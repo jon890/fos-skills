@@ -24,7 +24,20 @@
 //     내 PR 의 base 를 옮기지만, 이 정리는 머지 직후가 아닌 뒤늦은 정리라 열린 PR 의 base 를 바꾸는 판단을 하지 않는다.
 
 
-// --remote-branches 가 읽는 닫힌 PR 의 필드. --state closed 는 MERGED 와 CLOSED 를 함께 준다
+//
+//       차례  조건                                                         걸리면
+//       1     그 이름의 PR 가운데 isCrossRepository 가 true 인 것이 있다   `fork 의 브랜치다` 로 남긴다
+//       2     이름이 기준 브랜치이거나 `release/` 로 시작한다              `보호 브랜치다` 로 남긴다
+//       3     남은 워크트리의 브랜치이거나 그 upstream 이다                `워크트리가 쓴다` 로 남긴다
+//       4     워크트리 없는 남은 로컬 브랜치의 upstream 이다               `로컬 브랜치가 쓴다` 로 남긴다
+//       5     끝점이 같은 PR 이 없다                                       `원격 끝점이 PR head 와 다르다` 로 남긴다
+//       6     열린 PR 의 base 다                                           `열린 PR 의 base 다` 로 남긴다
+//       7     열린 PR 의 head 다(지우면 그 PR 이 닫힌다)                   `열린 PR 의 head 다` 로 남긴다
+//       8     MERGED 다                                                    지운다
+//       9     CLOSED 이고 `git merge-base --is-ancestor <headRefOid>        지운다. head 커밋이 로컬에 없으면 먼저 `git fetch -q origin <headRefName>`
+//             origin/<baseRefName>` 가 0 이다(다른 PR 에 합쳐 닫혔다)        로 받는다. 받지 못하면 `head 커밋을 받지 못했다`,
+//                                                                          origin/<baseRefName> 이 없으면 `base 를 찾지 못했다` 로 남긴다
+//       10    그 밖(CLOSED 이고 head 가 base 에 없다. 버린 작업일 수 있다)  `CLOSED 이고 head 가 base 에 없다` 로 남긴다
 import type { Log, Owners } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { ghJson } from '../../lib/gh.ts'
@@ -32,6 +45,7 @@ import { git, lines } from './shared.ts'
 import { hasCommit } from './prs.ts'
 import { isObject } from '../../core/json.ts'
 
+// --remote-branches 가 읽는 닫힌 PR 의 필드. --state closed 는 MERGED 와 CLOSED 를 함께 준다
 const CLOSED_FIELDS = 'number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt,body'
 
 const OPEN_PR_LIMIT = 1000
@@ -121,7 +135,7 @@ function usedRemoteNames(repo: string, worktreeBranches: Set<string>): Map<strin
   return used
 }
 
-// 원격 브랜치 하나의 판정. 지울 PR 이나 남길 이유다. 차례는 머리 주석의 「원격 브랜치 정리」 표다
+// 원격 브랜치 하나의 판정. 지울 PR 이나 남길 이유다. 차례는 파일 맨 위 「원격 브랜치 삭제」 표다
 function remoteVerdict(
   repo: string,
   name: string,

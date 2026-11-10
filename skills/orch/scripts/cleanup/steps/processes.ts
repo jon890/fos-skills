@@ -153,7 +153,7 @@ function startedOutsideOrca(pid: string, rows: Map<string, [string, string]>, ho
   }
 }
 
-// 끌 pid 목록. 빼는 것은 머리 주석의 「남은 프로세스 끄기」 가 정한다.
+// 끌 pid 목록. 빼는 것은 processes.ts 파일 맨 위 설명의 「남은 프로세스 끄기」 가 정한다.
 function targets(path: string, nested: string[], host: Host, log?: Log): string[] {
   const cwds = host.holderCwds(path)
   const rows = host.psRows()

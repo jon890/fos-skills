@@ -1,4 +1,4 @@
-// launch-worker.ts 가 띄운 worker 의 기록. cleanup-sweep.ts 가 「코디네이터가 띄운 터미널」 을 가리는 근거다.
+// launch-worker.ts 가 띄운 worker 의 기록. cleanup/steps/worktrees.ts 가 「코디네이터가 띄운 터미널」 을 확인하는 근거다.
 //
 // Orca 는 worker 가 끝난 터미널에 입력이 들어가면 `user_owned` 로 기록한다. 사람이 넘겨받은 것과 이 자동 기록을 필드로 구분할 수 없어,
 // 코디네이터가 띄운 터미널도 사람 터미널로 보고 워크트리를 남겼다. 띄운 쪽이 기록을 남기면 sweep 이 그 기록으로 구분한다.

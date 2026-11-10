@@ -6,7 +6,7 @@
 //                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
 //     --base        기준 브랜치. 없으면 저장소마다 origin/HEAD 를 읽고, 그것도 없으면 main
 //     --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다.
-//                   주면 다른 Run 의 worker 터미널이 있는 경로는 건너뛴다(아래 「다른 Run」)
+//                   주면 다른 Run 의 worker 터미널이 있는 경로는 건너뛴다(worktrees.ts 파일 맨 위 설명의 「다른 Run」)
 //     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
 //                   `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다.
 //                   살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서는 지우지 않는다(lib/spec.ts 의 liveSpecPaths).
@@ -18,16 +18,16 @@
 //                   고르기와 지우기는 lib/spec.ts 의 specCandidates, specsOnBranch 와 deleteSpecs 다
 //                   워크트리를 지우면 launch-worker 가 그 워크트리에 준 지시서(lib/launched.ts 의 기록. 이어받기, 충돌 해소, 후속 지시서처럼
 //                   이름이 다른 것도 든다)를 --trash 로 옮기고 그 기록을 지운다. 살아 있는 dispatch 가 가리키는 지시서는 남긴다
-//                   워크트리가 먼저 지워져 위 순회가 만나지 못한 지시서도 치운다(아래 「워크트리 없는 지시서」)
-//     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
-//     --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(아래 「하위 에이전트 워크트리」)
+//                   워크트리가 먼저 지워져 위 순회가 만나지 못한 지시서도 치운다(specs.ts 파일 맨 위 설명의 「워크트리 없는 지시서」)
+//     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(processes.ts 파일 맨 위 설명의 「남은 프로세스 끄기」)
+//     --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(worktrees.ts 파일 맨 위 설명의 「하위 에이전트 워크트리」)
 //     --close-own-taken-over
 //                   --run 과 함께 줄 때만 쓴다. 이 Run 의 끝난 dispatch 가 쓴 터미널이 `user_takeover` 로 남았어도
-//                   아래 「넘겨받은 터미널」 조건을 모두 채우면 닫고 정리한다. 없으면 예전처럼 남긴다
+//                   worktrees.ts 파일 맨 위 설명의 「넘겨받은 터미널」 조건을 모두 채우면 닫고 정리한다. 없으면 예전처럼 남긴다
 //     --remote-branches
 //                   저장소마다 워크트리와 로컬 브랜치 정리가 끝난 뒤, 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다
-//                   (아래 「원격 브랜치 삭제」 의 --remote-branches). 없으면 하지 않는다
-//     --trash       머지 큐 로그(아래 「머지 큐 로그」)와 기록된 지시서(--specs-dir)를 옮길 휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
+//                   (remote-branches.ts 파일 맨 위 설명의 「원격 브랜치 삭제」 의 --remote-branches). 없으면 하지 않는다
+//     --trash       머지 큐 로그(state.ts 파일 맨 위 설명의 「머지 큐 로그」)와 기록된 지시서(--specs-dir)를 옮길 휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
 //     --wait        터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 0 이상의 유한한 수. 기본 5
 //     --poll-interval  프로세스 확인 간격(초). 0 초과의 유한한 수. 기본 1
 //     --apply       실제로 정리한다
@@ -137,7 +137,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     return { code: 2 }
   }
   const repos = [...new Set<string>(values.repo.map((repo) => realPath(repo)))]
-  // 짧은 출력은 줄마다 sweepLine 으로 바꾸고 끝에 SWEEP 줄을 낸다(머리 주석의 「짧은 출력」)
+  // 짧은 출력은 줄마다 sweepLine 으로 바꾸고 끝에 SWEEP 줄을 낸다(output.ts 파일 맨 위 설명의 「짧은 출력」)
   const brief = short()
   const tally = { removed: 0, kept: 0 }
   const sweepCtx: SweepContext = { path: null }

@@ -1,3 +1,21 @@
+// 머지 없이 CLOSED 가 된 PR 의 터미널 (--run 을 줬을 때만):
+//     worker 터미널은 worker_done 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남긴다. 충돌과 리뷰 반영을 같은 worker 가 이어 받는다.
+//     PR 찾기로 찾은 PR 이 아래를 모두 채우면 그 dispatch 가 쓴 터미널을 닫고 dispatch 를 반납한다.
+//       - state 가 CLOSED 다(MERGED 가 아니다)
+//       - 내 PR 이다
+//       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고 모두 끝났다(lib/worker-state.ts 의 isFinished)
+//       - 터미널 소유 확인(lib/ownership.ts)을 통과한다. 사용자 보유 터미널이면 `남김: 사용자 보유 터미널` 이다
+//     닫는 터미널은 그 worker 행의 terminalHandle 과 agentTerminalHandle 가운데 그 경로에 살아 있는 것이다.
+//     모든 Run 의 worker 를 읽지 못했으면 agentTerminalHandle 만 닫는다.
+//     같은 경로의 다른 터미널과 다른 Run 의 worker 가 쥔 터미널은 닫지 않는다. --apply 가 없으면 `닫을 것: <터미널> (CLOSED #<PR>)` 만 낸다.
+//       - 워크트리가 지우기 대상이 아니면 터미널을 닫고 dispatch 를 반납한 뒤 `남김 <경로>: <이유>` 를 낸다
+//       - 지우기 대상(upstream 이 없고 cherry 가 0)이면 살아 있는 worker 와 살아 있는 터미널 판정에서 MERGED PR 과 같게 다루고,
+//         `정리` 줄과 before-cleanup 뒤에 터미널을 닫는다. before-cleanup 이 거부하면 터미널도 닫지 않는다
+//       - cherry 판정은 통과했는데 커밋 안 된 변경이나 원격에 없는 커밋으로 `건너뜀` 이 되면 터미널을 닫지 않고 dispatch 도 반납하지 않는다.
+//         그 변경과 커밋은 그 터미널의 worker 가 만든 것일 수 있어, 워크트리와 함께 남겨 다음 실행이 다시 판정한다
+//     --kill-holders 와 --merged-head 는 MERGED 일 때만이다. CLOSED PR 의 head 는 머지된 커밋이 아니다.
+//     열린 PR 의 끝난 dispatch 터미널은 그대로 남긴다.
+//
 // 머지가 끝난 worktree 와 로컬 브랜치, 그 worker 터미널과 지시서를 찾아 정리한다.
 //
 // 머지마다 수동으로 정리하면 잊히고, 프로세스가 worktree 를 잡고 있어 그 자리에서 실패한 것은 다시 돌아보지 않는다.
@@ -14,7 +32,7 @@
 // 정리 대상 (브랜치마다):
 //     - 그 브랜치의 PR 이 MERGED 다
 //     - PR 이 없거나 MERGED 가 아니면, upstream 이 gone 이고 `git cherry` 로 base 에 없는 커밋이 0 개다
-//     - 머지 없이 CLOSED 가 된 PR 의 터미널(아래 「머지 없이 CLOSED 가 된 PR 의 터미널」). 워크트리는 위 판정을 따른다
+//     - 머지 없이 CLOSED 가 된 PR 의 터미널(파일 맨 위 설명의 「머지 없이 CLOSED 가 된 PR 의 터미널」). 워크트리는 위 판정을 따른다
 //     - PR 없이 끝난 워크트리(아래 「PR 없이 끝난 워크트리」)
 //
 // 코디네이터가 띄운 터미널 (--run 을 줬을 때만):
@@ -49,14 +67,14 @@
 //       그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다.
 //       PR 이 MERGED 인 브랜치는 workerState 가 working, ready 가 아니면 남은 터미널만으로 건너뛰지 않는다.
 //       worker 의 Claude 세션 터미널은 일이 끝나도 목록에 남기 때문이다. 그 터미널은 아래에서 닫는다
-//     - --run 을 줬고, 그 경로에 다른 Run 의 worker 터미널이 있다(아래 「다른 Run」)
+//     - --run 을 줬고, 그 경로에 다른 Run 의 worker 터미널이 있다(worktrees.ts 파일 맨 위 설명의 「다른 Run」)
 //     - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다.
 //       OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.ts` 가 끝날 때까지 기다린다
 //       단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
 //       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 //     - before-cleanup 핸들러가 거부하거나 실패하거나 시간을 넘겼다(아래 「이벤트」)
 //
-// 리뷰 워크트리 (워크트리마다. 위 「건너뛰는 경우」 를 지난 detached 워크트리):
+// 리뷰 워크트리 (워크트리마다. 「건너뜀」 를 지난 detached 워크트리):
 //     launch-worker 는 리뷰 워크트리를 `review/pr-<N>` 브랜치로 만든 뒤 PR head 를 detached 로 꺼낸다. 브랜치가 없어 위 판정에 걸리지 않는다.
 //     그것을 만든 브랜치(lib/review.ts 의 originBranch)가 리뷰 브랜치이거나, 그 경로의 띄우기 기록(lib/launched.ts) 지시서가 리뷰 지시서면
 //     리뷰 워크트리다. 아래가 모두 참이면 저장소 안팎과 상관없이 `git worktree remove` 로 지운다. PR 상태는 보지 않는다.
@@ -67,7 +85,7 @@
 //       - 그 경로를 작업 디렉터리로 쓰는 프로세스가 없고, 그 경로에 Orca 터미널이 없다
 //     HEAD 가 원격에 있는지는 보지 않는다. 리뷰 워크트리의 HEAD 는 PR head 이고 `refs/pull/<N>/head` 는 원격 추적 브랜치가 아니다.
 //     출력은 `리뷰 워크트리를 지울 것 <경로> (#<N>)`, `리뷰 워크트리 삭제 <경로> (#<N>)`, `건너뜀 리뷰 워크트리 <경로> (#<N>): <이유>` 다.
-//     지운 뒤 아래 「리뷰 흔적」 이 그것을 만든 `review/pr-<N>` 브랜치를 PR 이 닫혔으면 지운다.
+//     지운 뒤 reviews.ts 파일 맨 위 설명의 「리뷰 흔적」 이 그것을 만든 `review/pr-<N>` 브랜치를 PR 이 닫혔으면 지운다.
 //
 // 저장소 밖 detached 워크트리:
 //     worker 가 기준선 비교나 임시 검사로 저장소 밖(임시 폴더 같은 곳)에 만든 detached 워크트리는 끝나도
@@ -112,32 +130,13 @@
 //     터미널 소유 확인과 같은 행을 정리 실행 내내 쓴다. 삭제 직전에는 해당 경로와 새로 갱신된 Run 만 다시 읽는다.
 //     그 조회가 실패하면 이 Run worker 의 터미널만 닫고, 다른 터미널이 있는 경로는 건너뛴다.
 //
-// 기준 브랜치 따라가기 (저장소마다 맨 처음):
-//     기본 체크아웃이 기준 브랜치에 있고 origin/<기준> 의 조상이면 `git merge --ff-only` 로 맞춘다.
-//     로컬에만 있는 커밋이 있거나 다른 브랜치가 체크아웃돼 있으면 건드리지 않고 이유를 낸다.
-//     기준 브랜치가 뒤처지면 그 위에서 계획한 worker 가 옛 코드를 본다.
-//
 // 실행 순서 (worktree 마다):
 //     그 경로의 Orca 터미널 close(PR 이 MERGED 이거나 PR 없이 끝난 워크트리일 때만. 머지 없이 CLOSED 가 된 내 PR 이면 그 dispatch 의 터미널만), 끝난 Dispatch release, `remove-worktree.ts --delete-branch --merged-head`,
 //     원격 브랜치 삭제(이미 없으면 통과), 지시서와 PR 본문 파일 삭제.
-//     remove-worktree.ts 는 lib/proc.ts 의 scriptCommand 로 같은 폴더의 것을 부른다.
+//     remove-worktree.ts 는 scriptPath('remove-worktree') 와 lib/proc.ts 의 scriptCommand 로 cleanup/remove-worktree.ts 를 부른다.
 //     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
-//     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다. 그다음 리뷰 흔적(위 「리뷰 흔적」)을 지운다. 로컬 브랜치 없이 직접 머지한 PR 과
+//     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다. 그다음 리뷰 흔적(reviews.ts 파일 맨 위 설명의 「리뷰 흔적」)을 지운다. 로컬 브랜치 없이 직접 머지한 PR 과
 //     다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치는 `--remote-branches` 가 지운다.
-//
-//       차례  조건                                                         걸리면
-//       1     그 이름의 PR 가운데 isCrossRepository 가 true 인 것이 있다   `fork 의 브랜치다` 로 남긴다
-//       2     이름이 기준 브랜치이거나 `release/` 로 시작한다              `보호 브랜치다` 로 남긴다
-//       3     남은 워크트리의 브랜치이거나 그 upstream 이다                `워크트리가 쓴다` 로 남긴다
-//       4     워크트리 없는 남은 로컬 브랜치의 upstream 이다               `로컬 브랜치가 쓴다` 로 남긴다
-//       5     끝점이 같은 PR 이 없다                                       `원격 끝점이 PR head 와 다르다` 로 남긴다
-//       6     열린 PR 의 base 다                                           `열린 PR 의 base 다` 로 남긴다
-//       7     열린 PR 의 head 다(지우면 그 PR 이 닫힌다)                   `열린 PR 의 head 다` 로 남긴다
-//       8     MERGED 다                                                    지운다
-//       9     CLOSED 이고 `git merge-base --is-ancestor <headRefOid>        지운다. head 커밋이 로컬에 없으면 먼저 `git fetch -q origin <headRefName>`
-//             origin/<baseRefName>` 가 0 이다(다른 PR 에 합쳐 닫혔다)        로 받는다. 받지 못하면 `head 커밋을 받지 못했다`,
-//                                                                          origin/<baseRefName> 이 없으면 `base 를 찾지 못했다` 로 남긴다
-//       10    그 밖(CLOSED 이고 head 가 base 에 없다. 버린 작업일 수 있다)  `CLOSED 이고 head 가 base 에 없다` 로 남긴다
 //
 // 이벤트 (--apply 일 때만. 핸들러가 바깥에 부작용을 낼 수 있어 dry-run 에서는 내지 않는다):
 //     before-cleanup  워크트리 하나가 지울 대상으로 판정되고(소유, 미커밋 변경, 원격에 없는 커밋 확인을 통과)
@@ -151,7 +150,7 @@
 //     after-cleanup   --repo 하나의 정리가 끝난 뒤 낸다. 입력은 removed(그 저장소에서 지운 워크트리 경로 목록)와
 //                     skipped(그 저장소에서 남기거나 건너뛴 워크트리의 { path, reason } 목록)다.
 //                     핸들러의 실패와 시간 초과는 `HOOK-FAIL` 줄만 내고 종료 코드에 반영하지 않는다.
-//                     정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(아래 「종료 코드」). after-cleanup 의 실패를 2 에 섞으면
+//                     정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(cli.ts 파일 맨 위 설명의 「종료 코드」). after-cleanup 의 실패를 2 에 섞으면
 //                     정리 자체가 실패한 경우와 구별할 수 없다
 //     ctx 는 { repo: --repo 의 체크아웃, base: 그 저장소의 기준 브랜치, run: --run 값 또는 null } 이다.
 //

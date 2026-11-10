@@ -323,7 +323,7 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 대상은 worker 터미널, 워크트리, 로컬 브랜치다(원격 브랜치는 위 조건을 따른다). 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.
 절차는 아래 「다른 저장소에 맡긴 PR 을 직접 머지했을 때」 가 소유한다.
 **다른 세션이 띄운 작업은 건드리지 않는다.** 그 세션이나 사용자가 하던 작업이 끊긴다.
-판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더 같은 정리 인자는 설정 `queue.sweep_args` 에 두는 것이 기본이다. Run 은 `--run` 으로 준 값이 자동으로 정리에 넘어간다.
+조건과 실행 순서는 `scripts/cleanup/steps/`의 해당 단계 설명을 따른다. 지시서 폴더 같은 정리 인자는 설정 `queue.sweep_args` 에 두는 것이 기본이다. Run 은 `--run` 으로 준 값이 자동으로 정리에 넘어간다.
 
 ```bash
 orch queue merge --sweep-arg --kill-holders 101 102
@@ -331,7 +331,7 @@ orch queue merge --sweep-arg --kill-holders 101 102
 
 **`--sweep-arg` 를 명령줄에 하나라도 주면 설정의 `queue.sweep_args` 를 통째로 쓰지 않는다.** `--specs-dir` 처럼 설정에 둔 인자도 `--sweep-arg --specs-dir --sweep-arg "$SPECS_DIR"` 로 다시 준다.
 
-**스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
+**`scripts/cleanup/steps/`의 설명이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
 저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 「메시지가 오면」).
 
 스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「메시지가 오면」 가 소유한다.

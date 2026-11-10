@@ -1,5 +1,13 @@
-// 지시서와 PR 본문 파일을 지운다. live 는 살아 있는 dispatch 의 지시서 실경로 집합이고 null 이면 둘 다 남긴다.
-// root 는 지시서 폴더 실경로의 부모다. 지시서와 PR 본문은 그 아래에 있어 lib/spec.ts 의 「orch 루트 밖」 에 걸리지 않는다.
+// 워크트리 없는 지시서 (저장소마다 리뷰 흔적 뒤에 한 번. --specs-dir 를 줬을 때):
+//     워크트리가 먼저 지워지면 worktrees.ts 의 워크트리 순회가 그 지시서를 만나지 못해 쌓인다. --specs-dir 바로 아래 .md 가운데
+//     `브랜치:` 줄이 있는 지시서마다 아래를 모두 채우면 --trash 로 옮긴다.
+//       - 줄의 브랜치마다 PR 이 있고 모두 MERGED 다(OPEN 이 하나라도 있거나 조회가 실패하면 남긴다)
+//       - 그 브랜치를 쓰는 워크트리가 없다. 같은 이름의 로컬 브랜치가 있으면 끝점이 머지된 PR 의 headRefOid 와 같다
+//       - 기능 PR 의 후속 검증이 대기가 아니다(featureCompletionProblem)
+//       - 살아 있는 dispatch 가 가리키는 지시서가 아니고 orch 루트 안이다(deleteSpecs)
+//     옮기기 전 `워크트리 없는 지시서 판정 <경로>: 브랜치 <b> PR #<N> MERGED, 그 브랜치의 워크트리 없음` 한 줄을 낸다.
+//     남기는 이유는 `워크트리 없는 지시서 남김 <경로>: <이유>` 로 낸다(PR 이 없는 지시서는 줄 없이 남긴다)
+//
 import type { Args, Log, Pr, Sweep } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { branchTip, prList } from './prs.ts'
@@ -11,6 +19,8 @@ import { readText, truthy } from './shared.ts'
 import { readdirSync } from 'node:fs'
 import { realPath } from '../../lib/fs.ts'
 
+// 지시서와 PR 본문 파일을 지운다. live 는 살아 있는 dispatch 의 지시서 실경로 집합이고 null 이면 둘 다 남긴다.
+// root 는 지시서 폴더 실경로의 부모다. 지시서와 PR 본문은 그 아래에 있어 lib/spec.ts 의 「orch 루트 밖」 에 걸리지 않는다.
 export function deleteSpecFiles(specsDir: string | null, name: string, apply: boolean, log: Log, live: Set<string> | null, branch: string, pr: Pr | null): void {
   if (!specsDir) return
   const prNumber = pr && truthy(pr.number) ? pr.number : undefined
@@ -28,7 +38,7 @@ export function trashLaunchedSpecs(repo: string, specsDir: string | null, path: 
   deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies: [], live, mode: { trash }, apply, log: (line) => log(`  ${line}`) })
 }
 
-// 기능 PR 의 후속 검증이 끝나지 않았으면 지시서를 남긴다(머리 주석의 「기능 PR」). 남기면 true 다.
+// 기능 PR 의 후속 검증이 끝나지 않았으면 지시서를 남긴다. 남기면 true 다.
 // 지울 지시서 후보가 있을 때만 PR 본문을 읽는다. 워크트리와 브랜치는 후속 검증과 상관없이 지운다
 export function specsKept(s: Sweep, path: string, name: string, branch: string, pr: Pr | null): boolean {
   const { repo, specsDir, log } = s
@@ -41,7 +51,7 @@ export function specsKept(s: Sweep, path: string, name: string, branch: string, 
   return pending !== null
 }
 
-// 머리 주석의 「워크트리 없는 지시서」. --specs-dir 폴더 바로 아래 지시서의 `브랜치:` PR 이 모두 MERGED 이고 그 브랜치를 쓰는
+// specs.ts 파일 맨 위 설명의 「워크트리 없는 지시서」. --specs-dir 폴더 바로 아래 지시서의 `브랜치:` PR 이 모두 MERGED 이고 그 브랜치를 쓰는
 // 워크트리가 없으면 휴지통으로 옮긴다. 워크트리가 먼저 지워진 지시서는 워크트리 순회가 만나지 못해 쌓이기 때문이다.
 // 살아 있는 dispatch 가 쓰는 지시서와 기능 후속 검증이 남은 지시서는 남긴다. 판정 근거는 옮기기 전 한 줄로 낸다
 function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {

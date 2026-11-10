@@ -15,7 +15,7 @@
 //     조회 결과는 JSON 으로 읽는다. 빈 목록이면 「PR 없음」 이고, JSON 이 아니거나 필드가 없으면 「조회 실패」 다.
 //     둘 다 머지로 읽지 않는다. PR HEAD 가 로컬에 없으면(머지 큐의 update-branch 로 앞서 간 경우) `refs/pull/<번호>/head` 를 받아 온다.
 //     조회 필드의 title, isDraft, url 은 before-cleanup 의 pr 입력을 채우는 데만 쓰고 판정에는 쓰지 않는다.
-//     author 는 그 입력과, CLOSED PR 이 내 PR 인지 가리는 데 쓴다(아래 「내 PR」).
+//     author 는 그 입력과, CLOSED PR 이 내 PR 인지 가리는 데 쓴다(prs.ts 파일 맨 위 설명의 「내 PR」).
 //
 // 내 PR:
 //     lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다. 작성자는 config.json 의 pipeline.authors, 없으면 그 호스트의 gh 현재 사용자다.
@@ -25,23 +25,6 @@
 //     읽지 못하면(null 이거나 ConfigError) 그 저장소에서 원격 브랜치 정리와 CLOSED PR 의 터미널 정리를 하지 않고
 //     stderr 에 이유를 내고 종료 코드를 2 로 둔다. 누가 내 PR 인지 모른 채 지우거나 닫지 않는다.
 //
-// 머지 없이 CLOSED 가 된 PR 의 터미널 (--run 을 줬을 때만):
-//     worker 터미널은 worker_done 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남긴다. 충돌과 리뷰 반영을 같은 worker 가 이어 받는다.
-//     PR 찾기로 찾은 PR 이 아래를 모두 채우면 그 dispatch 가 쓴 터미널을 닫고 dispatch 를 반납한다.
-//       - state 가 CLOSED 다(MERGED 가 아니다)
-//       - 내 PR 이다
-//       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고 모두 끝났다(lib/worker-state.ts 의 isFinished)
-//       - 터미널 소유 확인(lib/ownership.ts)을 통과한다. 사용자 보유 터미널이면 `남김: 사용자 보유 터미널` 이다
-//     닫는 터미널은 그 worker 행의 terminalHandle 과 agentTerminalHandle 가운데 그 경로에 살아 있는 것이다.
-//     모든 Run 의 worker 를 읽지 못했으면 agentTerminalHandle 만 닫는다.
-//     같은 경로의 다른 터미널과 다른 Run 의 worker 가 쥔 터미널은 닫지 않는다. --apply 가 없으면 `닫을 것: <터미널> (CLOSED #<PR>)` 만 낸다.
-//       - 워크트리가 지우기 대상이 아니면 터미널을 닫고 dispatch 를 반납한 뒤 `남김 <경로>: <이유>` 를 낸다
-//       - 지우기 대상(upstream 이 없고 cherry 가 0)이면 살아 있는 worker 와 살아 있는 터미널 판정에서 MERGED PR 과 같게 다루고,
-//         `정리` 줄과 before-cleanup 뒤에 터미널을 닫는다. before-cleanup 이 거부하면 터미널도 닫지 않는다
-//       - cherry 판정은 통과했는데 커밋 안 된 변경이나 원격에 없는 커밋으로 `건너뜀` 이 되면 터미널을 닫지 않고 dispatch 도 반납하지 않는다.
-//         그 변경과 커밋은 그 터미널의 worker 가 만든 것일 수 있어, 워크트리와 함께 남겨 다음 실행이 다시 판정한다
-//     --kill-holders 와 --merged-head 는 MERGED 일 때만이다. CLOSED PR 의 head 는 머지된 커밋이 아니다.
-//     열린 PR 의 끝난 dispatch 터미널은 그대로 남긴다.
 import { BY_PR, git, lines, truthy } from './shared.ts'
 import { ConfigError } from '../../lib/config.ts'
 import type { Log, Owners, Pr } from './shared.ts'
@@ -272,7 +255,7 @@ export function deleteRemote(repo: string, plan: RemotePlan, base: string, apply
   }
 }
 
-// 작성자 목록을 저장소마다 처음 쓸 때 한 번 읽는다. 머리 주석의 「내 PR」 이 정한다.
+// 작성자 목록을 저장소마다 처음 쓸 때 한 번 읽는다. prs.ts 파일 맨 위 설명의 「내 PR」 이 정한다.
 // 읽지 못하면(null 이거나 ConfigError) onFail 을 한 번 부르고, 그 뒤로도 null 을 돌려준다
 export function ownersOf(repo: string, onFail: (why: string) => void): Owners {
   let read = false

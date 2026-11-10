@@ -1,4 +1,3 @@
-// `orca <args> --json` 응답의 result. 실패하거나 result 가 없으면 null 이다.
 import type { Args, Log, Pr, Terminal } from './shared.ts'
 import { LookupError, rowHandles } from '../../lib/ownership.ts'
 import { REAL_HOST, holderPids, holdersOf, onlyIdleShells } from './processes.ts'
@@ -12,6 +11,7 @@ import { isObject } from '../../core/json.ts'
 import { readLaunch } from '../../lib/launched.ts'
 import { realPath } from '../../lib/fs.ts'
 
+// `orca <args> --json` 응답의 result. 실패하거나 result 가 없으면 null 이다.
 function orcaResult(args: string[]): unknown {
   const done = run([orcaBin(), ...withFull(args), '--json'])
   if (done.code !== 0) return null

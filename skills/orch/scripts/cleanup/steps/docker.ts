@@ -6,13 +6,13 @@
 //     docker 절이 틀렸으면(ConfigError) stderr 에 이유를 내고 종료 코드를 2 로 둔다. Docker 를 쓸 수 없으면 경고 한 줄만 낸다.
 
 
-// 머리 주석의 「Docker 자원」. docker 절이 틀렸으면 false 다
 import { ConfigError, loadConfig } from '../../lib/config.ts'
 import type { Log } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { dockerCleanup, dockerRules } from '../../lib/docker.ts'
 import { err } from './shared.ts'
 
+// 머리 주석의 「Docker 자원」. docker 절이 틀렸으면 false 다
 function sweepDocker(repo: string, apply: boolean, log: Log): boolean {
   let rules
   try {

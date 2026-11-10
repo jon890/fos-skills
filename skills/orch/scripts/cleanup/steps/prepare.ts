@@ -1,4 +1,13 @@
-// 기본 체크아웃이 기준 브랜치에 있으면 origin/<기준> 으로 fast-forward 한다.
+// routing 기록 (--apply일 때, --run과 무관):
+//     최근 띄우기 이력의 브랜치에서 머지 없이 닫힌 PR과 마무리 표시가 없는 머지 PR만 기록한다.
+//     마무리가 worker 종료를 기다리는 동안에는 finish-pr이 기록하도록 맡긴다. 기록 실패는 정리를 막지 않는다.
+//     ORCA_USAGE_DIR로 토큰 사용량 폴더를 바꾼다. 기록 형식과 수집은 lib/routing-log.ts가 소유한다.
+//
+// 기준 브랜치 따라가기 (저장소마다 맨 처음):
+//     기본 체크아웃이 기준 브랜치에 있고 origin/<기준> 의 조상이면 `git merge --ff-only` 로 맞춘다.
+//     로컬에만 있는 커밋이 있거나 다른 브랜치가 체크아웃돼 있으면 건드리지 않고 이유를 낸다.
+//     기준 브랜치가 뒤처지면 그 위에서 계획한 worker 가 옛 코드를 본다.
+//
 import type { Args, Log, Report } from './shared.ts'
 import { RepoError, err, git, lines, worktrees } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
@@ -10,6 +19,7 @@ import { requireMigrated } from '../../lib/paths.ts'
 import { sweepRouting } from '../../lib/routing-log.ts'
 import { workersAt } from './terminals.ts'
 
+// 기본 체크아웃이 기준 브랜치에 있으면 origin/<기준> 으로 fast-forward 한다.
 function followBase(repo: string, base: string, apply: boolean, log: Log): void {
   const current = git(repo, 'branch', '--show-current').out
   if (current !== base) return
