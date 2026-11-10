@@ -173,6 +173,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.
 // 충돌이 있으면 큐에서 빼는 충돌 처리로, worker 가 고칠 것(스레드, 근거 블록)이 있으면 worker 에게 알리는 보류로, 그 밖에는 알리지 않는 보류로 간다.
 // 체크 실패는 상주 루프의 CI 감시가 worker 에게 알리므로 체크만 걸렸을 때는 알리지 않는다
+// 리뷰 판정 대기와 보류는 일반 보류다. 리뷰 봇 재실행과 worker 수정 중 어느 쪽이 필요한지 알 수 없어 자동 알림을 보내지 않는다
 export function holdWith(state: StepState, reasons: GateReason[]): never {
   const n = state.p.n
   const joined = reasons.map((r) => r.text).join('; ')
