@@ -145,6 +145,34 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(gateReason(r), /HEAD aaaaaaaa 에 리뷰 판정이 없다/)
   })
 
+  test('리뷰 설정이 없으면 리뷰 없이 통과한다', async (t) => {
+    const c = setup(t)
+    const r = await gate(c, { '1': pr({ reviews: [], comments: [] }) }, 0)
+    assert.equal(r.code, 0, both(r))
+  })
+
+  test('머지 큐와 gate 는 이전 HEAD 와 보류 판정을 막는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK' } } }))
+    for (const [body, oid, reason] of [['PASS', 'b'.repeat(40), '리뷰 판정이 없다'], ['BLOCK', HEAD, '리뷰 보류']]) {
+      const state = { '1': pr({ reviews: [{ body, submittedAt: '2026-01-01T00:00:00Z', commit: { oid } }], comments: [] }) }
+      const g = await gate(c, state, 0)
+      const q = await queue(c, state, 0)
+      assert.equal(g.code, 1, both(g))
+      assert.equal(q.code, 1, both(q))
+      assert.match(gateReason(g), new RegExp(reason))
+      assert.equal(gateReason(g), queueReason(q))
+    }
+  })
+
+  test('모르는 리뷰 조건은 gate 를 막는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['unknown'] } } }))
+    const r = await gate(c, { '1': pr({ reviews: [], comments: [] }) }, 0)
+    assert.equal(r.code, 1, both(r))
+    assert.match(gateReason(r), /모르는 조건/)
+  })
+
   test('같은 이름 체크의 이전 실패보다 새 통과를 센다', async (t) => {
     const c = setup(t)
     const checks = [
