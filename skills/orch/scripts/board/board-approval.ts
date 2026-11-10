@@ -17,6 +17,12 @@ const USAGE = '사용법: board-approval.ts add|list|cancel|check [id] [--kind �
 const out = (line: string) => process.stdout.write(line + '\n')
 const err = (line: string) => process.stderr.write(line + '\n')
 const reject = (id: string, reason: CheckReason) => { out(`APPROVAL-REJECT ${id} ${reason}`); return 1 }
+async function coordinatorAllowed(): Promise<boolean> {
+  const worker = await selfIsWorker()
+  if (worker === false) return true
+  err(worker === true ? 'worker 터미널에서는 승인 대기를 올리거나 거두지 않는다' : 'worker 터미널인지 판정하지 못했다. 잠시 뒤 다시 부른다')
+  return false
+}
 async function main(): Promise<number> {
   let parsed: ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>
   try { parsed = parseArgs({ args: expandArgs(process.argv.slice(2), OPTIONS), options: OPTIONS, allowPositionals: true }) } catch (error) { err((error as Error).message); return 2 }
@@ -26,9 +32,6 @@ async function main(): Promise<number> {
   if (!['add', 'list', 'cancel', 'check'].includes(action) || (action === 'list' ? positionals.length !== 1 : positionals.length !== 2 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id))) { err(USAGE); return 2 }
   for (const key of ['step', 'version'] as const) if (v[key] !== undefined && (!/^\d+$/.test(v[key]!) || !Number.isSafeInteger(Number(v[key])) || Number(v[key]) < 1)) { err(`--${key} 은 양의 정수다`); return 2 }
   const repo = resolve(v.repo ?? process.cwd())
-  if (action === 'add' || action === 'cancel') {
-    if (await selfIsWorker() !== false) { err('worker 터미널에서는 승인 대기를 올리거나 거두지 않는다'); return 1 }
-  }
   if (action === 'add') {
     const preview = v.preview ? resolve(v.preview) : null
     const input: AddInput = { id, title: v.title ?? '', kind: (v.kind ?? '') as ApprovalKind, run: v.run ?? '', terminal: process.env.ORCA_TERMINAL_HANDLE || null,
@@ -44,6 +47,7 @@ async function main(): Promise<number> {
       if (!hash) { err(`미리보기 파일을 읽지 못했다: ${input.preview.path}`); return 1 }
       input.preview.sha256 = hash
     }
+    if (!await coordinatorAllowed()) return 1
     const added = updateApprovals(repo, (file, now) => { const result = applyAdd(file, input, now); return { file: result.file, result } }, { recoverBroken: true, onBroken: path => err(`깨진 승인 파일을 옮겼다: ${path}`) })
     out(`APPROVAL-ADD ${id} ${added.entry.kind} ${added.entry.version}${added.kept ? ' kept' : added.replaced ? ' replaced' : ''}`)
     return 0
@@ -54,6 +58,7 @@ async function main(): Promise<number> {
     return 0
   }
   if (action === 'cancel') {
+    if (!await coordinatorAllowed()) return 1
     const result = updateApprovals(repo, (file, now) => { const next = applyCancel(file, id, v.reason ?? null, now); return { file: 'file' in next ? next.file : file, result: next } })
     if ('error' in result) { err(result.error); return 1 }
     out(`APPROVAL-CANCEL ${id}`); return 0

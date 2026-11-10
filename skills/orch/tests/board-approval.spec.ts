@@ -70,6 +70,24 @@ test('없는 미리보기와 빈 Run 은 저장하지 않고 진입점도 Run �
     assert.doesNotMatch(help.stdout, /board sync|approval approve|approval revise/)
   } finally { f.clean() }
 })
+test('잘못된 인자는 Orca 없이 거절하고 worker 조회 실패는 구분해 안내한다', () => {
+  const f = fixture()
+  try {
+    f.fake.setRules([{ code: 1 }])
+    const missing = f.run(['add', 'demo'])
+    assert.equal(missing.code, 2); assert.match(missing.err, /--title, --kind/)
+    assert.equal(f.run(['add', 'a', '--title', '제목', '--kind', 'post', '--preview', 'missing', '--run', 'R']).code, 1)
+    assert.equal(f.run(['add', 'a', '--title', '제목', '--kind', 'post', '--preview', f.preview]).code, 1)
+    assert.equal(f.run(['add', 'a', '--step', 'bad']).code, 2)
+    assert.equal(f.run(['cancel', 'bad:id']).code, 2)
+    assert.equal(f.fake.calls().length, 0)
+    for (const result of [f.add(), f.run(['cancel', 'demo'])]) {
+      assert.equal(result.code, 1)
+      assert.equal(result.err, 'worker 터미널인지 판정하지 못했다. 잠시 뒤 다시 부른다')
+    }
+    assert.equal(existsSync(f.file), false)
+  } finally { f.clean() }
+})
 test('다시 올리기, 끝난 기록 보존, keep-open, list 와 cancel', () => {
   const f = fixture()
   try {
