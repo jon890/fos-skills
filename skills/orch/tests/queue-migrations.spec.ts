@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,7 @@ import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixture
 const runner = fileURLToPath(new URL('./fixtures/merge-queue-run.ts', import.meta.url))
 const cli = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
 const gate = fileURLToPath(new URL('../scripts/queue/gate.ts', import.meta.url))
+const wrapper = fileURLToPath(new URL('../scripts/queue/merge-with-finish.ts', import.meta.url))
 const migration = (version: number, module = 'app') => ({ module, version: [version], label: `V${version}`, path: `${module}/V${version}__x.sql` })
 const item = (pr: number, version: number) => ({ pr, readyAt: new Date(pr).toISOString(), migrations: [migration(version)] })
 
@@ -23,6 +24,14 @@ test('번호로 만든 묶음과 수동 묶음이 모순되면 거절한다', ()
 test('수동 묶음과 자동 묶음이 이어지면 하나로 합쳐 선행 PR 을 기다린다', () => {
   const result = orderedMigrations([item(1, 8), item(2, 7), { pr: 3, readyAt: new Date(3).toISOString(), migrations: [] }], [[3, 2]])
   assert.deepEqual(result, { order: [3, 2, 1], chains: [[3, 2, 1]] })
+})
+
+test('모듈 둘을 바꾸는 PR 과 수동 묶음이 자동 묶음들을 하나로 합친다', () => {
+  const mixed = { pr: 2, readyAt: new Date(2).toISOString(), migrations: [migration(8), migration(2, 'audit')] }
+  const audit = { pr: 3, readyAt: new Date(3).toISOString(), migrations: [migration(3, 'audit')] }
+  assert.deepEqual(orderedMigrations([audit, mixed, item(1, 7)], []), { order: [1, 2, 3], chains: [[1, 2, 3]] })
+  const separate = [item(1, 7), item(2, 8), { ...audit, migrations: [migration(2, 'audit')] }, { ...audit, pr: 4 }]
+  assert.deepEqual(orderedMigrations(separate, [[2, 3]]), { order: [1, 2, 3, 4], chains: [[1, 2, 3, 4]] })
 })
 
 function setup(t: TestContext, configured = true) {
@@ -62,6 +71,29 @@ test('낮은 번호 PR 이 보류되면 높은 번호 PR 도 머지하지 않는
   assert.equal(result.code, 1)
   assert.match(result.stdout, /SKIP 1 묶음의 앞 PR 2/)
   assert.doesNotMatch(c.log(), /^pr merge /m)
+})
+
+test('수동 순서와 번호 순서가 모순되면 머지 전에 거절하고 잠금을 푼다', { skip: !HAS_TOOLS }, async (t) => {
+  const c = setup(t)
+  c.write({ 1: c.pr(8), 2: c.pr(7) })
+  const result = await c.run('--chain', '1,2', '1', '2')
+  assert.equal(result.code, 2, result.stdout + result.stderr)
+  assert.match(result.stderr, /--chain.*모순/)
+  assert.doesNotMatch(c.log(), /^pr merge /m)
+  assert.equal(existsSync(join(c.dir, '.orch', 'state', 'merge-queue.lock')), false)
+})
+
+test('죽은 큐가 남긴 잠금은 다음 큐가 회수하고 머지한다', { skip: !HAS_TOOLS }, async (t) => {
+  const c = setup(t, false)
+  c.write({ 1: c.pr(7) })
+  const ended = spawnSync(process.execPath, ['-e', ''])
+  assert.equal(ended.status, 0)
+  const state = join(c.dir, '.orch', 'state')
+  mkdirSync(state)
+  writeFileSync(join(state, 'merge-queue.lock'), JSON.stringify({ pid: ended.pid, identity: '끝난 큐' }))
+  const result = await c.run('1')
+  assert.equal(result.code, 0, result.stdout + result.stderr)
+  assert.match(c.log(), /^pr merge 1/m)
 })
 
 test('base 최고 이하인 번호는 머지하지 않고 gate 에도 새 번호 안내를 낸다', { skip: !HAS_TOOLS }, async (t) => {
@@ -108,14 +140,14 @@ test('migrations 설정이 없으면 입력 순서를 유지하고 파일 조회
   assert.doesNotMatch(c.log(), /--json files|ls-tree/)
 })
 
-test('같은 저장소의 두 번째 큐는 거절하고 첫 큐가 끝나면 잠금을 푼다', { skip: !HAS_TOOLS }, async (t) => {
+for (const entry of [[cli], [wrapper, '--no-finish']]) test(`${entry.length === 1 ? '직접 건 큐' : '루프가 쓰는 래퍼'}와 두 번째 큐는 겹쳐 돌지 않는다`, { skip: !HAS_TOOLS }, async (t) => {
   const c = setup(t, false)
   c.write({ 1: c.pr(7) })
   const hooks = join(c.dir, '.orch', 'hooks')
   mkdirSync(hooks)
   const started = join(c.dir, 'started')
   writeFileSync(join(hooks, 'before-merge.ts'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(started)},''); setInterval(()=>{},1000)`)
-  const first = spawn(process.execPath, [cli, ...c.args, '1'], { env: c.env, stdio: 'ignore' })
+  const first = spawn(process.execPath, [...entry, ...c.args, '1'], { env: c.env, stdio: 'ignore' })
   const ended = new Promise((resolve) => first.on('exit', resolve))
   t.after(() => first.kill('SIGKILL'))
   const deadline = Date.now() + 15_000
@@ -125,7 +157,8 @@ test('같은 저장소의 두 번째 큐는 거절하고 첫 큐가 끝나면 �
   assert.equal(second.code, 2, second.stdout + second.stderr)
   assert.match(second.stderr, /QUEUE-BUSY/)
   assert.doesNotMatch(c.log(), /^pr merge /m)
-  first.kill('SIGTERM')
+  const queuePid = JSON.parse(readFileSync(join(c.dir, '.orch', 'state', 'merge-queue.lock'), 'utf8')).pid
+  process.kill(queuePid, 'SIGTERM')
   await ended
   assert.ok(!existsSync(join(c.dir, '.orch', 'state', 'merge-queue.lock')))
   rmSync(hooks, { recursive: true })
