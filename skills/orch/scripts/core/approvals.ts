@@ -107,6 +107,30 @@ export function applyUsed(file: ApprovalFile, id: string, version: number, nonce
   if (!entry.press || entry.press.nonce !== nonce) return { reason: '신호를 읽지 못함' }
   return { file: { ...file, entries: file.entries.map(e => e === entry ? { ...e, state: 'used', closedAt: now.toISOString() } : e) } }
 }
+export type PressInput = { id: string; version: number; action: 'approve' | 'revise'; terminal: string | null; origin: string; nonce: string; note: string | null }
+export type PressRefusal = '내용이 바뀌었어요' | '다른 창에서 이미 눌렀어요' | '코디네이터가 거뒀어요' | '대기가 없어요' | '고칠 내용이 비었어요' | '직접 실행하는 대기예요'
+// 창이 사람이 누른 버튼을 기록한다. 지금 버전이고 열려 있을 때만 쓰고, 아니면 이유를 돌려준다.
+export function applyPress(file: ApprovalFile, input: PressInput, now: Date): { file: ApprovalFile; entry: Approval } | { refusal: PressRefusal } {
+  const entry = latest(file, input.id)
+  if (!entry) return { refusal: '대기가 없어요' }
+  if (entry.version !== input.version) return { refusal: '내용이 바뀌었어요' }
+  if (entry.state !== 'open') return { refusal: entry.state === 'cancelled' ? '코디네이터가 거뒀어요' : '다른 창에서 이미 눌렀어요' }
+  if (entry.kind === 'command') return { refusal: '직접 실행하는 대기예요' }
+  const note = input.action === 'revise' ? (input.note ?? '').trim() : ''
+  if (input.action === 'revise' && !note) return { refusal: '고칠 내용이 비었어요' }
+  const pressed: Approval = {
+    ...entry, state: input.action === 'approve' ? 'approved' : 'revise', closedAt: now.toISOString(),
+    press: { action: input.action, terminal: input.terminal, origin: input.origin, at: now.toISOString(), nonce: input.nonce },
+    note: input.action === 'revise' ? note : null,
+  }
+  return { file: { ...file, entries: file.entries.map(e => e === entry ? pressed : e) }, entry: pressed }
+}
+// 신호를 보내지 못했을 때 누름 기록을 지운다. 그 사이 다른 쓰기가 같은 기록을 바꿨으면 건드리지 않는다.
+export function revertPress(file: ApprovalFile, id: string, version: number, nonce: string): { file: ApprovalFile } | { skipped: true } {
+  const entry = latest(file, id)
+  if (!entry || entry.version !== version || (entry.state !== 'approved' && entry.state !== 'revise') || entry.press?.nonce !== nonce) return { skipped: true }
+  return { file: { ...file, entries: file.entries.map(e => e === entry ? { ...e, state: 'open', closedAt: null, press: null, note: null } : e) } }
+}
 export function signalMatches(payload: Record<string, unknown>, entry: Approval): boolean {
   return !!entry.press && payload.source === 'board-approval' && payload.action === 'approve' && payload.id === entry.id && payload.version === entry.version && payload.nonce === entry.press.nonce
 }
