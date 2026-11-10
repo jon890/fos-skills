@@ -11,6 +11,21 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 
 **worker 는 보드를 고치지 않는다.** `board.ts step`, `mark`, `set` 은 스크립트와 코디네이터만 쓴다. worker 가 단계를 체크하면 PR 전인데 100% 로 보인다.
 
+## 승인 대기
+
+승인 대기는 보드 파일에 쓰지 않는다. `orch board approval` 명령이 별도 승인 파일을 읽고 쓴다. 코디네이터는 같은 일에 같은 id 를 쓰며, 신호를 받은 뒤 실행하기 직전에 확인한다. 종류별 필수 값과 채팅 승인 처리는 [`replying.md` 「보드 승인」](replying.md#보드-승인)이 소유한다.
+
+`$APPROVAL_ID` 는 같은 일을 가리키는 id, `$TITLE` 과 `$PREVIEW` 는 제목과 미리보기 경로, `$VERSION` 은 받은 신호의 버전이다.
+
+```bash
+orch board approval add "$APPROVAL_ID" --title "$TITLE" --kind post --preview "$PREVIEW"
+orch board approval list
+orch board approval check "$APPROVAL_ID" --version "$VERSION"
+orch board approval cancel "$APPROVAL_ID" --reason chat
+```
+
+끝난 기록도 보려면 `list --full` 을 쓴다.
+
 ## 마일스톤 단계
 
 단계 정의는 한 줄이 단계 하나다. 줄 앞 꼬리표가 그 단계를 끝낼 사건이고, 꼬리표가 없는 줄은 코디네이터가 끝내는 수동 단계다.

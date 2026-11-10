@@ -122,6 +122,8 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
+| `state/approvals.json` | 승인 대기. 저장 꼴과 상태는 [승인 설계의 저장 꼴](features/board-approval/design.md#저장-꼴)이 소유한다. 잠금 안에서 옆 파일에 쓰고 이름을 바꾼다 | 쓰기마다 끝난 지 7일이 지난 기록을 지운다. 열린 기록과 마지막 버전 번호는 남긴다 |
+| `state/approvals.json.lock` | 승인 파일 잠금. [보드 쓰기 잠금](adr/029-board-write-lock.md)의 `withFileLock` 규약을 쓴다 | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
 | `state/launch-history.jsonl` | 띄울 때마다 남기는 영구 이력. `dispatch`, `task`, `run`, `terminal`, `at`, `branch`, `worktree`, `spec`, `title`, `agent`, `model`, `effort`, `effective`, `row`, `completion`, `experiment`, `retry_of`. 모르는 값은 null. 필드와 선택 검사 계약은 [orch-routing 설계](features/orch-routing/design.md) 가 소유한다 | 자동으로 지우지 않는다. launched-workers 정리와 별개다 |
 | `state/routing-log.jsonl` | worker PR이 머지되거나 닫힐 때 남기는 관측 기록. 필드는 [orch-routing 스펙의 기록 항목](features/orch-routing/spec.md#기록-항목), 수집과 쓰기는 [설계](features/orch-routing/design.md)가 소유한다. `version`과 `recorded_at`을 함께 둔다. 토큰 키는 `input`, `output`, `cache_read`, `cache_write`이고 입력은 캐시 읽기를 제외한 값이다. `tokens_source`는 토큰을 읽은 곳(`session`, `orca-usage`)이거나 `tokens`가 `null`인 이유(`stale`, `unavailable`)다 | PR마다 한 줄. 같은 결과는 보존하고 closed에서 merged로 바뀌면 교체한다. 자동으로 지우지 않는다 |
 | `state/routing-log.lock` | routing 기록을 원자적으로 바꿀 때 잡는 pid 잠금 | 쓰기를 끝내면 반납하고 죽은 잠금은 회수한다 |
