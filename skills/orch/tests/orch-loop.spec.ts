@@ -36,7 +36,7 @@ if (st.fail) {
 }
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
-if (sub === 'send') { if(st.send_fail) { process.exitCode = 1; process.exit(1) }; reply({ message: { id: 'notice' } }); process.exit(0) }
+if (sub === 'send') { if(st.send_fail || (st.send_fail_runs || []).includes(argv[argv.indexOf('--to') + 1])) { process.exitCode = 1; process.exit(1) }; reply({ message: { id: 'notice' } }); process.exit(0) }
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 const byRun = st.by_run && run ? st.by_run[run] || [] : null
 if (st.bound && sub === 'check' && run && run !== st.bound) {
@@ -1029,8 +1029,8 @@ describe('여러 Run', () => {
     const result = tickOnce()
     const kinds = (run: string) => runEvents(run).map((row) => String(row.text).split(':')[0])
     // 같은 틱에 질문 확인도 실패한 Run 의 멈춤 확인 실패는 로그에만 쓴다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다
-    assert.deepEqual(kinds('A').sort(), ['done', 'lost', 'prs', 'questions'])
-    assert.deepEqual(kinds('B').sort(), ['done', 'lost', 'questions'])
+    assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
+    assert.deepEqual(kinds('B').sort(), ['questions'])
     const errors = result.errors as Json
     assert.equal(errors['questions@A'], null)
     assert.equal(errors['questions@B'], null)
@@ -1196,4 +1196,14 @@ test('다시 시작 알림 전송이 실패하면 loop.json 에 남기고 다음
   orca({});once()
   assert.deepEqual(loopState()?.restart_notices,{})
   assert.equal(events().filter(e=>e.kind==='LOOP-RESTARTED').length,2)
+})
+
+test('앞 루프에서 등록을 뺀 Run 은 재시작 알림이 거절돼도 한 번만 시도한다', () => {
+  const since='2026-01-01T00:00:00Z'
+  write(orchFile('state','loop.json'),JSON.stringify({pid:999999,run:'old',runs:['old','r'],alive_at:since,tick_sec:300}))
+  for(const run of ['old','r']) write(orchFile('state','loop-runs',`${run}.json`),JSON.stringify({run,specs_dir:null,registered_at:since}))
+  orca({send_fail_runs:['run:old']});once();once()
+  assert.deepEqual(loopState()?.restart_notices,{})
+  const rejected = jsonl(join(tmp,'orca-calls.jsonl')).filter((args:any) => args[1] === 'send' && args[args.indexOf('--to') + 1] === 'run:old')
+  assert.equal(rejected.length,1)
 })

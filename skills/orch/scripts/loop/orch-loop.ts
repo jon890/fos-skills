@@ -1076,7 +1076,11 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
       state.run = runs[0] ?? ctx.run
       for (const [run, since] of Object.entries(restartNotices)) {
         try { sendNotice('LOOP-RESTARTED', null, `${since} 부터 멈춰 있었다`, run); delete restartNotices[run] }
-        catch (e) { log(`NOTICE-FAIL LOOP-RESTARTED ${oneLine(e)}`) }
+        catch (e) {
+          log(`NOTICE-FAIL LOOP-RESTARTED ${oneLine(e)}`)
+          // 앞 루프의 등록을 뺀 Run 은 더 맡지 않는다. 실패한 알림을 다음 틱이나 시작으로 넘기지 않는다.
+          if (!isRegistered(ctx.repo, run)) delete restartNotices[run]
+        }
       }
       log(`tick ${n} ${iso()}`)
       const done = await runAsync(scriptCommand(entrypoint, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
@@ -2860,7 +2864,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
     if (!run) continue
     for (const [source, action] of [['done', watchCompletions], ['lost', watchLost]] as const) {
       try { await action(ctx.repo, run, defaultBase(ctx.repo) ?? ''); report(source, null, { run }) }
-      catch (e) { report(source, oneLine(e), { run }) }
+      catch (e) {
+        // 질문 조회가 같은 틱에 실패했으면 그 알림 하나로 둔다. 감시 자체는 독립적으로 실행한다.
+        if (waiting.get(run) === null) {
+          log(`WATCH-ERROR ${source}: ${oneLine(e)}`)
+          report(source, null, { run })
+        } else report(source, oneLine(e), { run })
+      }
     }
   }
 

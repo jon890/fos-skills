@@ -158,4 +158,4 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 루프 알림은 Orca 의 Run 메일함이 소유한다. `source: orch-loop`, `kind`, `pr` payload 로 구분한다. 종류와 전송 실패 처리는 `skills/orch/scripts/loop/orch-loop.ts` 와 `lib/run-notice.ts` 가 소유한다.
 완료 보고의 본 id·마지막 시각·의심 dispatch·이벤트 기록은 `state/done-seen/<Run>.json`, 미답변 질문 묶음은 `state/unanswered/<Run>.json` 에 둔다. PR 없는 작업은 띄우기 기록의 `completion: "none"` 으로 구분한다.
 
-loop.json 의 restart_notices 는 보내지 못한 재시작 알림을 Run 에서 이전 alive_at 으로 연결한다. 성공한 알림만 이 목록에서 뺀다.
+loop.json 의 restart_notices 는 보내지 못한 재시작 알림을 Run 에서 이전 alive_at 으로 연결한다. 성공한 알림은 목록에서 뺀다. 앞 루프에서 등록을 뺀 Run 은 전송 실패도 한 번 시도한 뒤 목록에서 뺀다. 지금 등록된 Run 의 실패는 다음 틱이 재시도한다.
