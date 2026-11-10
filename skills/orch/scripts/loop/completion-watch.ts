@@ -1,4 +1,8 @@
 // 완료 보고와 준비 상태를 따로 읽어 루프에서 확인한다. 메일을 소비하지 않는다.
+// 보낸 알림 기록: DONE-SUSPECT 는 state/done-seen/<runKey>.json 의 suspects(dispatch id 목록)에 남긴다. 키는 dispatch 이고 같은 dispatch 의
+//   worker_done 이 또 와도 다시 보내지 않는다. 파일이 디스크에 있어 루프를 다시 띄워도 이어진다. WORKER-LOST 는 lib/lost-workers.ts 가
+//   state/wait-important-lost.json 의 <Run>.<dispatch> 로 같은 방식으로 막는다. 전송이 성공한 뒤에만 기록해 실패는 다음 틱이 다시 보낸다.
+// 리뷰 dispatch 는 띄우기 기록이 지워져도 영구 이력의 spec 으로 알아본다(lib/review.ts).
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { classify, context, payload } from '../lib/completion.ts'
@@ -69,6 +73,9 @@ export async function watchCompletions(repo: string, run: string, base: string):
       let pr: Json | null = null
       if (verified.status === 'ready' && typeof verified.pr === 'number') {
         const got = ghJson<Json>(['pr', 'view', String(verified.pr), '--json', 'number,title,headRefName,headRefOid,author,isDraft,url'], { cwd: repo })
+        // 이 저장소가 띄우지 않은 dispatch(기록 없음)의 PR 번호는 다른 저장소의 것일 수 있다. 여러 저장소의 루프가 한 Run 에 있으면
+        // 남의 PR 번호로 조회가 실패하므로, 그 dispatch 는 건너뛰고 띄운 저장소의 루프가 맡는다
+        if (!got.ok && !launch) { seen.ids.push(id); if (time(message) > seen.last) seen.last = time(message); save(); continue }
         if (!got.ok) throw new Error(got.error)
         const v = got.data
         pr = { number: v.number, title: v.title, branch: v.headRefName, head: v.headRefOid, author: v.author?.login ?? null, draft: v.isDraft, url: v.url }

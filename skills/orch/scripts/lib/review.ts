@@ -20,13 +20,14 @@
 //
 // 리뷰 dispatch(reviewPrOfDispatch): launch-worker 의 띄우기 기록(lib/launched.ts)이 가리키는 지시서가 리뷰 지시서인 dispatch 다.
 //     완료 검증(lib/completion.ts)이 결과 status 를 근거로 세고, cleanup-sweep 이 detached 리뷰 워크트리를 알아보는 데 쓴다.
-//     기록이 없거나 지시서를 읽지 못하면 지시서 이름만 본다.
+//     기록이 없거나 지시서를 읽지 못하면 지시서 이름만 본다. 정리가 띄우기 기록을 지운 뒤에는 영구 이력(lib/launch-history.ts)의 spec 으로 본다.
 
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { ghJson } from './gh.ts'
 import { git } from './git.ts'
 import { readLaunch } from './launched.ts'
+import { launchHistory } from './launch-history.ts'
 import { allLiveSpecPaths, LINE_BREAK } from './spec.ts'
 
 const BRANCH = /^(?:pr-(\d+)|review\/pr-(\d+)(?:-[A-Za-z0-9._-]+)?)$/
@@ -128,7 +129,7 @@ export function liveReviews(): Set<number> | null {
 
 // 머리 주석의 「리뷰 dispatch」. 리뷰 dispatch 면 그 PR 번호, 아니면 null
 export function reviewPrOfDispatch(repo: string, dispatch: string): number | null {
-  const spec = readLaunch(repo, dispatch)?.spec
+  const spec = (readLaunch(repo, dispatch) ?? launchHistory(repo).find((row) => row.dispatch === dispatch))?.spec
   if (!spec) return null
   let text: string | null
   try {

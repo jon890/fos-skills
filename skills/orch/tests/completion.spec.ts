@@ -179,9 +179,16 @@ describe('리뷰 dispatch', () => {
     }
   })
 
-  test('리뷰 dispatch 가 아니면 결과 status 만으로는 의심스럽다', () => {
-    const got = classify([message('worker_done', 2)], [result('리뷰 결과', '판정: PASS')])[0]
-    assert.equal(got.type, 'suspicious_worker_done')
+  test('리뷰 dispatch 인지 몰라도 첫 status 가 판정 줄이면 리뷰 결과로 센다', () => {
+    const got = classify([message('worker_done', 2)], [result('리뷰 결과', '판정: 머지 가능, 차단 0건, 권장 3건')])[0]
+    assert.equal(got.type, 'worker_done')
+    assert.deepEqual(got.completionVerification, { status: 'ready', kind: 'review', statusMessageId: 'm1' })
+  })
+
+  test('리뷰 dispatch 인지 모르면 판정이 아닌 결과 줄이나 늦은 판정은 의심스럽다', () => {
+    for (const statuses of [[result('검증', '완료: 인수 검증')], [result('진행', '테스트 중'), { ...result('결과', '판정: PASS'), id: 'm2', created_at: '2026-10-23T00:00:01Z' }]]) {
+      assert.equal(classify([message('worker_done', 3)], statuses)[0].type, 'suspicious_worker_done')
+    }
   })
 
   test('판정 줄이 없거나 다른 dispatch, 다른 발신자, 완료보다 늦은 결과는 근거가 아니다', () => {
