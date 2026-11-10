@@ -434,7 +434,7 @@ describe('worker 선택 줄 대조', () => {
 
 describe('선택 정책과 영구 이력', () => {
   const select = (agent = 'codex', model = 'gpt-6.1-sol', effort = 'medium', extra = '') =>
-    writeFileSync(spec, `# 선택 검사\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${model.startsWith('claude-opus-') ? 'hard-design' : 'impl-planned'}. ${extra} 비교: 다른 모델. 이유: 테스트.\n`)
+    writeFileSync(spec, `# 선택 검사\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${model.startsWith('claude-opus-') ? 'hard-design' : model.startsWith('claude-haiku-') ? 'small-fix' : 'impl-planned'}. ${extra} 비교: 다른 모델. 이유: 테스트.\n`)
   const history = () => readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
   const prior = (extra = {}) => ({ dispatch: 'ctx_old', task: 'task_1', terminal: 'term_old', worktree, branch: 'feat/a', run: null, at: '2026-11-05T00:00:00Z', title: '이전 작업', row: 'impl-planned', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', retry_of: null, ...extra })
 
@@ -537,9 +537,9 @@ describe('선택 정책과 영구 이력', () => {
   })
 
   test('effort 기본은 --effort 를 생략한 경우에만 허용한다', () => {
-    select('claude', 'haiku', '기본')
+    select('claude', 'claude-haiku-5-5', '기본')
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const args = ['--worktree', worktree, '--', '--agent', 'claude', '--model', 'haiku']
+    const args = ['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-haiku-5-5']
     const rejected = launch([...args, '--effort', 'medium'], 'bash', false)
     assert.equal(rejected.code, 1, both(rejected))
     assert.deepEqual(lines('orca orchestration worker-start'), [])
@@ -2064,7 +2064,7 @@ describe('짧은 출력', () => {
     assert.equal(r.code, 0, both(r))
     const out = r.stdout.trim().split('\n')
     assert.equal(out.length, 2, r.stdout)
-    assert.equal(out[0], 'LAUNCH-EFFECTIVE {}')
+    assert.deepEqual(JSON.parse(out[0].slice('LAUNCH-EFFECTIVE '.length)), { candidateOverride: { row: 'impl-planned', model: 'm', reason: '실행 경로 테스트용 가짜 모델' } })
     assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
   })
 
