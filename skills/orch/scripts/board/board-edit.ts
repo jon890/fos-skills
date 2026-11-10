@@ -17,7 +17,8 @@ const USAGE = `사용법:
   orch board step <항목> <번호> text "<글>" [--on "<PR> <pr|merge|deploy|release>"]
   orch board add-step <항목> "<글>" [--on "<PR> <pr|merge|deploy|release>"]
   orch board show <항목>
-  공통: [--repo <폴더>] [--board <파일>] [--full]`
+  공통: [--repo <폴더>] [--board <파일>] [--full]
+  - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
 const OPTIONS = {
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
   help: { type: 'boolean', short: 'h' },

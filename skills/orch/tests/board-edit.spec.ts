@@ -63,6 +63,13 @@ test('도움말과 명령 표가 새 명령을 보이고 사용법 오류는 2 �
     refused(args, /사용법/, 2)
   }
 })
+test('- 로 시작하는 글은 번호를 붙여 다시 쓸 수 있게 안내한다', () => {
+  save([item()])
+  refused(['add-step', 'x', '- 하위 항목'], /단계 번호를 앞에 붙인다/, 2)
+  ok(['add-step', 'x', '10. - 하위 항목'], 'BOARD-STEP-ADD x 10')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details.at(-1).text, '10. - 하위 항목')
+})
+
 test('set 은 상태만 바꾸고 없는 항목과 진행률 없는 doing 을 거절한다', () => {
   save([item(), item({ id: 'empty', status: 'wait', details: [] })])
   for (const state of ['goal', 'decide', 'wait', 'done', 'doing']) ok(['set', 'x', state], `BOARD-SET x ${state}`)
