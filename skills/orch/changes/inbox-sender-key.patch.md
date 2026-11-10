@@ -1,0 +1,3 @@
+- 리뷰 worker 의 완료가 `DONE-SUSPECT 같은 Task의 앞선 PR 준비 상태가 없다` 로 다시 알려지던 것을 고친다. 결과 status 와 worker_done 이 같은 초에 오면 시각이 같아 앞선 근거로 세지 못했다. 시각이 같으면 Orca 의 순번(sequence)으로 가린다.
+- Orca 명령마다 다른 메시지 필드 이름(`from_handle`, `from`, `to_handle`, `to`, `thread_id`)을 `core/message-fields.ts` 한 곳에서 읽는다. 줄인 보기의 `from` 만 있는 메시지도 발신자로 읽는다.
+- 실측한 메시지 꼴로 리뷰 완료 판정과 답이 스레드에 있는 질문의 미답변 판정을 확인하는 회귀 테스트를 더한다.
