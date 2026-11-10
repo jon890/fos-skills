@@ -1,4 +1,4 @@
-import { INTERIM, prNumbers, NOTE, detailText, detailArgs, noteLine, withNote, prSteps, intermediateCommands } from '../core/board.ts'
+import { INTERIM, prNumbers, NOTE, detailText, detailArgs } from '../core/board.ts'
 import type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'
 // worker 띄우기와 루프가 함께 쓰는 보드 연동. 쓰기는 board.ts 에 맡긴다.
 // 지시서에 `중간 과정:` 줄이 있으면 띄울 때 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다.

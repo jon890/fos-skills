@@ -1,3 +1,4 @@
+import { isObject } from '../core/json.ts'
 // 마이그레이션 번호 예약(docs/adr/017-orch-migration-reserve.md)과 ADR 번호 예약의 파일, 잠금, 번호 판정을 이 모듈 한 곳이 소유한다.
 // 명령은 reserve-migration.ts, 읽기만 하는 쪽은 상주 루프의 자동 머지다. 자동 머지는 마이그레이션 예약만 읽는다.
 //
@@ -55,10 +56,6 @@ export function reservationsFile(repo: string, store: ReservationStore = 'migrat
 
 export function lockFile(repo: string): string {
   return join(dirname(reservationsFile(repo)), 'migration-reservations.lock')
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isReservation(value: unknown): value is Reservation {

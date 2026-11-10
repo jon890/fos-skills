@@ -1,15 +1,15 @@
-import { LIVE_STATUSES, LOST_WORKER_STATES, lostWorkers, retriedLost, deliberateEnd, taskClosed } from '../core/lost-workers.ts'
+import { objectOr } from '../core/json.ts'
+import { lostWorkers, retriedLost, deliberateEnd, taskClosed } from '../core/lost-workers.ts'
 import type { Json, Lost } from '../core/lost-workers.ts'
 // 옛 wait 의 끊김 판정을 루프에서 재사용한다. 일부러 끝낸 작업과 작업 중인 화면은 알리지 않는다.
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { orcaJson } from './orca.ts'
-import { workerRows, LIVE_DISPATCH } from './workers.ts'
+import { workerRows } from './workers.ts'
 import { judge, readScreens, screenHandles } from './worker-state.ts'
 import { makeParent, pathOf } from './paths.ts'
 import { fire } from './events.ts'
 import { notifyRun } from './run-notice.ts'
-const obj = (v: unknown): Json => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Json : {}
 const err = (line: string) => console.error(line)
 function orcaResult(args: string[]): Json | null {
   const got = orcaJson<Json>(['orchestration', ...args])
@@ -18,27 +18,27 @@ function orcaResult(args: string[]): Json | null {
 }
 
 function latestDispatch(taskId: unknown): Json {
-  return obj(orcaResult(['dispatch-show', '--task', String(taskId)])?.dispatch)
+  return objectOr(orcaResult(['dispatch-show', '--task', String(taskId)])?.dispatch)
 }
 
 function loadState(file: string): Json {
   try {
     const data: unknown = JSON.parse(readFileSync(file, 'utf8'))
-    return obj(data)
+    return objectOr(data)
   } catch {
     return {}
   }
 }
 
 function loadReported(file: string, runId: string): Json {
-  return obj(loadState(file)[runId])
+  return objectOr(loadState(file)[runId])
 }
 
 function saveReported(file: string, runId: string, kinds: Record<string, string>, repo: string): boolean {
   if (Object.keys(kinds).length === 0) return true
   const data = loadState(file)
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-  const entry = obj(data[runId])
+  const entry = objectOr(data[runId])
   data[runId] = entry
   for (const [dispatch, kind] of Object.entries(kinds)) {
     if (kind === 'handled' || !Object.hasOwn(entry, dispatch)) entry[dispatch] = `${kind} ${now}`
@@ -63,7 +63,7 @@ function unhandledLost(runId: string, rows: Json[], ignore: Set<unknown>): { fou
   if (candidates.length === 0) return { found: [], deliberate: {} }
   const tasks = orcaResult(['task-list', '--run', runId])?.tasks
   if (!Array.isArray(tasks)) return { found: [], deliberate: {} }
-  const byTask = new Map(tasks.map(obj).map((t) => [t.id, t]))
+  const byTask = new Map(tasks.map(value => objectOr(value)).map((t) => [t.id, t]))
   const taskOf = new Map(rows.map((w) => [w.dispatchId, w.taskId]))
   const found: Lost[] = []
   const deliberate: Record<string, string> = {}
@@ -87,7 +87,7 @@ function dropWorking(rows: Json[], lost: Lost[]): Lost[] {
   return lost.filter(([dispatch, stage]) => {
     const row = byDispatch.get(dispatch)
     if (!row) return true
-    const handles = new Set([row.agentTerminalHandle, obj(row.resource).terminalHandle].filter(Boolean))
+    const handles = new Set([row.agentTerminalHandle, objectOr(row.resource).terminalHandle].filter(Boolean))
     // 프로세스가 끝난 열린 dispatch 는 행만으로는 살아 있어 judge 가 늘 working 이다. 화면만 본다
     if (stage === 'liveness_exited') {
       const screens = readScreens([...handles])

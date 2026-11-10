@@ -1,3 +1,4 @@
+import { isObject } from './json.ts'
 // 상주 루프의 자동 머지(orch-loop.ts 머리 주석의 「자동 머지」)가 쓰는 판정의 한 벌이다. 근거는 docs/adr/016-orch-auto-merge.md 다.
 //
 // 함수는 gh, git, 파일 시스템을 부르지 않는다. 입력은 부르는 쪽이 이미 읽은 값(경로 목록, 리뷰 본문, 보드 항목)이다.
@@ -67,10 +68,6 @@ export type AutoMergeConfig = {
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
 const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require']
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 // 값이 모두 비지 않은 문자열인 객체. 아니면 ConfigError
 function stringMap(value: unknown, name: string): Record<string, string> {

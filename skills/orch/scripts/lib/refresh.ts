@@ -1,5 +1,5 @@
-import { joined, refreshSettings, verdict, aheadInQueue, isRecord, LANDING_MS, IN_FLIGHT_MS, inFlight } from '../core/refresh.ts'
-import type { RefreshSettings, ForkFiles, Verdict, RefreshRecord } from '../core/refresh.ts'
+import { isRecord } from '../core/refresh.ts'
+import type { ForkFiles, RefreshRecord } from '../core/refresh.ts'
 // 상주 루프의 「뒤처진 PR 최신화」 판정 한 벌이다. 루프(orch-loop.ts)가 읽기, 기록, 부르기를 하고 여기는 설정 읽기와 판정만 한다.
 // 단계의 차례와 알림은 orch-loop.ts 머리 주석의 「최신화」 가 소유한다. 결정의 배경은 docs/adr/020-orch-loop-refresh.md 다.
 //
@@ -24,13 +24,10 @@ import type { RefreshSettings, ForkFiles, Verdict, RefreshRecord } from '../core
 
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ConfigError, PIPELINE_KEYS, QUEUE_KEYS, section } from './config.ts'
-import type { Config } from './config.ts'
+
 import { git } from './git.ts'
-import { judge } from './overlap.ts'
-import type { JudgeOptions } from './overlap.ts'
+
 import { makeParent, pathOf } from './paths.ts'
-import { pyRegExp } from './py.ts'
 
 export function forkFiles(repo: string, base: string, head: string): { ok: true; files: ForkFiles } | { ok: false; error: string } {
   const lines = (args: string[]): string[] | null => {

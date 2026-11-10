@@ -1,3 +1,4 @@
+import { isObject } from '../core/json.ts'
 // worker 가 Flyway 마이그레이션 파일이나 ADR 문서를 만들기 전에 다음 번호를 잠금을 걸고 예약한다. 근거는 docs/adr/017-orch-migration-reserve.md 다.
 // 파일은 만들지 않는다. 경로만 돌려주고 worker 가 그 이름으로 만든다. 명령이 만들면 다른 worktree 의 경로와 섞인다.
 //
@@ -136,10 +137,6 @@ function storeOf(kind: ReserveKind): ReservationStore {
 type Presence = 'present' | 'absent' | null
 // 정리 판정. merged 는 예약 뒤 머지, gone 은 브랜치가 원격과 로컬에 모두 없음이라 지운다. false 남김, null 판정 못 함
 type Verdict = 'merged' | 'gone' | false | null
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function oneLine(text: string): string {
   return text.trim().replace(/\s*\n\s*/g, ' ')

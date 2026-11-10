@@ -1,4 +1,4 @@
-import { pyRegExp } from '../core/regexp.ts'
+
 // 옛 Python 명령과 같은 글자를 내는 변환이다. 출력 줄과 저장 파일의 바이트 꼴을 옛 명령과 맞춰, 그것을 읽는 다른 저장소가 깨지지 않게 한다.
 //
 //     pyStr    Python 의 str(). 없는 값은 None, 참거짓은 True 와 False 다

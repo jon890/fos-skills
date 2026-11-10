@@ -1,9 +1,10 @@
+import { workerRows } from '../scripts/lib/workers.ts'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { orca, orcaBin, orcaJson, repoVisibility, repoVisibilityActions, withFull } from '../scripts/lib/orca.ts'
+import { orca, orcaBin, orcaJson, orcaJsonOrThrow, closeTerminal, repoVisibility, repoVisibilityActions, withFull } from '../scripts/lib/orca.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
@@ -135,4 +136,31 @@ describe('repoVisibilityActions', () => {
     assert.match(text, /Orca 화면에서 그 워크트리를 등록한다/)
     assert.match(text, /orca repo set --repo path:\/r\/proj --external-worktree-visibility show/)
   })
+})
+
+
+test('예외형 JSON 읽기는 stdout 과 stderr 및 구조화된 오류 여부를 보존한다', () => {
+  fake.setRules([{ stdout: '{"ok":false,"error":{"code":"answer_conflict"}}', stderr: 'already has a different answer', code: 1 }])
+  let structured: boolean | undefined
+  assert.throws(() => orcaJsonOrThrow(['orchestration', 'reply'], { failure: (message, coded) => { structured = coded; return new Error(message) } }), /orca orchestration reply 실패: .*answer_conflict.*already has a different answer/)
+  assert.equal(structured, true)
+  fake.setRules([{ stdout: '{"ok":true}' }])
+  assert.deepEqual(orcaJsonOrThrow(['good']), {})
+  fake.setRules([{ stdout: '{"result":{}}' }])
+  assert.throws(() => orcaJsonOrThrow(['missing-ok']), /실패/)
+})
+test('터미널 닫기는 호출자가 쓰던 응답 검사 기준을 유지한다', () => {
+  fake.setRules([{ stdout: 'broken', code: 0 }])
+  assert.equal(closeTerminal('t'), false)
+  assert.equal(closeTerminal('t', { checkResponse: false }), true)
+  fake.setRules([{ code: 1 }])
+  assert.equal(closeTerminal('t', { checkResponse: false }), false)
+})
+test('worker 목록의 잘못된 행 처리와 잘못된 응답 처리는 기존 호출자별로 유지한다', () => {
+  fake.setRules([{ stdout: '{"ok":true,"result":{"workers":[null,{"dispatchId":"d"}],"page":{}}}' }])
+  assert.deepEqual(workerRows('r'), { ok: true, rows: [{}, { dispatchId: 'd' }] })
+  assert.deepEqual(workerRows('r', undefined, { strict: true }), { ok: true, rows: [{ dispatchId: 'd' }] })
+  fake.setRules([{ stdout: '{"ok":true,"result":null}' }])
+  assert.equal(workerRows('r').ok, true)
+  assert.equal(workerRows('r', undefined, { strict: true }).ok, false)
 })

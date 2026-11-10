@@ -23,7 +23,6 @@ export function lostWorkers(rows: Json[], watched: Set<unknown>): Lost[] {
   return lost
 }
 
-
 export function retriedLost(rows: Json[], lost: Lost[]): Set<string> {
   const liveByTask = new Map<unknown, Set<unknown>>()
   for (const w of rows) {

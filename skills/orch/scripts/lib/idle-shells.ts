@@ -84,7 +84,4 @@ export function orcaTerminals(): ShellTerminal[] | null {
   if (!done.ok || typeof done.data !== 'object' || done.data === null || !Array.isArray(done.data.terminals)) return null
   return done.data.terminals.filter((t): t is ShellTerminal => typeof t === 'object' && t !== null && !Array.isArray(t))
 }
-
-export function closeTerminal(handle: string): boolean {
-  return orcaJson(['terminal', 'close', '--terminal', handle]).ok
-}
+export { closeTerminal } from './orca.ts'

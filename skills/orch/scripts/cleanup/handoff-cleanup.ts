@@ -1,3 +1,4 @@
+import { gitBin } from '../lib/git.ts'
 // orch 작업 폴더에 남은 끝난 산출물을 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
 //
 // 기본은 옮길 후보만 보인다. `--apply` 를 주면 옮긴다. 몇 번을 돌려도 같은 상태에서는 같은 결과다.
@@ -244,12 +245,6 @@ function movePath(from: string, to: string): void {
     cpSync(from, to, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true })
     rmSync(from, { recursive: true, force: true })
   }
-}
-
-// ---- 수집 ----------------------------------------------------------------------------------------------
-
-function gitBin(): string {
-  return process.env.GIT || 'git'
 }
 
 function runOut(argv: string[], cwd: string): { code: number; out: string } {

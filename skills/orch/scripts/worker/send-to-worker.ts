@@ -1,3 +1,5 @@
+import { orcaJsonOrThrow } from '../lib/orca.ts'
+import { objectOr } from '../core/json.ts'
 // worker 에게 답이나 후속 지시를 보낸다. Orca 가 메시지마다 worker 를 깨우므로 터미널에 입력하지 않는다.
 // 활성 dispatch 는 미답변 질문에 reply 하고, 답할 후보가 없거나 --no-reply 면 send 한다.
 // answer_conflict/dispatch_inactive 는 닫은 질문으로 기록한다. consumer_fenced 는 --from 없이 재시도한다.
@@ -25,7 +27,7 @@ import { real } from '../lib/fs.ts'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { context } from '../lib/completion.ts'
-import { orca } from '../lib/orca.ts'
+
 import { emit, oneLine, shortEnv } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
 import { runInherit, scriptCommand } from '../lib/proc.ts'
@@ -100,45 +102,27 @@ function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
 
-function obj(value: unknown): Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
-}
-
 function rows(value: unknown): Json[] {
-  return Array.isArray(value) ? value.map(obj) : []
+  return Array.isArray(value) ? value.map(value => objectOr(value)) : []
 }
-
-// 실패 판정에 stdout 과 stderr 를 함께 본다. 「already has a different answer」 가 어느 쪽에 오든 다음 후보로 넘어가게 한다
-function orcaJson(args: string[]): Json {
-  const done = orca([...args, '--json'])
-  let data: unknown
-  try {
-    data = JSON.parse(done.stdout)
-  } catch {
-    data = null
-  }
-  const body = obj(data)
-  if (done.code !== 0 || data !== body || !body.ok) {
-    const detail = Array.from((done.stdout + done.stderr).trim()).slice(0, 300).join('')
-    throw new OrcaFailed(`orca ${args.slice(0, 2).join(' ')} 실패: ${detail}`, body.ok === false && !!obj(body.error).code)
-  }
-  return obj(body.result)
+function workerOrcaJson(args: string[]): Json {
+  return orcaJsonOrThrow(args, { failure: (message, structured) => new OrcaFailed(message, structured) })
 }
 
 type Described = { status: unknown; handle: string; worktree: string; runId: string; settings: Settings }
 
 function describe(dispatchId: string): Described {
-  const shown = orcaJson(['orchestration', 'worker-show', '--dispatch', dispatchId])
-  const dispatch = obj(shown.dispatch)
-  const worker = obj(shown.worker)
+  const shown = workerOrcaJson(['orchestration', 'worker-show', '--dispatch', dispatchId])
+  const dispatch = objectOr(shown.dispatch)
+  const worker = objectOr(shown.worker)
   const worktreeId = String(worker.worktreeId || '')
   const worktree = worktreeId.includes('::') ? worktreeId.slice(worktreeId.indexOf('::') + 2) : worktreeId
   const handle = String(worker.agentTerminalHandle || dispatch.assigneeHandle || '')
-  const options = obj(worker.startOptions)
-  const launch = obj(options.launch)
+  const options = objectOr(worker.startOptions)
+  const launch = objectOr(options.launch)
   const settings: Settings = {}
-  Object.assign(settings, obj(launch.requested))
-  for (const [key, value] of Object.entries(obj(launch.effective))) if (value) settings[key] = value
+  Object.assign(settings, objectOr(launch.requested))
+  for (const [key, value] of Object.entries(objectOr(launch.effective))) if (value) settings[key] = value
   if (!settings.agent) settings.agent = options.agent
   return { status: dispatch.status, handle, worktree, runId: String(dispatch.runId || ''), settings }
 }
@@ -147,12 +131,12 @@ function describe(dispatchId: string): Described {
 function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run?: string): string[] {
   // 질문은 status/heartbeat 에 밀리지 않게 따로 읽는다. 전역 inbox 를 읽지 않는다.
   const history = run ? [
-    ...rows(orcaJson(['orchestration', 'check', '--run', run, '--all']).messages),
-    ...rows(orcaJson(['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation']).messages),
-    ...rows(orcaJson(['orchestration', 'check', '--run', run, '--peek', '--types', 'question,escalation']).messages),
-  ] : rows(orcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
+    ...rows(workerOrcaJson(['orchestration', 'check', '--run', run, '--all']).messages),
+    ...rows(workerOrcaJson(['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation']).messages),
+    ...rows(workerOrcaJson(['orchestration', 'check', '--run', run, '--peek', '--types', 'question,escalation']).messages),
+  ] : rows(workerOrcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
   const replies = [...new Set([`dispatch:${dispatchId}`, handle].filter(Boolean))].flatMap((terminal) =>
-    rows(orcaJson(['orchestration', 'inbox', '--terminal', terminal, '--limit', '200']).messages))
+    rows(workerOrcaJson(['orchestration', 'inbox', '--terminal', terminal, '--limit', '200']).messages))
   const messages = [...new Map([...history, ...replies].filter((m) => !run || !m.run_id || m.run_id === run).map((m) => [m.id, m])).values()]
   const fromWorker = (row: Json) => row.from_handle === `dispatch:${dispatchId}` || (!!handle && row.from_handle === handle)
   // 같은 thread 에 worker 가 아닌 쪽이 쓴 글이 있으면 그 question 은 이미 답했다
@@ -179,31 +163,31 @@ function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run
 }
 
 function liveHandles(): Set<string> {
-  return new Set(rows(orcaJson(['terminal', 'list']).terminals).map((t) => String(t.handle || '')).filter(Boolean))
+  return new Set(rows(workerOrcaJson(['terminal', 'list']).terminals).map((t) => String(t.handle || '')).filter(Boolean))
 }
 
 // `--from run:<run>` 을 붙여 보내고, consumer_fenced 로 거부되면 빼고 한 번 다시 보낸다. 보낸 메시지 id 를 낸다
 function sendAsResult(base: string[], run: string): Json {
   let result: Json
   try {
-    result = orcaJson([...base, ...(run ? ['--from', `run:${run}`] : [])])
+    result = workerOrcaJson([...base, ...(run ? ['--from', `run:${run}`] : [])])
   } catch (e) {
     if (!run || !(e instanceof OrcaFailed) || !e.message.includes(FENCED)) throw e
     out(`retry: --from run:${run} 이 ${FENCED} 로 거부돼 --from 없이 다시 보낸다`)
-    result = orcaJson(base)
+    result = workerOrcaJson(base)
   }
   return result
 }
 
 function sendAs(base: string[], run: string): string {
   const result = sendAsResult(base, run)
-  return String(obj(result.message).id || result.messageId || result.id || '')
+  return String(objectOr(result.message).id || result.messageId || result.id || '')
 }
 
 // inbox 에서 본 그 메시지의 종류. 못 찾으면 빈 문자열이다
 function typeOf(msgId: string, run: string): string {
   const args = run ? ['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation'] : ['orchestration', 'inbox', '--limit', '200']
-  const row = rows(orcaJson(args).messages).find((m) => m.id === msgId)
+  const row = rows(workerOrcaJson(args).messages).find((m) => m.id === msgId)
   return String(row?.type ?? '')
 }
 
@@ -222,9 +206,9 @@ function reply(msgId: string, body: string, run: string, dispatchId: string): st
     // `--run` 과 `--from` 을 뺀 plain reply 는 같은 터미널에서도 받아들여진다(2026-11-02 실측). 질문이 바로 닫힌다
     if (run) {
       try {
-        const result = orcaJson(['orchestration', 'reply', '--id', msgId, '--body', body])
+        const result = workerOrcaJson(['orchestration', 'reply', '--id', msgId, '--body', body])
         out(`retry: reply 가 ${NO_PANE[0]} 로 거부돼 --run 과 --from 없이 다시 보냈다`)
-        return String(obj(result.message).id || result.messageId || result.id || '')
+        return String(objectOr(result.message).id || result.messageId || result.id || '')
       } catch (plain) {
         if (!noPane(plain)) throw plain
       }
@@ -314,7 +298,7 @@ function followUpSpec(file: string, repo: string): { text: string; line: string;
 
 async function recordFollowUp(a: Args, prior: Described, run: string, receipt: Json, spec: ReturnType<typeof followUpSpec>): Promise<number> {
   if (receipt.delivery === 'delivered') {
-    const sent = String(obj(receipt.message).id || receipt.messageId || receipt.id || '')
+    const sent = String(objectOr(receipt.message).id || receipt.messageId || receipt.id || '')
     out(`sent: 후속 Task 대신 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
     out(`delivered: Orca 가 ${sent || a.dispatch} 로 깨운다. delivery=delivered 이므로 새 Task 기록은 남기지 않는다`)
     return 0
@@ -333,12 +317,12 @@ async function recordFollowUp(a: Args, prior: Described, run: string, receipt: J
   }
   apply(prior.settings)
   apply(inherited ?? {})
-  apply(obj(inherited?.effective))
+  apply(objectOr(inherited?.effective))
   let terminal: string | null = null
   try {
-    const shown = orcaJson(['orchestration', 'worker-show', '--dispatch', dispatch])
-    apply(obj(obj(obj(obj(shown.worker).startOptions).launch).effective))
-    terminal = String(obj(shown.worker).agentTerminalHandle || obj(shown.resource).terminalHandle || obj(obj(shown.worker).resource).terminalHandle || '') || null
+    const shown = workerOrcaJson(['orchestration', 'worker-show', '--dispatch', dispatch])
+    apply(objectOr(objectOr(objectOr(objectOr(shown.worker).startOptions).launch).effective))
+    terminal = String(objectOr(shown.worker).agentTerminalHandle || objectOr(shown.resource).terminalHandle || objectOr(objectOr(shown.worker).resource).terminalHandle || '') || null
     if (!terminal) throw new Error('새 터미널 handle 이 없다')
   } catch (e) {
     err(`send-to-worker: 새 dispatch ${dispatch} 의 터미널을 읽지 못해 빈 값으로 기록한다: ${(e as Error).message}`)
@@ -525,7 +509,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (!a.spec) {
     try {
-      const screen = orcaJson(['terminal', 'read', '--terminal', handle, '--screen'])
+      const screen = workerOrcaJson(['terminal', 'read', '--terminal', handle, '--screen'])
       if (classify(screenLines(screen)) === 'working') {
         const sent = sendNew(a.dispatch, body, run)
         err(`send-to-worker: 지시서 없이 후속 Task 로 보냈으므로 띄우기 기록에 남지 않는다: ${a.dispatch}`)
@@ -563,8 +547,8 @@ async function main(argv: string[]): Promise<number> {
   }
   try {
     // 그 사이 같은 터미널에 다른 dispatch 가 붙었으면 닫지 않는다.
-    const current = orcaJson(['orchestration', 'worker-show', '--dispatch', a.dispatch])
-    const resource = obj(current.terminalResource)
+    const current = workerOrcaJson(['orchestration', 'worker-show', '--dispatch', a.dispatch])
+    const resource = objectOr(current.terminalResource)
     if (resource.ownershipState === 'user_owned' || resource.ownershipState === 'released') {
       out(
         `send-to-worker: 사용자가 보유하거나 해제한 터미널(${resource.ownershipState})은 닫지 않는다. ` +
@@ -582,18 +566,18 @@ async function main(argv: string[]): Promise<number> {
     let cursor = ''
     const seen = new Set<string>()
     for (;;) {
-      const fleet = orcaJson(['orchestration', 'worker-list', ...runArgs, ...(cursor ? ['--cursor', cursor] : [])])
+      const fleet = workerOrcaJson(['orchestration', 'worker-list', ...runArgs, ...(cursor ? ['--cursor', cursor] : [])])
       if (rows(fleet.workers).some((row) => row.agentTerminalHandle === handle && ACTIVE.has(String(row.dispatchStatus)))) {
         out('send-to-worker: 터미널에 활성 dispatch 가 있어 닫지 않는다')
         return 1
       }
-      const page = obj(fleet.page)
+      const page = objectOr(fleet.page)
       if (!page.hasMore) break
       cursor = String(page.nextCursor || '')
       if (!cursor || seen.has(cursor)) throw new OrcaFailed('worker-list 의 다음 페이지를 확인하지 못했다')
       seen.add(cursor)
     }
-    orcaJson(['terminal', 'close', '--terminal', handle])
+    workerOrcaJson(['terminal', 'close', '--terminal', handle])
   } catch (e) {
     if (!(e instanceof OrcaFailed)) throw e
     out(`send-to-worker: ${e.message}`)

@@ -34,7 +34,8 @@ function testIssues(file: string): string[] {
   const fakeImport = /(?:import|export)[^;]*?from\s*['"][^'"]*fixtures\/fake-bin\.ts['"]/g
   // core 테스트는 이 실행 파일 선택 환경에 기대지 않는다. 점 표기와 대괄호 표기를 함께 본다.
   const environment = /\b(?:process\s*\.\s*env|env)\s*(?:\.\s*(?:ORCA|GH|PATH)\b|\[\s*['"](?:ORCA|GH|PATH)['"]\s*\])/g
-  for (const rule of [fakeImport, environment]) for (const match of source.matchAll(rule)) found.push(`${file}:${source.slice(0, match.index).split('\n').length}: 순수 테스트의 외부 실행 환경`)
+  const environmentMap = /[,{]\s*(?:ORCA|GH|PATH|['"](?:ORCA|GH|PATH)['"])\s*:/g
+  for (const rule of [fakeImport, environment, environmentMap]) for (const match of source.matchAll(rule)) found.push(`${file}:${source.slice(0, match.index).split('\n').length}: 순수 테스트의 외부 실행 환경`)
   return found
 }
 
@@ -56,6 +57,8 @@ test('금지 import 와 외부 상태 접근은 임시 파일의 줄 번호로 �
     writeFileSync(file, "import type { Value } from './value.ts'\nimport { basename } from 'node:path'\nimport { createHash } from 'node:crypto'\n")
     assert.deepEqual(issues(file, dir), [])
     writeFileSync(file, "import { fakeBin } from './fixtures/" + "fake-bin.ts'\n")
+    assert.equal(testIssues(file).length, 1)
+    writeFileSync(file, 'const settings = {' + 'ORCA' + ': \"fake\"}\n')
     assert.equal(testIssues(file).length, 1)
     for (const expression of ['pro' + 'cess.env.' + 'ORCA', 'env["' + 'GH' + '"]', 'pro' + 'cess.env["' + 'PATH' + '"]']) {
       writeFileSync(file, expression + ' = "fake"\n')

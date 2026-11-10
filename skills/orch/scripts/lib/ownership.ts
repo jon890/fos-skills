@@ -1,3 +1,4 @@
+import { isObject } from '../core/json.ts'
 // 워크트리 정리 전에 그 경로의 살아 있는 터미널이 사용자 소유인지 확인하는 판정 한 벌이다.
 //
 // 사용처: remove-worktree.ts 와 cleanup-sweep.ts 가 삭제 전에 blocker 를 부른다. cleanup-sweep.ts 는 allWorkers 를 cached 로 감싸
@@ -42,10 +43,6 @@ const QUERY_TIMEOUT_MS = 30_000
 export class LookupError extends Error {}
 
 export type WorkerRow = Record<string, unknown>
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 // 값이 없거나 빈 문자열, 0, false 면 없는 것으로 본다. 옛 Python 의 `x or {}` 와 `if not x` 판정과 같다
 function given(value: unknown): boolean {

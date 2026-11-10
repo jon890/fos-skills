@@ -1,5 +1,5 @@
-import { NOTE_LINE, hash, flatten, isUserDecision, lines, decisionEntries, sameKeys } from '../core/decisions.ts'
-import type { Entry } from '../core/decisions.ts'
+import { isUserDecision, decisionEntries, sameKeys } from '../core/decisions.ts'
+
 // 상주 루프의 사용자 결정 알림. 같은 내용은 답하거나 사라지기 전까지 다시 깨우지 않는다.
 // 질문 재전송은 dispatch 와 본문으로 묶고 보드 결정은 남은 줄마다 추적한다.
 // 보드 decide 항목의 `참고:` 로 시작하는 줄은 결정이 아니라 배경이라 세지 않는다.
@@ -7,16 +7,15 @@ import type { Entry } from '../core/decisions.ts'
 // 전달 실패: 핸들러가 실패하면 같은 결정 묶음은 ORCH_DECISION_RETRY_SEC(기본 600초)부터 두 배씩, 한 시간까지 기다린 뒤 다시 낸다.
 //     그동안은 앞 실패와 같은 이유로 던져 루프가 같은 WATCH-ERROR 를 다시 쓰지 않는다. 묶음이 바뀌거나(새 결정, 답한 결정)
 //     코디네이터가 바뀌면 기다리지 않는다. 틱마다 다시 내던 때는 미룬 결정으로 「정할 것 묻기」 가 몇 분마다 왔다(2026-11-04).
-import { createHash } from 'node:crypto'
+
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readBoard } from './board.ts'
-import type { BoardItem } from './board.ts'
-import { payload } from './completion.ts'
+
 import { fire } from './events.ts'
 import { registeredRuns, runKey } from './loop.ts'
 import { boardPath, makeParent, pathOf } from './paths.ts'
-import { dispatchOf, questionLocations } from './questions.ts'
+
 import type { Message } from './questions.ts'
 import { LIVE_DISPATCH, workerRows } from './workers.ts'
 type Retry = { keys: string[]; failures: number; at: number; reason: string }

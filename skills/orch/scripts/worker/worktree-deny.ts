@@ -1,3 +1,4 @@
+import { isObject } from '../core/json.ts'
 // 워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령과 PR 머지의 deny 규칙을 더한다.
 //
 // 한 머신에서 worker 여럿이 같은 이름의 프로세스와 같은 브라우저를 쓴다.
@@ -33,10 +34,6 @@ const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(gh pr merge:*)']
 // 이미 만들어진 워크트리 설정에 남은 낡은 규칙. 이름 준 공간의 reset 까지 막는다
 const STALE = ['Bash(browser-driver reset:*)']
 const REL = '.claude/settings.local.json'
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function main(raw: string[]): number {
   // 옵션이 --help 하나라 접두가 겹칠 일이 없다

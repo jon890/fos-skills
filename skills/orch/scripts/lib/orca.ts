@@ -1,3 +1,4 @@
+import { isObject, objectOr } from '../core/json.ts'
 // Orca CLI 호출의 한 벌이다. 실행 파일은 ORCA 환경 변수, 없으면 orca 다. ORCA_CLI_COMMAND 는 읽지 않는다.
 //
 // `orca orchestration worker-list` 를 부르는 쪽이 알아야 할 동작(worker-list --help 와 실제 Orca 에서 확인했다):
@@ -39,15 +40,9 @@ function brief(text: string): string {
 // --json 을 붙여 부르고 응답 봉투의 result 를 data 로 낸다. 봉투 전체가 아니다.
 export function orcaJson<T>(args: string[], opts?: RunOptions): { ok: true; data: T } | { ok: false; error: string } {
   const command = `orca ${args.join(' ')}`
-  const done = orca([...args, '--json'], opts)
-  // --full 의 JSON 은 여러 줄로 들여 쓴 꼴이다. JSON.parse 는 출력 전체를 읽으므로 그대로 받는다
+  const { done, envelope, parsed } = readEnvelope(args, opts)
   if (done.code !== 0) return { ok: false, error: `${command} 가 종료 코드 ${done.code} 로 끝났다: ${brief(done.stderr || done.stdout)}` }
-  let envelope: unknown
-  try {
-    envelope = JSON.parse(done.stdout)
-  } catch {
-    return { ok: false, error: `${command} 의 출력이 JSON 이 아니다: ${brief(done.stdout)}` }
-  }
+  if (!parsed) return { ok: false, error: `${command} 의 출력이 JSON 이 아니다: ${brief(done.stdout)}` }
   if (typeof envelope !== 'object' || envelope === null || Array.isArray(envelope)) {
     return { ok: false, error: `${command} 의 응답이 봉투 객체가 아니다` }
   }
@@ -72,4 +67,30 @@ export function repoVisibilityActions(repo: string): string {
     '  1) Orca 화면에서 그 워크트리를 등록한다',
     `  2) orca repo set --repo path:${repo} --external-worktree-visibility show`,
   ].join('\n')
+}
+
+// 응답 봉투를 읽는 곳은 하나다. 호출자는 결과 반환과 예외 처리 중 기존 계약을 고른다.
+function readEnvelope(args: string[], opts?: RunOptions): { done: RunResult; envelope: unknown; parsed: boolean } {
+  const done = orca([...args, '--json'], opts)
+  try { return { done, envelope: JSON.parse(done.stdout), parsed: true } }
+  catch { return { done, envelope: null, parsed: false } }
+}
+
+// send-to-worker 가 쓰던 엄격한 ok 검사와 오류 본문을 보존한다.
+export function orcaJsonOrThrow(args: string[], options: { failure?: (message: string, structured: boolean) => Error; run?: RunOptions } = {}): Record<string, any> {
+  const { done, envelope } = readEnvelope(args, options.run)
+  const body = objectOr(envelope)
+  if (done.code !== 0 || !isObject(envelope) || !body.ok) {
+    const detail = Array.from((done.stdout + done.stderr).trim()).slice(0, 300).join('')
+    const message = `orca ${args.slice(0, 2).join(' ')} 실패: ${detail}`
+    throw options.failure ? options.failure(message, body.ok === false && !!objectOr(body.error).code) : new Error(message)
+  }
+  return objectOr(body.result)
+}
+
+// 기존 cleanup/resume 은 종료 코드만, idle-shells 는 응답 봉투까지 확인했다.
+export function closeTerminal(handle: string, options: RunOptions & { checkResponse?: boolean } = {}): boolean {
+  const { checkResponse = true, ...runOptions } = options
+  const args = ['terminal', 'close', '--terminal', handle]
+  return checkResponse ? orcaJson(args, runOptions).ok : orca([...args, '--json'], runOptions).code === 0
 }

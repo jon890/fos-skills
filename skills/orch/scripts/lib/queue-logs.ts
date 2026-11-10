@@ -21,7 +21,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import { alive } from './process.ts'
+import { pidFileAlive } from './process.ts'
 import { run } from './proc.ts'
 import { moveToTrash } from './spec.ts'
 
@@ -62,15 +62,6 @@ function prNumbers(text: string): number[] {
   return [...found]
 }
 
-function pidAlive(file: string): boolean {
-  try {
-    const text = readFileSync(file, 'utf8').trim()
-    return /^\d+$/.test(text) && alive(Number(text))
-  } catch {
-    return false
-  }
-}
-
 type Verdict = { move: true } | { move: false; reason: string | null }
 
 function hold(failed: boolean, mtimeMs: number, host: QueueLogHost, holdMs: number): Verdict | null {
@@ -80,7 +71,7 @@ function hold(failed: boolean, mtimeMs: number, host: QueueLogHost, holdMs: numb
 
 function finishVerdict(dir: string, name: string, number: string, host: QueueLogHost, holdMs: number): Verdict {
   const file = join(dir, name)
-  if (pidAlive(join(dir, `finish-${number}.pid`))) return { move: false, reason: '마무리가 돌고 있다' }
+  if (pidFileAlive(join(dir, `finish-${number}.pid`))) return { move: false, reason: '마무리가 돌고 있다' }
   const text = readFileSync(file, 'utf8')
   const end = tail(text)
   if (!FINISH_END.test(end)) {

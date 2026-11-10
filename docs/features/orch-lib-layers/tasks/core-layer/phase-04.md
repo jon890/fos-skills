@@ -27,7 +27,7 @@ core/json.ts 에 isObject, objectOr 를 정의하고 모든 scripts 의 isObject
 ## 검증
 
 ```bash
-node scripts/run-tests.ts skills/orch/tests/core-boundary.spec.ts skills/orch/tests/core-dedup.spec.ts skills/orch/tests/lib-movement.spec.ts skills/orch/tests/questions.spec.ts skills/orch/tests/decisions.spec.ts skills/orch/tests/lib-refresh.spec.ts skills/orch/tests/migrate-orch-dir.spec.ts skills/orch/tests/send-to-worker.spec.ts skills/orch/tests/nudge-worker.spec.ts skills/orch/tests/cleanup-sweep-merge.spec.ts skills/orch/tests/cleanup-sweep-run.spec.ts skills/orch/tests/resume-worker.spec.ts skills/orch/tests/lib-docker.spec.ts skills/orch/tests/lib-queue-logs.spec.ts skills/orch/tests/finish-pr.spec.ts skills/orch/tests/handoff-cleanup.spec.ts
+node scripts/run-tests.ts skills/orch/tests/core-boundary.spec.ts skills/orch/tests/core-dedup.spec.ts skills/orch/tests/lib-movement.spec.ts skills/orch/tests/questions.spec.ts skills/orch/tests/decisions.spec.ts skills/orch/tests/lib-refresh.spec.ts skills/orch/tests/migrate-orch-dir.spec.ts skills/orch/tests/send-to-worker.spec.ts skills/orch/tests/nudge-worker.spec.ts skills/orch/tests/cleanup-sweep-merge.spec.ts skills/orch/tests/cleanup-sweep-run.spec.ts skills/orch/tests/resume-worker.spec.ts skills/orch/tests/lib-docker.spec.ts skills/orch/tests/lib-queue-logs.spec.ts skills/orch/tests/finish-pr.spec.ts skills/orch/tests/handoff-cleanup.spec.ts skills/orch/tests/worker-ask.spec.ts skills/orch/tests/lib-orca.spec.ts
 node skills/orch/tests/fixtures/golden-run.ts
 GOLDEN_COMMIT=$(git log --reverse --format=%H origin/main..HEAD -- skills/orch/tests/golden | head -1)
 git diff --exit-code "$GOLDEN_COMMIT" HEAD -- skills/orch/tests/golden
@@ -41,3 +41,4 @@ git diff --exit-code "$GOLDEN_COMMIT" HEAD -- skills/orch/tests/golden
 | `skills/orch/scripts/core/*.ts` | 신규 |
 | `skills/orch/tests/core-boundary.spec.ts` | 수정 |
 | `skills/orch/tests/core-dedup.spec.ts` | 신규 |
+| `skills/orch/tests/lib-orca.spec.ts` | 수정 |

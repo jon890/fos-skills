@@ -60,7 +60,6 @@ export function selectionsOf(text: string): Selection[] {
   return found
 }
 
-
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
 
 export function experimentOf(text: string): Experiment | null {

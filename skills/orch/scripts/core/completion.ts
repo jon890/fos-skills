@@ -1,3 +1,4 @@
+import { objectOr } from './json.ts'
 // PR 작업의 완료 신호(worker_done)를 같은 Task 의 앞선 준비 상태와 대조한다. wait-important 와 triage-messages 가 쓴다.
 //
 // 이 검사는 발신 프로세스를 인증하지 않는다. Orca 의 settlement 를 바꾸지 않고, 완료 조건의 근거가 없는 신호를
@@ -58,10 +59,6 @@ export function readyOf(message: Json): { pr: number; head: string } | null {
   return match ? { pr: Number(match[1]), head: match[2].toLowerCase() } : null
 }
 
-function obj(value: unknown): Json | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : null
-}
-
 // payload 는 객체이거나 JSON 문자열이다. 읽지 못하면 빈 객체.
 export function payload(message: Json): Json {
   let value = message.payload || {}
@@ -72,7 +69,7 @@ export function payload(message: Json): Json {
       value = {}
     }
   }
-  return obj(value) ?? {}
+  return objectOr(value, null) ?? {}
 }
 
 // 메시지의 [task, dispatch]. 최상위의 snake_case, camelCase, payload 의 camelCase, snake_case 차례로 읽는다.
@@ -105,7 +102,7 @@ export function classify(messages: Json[], history: Json[] = [], options: Classi
   for (const message of messages) {
     const item: Json = { ...message }
     // wait-important 출력에는 이미 이력과 대조한 결과가 있다. 파일 분류 때 잃지 않는다
-    const verified = obj(item.completionVerification) ?? {}
+    const verified = objectOr(item.completionVerification, null) ?? {}
     if (item.type === 'worker_done' && verified.status !== 'ready' && verified.status !== 'failure_report') {
       const outcome = item.outcome || payload(item).outcome
       if (outcome === 'failed') {

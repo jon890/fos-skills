@@ -1,5 +1,6 @@
-import { DEFAULT_IDLE_MIN, worktreeOf, livenessOf, tailHash, markScreen, judgeWorker, openRows, pendingStep, stalledStages, idleNotices, stageNotices, readRecords, workerLine, stageLine } from '../core/movement.ts'
-import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict, IdleRecord, StageRecord } from '../core/movement.ts'
+
+import { DEFAULT_IDLE_MIN, worktreeOf, judgeWorker, openRows, stalledStages, readRecords } from '../core/movement.ts'
+import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } from '../core/movement.ts'
 // 움직임으로 멈춘 worker 와 worker 없이 멈춘 보드 단계를 찾는 한 벌이다.
 // 사용처: stalled-workers.ts(코디네이터가 부르는 조회), orch-loop.ts(틱의 「움직임 확인」), extensions/work-board/bin/worker-marks.ts(보드 worker 줄의 멈춤 표시).
 // 판정 함수는 조회하지 않는다.
@@ -34,23 +35,18 @@ import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict, I
 //   지금 멈추지 않은 것의 기록은 지운다.
 // 조회(collectWorkers, collectStages)는 worker 목록, 워크트리 파일, git, 보드를 읽어 판정 함수에 넘긴다. 쓰지 않는다.
 
-import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { readBoard } from './board.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
 import { git } from './git.ts'
 import { boardPath, pathOf } from './paths.ts'
-import { LIVE_DISPATCH, worktreePaths } from './workers.ts'
+import { worktreePaths } from './workers.ts'
 import type { workerRows } from './workers.ts'
 
 export const SKIP_DIRS: ReadonlySet<string> = new Set(['.git', 'node_modules', 'build', 'dist', 'out', '.gradle', '.omc', '.orch', '.venv', '__pycache__', 'target'])
 // 큰 워크트리에서 틱이 길어지지 않게 보는 파일 수의 상한이다. 넘으면 그때까지 본 가장 늦은 시각을 쓴다
 export const MTIME_BUDGET = 4000
-
-function obj(value: unknown): Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
-}
 
 // config.json 의 pipeline.idle_min(0 이상의 수, 기본 30. 0 이면 idle 을 보지 않는다)과 pipeline.idle_exited(참거짓, 기본 true).
 // 값이 틀리면 ConfigError 다

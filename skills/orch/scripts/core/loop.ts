@@ -2,7 +2,6 @@
 export const DEFAULT_TICK_SEC = 300
 export const MIN_DEAD_SEC = 120
 
-
 export type LoopState = {
   pid: number
   run: string | null
@@ -20,7 +19,6 @@ export type LoopState = {
 export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string; recheck?: true }
 
 export type RunEntry = { run: string; specs_dir: string | null; registered_at: string; coordinator_terminal: string | null }
-
 
 // 파일 이름에 쓸 Run. 머리 주석의 「<Run>」
 export function runKey(run: string): string {

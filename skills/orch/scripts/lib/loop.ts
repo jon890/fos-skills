@@ -1,4 +1,4 @@
-import { DEFAULT_TICK_SEC, MIN_DEAD_SEC, runKey } from '../core/loop.ts'
+import { runKey } from '../core/loop.ts'
 import type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
 // 상주 루프(orch-loop.ts)의 상태 판정 한 벌이다. 루프 상태 읽기, 생존 판정과 Run 등록을 맡는다.
 // 사용처: orch-loop.ts(쓰는 쪽과 --status), orch-doctor.ts(session-resume 의 loop_alive).
@@ -168,7 +168,6 @@ export function loopStatus(repo: string, now: number): LoopStatus {
   const result = judgeLoop(state, now, live)
   return !result.alive && result.recheck ? judgeLoop(state, now, live, isLoopProcess(pid)) : result
 }
-
 
 export { DEFAULT_TICK_SEC, MIN_DEAD_SEC, runKey } from '../core/loop.ts'
 export type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'

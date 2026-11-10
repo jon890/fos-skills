@@ -1,3 +1,4 @@
+import { objectOr } from '../core/json.ts'
 // worker 상태 판정 한 벌이다. 한 워크트리(또는 한 dispatch)의 worker 행, PR, 앞선 커밋 수, 터미널 화면을 받아 넷 가운데 하나로 정한다.
 // 사용처: cleanup-sweep.ts(일하는 중 먼저 건너뛰기, PR 없이 끝난 워크트리, 남은 프로세스 끄기), orch-doctor.ts(--run 의 WORKER-STATE 줄),
 // wait-important.ts(화면이 작업 중인 worker 를 끊긴 것으로 보지 않기).
@@ -68,20 +69,16 @@ export const FINISHED_DISPATCH = new Set(['completed', 'failed', 'canceled'])
 export const FINISHED_WORKER = new Set(['succeeded', 'fenced'])
 const AGENT_BUSY = new Set<ScreenState>(['working', 'permission'])
 
-function obj(value: unknown): Row {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Row) : {}
-}
-
 function given(value: unknown): boolean {
   return value !== undefined && value !== null && value !== ''
 }
 
 function handlesOf(row: Row): unknown[] {
-  return [...new Set([obj(row.resource).terminalHandle, row.agentTerminalHandle].filter(given))]
+  return [...new Set([objectOr(row.resource).terminalHandle, row.agentTerminalHandle].filter(given))]
 }
 
 function released(row: Row): boolean {
-  return row.terminalState === 'released' || obj(row.resource).releaseState === 'released'
+  return row.terminalState === 'released' || objectOr(row.resource).releaseState === 'released'
 }
 
 export function isLive(row: Row): boolean {
@@ -96,7 +93,7 @@ export function isFinished(row: Row): boolean {
 }
 
 function takenOver(row: Row, own: ReadonlySet<unknown>): boolean {
-  return obj(row.resource).ownershipState === 'user_owned' && !handlesOf(row).some((h) => own.has(h))
+  return objectOr(row.resource).ownershipState === 'user_owned' && !handlesOf(row).some((h) => own.has(h))
 }
 
 function id(row: Row): string {
@@ -108,7 +105,7 @@ function ids(rows: Row[]): string {
 }
 
 function mark(row: Row): string {
-  const resource = obj(row.resource)
+  const resource = objectOr(row.resource)
   return String(resource.retainedReason ?? resource.ownershipState ?? '')
 }
 
@@ -187,7 +184,7 @@ export function readScreens(handles: unknown[]): Map<unknown, ScreenState> {
   for (const handle of handles) {
     if (typeof handle !== 'string' || !handle) continue
     const read = orcaJson<Row>(['terminal', 'read', '--terminal', handle, '--screen'])
-    if (read.ok) screens.set(handle, readScreen(screenLines(obj(read.data))).state)
+    if (read.ok) screens.set(handle, readScreen(screenLines(objectOr(read.data))).state)
   }
   return screens
 }

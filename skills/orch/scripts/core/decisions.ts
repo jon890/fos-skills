@@ -8,7 +8,6 @@ export const NOTE_LINE = /^참고\s*:/
 export const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 export const flatten = (value: unknown) => String(value || '').replace(/\s+/g, ' ').trim()
 
-
 export function isUserDecision(message: Message): boolean {
   return /^결정:\s*\S/.test(String(payload(message).question || message.body || '').trim())
 }
@@ -19,7 +18,6 @@ export function lines(value: unknown): string[] {
       ? [] : flatten(text) && !NOTE_LINE.test(flatten(text)) ? [flatten(text)] : []
   })
 }
-
 
 export function decisionEntries(pending: Message[], items: BoardItem[], active: { dispatchId?: unknown; agentTerminalHandle?: unknown }[]): Entry[] {
   const live = new Set(active.map((w) => String(w.dispatchId)))

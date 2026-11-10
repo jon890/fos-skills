@@ -1,3 +1,5 @@
+import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
+import { isObject } from '../core/json.ts'
 // 머지가 끝난 worktree 와 로컬 브랜치, 그 worker 터미널과 지시서를 찾아 정리한다.
 //
 // 머지마다 수동으로 정리하면 잊히고, 프로세스가 worktree 를 잡고 있어 그 자리에서 실패한 것은 다시 돌아보지 않는다.
@@ -370,7 +372,7 @@ import { homedir } from 'node:os'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
-import { fileURLToPath } from 'node:url'
+
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { ConfigError, loadConfig } from '../lib/config.ts'
@@ -443,10 +445,6 @@ type Args = {
 
 // 저장소 하나를 읽지 못했다. main 이 stderr 에 내고 종료 코드를 2 로 하고 다음 저장소로 간다
 class RepoError extends Error {}
-
-function isObject(value: unknown): value is Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 // Python 의 참거짓 판정. 옛 명령의 `if x` 와 `x or y` 를 같게 옮긴다. 빈 목록과 빈 객체도 거짓이다
 function truthy(value: unknown): boolean {
@@ -795,13 +793,9 @@ function terminalsAt(terminals: Terminal[] | null, path: string): string[] {
   return handles
 }
 
-function closeTerminal(handle: string): boolean {
-  return run([orcaBin(), 'terminal', 'close', '--terminal', handle, '--json']).code === 0
-}
-
 function closeTerminals(handles: string[], apply: boolean, log: Log, what = '터미널'): void {
   for (const handle of handles) {
-    if (apply) log(closeTerminal(handle) ? `  ${what} 닫음 ${handle}` : `  ${what} 닫기 실패 ${handle}`)
+    if (apply) log(closeOrcaTerminal(handle, { checkResponse: false, timeoutMs: RUN_TIMEOUT_SEC * 1000 }) ? `  ${what} 닫음 ${handle}` : `  ${what} 닫기 실패 ${handle}`)
     else log(`  ${what}을 닫을 것 ${handle}`)
   }
 }
@@ -1292,7 +1286,7 @@ function closedOwnTerminals(s: Sweep, pr: Pr | null, mine: WorkerRow[], terminal
 function closeForClosedPr(handles: string[], pr: Pr, apply: boolean, log: Log, indent: string): void {
   const tag = `(CLOSED #${pr.number})`
   for (const handle of handles) {
-    if (apply) log(closeTerminal(handle) ? `${indent}터미널 닫음 ${handle} ${tag}` : `${indent}터미널 닫기 실패 ${handle} ${tag}`)
+    if (apply) log(closeOrcaTerminal(handle, { checkResponse: false, timeoutMs: RUN_TIMEOUT_SEC * 1000 }) ? `${indent}터미널 닫음 ${handle} ${tag}` : `${indent}터미널 닫기 실패 ${handle} ${tag}`)
     else log(`${indent}닫을 것: ${handle} ${tag}`)
   }
 }
@@ -1559,7 +1553,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   if (theirs.length && args.foreign === null && byDone && emptyShells(path, theirs, terminals)) {
     // 코디네이터가 worker 터미널을 닫으면 Orca 가 그 탭에 빈 셸을 다시 연다. 어느 Run 의 것도 아니다
     for (const handle of theirs) {
-      if (args.apply) log(closeTerminal(handle) ? `  빈 셸을 닫았다: ${handle}` : `  빈 셸 닫기 실패 ${handle}`)
+      if (args.apply) log(closeOrcaTerminal(handle, { checkResponse: false, timeoutMs: RUN_TIMEOUT_SEC * 1000 }) ? `  빈 셸을 닫았다: ${handle}` : `  빈 셸 닫기 실패 ${handle}`)
       else log(`  빈 셸을 닫을 것: ${handle}`)
     }
     const closed = new Set<unknown>(theirs)

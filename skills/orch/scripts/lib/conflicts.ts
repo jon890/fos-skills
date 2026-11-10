@@ -26,7 +26,6 @@ import { notifiedKey } from '../core/conflicts.ts'
 //   앞 base 의 지시서는 다음 base 에서 쓸모가 없다. `중간 과정: PR #<PR>` 줄을 담아 launch-worker 가 보드에 새 항목을 만들지 않는다.
 //   그 PR 의 마무리(finish-pr.ts)가 머지 뒤 conflictSpecFiles 로 찾아 지운다. 옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md 도 그 목록에 든다.
 
-import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { INTERIM } from './board.ts'

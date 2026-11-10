@@ -1,3 +1,4 @@
+import { gitBin } from '../lib/git.ts'
 // PR 하나의 머지 뒤 마무리를 끝까지 한다: worker 정리, 배포 확인, 마지막 PR 판정, after-deploy 이벤트(업무 완료), 보드 done.
 //
 // 머지 큐(`merge_queue.ts`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.ts` 가 대신 건다.
@@ -229,10 +230,6 @@ function usageText(): string {
     lines.push(line.replace(/^\/\/ ?/, ''))
   }
   return lines.join('\n')
-}
-
-function gitBin(): string {
-  return process.env.GIT || 'git'
 }
 
 function git(repo: string, args: string[]): { code: number; stdout: string } {

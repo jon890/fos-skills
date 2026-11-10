@@ -6,7 +6,6 @@ export type Json = Record<string, unknown>
 
 export const DEFAULT_IDLE_MIN = 30
 
-
 export type MovementSettings = { idleMin: number; exited: boolean }
 
 export type ScreenMark = { hash: string; changedAt: number; background?: string }
@@ -30,13 +29,11 @@ export type IdleRecord = { run: string; reason: 'idle' | 'exited'; movedAt: numb
 
 export type StageRecord = { step: string; since: number; fired: boolean }
 
-
 // worker-list 행의 워크트리 경로. resource.worktreeId 의 `::` 뒤다. 없으면 null
 export function worktreeOf(row: Json): string | null {
   const id = String(obj(row.resource).worktreeId ?? '')
   return id.includes('::') ? id.slice(id.indexOf('::') + 2) : null
 }
-
 
 // worker-list 행의 Orca liveness 판정(projection.liveness.verdict). 없으면 null
 export function livenessOf(row: Json): string | null {
@@ -44,12 +41,10 @@ export function livenessOf(row: Json): string | null {
   return typeof verdict === 'string' && verdict ? verdict : null
 }
 
-
 // 화면 끝 줄의 hash. 줄 끝 공백과 빈 줄은 lib/screen.ts 의 screenTail 이 이미 뺐다
 export function tailHash(lines: string[]): string {
   return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16)
 }
-
 
 // 앞 틱의 기록과 이번 화면으로 새 기록을 낸다. 처음 본 화면은 지금 바뀐 것으로 본다. 루프가 막 뜬 때 오래된 화면을 멈춤으로 알리지 않는다.
 // background 는 이번 화면의 백그라운드 작업 표시다. 바뀐 시각과 무관하게 늘 이번 값으로 둔다
@@ -57,7 +52,6 @@ export function markScreen(previous: ScreenMark | undefined, hash: string, now: 
   const changedAt = previous && previous.hash === hash ? previous.changedAt : now
   return background ? { hash, changedAt, background } : { hash, changedAt }
 }
-
 
 // 머리 주석의 「멈춤 판정」
 export function judgeWorker(input: {
@@ -93,12 +87,10 @@ export function judgeWorker(input: {
   return now - movedAt >= settings.idleMin * 60_000 ? { ...verdict, reason: 'idle' } : verdict
 }
 
-
 // 열린 dispatch 행만 고른다
 export function openRows(rows: Json[]): Json[] {
   return rows.filter((row) => row.dispatchId && LIVE_DISPATCH.has(String(row.dispatchStatus)))
 }
-
 
 // 보드 항목의 끝나지 않은 첫 단계 글. 없으면 null
 export function pendingStep(item: Json): string | null {
@@ -111,7 +103,6 @@ export function pendingStep(item: Json): string | null {
   }
   return null
 }
-
 
 // 머리 주석의 「멈춘 단계」. live 는 살아 있는 dispatch 의 워크트리 경로, branches 는 {브랜치: 워크트리 경로},
 // recent 는 워크트리 경로가 idleMin 분 안에 바뀌었는지 묻는 함수다
@@ -136,7 +127,6 @@ export function stalledStages(items: Json[], live: ReadonlySet<string>, branches
   return found
 }
 
-
 // worker 알림 기록. read 는 이번 틱에 worker 목록을 읽은 Run 이다. 읽지 못한 Run 의 앞 기록은 그대로 둔다
 export function idleNotices(
   previous: Record<string, IdleRecord>,
@@ -155,7 +145,6 @@ export function idleNotices(
   }
   return { records, fire }
 }
-
 
 // 단계 알림 기록
 export function stageNotices(
@@ -177,7 +166,6 @@ export function stageNotices(
   }
   return { records, fire }
 }
-
 
 // movement.json 의 형식이 맞는 항목만 남긴다
 export function readRecords(value: unknown): {
@@ -206,13 +194,11 @@ export function readRecords(value: unknown): {
   return { screens, workers, stages }
 }
 
-
 // 사람과 코디네이터가 읽는 판정 줄(탭으로 나눈다). 꼴은 stalled-workers.ts 머리 주석의 「출력」 이 소유한다
 export function workerLine(v: WorkerVerdict): string {
   const mark = v.reason ? 'STALLED' : 'MOVING'
   return [mark, v.dispatch, v.reason ?? '-', v.idleMin ?? '-', v.worktree ? basename(v.worktree) : '-', v.run].join('\t')
 }
-
 
 export function stageLine(s: StageVerdict): string {
   return ['STAGE', s.id, s.worktree ?? s.branch ?? '-', s.step].join('\t')

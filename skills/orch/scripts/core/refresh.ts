@@ -17,7 +17,6 @@ export function joined(value: unknown, key: string, glue: string): string {
   throw new ConfigError(`설정 파일의 ${key} 는 비지 않은 문자열이나 그 목록이어야 한다`)
 }
 
-
 export function refreshSettings(config: Config): RefreshSettings {
   const pipeline = section<Record<string, unknown>>(config, 'pipeline', PIPELINE_KEYS)
   const slots = pipeline.refresh_slots ?? 0
@@ -68,14 +67,11 @@ export function refreshSettings(config: Config): RefreshSettings {
   }
 }
 
-
 // PR 이 갈라진 뒤 양쪽에서 바뀐 파일. 이름 바꾸기는 옛 경로와 새 경로를 따로 센다(overlap_units.ts 와 같다).
 // behind 는 head 가 base 를 품지 않는다는 뜻이다. 두 커밋은 로컬에 있어야 한다
 export type ForkFiles = { behind: boolean; pr: string[]; base: string[] }
 
-
 export type Verdict = { action: 'skip'; reason: string } | { action: 'update'; reason: string } | { action: 'worker'; reason: string; files: string[] }
-
 
 export function verdict(files: ForkFiles, settings: RefreshSettings): Verdict {
   if (!files.behind) return { action: 'skip', reason: '최신' }
@@ -93,7 +89,6 @@ export function verdict(files: ForkFiles, settings: RefreshSettings): Verdict {
   }
   return { action: 'update', reason }
 }
-
 
 // 도는 큐에서 이 PR 보다 앞에 있고 겹치는 PR 의 번호. 없으면 null. queue 는 차례 기록의 남은 PR 이고, changed 는 그 PR 이 바꾼 파일이다
 export function aheadInQueue(
@@ -114,7 +109,6 @@ export function aheadInQueue(
   return null
 }
 
-
 // 기록: <orch 루트>/state/refresh.json 의 { "<PR>": RefreshRecord }. PR 마다 마지막으로 건 것 하나다.
 //   base 는 그때의 base SHA, from 은 그때의 PR HEAD, value 는 결과(update 는 updated 나 failed, worker 는 dispatch id 나 orphan)다.
 //   같은 (PR, base SHA) 에는 다시 걸지 않는다. 파일이 없거나 깨졌으면 빈 기록이다. 쓰기는 옆 파일에 쓰고 rename 한다
@@ -128,14 +122,12 @@ export function isRecord(value: unknown): value is RefreshRecord {
   )
 }
 
-
 // 루프가 건 최신화 가운데 CI 가 아직 도는 것으로 셀 기록인지. head 는 그 PR 의 지금 HEAD, ci 는 이번 틱의 CI 상태다.
 // update 를 건 뒤 HEAD 가 아직 그대로면 GitHub 가 합치는 중이다(10분까지). HEAD 가 바뀐 뒤에는 CI 가 pending 인 동안이다.
 // 3시간 넘은 기록은 세지 않는다. CI 가 붙지 않은 채 남은 기록이 자리를 계속 쥐지 않게 한다
 export const LANDING_MS = 10 * 60_000
 
 export const IN_FLIGHT_MS = 3 * 60 * 60_000
-
 
 export function inFlight(record: RefreshRecord, head: string, ci: 'passed' | 'failed' | 'pending' | null, nowMs: number): boolean {
   if (record.value === 'failed' || record.value === 'orphan') return false

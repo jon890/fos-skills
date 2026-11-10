@@ -1,3 +1,4 @@
+import { isObject } from '../core/json.ts'
 // 저장소마다 하나 도는 상주 루프다. 여러 세션의 Run 을 함께 맡는다(ADR-012, 아래 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 자동 머지, 충돌 PR 처리를 한다.
 // 코디네이터를 깨워야 하는 일은 그 Run 에 Orca status 메시지로 보낸다. 전송은 lib/run-notice.ts 가 맡는다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
@@ -435,7 +436,7 @@ import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
-import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
+import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { sendNotice } from '../lib/run-notice.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
@@ -1145,10 +1146,6 @@ type OwnPr = {
 }
 type Prs = { ok: true; mine: OwnPr[] } | { ok: false; error: string }
 const PR_FIELDS = 'number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup'
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function openPrs(repo: string): Prs {
   const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo, cache: false })

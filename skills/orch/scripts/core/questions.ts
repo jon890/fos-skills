@@ -1,9 +1,7 @@
 import { context, isoTime } from './completion.ts'
 export const KINDS = new Set(['question', 'escalation'])
 
-
 export type Message = Record<string, unknown>
-
 
 // worker 쪽으로 간 답이 질문을 푼다. Run 으로 간 worker 의 후속 메시지는 풀지 않는다.
 export function unanswered(rows: Message[], run: string): Message[] {
@@ -25,7 +23,6 @@ export function unanswered(rows: Message[], run: string): Message[] {
   return asked.filter((m) => !answered.has(m.id) && (!latestAnswered.has(key(m)) || later(m, latestAnswered.get(key(m))!)))
 }
 
-
 // 질문이 만들어진 뒤 지난 초. now 는 epoch 초다. 시각을 읽지 못하면 0.
 export function ageSeconds(message: Message, now: number): number {
   const created = isoTime(message.created_at)
@@ -38,7 +35,6 @@ export function brief(body: unknown): string {
   return Array.from(flat).slice(0, 160).join('')
 }
 
-
 // 알림 본문에 붙이는 질문 위치다. 많은 질문은 앞 일부만 내고 전체 수는 원래 문장에 둔다.
 export function questionLocations(questions: { id?: unknown; dispatch?: unknown; from_handle?: unknown; payload?: unknown }[]): string {
   const limit = 5
@@ -50,7 +46,6 @@ export function questionLocations(questions: { id?: unknown; dispatch?: unknown;
   const extra = questions.length > limit ? ` (외 ${questions.length - limit}개)` : ''
   return `questions=${refs.join(',') || '-'}${extra}`
 }
-
 
 export function dispatchOf(message: Message): string | null {
   const dispatch = context(message)[1]

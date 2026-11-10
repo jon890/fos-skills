@@ -1,3 +1,4 @@
+import { isObject } from '../core/json.ts'
 // 정리(cleanup-sweep.ts)의 PR 조회를 저장소마다 묶는 한 벌이다.
 //
 // 예전에는 브랜치마다 이름 변형까지 `gh pr list --head` 를 부르고, 열린 PR 의 base 인지 `gh pr list --base` 로 따로 물었다.
@@ -28,10 +29,6 @@ const PR_STATES = new Set(['MERGED', 'OPEN', 'CLOSED'])
 const MERGED_FILE = 'merged-prs.json'
 // GraphQL 로 읽는 필드. gh pr list 의 --json 이름과 같고 author 만 { login } 으로 고쳐 읽는다
 const NODE_FIELDS = 'number state headRefOid headRefName baseRefName isCrossRepository title author { login } isDraft url body'
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function validPrs(value: unknown): Pr[] | null {
   if (!Array.isArray(value)) return null
