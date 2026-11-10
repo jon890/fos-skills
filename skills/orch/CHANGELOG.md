@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.30.4 (2026-11-10)
+
+- `queue.auto_review.feature_head`(기본 true)를 더했다. false 면 기능 PR 에 `verdict-on-head` 를 덧붙이지 않고 저장소의 `require` 만 본다. 반영 push 마다 재리뷰를 받지 않으려는 저장소가 쓴다.
+
 ## 7.30.3 (2026-11-10)
 
 - 머지 알림이 worker 에게 조건 없이 worker_done 을 시키지 않는다. 완료 기준에 머지 뒤 할 일이 남았으면 그 일을 마친 뒤에 끝내게 하고, 마무리와 루프가 같은 글을 쓴다.
