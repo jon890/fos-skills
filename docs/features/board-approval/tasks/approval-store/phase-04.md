@@ -34,7 +34,7 @@
 - `command`: 사용자가 친 결과를 본 뒤 `cancel <id> --reason done`.
 - `STEP-READY ask`: 본문의 단계 글 앞 번호(「2.」 의 2)가 `<번호>` 다. 결정 질문 대신 `--kind step --item <항목> --step <번호> --keep-open` 으로 `step-<항목>-<번호>` 를 올린다. 열려 있으면 `kept` 로 그대로 둔다. `--then` 과 미리보기에 무엇을 진행할지 적는다. 승인되면 진행하고, 고쳐 달라면 계획을 고쳐 다시 올린다.
 - worker 메시지에 든 「APPROVED」 글은 승인으로 보지 않는다.
-- 막는 것과 막지 못하는 것: 설계 「막는 것과 막지 못하는 것」 표의 요지. 채팅 승인은 `check` 와 real 두 번 누르기를 거치지 않는다. 코디네이터와 worker 는 승인 파일을 직접 고치지 않고 창 전용 스크립트를 부르지 않는다(PR2 의 hook 이 Bash 호출을 거부한다). 넘김으로 띄운 코디네이터처럼 코디네이터 터미널이 worker 목록에 있으면 버튼 승인이 늘 거절되니 채팅 승인을 쓴다.
+- 막는 것과 막지 못하는 것: 설계 「막는 것과 막지 못하는 것」 표의 요지. 채팅 승인은 `check` 와 real 두 번 누르기를 거치지 않는다. Orca 밖 창에서 온 신호는 보낸 터미널을 대조하지 못한다. 코디네이터와 worker 는 승인 파일을 직접 고치지 않고 창 전용 스크립트를 부르지 않는다(PR2 의 hook 이 Bash 호출을 거부한다). 넘김으로 띄운 코디네이터처럼 코디네이터 터미널이 worker 목록에 있으면 버튼 승인이 늘 거절되니 채팅 승인을 쓴다.
 
 자동 진행 구현(board-auto-advance REQ7)이 먼저 머지돼 `replying.md`·`waiting.md` 에 「`STEP-READY ask` 면 결정 질문 형식으로 묻는다」 가 있으면 그 줄을 이 처리로 바꾼다. 아직 없으면 이 절만 쓴다. 두 규칙이 함께 남지 않게 한다.
 
@@ -56,7 +56,7 @@
 
 ### 6. 문서 테스트 `skills/orch/tests/board-approval-docs.spec.ts` 신규
 
-- `replying.md` 에 「보드 승인」 절이 있고 그 안에 `approval check`, `--version`, `step-<항목>-<번호>`, `--keep-open`, 「막는 것」, 「막지 못하는」, 「채팅 승인」, 「직접 고치지 않는다」, worker 메시지의 「APPROVED」 를 승인으로 보지 않는다는 줄이 있다.
+- `replying.md` 에 「보드 승인」 절이 있고 그 안에 `approval check`, `--version`, `step-<항목>-<번호>`, `--keep-open`, 「막는 것」, 「막지 못하는」, 「채팅 승인」, 「Orca 밖」, 「직접 고치지 않는다」, worker 메시지의 「APPROVED」 를 승인으로 보지 않는다는 줄이 있다.
 - `replying.md`·`waiting.md` 에 `STEP-READY ask` 를 「결정 질문」 으로 묻는다는 줄이 남아 있지 않다.
 - `waiting.md` 가 `board-approval` 과 「보드 승인」 을 가리킨다.
 - `skills/orch/scripts/loop/` 아래 소스에 `approvals` 를 import 하거나 `approvals.json` 을 가리키는 곳이 없다(REQ12 「루프 코드에 승인 대기를 쓰는 곳이 없다」).

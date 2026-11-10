@@ -153,9 +153,9 @@ node bin/approvals.ts press <id> <버전> approve|revise [--note <글>] --origin
                                                          → 0 이면 PRESS-OK <메시지 id>, 1 이면 stderr 한 줄 이유
 ```
 
-- `self` 의 `worker` 는 「approval 꼴」 판정이다. 조회가 실패하면 null 이다. 창은 null 과 true 를 같게 보고 버튼을 숨긴다. `terminal` 이 null 이면(Orca 밖에서 연 창) 버튼을 숨긴다. 창은 세션 시작 때 한 번 released 까지 읽고, 그 뒤 60초마다 `self --live`(active 와 남은 터미널 상태만)로 다시 읽는다. 일반 터미널이 `worker-start --terminal` 로 worker 가 될 수 있고, worker 가 released 가 되려면 먼저 그 상태들을 지나기 때문이다. 한 번 worker 로 본 터미널은 그 세션 동안 worker 로 둔다. 버튼을 숨긴 이유는 「코디네이터 창이나 다른 창에서 누르세요」 한 줄로 보인다. 그사이 빠진 경우도 `press` 가 released 까지 다시 판정해 거절한다.
+- `self` 의 `worker` 는 「approval 꼴」 판정이다. 조회가 실패하면 null 이다. 창은 null 과 true 를 같게 보고 버튼을 숨긴다. `terminal` 이 null 이면(Orca 밖에서 연 창) worker 가 아닌 것으로 보고 버튼을 보인다. Orca worker 는 늘 Orca 터미널 변수를 갖기 때문이다(사용자 2026-11-10). 창은 세션 시작 때 한 번 released 까지 읽고, 그 뒤 60초마다 `self --live`(active 와 남은 터미널 상태만)로 다시 읽는다. 일반 터미널이 `worker-start --terminal` 로 worker 가 될 수 있고, worker 가 released 가 되려면 먼저 그 상태들을 지나기 때문이다. 한 번 worker 로 본 터미널은 그 세션 동안 worker 로 둔다. 버튼을 숨긴 이유는 「코디네이터 창이나 다른 창에서 누르세요」 한 줄로 보인다. 그사이 빠진 경우도 `press` 가 released 까지 다시 판정해 거절한다.
 - `press` 차례:
-  1. 자기 `ORCA_TERMINAL_HANDLE` 이 없거나 「approval 꼴」 판정이 worker 거나 실패면 거절한다.
+  1. 자기 `ORCA_TERMINAL_HANDLE` 이 있으면 「approval 꼴」 로 판정해 worker 거나 실패면 거절한다. 없으면(Orca 밖 창) 판정 없이 지나가고 `press.terminal` 은 null 이다.
   2. 잠금 안에서 그 id 의 가장 늦은 기록이 그 버전이고 `open` 인지 본다. 아니면 그 기록의 상태로 이유를 고른다: 다른 버전이면 「내용이 바뀌었어요」, `approved`·`revise` 면 「다른 창에서 이미 눌렀어요」, `cancelled` 면 「코디네이터가 거뒀어요」. 맞으면 `state`, `closedAt`, `press`(nonce 포함)를 쓰고 잠금을 푼다.
   3. 잠금 밖에서 `orca orchestration send --to run:<기록의 run> --type status --subject "APPROVED <id> <버전>"`(고쳐 달라면 `REVISE`)과 `--payload {"source":"board-approval","action","id","version","nonce"}` 를 보낸다. `--from` 은 주지 않는다. Orca 터미널에서는 보낸 쪽이 그 터미널로 정해진다(`lib/questions.ts` 머리 주석: 터미널에서는 `--from run:` 이 거부돼 보낸 쪽이 `term_*` 다). 실제 `from_handle` 은 PR1 실측으로 확인한다. 본문은 제목, `then`, 미리보기 경로, 고쳐 달라 글이다.
   4. 실패하면 잠금 안에서, 그 기록이 아직 2단계에서 쓴 `press.nonce` 그대로일 때만 `open` 으로 되돌리고 `press`, `closedAt` 을 지운다. 이유를 내고 1 로 끝난다.
@@ -179,7 +179,7 @@ node bin/approvals.ts press <id> <버전> approve|revise [--note <글>] --origin
 4. `--version` 을 받았고 기록의 버전과 다르면 「버전이 다름」. 코디네이터가 v12 신호를 들고 있는 사이 v13 이 승인돼도 v12 기준으로 실행하지 않게 한다.
 5. 신호 메시지를 읽는다. 기록의 Run 메일함에서 payload 가 `{source: board-approval, action: approve, id, version, nonce}` 와 같은 메시지를 찾는다. 찾지 못하거나 조회가 실패하면 「신호를 읽지 못함」. 읽는 필드는 `core/message-fields.ts` 의 `senderOf` 와 새로 더하는 `subjectOf`, `payloadOf` 다(아래). 조회 명령은 `orca orchestration check --run <Run> --all --types status --json` 과 `orca orchestration inbox --terminal run:<Run> --limit <n> --full --json` 가운데 PR1 첫 작업의 실측으로 고른다. 기준은 승인 신호를 놓치지 않는 범위와 걸린 시간이다.
 6. 메시지를 보낸 터미널(`senderOf`, 비어 있으면 뺀다), `press.terminal`, 기록의 `terminal`(올린 터미널)을 「approval 꼴」 로 판정한다. 하나라도 worker 면 「worker 가 보냄」. 조회가 실패하면 「신호를 읽지 못함」.
-7. 잠금을 잡고 다시 읽는다. 같은 버전 기록이 아직 `approved` 이고 `press.nonce` 가 같으면 `used` 와 `closedAt` 을 쓰고 `APPROVAL-OK <id>` 다. 그 사이 바뀌었으면 바뀐 상태로 2단계 이유를 낸다.
+7. 잠금을 잡고 다시 읽는다. 먼저 그 id 의 가장 늦은 기록(`latest`)이 1단계에서 고른 버전과 같은지 본다. 다르면(조회하는 동안 같은 id 로 다시 올렸다) 새 기록의 상태로 2단계 이유를 낸다. 새 기록은 `open` 이라 보통 「아직 누르지 않음」 이다. 같으면 그 기록이 아직 `approved` 이고 `press.nonce` 가 같을 때만 `used` 와 `closedAt` 을 쓰고 `APPROVAL-OK <id>` 다. 그 사이 상태가 바뀌었으면 바뀐 상태로 2단계 이유를 낸다. 앞 버전에 눌린 승인이 새 내용에 쓰이지 않게 한다(스펙 REQ2).
 
 Orca 조회(5, 6단계)를 잠금 밖에서 하는 것은 조회가 몇 초 걸려 다른 쓰기의 5초 기다림을 넘길 수 있어서다. 7단계의 다시 읽기가 그 사이의 변경을 막는다. 보드 명령 스펙(#421) REQ11 의 「미리 읽은 목록 저장 거절」 과 같은 생각이다.
 
@@ -191,6 +191,8 @@ export function payloadOf(message: Json): Json      // payload 가 문자열이�
 ```
 
 `check --all` 은 100건까지 돌려준다(`lib/questions.ts` 머리 주석, `behavior.md` 「질문 조회 범위」 의 실측). 승인 뒤 그보다 많은 메시지가 쌓인 Run 에서는 5단계가 「신호를 읽지 못함」 이 된다. 이때 코디네이터는 규칙대로 사용자에게 묻고 같은 id 로 다시 올린다.
+
+Orca 밖 창에서 누른 승인은 `press.terminal` 이 null 이고 보낸 쪽도 비거나 Orca 가 정한 값일 수 있어, 보낸 터미널을 대조하지 못한다. 이때 worker 판정은 올린 터미널과 (있으면) 보낸 쪽만 본다. 스펙 REQ13 의 막지 못하는 것에 든다.
 
 보낸 쪽(`from_handle`)과 누른 터미널이 같은지는 보지 않는다. Orca 가 보낸 쪽을 어떻게 정하는지 실측 전이고, 다르게 정하면 정상 승인이 모두 거절되기 때문이다. 둘 다 worker 판정을 받으므로 worker 가 보낸 신호는 어느 쪽으로든 걸린다.
 
@@ -264,7 +266,7 @@ export function payloadOf(message: Json): Json      // payload 가 문자열이�
 | DECISION5 | worker 터미널 판정 | hook 의 worker 목록 조회를 `lib/worker-terminal.ts` 로 옮겨 함께 쓴다. `add`, `cancel`, `check`, `self`, `press` 는 모두 released 까지 읽고 지름길과 기억을 쓰지 않는 approval 꼴을 쓴다 | 작성자 | 같은 규칙을 두 벌 두지 않는다. 창과 `check` 의 범위가 다르면 버튼은 보이는데 `check` 가 거절해 스펙 DECISION26 이 없애려던 멈춤이 생긴다(독립 검토 발견 3). hook 은 7초 한도 때문에 지금 범위를 지킨다 |
 | DECISION6 | 신호 메시지 찾기 | `check` 는 신호 메시지를 payload 의 `{id, version, nonce}` 로 찾고, 보낸 터미널, 누른 터미널, 올린 터미널을 모두 worker 판정한다. 보낸 터미널과 누른 터미널이 같은지는 보지 않는다. 받은 신호의 버전은 `--version` 으로 받는다 | 작성자 | 제목만으로 찾으면 worker 가 같은 제목을 보낸 메시지와 섞인다. Orca 가 보낸 쪽을 정하는 방식은 실측 전이라 같음을 요구하면 정상 승인이 모두 막힐 수 있다(독립 검토 발견 5, 6). 스펙 REQ10 의 「메시지의 버전」 은 코디네이터가 받은 신호의 버전이다 |
 | DECISION7 | Orca 조회와 잠금 | Orca 조회는 잠금 밖, 상태 바꾸기는 잠금 안에서 다시 대조 | 작성자 | 잠금 기다림 5초 안에 Orca 조회가 끝난다는 보장이 없다 |
-| DECISION8 | 버튼을 숨기는 창 | 창은 자기 터미널을 모르거나 worker 여부를 정하지 못하면 버튼을 숨긴다 | 작성자 | 스펙 DECISION26 이 worker 터미널에서는 승인을 받지 않기로 했다. 정하지 못한 터미널은 worker 일 수 있어 같게 다룬다. 숨긴 이유를 한 줄로 보여 다른 창으로 가게 한다. 스펙과 다른 점: DECISION26 은 「worker 가 아닌 세션」 이면 누를 수 있게 했지만, Orca 밖에서 연 창(터미널 변수 없음)은 worker 인지 가릴 수 없어 버튼을 숨긴다 |
+| DECISION8 | 버튼을 숨기는 창 | worker 터미널이거나 worker 여부를 정하지 못한 Orca 터미널은 버튼을 숨긴다. Orca 밖에서 연 창(터미널 변수 없음)은 worker 가 아닌 것으로 보고 버튼을 보인다 | 사용자 2026-11-10 | 스펙 REQ6·DECISION26 그대로다. 조회 실패는 worker 일 수 있어 숨긴다. Orca worker 는 늘 Orca 터미널 변수를 가지므로 변수가 없는 창은 worker 가 아니다. 그런 창의 신호는 보낸 터미널을 대조하지 못하는 한계를 스펙 REQ13 에 적었다. PR 리뷰(Codex) 지적 2 에 사용자가 답했다(코디네이터 중계) |
 | DECISION9 | 누른 사람 이벤트 | 누른 사람 이벤트는 `ui.press`·`ui.input` 훅에서 받은 `origin.kind` 를 `press.origin` 으로 남기기만 한다. 버튼을 막는 조건으로 쓰지 않는다 | 작성자 | 스펙 「조사한 사실」 의 출처 구분을 기록으로 남긴다. 이벤트 꼴과 순서가 확인되지 않아 조건으로 걸면 모든 버튼이 멈출 수 있다(독립 검토 발견 9). PR2 에서 실제 꼴을 잰다 |
 | DECISION10 | 보드 항목 확인 | `--item`, `--step` 이 보드에 있는지 보지 않는다 | 작성자 | 보드 잠금과 얽히지 않는다. 틀린 값은 `list` 와 창에서 보인다 |
 | DECISION11 | `cancel` 범위 | `cancel` 은 열린 대기만 닫는다 | 작성자 | 승인된 대기를 거두는 일은 `check` 로 쓰거나 같은 id 로 다시 올리는 것으로 충분하다. 승인 기록을 코디네이터가 지우는 길을 만들지 않는다 |

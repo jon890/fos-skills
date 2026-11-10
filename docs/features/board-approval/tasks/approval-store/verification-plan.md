@@ -7,7 +7,7 @@
 
 | 요구사항 | 준비 조건 | 실행 절차 | 기대 결과 | 실행 환경 | 실행 담당 | 선행 조건 | 시점 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| REQ10 | 코디네이터가 묶인 Run 하나, 다른 Run 에 묶인 코디네이터 터미널 하나, Run 에 묶이지 않은 Orca 터미널 하나 | PR1 첫 실측. 세 터미널에서 각각 `orca orchestration send --to run:<R> --type status --subject "PROBE <터미널 이름>" --payload '{"source":"board-approval-probe"}'` 를 `--from` 없이 보낸다. 코디네이터 터미널에서 `orca orchestration check --run <R> --all --types status --json` 과 `orca orchestration inbox --terminal run:<R> --limit 200 --full --json` 으로 세 메시지를 찾고 각 명령의 시간을 잰다. worker 판정 시간은 phase 03 작업 0 에서 worker 가 잰다 | 세 메시지 모두 보내지고 `from_handle` 이 보낸 터미널 handle 이다(아니면 그 값을 적는다). 두 명령 가운데 세 메시지를 모두 찾는 쪽과 그 시간을 아래 「실측 결과」 에 적는다 | 실제 Orca 코디네이터 세션 | 코디네이터 | 없음 | PR 전 |
+| REQ10 | 코디네이터가 묶인 Run 하나, 다른 Run 에 묶인 코디네이터 터미널 하나, Run 에 묶이지 않은 Orca 터미널 하나, Orca 밖 셸(터미널 변수 없음) 하나 | PR1 첫 실측. 네 셸에서 각각 `orca orchestration send --to run:<R> --type status --subject "PROBE <터미널 이름>" --payload '{"source":"board-approval-probe"}'` 를 `--from` 없이 보낸다. 코디네이터 터미널에서 `orca orchestration check --run <R> --all --types status --json` 과 `orca orchestration inbox --terminal run:<R> --limit 200 --full --json` 으로 네 메시지를 찾고 각 명령의 시간을 잰다. worker 판정 시간은 phase 03 작업 0 에서 worker 가 잰다 | 네 메시지 모두 보내지고 `from_handle` 이 보낸 터미널 handle 이다(Orca 밖 셸과 그 밖의 다른 값은 그대로 적는다). 두 명령 가운데 네 메시지를 모두 찾는 쪽과 그 시간을 아래 「실측 결과」 에 적는다 | 실제 Orca 코디네이터 세션 | 코디네이터 | 없음 | PR 전 |
 | REQ1 | 임시 git 저장소, `ORCH_DIR`, 미리보기 파일 하나, 가짜 orca | `skills/orch/tests/board-approval.spec.ts` 의 REQ1 사례를 돌린다 | 다섯 종류 성공 줄 `APPROVAL-ADD <id> <kind> <버전>` 과 0, 필수 인자 빠짐 2 와 이름, 없는 미리보기와 빈 Run 은 1 이고 파일이 없다 | 로컬 node 테스트 | worker | 없음(보드 명령 구현의 잠금 함수가 main 에 있어야 하는 것은 phase 03 의 Blocked 조건이다) | PR 전 |
 | REQ1 | 이 저장소 주 checkout, 코디네이터가 묶인 Run | 코디네이터 셸에서 `node <워크트리>/skills/orch/bin/orch.ts board approval add demo-approval --title 실측 --kind post --preview <임시 파일>` 뒤 `list` | `APPROVAL-ADD demo-approval post <n>`, `list` 한 줄. 승인 파일의 `run` 이 그 Run, `terminal` 이 코디네이터 터미널이다 | 실제 Orca 코디네이터 세션 | 코디네이터 | 없음(워크트리의 `node <워크트리>/skills/orch/bin/orch.ts` 로 부른다) | PR 전 |
 | REQ2 | 임시 저장소 | `board-approval.spec.ts` 의 REQ2 사례 | 열린 대기 바꾸기에 ` replaced`, 승인된 기록을 다시 올린 뒤 `check` 가 「아직 누르지 않음」, `revise` 기록이 `list --full` 에 남는다 | 로컬 node 테스트 | worker | 없음 | PR 전 |
@@ -37,6 +37,6 @@ worker 가 보낸 `APPROVED` 가 「아직 누르지 않음」 으로 거절되�
 
 | 항목 | 결과 |
 | --- | --- |
-| `--from` 없이 보낸 메시지의 `from_handle`(세 터미널) | 미측정 |
+| `--from` 없이 보낸 메시지의 `from_handle`(네 셸) | 미측정 |
 | Run 메일함 명령 선택과 시간 | 미측정 |
 | approval 꼴 worker 판정 시간(phase 03 작업 0, worker) | 미측정 |

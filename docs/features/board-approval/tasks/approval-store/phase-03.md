@@ -83,6 +83,7 @@ export async function selfIsWorker(): Promise<boolean | null>                   
   - id 꼴: `a b`, `a:b` 는 2. `command` 종류인데 `ORCA_TERMINAL_HANDLE` 이 없으면 1.
   - REQ12: `--keep-open` 으로 같은 `step-x-2` 를 두 번 올린 뒤 `list` 가 한 줄이다.
   - REQ10: 테스트가 파일에 `approved` 기록(nonce 포함)을 써 두고, 가짜 orca 가 그 nonce 를 담은 메시지와 worker 목록을 낸다. 통과 하나, 「기록 없음」, 「고쳐 달라」, 「취소됨」, 「미리보기가 바뀜」(승인 뒤 파일 고침), 「worker 가 보냄」(보낸 쪽이 released worker), 「신호를 읽지 못함」(nonce 가 다른 메시지만 있음), 「버전이 다름」(`--version` 이 다름), 둘째 `check` 의 「이미 사용함」.
+  - 조회 중 다시 올리기(REQ2): 가짜 orca 가 메일함 조회를 받으면 같은 저장소에 `board-approval.ts add <같은 id>` 를 돌려 v2 를 연 뒤 v1 신호를 돌려준다. `check <id>` 는 「아직 누르지 않음」 과 1 이고, 파일의 v1 은 `approved`, v2 는 `open` 그대로다.
   - DECISION14: 가짜 orca 의 worker 목록에 `ORCA_TERMINAL_HANDLE` 이 있으면 `add`, `cancel` 이 1 이고 파일이 그대로다.
   - `--keep-open`: 열린 대기에 다시 부르면 ` kept` 와 같은 버전.
   - 깨진 파일: `add` 가 `approvals.json.broken-*` 을 남기고 새 파일에 올린다. `list` 는 1.

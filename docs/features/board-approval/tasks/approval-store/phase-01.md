@@ -60,7 +60,7 @@ export function formatLine(entry, now, full: boolean): string
 - `validateAdd`: 종류별 필수 칸(REQ1). `real` 은 target, change, rollback. `command` 는 command. `step` 은 item 과 step. `command` 를 뺀 넷은 preview. 빠진 이름을 모두 모아 `missing` 으로 돌려준다(명령이 종료 코드 2 로 낸다). 종류가 다섯 밖이면 `error`.
 - `applyAdd`: `seq + 1` 을 새 버전으로 쓴다. 같은 id 의 `open` 기록이 있으면 `replaced` 와 `closedAt` 을 쓰고 `replaced: true`. `keepOpen` 이면 열린 기록을 바꾸지 않고 `kept: true` 와 그 기록을 돌려준다(seq 도 늘리지 않는다). 끝난 기록은 그대로 둔다(스펙 DECISION22).
 - `checkVerdict` 차례는 설계 「신호와 `check` 의 판정」 2~6단계다. `stateReason` → 미리보기(`facts.previewSha` 가 null 이거나 다르면 「미리보기가 바뀜」) → `askedVersion` 이 있고 기록 버전과 다르면 「버전이 다름」 → `message.found` false 면 「신호를 읽지 못함」 → `workers.ok` false 면 「신호를 읽지 못함」 → `sender`(빈 값은 뺀다), `press.terminal`, 기록의 `terminal` 가운데 하나라도 `workerHandles` 에 있으면 「worker 가 보냄」. `sender` 와 `press.terminal` 이 같은지는 보지 않는다.
-- `applyUsed`: 같은 버전 기록이 `approved` 이고 `press.nonce` 가 같을 때만 `used`, `closedAt`. 아니면 그 기록의 `stateReason`(없으면 「기록 없음」).
+- `applyUsed`: 먼저 `latest(file, id)` 의 버전이 받은 `version` 과 같은지 본다. 다르면 그 최신 기록의 `stateReason` 을 돌려준다(조회 중 같은 id 로 다시 올린 경우, 스펙 REQ2). 같으면 그 기록이 `approved` 이고 `press.nonce` 가 같을 때만 `used`, `closedAt`. 아니면 그 기록의 `stateReason`(없으면 「기록 없음」).
 - `formatLine`: 열린 대기 `APPROVAL <id> <kind> <기다린 시간> <제목>`, `full` 이고 끝난 기록 `APPROVAL <id> <kind> <state> v<버전> <제목>`.
 
 ### 2. `skills/orch/scripts/core/message-fields.ts` 에 함수 둘
@@ -78,7 +78,8 @@ export function formatLine(entry, now, full: boolean): string
 - `applyAdd` 의 `keepOpen`: 열린 기록이 있으면 버전과 파일이 그대로이고 `kept: true`. 열린 기록이 없으면 새로 연다.
 - `checkVerdict`: 아홉 거절 이유를 하나씩 내는 사례와 통과 사례 하나. worker 가 같은 제목을 보냈지만 기록이 `open` 인 사례가 「아직 누르지 않음」 이다(REQ10 인수 조건). 올린 터미널만 worker 인 사례도 「worker 가 보냄」 이다. `sender` 가 비어 있고 나머지가 worker 가 아니면 통과한다.
 - `signalMatches`: nonce 나 버전이 다른 payload 는 거짓.
-- `applyUsed`: 통과 뒤 같은 기록에 다시 부르면 「이미 사용함」.
+- `applyUsed`: 통과 뒤 같은 기록에 다시 부르면 「이미 사용함」. v1 이 `approved` 인 파일에 `applyAdd` 로 v2 를 연 뒤 v1 으로 부르면 「아직 누르지 않음」 이고 v1 은 `approved` 그대로다.
+- `checkVerdict`: `press.terminal` 이 null(Orca 밖 창)이고 보낸 쪽이 비어 있으며 올린 터미널이 worker 가 아니면 통과한다.
 - `prune`: 8일 전에 끝난 기록은 빠지고, 6일 전에 끝난 기록과 30시간 열린 기록은 남는다(REQ11).
 - `waitedText`, `formatLine`: 59분, 61분, 25시간, 2일.
 
