@@ -308,7 +308,8 @@
 // 큐 기록: 열린 PR 과 상관없이 틱마다 돈다. lib/queue-turn.ts 의 차례 기록을 읽는다. 명령줄에 `merge_queue.` 가 든 프로세스의 기록은 도는 큐,
 //     아닌 pid 의 기록은 끝난 큐다. 두 쪽의 held 가운데 아직 옮기지 않은 항목마다 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 를 로그에 쓴다.
 //     옮긴 항목은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 끝난 큐의 기록은 옮긴 뒤 지우고 그 pid 의 키도 지운다.
-//     머지 큐가 뺀 PR 과 이유를, 누가 큐를 걸었든 loop.log 하나에서 보게 하려는 것이다. Run 메시지로는 보내지 않는다.
+//     머지 큐가 뺀 PR 과 이유를, 누가 큐를 걸었든 loop.log 하나에서 보게 하려는 것이다. 코디네이터가 고쳐야 다시 큐에 오르므로 주 Run 에 QUEUE-DROPPED(pr 은 PR 번호, text 는 `#<PR> <이유>`)를
+//     바로 보낸다. 같은 PR 의 같은 이유는 `reason:<PR>:<이유>` 키로 기억해 큐를 다시 돌려도 한 번만 보낸다. 보내지 못하면 기록하지 않아 다음 틱이 다시 보낸다.
 //     PS 를 읽지 못하면 errors 의 queue-turn 에 `프로세스 목록을 읽지 못했다` 를 둔다
 //
 // 최신화(ADR-020): pipeline.refresh_slots 가 1 이상이고 열린 PR 을 읽은 틱에만 돈다. 머지 큐가 차례가 온 PR 에 할 update-branch 를 미리,
@@ -373,7 +374,11 @@
 //     틱 자식은 stdout 에만 쓴다. 부모가 그 줄을 loop.log 로 옮기므로 두 번 쓰이지 않는다.
 //     잡지 않은 예외와 거부된 promise 는 스택을 로그에 남기고 1 로 끝난다.
 //
-// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. 위 「멈춤 확인」),
+// 알림 방식: 코디네이터가 할 일이 있는 kind 는 그 틱에 Run 메시지로 바로 보내고, WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED 는 loop.log 에 남긴 뒤
+//     state/notice-digest/<Run>.json 에 모아 pipeline.digest_sec(기본 1800)마다 DIGEST 하나로 보낸다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 바로 보낸다.
+//     한 Run 에 여러 저장소의 루프가 있으면 lib/run-notice.ts 가 머신 폴더의 run-notices/<Run>/<해시> 로 다른 루프가 보낸 같은 알림을 건너뛴다.
+//     어떤 kind 가 어느 쪽인지의 표는 lib/notice-digest.ts 와 references/waiting.md 가 갖는다. 틱마다 Run 별로 flushDigest 를 부른다.
+// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.digest_sec(양수, 기본 1800), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. 위 「멈춤 확인」),
 //     pipeline.idle_min, pipeline.idle_exited(위 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
 //     queue.auto_merge, queue.auto_review, migrations.dirs, migrations.before, migrations.blocked_after_sec(lib/auto-merge.ts 의 autoMergeConfig 가 읽는다.
 //     위 「자동 머지」), queue.sweep_args(자동 머지가 큐에 --sweep-arg 로 넘긴다),
@@ -438,7 +443,8 @@ import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
 import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
-import { sendNotice } from '../lib/run-notice.ts'
+import { sendNotice, setNoticeOwner } from '../lib/run-notice.ts'
+import { DEFAULT_DIGEST_SEC, flushDigest, watchStreak } from '../lib/notice-digest.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
 import { finishedTurns, readTurns, turnLine } from '../lib/queue-turn.ts'
 import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, refreshSettings, verdict as refreshVerdict, writeRefresh } from '../lib/refresh.ts'
@@ -499,6 +505,8 @@ type Context = {
   run: string | null
   specsDir: string | null
   tickSec: number
+  // pipeline.digest_sec. 모아 보내는 알림의 주기(초, lib/notice-digest.ts)
+  digestSec: number
   skippedIsMissing: boolean
   stallTicks: Record<StallState, number>
   // pipeline.idle_min, pipeline.idle_exited(머리 주석의 「움직임 확인」)
@@ -578,7 +586,7 @@ function stallTicks(value: unknown): Record<StallState, number> {
 
 function context(repo: string, run: string | undefined, specsDir: string | undefined): Context {
   const config = loadConfig(repo)
-  const pipeline = section<{ tick_sec?: unknown; stall_ticks?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
+  const pipeline = section<{ tick_sec?: unknown; stall_ticks?: unknown; digest_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
   const finish = section<{ run?: unknown; specs_dir?: unknown }>(config, 'finish', FINISH_KEYS)
   const queue = section<{ skipped_is_missing?: unknown; sweep_args?: unknown }>(config, 'queue', QUEUE_KEYS)
   const skipped = queue.skipped_is_missing ?? false
@@ -587,8 +595,13 @@ function context(repo: string, run: string | undefined, specsDir: string | undef
   if (typeof tickSec !== 'number' || !Number.isFinite(tickSec) || tickSec <= 0) {
     throw new ConfigError(`설정 파일의 pipeline.tick_sec 은 양수여야 한다: ${JSON.stringify(tickSec)}`)
   }
+  const digestSec = pipeline.digest_sec ?? DEFAULT_DIGEST_SEC
+  if (typeof digestSec !== 'number' || !Number.isFinite(digestSec) || digestSec <= 0) {
+    throw new ConfigError(`설정 파일의 pipeline.digest_sec 은 양수여야 한다: ${JSON.stringify(digestSec)}`)
+  }
   return {
     repo,
+    digestSec,
     run: run || optionalString(finish.run, 'finish.run'),
     specsDir: specsDir || optionalString(finish.specs_dir, 'finish.specs_dir'),
     tickSec,
@@ -1067,7 +1080,7 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
       state.runs = runs
       state.run = runs[0] ?? ctx.run
       for (const [run, since] of Object.entries(restartNotices)) {
-        try { sendNotice('LOOP-RESTARTED', null, `${since} 부터 멈춰 있었다`, run); delete restartNotices[run] }
+        try { sendNotice('LOOP-RESTARTED', null, `${since} 부터 멈춰 있었다`, run, ctx.repo); delete restartNotices[run] }
         catch (e) {
           log(`NOTICE-FAIL LOOP-RESTARTED ${oneLine(e)}`)
           // 앞 루프의 등록을 뺀 Run 은 더 맡지 않는다. 실패한 알림을 다음 틱이나 시작으로 넘기지 않는다.
@@ -1098,7 +1111,7 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
         log(`WATCH-ERROR tick: ${reason}`)
         if (state.errors[tickKey] !== reason) {
           try {
-            sendNotice('WATCH-ERROR', null, `tick: ${reason}`, state.run)
+            sendNotice('WATCH-ERROR', null, `tick: ${reason}`, state.run, ctx.repo)
             state.errors[tickKey] = reason
           } catch (e) {
             log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
@@ -1682,7 +1695,7 @@ function watchMovement(
         const text = `${stage.id} ${stage.worktree ?? stage.branch ?? '-'} ${stage.minutes}분 ${stage.step}`
         log(`STAGE-STALLED ${text}`)
         try {
-          sendNotice('STAGE-STALLED', null, text, primary)
+          sendNotice('STAGE-STALLED', null, text, primary, ctx.repo)
         } catch (e) {
           found.records[stage.id].fired = false
           log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
@@ -2023,7 +2036,7 @@ function queueTurns(repo: string, list: Proc[]): ReturnType<typeof readTurns> {
 
 // 머리 주석의 「큐 기록」. 차례 기록의 held 가운데 아직 옮기지 않은 것을 QUEUE-DROPPED 줄로 로그에 쓰고, 끝난 큐의 기록을 지운다.
 // 옮긴 것은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 기록을 지운 pid 의 키는 함께 지운다
-function watchQueueTurns(repo: string): string | null {
+function watchQueueTurns(repo: string, run: string | null): string | null {
   const list = processes()
   if (!list) return '프로세스 목록을 읽지 못했다'
   const isQueue = (pid: number) => list.some((p) => p.pid === pid && p.command.includes('merge_queue.'))
@@ -2041,6 +2054,13 @@ function watchQueueTurns(repo: string): string | null {
       const key = `${turn.pid}:${held.pr}`
       if (Object.hasOwn(seen, key)) continue
       log(`QUEUE-DROPPED #${held.pr} pid ${turn.pid}: ${held.reason}`)
+      // 코디네이터가 고쳐야 다시 큐에 오르므로 바로 보낸다. 같은 PR 의 같은 이유는 큐를 다시 돌려도 한 번만 보낸다
+      const same = `reason:${held.pr}:${held.reason}`
+      if (!Object.hasOwn(seen, same)) {
+        try { sendNotice('QUEUE-DROPPED', held.pr, `#${held.pr} ${held.reason}`, run, repo) }
+        catch (e) { log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`); continue }
+        seen[same] = iso()
+      }
       seen[key] = iso()
     }
   }
@@ -2572,12 +2592,14 @@ async function tick(ctx: Context, n: number): Promise<number> {
     const key = keyOf(source, run)
     const kind = opts.kind ?? 'WATCH-ERROR'
     const text = opts.text ?? `${source}: ${reason}`
+    // 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 모으지 않고 바로 보낸다(lib/notice-digest.ts)
+    const streak = kind === 'WATCH-ERROR' && run ? watchStreak(ctx.repo, key, reason) : false
     if (reason === null) { errors[key] = null; return }
     errors[key] = previous[key] === reason ? reason : null
     if (!opts.logged) log(`${kind} ${text}`)
-    if (previous[key] === reason) return
+    if (previous[key] === reason && !streak) return
     try {
-      sendNotice(kind, null, text, run)
+      sendNotice(kind, null, text, run, ctx.repo, streak)
       errors[key] = reason
     } catch (e) {
       log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
@@ -2797,7 +2819,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
 
   // 8-1. 큐 기록. 머지 큐가 뺀 PR 과 이유를 루프 로그에 옮기고 끝난 큐의 기록을 지운다
   try {
-    report('queue-turn', watchQueueTurns(ctx.repo))
+    report('queue-turn', watchQueueTurns(ctx.repo, primary))
   } catch (e) {
     report('queue-turn', oneLine(e))
   }
@@ -2850,6 +2872,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
 
   for (const { run } of runs) {
     if (!run) continue
+    try { flushDigest(ctx.repo, run, ctx.digestSec) } catch (e) { log(`orch-loop: DIGEST 를 보내지 못했다: ${oneLine(e)}`) }
     for (const [source, action] of [['done', watchCompletions], ['lost', watchLost]] as const) {
       try { await action(ctx.repo, run, defaultBase(ctx.repo) ?? ''); report(source, null, { run }) }
       catch (e) {
@@ -2969,6 +2992,7 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
     process.stderr.write(`orch-loop: ${e.message}\n`)
     return 2
   }
+  setNoticeOwner(ctx.repo)
   if (mode === 'start') return start(ctx, entrypoint)
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)

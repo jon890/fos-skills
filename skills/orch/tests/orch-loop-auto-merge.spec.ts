@@ -17,6 +17,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
+import { queuedNotices } from './fixtures/queued-notices.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
@@ -222,7 +223,8 @@ function jsonl(file: string): Json[] {
 
 function events(kind?: string): Json[] {
   const rows = jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args.includes('--payload') ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
-  return kind ? rows.filter((row) => row.kind === kind) : rows
+  const all = [...rows, ...queuedNotices(orchFile())]
+  return kind ? all.filter((row) => row.kind === kind) : all
 }
 
 function queueCalls(): { pid: number; args: string[] }[] {
@@ -603,6 +605,11 @@ describe('큐가 도는 동안', () => {
     assert.equal(existsSync(orchFile('state', 'queue-turn', '99997.json')), false)
     assert.equal(existsSync(orchFile('state', 'queue-turn', '99998.json')), true)
     assert.deepEqual(dropped(once()), [])
+    // 뺀 PR 번호와 이유를 바로 보내고, 같은 PR 의 같은 이유는 큐를 다시 돌려도 한 번만 보낸다
+    assert.deepEqual(events('QUEUE-DROPPED').map((row) => [row.pr, row.text]).sort(), [[8, '#8 8 HOOK-REJECT'], [9, '#9 9 실패한 체크 1 개']])
+    write(orchFile('state', 'queue-turn', '99997.json'), JSON.stringify({ pid: 99997, prs: [], pr: null, phase: '끝', since, held: [{ pr: 8, reason: '8 HOOK-REJECT' }] }))
+    once()
+    assert.equal(events('QUEUE-DROPPED').length, 2)
   })
 
   test('도는 큐의 차례 기록이 있으면 무엇을 기다리는지 AUTO-MERGE-HELD 한 줄로 남긴다', () => {

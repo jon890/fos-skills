@@ -15,6 +15,7 @@ import { tailHash } from '../scripts/lib/movement.ts'
 import { screenLines, screenTail } from '../scripts/lib/screen.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
+import { queuedNotices } from './fixtures/queued-notices.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
@@ -169,6 +170,10 @@ function jsonl(file: string): Json[] {
 }
 
 function runEvents(run: string): Json[] {
+  return [...sentRunEvents(run), ...queuedNotices(orchFile(), run)]
+}
+
+function sentRunEvents(run: string): Json[] {
   return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args[args.indexOf('--to') + 1] === `run:${run}`
     ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
 }

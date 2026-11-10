@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'no
 import { basename, join } from 'node:path'
 import { pathOf } from '../lib/paths.ts'
 import { readLoop, registeredRuns } from '../lib/loop.ts'
-import { notifyRun } from '../lib/run-notice.ts'
+import { queueDigest } from '../lib/notice-digest.ts'
 
 export function migrateLegacyNotices(repo: string, trash: string, apply: boolean, log: (line: string) => void): void {
   const state = pathOf('state', repo)
@@ -34,8 +34,9 @@ export function migrateLegacyNotices(repo: string, trash: string, apply: boolean
       const target = key === 'loop-events' ? old?.run : matches.length === 1 ? matches[0] : null
       if (!target) { log(`LEGACY-STATE-KEEP ${file}: Run 을 알 수 없다`); continue }
       if (!apply) { log(`LEGACY-NOTICE ${target}: ${rows.length}`); continue }
-      const sent = notifyRun(target, 'LEGACY-NOTICE', rows.map(row => `${row.kind} ${row.text}`).join('\n'))
-      if (!sent.ok) { log(`NOTICE-FAIL LEGACY-NOTICE ${sent.error}`); continue }
+      // 안내성 알림이라 바로 깨우지 않고 DIGEST 로 모아 보낸다(lib/notice-digest.ts)
+      try { queueDigest(repo, target, 'LEGACY-NOTICE', rows.map(row => `${row.kind} ${row.text}`).join('; ')) }
+      catch (e) { log(`NOTICE-FAIL LEGACY-NOTICE ${String(e)}`); continue }
     }
     move(file); move(cursor)
   }
