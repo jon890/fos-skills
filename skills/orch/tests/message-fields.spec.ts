@@ -5,11 +5,19 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { classify } from '../scripts/core/completion.ts'
 import { unanswered } from '../scripts/core/questions.ts'
-import { recipientOf, senderOf, threadOf } from '../scripts/core/message-fields.ts'
+import { payloadOf, recipientOf, senderOf, subjectOf, threadOf } from '../scripts/core/message-fields.ts'
 
 const status = (rows: Record<string, unknown>[], i = 0) => (rows[i].completionVerification as { status?: string } | undefined)?.status
 const SHA = 'a'.repeat(40)
 const payload = (dispatch: string) => ({ taskId: 'task', dispatchId: dispatch })
+
+test('제목과 객체·문자열 payload 를 같은 꼴로 읽는다', () => {
+  assert.equal(subjectOf({ title: 'fallback' }), 'fallback')
+  assert.equal(subjectOf({ subject: 'first', title: 'second' }), 'first')
+  assert.equal(subjectOf({}), '')
+  for (const value of [{ id: 'a' }, '{"id":"a"}']) assert.deepEqual(payloadOf({ payload: value }), { id: 'a' })
+  for (const value of ['{', null, [], '[]', 1, undefined]) assert.deepEqual(payloadOf({ payload: value }), {})
+})
 
 test('from_handle, fromHandle, from 을 모두 보낸 쪽으로 읽는다', () => {
   assert.equal(senderOf({ from_handle: 'a' }), 'a')

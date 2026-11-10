@@ -21,3 +21,12 @@ export function recipientOf(message: Json): string {
 export function threadOf(message: Json): string {
   return first(message.thread_id, message.threadId)
 }
+
+export function subjectOf(message: Json): string { return first(message.subject, message.title) }
+export function payloadOf(message: Json): Json {
+  let value = message.payload
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value) } catch { return {} }
+  }
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Json : {}
+}
