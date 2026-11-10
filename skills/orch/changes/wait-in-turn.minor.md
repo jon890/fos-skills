@@ -1,0 +1,2 @@
+- worker 는 PR 을 연 뒤나 고쳐 push 한 뒤 CI 결과를 그 턴 안에서 전경으로 기다린다. CI 를 기다리려고 턴을 끝내지 않는다.
+- 「PR 을 열었다」 와 「준비됨」 status 는 CI 를 기다린 뒤 한 번만 보낸다. 턴을 끝내면 Orca 가 「Worker stopped without reporting」 escalation 을 코디네이터에게 보내므로 기다리는 동안 턴을 끝내지 않는다.
