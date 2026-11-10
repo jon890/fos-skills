@@ -61,16 +61,22 @@ export function eventDone(items: BoardView[], pr: string, event: StageKind): boo
 - `event` 가 `'deploy'` 나 `'release'`: `pr` 과 `mergedPr` 을 합친 번호가 그 `pr` 하나뿐이고 `stages[event]` 번호 단계가 `done` 이다. PR 이 여럿인 항목은 이 길로 참이 되지 않는다.
 
 ```ts
-// 그 항목에 살아 있는 worker 나 열린 PR 이 있는가. openPrs 는 열린 PR 의 번호와 head 브랜치다
+// 그 항목의 그 단계가 진행 중인가(살아 있는 worker 나 열린 PR). launches 는 그 단계의 띄운 기록, openPrs 는 열린 PR 의 번호와 head 브랜치다
 export function itemBusy(
   item: { worktree: string | null; branch: string | null; pr: string[] },
-  live: ReadonlySet<string>,
+  launches: ReadonlyArray<{ dispatch: string; branch: string | null }>,
+  live: { paths: ReadonlySet<string>; dispatches: ReadonlySet<string> },
   branches: ReadonlyMap<string, string>,
   openPrs: ReadonlyArray<{ number: string; branch: string }>,
 ): boolean
 ```
 
-`itemBusy` 는 `liveWorkerOn` 이 참이거나, 열린 PR 가운데 번호가 항목의 `pr` 에 있거나 head 브랜치가 항목의 `branch` 와 같은 것이 있으면 참이다. 항목의 `worktree` 이름으로 브랜치를 알 수 있으면(`branches` 의 값 가운데 끝 이름이 같은 경로의 키) 그 브랜치의 PR 도 본다.
+`itemBusy` 는 아래 중 하나면 참이다.
+
+- `liveWorkerOn(item, live.paths, branches)` 가 참이다.
+- `launches` 가운데 `dispatch` 가 `live.dispatches` 에 있는 것이 있다. 보드 잇기가 실패해 항목의 worktree·branch 필드가 비어 있어도 띄운 worker 가 살아 있으면 진행 중이다.
+- 열린 PR 가운데 번호가 항목의 `pr` 에 있는 것이 있다.
+- 열린 PR 가운데 head 브랜치가 항목의 `branch`, 항목의 `worktree` 이름으로 알 수 있는 브랜치(`branches` 의 값 가운데 끝 이름이 같은 경로의 키), `launches` 의 `branch` 가운데 하나와 같은 것이 있다.
 
 ```ts
 export const ADVANCE_REASONS = {
@@ -92,8 +98,8 @@ export type AdvanceInput = {
   autoAdvance: boolean
   status: string | null   // 항목이 없으면 null
   step: { number: number; mark: 'auto' | 'ask' | 'wait' | null } | null   // 첫 미완료 단계. 없으면 null
-  busy: boolean | null    // 살아 있는 worker 나 열린 PR. 확인하지 못했으면 null
-  launched: boolean       // 같은 항목, 같은 단계 글로 띄운 기록이 있는가
+  busy: boolean | null    // itemBusy 의 결과. 확인하지 못했으면 null
+  launched: boolean       // 같은 항목, 같은 단계 글로 띄운 기록이 하나 이상 있는가
   evidence: Array<{ text: string; problem: string | null }>   // 근거마다의 확인 결과
 }
 export type AdvanceVerdict =
@@ -135,7 +141,7 @@ export function autoAdvanceOf(config: Config): boolean
   - 끝난 꼬리표 줄이 있으면 참, 같은 줄이 끝나지 않았으면 거짓. 다른 항목의 줄로도 참이 된다.
   - `mergedPr` 에 `665` 가 있으면 `stages` 가 `null` 이어도 `merge` 가 참. `665` 가 `pr` 필드에만 있으면 `merge` 는 거짓이다. 그 항목의 `stages` 가 `{ pr: 1, merge: 2 }` 이고 1번이 끝났으면 `pr` 은 참.
   - `stages` 가 `{ merge: 2, deploy: 3 }` 이고 3번이 끝난 항목: `mergedPr` 이 `['665']` 뿐이면 `deploy` 가 참, `['664', '665']` 면 거짓.
-- `itemBusy`: worktree 이름이 살아 있는 경로의 끝 이름과 같으면 참, branch 의 워크트리 경로가 `live` 에 있으면 참, 열린 PR 번호가 `pr` 에 있으면 참, 열린 PR 의 head 브랜치가 `branch` 와 같으면 참, 넷 다 아니면 거짓. worktree 와 branch 가 모두 `null` 이고 `pr` 이 빈 항목은 거짓이다.
+- `itemBusy`: worktree 이름이 살아 있는 경로의 끝 이름과 같으면 참, branch 의 워크트리 경로가 `live.paths` 에 있으면 참, 열린 PR 번호가 `pr` 에 있으면 참, 열린 PR 의 head 브랜치가 `branch` 와 같으면 참. worktree 와 branch 가 모두 `null` 이고 `pr` 이 빈 항목(보드 잇기가 실패한 꼴)은 `launches` 가 비었으면 거짓, `launches` 의 dispatch 가 `live.dispatches` 에 있으면 참, `launches` 의 브랜치에 열린 PR 이 있으면 참이다.
 - `judgeAdvance`: 표의 아홉 줄을 한 사례씩, 앞 조건이 뒤 조건보다 먼저 걸리는 사례 셋(꺼져 있으면서 근거도 없음 → `off`, 진행 중이면서 이미 띄움 → `busy`, 이미 띄웠으면서 근거가 틀림 → `launched`), 통과 사례 하나(`evidence` 글이 `계획: a, 앞 사건: #665 merge`).
 - `autoAdvanceOf`: 절이 없으면 `true`, `{ board: { auto_advance: false } }` 는 `false`, `'no'` 와 `0` 은 `ConfigError`.
 

@@ -44,13 +44,13 @@
 
 ### 2. `skills/orch/scripts/lib/step-launches.ts` 신규
 
-파일은 `<orch 상태 폴더>/step-launches.jsonl` 이고 한 줄이 `{"at": <ISO 8601 UTC>, "item": <항목 id>, "number": <단계 번호>, "step": <꼬리표를 뗀 단계 글>, "dispatch": <dispatch id>}` 다.
+파일은 `<orch 상태 폴더>/step-launches.jsonl` 이고 한 줄이 `{"at": <ISO 8601 UTC>, "item": <항목 id>, "number": <단계 번호>, "step": <꼬리표를 뗀 단계 글>, "dispatch": <dispatch id>, "branch": <띄운 worker 의 브랜치 또는 null>}` 다.
 
 ```ts
-// 같은 항목, 같은 단계 글로 띄운 기록이 있는가. 파일이 없으면 false. 깨진 줄은 건너뛴다
-export function stepLaunched(repo: string, item: string, step: string): boolean
+// 같은 항목, 같은 단계 글로 띄운 기록들. 파일이 없으면 빈 목록. 깨진 줄은 건너뛴다. branch 값이 없는 줄은 null 로 읽는다
+export function stepLaunches(repo: string, item: string, step: string): Array<{ dispatch: string; branch: string | null }>
 // 한 줄을 덧붙인다. 폴더가 없으면 만든다
-export function appendStepLaunch(repo: string, row: { item: string; number: number; step: string; dispatch: string }): void
+export function appendStepLaunch(repo: string, row: { item: string; number: number; step: string; dispatch: string; branch: string | null }): void
 ```
 
 파일이 줄바꿈 없이 끝나 있으면 앞에 줄바꿈을 넣는다(`skills/orch/scripts/lib/launch-history.ts` 의 `recordHistory` 와 같은 방식).
@@ -77,14 +77,14 @@ export function checkAdvance(repo: string, id: string, opts?: { board?: string; 
 1. `autoAdvanceOf(loadConfig(repo))` 를 읽는다. `ConfigError` 는 그대로 던진다.
 2. 보드 파일(`boardPath(repo, opts?.board)`)이 없으면 항목이 없는 것으로 본다. 있으면 `readBoard` 로 읽는다. JSON 이 깨져 읽지 못하면 `Error('보드를 읽지 못했다: <파일>: <이유>')` 를 던진다.
 3. 항목을 id 로 찾고(`row.id === id`) `firstPendingStep` 을 구한다.
-4. 여기까지 `judgeAdvance` 의 앞 네 조건(꺼짐, 항목 없음, 상태, `[auto]` 아님)에 걸리면 아래 5, 6, 7번을 건너뛰고 8번으로 간다. Orca 와 gh 를 쓸데없이 부르지 않는다.
-5. 진행 중인지 본다.
+4. 여기까지 `judgeAdvance` 의 앞 네 조건(꺼짐, 항목 없음, 상태, `[auto]` 아님)에 걸리면 아래 5, 6, 7번을 건너뛰고 8번으로 간다(띄운 기록, 진행 중, 근거를 읽지 않는다). Orca 와 gh 를 쓸데없이 부르지 않는다.
+5. `stepLaunches(repo, id, step.key)` 를 읽는다. 하나라도 있으면 `launched` 가 참이다.
+6. 진행 중인지 본다.
    - Run 목록은 `registeredRuns(repo)` 의 Run 과 `opts?.run` 을 합친 것이다(중복 없이). 하나도 없으면 `busy` 는 `null` 이다.
-   - Run 마다 `workerRows(run)` 을 읽는다. 하나라도 `ok` 가 아니면 `busy` 는 `null` 이다. 읽었으면 `openRows(rows)` 의 `worktreeOf(row)` 가운데 `null` 이 아닌 것이 `live` 다.
+   - Run 마다 `workerRows(run)` 을 읽는다. 하나라도 `ok` 가 아니면 `busy` 는 `null` 이다. 읽었으면 `openRows(rows)` 의 `worktreeOf(row)` 가운데 `null` 이 아닌 것이 `live.paths`, 같은 행들의 `String(row.dispatchId)` 가 `live.dispatches` 다.
    - `branches` 는 `worktreePaths(repo)` 다.
    - 열린 PR 을 위 `ghJson` 조회로 읽는다. 실패하면 `busy` 는 `null` 이다. `{ number: String(number), branch: headRefName }` 으로 바꾼다.
-   - `itemBusy({ worktree, branch, pr: [...prNumbers(item.pr)] }, live, branches, openPrs)` 가 `busy` 다. `worktree` 와 `branch` 는 항목의 그 필드를 앞뒤 공백을 떼어 읽고 비었으면 `null` 이다.
-6. `stepLaunched(repo, id, step.key)` 를 읽는다.
+   - `itemBusy({ worktree, branch, pr: [...prNumbers(item.pr)] }, <5번의 띄운 기록>, live, branches, openPrs)` 가 `busy` 다. `worktree` 와 `branch` 는 항목의 그 필드를 앞뒤 공백을 떼어 읽고 비었으면 `null` 이다.
 7. 단계의 `body` 에서 `parseEvidence` 로 근거를 읽고 근거마다 확인한다. 문제 글은 `ADVANCE_REASONS` 의 값을 쓴다.
    - 스펙: 경로가 절대경로면 그대로(`~/` 는 홈 폴더), 아니면 `mainCheckout(repo)` 기준이다. 파일이 아니면 `noSpec`, `confirmProblem` 이 문제를 내면 `unconfirmed`.
    - 계획: 같은 경로 규칙이다. 파일도 폴더도 아니면 `noPlan`.
@@ -118,8 +118,9 @@ export function checkAdvance(repo: string, id: string, opts?: { board?: string; 
 - 앞 사건, `merged-pr` 만 있는 항목: 다른 항목이 `{ merged-pr: 665, details: [{ text: '1. PR #665 구현', done: true }] }` 뿐이고(줄 끝 꼬리표도 `stages` 필드도 없다) 확인할 항목의 첫 미완료 단계가 `2. [auto] 후속 작업 (앞 사건: #665 merge)` 면 통과한다. 그 항목의 `merged-pr` 을 지우면 `앞 사건이 끝나지 않았다` 다.
 - 근거 없음: `2. [auto] PR4` 는 `근거가 없다`.
 - 진행 중: 가짜 `orca` 가 그 항목 worktree 의 열린 dispatch 를 답하면 `worker 나 열린 PR 이 있다`. 가짜 `gh` 가 항목의 `branch` 와 같은 head 의 열린 PR 을 답해도 같다. 띄운 기록이 함께 있어도 이 이유가 먼저 나온다.
+- 진행 중, 보드 잇기가 실패한 꼴: 항목의 worktree·branch 필드가 비어 있고 띄운 기록(`dispatch: ctx_9`, `branch: feat/x`)만 있다. 가짜 `orca` 가 `ctx_9` 를 열린 dispatch 로 답하면 `worker 나 열린 PR 이 있다`. dispatch 는 끝났고 가짜 `gh` 가 `feat/x` 의 열린 PR 을 답해도 같다. 둘 다 없으면 `이미 한 번 띄웠다` 다.
 - 확인 못 함: `--run` 을 주지 않고 등록된 Run 도 없으면 `worker 나 PR 을 확인하지 못했다`. 가짜 `orca` 가 실패로 답해도, 가짜 `gh` 가 0 이 아닌 코드로 끝나도 같다.
-- 이미 띄움: `appendStepLaunch` 로 같은 항목과 단계 글을 남긴 뒤에는 `이미 한 번 띄웠다`. 그 줄 끝에 `(#700 merge)` 꼬리표를 붙여도 같은 단계로 보아 거절한다. 본문이 다르면 통과한다.
+- 이미 띄움: `appendStepLaunch` 로 같은 항목과 단계 글을 남긴 뒤에는(그 dispatch 는 열려 있지 않다) `이미 한 번 띄웠다`. 그 줄 끝에 `(#700 merge)` 꼬리표를 붙여도 같은 단계로 보아 거절한다. 본문이 다르면 통과한다.
 - 표시: 첫 미완료가 `[ask]`, `[wait]`, 표시 없음이면 `첫 미완료 단계가 [auto] 가 아니다`. `stages` 가 `merge=2` 인 항목의 `2. [auto] 머지` 도 같다. 앞 단계가 끝나지 않았으면 뒤의 `[auto]` 를 보지 않는다. 이 사례들에서 가짜 `orca` 가 불리지 않는다(부른 인자를 파일에 남겨 확인한다).
 - next 에만 단계가 있는 항목의 `[auto]` 를 읽는다.
 - 상태와 항목: `done` 항목은 `상태가 doing 이나 wait 가 아니다`, 없는 id 는 `AUTO-REJECT x - 항목이 없다`, 보드 파일이 없어도 `항목이 없다` 다.
@@ -128,7 +129,7 @@ export function checkAdvance(repo: string, id: string, opts?: { board?: string; 
 - 읽기만 한다: 통과 사례의 호출 앞뒤로 보드 파일의 바이트가 같고 `step-launches.jsonl` 이 생기지 않는다.
 - 인자 없이 부르면 종료 코드 2.
 
-`skills/orch/tests/lib-step-launches.spec.ts` 신규: 파일이 없을 때 `false`, 덧붙인 뒤 `true`, 깨진 줄이 섞여도 읽는다, 끝 줄바꿈이 없는 파일에 덧붙여도 줄이 나뉜다.
+`skills/orch/tests/lib-step-launches.spec.ts` 신규: 파일이 없을 때 빈 목록, 덧붙인 뒤 그 줄의 `dispatch` 와 `branch`, 같은 단계로 두 번 덧붙이면 둘, 다른 항목이나 다른 단계 글은 빠진다, 깨진 줄이 섞여도 읽는다, `branch` 값이 없는 옛 줄은 `null`, 끝 줄바꿈이 없는 파일에 덧붙여도 줄이 나뉜다.
 
 `skills/orch/tests/lib-commands.spec.ts` 수정: `resolveNew(['board', 'auto-check', 'a'])` 가 `board/auto-check.ts` 로 풀린다.
 

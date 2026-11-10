@@ -34,18 +34,18 @@ worker 를 띄울 때, 지시서의 `보드 항목 id:` 줄이 가리키는 항�
 
 ```ts
 // 그 항목의 첫 미완료 단계가 [auto] 면 한 줄을 남기고 true. 아니면 남기지 않고 false
-export function recordStepLaunch(repo: string, item: string, dispatch: string): boolean
+export function recordStepLaunch(repo: string, item: string, dispatch: string, branch: string | null): boolean
 ```
 
 `step-launches.ts` 가 아니라 `auto-advance.ts` 에 둔다. `auto-advance.ts` 가 이미 `step-launches.ts` 를 가져오므로 반대 방향으로 가져오면 두 파일이 서로를 가져오게 된다.
 
-보드 파일(`boardPath(repo)`)이 없으면 `false` 다. 있으면 `readBoard` 로 읽어 항목을 찾고 `firstPendingStep` 을 구한다. 표시가 `'auto'` 면 `appendStepLaunch(repo, { item, number: <단계 번호>, step: <단계의 key>, dispatch })` 를 부른다. 항목이 없거나 단계가 없거나 표시가 다르면 `false` 다. 읽기나 쓰기가 실패하면 던진다.
+보드 파일(`boardPath(repo)`)이 없으면 `false` 다. 있으면 `readBoard` 로 읽어 항목을 찾고 `firstPendingStep` 을 구한다. 표시가 `'auto'` 면 `appendStepLaunch(repo, { item, number: <단계 번호>, step: <단계의 key>, dispatch, branch })` 를 부른다. 항목이 없거나 단계가 없거나 표시가 다르면 `false` 다. 읽기나 쓰기가 실패하면 던진다.
 
 ### 2. `launch-worker.ts` 와 `send-to-worker.ts` 가 기록을 남긴다
 
 두 곳 모두 `registerBoard` 를 부르는 `try` **앞에** 따로 `try` 를 두고 아래를 한다.
 
-- `boardIdOf(<지시서 글>)?.id` 가 있으면 `recordStepLaunch(repo, id, dispatch)` 를 부른다.
+- `boardIdOf(<지시서 글>)?.id` 가 있으면 `recordStepLaunch(repo, id, dispatch, <브랜치>)` 를 부른다. 브랜치는 `launch-worker.ts` 에서 `common.branch`, `send-to-worker.ts` 에서 `launch.branch` 이고 비었으면 `null` 이다. 보드 잇기가 실패해 항목의 필드가 비어도 이 브랜치로 그 단계의 열린 PR 을 찾는다.
 - 던지면 stderr 에 `<스크립트 이름>: 띄운 단계 기록을 남기지 못했다: <이유>` 한 줄을 남긴다. 종료 코드는 바꾸지 않고 다음 일(`registerBoard`)을 그대로 한다.
 - `launch-worker.ts` 는 시작 확인이 늦은 경우(`stalled`)에도 남긴다. `registerBoard` 와 같은 조건이다.
 
@@ -53,10 +53,11 @@ export function recordStepLaunch(repo: string, item: string, dispatch: string): 
 
 `skills/orch/tests/launch-worker.spec.ts` 수정:
 
-- 보드에 `{ id: 'board-id', status: 'doing', details: [{ text: '1. PR1', done: true }, { text: '2. [auto] PR2 (계획: docs/p)', done: false }] }` 를 두고 `보드 항목 id: \`board-id\`` 지시서로 띄우면, 상태 폴더의 `step-launches.jsonl` 에 `item` 이 `board-id`, `number` 가 2, `step` 이 `2. [auto] PR2 (계획: docs/p)`, `dispatch` 가 `ctx_1` 인 줄이 하나 생긴다.
+- 보드에 `{ id: 'board-id', status: 'doing', details: [{ text: '1. PR1', done: true }, { text: '2. [auto] PR2 (계획: docs/p)', done: false }] }` 를 두고 `보드 항목 id: \`board-id\`` 지시서로 띄우면, 상태 폴더의 `step-launches.jsonl` 에 `item` 이 `board-id`, `number` 가 2, `step` 이 `2. [auto] PR2 (계획: docs/p)`, `dispatch` 가 `ctx_1`, `branch` 가 그 worker 의 브랜치인 줄이 하나 생긴다.
 - 첫 미완료 단계에 표시가 없거나 `[ask]` 인 항목으로 띄우면 파일이 생기지 않는다.
 - 지시서에 `보드 항목 id:` 줄이 없으면 파일이 생기지 않는다.
 - 보드 파일이 없는 저장소에서 띄워도 종료 코드가 0 이고 파일이 생기지 않는다.
+- 보드 잇기 실패: 보드 명령이 실패하게 해도(환경 변수 `BOARD_BIN` 에 0 이 아닌 코드로 끝나는 가짜 명령을 준다. 단계 목록 읽기 `steps` 만 실제 도구로 넘긴다) 띄운 기록은 남는다.
 - 기록 실패: 상태 폴더에 `step-launches.jsonl` 이라는 이름의 폴더를 미리 만들어 덧붙이기가 실패하게 한다. 종료 코드가 0 이고 `LAUNCHED` 줄이 나오며 stderr 에 `띄운 단계 기록을 남기지 못했다` 가 있고, 보드 항목은 지금처럼 doing 으로 이어진다.
 
 `skills/orch/tests/lib-step-launches.spec.ts` 수정: `recordStepLaunch` 가 `[auto]` 항목에서 `true` 와 한 줄을 남긴다. 그 줄 끝에 `(#700 merge)` 꼬리표가 있으면 `step` 에 꼬리표를 뗀 글이 남는다. 표시 없는 항목과 없는 항목에서 `false` 다.

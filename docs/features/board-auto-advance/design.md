@@ -44,7 +44,7 @@ flowchart TD
 | REQ2 | 붙여도 되는 일, 안 되는 일, 근거 꼴은 `references/board.md` 의 새 절 「자동 진행 표시」 가 소유한다. 근거 꼴(`(스펙: …)`, `(계획: …)`, `(앞 사건: #N 사건)`)은 순수 함수 `core/evidence.ts` 의 `parseEvidence` 가 읽는다. `(앞 사건: …)` 은 줄 끝 사건 꼬리표 정규식(`event-tags.js` 의 `EVENT_TAG`)에 맞지 않는다. 줄 글의 `#N` 으로 줄을 끝내는 `core/board.ts` 의 `prSteps` 는 근거 괄호 안의 번호를 세지 않게 고친다(아래 「근거 괄호의 PR 번호」) | A |
 | REQ3 | 띄우기 직전 확인은 글 규칙이 아니라 명령 `orch board auto-check <항목>` 이 한다. 판정은 `core/auto-advance.ts` 의 `judgeAdvance` 가 하고, 보드와 파일, worker 목록 읽기는 `lib/auto-advance.ts` 가 한다 | A |
 | REQ4 | 루프 틱에 새 단계 `loop/steps/step-ready.ts` 를 움직임 확인 바로 뒤에 둔다. 판정은 `core/step-ready.ts`, 알림 기록은 `state/step-ready.json` 이다 | B |
-| REQ5 | 멈춘 단계 판정(`core/movement.ts` 의 `stalledStages`)이 lib 이 미리 읽은 표시를 받는다. `[wait]` 와 `[ask]` 는 건너뛰고, `[auto]` 는 띄운 기록(`state/step-launches.jsonl`)이 있을 때만 표시 없는 줄처럼 본다 | B |
+| REQ5 | 멈춘 단계 판정(`core/movement.ts` 의 `stalledStages`)이 lib 이 미리 읽은 표시와 띄운 기록을 받는다. `[wait]` 와 `[ask]` 는 건너뛴다. `[auto]` 는 띄운 기록(`state/step-launches.jsonl`)이 있을 때만 보되, 표시 없는 줄의 상태·필드 조건이 아니라 스펙이 정한 「살아 있는 worker 도 열린 PR 도 없음」 으로 본다 | B |
 | REQ6 | 시각 wait 는 보드 동기화(`board/board-sync.ts`)가 줄 끝 사건 꼬리표를 끝내는 자리 옆에서 끝낸다. 시각 읽기는 `step-marks.js` 의 `waitTimeMs` 가 맡는다 | B |
 | REQ7 | 코디네이터 절차는 `references/replying.md` 의 새 절 「다음 단계 이어 가기」 가 소유하고 `waiting.md` 는 가리키기만 한다. PR A 는 머지와 배포를 보고 이어 가는 길을, PR B 는 `STEP-READY` 를 받는 길을 적는다 | A, B |
 | REQ8 | 같은 절에 `다음 단계 자동 진행: <무엇을>, <agent·모델>, <묻지 않은 이유(근거)>` 꼴을 적는다. `auto-check` 의 `AUTO-OK` 줄이 근거 글을 돌려줘 그대로 옮긴다 | A |
@@ -157,8 +157,8 @@ orch 의 층 규칙([ADR-028](../../adr/028-orch-core-layer.md))을 그대로 �
 
 4번이 없으면 같은 일을 둘 띄울 수 있다. 앞 worker 가 아직 일하는 동안(머지 뒤 확인, 지시서가 정한 뒷일) 코디네이터가 그 단계를 또 띄우게 된다. 판정은 루프와 같은 순수 함수 `itemBusy` 를 쓴다.
 
-- 살아 있는 worker: 그 저장소 루프에 등록된 Run(`lib/loop.ts` 의 `registeredRuns`)과 `--run` 의 worker 목록에서, 항목의 worktree(이름)나 branch 의 워크트리에 열린 dispatch 가 있는지 본다. 고르는 규칙은 지금 멈춘 단계 판정과 같다.
-- 열린 PR: 항목의 `pr` 필드 번호나 항목 브랜치의 PR 이 열려 있는지 gh 로 한 번 본다.
+- 살아 있는 worker: 그 저장소 루프에 등록된 Run(`lib/loop.ts` 의 `registeredRuns`)과 `--run` 의 worker 목록에서, 항목의 worktree(이름)나 branch 의 워크트리에 열린 dispatch 가 있는지 본다. 고르는 규칙은 지금 멈춘 단계 판정과 같다. 그 단계의 띄운 기록에 적힌 dispatch 가 열려 있어도 살아 있는 것이다.
+- 열린 PR: 항목의 `pr` 필드 번호, 항목 브랜치, 띄운 기록의 브랜치 가운데 하나에 열린 PR 이 있는지 gh 로 한 번 본다.
 - Run 을 하나도 모르거나 목록을 못 읽으면 「없다」 로 보지 않고 `worker 나 PR 을 확인하지 못했다` 로 거절한다.
 
 근거를 한도보다 먼저 본다. 근거가 틀린 단계를 30분 미뤘다가 다시 거절하지 않게 하려는 것이다.
@@ -179,10 +179,11 @@ orch 의 층 규칙([ADR-028](../../adr/028-orch-core-layer.md))을 그대로 �
 worker 를 띄우는 두 곳(`launch-worker.ts`, 후속 지시서를 보내는 `send-to-worker.ts`)이, 지시서의 `보드 항목 id:` 줄(`lib/spec.ts` 의 `boardIdOf`)이 가리키는 항목의 첫 미완료 단계가 `[auto]` 면 한 줄을 덧붙인다.
 
 ```json
-{"at": "2026-11-10T07:00:00.000Z", "item": "trait-memory", "number": 4, "step": "4. [auto] PR4 회차 추이 API (계획: …)", "dispatch": "ctx_…"}
+{"at": "2026-11-10T07:00:00.000Z", "item": "trait-memory", "number": 4, "step": "4. [auto] PR4 회차 추이 API (계획: …)", "dispatch": "ctx_…", "branch": "feat/x-pr4"}
 ```
 
-- `step` 은 꼬리표를 뗀 단계 글이다(위 「단계 글을 비교할 때」).
+- `step` 은 꼬리표를 뗀 단계 글이다(위 「단계 글을 비교할 때」). `branch` 는 띄운 worker 의 브랜치이고 모르면 `null` 이다.
+- `dispatch` 와 `branch` 는 「그 단계가 진행 중인가」 를 볼 때도 쓴다. 보드 잇기가 실패해 항목의 worktree·branch 필드가 비어 있어도, 띄운 dispatch 가 열려 있거나 그 브랜치에 열린 PR 이 있으면 진행 중이다.
 - 보드에 항목을 잇는 쓰기(`registerBoard`)와 따로 한다. 그 쓰기가 잠금을 못 잡아 실패해도 기록은 남긴다. 실패하면 「한 번만」 과 멈춤 알림을 함께 잃기 때문이다.
 - 덧붙이기만 한다. 한 줄이 짧아 겹쳐 써도 줄이 섞이지 않는다.
 - 읽는 쪽은 `auto-check`(이미 띄웠는지)와 멈춘 단계 판정(스펙 REQ5)이다.
@@ -260,19 +261,30 @@ worker 를 띄우는 두 곳(`launch-worker.ts`, 후속 지시서를 보내는 `
 
 ### 멈춘 단계 판정의 변화(PR B)
 
-`stalledStages` 는 지금 조건(상태 doing, worktree 나 branch 필드 있음, 살아 있는 worker 없음, 최근 파일 변화 없음)과 지금의 `pendingStep` 을 그대로 두고, lib 이 넘긴 「그 항목의 첫 미완료 단계 표시」 에 따라 아래만 더한다.
+`stalledStages` 가 항목을 보는 길이 둘로 나뉜다. lib 이 항목마다 「첫 미완료 단계의 표시」 와 「그 단계의 띄운 기록」 을 넘긴다.
+
+**길 1. 표시 없는 줄(지금 규칙 그대로)**: 상태 doing, worktree 나 branch 필드 있음, 살아 있는 worker 없음, 최근 파일 변화 없음. 단계 글은 지금의 `pendingStep` 이다. 아래 표에서 「표시 없는 줄로 본다」 는 이 길이다.
+
+**길 2. 띄운 기록이 있는 `[auto]` 단계(스펙 REQ5)**: 길 1 의 상태와 필드 조건을 쓰지 않는다. 그 조건을 그대로 쓰면 알림이 빠지는 경우가 둘 있다. 띄울 때 보드 잇기(`registerBoard`)가 잠금을 못 잡아 worktree·branch 필드가 빈 항목과, 상태가 wait 인 항목이다. 길 2 의 조건은 아래다.
+
+- 상태가 doing 이나 wait 다(루프가 표시를 읽는 범위와 같다. 스펙 REQ4). worktree·branch 필드가 비어 있어도 본다.
+- 그 단계가 진행 중이 아니다(`itemBusy` 가 거짓). 띄운 기록의 dispatch 가 열려 있지 않고, 항목 필드로 찾은 worker 도 없고, 항목의 `pr` 필드나 항목·띄운 기록의 브랜치에 열린 PR 이 없다.
+- 열린 PR 목록을 모르면 판단하지 않는다.
+- 워크트리 경로를 아는 항목은 길 1 처럼 최근 파일 변화도 본다. 모르면 보지 않는다.
+
+이 상태가 `pipeline.idle_min` 분 이어지면 `STAGE-STALLED` 를 한 번 보낸다. 알림 글과 기록(`movement.json` 의 `stages`)은 지금 꼴 그대로이고, 글의 worktree 자리는 필드가 비었으면 `-` 다.
 
 | 표시 | `auto_advance` 켜짐 | `auto_advance` 꺼짐 |
 | --- | --- | --- |
-| 없음 | 지금과 같다 | 지금과 같다 |
+| 없음 | 길 1 | 길 1 |
 | `[wait]` | 건너뛴다 | 건너뛴다 |
-| `[ask]` | 건너뛴다 | 표시 없는 줄로 본다 |
-| `[auto]`, 띄운 기록 없음 | 건너뛴다 | 표시 없는 줄로 본다 |
-| `[auto]`, 띄운 기록 있음 | 열린 PR 이 없다고 확인됐을 때만 표시 없는 줄로 본다 | 표시 없는 줄로 본다 |
+| `[ask]` | 건너뛴다 | 표시 없는 줄로 본다(길 1) |
+| `[auto]`, 띄운 기록 없음 | 건너뛴다 | 표시 없는 줄로 본다(길 1) |
+| `[auto]`, 띄운 기록 있음 | 길 2 | 표시 없는 줄로 본다(길 1) |
 
-- `stalledStages` 에 항목마다의 `{ mark, launched, openPr }` 를 주는 인자를 더한다. `openPr` 은 `true`, `false`, 모름 셋이다.
-- 읽기는 `lib/movement.ts` 의 `collectStages` 가 한다. 설정과 띄운 기록은 스스로 읽고, 열린 PR 목록은 인자로 받는다.
-- 부르는 쪽 셋: 루프의 움직임 확인(`loop/steps/movement.ts`)은 그 틱의 열린 PR 목록을 넘긴다. `orch loop stalled`(`loop/stalled-workers.ts`)와 `orch status`(`status/orch-status.ts`)는 PR 목록이 없어 넘기지 않는다. 그러면 띄운 `[auto]` 단계는 「모름」 이라 멈춘 단계로 보이지 않는다. 모르는 것을 멈춤으로 알리지 않는 지금 원칙과 같다.
+- `stalledStages` 에 항목마다의 `{ mark, launches, openPrs }` 를 주는 인자를 더한다. `launches` 는 그 단계의 띄운 기록(dispatch 와 브랜치), `openPrs` 는 열린 PR 목록이거나 모름이다.
+- 읽기는 `lib/movement.ts` 의 `collectStages` 가 한다. 설정과 띄운 기록은 스스로 읽고, 열린 PR 목록과 열린 dispatch 목록은 인자로 받는다.
+- 부르는 쪽 셋: 루프의 움직임 확인(`loop/steps/movement.ts`)은 그 틱의 열린 PR 목록과 열린 dispatch 를 넘긴다. `orch loop stalled`(`loop/stalled-workers.ts`)와 `orch status`(`status/orch-status.ts`)는 PR 목록이 없어 넘기지 않는다. 그러면 길 2 는 「모름」 이라 멈춘 단계로 보이지 않는다. 모르는 것을 멈춤으로 알리지 않는 지금 원칙과 같다.
 - 보드 창의 worker 줄 표시(`extensions/work-board/bin/worker-marks.ts`)는 `judgeWorker` 만 써서 바뀌지 않는다.
 
 ### 시각 wait(PR B)
@@ -335,7 +347,7 @@ PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). gh pr view 로 확인한다. 지
 | REQ1 | `step-marks.js` 단위 테스트(work-board 테스트 폴더). 표시 넷, 모르는 표시, 줄 끝 꼬리표와 함께 쓴 줄, 앞 완료 표시가 붙은 옛 줄 |
 | REQ2, REQ3 | 근거 괄호가 든 `[auto]` 줄이 그 PR 의 머지 반영에서 끝나지 않는지 보는 `board-sync.spec.ts`, `finish-pr.spec.ts` 사례. `core/auto-advance.ts` 순수 테스트(근거 꼴, 앞 사건 판정, 진행 중 판정, 거절 순서)와 `orch board auto-check` 를 임시 저장소, 임시 보드, 가짜 `orca`·`gh` 로 돌리는 테스트(스펙 확인 줄, 절대경로와 상대경로, 종료 코드) |
 | REQ4 | `core/step-ready.ts` 순수 테스트와, 가짜 `orca`·`gh` 로 틱 한 번을 돌리는 루프 테스트(지금 `orch-loop-*.spec.ts` 방식). 한 번만 옴, 글이 바뀌면 다시 옴, 꼬리표만 붙으면 다시 안 옴, worker·PR 이 있으면 `[auto]` 는 안 옴, `[ask]` 는 옴, 루프를 다시 띄운 뒤 안 옴 |
-| REQ5 | `lib-movement.spec.ts` 에 표의 다섯 줄과 「열린 PR 모름」 사례. 번호 없는 참고 줄이 단계 앞에 있는 `[wait]` 항목이 알림을 받지 않는 사례 |
+| REQ5 | `lib-movement.spec.ts` 에 표의 다섯 줄과 「열린 PR 모름」 사례. 번호 없는 참고 줄이 단계 앞에 있는 `[wait]` 항목이 알림을 받지 않는 사례. 길 2 의 두 사례: 보드 잇기가 실패해 worktree·branch 필드가 빈 항목과 상태가 wait 인 항목이, 띄운 worker 가 끝난 뒤 30분에 `STAGE-STALLED` 를 받는다. 루프 테스트로도 한 번 본다 |
 | REQ6 | `board-sync.spec.ts` 에 지난 시각, 안 지난 시각, 꼴이 틀린 시각, wait 상태 항목. 같은 틱에 다음 `[auto]` 가 알려지는지는 루프 테스트 |
 | REQ7, REQ8 | 문서에 규칙 낱말이 있는지 보는 문서 테스트(`docs-contract.spec.ts` 방식). 거절 이유 글은 코드의 상수를 가져와 문서에 모두 있는지 본다 |
 | REQ9 | `auto-check` 테스트(띄운 기록이 있으면 거절, 한도 30분 안이면 거절)와 루프 테스트(한도 30분 뒤 한 번 더, 그 뒤 처음 알린 단계는 다시 안 옴) |

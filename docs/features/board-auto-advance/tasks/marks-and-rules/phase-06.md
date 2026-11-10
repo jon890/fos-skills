@@ -99,7 +99,7 @@
 ### 5. 설정, 상태 파일, 명령 계약 표
 
 - `docs/data-schema.md` 「config.json 에 더하는 절」 표에 `board` `auto_advance` 행: 값 「`true` 나 `false`. 아니면 설정 오류다」, 기본 `true`, 뜻 「`false` 면 `orch board auto-check` 가 거절해 코디네이터가 다음 단계를 자동으로 띄우지 않는다」.
-- `docs/data-schema.md` 「orch 루트에 더하는 파일」 표에 `state/step-launches.jsonl` 행: 한 줄의 필드(`at`, `item`, `number`, `step`, `dispatch`), 쓰는 쪽(`launch-worker`, `send-to-worker`), 읽는 쪽(`orch board auto-check`), 자동으로 지우지 않는다.
+- `docs/data-schema.md` 「orch 루트에 더하는 파일」 표에 `state/step-launches.jsonl` 행: 한 줄의 필드(`at`, `item`, `number`, `step`, `dispatch`, `branch`), 쓰는 쪽(`launch-worker`, `send-to-worker`), 읽는 쪽(`orch board auto-check`), 자동으로 지우지 않는다.
 - `skills/orch/references/overlay.md` 설정 표의 board 행들 옆에 `auto_advance` 행.
 - `docs/features/orch-cli/spec.md` 「명령 표」 의 `board` 행에 `auto-check <항목>` 과 스크립트 `auto-check` 를 더한다.
 - `docs/features/orch-cli/design.md` 「짧은 출력 (PR2)」 표의 `board goal` 행 뒤에 `board auto-check` 행: 짧은 출력 `AUTO-OK <항목> <번호> <근거>`, `AUTO-REJECT <항목> <번호 또는 -> <이유>`, 읽는 쪽 `references/replying.md`.
