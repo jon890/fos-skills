@@ -7,7 +7,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
-import { allWorkers, blocker, cached, rowHandles } from '../scripts/lib/ownership.ts'
+import { allWorkers, blocker, cached, rowHandles, workerSnapshot } from '../scripts/lib/ownership.ts'
+import { WorkerRunCache } from '../scripts/lib/worker-run-cache.ts'
 import type { WorkerRow } from '../scripts/lib/ownership.ts'
 
 const KEPT = '사용자 보유 터미널'
@@ -24,9 +25,10 @@ beforeEach(() => {
   delete process.env.ORCA_TERMINAL_HANDLE
   orca = fakeBin(tmp, 'orca', [])
   process.env.ORCA = orca.path
+  process.env.ORCH_MACHINE_DIR = join(tmp, 'machine')
 })
 
-afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => { delete process.env.ORCH_MACHINE_DIR; rmSync(tmp, { recursive: true, force: true }) })
 
 const ok = (result: unknown) => JSON.stringify({ result })
 
@@ -97,7 +99,7 @@ describe('blocker', () => {
     test(`관리되지 않는 터미널은 모든 Run 을 읽은 뒤 허락한다: scope ${scope}`, async () => {
       orca.setRules(orcaRules([{ handle: 't', worktreePath: wt }], { run_a: [row('x')], run_b: [row('y', 'owned', 'run_b')] }, { scope }))
       assert.equal(await blocker(wt), '')
-      assert.equal(calls('run-list').length, scope === 'bound' ? 2 : 0, 'run-list 를 부른 횟수')
+      assert.equal(calls('run-list').length, 2, 'run-list 를 부른 횟수')
     })
   }
 
@@ -177,15 +179,18 @@ describe('cached', () => {
     const workers = cached(allWorkers)
     assert.equal(await blocker(join(tmp, 'wt1'), new Set(), workers), '')
     assert.equal(await blocker(join(tmp, 'wt2'), new Set(), workers), '')
-    // 범위 없는 조회 한 번과 Run 마다 --run 한 번
-    assert.equal(calls('worker-list').length, 3, 'worker-list 를 부른 횟수')
+    // Run 마다 --run 한 번
+    assert.equal(calls('worker-list').length, 2, 'worker-list 를 부른 횟수')
   })
 
-  test('실패를 기억하고 다시 읽지 않는다', async () => {
+  test('실패 뒤 다음 호출이 다시 읽고 성공한 목록은 재사용한다', async () => {
     orca.setRules(orcaRules([{ handle: 't', worktreePath: wt }], { run_a: [row('x')] }, { failRun: 'run_a' }))
     const workers = cached(allWorkers)
-    for (let i = 0; i < 2; i++) assert.equal(await blocker(wt, new Set(), workers), FAILED)
-    assert.equal(calls('--run').length, 1, '--run 조회 횟수')
+    assert.equal(await blocker(wt, new Set(), workers), FAILED)
+    orca.setRules(orcaRules([{ handle: 't', worktreePath: wt }], { run_a: [row('t')] }))
+    assert.equal(await blocker(wt, new Set(), workers), '')
+    assert.equal(await blocker(wt, new Set(), workers), '')
+    assert.equal(calls('--run').length, 2, '--run 조회 횟수')
   })
 
   test('maxAge 가 지나면 다시 읽는다', async () => {
@@ -214,5 +219,91 @@ describe('rowHandles', () => {
     assert.deepEqual(rowHandles({ agentTerminalHandle: 'a', resource: { terminalHandle: 'b' } }), new Set(['b', 'a']))
     assert.deepEqual(rowHandles({ agentTerminalHandle: 'a', resource: { terminalHandle: 'a' } }), new Set(['a']))
     assert.deepEqual(rowHandles({ agentTerminalHandle: '', resource: null }), new Set())
+  })
+})
+
+describe('실행 단위 스냅샷과 끝난 Run 캐시', () => {
+  const old = '2000-01-01T00:00:00Z'
+  const finished = (handle: string, run = 'run_a'): WorkerRow => ({
+    ...row(handle, 'owned', run), dispatchStatus: 'completed', workerState: 'succeeded',
+  })
+
+  test('60초가 지나고 동시에 다시 불러도 전체 목록은 실행 중 한 번만 읽는다', async (t) => {
+    let count = 0
+    const workers = cached(async () => { count++; return [row('t')] })
+    let now = 0
+    t.mock.method(performance, 'now', () => now)
+    await Promise.all([workers(), workers()])
+    now = 120_000
+    await workers()
+    assert.equal(count, 1)
+  })
+
+  test('오래된 Run 은 모든 dispatch 가 끝났을 때만 저장하고 살아 있는 handle 은 다시 읽는다', () => {
+    const cache = new WorkerRunCache()
+    const run = { id: 'run_a', updated_at: old }
+    const rows = [finished('agent'), { ...finished('other'), resource: { terminalHandle: 'resource' } }]
+    cache.remember(run, rows)
+    assert.deepEqual(cache.read(run, new Set()), rows)
+    for (const handle of ['agent', 'resource']) assert.equal(cache.read(run, new Set([handle])), null)
+    assert.equal(cache.read({ ...run, updated_at: '2001-01-01T00:00:00Z' }, new Set()), null)
+    for (const bad of [row('active'), { ...finished('ready'), workerState: 'ready' }]) {
+      const other = { id: String(bad.agentTerminalHandle ?? 'unknown'), updated_at: old }
+      cache.remember(other, [bad])
+      assert.equal(cache.read(other, new Set()), null)
+    }
+    const abandoned = { id: 'run_abandoned', updated_at: old }
+    const abandonedRows = [{ ...finished('gone'), dispatchStatus: 'abandoned', workerState: 'abandoned' }]
+    cache.remember(abandoned, abandonedRows)
+    assert.deepEqual(cache.read(abandoned, new Set()), abandonedRows)
+    for (const updated_at of [undefined, 'bad', new Date().toISOString()]) {
+      const other = { id: 'recent', updated_at }
+      cache.remember(other, rows)
+      assert.equal(cache.read(other, new Set()), null)
+    }
+  })
+
+  test('캐시한 끝난 Run 을 다음 전체 조회에서 건너뛰고 넘겨받은 터미널이 살아나면 새로 읽어 막는다', async () => {
+    const rules = (terminals: unknown[], state = 'owned'): FakeRule[] => [
+      { args: ['terminal', 'list'], stdout: ok({ terminals }) },
+      { args: ['run-list'], stdout: ok({ runs: [{ id: 'run_a', updated_at: old }] }) },
+      { args: ['worker-list', '--run', 'run_a'], stdout: ok({ scope: { source: 'flag' }, workers: [
+        { ...finished('t'), resource: { terminalHandle: 't', ownershipState: state } },
+      ] }) },
+      { args: ['worker-list'], stdout: ok({ scope: { source: 'bound' }, workers: [] }) },
+    ]
+    orca.setRules(rules([]))
+    await allWorkers()
+    await allWorkers()
+    assert.equal(calls('--run').length, 1)
+    orca.setRules(rules([{ handle: 't', worktreePath: wt }], 'user_owned'))
+    assert.equal(await blocker(wt), KEPT)
+    assert.equal(calls('--run').length, 2)
+  })
+
+  test('삭제 직전에는 해당 경로와 새로 생기거나 갱신된 Run 만 다시 읽어 넘겨받기를 찾는다', async () => {
+    const info = (id: string, updated_at = old) => ({ id, updated_at })
+    const rows = (run: string, path: string, state = 'owned') => [{ ...finished(run, run), resource: {
+      terminalHandle: run, ownershipState: state, worktreeId: `repo::${path}`,
+    } }]
+    const rules = (changed: boolean): FakeRule[] => [
+      { args: ['terminal', 'list'], stdout: ok({ terminals: [{ handle: 'run_a', worktreePath: wt }] }) },
+      { args: ['run-list'], stdout: ok({ runs: [info('run_a'), info('run_b'), info('run_changed', changed ? '2001-01-01T00:00:00Z' : old), ...(changed ? [info('run_new')] : [])] }) },
+      ...['run_a', 'run_b', 'run_changed', 'run_new'].map((id) => ({ args: ['worker-list', '--run', id], stdout: ok({
+        scope: { source: 'flag' }, workers: rows(id, id === 'run_a' ? wt : `${wt}-other`, changed ? 'user_owned' : 'owned'),
+      }) })),
+      { args: ['worker-list'], stdout: ok({ scope: { source: 'bound' }, workers: [] }) },
+    ]
+    orca.setRules(rules(false))
+    const snapshot = workerSnapshot()
+    snapshot.seedRun('run_b', rows('run_b', `${wt}-other`))
+    await snapshot.all()
+    await snapshot.all()
+    assert.equal(calls('--run').filter((c) => c.argv.includes('run_b')).length, 0, '이미 읽은 이 Run 은 되풀이하지 않는다')
+    const before = calls('--run').length
+    orca.setRules(rules(true))
+    assert.equal(await blocker(wt, new Set(), () => snapshot.forWorktree(wt)), KEPT)
+    const again = calls('--run').slice(before).map((c) => c.argv[c.argv.indexOf('--run') + 1]).sort()
+    assert.deepEqual(again, ['run_a', 'run_changed', 'run_new'])
   })
 })

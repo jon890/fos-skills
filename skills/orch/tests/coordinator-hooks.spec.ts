@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { WorkerRunCache } from '../scripts/lib/worker-run-cache.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
@@ -354,6 +355,7 @@ describe('block-worker-terminal-send', () => {
         const v = verdict(HOOK, 'orca terminal send --terminal term_x --text x', sendEnv(orca.bin, { ORCH_SEND_HOOK_BUDGET_MS: '500' }))
         assert.equal(v.decision, 'deny', `ignoreTerm=${ignoreTerm}`)
         assert.match(v.reason, /시간 초과/)
+        assert.match(v.reason, /찾은 Run \d+개, 남은 Run \d+개/)
         assert.match(v.reason, /조회 \d+회, 완료 \d+회, 마지막 orca orchestration worker-list/)
         assert.match(v.reason, /orch worker adopt/)
         // 한도 500ms 에 node 기동을 더해도 5초에 못 미친다. 잠든 자식이나 KILL 유예(10초)를 기다리면 넘는다
@@ -397,7 +399,7 @@ describe('block-worker-terminal-send', () => {
     const first = argvs(fake).length
     assert.ok(argvs(fake).some((a) => a.includes('run-list')), argvs(fake).join('\n'))
     assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text y', env), 'pass')
-    assert.deepEqual(argvs(fake).slice(first).map((a) => /--terminal-state (\S+)/.exec(a)?.[1] ?? a), ['active', 'terminal show --terminal term_demo --json'])
+    assert.deepEqual(argvs(fake).slice(first).map((a) => /--terminal-state (\S+)/.exec(a)?.[1] ?? a), ['active'])
     // 그사이 worker 가 되면 active 에서 찾아 거부한다
     fake.setRules([{ args: ['worker-list', '--terminal-state', 'active'], stdout: workerList([{ handle: 'term_demo', dispatch: 'ctx_new' }], 'bound') }])
     assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text z', env), 'deny')
@@ -410,6 +412,40 @@ describe('block-worker-terminal-send', () => {
     const before = argvs(fake).length
     assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text w', { ...env, ORCH_SEND_HOOK_CACHE_SEC: '0' }), 'pass')
     assert.ok(argvs(fake).slice(before).some((a) => a.includes('run-list')), argvs(fake).join('\n'))
+  })
+
+  test('공유 캐시의 끝난 Run 은 건너뛰되 넘겨받은 대상 handle 이 있으면 새로 읽어 거부한다', () => {
+    const old = '2000-01-01T00:00:00Z'
+    const fake = fakeOrca([
+      { args: ['terminal', 'show'], stdout: terminalShow('claude') },
+      { args: ['run-list'], stdout: envelope({ runs: [{ id: 'run_old', updated_at: old }, { id: 'run_target', updated_at: old }] }) },
+      { args: ['worker-list', '--run', 'run_old'], code: 1 },
+      { args: ['worker-list', '--run', 'run_target'], stdout: workerList([{ handle: 'term_taken', dispatch: 'ctx_taken' }], 'flag') },
+      { args: ['worker-list'], stdout: workerList([], 'bound') },
+    ])
+    const env = sendEnv(fake.path)
+    const previous = { ORCA: process.env.ORCA, ORCH_MACHINE_DIR: process.env.ORCH_MACHINE_DIR }
+    try {
+      process.env.ORCA = fake.path
+      process.env.ORCH_MACHINE_DIR = env.ORCH_MACHINE_DIR
+      const cache = new WorkerRunCache()
+      for (const [id, handle] of [['run_old', 'term_closed'], ['run_target', 'term_taken']]) cache.remember(
+        { id, updated_at: old }, [{ agentTerminalHandle: handle, dispatchStatus: 'completed', workerState: 'succeeded' }],
+      )
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+    const v = verdict(HOOK, 'orca terminal send --terminal term_taken --text resume', env)
+    assert.equal(v.decision, 'deny')
+    assert.match(v.reason, /worker 터미널\(term_taken\)/)
+    assert.ok(!argvs(fake).some((a) => a.includes('--run run_old')))
+    assert.ok(argvs(fake).some((a) => a.includes('--run run_target')))
+    const before = argvs(fake).length
+    assert.equal(decide(HOOK, 'orca terminal send --terminal term_unrelated --text x', env), 'pass')
+    assert.ok(!argvs(fake).slice(before).some((a) => a.includes('--run ')))
   })
 
   test('resource 에만 남은 터미널 handle 도 worker 로 판정한다', () => {

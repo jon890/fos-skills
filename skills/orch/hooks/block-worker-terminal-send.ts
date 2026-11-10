@@ -15,22 +15,23 @@
 //     조회는 `worker-list ... --limit 100` 을 page.nextCursor 끝까지 읽는다. 행의 agentTerminalHandle(없으면 resource.terminalHandle)이
 //     대상이면 worker 이고, 그 행의 dispatchId 로 첫 화면을 본다.
 //     1. `worker-list --terminal-state active` 를 읽는다. 일하는 worker 와 막 띄운 worker 는 모두 여기 있다
-//     2. 없으면 `orca terminal show --terminal <대상>` 의 agentIdentity 를 본다. 비어 있으면(에이전트가 돌지 않는 셸) worker 가 아니다.
+//     2. send-hook-cache.json 에 기한 안의 기록이 있으면 terminal show 와 Run 조회를 건너뛴다. active 는 늘 먼저 읽는다.
+//        기록이 없으면 `orca terminal show --terminal <대상>` 의 agentIdentity 를 본다. 비어 있으면(에이전트가 돌지 않는 셸) worker 가 아니다.
 //        막 띄워 에이전트를 아직 알아보지 못한 worker 는 1단계가 찾았다
-//     3. 에이전트 터미널이 아래 「판정 기억」 에 worker 가 아니라고 남아 있으면 worker 가 아니다
-//     4. 남은 터미널 상태(LIVE_STATES: reclaimable, release_unknown, release_pending, retained)를 동시에 읽는다.
+//     3. 남은 터미널 상태(LIVE_STATES: reclaimable, release_unknown, release_pending, retained)를 동시에 읽는다.
 //        끝난 dispatch 가 남긴 살아 있는 터미널이 여기 있다. released 는 읽지 않는다. 터미널을 돌려준 행이라 지금 보내는 터미널의 행일 수 없다
 //        (2026-11-04 실측: released 2243행 가운데 살아 있는 터미널 0)
-//     5. 없고 1단계 응답의 scope.source 가 all 이면 worker 가 아니다
-//     6. all 이 아니면(묶인 Run 만 봤다) `run-list --limit 100` 을 result.nextCursor 끝까지 읽어 updated_at 이 최근인 순서로 놓고,
+//     4. 없고 1단계 응답의 scope.source 가 all 이면 worker 가 아니다
+//     5. all 이 아니면(묶인 Run 만 봤다) `run-list --limit 100` 을 result.nextCursor 끝까지 읽어 updated_at 이 최근인 순서로 놓고,
 //        Run 마다 `worker-list --run <id> --limit 100` 을 읽는다. 동시 16개까지 부르고, 대상을 모두 찾으면 남은 호출을 기다리지 않는다.
-//        모두 읽고도 없으면 worker 가 아니다
+//        모두 읽고도 없으면 worker 가 아니다. lib/worker-run-cache.ts 의 끝난 Run 캐시를 함께 쓴다.
+//        대상 handle 이 캐시에 있으면 건너뛰지 않고 새로 읽으므로 넘겨받은 터미널도 찾는다
 //     상태 없이 모든 행을 읽던 때는 4천여 행 45쪽이 7초 한도를 넘어, worker 가 아닌 터미널로 보내도 10번 중 6~7번 거부됐다(2026-11-02).
 //     active 만 읽으면 끝난 dispatch 의 살아 있는 터미널을 놓친다. 끝난 dispatch 도 식별해 직접 입력을 막고 adopt-sessions 로 새 dispatch 에
 //     연결하도록 안내한다.
 //
-// 판정 기억: 4~6단계로 worker 가 아니라고 정한 에이전트 터미널은 머신 폴더(lib/machine.ts)의 send-hook-cache.json 에
-//     {handle: 정한 epoch ms} 로 남긴다. ORCH_SEND_HOOK_CACHE_SEC(기본 600)초 안에는 4~6단계를 건너뛴다. 1단계는 늘 읽으므로
+// 판정 기억: 3~5단계로 worker 가 아니라고 정한 에이전트 터미널은 머신 폴더(lib/machine.ts)의 send-hook-cache.json 에
+//     {handle: 정한 epoch ms} 로 남긴다. ORCH_SEND_HOOK_CACHE_SEC(기본 600)초 안에는 3~5단계를 건너뛴다. 1단계는 늘 읽으므로
 //     그사이 새 dispatch 가 그 터미널을 쓰면 찾는다. 읽지 못하거나 쓰지 못하면 기억 없이 판정한다. 시간 초과로 끝난 판정은 남기지 않는다
 //
 // 조회 실패와 시간 한도:
@@ -38,11 +39,11 @@
 //       꼴이 아니면 조회 실패로 거부한다
 //     - orca 호출은 모두 합쳐 hook 시작부터 7초 안에 끝낸다. 호출마다 남은 시간을 넘기고, 남은 시간이 없으면 부르지 않고 거부한다.
 //       hooks.json 의 timeout 이 10초이고, hook 이 시간을 넘겨 죽으면 Claude Code 는 막지 않고 명령을 실행하기 때문이다.
-//       Run 이 늘어 4~6단계가 한도를 넘으면 거부된다. fail-closed 의 의도된 비용이다
+//       Run 이 늘어 3~5단계가 한도를 넘으면 거부된다. fail-closed 의 의도된 비용이다
 //     - 조회는 runAsync 로만 한다. 동기 실행은 TERM 을 무시하는 자식이 끝날 때까지 돌아오지 않는다.
 //       판정을 낸 뒤 process.exit 로 끝내 아직 도는 조회가 hook 을 붙잡지 않게 한다
 //     - ORCH_SEND_HOOK_BUDGET_MS 는 7초 한도를 바꾼다. 테스트만 쓴다
-//     - 4단계의 상태별 조회는 동시에 돈다. 하나라도 실패하면 조회 실패다
+//     - 3단계의 상태별 조회는 동시에 돈다. 하나라도 실패하면 조회 실패다
 //     - ORCA_TERMINAL_HANDLE 은 빼지 않는다. 빼도 worker-list 의 범위가 넓어지지 않는다(lib/orca.ts 머리 주석)
 //
 // 오탐을 피하는 기준:
@@ -61,6 +62,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { WorkerRunCache, type RunInfo } from '../scripts/lib/worker-run-cache.ts'
 import { machineDir } from '../scripts/lib/machine.ts'
 import { orcaBin, withFull } from '../scripts/lib/orca.ts'
 import { runAsync } from '../scripts/lib/proc.ts'
@@ -77,7 +79,7 @@ const ENTER_FLAG = /--enter\b/
 // Orca 가 첫 화면에서 사람을 기다린다고 알리는 이름. 사용자가 답할 화면이라 키 입력만 허용한다
 const FIRST_SCREEN = /agent-(?:trust-workspace|update-prompt|cwd-prompt|hooks-review-prompt)/
 
-// 4단계에서 동시에 읽는 터미널 상태. active 는 1단계가 먼저 읽는다
+// 3단계에서 동시에 읽는 터미널 상태. active 는 1단계가 먼저 읽는다
 const LIVE_STATES = ['reclaimable', 'release_unknown', 'release_pending', 'retained']
 
 const DEFAULT_BUDGET_MS = 7_000
@@ -104,7 +106,7 @@ const REASON = {
     'orch: `--environment` 나 `--pairing-code` 로 원격 서버의 터미널에 보내는 `orca terminal send` 는 ' +
     `이 hook 이 worker 터미널인지 확인할 수 없다. worker 면 ${SEND_TO_WORKER} 아니면 그 서버의 셸에서 보낸다.`,
   failed: (why: string) => `orch: worker 터미널인지 확인하는 orca 조회가 실패했다: ${why}. ${RESEND}`,
-  timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과, 경과 ${Date.now() - startedAt}ms, 조회 ${queries}회, 완료 ${completed}회, 마지막 ${lastQuery}). \`orch worker adopt\` 로 연결 상태를 먼저 확인한다. ${RESEND}`,
+  timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과, 경과 ${Date.now() - startedAt}ms, 조회 ${queries}회, 완료 ${completed}회, 마지막 ${lastQuery}, 찾은 Run ${runTotal}개, 남은 Run ${runTotal - runsRead}개). \`orch worker adopt\` 로 연결 상태를 먼저 확인한다. ${RESEND}`,
   unexpected: (why: string) => `orch: worker 터미널인지 판정하다 예상 밖 오류가 났다: ${why}. ${RESEND}`,
 }
 
@@ -157,6 +159,8 @@ const TIMEOUT = Symbol('timeout')
 let queries = 0
 let completed = 0
 let lastQuery = '-'
+let runTotal = 0
+let runsRead = 0
 
 // orca 를 한 번 부르고 봉투의 result 객체를 낸다. 남은 시간이 없거나 넘기면 시간 초과, 그 밖의 문제는 조회 실패다.
 async function orcaResult(args: string[]): Promise<Record<string, unknown>> {
@@ -215,6 +219,7 @@ async function scanWorkers(
   wanted: Set<string>,
   found: Map<string, Worker>,
   stop: () => boolean = () => false,
+  collected?: Record<string, unknown>[],
 ): Promise<unknown> {
   let cursor: string | null = null
   let scope: unknown
@@ -222,6 +227,7 @@ async function scanWorkers(
   do {
     if (stop()) return scope
     const page = await workerPage([...base, '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
+    collected?.push(...page.workers)
     if (first) scope = page.scope
     first = false
     for (const w of page.workers) {
@@ -249,22 +255,25 @@ async function hasAgent(handle: string): Promise<boolean> {
 }
 
 // run-list 를 result.nextCursor 끝까지 읽고 updated_at 이 최근인 순서로 Run id 를 낸다.
-async function runIds(): Promise<string[]> {
-  const runs: { id: string; updated: string }[] = []
+async function runIds(): Promise<RunInfo[]> {
+  const runs: RunInfo[] = []
   let cursor: string | null = null
   do {
     const result = await orcaResult(['orchestration', 'run-list', '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
     if (!Array.isArray(result.runs)) throw new LookupFailure('run-list 응답의 result.runs 가 배열이 아니다')
     for (const r of result.runs as { id?: unknown; updated_at?: unknown }[]) {
-      if (typeof r?.id === 'string') runs.push({ id: r.id, updated: typeof r.updated_at === 'string' ? r.updated_at : '' })
+      if (typeof r?.id === 'string') runs.push({ id: r.id, updated_at: r.updated_at })
     }
+    runTotal = runs.length
     cursor = nextCursor(result.nextCursor)
   } while (cursor)
-  return runs.sort((a, b) => (a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : 0)).map((r) => r.id)
+  return runs.sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))
 }
 
 // Run 마다 worker-list --run 을 동시 RUN_CONCURRENCY 개까지 부른다. 대상을 모두 찾거나 하나라도 실패하면 바로 돌아온다.
-function scanRuns(ids: string[], wanted: Set<string>, found: Map<string, Worker>): Promise<void> {
+function scanRuns(ids: RunInfo[], wanted: Set<string>, found: Map<string, Worker>): Promise<void> {
+  runTotal = ids.length
+  const cache = new WorkerRunCache()
   return new Promise((resolve, reject) => {
     let next = 0
     let running = 0
@@ -278,11 +287,18 @@ function scanRuns(ids: string[], wanted: Set<string>, found: Map<string, Worker>
         return
       }
       while (running < RUN_CONCURRENCY && next < ids.length) {
-        const id = ids[next++]
+        const run = ids[next++]
+        if (cache.read(run, wanted) !== null) {
+          runsRead++
+          continue
+        }
         running++
-        scanWorkers(['--run', id], wanted, found, () => settled || allFound()).then(
+        const rows: Record<string, unknown>[] = []
+        scanWorkers(['--run', run.id], wanted, found, () => settled || allFound(), rows).then(
           () => {
             running--
+            runsRead++
+            if (!settled && !allFound()) cache.remember(run, rows)
             launch()
           },
           (err: unknown) => {
@@ -291,6 +307,10 @@ function scanRuns(ids: string[], wanted: Set<string>, found: Map<string, Worker>
             reject(err)
           },
         )
+      }
+      if (next >= ids.length && running === 0) {
+        settled = true
+        resolve()
       }
     }
     launch()
@@ -337,11 +357,13 @@ function rememberNonWorkers(handles: string[]): void {
 async function lookupWorkers(handles: string[]): Promise<Map<string, Worker>> {
   const found = new Map<string, Worker>()
   const scope = await scanWorkers(['--terminal-state', 'active'], new Set(handles), found)
-  const agents: string[] = []
-  for (const handle of handles.filter((h) => !found.has(h))) if (await hasAgent(handle)) agents.push(handle)
   const cache = readCache()
   const now = Date.now()
-  const fresh = agents.filter((h) => cache[h] === undefined || now - cache[h] >= cacheMs())
+  const fresh: string[] = []
+  for (const handle of handles.filter((h) => !found.has(h))) {
+    if (cache[handle] !== undefined && now - cache[handle] < cacheMs()) continue
+    if (await hasAgent(handle)) fresh.push(handle)
+  }
   if (fresh.length === 0) return found
   const wanted = new Set(fresh)
   const allFound = () => fresh.every((h) => found.has(h))

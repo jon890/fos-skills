@@ -234,8 +234,8 @@
 //     터미널은 경로로 찾으므로, 같은 저장소에서 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널도 걸린다.
 //     모든 Run 의 worker 행(lib/ownership.ts 의 allWorkers)에서 terminalState 가 active 인 행을 골라
 //     --run 과 다른 Run 의 worker 가 쥔 터미널이 그 경로에 있으면 그 경로를 통째로 건너뛴다. 그 Run 의 코디네이터가 정리한다.
-//     범위 없는 worker-list 가 부른 터미널에 묶인 Run 만 주면(scope bound, 코디네이터에서 부르면 늘 그렇다)
-//     `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다. 터미널 소유 확인과 같은 행을 쓰고, 읽은 지 60초가 지나면 다시 읽는다.
+//     호출 터미널의 바인딩과 관계없이 `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
+//     터미널 소유 확인과 같은 행을 정리 실행 내내 쓴다. 삭제 직전에는 해당 경로와 새로 갱신된 Run 만 다시 읽는다.
 //     그 조회가 실패하면 이 Run worker 의 터미널만 닫고, 다른 터미널이 있는 경로는 건너뛴다.
 //
 // 남은 프로세스 끄기 (--kill-holders):
@@ -381,7 +381,7 @@ import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from '../lib/gh.ts'
 import { defaultBase } from '../lib/git.ts'
 import { forgetLaunch, launchesAt, readLaunch } from '../lib/launched.ts'
 import { orcaBin, withFull } from '../lib/orca.ts'
-import { allWorkers, blocker as ownershipBlocker, cached, LookupError, rowHandles, runWorkers } from '../lib/ownership.ts'
+import { blocker as ownershipBlocker, workerSnapshot, LookupError, rowHandles, runWorkers } from '../lib/ownership.ts'
 import type { WorkerRow } from '../lib/ownership.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from '../lib/queue-logs.ts'
@@ -437,6 +437,7 @@ type Args = {
   // 다른 Run 의 worker 가 쥔 살아 있는 터미널 handle. --run 이 없거나 모든 Run 을 읽지 못하면 null 이다
   foreign: Set<unknown> | null
   allWorkers: () => Promise<WorkerRow[]>
+  worktreeWorkers: (path: string) => Promise<WorkerRow[]>
   liveSpecs: Set<string> | null
 }
 
@@ -1624,7 +1625,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   if (pids.length && byDone && onlyIdleShells(pids, REAL_HOST)) {
     // worker 를 반납한 뒤나 워크트리를 화면에서 열 때 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 터미널과 worker 를 다시 읽어 그 터미널을 닫는다.
     // 소유 상태는 캐시를 거치지 않고 새로 읽는다. 기다리는 사이 사용자가 넘겨받았을 수 있다
-    const again = await ownershipBlocker(path, taken, allWorkers)
+    const again = await ownershipBlocker(path, taken, () => args.worktreeWorkers(path))
     if (again) return keep(again, `남김: ${again} (${path})`)
     const listed = liveTerminals() ?? []
     const verdict = idleShellVerdict({ path, terminals: listed, holders: holdersOf(path, REAL_HOST), claimed: args.foreign ?? new Set() })
@@ -2082,6 +2083,7 @@ async function executeMain(argv: string[]): Promise<number> {
     return 2
   }
   const specsDir = values['specs-dir'] || null
+  const snapshot = workerSnapshot()
   const args: Args = {
     base: values.base ?? '',
     run,
@@ -2097,13 +2099,15 @@ async function executeMain(argv: string[]): Promise<number> {
     removeTimeoutSec: Number(hookWait) + 60,
     foreign: null,
     // 정리 한 번 안에서 모든 Run 의 소유 상태를 한 번만 읽는다. 소유 확인과 다른 Run 판정이 같은 행을 쓴다
-    allWorkers: cached(allWorkers),
+    allWorkers: snapshot.all,
+    worktreeWorkers: snapshot.forWorktree,
     liveSpecs: new Set(),
   }
   let workers: WorkerRow[] = []
   if (run) {
     try {
       workers = await runWorkers(run)
+      snapshot.seedRun(run, workers)
     } catch (e) {
       if (!(e instanceof LookupError)) throw e
     }
