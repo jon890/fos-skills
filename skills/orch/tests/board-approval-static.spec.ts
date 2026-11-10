@@ -44,6 +44,13 @@ test('승인 기록을 쓰는 길은 한 줄기다: applyPress → recordPress �
   assert.equal(count(register, /\bapprovalArgv\(/g), 2, 'approvalArgv 는 정의 하나와 호출 하나(pressApproval)다')
   const body = register.slice(register.indexOf('async function pressApproval'))
   assert.ok(body.slice(0, body.indexOf('\n}\n')).includes('approvalArgv('), '호출은 pressApproval 안에 있다')
+  // 사람이 누른 이벤트 처리(onPress, onSubmit 의 처리 함수)만 pressApproval 을 부른다
+  const callLines = register.split('\n').filter(line => /\bpressApproval\(/.test(line) && !/async function pressApproval/.test(line))
+  assert.ok(callLines.length >= 1 && callLines.every(line => /pressApproval\(\$, entry, 'approve'|onSubmit:/.test(line)), `pressApproval 호출: ${callLines.join(' | ')}`)
+  const approve = register.slice(register.indexOf('async function approveApproval'))
+  assert.ok(approve.slice(0, approve.indexOf('\n}\n')).includes('pressApproval('), 'approve 호출은 approveApproval 안에 있다')
+  assert.equal(count(register, /\bapproveApproval\(/g), 2, 'approveApproval 은 정의 하나와 버튼 onPress 하나에서만 쓴다')
+  assert.ok(/onPress: \(event\) => \{ void approveApproval\(/.test(register), 'approveApproval 은 버튼 onPress 안에서 부른다')
   assert.ok(!register.includes('$.fs.write'), '창은 승인 파일을 직접 쓰지 않는다')
 })
 test('orch 명령 표에 승인·고쳐 달라를 기록하는 동작이 없다', () => {

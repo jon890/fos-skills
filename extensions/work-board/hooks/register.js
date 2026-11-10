@@ -93,7 +93,9 @@ const QUESTION_HISTORY_LIMIT = 100 // Orca check --all/--peek 의 고정 상한
 const REPLY_LIMIT = 200
 const SELF_LIVE_MS = 60000 // 승인 대기가 있을 때 worker 터미널인지 다시 읽는 주기
 const SELF_TIMEOUT_MS = 40000
-const PRESS_TIMEOUT_MS = 45000
+// press 의 최악 시간: worker 조회 33초 + 잠금 5초 + 신호 보내기 30초(lib/approvals.ts) + 되돌리기 5초에 여유를 더한 값이다.
+// 이보다 짧으면 기록을 쓴 뒤 창이 자식을 끊어 기록만 남는다
+const PRESS_TIMEOUT_MS = 90000
 const REAL_ARM_MS = 10000 // real 대기의 「승인」 을 처음 누른 뒤 다시 눌러야 하는 기한
 const APPROVAL_OLD_MS = 24 * 60 * 60 * 1000
 const APPROVAL_KINDS = { post: '글 등록', spec: '스펙 확인', step: '단계 진행 허락', real: 'real 쓰기', command: '직접 실행' }
@@ -146,6 +148,8 @@ let approvalSelfBusy = false
 let approvalOrigin = 'none' // 마지막 ui.press, ui.input 이벤트의 origin.kind. 나중에 확인할 기록이고 버튼을 막는 조건이 아니다
 let armed = null // real 대기의 「승인」 을 처음 누른 { key, until }
 let reviseKey = '' // 「고쳐 달라」 글칸이 열린 대기의 버튼 키
+let approvalsRoot = '' // 승인 경로를 받은 주 checkout. 세션이 다른 저장소로 옮겨 가면 경로를 다시 받는다
+let approvalSelfFull = false // released 까지 읽은 전체 조회가 한 번 성공했는지. 그 전에는 --live 로 넘어가지 않는다
 let whereSkips = 0 // where 가 실패한 동안 5초마다 다시 부르지 않고 열두 번에 한 번만 부른다
 const pressing = new Set()
 
@@ -1144,8 +1148,9 @@ export function approvalKey(entry, action) {
 // checking(이 창이 누를 수 있는 곳인지 읽는 중). self 는 bin/approvals.ts self 의 결과다. worker 이거나 worker 인지 모르면 guide 다. 숨기는 쪽이 안전하다
 export function approvalControls(entry, self) {
   if (!self || !self.known) return 'checking'
+  if (self.worker !== false) return 'guide'
   if (entry.kind === 'command') return self && self.terminal && self.terminal === entry.terminal ? 'fill' : 'text'
-  return self && self.known && self.worker === false ? 'press' : 'guide'
+  return 'press'
 }
 
 // 창 전용 스크립트 press 를 부르는 인자. 글은 --note=<글> 한 낱말이라 - 로 시작해도 옵션으로 읽히지 않는다
@@ -1514,6 +1519,11 @@ export async function updatePlugin($, install = plugin.install) {
 // 못 받으면 상자를 그리지 않는다. force 는 /board 를 열 때 경로를 다시 받는다
 async function loadApprovals($, force = false) {
   const root = await boardRoot($)
+  if (root !== approvalsRoot) {
+    approvalsRoot = root
+    approvals = { open: [], error: '', path: '' }
+    reviseKey = ''
+  }
   if (root && !approvals.path && !force) whereSkips++
   if (root && (force || (!approvals.path && whereSkips % 12 === 1))) {
     try {
@@ -1541,9 +1551,12 @@ async function loadApprovals($, force = false) {
 async function loadApprovalSelf($, live) {
   if (approvalSelfBusy) return
   approvalSelfBusy = true
+  // 전체 조회(released 포함)가 한 번 성공하기 전에 --live 로 넘어가면 끝난 worker 터미널이 worker 가 아닌 것으로 읽힌다
+  const useLive = live && approvalSelfFull
   try {
     const value = JSON.parse(await run($, ['node', '--disable-warning=ExperimentalWarning',
-      $.plugin.root + '/extensions/work-board/bin/approvals.ts', 'self', ...(live ? ['--live'] : [])], SELF_TIMEOUT_MS))
+      $.plugin.root + '/extensions/work-board/bin/approvals.ts', 'self', ...(useLive ? ['--live'] : [])], SELF_TIMEOUT_MS))
+    if (!useLive && typeof value.worker === 'boolean') approvalSelfFull = true
     const worker = approvalSelf.worker === true || value.worker === true ? true : value.worker === false ? false : null
     approvalSelf = { known: true, terminal: typeof value.terminal === 'string' ? value.terminal : null, worker }
   } catch {

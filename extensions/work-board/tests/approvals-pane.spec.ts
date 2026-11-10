@@ -47,6 +47,8 @@ test('approvalControls: worker 가 아닌 창만 press, worker 이거나 모르�
   assert.equal(approvalControls(entry({ kind: 'real' }), { known: true, terminal: null, worker: false }), 'press')
   const command = entry({ kind: 'command', terminal: 'term_c' })
   assert.equal(approvalControls(command, { known: true, terminal: 'term_c', worker: false }), 'fill')
+  assert.equal(approvalControls(command, { known: true, terminal: 'term_c', worker: true }), 'guide')
+  assert.equal(approvalControls(command, { known: true, terminal: 'term_c', worker: null }), 'guide')
   assert.equal(approvalControls(command, { known: true, terminal: 'term_other', worker: false }), 'text')
   assert.equal(approvalControls(command, { known: true, terminal: null, worker: false }), 'text')
   assert.equal(approvalControls(command, { known: false, terminal: null, worker: null }), 'checking')

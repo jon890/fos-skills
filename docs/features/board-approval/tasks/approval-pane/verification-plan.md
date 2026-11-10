@@ -22,5 +22,8 @@
 | REQ8 | `real` 대기를 가짜 파일로 줌 | `approvals-pane.test.ts` | 대상 환경, 바꿀 것, 되돌리는 법이 빨강으로 보이고 첫 누름에는 `press` 가 불리지 않고 10초 안의 둘째 누름에 불린다. 10초가 지난 뒤 누르면 다시 첫 누름이다 | `claude plugin test .` | worker | 없음 | PR 전 |
 | REQ9 | `command` 대기를 가짜 파일로 줌, `self` 의 터미널을 올린 터미널과 같게/다르게 | `approvals-pane.test.ts` | 같으면 「명령 채우기」 가 `! <명령>` 을 입력란에 채우고 `press` 와 `send` 는 불리지 않는다. 다르면 명령 글만 보이고 버튼이 없다 | `claude plugin test .` | worker | 없음 | PR 전 |
 | REQ9 | 실제 Orca 코디네이터 창 | 코디네이터가 `orch board approval add demo-cmd --title 실측 --kind command --command "echo ok"` 를 올린다. 사용자가 「명령 채우기」 를 누른다 | 입력란에 `! echo ok` 가 채워지고 Orca 메시지는 가지 않는다 | 실제 Orca 코디네이터 세션과 사용자 | 코디네이터 | 없음(위 REQ5 실측과 같은 설치를 쓴다) | PR 전 |
+| REQ6 | 실제 Orca, 다른 워크트리의 Claude Code 에서 연 `/board`(worker 가 아닌 세션) | 위 실측의 열린 대기를 그 창에서 「승인」 한다. 코디네이터가 `check` 를 부른다 | 올린 코디네이터의 `orca orchestration check` 에 `APPROVED <id> <버전>` 이 오고 `check` 가 `APPROVAL-OK` 이다 | 실제 Orca 세션과 사용자 | 코디네이터 | 없음(위 REQ5 실측의 열린 대기를 쓴다) | PR 전 |
+| REQ6 | 실제 Orca, 끝났지만 터미널이 남은 worker 터미널의 Claude Code | 그 터미널에서 `/board` 를 열어 버튼이 그려지는지 본다 | 승인 대기와 안내 줄만 있고 버튼이 없다 | 실제 Orca 세션과 사용자 | 코디네이터 | 없음(위 REQ5 실측의 열린 대기가 있어야 한다) | PR 전 |
+| REQ9 | 실제 Orca 코디네이터 창 | 코디네이터 Claude Code 를 같은 터미널에서 다시 시작하거나 이어 열고 `/board` 를 연다 | 「명령 채우기」 버튼이 보인다 | 실제 Orca 코디네이터 세션과 사용자 | 코디네이터 | 없음(위 REQ9 실측의 `command` 대기가 열려 있어야 한다) | PR 전 |
 
 사용자가 창에서 누르는 항목(REQ5, REQ6, REQ7, REQ9 의 실제 Orca 행)은 PR 직전에 ask 로 코디네이터에게 맡긴다. 코디네이터가 사용자에게 부탁하고 결과를 돌려주면 실측 결과를 PR 본문 근거 블록에 적는다. 실측이 끝나면 코디네이터는 `orch board approval cancel <id>` 로 남은 `demo-*` 대기를 닫는다.
