@@ -4,7 +4,7 @@
   "pr_scope": "orch board approval 의 네 명령과 승인 파일 저장, check 판정, 코디네이터 규칙 문서를 더하고 창은 바꾸지 않는다.",
   "deferred": [
     {
-      "what": "PR2 창: bin/approvals.ts(where, self, press)와 lib/approvals.ts 의 recordPress, register.js 의 승인 대기 상자, 버튼, 글칸, real 두 번 누르기, 명령 채우기, behavior.md",
+      "what": "PR2 창: bin/approvals.ts(where, self, press), core/approvals.ts 의 applyPress·revertPress, lib/approvals.ts 의 recordPress, hooks/block-approval-press.ts, register.js 의 승인 대기 상자, 버튼, 글칸, real 두 번 누르기, 명령 채우기, behavior.md. REQ5~REQ9 와 REQ2(예전 화면 버튼), REQ4(창 코드의 기록 자리 하나)의 남은 인수 조건",
       "why": "스펙 DECISION11 이 창을 둘째 PR 로 나눴다. 창은 실제 Claude Code 실측이 필요하고, PR1 만 머지된 동안 승인 기록을 쓰는 길이 없어야 한다",
       "after": "이 계획의 PR(approval-store)이 머지된 뒤"
     }
