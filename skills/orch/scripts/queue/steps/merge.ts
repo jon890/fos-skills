@@ -83,7 +83,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   if (!p.base) stop(`${n} baseRefName 조회 실패`)
   state.sweepBase = p.base
 
-  const req = requiredChecks(state)
+  const req = requiredChecks(stepContext, state)
   for (const name of o.allowFail) {
     if (req.includes(name)) stop(`${n} --allow-fail 의 ${name} 는 필수 체크다. 필수 체크의 실패는 허용할 수 없다`)
   }
@@ -98,15 +98,15 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   p.beforeHead = null
   p.judgments = 0
   if (state.mode === 'quick') {
-    const clash = overlapsDeferred(state)
+    const clash = overlapsDeferred(stepContext, state)
     if (clash) throw new NotReady(clash)
   }
   await readyToMerge(stepContext, state, prCommand)
 
   // 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
-  const kind = o.docsGlob && docsOnly(state) ? 'docs' : 'code'
+  const kind = o.docsGlob && docsOnly(stepContext, state) ? 'docs' : 'code'
   refuseWhenStopping(n)
-  turn(state, TURN_PHASES.merge)
+  turn(stepContext, state, TURN_PHASES.merge)
   const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
   // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
   const last = chomp(merge.stdout + merge.stderr).split('\n').pop() ?? ''
@@ -125,7 +125,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   state.merged.push([n, kind])
   // 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.ts 가 워크트리 커밋을 원격에 있다고 본다
   git('fetch', '-q', 'origin')
-  const branch = !o.keepBranch && !p.cross ? deleteBranch(state) : { retargeted: [], deleted: false }
+  const branch = !o.keepBranch && !p.cross ? deleteBranch(stepContext, state) : { retargeted: [], deleted: false }
   await afterMerge(stepContext, state, branch)
 }
 
@@ -141,7 +141,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     for (const name of (await field(stepContext, state, n, 'statusCheckRollup', state.q.allowedFailed)).split('\n')) {
       if (name) out(`경고: ${n} 실패를 허용한 체크 ${name}`)
     }
-    const threads = await runAsync(['bash', '-c', o.threadsCmd], { env: { ...prEnv(state), GH_HOST: p.apiHost, ORCH_GH_CACHE: '0' }, timeoutMs: NO_LIMIT_MS })
+    const threads = await runAsync(['bash', '-c', o.threadsCmd], { env: { ...prEnv(stepContext, state), GH_HOST: p.apiHost, ORCH_GH_CACHE: '0' }, timeoutMs: NO_LIMIT_MS })
     // 옛 명령은 스레드 명령의 stderr 를 받지 않고 그대로 흘렸다
     if (threads.stderr) process.stderr.write(threads.stderr)
     if (threads.code !== 0) stop(`${n} 스레드 조회 실패`)
@@ -161,7 +161,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
 
     p.ov = []
     if (o.overlap) {
-      const ov = overlapFiles(state)
+      const ov = overlapFiles(stepContext, state)
       if (ov === null) stop(`${n} 겹침 판정 실패(PR HEAD 나 base 를 받지 못했다)`)
       p.ov = ov
       const listing = ov.join(' ')
@@ -170,11 +170,11 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       } else {
         if (ov.length > 0) log(`${n} 겹침: ${listing}`)
         if (o.verifyWhen !== 'overlap' || ov.length > 0) {
-          if (o.verifyWhen !== 'always' && o.docsGlob && docsOnly(state)) {
+          if (o.verifyWhen !== 'always' && o.docsGlob && docsOnly(stepContext, state)) {
             log(`${n} 문서만 바꿨다(--docs-glob). 합친 사본 검사 없이 머지한다`)
           } else {
-            turn(state, TURN_PHASES.verify)
-            await verifyMerged(state)
+            turn(stepContext, state, TURN_PHASES.verify)
+            await verifyMerged(stepContext, state)
           }
         }
       }
@@ -183,8 +183,8 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     // 같은 HEAD 에는 한 번만 낸다. base 가 움직여 다시 판정해도 HEAD 가 같으면 다시 내지 않는다
     if (p.beforeHead !== p.ph) {
       p.beforeHead = p.ph
-      if (prCommand !== null || state.hooks.has('before-merge')) turn(state, TURN_PHASES.before)
-      await beforeMerge(state, prCommand)
+      if (prCommand !== null || state.hooks.has('before-merge')) turn(stepContext, state, TURN_PHASES.before)
+      await beforeMerge(stepContext, state, prCommand)
     }
 
     const ph2 = await field(stepContext, state, n, 'headRefOid', '.headRefOid')
@@ -193,7 +193,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     if (!evidence.ok || evidence.data.headRefOid !== p.ph) stop(`${n} 기능 완료 근거 또는 HEAD 조회 실패`)
     // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 기다렸다
     const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false,
-      (verified) => fetchPrRefs(state) && baseMergesOnly(state.repoDir, p.ph, verified, p.base))
+      (verified) => fetchPrRefs(stepContext, state) && baseMergesOnly(state.repoDir, p.ph, verified, p.base))
     if (problem) throw new WorkerFix(`${n} ${problem}`, problem)
 
     // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
@@ -207,20 +207,20 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       if (p.ph !== rh) stop(`${n} head 불일치 pr=${p.ph.slice(0, 8)} remote=${rh.slice(0, 8)}`)
     }
     if (!p.judgedBase) return
-    if (remoteBase(state) === p.judgedBase) return
+    if (remoteBase(stepContext, state) === p.judgedBase) return
     log(`${n} 판정한 뒤 base(${p.base}) 가 움직였다. 새로 들어온 변경으로 다시 판정한다`)
   }
 }
 
 // before-merge 를 내고 `PR:명령` 을 돌린다.
-export async function beforeMerge(state: StepState, prCommand: string | null): Promise<void> {
+export async function beforeMerge(stepContext: StepContext, state: StepState, prCommand: string | null): Promise<void> {
   const o = state.o
   const p = state.p
   const n = p.n
-  const env = { ...prEnv(state), GH_HOST: p.apiHost }
+  const env = { ...prEnv(stepContext, state), GH_HOST: p.apiHost }
   if (state.hooks.has('before-merge')) {
-    const ctx = eventContext(state)
-    const input = { pr: prInput(state), owner: p.owner, name: p.repo, last_of_task: o.lastOfTask.includes(n), has_pr_command: prCommand !== null }
+    const ctx = eventContext(stepContext, state)
+    const input = { pr: prInput(stepContext, state), owner: p.owner, name: p.repo, last_of_task: o.lastOfTask.includes(n), has_pr_command: prCommand !== null }
     const done = await fire('before-merge', input, ctx)
     if (done.result === 'reject') stop(`${n} HOOK-REJECT`)
     if (failed(done)) stop(`${n} HOOK-FAIL`)
@@ -236,9 +236,9 @@ export async function afterMerge(stepContext: StepContext, state: StepState, bra
   if (!state.hooks.has('after-merge')) return
   const p = state.p
   const commit = await field(stepContext, state, p.n, 'mergeCommit', '.mergeCommit.oid // ""')
-  const input = { pr: prInput(state), merge_commit: commit || null, remote_branch_deleted: branch.deleted, retargeted: branch.retargeted }
+  const input = { pr: prInput(stepContext, state), merge_commit: commit || null, remote_branch_deleted: branch.deleted, retargeted: branch.retargeted }
   try {
-    if (failed(await fire('after-merge', input, eventContext(state)))) state.notifyFailed = true
+    if (failed(await fire('after-merge', input, eventContext(stepContext, state)))) state.notifyFailed = true
   } catch (e) {
     // 설정 오류는 사용법 오류로 올린다. 그 밖의 오류로 머지된 PR 을 보류로 읽지 않는다
     if (e instanceof ConfigError) throw e
@@ -249,13 +249,13 @@ export async function afterMerge(stepContext: StepContext, state: StepState, bra
 }
 
 // 머지한 브랜치를 base 로 둔 열린 PR. 조회하지 못하면 null
-export function basedOn(state: StepState): GhPr[] | null {
+export function basedOn(stepContext: StepContext, state: StepState): GhPr[] | null {
   const found = ghJson<GhPr[]>(['pr', 'list', '--state', 'open', '--base', state.p.branch, '--json', 'number,author,url'])
   return found.ok && Array.isArray(found.data) ? found.data : null
 }
 
 // 「내 PR」 인지. 작성자 목록은 PR URL 의 호스트마다 한 번 읽는다. 정하지 못하면 null
-export function ownPr(state: StepState, pr: GhPr): boolean | null {
+export function ownPr(stepContext: StepContext, state: StepState, pr: GhPr): boolean | null {
   const host = apiTarget(pr.url)?.host
   if (!host) return null
   if (!state.authors.has(host)) state.authors.set(host, ownAuthors(state.repoDir, host))
@@ -266,7 +266,7 @@ export function ownPr(state: StepState, pr: GhPr): boolean | null {
 
 // 머지한 PR 의 원격 브랜치를 지운다. 그 브랜치를 base 로 둔 열린 PR 이 모두 내 PR 이면 먼저 머지한 PR 의 base 로 옮긴다.
 // 지우면 그 브랜치를 base 로 둔 열린 PR 이 닫히므로, 다른 사람의 PR 이 있거나 조회나 옮기기가 실패하면 남긴다
-export function deleteBranch(state: StepState): { retargeted: number[]; deleted: boolean } {
+export function deleteBranch(stepContext: StepContext, state: StepState): { retargeted: number[]; deleted: boolean } {
   const p = state.p
   const retargeted: number[] = []
   const kept = (why: string) => {
@@ -277,10 +277,10 @@ export function deleteBranch(state: StepState): { retargeted: number[]; deleted:
     log(`${p.n} release 브랜치는 남긴다 ${p.branch}`)
     return { retargeted, deleted: false }
   }
-  const based = basedOn(state)
+  const based = basedOn(stepContext, state)
   if (based === null) return kept('열린 PR 조회에 실패해 남긴다')
   if (based.length > 0) {
-    const owns = based.map((pr) => ownPr(state, pr))
+    const owns = based.map((pr) => ownPr(stepContext, state, pr))
     if (owns.includes(null)) return kept('쌓인 PR 의 작성자를 정하지 못해 남긴다')
     const others = based.filter((_, i) => !owns[i]).map((pr) => pr.number)
     if (others.length > 0) return kept(`다른 사람의 열린 PR(${others.join(' ')}) 의 base 라 남긴다`)
@@ -293,7 +293,7 @@ export function deleteBranch(state: StepState): { retargeted: number[]; deleted:
       log(`${p.n} 쌓인 PR ${pr.number} 의 base 를 ${p.base} 로 옮겼다`)
     }
     // 옮기는 사이 새로 열린 PR 이 있으면 지우면서 닫는다. 다시 읽어 남은 것이 없을 때만 지운다
-    const left = basedOn(state)
+    const left = basedOn(stepContext, state)
     if (left === null || left.length > 0) return kept('다른 열린 PR 의 base 이거나 조회 실패라 남긴다')
   }
   if (stopping()) return kept(`${stopping()} 를 받아 끝내는 중이라 남긴다`)

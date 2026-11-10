@@ -212,8 +212,8 @@ const stepContext: StepContext = { script: SCRIPT, here: dirname(SCRIPT), sleepS
 async function runQueue(stepContext: StepContext, state: StepState): Promise<number> {
   const selected = await selectQueue(stepContext, state)
   Object.assign(state, selected.changes)
-  if (selected.kind === 'config') return await stopOnConfig(state, selected.error)
-  turn(state, TURN_PHASES.after, null)
+  if (selected.kind === 'config') return await stopOnConfig(stepContext, state, selected.error)
+  turn(stepContext, state, TURN_PHASES.after, null)
   if (selected.kind === 'done') {
     if (state.conflicted.length > 0) out(`QUEUE-CONFLICT ${state.conflicted.join(' ')}`)
     out(state.held.length > 0 ? `QUEUE-HELD ${state.held.join(' ')}` : 'QUEUE-DONE')
@@ -238,8 +238,8 @@ function onSignal(signal: NodeJS.Signals): void {
   if (exiting) return
   exiting = true
   void stopChildren(signal).finally(() => {
-    active && dropCopy(active)
-    active && endTurn(active)
+    active && dropCopy(stepContext, active)
+    active && endTurn(stepContext, active)
     process.exit(signalCode(signal))
   })
 }
@@ -281,8 +281,8 @@ async function mainImpl(argv: string[]): Promise<number> {
     process.stderr.write(`${e.message}\n`)
     return 2
   } finally {
-    dropCopy(queue)
-    endTurn(queue)
+    dropCopy(stepContext, queue)
+    endTurn(stepContext, queue)
   }
 }
 

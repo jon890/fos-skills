@@ -8,12 +8,12 @@ import type { StepState } from './model.ts'
 import { api, field } from './pr.ts'
 import { chomp, log, nap, stop } from './runtime.ts'
 
-export function requiredChecks(state: StepState): string[] {
+export function requiredChecks(stepContext: StepContext, state: StepState): string[] {
   const o = state.o
   const p = state.p
   let req = o.required
   if (req.length === 0) {
-    const done = api(state, `repos/${p.owner}/${p.repo}/rules/branches/${p.base}`, '--jq', RULES_JQ)
+    const done = api(stepContext, state, `repos/${p.owner}/${p.repo}/rules/branches/${p.base}`, '--jq', RULES_JQ)
     if (done.code === 0) {
       req = parseNames(chomp(done.stdout))
     } else if (rulesPlanLimited(done.stderr)) {

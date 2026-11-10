@@ -185,7 +185,7 @@ export class StepState {
 }
 
 export type StepContext = { script: string; here: string; sleepScale: number }
-// 모든 상태는 같은 객체에 즉시 반영한다. 공개 단계는 완료 시 최종 상태 조각과 결과를 돌려준다.
+// 단계는 최종 상태 조각과 결과를 함께 돌려준다. 신호 정리가 읽는 진행 상태는 같은 객체에 즉시 반영한다.
 export type StepResult<T extends object = {}> = T & { changes: Partial<StepState> }
 
 export type SelectionResult = StepResult<{ kind: 'config'; error: ConfigError } | { kind: 'held' } | { kind: 'done' }>

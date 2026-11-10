@@ -11,7 +11,7 @@ import { api, field, turn } from './pr.ts'
 import { chomp, git, isDigits, log, nap, refuseWhenStopping, stop } from './runtime.ts'
 
 // 원격 base 의 지금 SHA. 조회하지 못하면 base 가 움직인 것으로 읽지 않고 멈춘다
-export function remoteBase(state: StepState): string {
+export function remoteBase(stepContext: StepContext, state: StepState): string {
   const p = state.p
   const done = git('ls-remote', 'origin', `refs/heads/${p.base}`)
   const sha = done.code === 0 ? done.stdout.split('\t')[0].trim() : ''
@@ -28,13 +28,13 @@ export async function bringUpToDate(stepContext: StepContext, state: StepState):
   p.judgedBase = null
   for (;;) {
     p.judgedBase = null
-    turn(state, rounds > 0 ? TURN_PHASES.updated : TURN_PHASES.checks)
+    turn(stepContext, state, rounds > 0 ? TURN_PHASES.updated : TURN_PHASES.checks)
     await waitChecks(stepContext, state)
     let updateDocs = false
     if (o.updateDocs) {
-      const ov = overlapFiles(state)
+      const ov = overlapFiles(stepContext, state)
       if (ov === null) stop(`${n} 문서 PR 의 겹침 판정 실패`)
-      if (ov.length > 0 && docsOnly(state)) {
+      if (ov.length > 0 && docsOnly(stepContext, state)) {
         if (state.mode === 'quick') throw new NotReady('문서 PR 의 갱신이 필요하다')
         const ms = await field(stepContext, state, n, 'mergeStateStatus', '.mergeStateStatus')
         if (ms !== 'CLEAN') stop(`${n} 문서 PR 을 갱신하려면 GitHub CLEAN 이 필요하다(현재 ${ms})`)
@@ -43,8 +43,8 @@ export async function bringUpToDate(stepContext: StepContext, state: StepState):
     }
     if (!(o.upToDate || updateDocs)) return
     // 비교보다 먼저 읽는다. 그 사이 base 가 움직였으면 나중에 다른 값으로 보여 다시 판정한다
-    const baseAtCompare = o.upToDateWhen === 'overlap' ? remoteBase(state) : null
-    const compared = api(state, `repos/${p.owner}/${p.repo}/compare/${p.base}...${p.ph}`, '--jq', '.behind_by')
+    const baseAtCompare = o.upToDateWhen === 'overlap' ? remoteBase(stepContext, state) : null
+    const compared = api(stepContext, state, `repos/${p.owner}/${p.repo}/compare/${p.base}...${p.ph}`, '--jq', '.behind_by')
     const behind = compared.code === 0 ? chomp(compared.stdout) : ''
     if (!isDigits(behind)) stop(`${n} base 와 비교 실패`)
     if (behind === '0') {
@@ -58,7 +58,7 @@ export async function bringUpToDate(stepContext: StepContext, state: StepState):
       // 갱신하고 CI 를 기다리는 사이 base 가 또 움직였을 수 있어, 이 자리에 올 때마다 새로 판정한다
       p.judgments += 1
       if (p.judgments > REJUDGE_LIMIT + 1) stop(`${n} 다시 판정을 ${REJUDGE_LIMIT}번 했는데도 base(${p.base}) 가 계속 움직인다`)
-      if (!needsUpdate(state)) return
+      if (!needsUpdate(stepContext, state)) return
     }
     if (state.mode === 'quick') throw new NotReady('base 최신화가 필요하다')
     rounds += 1
@@ -88,7 +88,7 @@ export async function bringUpToDate(stepContext: StepContext, state: StepState):
     p.ph = next
     // 체크를 기다리는 동안 뒤 PR 을 먼저 머지할 수 있게 대기를 미룬다(머리 주석의 「앞지르기」). 바꾼 파일을 읽지 못하면 미루지 않는다
     if (state.mode === 'defer') {
-      const files = prFiles(state)
+      const files = prFiles(stepContext, state)
       if (files !== null) throw new Deferred(n, files)
     }
   }

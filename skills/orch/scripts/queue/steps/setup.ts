@@ -33,7 +33,7 @@ function setupImpl(stepContext: StepContext, state: StepState): void {
     throw new Usage(`${o.repo} 로 이동하지 못했다: ${(e as Error).message}`)
   }
   state.repoDir = process.cwd()
-  preflight(state)
+  preflight(stepContext, state)
   const tmp = process.env.TMPDIR || '/tmp'
   if (!isDir(tmp)) throw new Usage(`TMPDIR 를 읽지 못했다: ${tmp}`)
   state.realTmp = realpathSync(tmp)
@@ -61,13 +61,13 @@ function setupImpl(stepContext: StepContext, state: StepState): void {
   }
   state.ghRetries = Number(retries)
   state.ghRetrySeconds = Number(seconds)
-  dropStaleCopies(state)
+  dropStaleCopies(stepContext, state)
 }
 
 // 큐를 시작하기 전에 설정과 핸들러를 본다. 여기서 내는 ConfigError 와 Usage 는 사용법 오류(종료 코드 2)다.
 // fire 도 핸들러이 함께 있으면 ConfigError 를 내지만, after-queue 는 머지가 끝난 뒤에 나므로 fire 에만 맡기면
 // 앞 PR 이 머지된 뒤에야 멈춘다. 설정 파일도 after-merge, after-queue, 쌓인 PR 판정이 머지 뒤에 읽으므로 여기서 먼저 읽는다
-export function preflight(state: StepState): void {
+export function preflight(stepContext: StepContext, state: StepState): void {
   const o = state.o
   const repo = state.repoDir
   const config = loadConfig(repo)
@@ -97,7 +97,7 @@ export function preflight(state: StepState): void {
 }
 
 // 앞 실행이 KILL 로 끝나 남긴 사본을 지운다. 이름 끝의 pid 가 살아 있으면 다른 큐가 쓰는 중이다
-export function dropStaleCopies(state: StepState): void {
+export function dropStaleCopies(stepContext: StepContext, state: StepState): void {
   if (!isDir(state.copyDir)) return
   const names = readdirSync(state.copyDir)
     .filter((name) => COPY_NAME.test(name))
@@ -107,13 +107,13 @@ export function dropStaleCopies(state: StepState): void {
     if (!isDir(old)) continue
     const pid = name.slice(name.lastIndexOf('-') + 1)
     if (isDigits(pid) && alive(Number(pid))) continue
-    removeCopy(state, old)
+    removeCopy(stepContext, state, old)
     log(`끝난 실행(pid ${pid})이 남긴 사본을 지웠다: ${old}`)
   }
   git('worktree', 'prune')
 }
 
-export function removeCopy(state: StepState, path: string): void {
+export function removeCopy(stepContext: StepContext, state: StepState, path: string): void {
   if (git('worktree', 'remove', '--force', path).code !== 0) {
     try {
       rmSync(path, { recursive: true, force: true })
@@ -123,9 +123,9 @@ export function removeCopy(state: StepState, path: string): void {
   }
 }
 
-export function dropCopy(state: StepState): void {
+export function dropCopy(stepContext: StepContext, state: StepState): void {
   if (!state.copy) return
-  removeCopy(state, state.copy)
+  removeCopy(stepContext, state, state.copy)
   git('worktree', 'prune')
   state.copy = ''
 }
