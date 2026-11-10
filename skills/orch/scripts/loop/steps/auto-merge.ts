@@ -81,8 +81,8 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync,
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
-import { beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
-import type { ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from '../../lib/auto-merge.ts'
+import { beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, specHold, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
+import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
@@ -90,6 +90,7 @@ import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from 
 import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
+import { judgePrReview } from '../../lib/review-judgement.ts'
 import { specFiles } from '../../lib/last-pr.ts'
 import { boardPath, makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
@@ -116,9 +117,6 @@ const HELD_COMMAND_CHARS = 160
 
 // 마이그레이션을 보는 열린 PR 조회의 최대 줄 수. 이만큼 오면 잘렸을 수 있다(머리 주석의 「자동 머지」 4)
 const MIGRATION_PR_LIMIT = 200
-
-// 리뷰 범위를 볼 때 HEAD 부터 첫 부모를 따라 읽는 커밋 수. merge 커밋이 이만큼 이어지는 일은 없다
-const REVIEW_CHAIN_LIMIT = 50
 
 type Ready = { head: string; at: string }
 
@@ -255,30 +253,6 @@ function addedMigrations(files: unknown, dirs: Record<string, string | string[]>
   return found
 }
 
-function reviewNotes(rows: unknown, at: string): ReviewNote[] {
-  if (!Array.isArray(rows)) return []
-  return rows.filter(isObject).map((row) => {
-    const commit = isObject(row.commit) && typeof row.commit.oid === 'string' && row.commit.oid ? row.commit.oid : null
-    return { body: typeof row.body === 'string' ? row.body : '', at: typeof row[at] === 'string' ? (row[at] as string) : '', commit }
-  })
-}
-
-// 리뷰를 셀 범위(머리 주석의 「자동 머지」 3). PR 브랜치와 base 를 받아 HEAD 부터 첫 부모를 따라 읽는다.
-// 받지 못하거나 HEAD 가 없으면 빈 체인이라 reviewScope 가 HEAD 의 리뷰만 센다. chain 은 judgeReview 의 rereview-after-block 도 쓴다
-function prReviewScope(ctx: Context, pr: OwnPr): { scope: ReviewScope; chain: ChainCommit[] } {
-  git(ctx.repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
-  const listed = git(ctx.repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
-  const chain: ChainCommit[] = []
-  if (listed.code === 0) {
-    for (const row of lines(listed.stdout)) {
-      const [oid, parents, at] = row.split('\t')
-      chain.push({ oid, parents: parents ? parents.split(' ') : [], at: at ?? '' })
-    }
-  }
-  const inBase = (oid: string) => git(ctx.repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0
-  return { scope: reviewScope(pr.head, chain, inBase), chain }
-}
-
 // 판정(머리 주석의 「자동 머지」 3). wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다.
 // missing 은 판정 문구가 든 본문이 없어 멈춘 조건이다. AUTO-MERGE-NO-REVIEW 의 문구를 정한다
 function judgeTarget(
@@ -332,9 +306,7 @@ function judgeTarget(
   }
   let basis = noReview
   if (review) {
-    const notes = [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
-    const rule = feature ? { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] } : review
-    const judged = judgeReview({ notes, ...prReviewScope(ctx, pr) }, rule)
+    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base }, data, review, feature)
     if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
     basis = judged.basis.join('; ')
   }

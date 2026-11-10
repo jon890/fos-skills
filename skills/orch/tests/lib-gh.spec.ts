@@ -261,12 +261,22 @@ describe('ciState', () => {
       { ...run('test', 'SUCCESS'), workflowName: 'CI', startedAt: '2026-10-30T02:00:00Z' },
     ], ['test'], false, 'head').state, 'passed')
   })
-  test('다른 HEAD 결과와 다른 workflow 로 취소 실패를 덮지 않는다', () => {
+  test('같은 이름의 이전 실패보다 새 통과를 센다', () => {
+    const old = attempt('FAILURE', '2026-10-30T01:00:00Z')
+    const newer = attempt('SUCCESS', '2026-10-30T02:00:00Z')
+    assert.equal(ciState([old, newer], ['test'], false, 'head').state, 'passed')
+    assert.equal(ciState([newer, old], ['test'], false, 'head').state, 'passed')
+    assert.equal(ciState([newer, { ...old, startedAt: '2026-10-30T03:00:00Z' }], ['test'], false, 'head').state, 'failed')
+  })
+  test('다른 워크플로, HEAD 또는 시각을 모르는 실행으로 실패를 덮지 않는다', () => {
     const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
     assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'Other')], ['test'], false, 'head').state, 'failed')
     assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'failed')
     assert.equal(ciState([attempt('FAILURE', '2026-10-30T01:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'pending')
     assert.equal(ciState([old, attempt('SUCCESS', 'invalid')], ['test'], false, 'head').state, 'failed')
+    const queued = attempt(null, '0001-01-01T00:00:00Z', 'CI', 'QUEUED')
+    assert.equal(ciState([old, queued], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([attempt('SUCCESS', '2026-10-30T01:00:00Z'), queued], ['test'], false, 'head').state, 'pending')
     assert.equal(ciState([run('test', 'CANCELLED'), run('test', 'SUCCESS')], ['test'], false, 'head').state, 'failed')
   })
   test('필수 체크가 모두 나타나 성공으로 끝나고 실패가 없으면 passed 이고 checks 는 나타난 체크 전부다', () => {
