@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { payload } from './completion.ts'
+import { senderOf } from './message-fields.ts'
 import { dispatchOf } from './questions.ts'
 import type { Message } from './questions.ts'
 import type { BoardItem } from './board.ts'
@@ -25,7 +26,7 @@ export function decisionEntries(pending: Message[], items: BoardItem[], active: 
   const byTerminal = new Map(active.filter((w) => w.agentTerminalHandle).map((w) => [w.agentTerminalHandle, String(w.dispatchId)]))
   const newest = new Map<string, Message>()
   for (const message of pending) {
-    const dispatch = dispatchOf(message) || byTerminal.get(message.from_handle)
+    const dispatch = dispatchOf(message) || byTerminal.get(senderOf(message))
     if (!dispatch || !live.has(dispatch)) continue
     const previous = newest.get(dispatch)
     if (!previous || String(message.created_at || '') >= String(previous.created_at || '')) newest.set(dispatch, message)

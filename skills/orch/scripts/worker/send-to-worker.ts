@@ -42,6 +42,7 @@ import { recordHistory } from '../lib/launch-history.ts'
 import { registerBoard } from '../lib/board.ts'
 import { fire } from '../lib/events.ts'
 import { defaultBase } from '../lib/git.ts'
+import { senderOf, threadOf } from '../core/message-fields.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
@@ -137,15 +138,15 @@ function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run
   const replies = [...new Set([`dispatch:${dispatchId}`, handle].filter(Boolean))].flatMap((terminal) =>
     rows(workerOrcaJson(['orchestration', 'inbox', '--terminal', terminal, '--limit', '200']).messages))
   const messages = [...new Map([...history, ...replies].filter((m) => !run || !m.run_id || m.run_id === run).map((m) => [m.id, m])).values()]
-  const fromWorker = (row: Json) => row.from_handle === `dispatch:${dispatchId}` || (!!handle && row.from_handle === handle)
+  const fromWorker = (row: Json) => senderOf(row) === `dispatch:${dispatchId}` || (!!handle && senderOf(row) === handle)
   // 같은 thread 에 worker 가 아닌 쪽이 쓴 글이 있으면 그 question 은 이미 답했다
-  const answered = new Set(messages.filter((r) => r.thread_id && !fromWorker(r) && r.thread_id !== r.id).map((r) => r.thread_id))
+  const answered = new Set(messages.filter((r) => threadOf(r) && !fromWorker(r) && threadOf(r) !== r.id).map((r) => threadOf(r)))
   const mine = messages.filter((row) => {
     const owner = context(row)[1]
     // 터미널은 새 dispatch 가 이어 쓸 수 있다. 명시된 이전 dispatch 의 질문에는 답하지 않는다.
     if (owner && owner !== dispatchId) return false
     if (!fromWorker(row) && owner !== dispatchId) return false
-    if (String(row.from_handle ?? '').startsWith('run:')) return false
+    if (senderOf(row).startsWith('run:')) return false
     if (kinds && !kinds.has(String(row.type))) return false
     return true
   })
@@ -156,8 +157,8 @@ function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run
     const [kb, sb] = rank(b)
     return ka - kb || String(a.created_at || '').localeCompare(String(b.created_at || '')) || sa - sb
   })
-  const latestAnswer = mine.findLastIndex((row) => ASKS.has(String(row.type)) && answered.has(row.id))
-  return mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(row.id) && index > latestAnswer))
+  const latestAnswer = mine.findLastIndex((row) => ASKS.has(String(row.type)) && answered.has(String(row.id)))
+  return mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(String(row.id)) && index > latestAnswer))
     .reverse().map((row) => String(row.id))
 }
 

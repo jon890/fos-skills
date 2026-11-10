@@ -40,6 +40,7 @@ import { makeParent } from './paths.ts'
 import { pyJson, pyStr as text } from './py.ts'
 import { isQuietStop } from './stop-reports.ts'
 import { workerRows, worktreePaths } from './workers.ts'
+import { recipientOf, senderOf, threadOf } from '../core/message-fields.ts'
 
 export const HISTORY_LIMIT = 100
 export const REPLY_LIMIT = 200
@@ -75,13 +76,13 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   const candidates = new Map<unknown, Message>()
   for (const m of [...history, ...unread]) {
     // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
-    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && !isQuietStop(m)) candidates.set(m.id, m)
+    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m)) candidates.set(m.id, m)
   }
   // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다
   const handlesOf = (m: Message): string[] => {
-    if (!m.from_handle) throw new Error('질문 발신자가 없다')
+    if (!senderOf(m)) throw new Error('질문 발신자가 없다')
     const dispatch = dispatchOf(m)
-    return [...new Set([String(m.from_handle), ...(dispatch ? [`dispatch:${dispatch}`] : [])])]
+    return [...new Set([senderOf(m), ...(dispatch ? [`dispatch:${dispatch}`] : [])])]
   }
   const threads = new Set([...candidates.keys()])
   const replies: Message[] = []
@@ -89,7 +90,7 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   for (const handle of new Set([...candidates.values()].flatMap(handlesOf))) {
     const rows = messages(orca(['inbox', '--terminal', handle, '--limit', String(REPLY_LIMIT)]))
     if (rows.length >= REPLY_LIMIT) full.add(handle)
-    replies.push(...rows.filter((m) => threads.has(m.thread_id)))
+    replies.push(...rows.filter((m) => threads.has(threadOf(m))))
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
   const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
@@ -136,7 +137,7 @@ export function poll(run: string | null, state: string, now: number, remindAfter
     if (typeof previous === 'number' && now - previous < remindAfter) continue
     const reminder = previous !== undefined && previous !== null
     notices.push({
-      line: `${reminder ? 'REMINDER' : 'QUESTION'} ${id} ${text(message.type)} from=${text(message.from_handle)}: ${brief(message.body)}`,
+      line: `${reminder ? 'REMINDER' : 'QUESTION'} ${id} ${text(message.type)} from=${text(senderOf(message))}: ${brief(message.body)}`,
       message,
       reminder,
     })
@@ -161,7 +162,7 @@ export async function notifyQuestion(notice: Notice, repo: string, run: string |
     await fire(
       'worker-question',
       {
-        worker: { task, dispatch, terminal: message.from_handle ?? null, worktree: null, spec: null },
+        worker: { task, dispatch, terminal: senderOf(message) || null, worktree: null, spec: null },
         message: { id: message.id ?? null, type: message.type ?? null, subject: message.subject ?? null, body: message.body ?? null },
         reminder: notice.reminder,
         age_sec: Math.trunc(ageSeconds(message, Date.now() / 1000)),

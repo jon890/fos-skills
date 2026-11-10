@@ -51,6 +51,7 @@ import { orcaBin, withFull } from '../lib/orca.ts'
 import { run, runAsync } from '../lib/proc.ts'
 import { short } from '../lib/output.ts'
 import { pyStr as text } from '../lib/py.ts'
+import { senderOf } from '../core/message-fields.ts'
 
 // 답을 받은 출력. 첫 줄이 `answer: <답>` 이고, 지금 출력은 그 뒤에 ask 의 출력을 잇는다. 짧은 출력은 첫 줄만이다
 
@@ -160,7 +161,7 @@ function unreadOf(output: string, sender: string, seenFile: string): string {
   const lines: string[] = []
   const shown: string[] = []
   for (const m of messages(load(output))) {
-    if (m.from_handle === sender || seen.has(String(m.id))) continue
+    if (senderOf(m) === sender || seen.has(String(m.id))) continue
     lines.push(`[${text(m.type)}] ${m.subject || ''} (${text(m.id)}, ${m.created_at || ''})`)
     lines.push(String(m.body || ''))
     shown.push(text(m.id))
