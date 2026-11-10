@@ -161,4 +161,5 @@ node skills/orch/tests/fixtures/golden-run.ts
 
 명령은 저장소 루트에서 실행한다. 고정 입력 실행기는 임시 폴더에서 루프 틱·머지 큐·정리를 실행하고 출력과 종료 뒤 상태를 기록과 비교한다.
 시계와 캐시 식별자는 실행 전에 고정하고, 비교할 때는 임시 경로와 pid 만 바꾼다. 기록은 `tests/golden/` 에 있다.
+루프 틱이 Run 마다 번갈아 도는 순서는 `tests/loop-order/` 기록이 따로 본다. `node skills/orch/tests/fixtures/loop-order-run.ts` 로 비교한다.
 `--record` 는 새 기준을 만들 때만 쓴다. 구조만 고치는 PR 은 기존 기록과 테스트 기대값을 유지한다.

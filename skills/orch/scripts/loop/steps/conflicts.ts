@@ -1,4 +1,3 @@
-// 시작 확인 시간 초과는 action stalled 와 CONFLICT-STALLED 로 worker 의 Run 에 Orca 메시지로 쓰고 자동 재전송하지 않는다.
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
 //     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, PR HEAD, 충돌 파일) 을 두 번 보내지 않는다. 둘이 겹쳐 돌면
@@ -14,6 +13,7 @@
 //        notify-conflicts 는 2 로 끝나지만 루프는 끝내지 않는다. 끝내면 질문 확인도 멈춘다
 //     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
 //     부모의 생존 타이머가 alive_at 을 쓴다.
+//     시작 확인 시간 초과는 action stalled 와 CONFLICT-STALLED 로 worker 의 Run 에 Orca 메시지로 쓰고 자동 재전송하지 않는다.
 
 import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict } from '../../lib/conflicts.ts'
 import type { Found, OpenPr, WorkerFound } from '../../lib/conflicts.ts'

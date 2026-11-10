@@ -4,7 +4,7 @@
 //
 //   ORCH_KILL_GRACE_SEC            TERM 뒤 KILL 을 보내기까지의 유예. 기본 10초. lib/proc.ts, lib/events.ts
 //   ORCH_QUESTIONS_TIMEOUT_SEC     질문 조회에서 orca 호출 한 번의 시간 제한. 기본 30초. lib/questions.ts
-//   ORCH_LOOP_START_WAIT_SEC       루프 시작·잠금 대기 한도. 기본 10초. loop/orch-loop.ts
+//   ORCH_LOOP_START_WAIT_SEC       루프 시작·잠금 대기 한도. 기본 10초. loop/lifecycle.ts
 //   ORCH_LOOP_ALIVE_SEC            루프 생존 타이머 간격. 기본 30초. lib/loop.ts
 //   ORCH_LOOP_RECHECK_MARGIN_SEC   루프 생존을 다시 보기 전에 간격에 더하는 여유. 기본 5초. lib/loop.ts
 

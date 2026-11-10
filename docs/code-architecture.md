@@ -254,6 +254,7 @@ skills/orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고�
 skills/orch/tests/core-*.spec.ts         값 입력 검증과 경계·중복 검사. 순수 테스트는 외부 실행 환경을 바꾸지 않는다
 skills/orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
 skills/orch/tests/golden/                고정 입력과 stdout·stderr·종료 코드·종료 뒤 상태. fixtures/golden-run.ts 가 비교한다
+skills/orch/tests/loop-order/            Run 이 둘인 루프 틱의 로그 줄·결과 줄·orca 와 gh 호출 순서. fixtures/loop-order-run.ts 가 비교한다
 extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 

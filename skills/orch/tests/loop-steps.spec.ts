@@ -63,9 +63,9 @@ test('자동 머지의 기본 스레드 명령이 가리키는 스크립트가 �
 
 test('옮겨 간 절을 옛 이름으로 가리키는 주석이 남아 있지 않다', () => {
   // 정리의 머리 주석은 cleanup/steps/ 로, 「대기 확인」 은 「미답변 질문 확인」 으로 바뀌었다
-  const files = [join(loop, 'orch-loop.ts'), join(loop, 'lifecycle.ts'), ...readdirSync(join(loop, 'steps')).map((name) => join(loop, 'steps', name)), resolve(loop, '..', 'lib', 'review.ts')]
+  const files = [join(loop, 'orch-loop.ts'), join(loop, 'lifecycle.ts'), ...readdirSync(join(loop, 'steps')).map((name) => join(loop, 'steps', name)), resolve(loop, '..', 'lib', 'review.ts'), resolve(loop, '..', 'lib', 'waiters.ts')]
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
-    for (const old of ['cleanup-sweep 머리 주석', 'cleanup-sweep 의 「', '「대기 확인」']) assert.ok(!text.includes(old), `${file}: ${old}`)
+    for (const old of ['cleanup-sweep 머리 주석', 'cleanup-sweep 의 「', '「대기 확인」', '대기 없음']) assert.ok(!text.includes(old), `${file}: ${old}`)
   }
 })

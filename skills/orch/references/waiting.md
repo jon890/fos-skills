@@ -10,7 +10,7 @@ Orca 가 check 명령을 지정한 깨움은 그 명령으로 읽는다. orch �
 
 ## 루프 알림
 
-루프는 등록된 Run 에 status 메시지를 보낸다. subject 첫 낱말은 알림 종류이고 payload 의 source 는 orch-loop 다. 알림 종류의 원본은 `scripts/loop/orch-loop.ts` 이다.
+루프는 등록된 Run 에 status 메시지를 보낸다. subject 첫 낱말은 알림 종류이고 payload 의 source 는 orch-loop 다. 알림 종류의 원본은 그 알림을 내는 `scripts/loop/steps/` 의 단계 파일과 `scripts/loop/lifecycle.ts` 다.
 CI 실패, 충돌, 멈춤과 조회 실패는 기존 중복 억제 규칙을 따른다. 보내지 못하면 NOTICE-FAIL 을 기록하고 다음 틱에서 다시 시도한다. Run 없는 옛 루프는 로그에만 남긴다.
 DONE-SUSPECT 는 준비 근거 없는 완료 보고, WORKER-LOST 는 끊긴 worker 를 뜻한다. 완료·끊김 이벤트와 보드 PR 연결도 루프가 맡는다. 첫 루프 틱은 지난 완료 보고를 알리지 않는다. 리뷰 worker 는 PR 을 열지 않아, 리뷰 지시서로 띄웠거나(정리가 띄우기 기록을 지운 뒤에는 영구 이력으로 본다) 첫 status 가 `판정:` 줄이면 정상 완료로 본다.
 DONE-SUSPECT 는 `state/done-seen/<Run>.json` 의 `suspects`(dispatch 목록), WORKER-LOST 는 `state/wait-important-lost.json` 의 `<Run>.<dispatch>` 가 보낸 기록이다. 루프를 다시 띄워도 이 파일이 남아 같은 dispatch 의 알림을 한 번만 보낸다.

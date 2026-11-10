@@ -1,5 +1,5 @@
 // 한 Run 의 살아 있는 대기(wait-important)와 질문 감시(watch-questions) 프로세스를 찾는다.
-// 사용처: orch-doctor.ts(session-resume 의 waiters), orch-loop.ts(대기 없음 확인).
+// 사용처: orch-doctor.ts(session-resume 의 waiters), loop/lifecycle.ts(루프를 띄울 때 남은 옛 대기를 WAITER-LEFT 로 알리기).
 //
 // `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid 다. 다음 행은 뺀다.
 //     - `orchestration check` 행. wait-important 가 띄운 자식이라 대기 하나를 두 번 세게 된다
