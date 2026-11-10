@@ -92,7 +92,7 @@
 5. PR 이 열리면 status 로 `준비됨 #<PR 번호>, head <40자리 SHA>` 한 줄을 보낸다. 설명을 붙이려면 그 줄 뒤에 줄을 바꿔 쓴다. 「게시가 막히면」에 따라 넘겼으면 본문 파일 경로를 보내고 PR 이 열리면 이 줄을 보낸다. <!-- orch-rule: ready-status -->
 6. **머지될 때까지 맡는다.** CI 실패, 충돌, 기준 브랜치 변경, 리뷰를 직접 처리하고 push 할 때마다 「준비됨 status」를 다시 보낸다. 코디네이터가 머지한다.
 7. PR 이 MERGED 인 것을 확인한 뒤 `worker_done` 을 보낸다. PR 번호와 머지 커밋, 아래 「스킬 개선 후보 보고」 와 「공부 후보 보고」 의 줄을 적는다. 머지 없이 닫혔으면 ask 로 알린다. <!-- orch-rule: done-after-merged -->
-- PR 을 연 뒤나 고쳐 push 한 뒤에는 CI 결과를 그 턴 안에서 기다린다. `gh pr checks <PR 번호> --watch --interval 60` 을 전경으로 돌려 끝까지 기다리고, 도구 시간 제한에 걸리면 같은 명령을 다시 부른다. CI 가 끝난 뒤 `준비됨` status 를 한 번 보내고 턴을 끝낸다. CI 를 기다리며 턴을 끝내거나 「CI 를 기다리는 중」 status 를 보내지 않는다. 이유: 기다리려고 턴을 끝내면 Orca 가 「Worker stopped without reporting」 escalation 을 코디네이터에게 보내 코디네이터 채팅을 끊는다. <!-- orch-rule: wait-in-turn -->
+- PR 을 연 뒤나 고쳐 push 한 뒤에는 CI 결과를 그 턴 안에서 기다린다. `gh pr checks <PR 번호> --watch --interval 60` 을 전경으로 돌려 끝까지 기다리고, 도구 시간 제한에 걸리면 같은 명령을 다시 부른다. CI 가 끝난 뒤 `준비됨` status 를 한 번 보내고 턴을 끝낸다. CI 를 기다리며 턴을 끝내거나 「CI 를 기다리는 중」 status 를 보내지 않는다. 이유: 턴을 끝내면 Orca 가 코디네이터를 깨운다. 실측(Run run_67445446b89f, haiku, 케이스당 1회, 표본이 적다): 아무것도 안 보내고 끝내면 escalation 1건, status 를 보낸 뒤 끝내면 status 1건과 escalation 1건, ask 뒤 끝내면 question 1건, worker_done 뒤 끝내면 worker_done 1건이다. 전경에서 오래 도는 명령 동안에는 깨우지 않는다. 그래서 진행 소식은 보내지 않고, 판단이 필요하면 status 대신 ask 로 묻고 턴을 끝낸다. <!-- orch-rule: wait-in-turn -->
 
 ## 설계와 구현을 맡길 때
 
