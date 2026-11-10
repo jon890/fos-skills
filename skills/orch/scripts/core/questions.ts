@@ -17,12 +17,12 @@ export function unanswered(rows: Message[], run: string): Message[] {
   const later = (a: Message, b: Message) => String(a.created_at || '') === String(b.created_at || '')
     ? asked.indexOf(a) > asked.indexOf(b) : String(a.created_at || '') > String(b.created_at || '')
   const latestAnswered = new Map<unknown, Message>()
-  for (const message of asked.filter((m) => answered.has(m.id))) {
+  for (const message of asked.filter((m) => answered.has(String(m.id)))) {
     const previous = latestAnswered.get(key(message))
     if (!previous || later(message, previous)) latestAnswered.set(key(message), message)
   }
   // ask 는 한 번에 한 질문의 답을 기다린다. 뒤 질문에 답하면 같은 dispatch 의 앞선 재전송 질문도 푼다.
-  return asked.filter((m) => !answered.has(m.id) && (!latestAnswered.has(key(m)) || later(m, latestAnswered.get(key(m))!)))
+  return asked.filter((m) => !answered.has(String(m.id)) && (!latestAnswered.has(key(m)) || later(m, latestAnswered.get(key(m))!)))
 }
 
 // 질문이 만들어진 뒤 지난 초. now 는 epoch 초다. 시각을 읽지 못하면 0.

@@ -7,6 +7,7 @@ import { classify } from '../scripts/core/completion.ts'
 import { unanswered } from '../scripts/core/questions.ts'
 import { recipientOf, senderOf, threadOf } from '../scripts/core/message-fields.ts'
 
+const status = (rows: Record<string, unknown>[], i = 0) => (rows[i].completionVerification as { status?: string } | undefined)?.status
 const SHA = 'a'.repeat(40)
 const payload = (dispatch: string) => ({ taskId: 'task', dispatchId: dispatch })
 
@@ -24,16 +25,16 @@ test('줄인 보기(from 만 있음)의 준비 상태와 완료도 같은 발신
   const ready = { id: 's', type: 'status', from: 'w', to: 'run:R', subject: `준비됨 #7, head ${SHA}`, payload: payload('d') }
   const done = { id: 'd', type: 'worker_done', from: 'w', to: 'run:R', payload: payload('d') }
   // 줄인 보기에는 시각이 없어 같은 묶음에서 앞선 status 만 근거가 된다
-  assert.equal(classify([ready, done], [ready])[1].completionVerification?.status, 'ready')
+  assert.equal(status(classify([ready, done], [ready]), 1), 'ready')
 })
 
 test('리뷰 결과 status 와 worker_done 이 같은 초에 와도 sequence 가 앞서면 근거로 센다', () => {
   const at = '2026-11-10T02:56:16Z'
   const verdict = { id: 'v', type: 'status', from_handle: 'w', created_at: at, sequence: 10, subject: '리뷰 결과', body: '판정: 머지 가능', payload: payload('d') }
   const done = { id: 'd', type: 'worker_done', from_handle: 'w', created_at: at, sequence: 11, payload: payload('d') }
-  assert.equal(classify([done], [verdict], { isReview: () => true })[0].completionVerification?.status, 'ready')
+  assert.equal(status(classify([done], [verdict], { isReview: () => true }), 0), 'ready')
   // 순번이 반대(결과가 완료보다 늦다)면 여전히 근거가 아니다
-  assert.equal(classify([{ ...done, sequence: 9 }], [verdict], { isReview: () => true })[0].completionVerification?.status, 'suspicious')
+  assert.equal(status(classify([{ ...done, sequence: 9 }], [verdict], { isReview: () => true }), 0), 'suspicious')
 })
 
 test('답이 질문 스레드에 있으면 from_handle, to_handle 로도 to 로도 미답변이 아니다', () => {

@@ -157,8 +157,8 @@ function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run
     const [kb, sb] = rank(b)
     return ka - kb || String(a.created_at || '').localeCompare(String(b.created_at || '')) || sa - sb
   })
-  const latestAnswer = mine.findLastIndex((row) => ASKS.has(String(row.type)) && answered.has(row.id))
-  return mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(row.id) && index > latestAnswer))
+  const latestAnswer = mine.findLastIndex((row) => ASKS.has(String(row.type)) && answered.has(String(row.id)))
+  return mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(String(row.id)) && index > latestAnswer))
     .reverse().map((row) => String(row.id))
 }
 
