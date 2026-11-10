@@ -185,7 +185,7 @@ function fillSelection(args: string[]): void {
   const agent = value('--agent') ?? (value('--terminal') ? 'codex' : null)
   const model = value('--model') ?? (value('--terminal') ? 'm' : null)
   if (!args.includes('--') || !agent || !model) return
-  writeFileSync(spec, `${text}\nworker 선택: \`${agent}\` \`${model}\` effort \`${value('--effort') ?? '기본'}\`. 행: impl-planned. 비교: 다른 제공자. 이유: 테스트.\n`)
+  writeFileSync(spec, `${text}\nworker 선택: \`${agent}\` \`${model}\` effort \`${value('--effort') ?? '기본'}\`. 행: impl-planned. 비교: 다른 제공자. 이유: 테스트. 후보 밖: 실행 경로 테스트용 가짜 모델.\n`)
 }
 
 function launch(args: string[], shell = 'bash', fill = true, script = FUNCTION_RUNNER): Launch {
@@ -385,6 +385,45 @@ describe('worker 선택 줄 대조', () => {
     assert.match(r.stdout, /LAUNCHED ctx_1/)
   })
 
+  for (const reason of ['', ' 후보 밖:', ' 후보 밖:   .']) {
+    test(`후보 밖 모델은 유효한 이유 없이 시작하지 않는다: ${reason || '표시 없음'}`, () => {
+      writeFileSync(spec, SELECTED.replace('gpt-6.1-sol', 'gpt-6-astra').trimEnd() + reason + '\n')
+      state({ next_ids: ['ctx_1'] })
+      const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6-astra', '--effort', 'low'], 'bash', false)
+      assert.equal(r.code, 1, both(r))
+      assert.match(r.stderr, /후보: gpt-6\.1-sol, claude-sonnet-5-5/)
+      assert.match(r.stderr, /후보 밖: <이유>/)
+      assert.deepEqual(lines('orca orchestration worker-start'), [])
+    })
+  }
+
+  for (const short of [false, true]) {
+    test(`후보 밖 이유가 있으면 띄우고 LAUNCH-EFFECTIVE 에 이유를 남긴다: short=${short}`, () => {
+      writeFileSync(spec, SELECTED.replace('gpt-6.1-sol', 'gpt-6-astra').trimEnd() + ' 후보 밖: 사용자 지정 비교 작업.\n')
+      if (short) env.ORCH_OUTPUT = 'short'
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6-astra', '--effort', 'low'], 'bash', false)
+      assert.equal(r.code, 0, both(r))
+      const line = r.stdout.split('\n').find(line => line.startsWith('LAUNCH-EFFECTIVE '))!
+      assert.deepEqual(JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride, { row: 'impl-planned', model: 'gpt-6-astra', reason: '사용자 지정 비교 작업' })
+    })
+  }
+
+  for (const [model, row, marker] of [
+    ['gpt-6-astra', 'review', ''],
+    ['gpt-6.1-terra', 'impl-planned', 'Terra 실험 1/5'],
+    ['claude-fable-5-2', 'impl-explore', 'Fable 실험 5/5'],
+  ]) {
+    test(`리뷰와 승인된 실험 모델을 띄운다: ${model}`, () => {
+      const agent = model.startsWith('claude-') ? 'claude' : 'codex'
+      writeFileSync(spec, `# 일\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`high\`. 행: ${row}. 비교: 다른 제공자. 이유: 실험. ${marker}\n`)
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--', '--agent', agent, '--model', model, '--effort', 'high'], 'bash', false)
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /LAUNCHED ctx_1/)
+    })
+  }
+
   test('--terminal 로 이어 쓸 때도 선택 줄을 검사한다', () => {
     writeFileSync(spec, '# 일\n허락: push\n')
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
@@ -395,7 +434,7 @@ describe('worker 선택 줄 대조', () => {
 
 describe('선택 정책과 영구 이력', () => {
   const select = (agent = 'codex', model = 'gpt-6.1-sol', effort = 'medium', extra = '') =>
-    writeFileSync(spec, `# 선택 검사\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: impl-planned. ${extra} 비교: 다른 모델. 이유: 테스트.\n`)
+    writeFileSync(spec, `# 선택 검사\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${model.startsWith('claude-opus-') ? 'hard-design' : 'impl-planned'}. ${extra} 비교: 다른 모델. 이유: 테스트.\n`)
   const history = () => readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
   const prior = (extra = {}) => ({ dispatch: 'ctx_old', task: 'task_1', terminal: 'term_old', worktree, branch: 'feat/a', run: null, at: '2026-11-05T00:00:00Z', title: '이전 작업', row: 'impl-planned', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', retry_of: null, ...extra })
 

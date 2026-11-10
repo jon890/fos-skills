@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, mock, test } from 'node:test'
-import { modelRowIds, selectionVerdict } from '../scripts/lib/selection.ts'
+import { modelRowIds, modelRows, selectionVerdict } from '../scripts/lib/selection.ts'
 import { experimentOf, selectionsOf } from '../scripts/lib/spec.ts'
 import { launchHistory, latestTerminal, recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
 import { forgetLaunch, readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
@@ -29,8 +29,34 @@ test('문서의 행을 읽고 누락, 알 수 없는 행과 읽을 수 없는 �
   assert.match(selectionVerdict(sol.replace('행: impl-planned.', ''), repo).join(), /행/)
   assert.match(selectionVerdict(sol.replace('impl-planned', 'unknown'), repo).join(), /모델 표에 없다/)
   assert.match(selectionVerdict(sol, repo, { table: join(repo, 'missing') }).join(), /표를 읽지 못했다/)
-  const table = join(repo, 'table.md'); writeFileSync(table, '## 모델\n\n| `new-row` | 설명 |')
+  const table = join(repo, 'table.md'); writeFileSync(table, '## 모델\n\n| `new-row` | 설명 | `gpt-6.1-sol` | effort |')
   assert.deepEqual(selectionVerdict(sol.replace('impl-planned', 'new-row'), repo, { table }), [])
+})
+
+test('후보 목록은 모델 칸에서만 읽고 괄호 조건과 effort 칸을 섞지 않는다', () => {
+  const table = '## 모델\n| `example` | 설명 | `gpt-6.1-sol`(조건), Claude Sonnet 5.5 | Claude Opus 5.5 |\n### 다음 절\n| `other` | 설명 | `gpt-6-astra` |'
+  assert.deepEqual([...modelRows(table)], [['example', ['gpt-6.1-sol', 'claude-sonnet-5-5']]])
+  const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  for (const [row, models] of modelRows(source)) {
+    if (row !== 'review') assert.ok(models.length > 0, `${row} 후보 추출 실패`)
+  }
+})
+
+test('후보 밖 이유는 선택 줄에서만 읽고 빈 이유 뒤의 다른 필드를 이유로 삼지 않는다', () => {
+  const text = sol.replace('비교:', '후보 밖: 비교:')
+  assert.match(selectionVerdict(text, repo, { launch: true }).join(), /후보 밖 이유/)
+  assert.equal(selectionsOf(`${sol} 후보 밖: 도구 버전 5.5 비교 작업.`)[0].outsideReason, '도구 버전 5.5 비교 작업')
+  assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6-astra')}\n후보 밖: 사용자 지정`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
+})
+
+test('실험 표시는 대응 모델과 유효한 회차에만 후보 예외를 준다', () => {
+  for (const marker of ['', 'Terra 실험 0/5', 'Terra 실험 6/5', 'Fable 실험 1/5']) {
+    assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6.1-terra')} ${marker}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
+  }
+  const wrongRow = sol.replace('gpt-6.1-sol', 'gpt-6.1-terra').replace('impl-planned', 'simple-apply')
+  assert.match(selectionVerdict(`${wrongRow} Terra 실험 1/5`, repo, { launch: true }).join(), /행 simple-apply 의 후보:/)
+  const generic = 'experiment: other. 후보: `codex` `gpt-6-astra` effort `medium` / `claude` `claude-sonnet-5-5` effort `medium`.'
+  assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6-astra')}\n${generic}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
 })
 
 test('Opus 높은 effort 는 유효 근거를 요구하고 다른 모델과 medium 은 통과한다', () => {

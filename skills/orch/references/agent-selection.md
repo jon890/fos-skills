@@ -37,6 +37,8 @@
 
 Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다. 분기 논리를 고친 Haiku PR 둘에서 첫 리뷰 차단 버그가 나왔다. 사용자 결정(2026-11-10)이고, 근거 수치는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
 
+- `launch-worker` 는 이 표의 행에 있는 모델만 띄운다. 후보 밖 모델이 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다.
+- `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Fable 과 Terra 는 선택 줄에 해당 모델의 `Fable 실험 N/5` 또는 `Terra 실험 N/5`(N 은 1~5)가 있으면 허용한다. Terra 는 Sonnet 이 후보인 행에서만 이 예외를 쓴다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
 - 사용자 결정이나 설계 판단을 묻는 질문이 남은 Task 는 Claude 로 띄운다. 실행 전 확인처럼 답이 정해진 확인 질문은 sol 을 막지 않는다. 표 2 에서 sol 은 질문과 코디네이터 지시가 가장 많았다. #404 로 질문 하나가 worker 를 붙잡지 않게 돼서, 이 조건만 남기고 sol 을 쓴다([표 2](../../../docs/features/orch-routing/evidence.md)).
 
