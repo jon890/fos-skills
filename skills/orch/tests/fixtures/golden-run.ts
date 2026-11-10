@@ -70,6 +70,9 @@ function cases(): Record<string, Input> {
       lsof: [{ code: 1 }], ps: [{ stdout: '' }], docker: [{ code: 1 }],
     },
   }
+  const applied = structuredClone(found['cleanup/merged-worktree'])
+  applied.args.push('--apply')
+  found['cleanup/merged-worktree-apply'] = applied
   return found
 }
 
@@ -87,9 +90,11 @@ function filesAt(root: string): Record<string, string> {
   return found
 }
 
-export function runGolden(record = false): void {
+export function runGolden(record = false, selected?: string): void {
   const inputs = record ? cases() : Object.fromEntries(Object.keys(cases()).map((name) => [name, JSON.parse(readFileSync(join(golden, name, 'input.json'), 'utf8')) as Input]))
+  if (selected) assert.ok(Object.hasOwn(inputs, selected), `알 수 없는 고정 입력: ${selected}`)
   for (const [name, input] of Object.entries(inputs)) {
+    if (selected && name !== selected) continue
     const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'orch-golden-')))
     const expand = (text: string) => text.replaceAll('<TMP>', tmp)
     const normalize = (text: string) => text.replaceAll(tmp, '<TMP>')
@@ -130,4 +135,4 @@ export function runGolden(record = false): void {
     } finally { rmSync(tmp, { recursive: true, force: true }) }
   }
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) runGolden(process.argv.includes('--record'))
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) runGolden(process.argv.includes('--record'), process.argv.includes('--case') ? process.argv[process.argv.indexOf('--case') + 1] : undefined)
