@@ -191,7 +191,7 @@
 //           143 SIGTERM 을 받았다, 130 SIGINT 를 받았다
 //
 // 큐 시작: 같은 저장소의 state/merge-queue.lock 을 wx 로 잡는다. 다른 큐가 돌면 QUEUE-BUSY 이유와 코드 2 로 거절한다.
-//   정상 종료와 SIGTERM/SIGINT 에 잠금을 풀고, 죽은 pid 의 잠금은 다음 실행이 회수한다. 워크트리도 주 checkout 의 잠금을 쓴다.
+//   정상 종료와 SIGTERM/SIGINT 에 잠금을 풀고, 죽은 pid 나 시작 시각·명령줄이 달라진 pid 의 잠금은 다음 실행이 회수한다. 워크트리도 주 checkout 의 잠금을 쓴다.
 //   migrations 설정이 있으면 queueOrder 로 낮은 번호부터 정렬하고 자동 --chain 을 만든다. 수동 묶음도 함께 지키되 모순되면 코드 2 다.
 //   순서가 바뀌면 QUEUE-ORDER <번호...>: <이유> 를 낸다. 설정이 없으면 입력 순서를 유지한다.
 //   gate 와 머지 직전에 새 origin/<base> 의 최고 번호를 judgeMigrations 로 확인한다. 최고 이하이면 --again 안내와 함께 worker 에게 보류를 보낸다.

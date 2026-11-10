@@ -1,7 +1,7 @@
 // 머지 전 조건 확인, 머지와 원격 브랜치 정리.
 
 import { ConfigError } from '../../lib/config.ts'
-import { fire, ownsLock } from '../../lib/events.ts'
+import { fire } from '../../lib/events.ts'
 import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from '../../lib/gh.ts'
 import { oneLine, short } from '../../lib/output.ts'
 import { NO_LIMIT_MS, runInherit, stopping } from '../../lib/proc.ts'
@@ -10,6 +10,7 @@ import { gateReasons, holdWith, loadPr } from './gate.ts'
 import type { GhPr, StepContext } from './model.ts'
 import { CheckStop, HeadChanged, NotReady, PENDING } from './model.ts'
 import type { StepState } from './model.ts'
+import { ownsQueueLock } from '../../lib/queue-lock.ts'
 import { migrationReasons } from './migrations.ts'
 import { docsOnly, overlapFiles, overlapsDeferred } from './overlap.ts'
 import { eventContext, field, prEnv, prInput, turn } from './pr.ts'
@@ -38,7 +39,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   // 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
   const kind = o.docsGlob && docsOnly(stepContext, state) ? 'docs' : 'code'
   refuseWhenStopping(n)
-  if (state.queueLock && !ownsLock(state.queueLock)) stop(`${n} 머지 큐 잠금을 잃었다`)
+  if (state.queueLock && !ownsQueueLock(state.queueLock, state.queueLockToken)) stop(`${n} 머지 큐 잠금을 잃었다`)
   turn(stepContext, state, TURN_PHASES.merge)
   const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
   // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
