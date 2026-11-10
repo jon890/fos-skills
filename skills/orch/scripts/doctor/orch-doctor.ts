@@ -100,7 +100,7 @@
 //     user 범위 행이 없으면 판정하지 않는다. 판정 규칙은 이 기능 전과 같다(진입점의 번들 고르기 lib/install-record.ts 와 따로 둔다).
 //     캐시 꼴이 아니면(저장소 체크아웃에서 띄운 개발 중인 루프) 보지 않는다. installed_plugins.json 을 읽지 못하면 판정하지 않는다.
 //     다시 띄우는 명령은 그 루프의 Run 코디네이터 세션에서 돌리라는 안내와 함께 낸다. 루프는 띄운 터미널의 Run 명의를 물려받는다
-//     (orch-loop.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
+//     (loop/lifecycle.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // Orca 형식 판정(늘 본다):
 //     `orca orchestration worker-list --limit 1 --full --json` 의 첫 행에 lib/workers.ts 의 ROW_KEYS 가 모두 있는지 본다.

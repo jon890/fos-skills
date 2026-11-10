@@ -77,7 +77,7 @@ if (live.length >= LIMIT) {
 ### 멈춘 worker 다시 시도시키기
 
 상주 루프는 멈춘 worker 를 알리기만 하고 입력하지 않는다. 다시 시도시킬지와 몇 번까지 할지는 저장소의 `worker-stalled` 핸들러가 정한다.
-판정 기준과 틱 수는 `scripts/loop/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
+판정 기준과 틱 수는 `scripts/loop/steps/stalls.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
 
 아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 세 번까지 「계속 진행해」 메시지를 보내는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
 

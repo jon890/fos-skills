@@ -9,7 +9,9 @@ import { fakeBin, type FakeRule } from './fake-bin.ts'
 import { linkBin } from '../../../../modules/testkit/fake-bin.ts'
 import { FAKE_GH, FAKE_GIT } from './merge-queue-fakes.ts'
 
-type Input = { script: string; args: string[]; files: Record<string, string>; rules: Record<string, FakeRule[]>; queue?: Record<string, unknown> }
+export type Input = { script: string; args: string[]; files: Record<string, string>; rules: Record<string, FakeRule[]>; queue?: Record<string, unknown> }
+// 기록 묶음. dir 아래 <사례>/input.json 과 result.json 을 둔다. calls 에 적은 가짜 명령은 받은 인자를 호출 순서대로 결과에 담는다
+export type GoldenSet = { dir: string; cases: () => Record<string, Input>; calls?: string[] }
 const here = dirname(fileURLToPath(import.meta.url))
 const golden = join(here, '..', 'golden')
 const scripts = join(here, '..', '..', 'scripts')
@@ -90,8 +92,14 @@ function filesAt(root: string): Record<string, string> {
   return found
 }
 
-export function runGolden(record = false, selected?: string): void {
-  const inputs = record ? cases() : Object.fromEntries(Object.keys(cases()).map((name) => [name, JSON.parse(readFileSync(join(golden, name, 'input.json'), 'utf8')) as Input]))
+// 가짜 명령이 받은 인자 목록. 호출 순서대로다. 한 번도 불리지 않았으면 빈 목록이다
+function callsOf(file: string): string[][] {
+  if (!existsSync(file)) return []
+  return readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => (JSON.parse(line) as { argv: string[] }).argv)
+}
+
+export function runGolden(record = false, selected?: string, set: GoldenSet = { dir: golden, cases }): void {
+  const inputs = record ? set.cases() : Object.fromEntries(Object.keys(set.cases()).map((name) => [name, JSON.parse(readFileSync(join(set.dir, name, 'input.json'), 'utf8')) as Input]))
   if (selected) assert.ok(Object.hasOwn(inputs, selected), `알 수 없는 고정 입력: ${selected}`)
   for (const [name, input] of Object.entries(inputs)) {
     if (selected && name !== selected) continue
@@ -122,10 +130,11 @@ export function runGolden(record = false, selected?: string): void {
       assert.ifError(done.error)
       const states = filesAt(join(tmp, 'repo', '.orch'))
       if (input.queue) states['queue.json'] = readFileSync(join(tmp, 'queue.json'), 'utf8')
-      const normalized = normalize(JSON.stringify({ stdout: done.stdout, stderr: done.stderr, code: done.status, states }))
+      const calls = set.calls ? { calls: Object.fromEntries(set.calls.map((command) => [command, callsOf(join(bin, `${command}.calls.jsonl`))])) } : {}
+      const normalized = normalize(JSON.stringify({ stdout: done.stdout, stderr: done.stderr, code: done.status, states, ...calls }))
         .replace(new RegExp(`(?<![0-9])${done.pid}(?![0-9])`, 'g'), '<PID>')
       const result = JSON.parse(normalized)
-      const dest = join(golden, name)
+      const dest = join(set.dir, name)
       if (record) {
         mkdirSync(dest, { recursive: true })
         writeFileSync(join(dest, 'input.json'), JSON.stringify(input, null, 2) + '\n')

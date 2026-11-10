@@ -1,0 +1,137 @@
+{
+  "script": "loop/orch-loop.ts",
+  "args": [
+    "--repo",
+    "<TMP>/repo",
+    "--run",
+    "r1",
+    "--tick",
+    "--tick-number",
+    "1"
+  ],
+  "files": {
+    "repo/.orch/config.json": "{\"pipeline\":{\"authors\":[\"me\"]}}\n",
+    "repo/.orch/state/loop-runs/r1.json": "{\"run\":\"r1\",\"specs_dir\":null,\"registered_at\":\"2026-01-01T00:00:00Z\"}\n",
+    "repo/.orch/state/loop-runs/r2.json": "{\"run\":\"r2\",\"specs_dir\":null,\"registered_at\":\"2026-01-02T00:00:00Z\"}\n",
+    "repo/.orch/state/notice-digest/r1.json": "{\"sent_at\":\"2026-11-09T00:00:00.000Z\",\"items\":[{\"kind\":\"STAGE-STALLED\",\"text\":\"item-r1 30분 pr\",\"at\":\"2026-11-09T23:30:00.000Z\"}],\"streaks\":{}}\n",
+    "repo/.orch/state/notice-digest/r2.json": "{\"sent_at\":\"2026-11-09T00:00:00.000Z\",\"items\":[{\"kind\":\"STAGE-STALLED\",\"text\":\"item-r2 30분 pr\",\"at\":\"2026-11-09T23:30:00.000Z\"}],\"streaks\":{}}\n"
+  },
+  "rules": {
+    "orca": [
+      {
+        "args": [
+          "worker-list",
+          "r1"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[{\"taskId\":\"t-r1\",\"dispatchId\":\"d-r1\",\"dispatchStatus\":\"running\",\"workerState\":\"running\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}}],\"page\":{},\"scope\":{\"source\":\"flag\"}}}\n"
+      },
+      {
+        "args": [
+          "worker-list",
+          "r2"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[{\"taskId\":\"t-r2\",\"dispatchId\":\"d-r2\",\"dispatchStatus\":\"running\",\"workerState\":\"running\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r2\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r2\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}}],\"page\":{},\"scope\":{\"source\":\"flag\"}}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "--all"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[]}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "r1"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[{\"id\":\"q1\",\"type\":\"question\",\"from_handle\":\"term_r1\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}}]}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "r2"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[]}}\n"
+      },
+      {
+        "args": [
+          "terminal",
+          "read"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"lines\":[]}}\n"
+      },
+      {
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[],\"workers\":[],\"runs\":[],\"message\":{\"id\":\"notice\"},\"page\":{},\"scope\":{\"source\":\"all\"}}}\n"
+      }
+    ],
+    "gh": [
+      {
+        "args": [
+          "pr",
+          "list"
+        ],
+        "stdout": "[{\"number\":1,\"state\":\"OPEN\",\"title\":\"example\",\"headRefName\":\"feat\",\"baseRefName\":\"main\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"url\":\"https://github.example/o/r/pull/1\",\"mergeable\":\"CONFLICTING\",\"statusCheckRollup\":[{\"name\":\"Tests\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\"}]}]\n"
+      },
+      {
+        "args": [
+          "api",
+          "user"
+        ],
+        "stdout": "me\n"
+      },
+      {
+        "args": [
+          "api"
+        ],
+        "stdout": "[]\n"
+      },
+      {
+        "stdout": "{\"number\":1,\"state\":\"OPEN\",\"title\":\"example\",\"headRefName\":\"feat\",\"baseRefName\":\"main\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"url\":\"https://github.example/o/r/pull/1\",\"mergeable\":\"CONFLICTING\",\"statusCheckRollup\":[{\"name\":\"Tests\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\"}],\"commits\":[],\"files\":[]}\n"
+      }
+    ],
+    "git": [
+      {
+        "args": [
+          "--git-common-dir"
+        ],
+        "code": 128
+      },
+      {
+        "args": [
+          "worktree",
+          "list"
+        ],
+        "stdout": "worktree <TMP>/repo\nHEAD abc\nbranch refs/heads/main\n\n"
+      },
+      {
+        "args": [
+          "fetch"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "rev-parse",
+          "--verify"
+        ],
+        "stdout": "abc\n"
+      },
+      {
+        "args": [
+          "cat-file"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "merge-tree"
+        ],
+        "code": 1,
+        "stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsrc/conflict.ts\n"
+      },
+      {
+        "code": 1
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-// orch-loop.ts 의 자동 머지(머리 주석의 「자동 머지」)를 가짜 gh, orca, ps, 머지 큐로 본다. GitHub 와 Orca 에는 닿지 않는다.
+// orch-loop.ts 의 자동 머지(loop/steps/auto-merge.ts 머리 주석의 「자동 머지」)를 가짜 gh, orca, ps, 머지 큐로 본다. GitHub 와 Orca 에는 닿지 않는다.
 // 저장소는 임시 git 저장소와 bare origin 이고, 루프는 --run 없이 --foreground --once 로 띄워 finish.run(run_t)을 쓴다.
 // 가짜 머지 큐(fake-merge-with-finish.ts)는 받은 인자와 자기 pid 를 먼저 적고 FAKE_QUEUE_HOLD_MS 만큼 기다린 뒤 끝 줄과 정리 줄을 낸다.
 // 이름에 `merge-with-finish.` 가 들어 루프가 명령줄로 도는 큐를 알아본다.

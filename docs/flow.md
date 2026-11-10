@@ -286,7 +286,7 @@ flowchart TD
 
 ### 상주 루프의 자동 머지
 
-`queue.auto_merge` 가 true 이면 틱이 CI 감시 뒤, 충돌 처리 앞에 한 번 돈다. 대상 조건, 순서, 알림 text 는 `orch-loop.ts` 머리 주석의 「자동 머지」 가,
+`queue.auto_merge` 가 true 이면 틱이 CI 감시 뒤, 충돌 처리 앞에 한 번 돈다. 대상 조건, 순서, 알림 text 는 `loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」 가,
 판정 함수는 `skills/orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
 
 ```mermaid

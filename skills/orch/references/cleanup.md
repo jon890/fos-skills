@@ -38,7 +38,7 @@ PR 이 머지될 때까지 같은 worker 가 이어 받아야 하면 자동 rele
 머지 큐는 오래 걸리므로 Bash 도구의 `run_in_background` 로 건다. 셸의 `&` 나 `nohup` 은 쓰지 않는다.
 `merge_queue.ts` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.ts` 머리 주석이 소유한다.
 PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은 변수 하나로 넘기면 zsh 가 쪼개지 않아 사용법 오류로 끝난다.
-`queue.auto_merge` 를 켠 저장소에서는 상주 루프가 머지할 수 있는 PR 을 스스로 건다(조건은 `orch-loop.ts` 머리 주석의 「자동 머지」).
+`queue.auto_merge` 를 켠 저장소에서는 상주 루프가 머지할 수 있는 PR 을 스스로 건다(조건은 `loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」).
 코디네이터가 걸 일은 루프가 걸지 않은 PR(지시서 밖, 큐가 멈춘 같은 HEAD, 보류를 푼 PR)뿐이다.
 **코디네이터가 따로 건 큐가 도는 동안에는 루프가 자동 머지를 걸지 않는다.** 머지 큐는 저장소에 하나만 돈다. 두 큐가 같은 base 를 함께 움직이면 서로의 최신화 판정이 무효가 되기 때문이다.
 그래서 루프가 준비된 PR 을 볼 때 먼저 건다. 직접 걸기 전에 `state/loop.log` 의 `AUTO-MERGE` 줄로 루프가 이미 건 PR 인지 보고, 걸었으면 그 큐가 끝나기를 기다린다.
@@ -166,7 +166,7 @@ orch queue merge --require-up-to-date --required backend,frontend 101 102
 - 같은 (PR, base SHA) 에는 한 번만 건다. CI 가 passed 가 아닌 PR 은 걸지 않는다
 
 루프 로그(`state/loop.log`)의 `REFRESH`, `REFRESH-WAIT`, `REFRESH-WORKER`, `REFRESH-ORPHAN` 줄이 무엇을 걸었고 왜 미뤘는지 보인다. Run 메시지는 보내지 않는다.
-자리 수와 runner 의 관계, 설정 예시는 [`overlay.md`](overlay.md) 의 「뒤처진 PR 미리 최신화」 가, 판정 순서는 `orch-loop.ts` 머리 주석의 「최신화」 가 소유한다.
+자리 수와 runner 의 관계, 설정 예시는 [`overlay.md`](overlay.md) 의 「뒤처진 PR 미리 최신화」 가, 판정 순서는 `loop/steps/refresh.ts` 머리 주석의 「최신화」 가 소유한다.
 
 ### 체크 확인 간격
 

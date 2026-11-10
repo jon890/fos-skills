@@ -1,5 +1,5 @@
 // 열린 dispatch 마다 마지막 움직임을 보고 멈춘 worker 와, worker 없이 멈춘 보드 단계를 낸다. 읽기만 한다.
-// 상주 루프(orch-loop.ts)가 틱마다 같은 판정으로 알린다(그 머리 주석의 「움직임 확인」). 이 명령은 코디네이터가 지금 상태를 직접 볼 때 쓴다.
+// 상주 루프(orch-loop.ts)가 틱마다 같은 판정으로 알린다(steps/movement.ts 머리 주석의 「움직임 확인」). 이 명령은 코디네이터가 지금 상태를 직접 볼 때 쓴다.
 //
 // 사용법:
 //     stalled-workers.ts --repo DIR [--run ID]... [--idle-min N] [--json]

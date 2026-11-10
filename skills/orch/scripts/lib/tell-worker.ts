@@ -1,5 +1,5 @@
 // 브랜치의 워크트리에 붙은 살아 있는 worker 에게 글 하나를 보내는 한 벌이다. 머지 큐가 worker 가 고쳐야 하는 보류를 알릴 때 쓴다.
-// 상주 루프는 여러 Run 의 worker 행을 틱 안에서 한 번만 읽으므로 자기 찾기(orch-loop.ts 의 ownerOf)를 쓴다.
+// 상주 루프는 여러 Run 의 worker 행을 틱 안에서 한 번만 읽으므로 자기 찾기(loop/steps/shared.ts 의 ownerOf)를 쓴다.
 // 보내는 명령은 SEND_TO_WORKER 환경 변수, 없으면 이 폴더의 부모 폴더의 send-to-worker.ts 다.
 // send-to-worker 의 0, 1, 4 는 보낸 것으로 본다(살아 있는 dispatch 에 1 은 깨우지 못한 것이다. notify-conflicts.ts 머리 주석의 표).
 

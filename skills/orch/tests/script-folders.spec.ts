@@ -42,6 +42,7 @@ describe('스크립트 폴더', () => {
     const helpers: Record<string, string> = {
       'cleanup/legacy-notices.ts': 'cleanup-sweep 가 옛 알림을 이전할 때 부르는 단계다. 직접 실행하지 않는다',
       'loop/completion-watch.ts': 'orch-loop 가 완료 보고를 확인할 때 부르는 단계다. 직접 실행하지 않는다',
+      'loop/lifecycle.ts': 'orch-loop 가 부르는 루프의 시작·멈춤·잠금과 틱 자식을 띄우는 부모다. 직접 실행하지 않는다',
       'worker/resume-exec.ts': 'worker/resume-worker.ts 가 연 새 터미널의 셸이 부르는 실행기다. 코디네이터가 직접 부르지 않는다',
     }
     const found = GROUPS.flatMap((g) => readdirSync(join(SCRIPTS, g)).filter((n) => n.endsWith('.ts')).map((n) => `${g}/${n}`)).sort()

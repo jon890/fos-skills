@@ -162,7 +162,7 @@ export function classify(lines: string[]): ScreenState {
   return readScreen(lines).state
 }
 
-// 머리 주석의 「멈춤 해시」. 입력란 아래의 상태 줄이 바뀌어도 같다. 같은 멈춤이 이어지는지 보는 데 쓴다(orch-loop.ts 의 「멈춤 확인」)
+// 머리 주석의 「멈춤 해시」. 입력란 아래의 상태 줄이 바뀌어도 같다. 같은 멈춤이 이어지는지 보는 데 쓴다(loop/steps/stalls.ts 의 「멈춤 확인」)
 export function stallHash(screen: Screen): string {
   return createHash('sha256').update(`${screen.errors}\n${screen.block.join('\n')}`).digest('hex').slice(0, 16)
 }

@@ -12,7 +12,7 @@
 //   loop.json 은 루프의 부모만 쓰는 파일이라 다른 프로세스(--start, --stop)가 쓰지 않게 등록을 따로 둔다.
 //   이미 등록된 Run 을 다시 등록하면 registered_at 은 그대로 두고 specs_dir 만 바꾼다. 주 Run 의 차례가 바뀌지 않게 하려는 것이다.
 //   renew 를 주면 registered_at 을 지금으로 새로 쓴다. 살아 있는 루프 없이 --start 한 세션이 자기 등록이 살아 있음을 알리는 데 쓴다
-//   (orch-loop.ts 머리 주석의 「Run」).
+//   (loop/lifecycle.ts 머리 주석의 「Run」).
 //   registeredRuns 는 registered_at 이 이른 순(같으면 Run id 순)이다. 앞이 주 Run 이다. 읽지 못한 파일은 건너뛴다.
 //
 // 생존(loopStatus): loop.json 이 있고, pid 가 살아 있고(lib/process.ts 의 alive), alive_at 이 now 에서 max(3 × tick_sec, 120) 초 안이면

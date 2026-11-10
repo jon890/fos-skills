@@ -1,6 +1,6 @@
 // 리뷰 worker 의 흔적(브랜치, 지시서, 워크트리)을 PR 번호로 알아보는 한 벌이다.
 //
-// 리뷰 worker 는 남의 PR 을 읽기만 하고 PR 을 열지 않는다. 그래서 cleanup-sweep 의 「PR 찾기」 로는 그 브랜치를 찾지 못한다.
+// 리뷰 worker 는 남의 PR 을 읽기만 하고 PR 을 열지 않는다. 그래서 cleanup/steps/prs.ts 의 「PR 찾기」 로는 그 브랜치를 찾지 못한다.
 // 10-31 에 `pr-N`, `review/pr-N` 브랜치와 `spec-review-pr-N*.md` 지시서가 26개 쌓였다. 여기서 이름과 지시서 줄로 PR 번호를 읽는다.
 //
 // 이름 규칙:
