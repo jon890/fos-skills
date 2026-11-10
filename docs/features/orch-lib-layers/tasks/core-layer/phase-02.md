@@ -53,8 +53,4 @@ git diff --exit-code "$GOLDEN_COMMIT" HEAD -- skills/orch/tests/golden
 | --- | --- |
 | `skills/orch/scripts/lib/*.ts` | 수정 |
 | `skills/orch/scripts/core/*.ts` | 신규 |
-| `skills/orch/tests/completion.spec.ts` | 수정 |
-| `skills/orch/tests/lib-auto-merge.spec.ts` | 수정 |
-| `skills/orch/tests/lib-screen.spec.ts` | 수정 |
-| `skills/orch/tests/overlap-units.spec.ts` | 수정 |
 | `skills/orch/tests/core-values.spec.ts` | 신규 |

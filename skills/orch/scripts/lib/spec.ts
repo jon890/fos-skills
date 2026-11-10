@@ -1,3 +1,4 @@
+import { LINE_BREAK } from '../core/text.ts'
 // 지시서 읽기와 지우기의 한 벌이다. 브랜치 줄과 허락 줄, worker 선택 줄, 중간 과정 줄, 살아 있는 dispatch 가 쓰는 지시서 목록, 지시서 삭제 경로를 둔다.
 //
 // 지시서 삭제는 deleteSpecs 한 경로다. 어떤 파일을 지울지 고르는 일과 지우는 일을 나눈다.
@@ -87,9 +88,6 @@ export function experimentOf(text: string): Experiment | null {
 // spec 줄에서 / 로 시작하고 .md 로 끝나는 경로. 뒤에 글자나 점이 이어지면 경로의 끝이 아니다.
 // u 플래그로 글자를 유니코드로 본다. 옮기기 전 Python 의 \w 가 한글도 글자로 보았다.
 const SPEC_PATH = /(\/[^\s`'"]+?\.md)(?![\p{L}\p{N}\p{M}_.])/gu
-
-// Python 의 str.splitlines 가 나누는 줄 경계. 지시서의 줄을 옛 명령(spec-line, spec-lint)과 같게 나눈다. spec-lint 가 줄 번호를 셀 때도 쓴다
-export const LINE_BREAK: RegExp = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/
 
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 const PAGE_LIMIT = '100'
@@ -467,3 +465,5 @@ export function taskFirstLine(text: string): { text: string; line: number } | nu
   const raw = index < lines.length && !/^#{1,6}\s/.test(lines[index]) ? lines[index] : ''
   return { text: raw.trim().replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/, '').replaceAll('**', '').trim(), line: raw ? index + 1 : at + 1 }
 }
+
+export { LINE_BREAK } from '../core/text.ts'

@@ -19,7 +19,7 @@
       "after": "core-layer 머지"
     }
   ],
-  "status": "in_progress",
+  "status": "pending",
   "created_at": "2026-11-10",
   "spec": "docs/features/orch-lib-layers/spec.md",
   "design": "docs/features/orch-lib-layers/design.md",
@@ -30,7 +30,7 @@
     "REQ13"
   ],
   "total_phases": 5,
-  "current_phase": 2,
+  "current_phase": 3,
   "phases": [
     {
       "number": 1,
