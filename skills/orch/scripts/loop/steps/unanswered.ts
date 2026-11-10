@@ -13,7 +13,7 @@ import { reporter } from './errors.ts'
 import { REMIND_AFTER_SEC } from './questions.ts'
 import { oneLine } from './shared.ts'
 
-// 머리 주석의 「대기 확인」. 오류면 이유를, 아니면 null 을 낸다
+// 머리 주석의 「미답변 질문 확인」. 묶음이 바뀌었을 때만 알리고 기록을 쓴다. pending 이 null 이면 그 Run 의 질문을 읽지 못한 틱이라 아무것도 하지 않는다
 async function watchUnanswered(repo: string, run: string, pending: ReturnType<typeof poll>['pending'] | null): Promise<void> {
   if (pending === null) return
   const ids = pending.filter(m => !isUserDecision(m) && Date.now() - Date.parse(String(m.created_at ?? m.createdAt ?? '')) >= REMIND_AFTER_SEC * 1000).map(m => String(m.id)).sort()

@@ -90,8 +90,7 @@
 //     쓴다. 최신화도 쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격),
 //     MERGE_WITH_FINISH(자동 머지가 띄우는 큐 명령. 기본은 이 폴더의 merge-with-finish.ts),
 //     THREADS_CMD(미해결 스레드 수를 내는 bash 명령. 환경 변수 OWNER, REPO, PR, GH_HOST 를 받는다. 기본은 머지 큐의 기본 --threads-cmd 와
-//     같은 review-fix 의 review_threads.ts), PS(프로세스 목록 명령. 자동 머지와 최신화가 쓴다. 기본 ps), NUDGE_WORKER(대기 없음을 코디네이터 터미널에 넣는 명령.
-//     기본은 이 폴더의 nudge-worker.ts), ORCH_NO_WAIT_SEC(대기 확인의 기다리는 초)
+//     같은 review-fix 의 review_threads.ts), PS(프로세스 목록 명령. 자동 머지와 최신화가 쓴다. 기본 ps)
 //
 // 종료 코드:
 //     0  성공. --start 가 띄웠다, --stop 이 멈췄거나 루프가 없다, --status 가 살아 있다, --once 와 --tick 이 끝났다
@@ -141,8 +140,6 @@ const USAGE = [
 
 const SELF = fileURLToPath(import.meta.url)
 
-// 대기 없음을 알리기 전에 기다리는 초(머리 주석의 「대기 확인」). 코디네이터가 묶음을 처리하는 사이에는 대기가 잠깐 없다
-// 코디네이터 터미널에 대기 없음을 넣는 nudge-worker 의 시간 제한
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 
 type Mode = (typeof MODES)[number]

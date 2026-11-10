@@ -1,6 +1,6 @@
 // 정리(틱 4): Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
 //     --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다.
-//     정리 출력의 `FINISH-MISSING #<PR> <글>` 줄(cleanup-sweep 머리 주석의 「마무리 빠짐」)은 그 Run 에 Orca 메시지로 FINISH-MISSING(pr 그 PR,
+//     정리 출력의 `FINISH-MISSING #<PR> <글>` 줄(cleanup/steps/worktrees.ts 의 「마무리 빠짐」)은 그 Run 에 Orca 메시지로 FINISH-MISSING(pr 그 PR,
 //     text `<글>. 마무리를 뒤늦게 돌리려면 orch.ts finish-pr <PR> --repo <repo> [--run <Run>]`)으로 옮긴다. 같은 PR 은
 //     state/finish-missing.json 에 적어 한 번만 쓴다. 워크트리를 치우지 못해 다음 틱이 같은 줄을 내도 다시 깨우지 않는다
 
@@ -16,7 +16,7 @@ import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { iso, lines, log, oneLine, relay, SWEEP_TIMEOUT_MS } from './shared.ts'
 
-// 머리 주석의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 에 Orca 메시지로 옮긴다. 같은 PR 은 한 번만 쓴다
+// cleanup/steps/worktrees.ts 의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 에 Orca 메시지로 옮긴다. 같은 PR 은 한 번만 쓴다
 function relayFinishMissing(repo: string, stdout: string, run: string | null): void {
   const found = lines(stdout).map((line) => /^\s*FINISH-MISSING #(\d+) (.*)$/.exec(line)).filter((m) => m !== null)
   if (found.length === 0) return
