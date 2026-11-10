@@ -41,7 +41,7 @@ extensions/work-board/hooks/register.js (그리기, 누름, 글칸, real 두 번
 - **`lib/worker-terminal.ts`(신규, PR1)**: 터미널 handle 이 어느 Run 의 worker 인지 정하는 조회 한 벌. 지금 `hooks/block-worker-terminal-send.ts` 머리 주석의 「worker 판정 범위」 가운데 worker 목록 조회(1단계 active, 3단계 남은 터미널 상태, 5단계 `run-list` 뒤 Run 마다 `worker-list`, `lib/worker-run-cache.ts`)를 옮긴다. 판정 꼴 둘을 둔다(아래 「worker 판정 꼴」). hook 고유의 지름길(2단계 `agentIdentity`, `send-hook-cache.json` 기억), 시간 한도, 첫 화면 승인 예외는 hook 에 남긴다. hook 의 판정이 바뀌지 않는 것은 기존 `coordinator-hooks.spec.ts` 가 본다.
 - **`scripts/board/board-approval.ts`(신규, PR1)**: 인자 풀이와 출력, 종료 코드만 맡는다. 동작 넷을 `prepend` 로 받는다.
 - **`extensions/work-board/bin/approvals.ts`(신규, PR2)**: 창이 부르는 세 동작. `where`(승인 파일의 절대경로 한 줄), `self`(이 프로세스의 `ORCA_TERMINAL_HANDLE` 과 worker 여부를 JSON 한 줄), `press`(승인·고쳐 달라 기록과 신호). orch 의 `lib/approvals.ts` 를 import 한다. 이 의존 방향(work-board → orch lib)은 `bin/worker-marks.ts` 가 `lib/movement.ts` 를 쓰는 것과 같다. orch 명령 표에는 넣지 않는다.
-- **`hooks/block-approval-press.ts`(신규, PR2)**: Bash PreToolUse hook. 명령에 `approvals.ts` 와 `press` 가 함께 든 Bash 호출을 거부한다. `block-worker-terminal-send.ts` 와 같은 자리, 같은 꼴(`skills/orch/hooks/`, 거부할 때만 deny 를 낸다)이다. 에이전트가 승인 기록을 쓰는 가장 쉬운 길을 막는다. 셸 밖에서 우회하는 것은 막지 못한다.
+- **`hooks/block-approval-press.ts`(신규, PR2, 자리는 `skills/orch/hooks/`)**: Bash PreToolUse hook. 가린 명령(따옴표 안, heredoc, 주석 제외)에 `approvals.ts press` 가 낱말로 이어 있으면 거부한다. 파일 경로를 따옴표로 감싼 호출(`node "$ROOT/bin/approvals.ts" press`)도 잡고, `lib/approvals.ts` 를 여는 명령이나 커밋 메시지의 같은 글은 통과시킨다. `block-worker-terminal-send.ts` 와 같은 자리, 같은 꼴(`skills/orch/hooks/`, 거부할 때만 deny 를 낸다)이다. 에이전트가 승인 기록을 쓰는 가장 쉬운 길을 막는다. 셸 밖에서 우회하는 것은 막지 못한다.
 - **`register.js`(PR2)**: 그리기와 사람 입력만 맡는다. 판정 규칙(누가 누를 수 있나, 버전이 맞나)은 스크립트가 다시 확인하므로, 창의 판정은 버튼을 그릴지 정하는 데만 쓴다.
 - **루프(`loop/`)**: 바꾸지 않는다. 승인 대기를 만들지 않는다(스펙 「범위 밖」, DECISION10).
 - **보드 파일(`board.json`)**: 승인 대기를 담지 않는다(스펙 DECISION12). `--item`, `--step` 은 글로만 남기고 보드에 그 항목과 단계가 있는지 보지 않는다. 보드를 읽으면 보드 잠금과 얽히고, 틀린 번호는 코디네이터가 `list` 와 창에서 바로 본다.
@@ -150,24 +150,25 @@ stateDiagram-v2
 ```text
 node bin/approvals.ts where --repo <주 checkout>      → 승인 파일 절대경로 한 줄
 node bin/approvals.ts self                              → {"terminal":"term_…"|null,"worker":true|false|null}
-node bin/approvals.ts press <id> <버전> approve|revise [--note <글>] --origin <kind> --repo <주 checkout>
+node bin/approvals.ts press <id> <버전> approve|revise [--note=<글>] --origin <kind> --repo <주 checkout>
                                                          → 0 이면 PRESS-OK <메시지 id>, 1 이면 stderr 한 줄 이유
 ```
 
-- `self` 의 `worker` 는 「approval 꼴」 판정이다. 조회가 실패하면 null 이다. 창은 null 과 true 를 같게 보고 버튼을 숨긴다. `terminal` 이 null 이면(Orca 밖에서 연 창) worker 가 아닌 것으로 보고 버튼을 보인다. Orca worker 는 늘 Orca 터미널 변수를 갖기 때문이다(사용자 2026-11-10). 창은 세션 시작 때 한 번 released 까지 읽고, 그 뒤 60초마다 `self --live`(active 와 남은 터미널 상태만)로 다시 읽는다. 일반 터미널이 `worker-start --terminal` 로 worker 가 될 수 있고, worker 가 released 가 되려면 먼저 그 상태들을 지나기 때문이다. 한 번 worker 로 본 터미널은 그 세션 동안 worker 로 둔다. 버튼을 숨긴 이유는 「코디네이터 창이나 다른 창에서 누르세요」 한 줄로 보인다. 그사이 빠진 경우도 `press` 가 released 까지 다시 판정해 거절한다.
+- `self` 의 `worker` 는 「approval 꼴」 판정이다. 조회가 실패하면 null 이다. 창은 null 과 true 를 같게 보고 버튼을 숨긴다. `terminal` 이 null 이면(Orca 밖에서 연 창) worker 가 아닌 것으로 보고 버튼을 보인다. Orca worker 는 늘 Orca 터미널 변수를 갖기 때문이다(사용자 2026-11-10). 창은 승인 대기가 처음 보일 때 한 번 released 까지 읽고, 그 뒤 승인 대기가 있는 동안 60초마다 `self --live`(active 와 남은 터미널 상태만)로 다시 읽는다. 승인 대기가 없으면 읽지 않는다. 조회가 무겁기 때문이다. 일반 터미널이 `worker-start --terminal` 로 worker 가 될 수 있고, worker 가 released 가 되려면 먼저 그 상태들을 지나기 때문이다. 한 번 worker 로 본 터미널은 그 세션 동안 worker 로 둔다. 버튼을 숨긴 이유는 「코디네이터 창이나 다른 창에서 누르세요」 한 줄로 보인다. 그사이 빠진 경우도 `press` 가 released 까지 다시 판정해 거절한다.
 - `press` 차례:
   1. 자기 `ORCA_TERMINAL_HANDLE` 이 있으면 「approval 꼴」 로 판정해 worker 거나 실패면 거절한다. 없으면(Orca 밖 창) 판정 없이 지나가고 `press.terminal` 은 null 이다.
   2. 잠금 안에서 그 id 의 가장 늦은 기록이 그 버전이고 `open` 인지 본다. 아니면 그 기록의 상태로 이유를 고른다: 다른 버전이면 「내용이 바뀌었어요」, `approved`·`revise` 면 「다른 창에서 이미 눌렀어요」, `cancelled` 면 「코디네이터가 거뒀어요」. 맞으면 `state`, `closedAt`, `press`(nonce 포함)를 쓰고 잠금을 푼다.
   3. 잠금 밖에서 `orca orchestration send --to run:<기록의 run> --type status --subject "APPROVED <id> <버전>"`(고쳐 달라면 `REVISE`)과 `--payload {"source":"board-approval","action","id","version","nonce"}` 를 보낸다. `--from` 은 주지 않는다. Orca 터미널에서는 보낸 쪽이 그 터미널로 정해진다(`lib/questions.ts` 머리 주석: 터미널에서는 `--from run:` 이 거부돼 보낸 쪽이 `term_*` 다). 실제 `from_handle` 은 PR1 실측으로 확인한다. 본문은 제목, `then`, 미리보기 경로, 고쳐 달라 글이다.
   4. 실패하면 잠금 안에서, 그 기록이 아직 2단계에서 쓴 `press.nonce` 그대로일 때만 `open` 으로 되돌리고 `press`, `closedAt` 을 지운다. 이유를 내고 1 로 끝난다.
   5. 성공하면 기록을 다시 쓰지 않는다. 메시지는 `check` 가 payload 의 nonce 로 찾는다.
+- 글은 `--note=<글>` 한 낱말로 준다. `-` 로 시작하는 글이 옵션으로 읽히지 않게 하려는 것이다.
 - 창은 0 이면 다음 읽기를 기다리지 않고 그 대기를 상자에서 뺀다. 1 이면 toast 에 이유를 보이고 상자는 그대로다.
 
 ### 버튼과 누른 사람 이벤트 (PR2)
 
 - 버튼 키는 `approval:<id>:<버전>:<approve|revise|fill>` 이다. 다시 그릴 때 버전이 바뀌면 키도 바뀐다.
 - `register.js` 는 이미 `ui.press`, `ui.input` 훅(`recordInput`)을 건다. 이 훅에서 마지막 이벤트의 `origin?.kind ?? 'none'` 을 메모리에 남기고, 승인 버튼의 `onPress` 가 그 값을 `--origin` 으로 넘긴다. 이 값은 판정이 아니라 나중에 확인할 기록이다. 버튼을 막는 조건으로 쓰지 않는다. 훅이 `onPress` 보다 먼저 도는지, 이벤트에 어떤 필드가 있는지 확인되지 않았고(`behavior.md` 「네트워크 조회」 는 `ui.press` 에 출처 필드가 없다고 적는다), 가정이 틀리면 모든 버튼이 멈추기 때문이다. 모델은 창의 버튼을 누를 수 없고 플러그인 코드만 누름을 만든다. PR2 첫 작업으로 Claude Code 의 실제 이벤트 꼴과 순서를 재고, 출처가 믿을 만하면 그때 막는 조건으로 올릴지 정한다.
-- 미리보기 링크는 `Link` 에 `file://` 주소를 준다. 터미널에서 로컬 파일이 열리는지는 PR2 에서 잰다. 열리지 않으면 링크 대신 경로를 보이고 버튼 하나가 `$.process.run(['open', <경로>])` 를 부른다.
+- 미리보기는 「미리보기 열기」 버튼과 흐린 경로로 보인다. 버튼은 `$.process.run(['sh', '-c', 'open "$1" 2>/dev/null || xdg-open "$1"', 'sh', <경로>])` 를 부른다. 처음 설계는 `Link` 에 `file://` 주소를 주고 안 열리면 버튼을 쓰는 것이었지만, 터미널 링크(OSC 8)가 로컬 파일을 여는지는 터미널마다 달라 모든 터미널을 재지 못하므로 버튼으로 정했다. 같은 버튼 키 꼴(`approval:<id>:<버전>:open`)을 쓴다.
 - 「고쳐 달라」 의 글칸은 같은 자리에 `Input`(label 「고칠 내용」, submitLabel 「보내기」, rows 3)을 그린다. 제출 이벤트(`ui.input`)도 같은 방식으로 `origin` 을 남긴다.
 
 ### 신호와 `check` 의 판정
@@ -252,7 +253,7 @@ Orca 밖 창에서 누른 승인은 `press.terminal` 이 null 이고 보낸 쪽�
 | 순서 | PR | 담는 것 | 계획서 |
 | --- | --- | --- | --- |
 | 1 | PR1 명령·저장·규칙 | `core/approvals.ts`, `lib/approvals.ts`, `lib/worker-terminal.ts`(hook 에서 옮김), `core/message-fields.ts` 의 두 함수, `board/board-approval.ts`, 명령 표 네 행, `data-schema.md`, `replying.md`, `waiting.md`, `board.md` 의 명령 안내, orch 변경 조각 | 구현 PR 본문의 검증 근거(구현한 계획서는 해당 PR에서 삭제) |
-| 2 | PR2 창 | `bin/approvals.ts`(`where`, `self`, `press`), `core/approvals.ts` 의 `applyPress`·`revertPress`, `lib/approvals.ts` 의 `recordPress`, `hooks/block-approval-press.ts`, `register.js` 의 상자·버튼·글칸·real 두 번·명령 채우기, `behavior.md`, README, 창 실측 | PR1 머지 뒤에 쓴다 |
+| 2 | PR2 창(이 문서의 창 부분을 구현했다) | `bin/approvals.ts`(`where`, `self`, `press`), `core/approvals.ts` 의 `applyPress`·`revertPress`, `lib/approvals.ts` 의 `recordPress`, `hooks/block-approval-press.ts`, `register.js` 의 상자·버튼·글칸·real 두 번·명령 채우기, `behavior.md`, README, 창 실측 | 구현 PR 본문의 검증 근거(구현한 계획서는 해당 PR에서 삭제) |
 
 `recordPress` 를 PR2 에 두는 것은 PR1 만 머지된 동안 승인 기록을 쓰는 길이 하나도 없게 하려는 것이다. 그동안 `check` 는 늘 「아직 누르지 않음」 이고 코디네이터는 채팅 승인을 쓴다.
 
