@@ -34,6 +34,7 @@
 ### 2. `skills/orch/tests/fixtures/loop-order-run.ts` 와 기록
 
 Run `r1`(주 Run), `r2` 가 등록된 틱 사례 둘을 둔다. 스크립트는 `loop/orch-loop.ts`, 인자는 `--repo <TMP>/repo --run r1 --tick --tick-number 1` 이다.
+두 사례 모두 `repo/.orch/state/notice-digest/r1.json` 과 `r2.json` 에 모아 둔 알림 하나와 고정 시계보다 하루 앞선 `sent_at` 을 둔다. `lib/notice-digest.ts` 의 `flushDigest` 는 쌓인 것이 없거나 주기(기본 1800초)가 지나지 않았으면 아무것도 보내지 않는다. 이 파일이 있어야 Run 마다의 DIGEST 보내기가 호출 순서에 드러난다.
 
 - `two-runs-offline`: orca 와 gh 가 모두 종료 코드 1 로 실패한다. 모든 단계가 Run 마다 오류 이유를 적는다.
 - `two-runs-busy`: `r1` 에는 worker 와 600초 넘은 미답변 질문이 있고 `r2` 에는 다른 worker 만 있다. 내 열린 PR 하나가 CI 실패이면서 base 와 충돌한다. Run 마다 응답이 달라 번갈아 도는 순서가 결과에 드러난다.
@@ -43,7 +44,7 @@ Run `r1`(주 Run), `r2` 가 등록된 틱 사례 둘을 둔다. 스크립트는 
 ### 3. 이 phase 를 검증하는 `skills/orch/tests/loop-order.spec.ts`
 
 `runLoopOrder()` 를 불러 두 사례의 stdout(로그 줄과 결과 줄. 문자열로 비교하므로 `errors` 의 키 순서까지 본다), stderr, 종료 코드, 상태 파일, orca·gh 호출 순서가 기록과 같은지 본다. 정상 사례는 `two-runs-busy`, 실패가 이어지는 사례는 `two-runs-offline` 이다.
-순서를 일부러 바꾸면 실패하는지 한 번 확인한다: `orch-loop.ts` 의 마지막 Run 반복에서 `flushDigest` 줄을 완료 보고 뒤로 옮긴 임시 수정으로 테스트가 실패하는 것을 보고 되돌린다. 커밋에는 넣지 않는다.
+순서를 일부러 바꾸면 실패하는지 한 번 확인한다: `orch-loop.ts` 의 마지막 Run 반복에서 `flushDigest` 줄을 완료 보고와 끊긴 worker 확인 뒤로 옮긴 임시 수정으로 테스트가 실패하는 것을 보고 되돌린다. 커밋에는 넣지 않는다.
 
 ## 검증
 

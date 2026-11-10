@@ -87,7 +87,8 @@
 
 ### 4. `skills/orch/scripts/loop/orch-loop.ts`
 
-- 머리 주석에는 첫 문단, 「사용법」, 「틱」 의 단계 순서(단계마다 단계 파일 이름을 붙인다), 「알림 방식」, 「환경 변수」, 「종료 코드」 와 옮긴 절이 어느 파일에 있는지의 목록만 남긴다.
+- 머리 주석에는 첫 문단, 「사용법」, 「틱」 의 단계 순서, 「알림 방식」, 「환경 변수」, 「종료 코드」 와 옮긴 절이 어느 파일에 있는지의 목록만 남긴다.
+- 「틱」 의 단계 순서는 위 「단계 파일」 표대로 새로 쓴다. 번호마다 이름과 단계 파일(`steps/questions.ts` 꼴)을 적는다. 3번에는 결정 알림(`steps/decisions.ts`)을 잇고, 11번은 옛 「대기 확인」 이 아니라 「미답변 질문 확인」(`steps/unanswered.ts`)으로 적고, 끝에 12번으로 모아 보내기와 완료 보고·끊긴 worker 확인(`steps/reports.ts`)을 더한다. 9번과 9-1번의 순서 이유 문장은 그대로 둔다.
 - 코드는 `USAGE`, `SELF`, `MODES`, `Mode`, `tick`, `main`, `executeMain`, `reportError`, 직접 실행 가드만 남긴다. `tick()` 은 `stepContext` 와 `initialState` 를 만들고 위 표의 순서대로 `collect` 로 각 단계의 결과를 `state` 에 합친 뒤(오류 이유는 `state.errors` 에, 나머지 칸은 `state` 에) 지금과 같은 결과 줄을 낸다.
 
 ### 5. 가리키는 곳 고치기
