@@ -238,7 +238,7 @@ skills/orch/scripts/lib/reservations.ts  마이그레이션 번호와 ADR 번호
 skills/orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 skills/orch/scripts/core/completion.ts  worker_done 과 앞선 준비 상태 대조. lib/completion.ts 는 기존 비교기를 넘기는 호환 함수다
 skills/orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/loop.ts          상주 루프의 상태 파일 한 벌. 파일과 판정은 머리 주석이 소유한다
+skills/orch/scripts/lib/loop.ts          상주 루프의 파일·프로세스 조회와 기록. 값 판정은 core/loop.ts 의 judgeLoop 가 맡는다
 skills/orch/scripts/lib/workers.ts       브랜치의 워크트리와 그 worker 행 찾기 한 벌. 사용처는 머리 주석이 소유한다
 skills/orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
 skills/orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
@@ -255,7 +255,7 @@ skills/orch/tests/golden/                고정 입력과 stdout·stderr·종료
 extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 
-`skills/orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
+`skills/orch/scripts/` 의 명령은 외부 조회·기록에 `lib/`, 값 판정에 `core/` 를 import 한다. core 는 실행 모듈을 import 하지 않는다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
 예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `extensions/work-board/bin/board.ts` 에서 import 한다.
 work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
 `extensions/work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/paths.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
