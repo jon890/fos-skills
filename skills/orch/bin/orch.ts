@@ -211,6 +211,10 @@ async function main(argv: string[]): Promise<number> {
       process.stdout.write(commands.helpText(first))
       return 0
     }
+    if ((rest[1] === '--help' || rest[1] === '-h') && commands.COMMANDS.some(c => c.group === first && c.verb?.startsWith(rest[0] + ' '))) {
+      process.stdout.write(commands.helpText(first, rest[0]))
+      return 0
+    }
     const retired = commands.COMMANDS.find(c => c.retired && c.group === first && (c.verb === null || c.verb === rest[0]))
     if (retired) {
       const { retiredMessage } = await import('../scripts/lib/retired.ts')

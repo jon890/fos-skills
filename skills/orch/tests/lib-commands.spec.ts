@@ -36,6 +36,9 @@ describe('표의 행', () => {
   test('스크립트가 받는 문맥 인자는 문맥 칸에 있다. 일부러 뺀 것은 이유가 있다', () => {
     // 일부러 채우지 않는 문맥. 설계 「문맥 칸」 표와 스펙 DECISION23 이 정한다
     const omitted: Record<string, string> = {
+      'orch board approval list run': '기록의 run 을 쓴다',
+      'orch board approval cancel run': '기록의 run 을 쓴다',
+      'orch board approval check run': '기록의 run 을 쓴다',
       'orch wait ack-lost loop-repo': '끊긴 worker 의 처리 기록만 쓴다. 루프를 보지 않는다',
       'orch loop stop specs-dir': '멈출 때는 지시서 폴더를 쓰지 않는다',
       'orch loop status run': '루프에 등록된 Run 을 모두 본다',
@@ -218,4 +221,11 @@ test('orchWord 는 PATH 의 첫 orch 가 표지 있는 실행기면 orch, 아니
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
+})
+
+test('승인 대기는 add/list/cancel/check 만 명령으로 노출한다', () => {
+  const result = ok(['board', 'approval', 'add', 'demo'])
+  assert.equal(result.command.script, 'board/board-approval.ts')
+  assert.deepEqual(result.args, ['add', 'demo'])
+  assert.ok(!COMMANDS.some(c => c.group === 'board' && /approve|revise/.test(c.verb ?? '')))
 })
