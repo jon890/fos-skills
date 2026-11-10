@@ -1,5 +1,11 @@
 # CHANGELOG: orch
 
+## 7.31.0 (2026-11-10)
+
+- 보드를 읽는 orch 호출자가 `finish.board` 를 함께 사용한다.
+- 단계 목록을 통째로 저장할 때 줄 지문을 확인해 그 사이 바뀐 글과 완료 값을 덮어쓰지 않는다.
+- 잘못된 보드 경로 설정은 한 줄 설명과 종료 코드 2 로 알린다. 루프는 WATCH-ERROR 를 남기고 다음 단계를 계속 실행한다.
+
 ## 7.30.4 (2026-11-10)
 
 - `queue.auto_review.feature_head`(기본 true)를 더했다. false 면 기능 PR 에 `verdict-on-head` 를 덧붙이지 않고 저장소의 `require` 만 본다. 반영 push 마다 재리뷰를 받지 않으려는 저장소가 쓴다.
