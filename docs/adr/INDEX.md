@@ -32,6 +32,7 @@
 | [ADR-026](026-docs-checks-at-authoring-time.md) | 문서 링크와 ADR 검사는 plan 번들 검사기 하나가 작성 단계에서 맡는다 | accepted | - |
 | [ADR-027](027-orca-message-wake.md) | 코디네이터 깨우기는 Orca 메시지를 쓴다 | accepted | - |
 | [ADR-028](028-orch-core-layer.md) | 값 판정과 외부 실행을 폴더로 나눈다 | accepted | - |
+| [ADR-029](029-board-write-lock.md) | 보드 쓰기는 `board.ts` 의 파일 잠금을 지나고, 통째 저장은 읽을 때의 줄 지문으로 거절한다 | accepted | - |
 
 ## 대체됨
 

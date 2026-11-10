@@ -1,0 +1,80 @@
+{
+  "name": "board-lock-step-edit",
+  "description": "board.ts 에 파일 잠금과 엄격 호출, 단계 글 바꾸기와 더하기, 항목 읽기, 낡은 목록 거절을 더한다",
+  "pr_scope": "extensions/work-board 의 board.ts 가 모든 쓰기를 파일 잠금 안에서 하고, orch 의 새 보드 명령과 통째 저장 호출자가 부를 새 옵션(--exact, --if-rev, --event)과 새 동작(step-edit, step-add, view)을 받게 한다.",
+  "deferred": [
+    {
+      "what": "보드 파일 찾기를 lib/board-file.ts 한 곳으로 옮겨 finish.board 를 읽게 하고, 줄 목록을 통째로 저장하는 호출자(board-sync, registerBoard, finish-pr)가 --if-rev 를 붙이고 거절 뒤 다시 하게 한다",
+      "why": "REQ2 와 REQ11 의 호출자 쪽이다. board.ts 가 --if-rev 를 받은 뒤에야 붙일 수 있다(설계 「PR 나누기와 순서」 PR2)",
+      "after": "이 계획(board-lock-step-edit)의 PR 머지"
+    },
+    {
+      "what": "명령 표에 orch board set, step, add-step, show 행과 scripts/board/board-edit.ts 를 더하고 board.md, 창 요청문, work-board 안내를 새 명령으로 바꾼다",
+      "why": "REQ1, REQ8, REQ9, REQ14 와 REQ3~REQ7 의 명령 쪽이다. 보드 파일 찾기(PR2)를 쓴다(설계 PR3)",
+      "after": "PR2 머지"
+    },
+    {
+      "what": "못 맞춘 머지(BOARD-UNMATCHED)의 판정, 기록 파일, 루프 알림, show 의 줄과 마지막 PR 뒤 남은 단계 규칙",
+      "why": "REQ12, REQ15. 새 명령의 show 와 --on 이 있어야 코디네이터가 알림을 풀 수 있다(설계 PR4)",
+      "after": "PR3 머지"
+    },
+    {
+      "what": "자동 진행 표시를 바꾸는 board.ts step-mark 와 orch board step 의 auto, ask, wait, plain 동작",
+      "why": "REQ10. 표시를 읽는 코드를 자동 진행 구현이 만든다(스펙 DECISION6, 설계 「자동 진행 표시 동작이 기다리는 방법」)",
+      "after": "PR3 머지와 보드 자동 진행 구현의 main 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-10",
+  "spec": "docs/features/orch-board-cli/spec.md",
+  "design": "docs/features/orch-board-cli/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ7",
+    "REQ8",
+    "REQ9",
+    "REQ11",
+    "REQ13"
+  ],
+  "total_phases": 3,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ11",
+        "REQ13"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ3",
+        "REQ7",
+        "REQ8",
+        "REQ9",
+        "REQ11",
+        "REQ13"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ4",
+        "REQ5",
+        "REQ6",
+        "REQ13"
+      ]
+    }
+  ]
+}
