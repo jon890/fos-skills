@@ -1591,15 +1591,20 @@ async function pressApproval($, entry, action, note, origin) {
   const key = approvalKey(entry, action)
   if (pressing.has(key)) return
   pressing.add(key)
+  // press 는 worker 터미널인지 다시 읽느라 몇 초 걸린다. 누른 자리에서 바로 보내는 중임을 보인다
+  const what = action === 'approve' ? '승인' : '고쳐 달라'
+  $.ui.toast(what + (action === 'approve' ? '을' : '를') + ' 보내는 중이에요: ' + entry.title)
+  $.ui.invalidate('ui.render')
   try {
     const root = (await boardRoot($)) || (await $.session.cwd())
     await run($, approvalArgv($.plugin.root, root, entry, action, note, origin), PRESS_TIMEOUT_MS)
     approvals = { ...approvals, open: approvals.open.filter((e) => e !== entry) }
-    $.ui.toast(note ? '고쳐 달라를 보냈어요' : '승인했어요')
+    $.ui.toast(what + (action === 'approve' ? '을' : '를') + ' 보냈어요: ' + entry.title)
   } catch (failure) {
     $.ui.toast(pressToast(String(failure.message || failure)))
   } finally {
     pressing.delete(key)
+    $.ui.invalidate('ui.render')
     armed = null
     // 누른 대기의 글칸만 닫는다. 다른 대기의 글칸에 적던 글을 지우지 않는다
     if (reviseKey === approvalKey(entry, 'revise')) reviseKey = ''
@@ -1613,7 +1618,7 @@ async function approveApproval($, entry, event) {
   now = await $.clock.now()
   if (entry.kind === 'real' && armedState(armed, key, now) !== 'armed') {
     armed = { key, until: now + REAL_ARM_MS }
-    $.ui.toast('real 에 씁니다. 한 번 더 누르세요')
+    $.ui.toast('real 에 씁니다. 10초 안에 승인을 한 번 더 누르세요: ' + entry.title)
     $.ui.invalidate('ui.render')
     try {
       $.clock.after(REAL_ARM_MS + 200, async () => {
@@ -1696,9 +1701,11 @@ async function recordInput($, e, next) {
   return next(e)
 }
 
-// ui.press, ui.input 이벤트의 출처를 남긴다. 승인 기록에 확인용으로 실을 뿐 버튼을 막지 않는다
+// ui.press, ui.input 이벤트의 출처를 남긴다. 승인 기록에 확인용으로 실을 뿐 버튼을 막지 않는다.
+// 이 두 이벤트에는 origin 필드가 없다(2026-11-10 실측: 사용자가 누른 기록이 모두 none 이었다). 대신 훅 호출을 일으킨 쪽 next.origin.plugin 을 남긴다.
+// 사람이 누른 버튼은 엔진의 호출이라 engine 이다. 이 훅은 onPress, onSubmit 보다 먼저 돌아 그 처리가 이 값을 읽는다
 async function recordOrigin($, e, next) {
-  approvalOrigin = (e && e.origin && e.origin.kind) || 'none'
+  approvalOrigin = (e && e.origin && e.origin.kind) || (next && next.origin && next.origin.plugin) || 'none'
   return recordInput($, e, next)
 }
 
@@ -1950,6 +1957,7 @@ export function register(on) {
       const approveKey = approvalKey(entry, 'approve')
       const reviseKeyOf = approvalKey(entry, 'revise')
       const armedNow = armedState(armed, approveKey, now) === 'armed'
+      const sending = pressing.has(approveKey) ? '승인' : pressing.has(reviseKeyOf) ? '고쳐 달라' : ''
       const real = entry.kind === 'real' && entry.real ? entry.real : null
       const stamp = clockOf(entry.createdAt)
       return Box({
@@ -1993,17 +2001,19 @@ export function register(on) {
               Text({ key: 'path', dimColor: true, wrap: 'wrap', children: [entry.preview.path] }),
             ],
           }))] : []),
-          indent('controls', 2, controls === 'press'
+          indent('controls', 2, controls === 'press' && sending
+            ? Text({ key: 'sending', color: 'yellow', bold: true, wrap: 'wrap', children: [sending + ' 보내는 중이에요…'] })
+            : controls === 'press'
             ? Box({
               flexDirection: 'row',
               flexWrap: 'wrap',
-              columnGap: 2,
+              columnGap: 4,
               children: [
-                Button({ key: approveKey, label: armedNow ? '한 번 더 누르세요' : '승인', variant: 'primary',
+                Button({ key: approveKey, label: armedNow ? '⚠ 한 번 더 누르세요' : '승인', variant: 'primary',
                   onPress: (event) => { void approveApproval($, entry, event) } }),
                 Button({ key: reviseKeyOf, label: reviseKey === reviseKeyOf ? '고쳐 달라 그만' : '고쳐 달라',
                   onPress: () => { reviseKey = reviseKey === reviseKeyOf ? '' : reviseKeyOf; $.ui.invalidate('ui.render') } }),
-                ...(armedNow ? [Text({ key: 'armed', color: 'red', wrap: 'wrap', children: ['real 에 씁니다. 10초 안에 한 번 더 누르세요'] })] : []),
+                ...(armedNow ? [Text({ key: 'armed', color: 'red', bold: true, wrap: 'wrap', children: ['⚠ real 에 씁니다. 10초 안에 「승인」 을 한 번 더 누르세요'] })] : []),
               ],
             })
             : controls === 'fill'
