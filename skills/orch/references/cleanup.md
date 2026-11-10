@@ -15,14 +15,14 @@
 - 화면: `orca terminal read` 로 읽어 에이전트가 일하는 중이 아니고 사용자가 쓰는 흔적이 없다.
 - 프로세스: 그 터미널에서 도는 프로세스가 worker 의 claude·codex 가 아니고 빈 셸이다.
 
-Orca 의 판정을 그대로 믿지 않는 이유는 새 세션에서 띄운 worker 를 `user_takeover` 로 잘못 적은 일이 있어서다(`CHANGELOG.md` 2.3.0, `cleanup-sweep.ts` 의 「새 세션에서 띄운 worker」 주석, `orch-doctor.ts` 의 터미널 판정 주석).
+Orca 의 판정을 그대로 믿지 않는 이유는 새 세션에서 띄운 worker 를 `user_takeover` 로 잘못 적은 일이 있어서다(`CHANGELOG.md` 2.3.0, `scripts/cleanup/steps/worktrees.ts` 의 「새 세션에서 띄운 worker」 주석, `orch-doctor.ts` 의 터미널 판정 주석).
 worker_done 을 받은 뒤 Orca 가 약 2분 뒤 자동으로 release 한다(`worker-show` 의 `autoReleaseAt`). 바로 정리할 때만 `worker-release` 를 부른다.
 PR 이 머지될 때까지 같은 worker 가 이어 받아야 하면 자동 release 를 막는다. 띄울 때 `worker-start --keep-open` 을 주거나 이미 뜬 worker 에 `worker-keep-open --dispatch <id>` 를 부른다. 머지 뒤 `worker-release` 가 그 보존을 풀고 닫는다. 새 워크트리(`new-child`, `new-top-level`)에 띄운 worker 는 처음부터 열려 있다.
 
-**`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 과 「PR 없이 끝난 워크트리」 가 소유한다.
+**`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `scripts/cleanup/steps/worktrees.ts` 파일 맨 위 설명의 「코디네이터가 띄운 터미널」 과 「PR 없이 끝난 워크트리」 가 소유한다.
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `orch cleanup sweep --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
-옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
+옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `scripts/cleanup/steps/worktrees.ts` 파일 맨 위 설명의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.ts` 와 `merge-with-finish.ts` 는 스스로 이 옵션을 더하지 않는다. `queue.sweep_args` 에 두면 머지 큐의 정리에 넘어가고, Run 이 없으면 옵션을 빼고 경고한다.
 
 머지는 worker 에게 맡기지 않는다.
@@ -317,7 +317,7 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 로컬 브랜치가 없는 원격 브랜치는 `--remote-branches` 로 지운다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치가 여기 든다.
 머지 큐 로그 폴더(`.orch/queue`)의 끝난 마무리 로그와 큐 로그도 휴지통(`--trash`)으로 옮긴다. 돌고 있는 것, 모르는 파일, 1시간이 안 된 실패 로그와, 끝 표시 없이 pid 만 죽은 마무리 로그는 남긴다(1시간이 지나면 옮긴다). 조건은 `lib/queue-logs.ts` 머리 주석이 소유한다.
 작업이 띄운 Docker 컨테이너와 쌓은 이미지도 반납한다. 무엇을 지우고 남기는지는 아래 「Docker 자원 반납」 이 소유한다.
-상세 판정은 `cleanup-sweep.ts` 머리 주석이 소유한다.
+상세 규칙은 `scripts/cleanup/steps/` 의 해당 단계 파일 맨 위 설명을 따른다.
 
 **코디네이터가 worker 에게 맡긴 작업은 그 PR 이 머지되면 그 자리에서 정리한다.** 작업을 맡긴 저장소가 코디네이터의 저장소가 아니어도 같다.
 대상은 worker 터미널, 워크트리, 로컬 브랜치다(원격 브랜치는 위 조건을 따른다). 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.

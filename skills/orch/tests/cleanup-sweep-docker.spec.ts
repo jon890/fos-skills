@@ -1,4 +1,4 @@
-// cleanup-sweep.ts 의 Docker 자원 정리(머리 주석의 「Docker 자원」)를 본다. 판정의 세부는 lib-docker.spec.ts 가 본다.
+// cleanup/steps/docker.ts 의 Docker 자원 정리를 본다. 판정의 세부는 lib-docker.spec.ts 가 본다.
 // 가짜 실행 파일, 상태와 공통 도우미는 fixtures/cleanup-sweep.ts 가 소유한다. 여기서는 docker 만 상태를 가진 가짜로 바꾼다.
 
 import assert from 'node:assert/strict'
