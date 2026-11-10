@@ -33,4 +33,14 @@ jobs:
         # 묶음 목록, TypeScript 버전, 캐시 폴더는 실행기가 소유한다(scripts/run-tests.ts 머리 주석).
         # plugin test 가 실패해도 돌려 같은 실행에서 두 결과를 함께 본다
         if: ${{ !cancelled() }}
-        run: node scripts/run-tests.ts
+        # 결과 폴더를 고정 경로로 둬 실패해도 아래 단계가 node.log 를 올릴 수 있게 한다
+        run: node scripts/run-tests.ts --out "$RUNNER_TEMP/run-tests"
+      - name: Upload test logs
+        # 실패한 테스트의 상세 로그(node.log)가 job 이 끝나면 사라지지 않게 짧게 보관한다
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-tests-logs
+          path: ${{ runner.temp }}/run-tests/node.log
+          if-no-files-found: warn
+          retention-days: 7
