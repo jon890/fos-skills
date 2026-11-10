@@ -124,3 +124,14 @@ describe('cwdHolders', () => {
     }
   })
 })
+
+
+test('캐시 잠금 확인은 ESRCH 만 종료로 보고 알 수 없는 오류는 남긴다', (t) => {
+  const kill = t.mock.method(process, 'kill', () => { throw errno('EINVAL') })
+  assert.equal(alive(4242), false)
+  assert.equal(alive(4242, { keepOnUnknownError: true }), true)
+  kill.mock.mockImplementation(() => { throw errno('EPERM') })
+  assert.equal(alive(4242, { keepOnUnknownError: true }), true)
+  kill.mock.mockImplementation(() => { throw errno('ESRCH') })
+  assert.equal(alive(4242, { keepOnUnknownError: true }), false)
+})

@@ -42,6 +42,7 @@
 //                   한 번 보여 준 메시지로 다시 막지 않으려는 것이다
 //     출력 앞뒤에 다른 줄이 섞여도 마지막 JSON 객체를 읽는다. JSON 이 없으면 값이 없는 것으로 본다
 
+import { objectOr } from '../core/json.ts'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -52,6 +53,7 @@ import { short } from '../lib/output.ts'
 import { pyStr as text } from '../lib/py.ts'
 
 // 답을 받은 출력. 첫 줄이 `answer: <답>` 이고, 지금 출력은 그 뒤에 ask 의 출력을 잇는다. 짧은 출력은 첫 줄만이다
+
 function answered(answer: string, output: string): void {
   process.stdout.write(short() ? `answer: ${answer}\n` : `answer: ${answer}\n${output}\n`)
 }
@@ -82,10 +84,6 @@ const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/u
 
 type Json = Record<string, unknown>
 
-function obj(value: unknown): Json | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : null
-}
-
 // 출력 전체, 그다음 마지막 줄부터 차례로 JSON 객체를 찾는다. 그 result 를 낸다(없으면 객체 자체).
 function load(text: string): Json {
   const lines = text.split(LINE_BREAK)
@@ -96,15 +94,15 @@ function load(text: string): Json {
     } catch {
       continue
     }
-    const found = obj(data)
-    if (found) return obj('result' in found ? found.result : found) ?? {}
+    const found = objectOr(data, null)
+    if (found) return objectOr('result' in found ? found.result : found, null) ?? {}
   }
   return {}
 }
 
 function bodyOf(value: unknown): string {
   if (typeof value === 'string') return value
-  const found = obj(value)
+  const found = objectOr(value, null)
   if (found) {
     for (const key of ['answer', 'body', 'text']) if (typeof found[key] === 'string') return found[key] as string
   }
@@ -113,7 +111,7 @@ function bodyOf(value: unknown): string {
 
 function messages(result: Json): Json[] {
   const list = Array.isArray(result.messages) ? result.messages : []
-  return list.map(obj).filter((m): m is Json => m !== null && m.type !== 'heartbeat')
+  return list.map(value => objectOr(value, null)).filter((m): m is Json => m !== null && m.type !== 'heartbeat')
 }
 
 function answerOf(output: string): string {
@@ -133,12 +131,12 @@ function messageIdOf(output: string): string {
 // send 결과의 메시지 ID. 전체 기록은 message.id, 줄인 보기는 messageId 다
 function sentIdOf(output: string): string {
   const result = load(output)
-  return String(obj(result.message)?.id || result.messageId || result.id || '').trim()
+  return String(objectOr(result.message, null)?.id || result.messageId || result.id || '').trim()
 }
 
 // 실패한 ask 의 오류 코드. JSON 의 error.code, 없으면 글 속의 알려진 코드 낱말이다. 못 읽으면 빈 문자열이다
 function errorCodeOf(output: string): string {
-  const code = obj(load(output).error)?.code
+  const code = objectOr(load(output).error, null)?.code
   if (typeof code === 'string' && code) return code
   const word = /\b(?:remote_)?runtime_busy\b|\bruntime_rpc_queue_overloaded\b|\bdispatch_(?:inactive|not_found)\b/.exec(output)
   if (word) return word[0]

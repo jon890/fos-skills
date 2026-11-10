@@ -90,6 +90,7 @@
 //     GH                    gh 실행 파일(lib/gh.ts). 기본 gh
 //     ORCH_DIR              orch 루트(lib/paths.ts). 기본은 주 checkout 의 .orch
 
+import { isObject } from '../core/json.ts'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
@@ -136,10 +137,6 @@ function storeOf(kind: ReserveKind): ReservationStore {
 type Presence = 'present' | 'absent' | null
 // 정리 판정. merged 는 예약 뒤 머지, gone 은 브랜치가 원격과 로컬에 모두 없음이라 지운다. false 남김, null 판정 못 함
 type Verdict = 'merged' | 'gone' | false | null
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function oneLine(text: string): string {
   return text.trim().replace(/\s*\n\s*/g, ' ')

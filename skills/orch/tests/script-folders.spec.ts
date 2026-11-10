@@ -29,12 +29,12 @@ describe('스크립트 폴더', () => {
     }
   })
 
-  test('scripts 바로 아래에는 .ts 가 없고 폴더는 묶음, lib, handlers 뿐이다', () => {
+  test('scripts 바로 아래에는 .ts 가 없고 폴더는 묶음, core, lib, handlers 뿐이다', () => {
     const entries = readdirSync(SCRIPTS)
     assert.deepEqual(entries.filter((n) => n.endsWith('.ts')), [])
     // __pycache__ 는 python3 이 orch-doctor.py 를 돌릴 때 남기는 캐시다(git 이 무시한다)
     const dirs = entries.filter((n) => n !== '__pycache__' && statSync(join(SCRIPTS, n)).isDirectory()).sort()
-    assert.deepEqual(dirs, [...GROUPS, 'handlers', 'lib'].sort())
+    assert.deepEqual(dirs, [...GROUPS, 'core', 'handlers', 'lib'].sort())
   })
 
   test('묶음 폴더의 .ts 는 명령 표의 스크립트이거나 그 스크립트가 부르는 보조 스크립트다', () => {

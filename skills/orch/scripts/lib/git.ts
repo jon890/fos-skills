@@ -101,3 +101,7 @@ export function conflicts(repo: string, base: string, head: string): { ok: true;
   }
   return { ok: false, error: `${base} 와 ${head} 를 합쳐 보지 못했다(종료 코드 ${done.code}): ${done.stderr.trim()}` }
 }
+
+export function gitBin(): string {
+  return process.env.GIT || 'git'
+}

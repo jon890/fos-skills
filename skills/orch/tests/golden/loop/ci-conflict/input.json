@@ -1,0 +1,125 @@
+{
+  "script": "loop/orch-loop.ts",
+  "args": [
+    "--repo",
+    "<TMP>/repo",
+    "--run",
+    "r",
+    "--tick",
+    "--tick-number",
+    "1"
+  ],
+  "files": {
+    "repo/.orch/config.json": "{\"pipeline\":{\"authors\":[\"me\"]}}\n",
+    "repo/.orch/state/loop-runs/r.json": "{\"run\":\"r\",\"specs_dir\":null,\"registered_at\":\"2026-01-01T00:00:00Z\"}\n"
+  },
+  "rules": {
+    "orca": [
+      {
+        "args": [
+          "worker-list"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[],\"page\":{},\"scope\":{\"source\":\"all\"}}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "question,escalation"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[]}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "--all"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[]}}\n"
+      },
+      {
+        "args": [
+          "check"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[]}}\n"
+      },
+      {
+        "args": [
+          "terminal",
+          "read"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"lines\":[]}}\n"
+      },
+      {
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[],\"workers\":[],\"runs\":[],\"message\":{\"id\":\"notice\"},\"page\":{},\"scope\":{\"source\":\"all\"}}}\n"
+      }
+    ],
+    "gh": [
+      {
+        "args": [
+          "pr",
+          "list"
+        ],
+        "stdout": "[{\"number\":1,\"state\":\"OPEN\",\"title\":\"example\",\"headRefName\":\"feat\",\"baseRefName\":\"main\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"url\":\"https://github.example/o/r/pull/1\",\"mergeable\":\"CONFLICTING\",\"statusCheckRollup\":[{\"name\":\"Tests\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\"}]}]\n"
+      },
+      {
+        "args": [
+          "api",
+          "user"
+        ],
+        "stdout": "me\n"
+      },
+      {
+        "args": [
+          "api"
+        ],
+        "stdout": "[]\n"
+      },
+      {
+        "stdout": "{\"number\":1,\"state\":\"OPEN\",\"title\":\"example\",\"headRefName\":\"feat\",\"baseRefName\":\"main\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"url\":\"https://github.example/o/r/pull/1\",\"mergeable\":\"MERGEABLE\",\"statusCheckRollup\":[{\"name\":\"Tests\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-01-01T00:00:00Z\"}],\"commits\":[],\"files\":[]}\n"
+      }
+    ],
+    "git": [
+      {
+        "args": [
+          "--git-common-dir"
+        ],
+        "code": 128
+      },
+      {
+        "args": [
+          "worktree",
+          "list"
+        ],
+        "stdout": "worktree <TMP>/repo\nHEAD abc\nbranch refs/heads/main\n\n"
+      },
+      {
+        "args": [
+          "fetch"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "rev-parse",
+          "--verify"
+        ],
+        "stdout": "abc\n"
+      },
+      {
+        "args": [
+          "cat-file"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "merge-tree"
+        ],
+        "code": 1,
+        "stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsrc/conflict.ts\n"
+      },
+      {
+        "code": 1
+      }
+    ]
+  }
+}

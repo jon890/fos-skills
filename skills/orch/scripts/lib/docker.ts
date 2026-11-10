@@ -26,6 +26,8 @@
 //
 // 환경 변수 DOCKER 로 docker 실행 파일을 바꾼다. 기본 docker.
 
+import { alive as pidAlive } from './process.ts'
+import { isObject } from '../core/json.ts'
 import { ConfigError, section } from './config.ts'
 import type { Config } from './config.ts'
 import { run } from './proc.ts'
@@ -61,10 +63,6 @@ export function dockerBin(): string {
 }
 
 const defaultRunner: Runner = (args) => run([dockerBin(), ...args], { timeoutMs: TIMEOUT_MS })
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function compile(pattern: unknown, where: string): RegExp {
   if (typeof pattern !== 'string' || !pattern) throw new ConfigError(`${where} 는 비지 않은 정규식 문자열이다`)
@@ -125,16 +123,7 @@ function under(child: string, parent: string): boolean {
   const base = parent.replace(/\/+$/, '')
   return child === base || child.startsWith(`${base}/`)
 }
-
-// 프로세스가 있는지. 다른 사용자의 프로세스(EPERM)도 있는 것으로 본다
-export function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
+export { alive as pidAlive } from './process.ts'
 
 export type Verdict = { container: Container; remove: boolean; reason: string }
 

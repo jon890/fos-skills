@@ -75,8 +75,8 @@ test('모든 직접 실행 스크립트가 공용 경고 모듈에 닿는다', (
   const exempt: Record<string, string> = {
     'worker/resume-exec.ts': '새 터미널에서 lib/resume.ts 만으로 뜨는 실행기다. 경고 모듈과 orca 조회 없이 세션을 찾고 끝난다',
   }
-  // 직접 실행 스크립트는 묶음 폴더 아래에 있다(lib, handlers 는 진입 스크립트가 아니다)
-  const groups = readdirSync(SCRIPTS, { withFileTypes: true }).filter((d) => d.isDirectory() && !['lib', 'handlers'].includes(d.name)).map((d) => d.name)
+  // 직접 실행 스크립트는 묶음 폴더 아래에 있다(core, lib, handlers 는 진입 스크립트가 아니다)
+  const groups = readdirSync(SCRIPTS, { withFileTypes: true }).filter((d) => d.isDirectory() && !['core', 'lib', 'handlers'].includes(d.name)).map((d) => d.name)
   const names = groups.flatMap((group) => readdirSync(join(SCRIPTS, group)).filter((name) => name.endsWith('.ts')).map((name) => `${group}/${name}`))
   assert.ok(names.length > 0)
   for (const name of Object.keys(exempt)) assert.ok(names.includes(name), `예외 목록의 ${name} 이 없다`)

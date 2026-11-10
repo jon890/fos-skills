@@ -6,15 +6,18 @@ import { run } from './proc.ts'
 
 // EPERM 은 그 pid 의 프로세스가 있지만 신호를 보낼 권한이 없다는 뜻이라 살아 있다고 본다.
 // EPERM 을 죽음으로 읽으면 같은 PR 의 마무리를 겹쳐 걸 수 있었다.
+// keepOnUnknownError 는 기존 캐시 잠금처럼 ESRCH 로 확인한 종료만 회수할 때 쓴다.
 // 정수가 아니거나 1 미만이면 process.kill 을 부르지 않는다. process.kill(0, 0) 은 자기 프로세스 그룹에 보내져 늘 성공하므로
 // 깨진 pid 파일이 살아 있는 것으로 읽혀 잠금이 회수되지 않는다.
-export function alive(pid: number): boolean {
+
+export function alive(pid: number, options: { keepOnUnknownError?: boolean } = {}): boolean {
   if (!Number.isInteger(pid) || pid < 1) return false
   try {
     process.kill(pid, 0)
     return true
   } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
+    const code = (e as NodeJS.ErrnoException).code
+    return code === 'EPERM' || (options.keepOnUnknownError === true && code !== 'ESRCH')
   }
 }
 

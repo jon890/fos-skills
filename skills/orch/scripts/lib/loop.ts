@@ -32,37 +32,17 @@
 //   ps 가 실패한 사이 pid 가 죽었으면 false 다.
 //
 
+import { runKey } from '../core/loop.ts'
+import type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
 import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
 import { envMs } from './env.ts'
 import { run } from './proc.ts'
 import { alive } from './process.ts'
+import { judgeLoop } from '../core/loop.ts'
 
-const DEFAULT_TICK_SEC = 300
-const MIN_DEAD_SEC = 120
 export const DEFAULT_ALIVE_SEC = 30
-
-export type LoopState = {
-  pid: number
-  run: string | null
-  runs?: string[]
-  repo: string
-  tick_sec: number
-  started_at: string
-  alive_at: string
-  last_tick: string | null
-  ticks: number
-  errors: Record<string, string | null>
-  [key: string]: unknown
-}
-export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string; recheck?: true }
-export type RunEntry = { run: string; specs_dir: string | null; registered_at: string; coordinator_terminal: string | null }
-
-// 파일 이름에 쓸 Run. 머리 주석의 「<Run>」
-export function runKey(run: string): string {
-  return run.replace(/[^A-Za-z0-9_.-]/g, '_')
-}
 
 export function loopFile(repo: string): string {
   return join(pathOf('state', repo), 'loop.json')
@@ -182,18 +162,14 @@ export function isLoopProcess(pid: number): boolean | null {
 export function recheckMs(): number {
   return envMs('ORCH_LOOP_ALIVE_SEC', DEFAULT_ALIVE_SEC) + envMs('ORCH_LOOP_RECHECK_MARGIN_SEC', 5)
 }
-
-// now 는 epoch ms 다.
+// 외부 상태는 여기서 읽고, 결과는 값만으로 정한다.
 export function loopStatus(repo: string, now: number): LoopStatus {
   const state = readLoop(repo)
-  if (!state) return { alive: false, reason: '없음' }
-  const pid = Number(state.pid)
-  if (!alive(pid)) return { alive: false, reason: `pid ${String(state.pid)} 종료` }
-  const tick = typeof state.tick_sec === 'number' && Number.isFinite(state.tick_sec) && state.tick_sec > 0 ? state.tick_sec : DEFAULT_TICK_SEC
-  const at = typeof state.alive_at === 'string' ? Date.parse(state.alive_at) : Number.NaN
-  if (!Number.isFinite(at) || now - at > Math.max(3 * tick, MIN_DEAD_SEC) * 1000) {
-    const reason = `alive_at ${String(state.alive_at ?? '-')} 이후 응답 없음`
-    return isLoopProcess(pid) !== false ? { alive: false, reason, recheck: true } : { alive: false, reason }
-  }
-  return { alive: true, state }
+  const pid = Number(state?.pid)
+  const live = state !== null && alive(pid)
+  const result = judgeLoop(state, now, live)
+  return !result.alive && result.recheck ? judgeLoop(state, now, live, isLoopProcess(pid)) : result
 }
+
+export { DEFAULT_TICK_SEC, MIN_DEAD_SEC, runKey } from '../core/loop.ts'
+export type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'

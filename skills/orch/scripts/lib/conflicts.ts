@@ -25,7 +25,7 @@
 //   앞 base 의 지시서는 다음 base 에서 쓸모가 없다. `중간 과정: PR #<PR>` 줄을 담아 launch-worker 가 보드에 새 항목을 만들지 않는다.
 //   그 PR 의 마무리(finish-pr.ts)가 머지 뒤 conflictSpecFiles 로 찾아 지운다. 옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md 도 그 목록에 든다.
 
-import { createHash } from 'node:crypto'
+import { notifiedKey } from '../core/conflicts.ts'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { INTERIM } from './board.ts'
@@ -121,12 +121,6 @@ export function conflictSpecFiles(repo: string, pr: number): string[] {
 
 export function notifiedFile(repo: string): string {
   return join(pathOf('state', repo), 'notify-conflicts.json')
-}
-
-// 알린 기록의 키(머리 주석의 「알린 기록」). files 의 순서는 보지 않는다
-export function notifiedKey(pr: number, headSha: string, files: readonly string[]): string {
-  const print = createHash('sha256').update([...files].sort().join('\n')).digest('hex').slice(0, 12)
-  return `${pr}@${headSha}#${print}`
 }
 
 export function loadNotified(file: string): Record<string, string> {
@@ -310,3 +304,5 @@ export async function concludeConflict(
     err(`notify-conflicts: pr-conflict 를 내지 못했다: ${(e as Error)?.message ?? String(e)}`)
   }
 }
+
+export { notifiedKey } from '../core/conflicts.ts'

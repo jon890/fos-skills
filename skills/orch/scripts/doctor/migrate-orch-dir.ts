@@ -78,6 +78,9 @@
 //
 // GIT, ORCA, PGREP 환경 변수로 실행 파일을 바꾼다.
 
+import { workerRows } from '../lib/workers.ts'
+import { gitBin } from '../lib/git.ts'
+import { isObject } from '../core/json.ts'
 import {
   accessSync,
   constants as fsConstants,
@@ -100,9 +103,8 @@ import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep 
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { inside, isFile, real, realPath } from '../lib/fs.ts'
+import { inside, isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
-import { orcaJson } from '../lib/orca.ts'
 import { DEFAULT_MOVES, ensureIgnored, hasFiles, LEGACY_MARKERS, legacyPaths, NAMES, orchDir, pathOf } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
 import { pyRegExp, pyStr, shSplit } from '../lib/py.ts'
@@ -124,7 +126,6 @@ const LOCAL_SKIP = new Set(['worktrees'])
 const KEEP_DIRS = new Set(['.omc', '.claude'])
 const PREVIEWS = '.omc/previews'
 const SHOWN_REFS = 60
-const PAGE_LIMIT = '100'
 // finish-pr.ts 의 NUMBER_OK 와 같다. 만든 after-deploy.ts 에 그대로 적는다
 const NUMBER_OK = '^[A-Za-z0-9._/-]+$'
 
@@ -164,10 +165,6 @@ function out(line: string): void {
 
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
-}
-
-function gitBin(): string {
-  return process.env.GIT || 'git'
 }
 
 function git(root: string, args: string[]): { code: number; stdout: string } {
@@ -269,10 +266,6 @@ function splitLines(text: string): string[] {
   const lines = text.split(LINE_BREAK)
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
   return lines
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 // 덮어쓰다 멈춰도 설정 파일이 반쯤 쓰인 채 남지 않게 옆에 쓴 뒤 바꾼다
@@ -470,32 +463,15 @@ function worktreePaths(root: string): Set<string> {
   }
   return paths
 }
-
-// worker-list 를 모든 페이지에 걸쳐 읽는다. 첫 페이지만 읽으면 다른 worker 를 놓친다(lib/orca.ts 머리 주석). 실패하면 null
-function workerRows(runId: string | null): Record<string, unknown>[] | null {
-  const rows: Record<string, unknown>[] = []
-  const seen = new Set<string>()
-  let cursor: string | null = null
-  for (let first = true; first || cursor !== null; first = false) {
-    const args = ['orchestration', 'worker-list', ...(runId ? ['--run', runId] : []), '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])]
-    const got = orcaJson<{ workers?: unknown; page?: { nextCursor?: unknown } }>(args)
-    if (!got.ok || !isObject(got.data)) return null
-    const list = got.data.workers
-    if (Array.isArray(list)) for (const row of list) if (isObject(row)) rows.push(row)
-    const next = got.data.page?.nextCursor
-    cursor = typeof next === 'string' && next ? next : null
-    if (cursor !== null) {
-      if (seen.has(cursor)) return null
-      seen.add(cursor)
-    }
-  }
-  return rows
+function migrationWorkerRows(runId: string | null): Record<string, unknown>[] | null {
+  const got = workerRows(runId, undefined, { strict: true })
+  return got.ok ? got.rows : null
 }
 
 function blockers(root: string, runId: string | null): string[] {
   const found: string[] = []
   const live = liveSpecPaths(runId)
-  const workers = live === null ? null : workerRows(runId)
+  const workers = live === null ? null : migrationWorkerRows(runId)
   if (live === null || workers === null) {
     found.push(`orca 로 살아 있는 dispatch 와 worker 를 읽지 못했다${runId ? '' : '(--run 이 없으면 모든 Run 의 목록을 읽어야 한다)'}`)
   } else {

@@ -209,6 +209,10 @@
 
 ### 배치
 
+orch 의 값 판정은 `scripts/core/`, 외부 조회와 기록은 `scripts/lib/` 와 명령 파일이 맡는다.
+core 는 core 안의 상대 모듈과 허용한 내장 모듈만 가져온다. 기존 lib 경로는 호환 재수출로 남는다.
+[ADR-028](adr/028-orch-core-layer.md)이 선택 이유를, [경계 검사](../skills/orch/tests/core-boundary.spec.ts)가 허용 의존과 외부 상태 접근 금지를 소유한다.
+
 ```
 skills/orch/scripts/<묶음>/<명령>.ts     명령. 폴더는 명령 표(lib/commands.ts)의 묶음과 같다. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
 skills/orch/scripts/orch-doctor.py       doctor 의 Python 진입점. ts_shim.py 와 함께 scripts/ 바로 아래에 남는다. 옛 .py 진입점은 이 둘 외에는 orch 5.0.0 에서 지웠다
@@ -222,19 +226,19 @@ skills/orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 or
 skills/orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 skills/orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
 skills/orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
-skills/orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
-skills/orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue 키를 옵션으로 바꾸는 표 한 벌. 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
+skills/orch/scripts/lib/config.ts        config.json 파일 읽기. 값 검사와 키 목록은 core/config.ts 를 호출하고 재수출한다
+skills/orch/scripts/core/overlap.ts      입력 파일 목록의 단위 겹침 판정. lib/overlap.ts 는 재수출한다
+skills/orch/scripts/core/queue-options.ts 머지 큐 옵션 목록과 설정 키 변환 표. lib/queue-options.ts 는 재수출한다
+skills/orch/scripts/core/finish-options.ts finish-pr 옵션 목록. lib/finish-options.ts 는 재수출한다
 skills/orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/auto-merge.ts    상주 루프의 자동 머지 판정 한 벌. 함수는 머리 주석이 소유한다. 부수 효과는 orch-loop.ts 가 한다
-skills/orch/scripts/lib/refresh.ts       상주 루프의 뒤처진 PR 최신화 판정과 기록 한 벌. 부수 효과는 orch-loop.ts 가 한다
+skills/orch/scripts/core/auto-merge.ts   상주 루프의 자동 머지 값 판정. lib/auto-merge.ts 는 재수출한다
+skills/orch/scripts/lib/refresh.ts       최신화 파일 조회와 기록. 값 판정은 core/refresh.ts 가 소유하고 재수출한다
 skills/orch/scripts/lib/queue-turn.ts    머지 큐의 차례 기록 한 벌. 머지 큐가 쓰고 상주 루프가 읽는다
 skills/orch/scripts/lib/reservations.ts  마이그레이션 번호와 ADR 번호 예약 한 벌. 파일, 잠금, 함수와 사용처는 머리 주석이 소유한다
 skills/orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
-skills/orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
+skills/orch/scripts/core/completion.ts  worker_done 과 앞선 준비 상태 대조. lib/completion.ts 는 기존 비교기를 넘기는 호환 함수다
 skills/orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/loop.ts          상주 루프의 상태 파일 한 벌. 파일과 판정은 머리 주석이 소유한다
+skills/orch/scripts/lib/loop.ts          상주 루프의 파일·프로세스 조회와 기록. 값 판정은 core/loop.ts 의 judgeLoop 가 맡는다
 skills/orch/scripts/lib/workers.ts       브랜치의 워크트리와 그 worker 행 찾기 한 벌. 사용처는 머리 주석이 소유한다
 skills/orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
 skills/orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
@@ -245,11 +249,13 @@ skills/orch/scripts/lib/guard/guard.ts   거부 규칙
 skills/orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부른다
 skills/orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
 skills/orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
+skills/orch/tests/core-*.spec.ts         값 입력 검증과 경계·중복 검사. 순수 테스트는 외부 실행 환경을 바꾸지 않는다
 skills/orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
+skills/orch/tests/golden/                고정 입력과 stdout·stderr·종료 코드·종료 뒤 상태. fixtures/golden-run.ts 가 비교한다
 extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 
-`skills/orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
+`skills/orch/scripts/` 의 명령은 외부 조회·기록에 `lib/`, 값 판정에 `core/` 를 import 한다. core 는 실행 모듈을 import 하지 않는다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
 예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `extensions/work-board/bin/board.ts` 에서 import 한다.
 work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
 `extensions/work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/paths.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.

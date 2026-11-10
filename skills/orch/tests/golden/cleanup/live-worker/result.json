@@ -1,0 +1,6 @@
+{
+  "stdout": "cleanup-sweep dry-run: <TMP>/repo (base main)\n건너뜀 <TMP>/worktree: 살아 있는 worker d. 근거: 살아 있는 dispatch d\n",
+  "stderr": "",
+  "code": 0,
+  "states": {}
+}

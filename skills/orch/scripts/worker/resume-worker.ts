@@ -44,6 +44,9 @@
 // 잠금(<orch 루트>/state/resume/<dispatch>/lock): 이미 있으면 그 pid 가 살아 있거나 그 terminal 이 열려 있을 때 RESUME-FAIL target 이다.
 // 둘 다 아니면 옛 폴더를 비우고 새로 잡는다. 회수는 reclaim 파일을 잡은 실행 하나만 한다. 그래서 link 실패로 남은 터미널이 열려 있는 동안 같은 세션에 두 번째 프로세스를 띄우지 않는다.
 
+import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
+import { alive } from '../lib/process.ts'
+import { objectOr } from '../core/json.ts'
 import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -89,24 +92,13 @@ class Fail extends Error {
   }
 }
 
-function obj(value: unknown): Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
-}
-
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
-
 function pidAlive(pid: unknown): boolean {
-  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
-  }
+  return typeof pid === 'number' && alive(pid)
 }
 
 function openHandles(): Set<string> {
@@ -156,21 +148,21 @@ function lookup<T>(args: string[]): T {
 }
 
 function judge(dispatchId: string, runFlag: string | undefined, repo: string): Target {
-  const shown = obj(lookup<Json>(['orchestration', 'worker-show', '--dispatch', dispatchId]))
-  const dispatch = obj(shown.dispatch)
-  const worker = obj(shown.worker)
-  const options = obj(worker.startOptions)
+  const shown = objectOr(lookup<Json>(['orchestration', 'worker-show', '--dispatch', dispatchId]))
+  const dispatch = objectOr(shown.dispatch)
+  const worker = objectOr(shown.worker)
+  const options = objectOr(worker.startOptions)
   const runId = text(dispatch.runId)
   const task = text(dispatch.taskId)
   const status = text(dispatch.status)
   const adopt = `${orchWord()} worker adopt --repo ${shQuote(repo)}`
   if (!runId || !task) throw targetFail(`dispatch ${dispatchId} 의 Run 이나 Task 를 읽지 못했다`, adopt)
   if (runFlag && runFlag !== runId) throw targetFail(`--run ${runFlag} 이 dispatch 의 Run ${runId} 과 다르다`, `${orchWord()} worker resume --dispatch ${shQuote(dispatchId)}`)
-  const handle = text(worker.agentTerminalHandle) || text(dispatch.assigneeHandle) || text(obj(shown.terminal).handle) || null
+  const handle = text(worker.agentTerminalHandle) || text(dispatch.assigneeHandle) || text(objectOr(shown.terminal).handle) || null
   if (isStructured(handle ?? '', options)) throw targetFail('구조화 worker 는 터미널이 없어 resume 대상이 아니다', 'references/launch.md 「끊긴 worker 다시 띄우기」')
-  const launch = obj(options.launch)
-  const effective = obj(launch.effective)
-  const requested = obj(launch.requested)
+  const launch = objectOr(options.launch)
+  const effective = objectOr(launch.effective)
+  const requested = objectOr(launch.requested)
   // worker resume 이 `worker-start --terminal` 로 이은 dispatch 는 Orca 가 실행 설정을 모른다. 그때 적어 둔 기록을 먼저 본다
   const recorded = readLaunch(repo, dispatchId)
   const agent = recorded?.agent || text(effective.agent) || text(requested.agent) || text(options.agent)
@@ -184,9 +176,9 @@ function judge(dispatchId: string, runFlag: string | undefined, repo: string): T
   const worktree = real(resolve(raw))
   const open = openHandles()
   const oldOpen = !!handle && open.has(handle)
-  const tasks = obj(lookup<Json>(['orchestration', 'task-list', '--run', runId])).tasks
-  const taskStatus = text(obj((Array.isArray(tasks) ? tasks : []).find((t) => obj(t).id === task)).status)
-  const latest = obj(obj(lookup<Json>(['orchestration', 'dispatch-show', '--task', task])).dispatch)
+  const tasks = objectOr(lookup<Json>(['orchestration', 'task-list', '--run', runId])).tasks
+  const taskStatus = text(objectOr((Array.isArray(tasks) ? tasks : []).find((t) => objectOr(t).id === task)).status)
+  const latest = objectOr(objectOr(lookup<Json>(['orchestration', 'dispatch-show', '--task', task])).dispatch)
   if (text(latest.id) !== dispatchId) throw targetFail(`같은 Task 에 더 새 dispatch ${text(latest.id) || '-'} 가 있다`, `${orchWord()} worker resume --dispatch ${shQuote(text(latest.id) || dispatchId)} 또는 ${adopt}`)
   const base = { dispatch: dispatchId, task, run: runId, worktree, agent: agent as Agent, model, effort, oldTerminal: handle }
   if (LIVE_DISPATCH.has(status)) {
@@ -221,7 +213,7 @@ function tryLock(file: string): boolean {
 
 function readJson(file: string): Json {
   try {
-    return obj(JSON.parse(readFileSync(file, 'utf8')))
+    return objectOr(JSON.parse(readFileSync(file, 'utf8')))
   } catch {
     // 쓰다 만 파일은 pid 와 터미널이 없는 것으로 본다
     return {}
@@ -261,13 +253,13 @@ function lock(dir: string): void {
 
 function setLockTerminal(dir: string, terminal: string): void {
   const file = join(dir, LOCK)
-  const held = obj(JSON.parse(readFileSync(file, 'utf8')))
+  const held = objectOr(JSON.parse(readFileSync(file, 'utf8')))
   writeFileSync(file, JSON.stringify({ ...held, terminal }))
 }
 
 // 새 터미널을 닫는다. 닫지 못하면 남은 handle 을 알린다(그 터미널에 resume 한 에이전트가 붙어 있을 수 있다)
-function closeTerminal(handle: string): void {
-  if (orca(['terminal', 'close', '--terminal', handle, '--json']).code !== 0) emit(`RESUME-WARN 새 터미널 ${handle} 을 닫지 못했다. orca terminal close --terminal ${shQuote(handle)} 로 닫는다`)
+function closeNewTerminal(handle: string): void {
+  if (!closeOrcaTerminal(handle, { checkResponse: false })) emit(`RESUME-WARN 새 터미널 ${handle} 을 닫지 못했다. orca terminal close --terminal ${shQuote(handle)} 로 닫는다`)
 }
 
 // 3~6 단계의 Fail 이 아닌 예외를 그 단계 이름으로 감싼다
@@ -323,7 +315,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   const execPath = join(dirname(import.meta.filename), 'resume-exec.ts')
   const command = `${shQuote(process.execPath)} --disable-warning=ExperimentalWarning ${shQuote(execPath)} ${shQuote(dir)} && . ${shQuote(join(dir, 'launch.sh'))}`
   const created = orcaJson<Json>(['terminal', 'create', '--worktree', `path:${target.worktree}`, '--title', 'resume', '--command', command])
-  const fresh = created.ok ? text(obj(created.data.terminal).handle) || text(created.data.handle) : ''
+  const fresh = created.ok ? text(objectOr(created.data.terminal).handle) || text(created.data.handle) : ''
   if (!fresh) throw new Fail('find', `새 터미널을 열지 못했다: ${created.ok ? '응답에 handle 이 없다' : created.error}`, again)
   setLockTerminal(dir, fresh)
   let session = ''
@@ -342,7 +334,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     if (target.kind === 'limited') {
       const abandoned = orcaJson<Json>(['orchestration', 'worker-abandon', '--dispatch', dispatchId])
       if (!abandoned.ok) throw new Fail('cleanup', `옛 dispatch 를 abandon 하지 못했다: ${abandoned.error}`, again)
-      const closed = orcaJson<Json>(['terminal', 'close', '--terminal', target.oldTerminal!])
+      const closed = closeOrcaTerminal(target.oldTerminal!, { mode: 'result' })
       if (!closed.ok) throw new Fail('cleanup', `옛 터미널을 닫지 못했다: ${closed.error}`, `orca terminal close --terminal ${shQuote(target.oldTerminal!)} && ${again}`)
     }
     // 5. 출발 신호
@@ -356,7 +348,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     }
   } catch (error) {
     // 3~6 단계의 실패는 새 터미널을 닫아 남는 자원이 없게 한다
-    closeTerminal(fresh)
+    closeNewTerminal(fresh)
     throw asStage(stage, error, again)
   }
   // 7. 같은 Task 에 잇는다. 실패하면 연결이 이미 일어났을 수 있어 터미널을 닫지 않고 재시도하지 않는다
@@ -368,19 +360,19 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     throw new Fail('link', `Task 상태를 읽지 못했다(터미널 ${fresh} 은 남긴다): ${tasks.error}`,
       `orca orchestration task-list --run ${shQuote(target.run)} --json 로 Task 상태를 보고, failed·blocked 면 --retry-of ${shQuote(dispatchId)} 를 -- 앞에 붙여 ${[...recovery, '--', '--terminal', fresh].map(shQuote).join(' ')}`, 1)
   }
-  const taskStatus = text(obj((Array.isArray(tasks.data.tasks) ? tasks.data.tasks : []).find((t) => obj(t).id === target.task)).status)
+  const taskStatus = text(objectOr((Array.isArray(tasks.data.tasks) ? tasks.data.tasks : []).find((t) => objectOr(t).id === target.task)).status)
   const retry = taskStatus === 'failed' || taskStatus === 'blocked' ? ['--retry-of', dispatchId] : []
   const startArgs = ['orchestration', 'worker-start', '--task', target.task, ...retry, '--terminal', fresh, '--worktree', `path:${target.worktree}`, '--run', target.run, '--json']
   const linkNext = [...recovery, ...retry, '--', '--terminal', fresh].map(shQuote).join(' ')
   const linked = orca(startArgs)
   let receipt: Json = {}
   try {
-    receipt = obj(JSON.parse(linked.stdout))
+    receipt = objectOr(JSON.parse(linked.stdout))
   } catch {
     // 형식이 다르면 아래에서 실패로 본다
   }
-  const result = obj(receipt.result)
-  const newDispatch = text(obj(result.dispatch).id) || text(result.dispatchId) || text(obj(result.worker).dispatchId)
+  const result = objectOr(receipt.result)
+  const newDispatch = text(objectOr(result.dispatch).id) || text(result.dispatchId) || text(objectOr(result.worker).dispatchId)
   if (linked.code !== 0 || receipt.ok !== true || !newDispatch) {
     // receipt 의 잔여 자원과 request id 를 자르지 않는다(adopt-sessions, launch-worker 와 같다)
     const detail = `${linked.stdout} ${linked.stderr}`.trim().replace(/\s+/g, ' ')

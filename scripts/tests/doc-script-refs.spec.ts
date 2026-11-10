@@ -45,10 +45,10 @@ describe('문서가 부르는 스크립트', () => {
   })
 
   test('문서는 orch 를 새 꼴로 부른다', () => {
-    // 진입 스크립트는 묶음 폴더(scripts/<묶음>/) 아래에 있다. lib, handlers 는 진입 스크립트가 아니다
+    // 진입 스크립트는 묶음 폴더(scripts/<묶음>/) 아래에 있다. core, lib, handlers 는 진입 스크립트가 아니다
     const entries = new Set(
       globSync('*/*.ts', { cwd: ORCH_SCRIPTS })
-        .filter((p) => !['lib', 'handlers'].includes(dirname(p)))
+        .filter((p) => !['core', 'lib', 'handlers'].includes(dirname(p)))
         .map((p) => p.split('/').pop()!.replace(/\.ts$/, '')),
     )
     assert.ok(entries.has('merge_queue'))

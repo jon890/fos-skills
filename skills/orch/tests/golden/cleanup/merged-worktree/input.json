@@ -1,0 +1,112 @@
+{
+  "script": "cleanup/cleanup-sweep.ts",
+  "args": [
+    "--repo",
+    "<TMP>/repo",
+    "--run",
+    "r",
+    "--base",
+    "main",
+    "--trash",
+    "<TMP>/trash"
+  ],
+  "files": {
+    "repo/.git/HEAD": "ref: refs/heads/main\n"
+  },
+  "rules": {
+    "git": [
+      {
+        "args": [
+          "--git-common-dir"
+        ],
+        "stdout": "<TMP>/repo/.git\n"
+      },
+      {
+        "args": [
+          "worktree",
+          "list"
+        ],
+        "stdout": "worktree <TMP>/repo\nHEAD abc\nbranch refs/heads/main\n\nworktree <TMP>/worktree\nHEAD abc\nbranch refs/heads/feat\n\n"
+      },
+      {
+        "args": [
+          "rev-parse"
+        ],
+        "stdout": "abc\n"
+      },
+      {
+        "args": [
+          "show-ref"
+        ],
+        "stdout": "abc refs/remotes/origin/main\n"
+      },
+      {
+        "stdout": ""
+      }
+    ],
+    "orca": [
+      {
+        "args": [
+          "run-list"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"runs\":[{\"id\":\"r\"}],\"nextCursor\":null}}\n"
+      },
+      {
+        "args": [
+          "worker-list",
+          "--run"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[],\"scope\":{\"source\":\"flag\"},\"page\":{}}}\n"
+      },
+      {
+        "args": [
+          "worker-list"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[],\"scope\":{\"source\":\"all\"},\"page\":{}}}\n"
+      },
+      {
+        "stdout": "{\"ok\":true,\"result\":{\"terminals\":[],\"messages\":[],\"runs\":[],\"tasks\":[],\"page\":{}}}\n"
+      }
+    ],
+    "gh": [
+      {
+        "args": [
+          "repo",
+          "view"
+        ],
+        "stdout": "{\"url\":\"https://github.example/o/r\"}\n"
+      },
+      {
+        "args": [
+          "api",
+          "graphql"
+        ],
+        "stdout": "{\"data\":{\"repository\":{\"h0\":{\"nodes\":[{\"number\":1,\"state\":\"MERGED\",\"title\":\"example\",\"headRefName\":\"feat\",\"baseRefName\":\"main\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"url\":\"https://github.example/o/r/pull/1\",\"mergeable\":\"MERGEABLE\",\"statusCheckRollup\":[{\"name\":\"Tests\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-01-01T00:00:00Z\"}]}]}}}}\n"
+      },
+      {
+        "args": [
+          "--head"
+        ],
+        "stdout": "[{\"number\":1,\"state\":\"MERGED\",\"title\":\"example\",\"headRefName\":\"feat\",\"baseRefName\":\"main\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"url\":\"https://github.example/o/r/pull/1\",\"mergeable\":\"MERGEABLE\",\"statusCheckRollup\":[{\"name\":\"Tests\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-01-01T00:00:00Z\"}]}]\n"
+      },
+      {
+        "stdout": "[]\n"
+      }
+    ],
+    "lsof": [
+      {
+        "code": 1
+      }
+    ],
+    "ps": [
+      {
+        "stdout": ""
+      }
+    ],
+    "docker": [
+      {
+        "code": 1
+      }
+    ]
+  }
+}

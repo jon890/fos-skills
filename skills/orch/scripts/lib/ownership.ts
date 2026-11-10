@@ -27,12 +27,14 @@
 //     rowHandles     한 행이 가리키는 터미널 handle
 //     blocker        안전하면 빈 문자열, 남길 때는 이유
 
+import { isObject } from '../core/json.ts'
 import { realPath, inside } from './fs.ts'
 import { orcaBin, withFull } from './orca.ts'
 import { runAsync } from './proc.ts'
 import { WorkerRunCache, type RunInfo } from './worker-run-cache.ts'
 
 // Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
+
 export const JOBS = 16
 // 성공한 목록은 정리 실행 동안 유지한다. 삭제 직전 forWorktree 가 해당 경로와 변경된 Run 을 새로 읽으므로
 // 기다리는 사이 터미널을 사용자가 넘겨받아도 옛 소유 상태로 닫지 않는다. 조회 실패는 다음 호출이 다시 시도한다.
@@ -42,10 +44,6 @@ const QUERY_TIMEOUT_MS = 30_000
 export class LookupError extends Error {}
 
 export type WorkerRow = Record<string, unknown>
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 // 값이 없거나 빈 문자열, 0, false 면 없는 것으로 본다. 옛 Python 의 `x or {}` 와 `if not x` 판정과 같다
 function given(value: unknown): boolean {

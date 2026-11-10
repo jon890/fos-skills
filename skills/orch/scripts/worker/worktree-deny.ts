@@ -22,6 +22,7 @@
 //
 // `--help` 는 고유 접두(`--he`)로 줄여 쓸 수 있다(lib/args.ts).
 
+import { isObject } from '../core/json.ts'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expandArgs } from '../lib/args.ts'
@@ -33,10 +34,6 @@ const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(gh pr merge:*)']
 // 이미 만들어진 워크트리 설정에 남은 낡은 규칙. 이름 준 공간의 reset 까지 막는다
 const STALE = ['Bash(browser-driver reset:*)']
 const REL = '.claude/settings.local.json'
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function main(raw: string[]): number {
   // 옵션이 --help 하나라 접두가 겹칠 일이 없다

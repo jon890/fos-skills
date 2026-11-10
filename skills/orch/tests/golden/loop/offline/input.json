@@ -1,0 +1,74 @@
+{
+  "script": "loop/orch-loop.ts",
+  "args": [
+    "--repo",
+    "<TMP>/repo",
+    "--run",
+    "r",
+    "--tick",
+    "--tick-number",
+    "1"
+  ],
+  "files": {
+    "repo/.orch/config.json": "{\"pipeline\":{\"authors\":[\"me\"]}}\n",
+    "repo/.orch/state/loop-runs/r.json": "{\"run\":\"r\",\"specs_dir\":null,\"registered_at\":\"2026-01-01T00:00:00Z\"}\n"
+  },
+  "rules": {
+    "orca": [
+      {
+        "code": 1,
+        "stderr": "offline\n"
+      }
+    ],
+    "gh": [
+      {
+        "code": 1,
+        "stderr": "offline\n"
+      }
+    ],
+    "git": [
+      {
+        "args": [
+          "--git-common-dir"
+        ],
+        "code": 128
+      },
+      {
+        "args": [
+          "worktree",
+          "list"
+        ],
+        "stdout": "worktree <TMP>/repo\nHEAD abc\nbranch refs/heads/main\n\n"
+      },
+      {
+        "args": [
+          "fetch"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "rev-parse",
+          "--verify"
+        ],
+        "stdout": "abc\n"
+      },
+      {
+        "args": [
+          "cat-file"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "merge-tree"
+        ],
+        "code": 1,
+        "stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsrc/conflict.ts\n"
+      },
+      {
+        "code": 1
+      }
+    ]
+  }
+}

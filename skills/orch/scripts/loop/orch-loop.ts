@@ -397,6 +397,7 @@
 //     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED)
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
+import { isObject } from '../core/json.ts'
 import { createHash } from 'node:crypto'
 import { watchCompletions } from './completion-watch.ts'
 import { watchLost } from '../lib/lost-workers.ts'
@@ -435,7 +436,7 @@ import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
-import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
+import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { sendNotice } from '../lib/run-notice.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
@@ -1145,10 +1146,6 @@ type OwnPr = {
 }
 type Prs = { ok: true; mine: OwnPr[] } | { ok: false; error: string }
 const PR_FIELDS = 'number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup'
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function openPrs(repo: string): Prs {
   const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo, cache: false })

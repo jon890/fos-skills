@@ -31,6 +31,7 @@
 //                  kind 가 adr 이면 label 과 경로를 위 「ADR 번호」 꼴로 만든다. 부르는 쪽은 ADR 예약 파일의 목록을 넘긴다
 //   - prune        gone 이 true 인 항목만 지운다. null(판정 못 함)과 false 는 남긴다. 지우면 그 번호가 다시 나가기 때문이다
 
+import { isObject } from '../core/json.ts'
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { compareVersion } from './auto-merge.ts'
@@ -55,10 +56,6 @@ export function reservationsFile(repo: string, store: ReservationStore = 'migrat
 
 export function lockFile(repo: string): string {
   return join(dirname(reservationsFile(repo)), 'migration-reservations.lock')
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isReservation(value: unknown): value is Reservation {

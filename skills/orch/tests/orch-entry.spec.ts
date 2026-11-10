@@ -22,7 +22,7 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-// 번들 하나. 이 체크아웃의 진입점과 lib 사본을 넣어, 다른 번들에서 넘겨받은 진입점이 돌게 한다(lib: false 면 이 기능 이전 번들이다).
+// 번들 하나. 이 체크아웃의 진입점과 core·lib 사본을 넣어, 다른 번들에서 넘겨받은 진입점이 돌게 한다(lib: false 면 이 기능 이전 번들이다).
 // hello 스크립트가 자기 이름과 받은 인자, 종료 코드 요청을 낸다. wait-important 와 orch-loop 는 새 꼴의 대상이 되는 같은 꼴의 가짜다.
 // sleeper 는 ready 를 내고 신호를 기다린다. user-active 와 heavy-slot 은 받은 인자와 짧은 출력 신호(out=)를 낸다
 function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): string {
@@ -43,7 +43,7 @@ function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): stri
   if (opts.lib !== false) {
     mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
     copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
-    cpSync(join(OWN_SCRIPTS, 'lib'), join(scripts, 'lib'), { recursive: true })
+    for (const dir of ['core', 'lib']) cpSync(join(OWN_SCRIPTS, dir), join(scripts, dir), { recursive: true })
     // lib 가 가져오는 work-board 모듈(lib/paths.ts 의 board.ts 같은 것)
     for (const dir of ['bin', 'hooks']) cpSync(join(OWN_SCRIPTS, '..', '..', '..', 'extensions', 'work-board', dir), join(root, 'extensions', 'work-board', dir), { recursive: true })
   }

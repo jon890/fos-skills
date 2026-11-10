@@ -41,6 +41,7 @@
 //
 // judge 는 조회하지 않는다. 화면이 필요한 handle 은 screenHandles 로 고르고 readScreens 로 읽어 넘긴다.
 
+import { objectOr } from '../core/json.ts'
 import { orcaJson } from './orca.ts'
 import { readScreen, screenLines } from './screen.ts'
 import type { ScreenState } from './screen.ts'
@@ -68,20 +69,16 @@ export const FINISHED_DISPATCH = new Set(['completed', 'failed', 'canceled'])
 export const FINISHED_WORKER = new Set(['succeeded', 'fenced'])
 const AGENT_BUSY = new Set<ScreenState>(['working', 'permission'])
 
-function obj(value: unknown): Row {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Row) : {}
-}
-
 function given(value: unknown): boolean {
   return value !== undefined && value !== null && value !== ''
 }
 
 function handlesOf(row: Row): unknown[] {
-  return [...new Set([obj(row.resource).terminalHandle, row.agentTerminalHandle].filter(given))]
+  return [...new Set([objectOr(row.resource).terminalHandle, row.agentTerminalHandle].filter(given))]
 }
 
 function released(row: Row): boolean {
-  return row.terminalState === 'released' || obj(row.resource).releaseState === 'released'
+  return row.terminalState === 'released' || objectOr(row.resource).releaseState === 'released'
 }
 
 export function isLive(row: Row): boolean {
@@ -96,7 +93,7 @@ export function isFinished(row: Row): boolean {
 }
 
 function takenOver(row: Row, own: ReadonlySet<unknown>): boolean {
-  return obj(row.resource).ownershipState === 'user_owned' && !handlesOf(row).some((h) => own.has(h))
+  return objectOr(row.resource).ownershipState === 'user_owned' && !handlesOf(row).some((h) => own.has(h))
 }
 
 function id(row: Row): string {
@@ -108,7 +105,7 @@ function ids(rows: Row[]): string {
 }
 
 function mark(row: Row): string {
-  const resource = obj(row.resource)
+  const resource = objectOr(row.resource)
   return String(resource.retainedReason ?? resource.ownershipState ?? '')
 }
 
@@ -187,7 +184,7 @@ export function readScreens(handles: unknown[]): Map<unknown, ScreenState> {
   for (const handle of handles) {
     if (typeof handle !== 'string' || !handle) continue
     const read = orcaJson<Row>(['terminal', 'read', '--terminal', handle, '--screen'])
-    if (read.ok) screens.set(handle, readScreen(screenLines(obj(read.data))).state)
+    if (read.ok) screens.set(handle, readScreen(screenLines(objectOr(read.data))).state)
   }
   return screens
 }

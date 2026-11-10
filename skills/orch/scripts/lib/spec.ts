@@ -6,6 +6,7 @@
 //     live 가 null(목록을 읽지 못했다)이면 지시서와 PR 본문 모두 지우지 않는다. 남은 파일은 다음 정리가 지운다
 // 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 지운 일이 있어, 부르는 쪽이 이 확인을 건너뛸 수 없게 했다.
 
+import { LINE_BREAK } from '../core/text.ts'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { inside, isFile, realPath } from './fs.ts'
@@ -15,6 +16,7 @@ import { orcaJson } from './orca.ts'
 // 어느 꼴이라도 놓치면 그 지시서가 지워지지 않거나 워크트리가 만들어지지 않는다.
 // 옛 make-worktree 는 `- ` 목록만 받았다. 이 한 벌로 모으며 `* ` 목록도 받게 넓어졌다(CHANGELOG 3.0.0).
 // g 플래그를 두지 않는다. g 가 있으면 lastIndex 가 남아 같은 줄을 두 번 검사할 때 결과가 달라진다.
+
 export const BRANCH_LINE: RegExp = /^\s*(?:[-*]\s+)?(?:\*\*)?브랜치(?:\*\*)?:(?:\*\*)?\s*`([^`]+)`/
 
 // 줄 머리의 `허락: ...`. 목록 기호와 굵은 글씨는 벗긴다. `- **허락:** ...` 도 같은 줄로 본다.
@@ -59,7 +61,6 @@ export function selectionsOf(text: string): Selection[] {
   return found
 }
 
-
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
 
 export function experimentOf(text: string): Experiment | null {
@@ -87,9 +88,6 @@ export function experimentOf(text: string): Experiment | null {
 // spec 줄에서 / 로 시작하고 .md 로 끝나는 경로. 뒤에 글자나 점이 이어지면 경로의 끝이 아니다.
 // u 플래그로 글자를 유니코드로 본다. 옮기기 전 Python 의 \w 가 한글도 글자로 보았다.
 const SPEC_PATH = /(\/[^\s`'"]+?\.md)(?![\p{L}\p{N}\p{M}_.])/gu
-
-// Python 의 str.splitlines 가 나누는 줄 경계. 지시서의 줄을 옛 명령(spec-line, spec-lint)과 같게 나눈다. spec-lint 가 줄 번호를 셀 때도 쓴다
-export const LINE_BREAK: RegExp = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/
 
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 const PAGE_LIMIT = '100'
@@ -467,3 +465,5 @@ export function taskFirstLine(text: string): { text: string; line: number } | nu
   const raw = index < lines.length && !/^#{1,6}\s/.test(lines[index]) ? lines[index] : ''
   return { text: raw.trim().replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/, '').replaceAll('**', '').trim(), line: raw ? index + 1 : at + 1 }
 }
+
+export { LINE_BREAK } from '../core/text.ts'

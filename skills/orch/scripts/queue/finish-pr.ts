@@ -117,6 +117,7 @@
 // 종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
+import { gitBin } from '../lib/git.ts'
 import { recordRouting } from '../lib/routing-log.ts'
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -229,10 +230,6 @@ function usageText(): string {
     lines.push(line.replace(/^\/\/ ?/, ''))
   }
   return lines.join('\n')
-}
-
-function gitBin(): string {
-  return process.env.GIT || 'git'
 }
 
 function git(repo: string, args: string[]): { code: number; stdout: string } {
