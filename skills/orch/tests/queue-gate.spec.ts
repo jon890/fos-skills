@@ -140,8 +140,8 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
   test('같은 이름 체크의 이전 실패보다 새 통과를 센다', async (t) => {
     const c = setup(t)
     const checks = [
-      { name: 'Tests', status: 'COMPLETED', conclusion: 'FAILURE', startedAt: '2026-01-01T00:00:00Z' },
-      { name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: '2026-01-01T01:00:00Z' },
+      { name: 'Tests', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', startedAt: '2026-01-01T00:00:00Z' },
+      { name: 'Tests', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: '2026-01-01T01:00:00Z' },
     ]
     const r = await gate(c, { '1': pr({ statusCheckRollup: checks }) }, 0)
     assert.equal(r.code, 0, both(r))

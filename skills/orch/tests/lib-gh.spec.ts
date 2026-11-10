@@ -268,9 +268,9 @@ describe('ciState', () => {
     assert.equal(ciState([newer, old], ['test'], false, 'head').state, 'passed')
     assert.equal(ciState([newer, { ...old, startedAt: '2026-10-30T03:00:00Z' }], ['test'], false, 'head').state, 'failed')
   })
-  test('다른 HEAD 결과나 시각을 모르는 실행으로 실패를 덮지 않는다', () => {
+  test('다른 워크플로, HEAD 또는 시각을 모르는 실행으로 실패를 덮지 않는다', () => {
     const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
-    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'Other')], ['test'], false, 'head').state, 'passed')
+    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'Other')], ['test'], false, 'head').state, 'failed')
     assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'failed')
     assert.equal(ciState([attempt('FAILURE', '2026-10-30T01:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'pending')
     assert.equal(ciState([old, attempt('SUCCESS', 'invalid')], ['test'], false, 'head').state, 'failed')

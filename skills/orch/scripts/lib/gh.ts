@@ -216,13 +216,24 @@ export function checkSnapshot(repo: string, number: string, head: string, refres
 }
 
 // gh 는 commits(last:1) 의 롤업을 낸다. HEAD 와 같은 응답에서 읽고 도중의 push 는 호출자가 막는다.
-// 같은 이름의 더 늦게 시작한 실행이 확인되면 이전 실행을 뺀다. 시각을 모르면 실패를 숨기지 않는다.
+// 같은 워크플로와 이름의 더 늦게 시작한 실행이 확인되면 이전 실행을 뺀다. 시각을 모르면 실패를 숨기지 않는다.
 export function currentChecks(rollup: unknown, head?: string): Record<string, unknown>[] {
   const rows = (Array.isArray(rollup) ? rollup : []).filter(
     (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
   ).filter((row) => !head || !field(row, 'headSha') || field(row, 'headSha') === head)
+  const workflow = (row: Record<string, unknown>): string | null => {
+    const flat = field(row, 'workflowName')
+    if (flat) return flat
+    const suite = row.checkSuite as { workflowRun?: { workflow?: { name?: unknown } } } | null
+    const name = suite?.workflowRun?.workflow?.name
+    return typeof name === 'string' && name ? name : null
+  }
+  const sameSource = (a: Record<string, unknown>, b: Record<string, unknown>): boolean => {
+    const left = workflow(a), right = workflow(b)
+    return left !== null && left === right || left === null && right === null && !!field(a, 'context') && !!field(b, 'context')
+  }
   return rows.filter((row) => !rows.some((newer) =>
-    checkName(row) !== '' && checkName(newer) === checkName(row) &&
+    sameSource(row, newer) && checkName(row) !== '' && checkName(newer) === checkName(row) &&
     Date.parse(field(newer, 'startedAt') ?? '') > Date.parse(field(row, 'startedAt') ?? ''),
   ))
 }
