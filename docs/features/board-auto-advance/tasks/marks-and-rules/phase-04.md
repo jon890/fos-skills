@@ -88,7 +88,7 @@ export function checkAdvance(repo: string, id: string, opts?: { board?: string; 
 7. 단계의 `body` 에서 `parseEvidence` 로 근거를 읽고 근거마다 확인한다. 문제 글은 `ADVANCE_REASONS` 의 값을 쓴다.
    - 스펙: 경로가 절대경로면 그대로(`~/` 는 홈 폴더), 아니면 `mainCheckout(repo)` 기준이다. 파일이 아니면 `noSpec`, `confirmProblem` 이 문제를 내면 `unconfirmed`.
    - 계획: 같은 경로 규칙이다. 파일도 폴더도 아니면 `noPlan`.
-   - 앞 사건: 보드의 모든 항목을 `BoardView` 로 바꿔 `eventDone` 에 넘긴다. 거짓이면 `eventPending`. `BoardView.steps` 는 그 항목의 `boardSteps` 목록이고 `tag` 는 `parseEventTag(text)` 다. 줄 글에 `(#` 가 없고 `stages` 필드도 없는 항목은 보드 도구를 부르지 않고 건너뛴다. 단계 목록을 읽지 못한 항목도 건너뛴다.
+   - 앞 사건: 보드의 **모든 항목**을 `BoardView` 로 바꿔 `eventDone` 에 넘긴다. 거짓이면 `eventPending`. 항목마다 `pr`, `mergedPr`, `stages` 는 늘 채운다. `merged-pr` 필드만 있는 직접 쓴 항목도 머지 근거가 되기 때문이다. `steps` 는 그 항목의 `boardSteps` 목록이고 `tag` 는 `parseEventTag(text)` 다. 줄 글에 `(#` 가 없고 `stages` 필드도 없는 항목은 단계 목록이 판정에 쓰이지 않으므로 보드 도구를 부르지 않고 `steps` 를 빈 목록으로 둔다. 단계 목록을 읽지 못한 항목도 `steps` 만 빈 목록으로 두고 넘긴다. 항목을 통째로 빼지 않는다.
 8. `judgeAdvance` 를 부른다.
 
 ### 4. `skills/orch/scripts/board/auto-check.ts` 신규, `skills/orch/scripts/lib/commands.ts` 수정
@@ -115,6 +115,7 @@ export function checkAdvance(repo: string, id: string, opts?: { board?: string; 
 - 절대경로 근거: 저장소 밖 임시 폴더의 계획을 절대경로로 적으면 통과한다.
 - 기본 checkout 기준: 저장소에 커밋을 하나 만들고 `git worktree add` 로 연결 워크트리를 만든다. 계획 폴더는 주 checkout 에만 두고(커밋하지 않는다) 보드도 주 checkout 에 둔다. 워크트리를 `cwd` 로 불러도 통과한다. 주 checkout 의 계획 폴더를 지우면 `계획 파일이 없다` 다.
 - 앞 사건: 같은 보드의 다른 항목에 끝난 `3. 머지 (#665 merge)` 줄이 있으면 `(앞 사건: #665 merge)` 가 통과하고, 그 줄이 끝나지 않았으면 `앞 사건이 끝나지 않았다`.
+- 앞 사건, `merged-pr` 만 있는 항목: 다른 항목이 `{ merged-pr: 665, details: [{ text: '1. PR #665 구현', done: true }] }` 뿐이고(줄 끝 꼬리표도 `stages` 필드도 없다) 확인할 항목의 첫 미완료 단계가 `2. [auto] 후속 작업 (앞 사건: #665 merge)` 면 통과한다. 그 항목의 `merged-pr` 을 지우면 `앞 사건이 끝나지 않았다` 다.
 - 근거 없음: `2. [auto] PR4` 는 `근거가 없다`.
 - 진행 중: 가짜 `orca` 가 그 항목 worktree 의 열린 dispatch 를 답하면 `worker 나 열린 PR 이 있다`. 가짜 `gh` 가 항목의 `branch` 와 같은 head 의 열린 PR 을 답해도 같다. 띄운 기록이 함께 있어도 이 이유가 먼저 나온다.
 - 확인 못 함: `--run` 을 주지 않고 등록된 Run 도 없으면 `worker 나 PR 을 확인하지 못했다`. 가짜 `orca` 가 실패로 답해도, 가짜 `gh` 가 0 이 아닌 코드로 끝나도 같다.
