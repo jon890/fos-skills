@@ -1,3 +1,0 @@
-- 저장소 checkout 의 `bin/orch.ts` 가 `ORCH_SCRIPTS_DIR` 없이 설치본으로 넘어가면 stderr 에 설치본 버전과 `ORCH_SCRIPTS_DIR` 안내를 한 줄 낸다. 동작은 그대로다
-- 지시서 행 id 가 모델 표에 없다는 거절에 표의 행 id 목록을 붙이고, 모델 이름을 쓴 경우 작업 종류 id 를 쓰라고 덧붙인다
-- `spec-lint` 의 임시 경로 경고가 재개 절에서는 회신과 측정 결과를 본문에 옮기라는 안내를 붙인다. `launch.md` 의 재개 절 규칙을 맞춘다
