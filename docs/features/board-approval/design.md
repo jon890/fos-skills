@@ -191,7 +191,7 @@ export function subjectOf(message: Json): string   // subject, title
 export function payloadOf(message: Json): Json      // payload 가 문자열이면 JSON 으로 푼다
 ```
 
-`check --all` 은 100건까지 돌려준다(`lib/questions.ts` 머리 주석, `behavior.md` 「질문 조회 범위」 의 실측). 승인 뒤 그보다 많은 메시지가 쌓인 Run 에서는 5단계가 「신호를 읽지 못함」 이 된다. 이때 코디네이터는 규칙대로 사용자에게 묻고 같은 id 로 다시 올린다.
+`inbox --terminal run:<Run> --limit 200` 을 고른다. 2026-11-10 실측에서 최근 메시지부터 왔다(표본 200건의 sequence 가 45650 → 44602로 모두 내림차순). 이미 읽은 메시지도 소비 없이 읽으며 0.56초였다. 비교한 `check --all` 은 100건, 0.58초였다. 승인 뒤 조회 한도보다 많은 메시지가 쌓인 Run 에서는 5단계가 「신호를 읽지 못함」 이 된다. 이때 코디네이터는 규칙대로 사용자에게 묻고 같은 id 로 다시 올린다.
 
 Orca 밖 창에서 누른 승인은 `press.terminal` 이 null 이고 보낸 쪽도 비거나 Orca 가 정한 값일 수 있어, 보낸 터미널을 대조하지 못한다. 이때 worker 판정은 올린 터미널과 (있으면) 보낸 쪽만 본다. 스펙 REQ13 의 막지 못하는 것에 든다.
 

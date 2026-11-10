@@ -58,7 +58,7 @@ export function previewSha(file: string): string | null {
   try { return createHash('sha256').update(readFileSync(file)).digest('hex') } catch { return null }
 }
 export function readSignal(entry: Approval): CheckFacts['message'] {
-  // inbox 는 이미 읽은 신호도 돌려주며 check 와 달리 메일함을 소비하지 않는다.
+  // inbox 는 최신 메시지부터 돌려준다(core/message-fields.ts 의 실측). 이미 읽은 신호도 소비 없이 읽는다.
   const result = orcaJson<{ messages?: unknown }>(['orchestration', 'inbox', '--terminal', `run:${entry.run}`, '--limit', '200'])
   if (!result.ok || !Array.isArray(result.data?.messages)) return { found: false }
   const message = result.data.messages.find(m => isObject(m) && signalMatches(payloadOf(m), entry))
