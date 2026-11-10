@@ -16,7 +16,7 @@ orch 는 명령줄의 보드 파일, `finish.board`, 기본 위치 순서로 고
 진행률은 단계 줄에서 센다. `--progress 끝낸단계수/전체단계수` 는 단계로 나타낼 수 없을 때만 쓴다.
 PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단계와 섞이면 보드를 읽기 어렵다.
 
-**worker 는 보드를 고치지 않는다.** `board.ts step`, `mark`, `set` 은 스크립트와 코디네이터만 쓴다. worker 가 단계를 체크하면 PR 전인데 100% 로 보인다.
+**worker 는 보드를 고치지 않는다.** `orch board set`, `step`, `add-step` 과 `board.ts mark` 는 스크립트와 코디네이터만 쓴다. worker 가 단계를 체크하면 PR 전인데 100% 로 보인다.
 
 ## 승인 대기
 
@@ -32,6 +32,29 @@ orch board approval cancel "$APPROVAL_ID" --reason chat
 ```
 
 끝난 기록도 보려면 `list --full` 을 쓴다.
+
+## 상태와 단계 고치기
+
+**`board.json` 은 직접 고치지 않는다.** 상태와 단계는 아래 명령으로 고친다. 새 항목을 만들거나 제목·PR·담당 워크트리 같은 칸을 고칠 때는 `board.ts set`, 번호 없는 줄을 끝낼 때는 `board.ts mark`, 항목을 지울 때는 `board.ts del` 을 쓴다.
+
+```text
+orch board set <항목> <goal|decide|doing|wait|done>
+orch board step <항목> <번호> done|undo
+orch board step <항목> <번호> text "<번호를 포함한 줄 전체>" [--on "<PR> <사건>"]
+orch board add-step <항목> "<글>" [--on "<PR> <사건>"]
+orch board show <항목>
+공통: [--board <파일>] [--repo <폴더>] [--full]
+```
+
+`--repo` 를 생략하면 워크트리에서도 주 checkout 의 보드를 쓴다. 직접 주면 그 작업 트리의 보드다. 새 명령의 `--board` 상대경로와 `finish.board` 는 주 checkout 기준이다. 기존 명령의 예외는 위 파일 안내를 따른다.
+
+`set` 은 있는 항목의 상태만 고치며 `doing` 에는 진행률이 있어야 한다. `step` 은 보이는 줄 앞 번호로 고른다. 같은 번호가 둘이거나 없으면 거절한다. `text` 는 번호를 포함한 줄 전체를 받고 번호가 다르거나 사건 꼬리표를 지우면 거절한다. 완료 표시를 쓰지 않으면 끝냄 상태는 유지된다. `undo` 는 항목 상태를 바꾸지 않고, `decide` 의 마지막 줄을 끝내면 항목도 `done` 이 된다.
+
+`add-step` 은 단계를 세는 쪽(details, 없으면 next)에 더한다. 번호가 없으면 가장 큰 번호 다음을 붙이고, 직접 쓴 번호가 겹치거나 항목이 `done` 이면 거절한다. `progress` 값이 있으면 새 단계가 진행률에 안 보일 수 있어 stderr 로 알린다.
+
+`--on "1455 merge"` 는 줄 끝에 `(#1455 merge)` 를 붙이고 기존 꼬리표는 바꾼다. 사건은 `pr`, `merge`, `deploy`, `release` 다. `stages` 가 있는 항목에 붙이면 기존 사건 단계의 자동 완료가 멈출 수 있어 경고한다. 자동 진행 표시만 바꾸는 동작은 후속 구현까지 열지 않으며, 그동안 `text` 로 줄 전체를 바꾼다.
+
+성공 출력은 `BOARD-SET <항목> <상태>`, `BOARD-STEP <항목> <번호> <동작>`, `BOARD-STEP-ADD <항목> <번호>` 한 줄이다. 단계 변경으로 상태도 바뀌면 `status=<상태>` 가 붙는다. `show` 는 `BOARD <항목> <상태> <끝낸>/<전체>` 와 미완료 번호 단계만 낸다. 명시 진행률이 앞서고 진행률이 없으면 `진행률 없음` 이다. `--full` 은 완료 단계와 참고 줄도 내며 완료 줄 앞에 `✓` 를 붙인다. 거절은 stderr 와 종료 코드 1, 사용법 오류는 2, 성공은 0 이다.
 
 ## 마일스톤 단계
 
@@ -105,7 +128,7 @@ orch board release --release "$RELEASE_PR"
 | 배포 성공 뒤 | `board-sync.ts`, `finish-pr.ts` | 마일스톤 항목의 `[deploy]` 단계를 끝내고, 마지막 PR 이 done 지점에 닿았으면 done 으로 바꾼다. `finish-pr.ts` 는 마지막 PR 인지 판정하지 못하면 중간 PR 로 본다. `merged-pr` 의 PR 은 다시 판정하지 않는다 |
 | 릴리스 뒤 | `board-release.ts` | 저장소가 부른다. 릴리스에 든 PR 의 항목에서 `[release]` 단계까지 끝내고, done 지점에 닿았으면 done 으로 바꾼다 |
 | 사건 꼬리표 확인 | `board-sync.ts`, `board-release.ts` | done 을 제외한 goal 과 수동 항목도 줄 끝의 `(#PR번호 사건)` 을 읽어 그 줄만 끝낸다. 다른 줄과 항목 상태는 그대로 둔다 |
-| 결정·수동 단계 변경 | 코디네이터 | decide·wait 상태와 꼬리표 없는 수동 단계의 완료를 `board.ts set/step/mark` 로 반영한다. 자동 반영이 빠졌을 때만 사건 단계를 직접 고친다 |
+| 결정·수동 단계 변경 | 코디네이터 | decide·wait 상태와 꼬리표 없는 수동 단계의 완료를 `orch board set/step` 으로 반영한다. 번호 없는 결정 줄은 `board.ts mark` 로 끝낸다. 자동 반영이 빠졌을 때만 사건 단계를 직접 고친다 |
 
 자동 연결의 근거와 `pr`·`merged-pr` 필드의 값 읽기는 `board-sync.ts` 와 `board.ts` 머리 주석이 소유한다. 수동 갱신은 자동 반영이 누락됐을 때만 쓴다.
 
