@@ -53,7 +53,8 @@ export type ReviewCondition = (typeof REVIEW_CONDITIONS)[number]
 // queue.auto_review.require 를 적지 않은 저장소의 조합. 조합을 더하기 전의 동작과 같다
 export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-head']
 // require 는 적은 순서대로 볼 조건, unknown 은 모르는 이름이다. unknown 이 있으면 루프가 어느 PR 도 걸지 않는다
-export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[] }
+// featureHead 가 거짓이면 기능 PR 에도 verdict-on-head 를 덧붙이지 않는다. 적지 않은 값(undefined)은 참이다
+export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewConfig | null
@@ -67,7 +68,7 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
-const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require']
+const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head']
 
 // 값이 모두 비지 않은 문자열인 객체. 아니면 ConfigError
 function stringMap(value: unknown, name: string): Record<string, string> {
@@ -113,7 +114,8 @@ function reviewRule(value: unknown): ReviewConfig {
       throw new ConfigError(`설정 파일의 ${name}.${key} 를 정규식으로 읽지 못했다: ${(e as Error).message}`)
     }
   }
-  return { ...(rule as ReviewRule), ...reviewRequire(value.require) }
+  if (value.feature_head !== undefined && typeof value.feature_head !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.feature_head 는 true 나 false 여야 한다`)
+  return { ...(rule as ReviewRule), ...reviewRequire(value.require), featureHead: value.feature_head !== false }
 }
 
 // 모르는 이름은 ConfigError 로 막지 않고 unknown 에 둔다. 루프가 멈추면 CI 감시와 정리까지 함께 멈추기 때문이다

@@ -20,6 +20,7 @@ import {
   specHold,
   sweepArgs,
 } from '../scripts/lib/auto-merge.ts'
+import { featureReviewRule } from '../scripts/lib/review-judgement.ts'
 import { ConfigError } from '../scripts/lib/config.ts'
 import type { ChainCommit, Migration, QueueItem, ReviewConfig, ReviewNote, ReviewRule } from '../scripts/lib/auto-merge.ts'
 import type { Config } from '../scripts/lib/config.ts'
@@ -529,5 +530,41 @@ describe('judgeReview', () => {
     assert.equal(chainIndex({ body: 'x', at: '2026-11-03T02:30:00Z', commit: null }, chain), 1)
     assert.equal(chainIndex(comment('x', 0), chain), null)
     assert.equal(chainIndex({ body: 'x', at: '', commit: null }, chain), null)
+  })
+})
+
+describe('기능 PR 의 HEAD 리뷰 요구(queue.auto_review.feature_head)', () => {
+  const at = (h: number) => `2026-11-03T${String(h).padStart(2, '0')}:00:00Z`
+  const chain: ChainCommit[] = [
+    { oid: 'c3', parents: ['c2'], at: at(3) },
+    { oid: 'c2', parents: ['c1'], at: at(2) },
+    { oid: 'c1', parents: [], at: at(1) },
+  ]
+  const scope = { heads: ['c3'], since: at(3) }
+  const note = (body: string, commit: string, h: number): ReviewNote => ({ body, at: at(h), commit })
+  const base: ReviewConfig = { pass: /^통과/, block: /^보류/, require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'], unknown: [] }
+  const judge = (notes: ReviewNote[], cfg: ReviewConfig, feature = true) => judgeReview({ notes, scope, chain }, featureReviewRule(cfg, feature))
+  const parse = (auto_review: Record<string, unknown>) => autoMergeConfig({ queue: { auto_merge: true, auto_review } } as unknown as Config).review
+
+  test('기본값에서 기능 PR 에 HEAD 판정이 없으면 걸린다', () => {
+    const got = judge([note('통과', 'c1', 1)], parse({ pass: '^통과', block: '^보류', require: base.require })!)
+    assert.equal(got.ok, false)
+    assert.equal(got.ok === false && got.condition, 'verdict-on-head')
+  })
+
+  test('feature_head false 면 앞 커밋의 pass 만 있는 기능 PR 이 통과한다', () => {
+    const cfg = parse({ pass: '^통과', block: '^보류', require: base.require, feature_head: false })!
+    assert.equal(cfg.featureHead, false)
+    assert.equal(judge([note('통과', 'c1', 1)], cfg).ok, true)
+  })
+
+  test('feature_head false 에서도 마지막 판정이 block 이면 걸린다', () => {
+    const cfg = parse({ pass: '^통과', block: '^보류', require: base.require, feature_head: false })!
+    const got = judge([note('통과', 'c1', 1), note('보류', 'c2', 2)], cfg)
+    assert.equal(got.ok, false)
+  })
+
+  test('feature_head 가 불리언이 아니면 설정 오류다', () => {
+    assert.throws(() => parse({ pass: '^통과', block: '^보류', feature_head: 'no' }), ConfigError)
   })
 })
