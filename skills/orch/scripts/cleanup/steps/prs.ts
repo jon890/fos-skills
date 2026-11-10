@@ -43,11 +43,11 @@
 //     --kill-holders 와 --merged-head 는 MERGED 일 때만이다. CLOSED PR 의 head 는 머지된 커밋이 아니다.
 //     열린 PR 의 끝난 dispatch 터미널은 그대로 남긴다.
 import { BY_PR, git, lines, truthy } from './shared.ts'
-import { ConfigError } from '../lib/config.ts'
+import { ConfigError } from '../../lib/config.ts'
 import type { Log, Owners, Pr } from './shared.ts'
-import { PrLookup, cachedMerged, rememberMerged } from '../lib/pr-lookup.ts'
-import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from '../lib/gh.ts'
-import { isObject } from '../core/json.ts'
+import { PrLookup, cachedMerged, rememberMerged } from '../../lib/pr-lookup.ts'
+import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from '../../lib/gh.ts'
+import { isObject } from '../../core/json.ts'
 
 const MAX_VARIANTS = 4
 

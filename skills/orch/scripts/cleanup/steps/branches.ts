@@ -1,7 +1,7 @@
-import type { Args, Log } from '../shared.ts'
+import type { Args, Log } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
-import { deleteRemote, merged, protectedReason, remotePlan, unpushed } from '../prs.ts'
-import { git, lines } from '../shared.ts'
+import { deleteRemote, merged, protectedReason, remotePlan, unpushed } from './prs.ts'
+import { git, lines } from './shared.ts'
 
 function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: Log): void {
   const listed = git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')

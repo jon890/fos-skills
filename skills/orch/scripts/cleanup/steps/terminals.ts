@@ -1,16 +1,16 @@
 // `orca <args> --json` 응답의 result. 실패하거나 result 가 없으면 null 이다.
 import type { Args, Log, Pr, Terminal } from './shared.ts'
-import { LookupError, rowHandles } from '../lib/ownership.ts'
+import { LookupError, rowHandles } from '../../lib/ownership.ts'
 import { REAL_HOST, holderPids, holdersOf, onlyIdleShells } from './processes.ts'
 import { RUN_TIMEOUT_SEC, resourceOf, run, truthy } from './shared.ts'
-import type { WorkerRow } from '../lib/ownership.ts'
+import type { WorkerRow } from '../../lib/ownership.ts'
 import { basename } from 'node:path'
-import { closeTerminal as closeOrcaTerminal, orcaBin, withFull } from '../lib/orca.ts'
-import { idleShellVerdict } from '../lib/idle-shells.ts'
-import { isFinished } from '../lib/worker-state.ts'
-import { isObject } from '../core/json.ts'
-import { readLaunch } from '../lib/launched.ts'
-import { realPath } from '../lib/fs.ts'
+import { closeTerminal as closeOrcaTerminal, orcaBin, withFull } from '../../lib/orca.ts'
+import { idleShellVerdict } from '../../lib/idle-shells.ts'
+import { isFinished } from '../../lib/worker-state.ts'
+import { isObject } from '../../core/json.ts'
+import { readLaunch } from '../../lib/launched.ts'
+import { realPath } from '../../lib/fs.ts'
 
 function orcaResult(args: string[]): unknown {
   const done = run([orcaBin(), ...withFull(args), '--json'])

@@ -1,8 +1,8 @@
-import { LINE_BREAK } from '../lib/spec.ts'
-import type { WorkerRow } from '../lib/ownership.ts'
-import { isObject } from '../core/json.ts'
+import { LINE_BREAK } from '../../lib/spec.ts'
+import type { WorkerRow } from '../../lib/ownership.ts'
+import { isObject } from '../../core/json.ts'
 import { readFileSync } from 'node:fs'
-import { run as runCommand } from '../lib/proc.ts'
+import { run as runCommand } from '../../lib/proc.ts'
 
 export const RUN_TIMEOUT_SEC = 120
 

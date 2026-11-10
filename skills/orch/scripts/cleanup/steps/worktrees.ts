@@ -164,17 +164,17 @@
 //     `정리` 줄 다음에 `FINISH-MISSING #<PR> <브랜치>: …` 한 줄을 낸다. 치우기는 그대로 한다. 상주 루프가 이 줄을 알림 파일에 옮긴다.
 //     `gh pr merge` 로 바로 머지해 배포 확인, 업무 완료, 보드 done 이 빠진 PR 을 코디네이터가 알게 하려는 것이다.
 //     worker 터미널과 dispatch 는 여기서 닫고 반납하므로, 마무리를 뒤늦게 돌려도 정리는 다시 할 일이 없다
-import type { Args, Json, Log, Pr, Report, Sweep, Terminal } from '../shared.ts'
-import { BY_NO_PR, BY_PR, RUN_TIMEOUT_SEC, dirty, git, readText, resourceOf, run, truthy, under, worktrees } from '../shared.ts'
-import { REAL_HOST, describe, holderPids, holdersOf, onlyIdleShells, sessionEndHooks, stopHolders, waitFree } from '../processes.ts'
+import type { Args, Json, Log, Pr, Report, Sweep, Terminal } from './shared.ts'
+import { BY_NO_PR, BY_PR, RUN_TIMEOUT_SEC, dirty, git, readText, resourceOf, run, truthy, under, worktrees } from './shared.ts'
+import { REAL_HOST, describe, holderPids, holdersOf, onlyIdleShells, sessionEndHooks, stopHolders, waitFree } from './processes.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import type { Verdict } from '../../lib/worker-state.ts'
 import type { WorkerRow } from '../../lib/ownership.ts'
 import { allLiveSpecPaths } from '../../lib/spec.ts'
 import { basename } from 'node:path'
-import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from '../terminals.ts'
+import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
 import { closeTerminal as closeOrcaTerminal } from '../../lib/orca.ts'
-import { deleteRemote, merged, ownPr, prCandidates, protectedReason, remotePlan, unpushed } from '../prs.ts'
+import { deleteRemote, merged, ownPr, prCandidates, protectedReason, remotePlan, unpushed } from './prs.ts'
 import { deleteSpecFiles, specsKept, trashLaunchedSpecs } from './specs.ts'
 import { finishStarted } from '../../lib/finish-marks.ts'
 import { fire } from '../../lib/events.ts'

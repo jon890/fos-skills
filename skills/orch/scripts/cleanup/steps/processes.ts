@@ -18,7 +18,7 @@
 //     열린 파일로만 그 경로를 쥔 프로세스는 끄지 않는다.
 //     워크트리 삭제를 막는 것은 작업 디렉터리이고, 작업 디렉터리가 밖에 있는 Gradle daemon 같은 프로세스는
 //     다른 워크트리의 빌드도 맡을 수 있다.
-import type { Holder } from '../lib/idle-shells.ts'
+import type { Holder } from '../../lib/idle-shells.ts'
 import type { Log } from './shared.ts'
 import { basename } from 'node:path'
 import { lines, run, under } from './shared.ts'

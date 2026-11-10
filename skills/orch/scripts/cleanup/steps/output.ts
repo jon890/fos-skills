@@ -8,8 +8,8 @@
 // 짧은 출력(진입점의 orch cleanup sweep, 머지 큐가 이어 준 신호, lib/output.ts)의 줄 하나. 머리 주석의 「짧은 출력」 이다.
 // ctx.path 는 마지막 `정리 <경로>` 줄의 워크트리다. 그 뒤의 `건너뜀:`, `거부:`, 지울 것 줄이 이 경로를 쓴다.
 // 남김 줄, 실패 줄, 지움 줄 차례로 본다. `원격 브랜치 삭제 실패 b: e` 가 REMOVED 로, `남김 x: 조회 실패` 가 FAILED 로 읽히지 않게 한다
-import { dockerShortLine } from '../lib/docker.ts'
-import { isVerdict } from '../lib/output.ts'
+import { dockerShortLine } from '../../lib/docker.ts'
+import { isVerdict } from '../../lib/output.ts'
 
 export type SweepContext = { path: string | null }
 

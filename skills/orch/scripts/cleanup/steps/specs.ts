@@ -1,13 +1,13 @@
 // 지시서와 PR 본문 파일을 지운다. live 는 살아 있는 dispatch 의 지시서 실경로 집합이고 null 이면 둘 다 남긴다.
 // root 는 지시서 폴더 실경로의 부모다. 지시서와 PR 본문은 그 아래에 있어 lib/spec.ts 의 「orch 루트 밖」 에 걸리지 않는다.
-import type { Args, Log, Pr, Sweep } from '../shared.ts'
+import type { Args, Log, Pr, Sweep } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
-import { branchTip, prList } from '../prs.ts'
+import { branchTip, prList } from './prs.ts'
 import { branchesOf, deleteSpecs, specCandidates, specsOnBranch } from '../../lib/spec.ts'
 import { dirname, join } from 'node:path'
 import { featureCompletionProblem } from '../../lib/feature-evidence.ts'
 import { launchesAt } from '../../lib/launched.ts'
-import { readText, truthy } from '../shared.ts'
+import { readText, truthy } from './shared.ts'
 import { readdirSync } from 'node:fs'
 import { realPath } from '../../lib/fs.ts'
 

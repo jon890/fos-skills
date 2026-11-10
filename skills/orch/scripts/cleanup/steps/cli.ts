@@ -48,18 +48,18 @@
 //
 // 테스트가 waitFree, stopHolders 를
 import type { Args, Log, Terminal } from './shared.ts'
-import { LookupError, runWorkers, workerSnapshot } from '../lib/ownership.ts'
+import { LookupError, runWorkers, workerSnapshot } from '../../lib/ownership.ts'
 import type { SweepContext } from './output.ts'
-import type { WorkerRow } from '../lib/ownership.ts'
+import type { WorkerRow } from '../../lib/ownership.ts'
 import { err } from './shared.ts'
-import { expandArgs } from '../lib/args.ts'
+import { expandArgs } from '../../lib/args.ts'
 import { foreignHandles, liveTerminals } from './terminals.ts'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { liveSpecPaths } from '../lib/spec.ts'
+import { liveSpecPaths } from '../../lib/spec.ts'
 import { parseArgs } from 'node:util'
-import { realPath } from '../lib/fs.ts'
-import { short } from '../lib/output.ts'
+import { realPath } from '../../lib/fs.ts'
+import { short } from '../../lib/output.ts'
 import { sweepLine } from './output.ts'
 
 const USAGE =

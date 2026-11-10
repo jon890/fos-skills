@@ -28,12 +28,12 @@
 
 
 // 리뷰 브랜치를 남길 이유. 끝 커밋이 기준 브랜치나 PR head 의 조상이면 null 이다(머리 주석의 「리뷰 흔적」)
-import type { Args, Log } from '../shared.ts'
+import type { Args, Log } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { allLiveSpecPaths, deleteSpecs } from '../../lib/spec.ts'
 import { dirname, join } from 'node:path'
-import { git, lines, readText, worktrees } from '../shared.ts'
-import { hasCommit, prCandidates, prList, protectedReason } from '../prs.ts'
+import { git, lines, readText, worktrees } from './shared.ts'
+import { hasCommit, prCandidates, prList, protectedReason } from './prs.ts'
 import { liveReviewPrs, originBranch, reviewKeepReason, reviewPrOf, reviewPrOfBranch, reviewPrState } from '../../lib/review.ts'
 import { readdirSync } from 'node:fs'
 import { realPath } from '../../lib/fs.ts'

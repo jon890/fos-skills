@@ -1,14 +1,14 @@
 // 기본 체크아웃이 기준 브랜치에 있으면 origin/<기준> 으로 fast-forward 한다.
-import type { Args, Log, Report } from '../shared.ts'
-import { RepoError, err, git, lines, worktrees } from '../shared.ts'
+import type { Args, Log, Report } from './shared.ts'
+import { RepoError, err, git, lines, worktrees } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { defaultBase } from '../../lib/git.ts'
 import { isAbsolute, join } from 'node:path'
 import { isLive } from '../../lib/worker-state.ts'
-import { ownersOf, prefetchPrs } from '../prs.ts'
+import { ownersOf, prefetchPrs } from './prs.ts'
 import { requireMigrated } from '../../lib/paths.ts'
 import { sweepRouting } from '../../lib/routing-log.ts'
-import { workersAt } from '../terminals.ts'
+import { workersAt } from './terminals.ts'
 
 function followBase(repo: string, base: string, apply: boolean, log: Log): void {
   const current = git(repo, 'branch', '--show-current').out

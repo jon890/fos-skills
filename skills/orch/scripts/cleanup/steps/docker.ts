@@ -8,10 +8,10 @@
 
 // 머리 주석의 「Docker 자원」. docker 절이 틀렸으면 false 다
 import { ConfigError, loadConfig } from '../../lib/config.ts'
-import type { Log } from '../shared.ts'
+import type { Log } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { dockerCleanup, dockerRules } from '../../lib/docker.ts'
-import { err } from '../shared.ts'
+import { err } from './shared.ts'
 
 function sweepDocker(repo: string, apply: boolean, log: Log): boolean {
   let rules

@@ -25,11 +25,11 @@
 
 
 // --remote-branches 가 읽는 닫힌 PR 의 필드. --state closed 는 MERGED 와 CLOSED 를 함께 준다
-import type { Log, Owners } from '../shared.ts'
+import type { Log, Owners } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { ghJson } from '../../lib/gh.ts'
-import { git, lines } from '../shared.ts'
-import { hasCommit } from '../prs.ts'
+import { git, lines } from './shared.ts'
+import { hasCommit } from './prs.ts'
 import { isObject } from '../../core/json.ts'
 
 const CLOSED_FIELDS = 'number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt,body'

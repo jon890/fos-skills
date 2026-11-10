@@ -12,8 +12,8 @@
 
 // 머지 큐 로그 정리가 쓰는 실제 조회. PR 상태는 번호를 묶어 한 번에 읽고(lib/pr-lookup.ts 의 states) 읽지 못한 번호는 담지 않는다
 import type { StepContext, StepResult, StepState } from './context.ts'
-import { git, lines } from '../shared.ts'
-import { lookupOf } from '../prs.ts'
+import { git, lines } from './shared.ts'
+import { lookupOf } from './prs.ts'
 import { lsofOpenedBy, sweepQueueLogs } from '../../lib/queue-logs.ts'
 import { migrateLegacyNotices } from '../legacy-notices.ts'
 import { pathOf } from '../../lib/paths.ts'

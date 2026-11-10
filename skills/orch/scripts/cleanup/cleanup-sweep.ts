@@ -1,7 +1,7 @@
 // 정리 단계를 순서대로 실행하고 저장소별 결과를 모은다. 기본은 dry-run 이다.
-import type { Args, Log, Terminal } from './shared.ts'
+import type { Args, Log, Terminal } from './steps/shared.ts'
 import { ConfigError } from '../lib/config.ts'
-import { RepoError, err } from './shared.ts'
+import { RepoError, err } from './steps/shared.ts'
 import type { Runner } from '../lib/proc.ts'
 import type { StepContext, StepState } from './steps/context.ts'
 import type { WorkerRow } from '../lib/ownership.ts'
@@ -14,13 +14,13 @@ import { cleanupState } from './steps/state.ts'
 import { cleanupWorktrees } from './steps/worktrees.ts'
 import { fire } from '../lib/events.ts'
 import { prepare } from './steps/prepare.ts'
-import { prepareSession } from './cli.ts'
+import { prepareSession } from './steps/cli.ts'
 import { withRun } from '../lib/proc.ts'
 
-export type { Host } from './processes.ts'
-export { waitFree, stopHolders } from './processes.ts'
-export type { SweepContext } from './output.ts'
-export { sweepLine } from './output.ts'
+export type { Host } from './steps/processes.ts'
+export { waitFree, stopHolders } from './steps/processes.ts'
+export type { SweepContext } from './steps/output.ts'
+export { sweepLine } from './steps/output.ts'
 
 async function sweepRepo(repo: string, args: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<number> {
   const ctx: StepContext = { repo, args, workers, terminals, log }

@@ -23,8 +23,8 @@ test('진입 파일은 단계 호출을 모으고 단계 구현을 갖지 않는
 
 test('기존 공개 경로는 프로세스와 출력 도우미를 그대로 내보낸다', async () => {
   const api = await import(entry.href)
-  const processes = await import('../scripts/cleanup/processes.ts')
-  const output = await import('../scripts/cleanup/output.ts')
+  const processes = await import('../scripts/cleanup/steps/processes.ts')
+  const output = await import('../scripts/cleanup/steps/output.ts')
   assert.equal(api.waitFree, processes.waitFree)
   assert.equal(api.stopHolders, processes.stopHolders)
   assert.equal(api.sweepLine, output.sweepLine)
