@@ -277,8 +277,46 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     const r = await c.runQueue({ '1': pr() }, ['1'], '2')
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'threads=2')
-    has(r.stdout, 'STOP 1\n')
+    has(r.stdout, 'STOP 1 미해결 리뷰 스레드 2 개\n')
     lacks(c.log(), 'pr merge')
+  })
+
+  test('멈춘 이유가 둘이면 STOP 줄과 worker 에게 보내는 이유에 모두 낸다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+    const noEvidence = pr({ body: '<!-- fos-feature-evidence -->' })
+    // 스레드와 근거 블록. 앞 판정에서 걸린 이유 하나로 멈추지 않는다
+    let r = await c.runQueue({ '1': noEvidence }, ['--stop-on-hold', '1'], '2')
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'STOP 1 미해결 리뷰 스레드 2 개; 기능 완료 근거 블록이 하나 필요하다\n')
+    // 체크 실패도 대기 중에 멈추지 않고 같은 줄에 모은다
+    r = await c.runQueue({ '1': { ...noEvidence, statusCheckRollup: FAILED } }, ['--stop-on-hold', '1'], '1')
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'STOP 1 실패한 체크 1 개; 미해결 리뷰 스레드 1 개; 기능 완료 근거 블록이 하나 필요하다\n')
+    lacks(c.log(), 'pr merge')
+    // 이유가 둘이어도 worker 에게 알리는 보류로 간다(워크트리가 없어 보내지는 못한다)
+    r = await c.runQueue({ '1': noEvidence }, ['--stop-on-hold', '--sweep-arg', '--run', '--sweep-arg', 'run_x', '1'], '2')
+    has(r.stdout, '1 worker 에게 알리지 않았다: 워크트리 없음')
+  })
+
+  test('체크만 실패했으면 이유 하나로 멈추고 worker 에게 알리지 않는다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: FAILED }) }, ['--stop-on-hold', '1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'STOP 1 실패한 체크 1 개\n')
+    lacks(r.stdout, 'worker 에게')
+  })
+
+  test('기능 완료 근거에서 걸리면 합친 사본 검사와 머지 전 명령을 돌리지 않는다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+    const marker = join(c.tmp, 'ran')
+    const r = await c.runQueue({ '1': pr({ body: '' }) }, ['--stop-on-hold', `1:touch ${marker}`])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'STOP 1 기능 완료 근거 블록이 하나 필요하다')
+    assert.equal(existsSync(marker), false)
   })
 
   test('뒤 PR 을 처리하는 동안 풀린 스레드는 정리 전에 한 번 더 판정한다', async (t) => {

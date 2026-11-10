@@ -12,8 +12,10 @@
 //      60초가 지났으면 그 대기를 건너뛴다(`<PR> 체크가 60초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
 //      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 //      (--up-to-date-when overlap 이면 base 최신을 품지 않아도 단위가 겹치지 않으면 merge 없이 3 으로 간다)
-//   3. 실패한 체크, 미해결 리뷰 스레드가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
-//      mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
+//   3. 실패한 체크, 미해결 리뷰 스레드, 기능 완료 근거 블록 불일치(독립 리뷰 줄의 「대기」 포함)가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
+//      mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다. 체크 대기를 넘지 못해도(실패, 시간 초과) 이 조건을 모두 보고, 걸린 이유를
+//      `; ` 로 이어 STOP 줄 하나와 worker 에게 보내는 이유 하나에 낸다. 판정은 steps/gate.ts 의 gateReasons 이고 `orch queue gate`(gate.ts)가 같은 함수를 쓴다.
+//      이 조건은 겹침 판정, 합친 사본 검사, before-merge 보다 먼저 본다
 //      --allow-fail 로 준 체크의 실패는 세지 않고 경고 줄만 찍는다
 //   3-1. --stop-on-overlap 이나 hooks/verify-merged.ts 가 있으면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
 //      겹치는지 본다. 겹치면 --stop-on-overlap 은 겹친 파일을 찍고 멈추고, verify-merged 핸들러는 base 와 합친
@@ -46,7 +48,7 @@
 //   --stop-on-hold 면 그 자리에서 앞서 머지한 PR 의 after-queue 만 돌리고 1 로 끝난다. 뺀 PR 과 이유는 차례 기록의 held 에 남는다.
 //   기본 모드에서는 미해결 스레드와 검사 뒤 HEAD 변경으로 뺀 PR 만 정리 전에 한 번 다시 판정한다.
 //   재판정의 CI 대기 합계는 PR 마다 최대 5분(--check-timeout 이 더 짧으면 그 값)이고, 실패한 체크 등 다른 보류는 다시 보지 않는다.
-//   worker 가 고쳐야 하는 보류(기능 완료 근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패)는 그 PR 브랜치의 살아 있는 worker 에게
+//   worker 가 고쳐야 하는 보류(기능 완료 근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패. 이유가 여럿이면 모두 한 번에)는 그 PR 브랜치의 살아 있는 worker 에게
 //   `PR #<PR> 을 머지 큐에서 뺐다: <이유>. 고쳐 push 한 뒤 status 로 알린다.` 를 보낸다(lib/tell-worker.ts). Run 은 --sweep-arg 로 준 --run 이고,
 //   Run 이나 worker 가 없으면 `<PR> worker 에게 알리지 않…` 줄만 찍는다. 체크 실패와 충돌은 보내지 않는다. 상주 루프의 CI 감시와
 //   충돌 처리가 그 worker 에게 이미 보낸다

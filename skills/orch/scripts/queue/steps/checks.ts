@@ -3,7 +3,7 @@
 import { queuePollSeconds } from '../../lib/gh-budget.ts'
 import { parseNames, RULES_JQ, rulesPlanLimited } from '../../lib/gh.ts'
 import type { StepContext } from './model.ts'
-import { NotReady, PENDING, ROLL_NAMES, RUNNING_SINCE_JQ, SETTLED_JQ, SETTLED_SEC } from './model.ts'
+import { CheckStop, NotReady, PENDING, ROLL_NAMES, RUNNING_SINCE_JQ, SETTLED_JQ, SETTLED_SEC } from './model.ts'
 import type { StepState } from './model.ts'
 import { api, field } from './pr.ts'
 import { chomp, log, nap, stop } from './runtime.ts'
@@ -70,21 +70,22 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
   for (;;) {
     let f = await field(stepContext, state, n, 'statusCheckRollup', q.failed, waited >= limit || (missingLimit > 0 && idle >= missingLimit))
     if (f !== '0') f = await field(stepContext, state, n, 'statusCheckRollup', q.failed, true)
-    if ((f || '0') !== '0') stop(`${n} 실패한 체크 ${f} 개`)
+    if ((f || '0') !== '0') throw new CheckStop(n, `실패한 체크 ${f} 개`)
     const pending = await field(stepContext, state, n, 'statusCheckRollup', PENDING)
     const missing = await field(stepContext, state, n, 'statusCheckRollup', `${q.missing} | length`)
     if (!pending || !missing) stop(`${n} 체크 조회 실패`)
     if (pending === '0' && missing === '0') break
     if (waited >= limit) {
       const names = await field(stepContext, state, n, 'statusCheckRollup', `${q.missing} | join(",")`)
-      stop(`${n} 체크 대기 ${timeout}분 초과(진행 중 ${pending}, 나타나지 않은 필수 체크 ${names})`)
+      throw new CheckStop(n, `체크 대기 ${timeout}분 초과(진행 중 ${pending}, 나타나지 않은 필수 체크 ${names})`)
     }
     if (pending !== '0') idle = 0
     if (missingLimit > 0 && idle >= missingLimit) {
       const names = await field(stepContext, state, n, 'statusCheckRollup', `${q.missing} | join(", ")`)
       const seen = await field(stepContext, state, n, 'statusCheckRollup', `${ROLL_NAMES} | unique | tojson`)
-      stop(
-        `${n} 진행 중인 체크가 없는데 필수 체크가 ${state.o.missingTimeout}분째 나타나지 않는다(나타나지 않은 필수 체크 ${names}). ` +
+      throw new CheckStop(
+        n,
+        `진행 중인 체크가 없는데 필수 체크가 ${state.o.missingTimeout}분째 나타나지 않는다(나타나지 않은 필수 체크 ${names}). ` +
           `PR 에 붙은 체크: ${seen || '[]'}. 필수 체크 이름이 틀렸을 수 있다(쉼표가 든 이름은 --required-check 로 준다)`,
       )
     }
@@ -105,12 +106,12 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
     return
   }
   const settle = state.rechecking ? Math.min(60, Math.max(0, timeout * 60 - state.recheckWaited)) : 60
-  if (state.rechecking && settle < 60) stop(`${n} 체크 대기 ${timeout}분 초과(체크 안정화 대기 포함)`)
+  if (state.rechecking && settle < 60) throw new CheckStop(n, `체크 대기 ${timeout}분 초과(체크 안정화 대기 포함)`)
   await nap(stepContext, settle)
   if (state.rechecking) state.recheckWaited += settle
   const pending = await field(stepContext, state, n, 'statusCheckRollup', PENDING, true)
   const missing = await field(stepContext, state, n, 'statusCheckRollup', `${q.missing} | length`)
   if (!(pending === '0' && missing === '0')) {
-    stop(`${n} 새로 붙은 체크가 아직 돈다(진행 중 ${pending || '?'}, 미등장 ${missing || '?'}). 다시 돌린다`)
+    throw new CheckStop(n, `새로 붙은 체크가 아직 돈다(진행 중 ${pending || '?'}, 미등장 ${missing || '?'}). 다시 돌린다`)
   }
 }

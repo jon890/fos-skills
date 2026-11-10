@@ -38,6 +38,13 @@ function setupImpl(stepContext: StepContext, state: StepState): void {
   if (!isDir(tmp)) throw new Usage(`TMPDIR 를 읽지 못했다: ${tmp}`)
   state.realTmp = realpathSync(tmp)
   state.copyDir = o.copyDir || state.realTmp
+  readQueueEnv(stepContext, state)
+  dropStaleCopies(stepContext, state)
+}
+
+// 스레드 수 명령의 기본값과 gh 재시도 환경 변수를 읽는다. 머지 큐와 `orch queue gate` 가 함께 쓴다
+export function readQueueEnv(stepContext: StepContext, state: StepState): void {
+  const o = state.o
   if (!o.threadsCmd) {
     // 옛 명령과 같은 글자를 내려고 정규화하지 않고 잇는다
     const rt = `${stepContext.here}/../../../review-fix/scripts/review_threads.ts`
@@ -61,7 +68,6 @@ function setupImpl(stepContext: StepContext, state: StepState): void {
   }
   state.ghRetries = Number(retries)
   state.ghRetrySeconds = Number(seconds)
-  dropStaleCopies(stepContext, state)
 }
 
 // 큐를 시작하기 전에 설정과 핸들러를 본다. 여기서 내는 ConfigError 와 Usage 는 사용법 오류(종료 코드 2)다.
