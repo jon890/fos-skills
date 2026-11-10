@@ -14,6 +14,7 @@ import { orcaJson } from './orca.ts'
 import { ensure, pathOf } from './paths.ts'
 import { SLACK_MS, sessionTokens } from './session-tokens.ts'
 import { isQuietStop } from './stop-reports.ts'
+import { recipientOf, senderOf, threadOf } from '../core/message-fields.ts'
 
 type Json = Record<string, any>
 type Outcome = 'merged' | 'closed'
@@ -169,12 +170,12 @@ function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetr
     }
   }
   const list = [...all.values()]
-  const from = (m: Json) => rows.find(row => context(m)[1] === row.dispatch && (m.from_handle === row.terminal || m.from_handle === `dispatch:${row.dispatch}`))
+  const from = (m: Json) => rows.find(row => context(m)[1] === row.dispatch && (senderOf(m) === row.terminal || senderOf(m) === `dispatch:${row.dispatch}`))
   const sent = list.filter(m => from(m))
   const questions = sent.filter(m => m.type === 'question')
   const escalation = sent.filter(m => m.type === 'escalation' && !isQuietStop(m))
   const ready = sent.filter(m => m.type === 'status' && readyOf(m)?.pr === pr).sort((a, b) => ms(a.created_at) - ms(b.created_at))[0]
-  const commands = list.filter(m => rows.some(row => m.to_handle === `dispatch:${row.dispatch}` || m.to_handle === row.terminal)
+  const commands = list.filter(m => rows.some(row => recipientOf(m) === `dispatch:${row.dispatch}` || recipientOf(m) === row.terminal)
     && !from(m) && !['heartbeat', 'worker_done'].includes(m.type) && !payload(m).broadcast &&
     !(Array.isArray(payload(m).recipients) && (payload(m).recipients as unknown[]).length > 1))
   // 겹친 대기 구간은 한 번만 센다. 준비 뒤의 질문은 준비까지의 대기에 넣지 않는다.
@@ -183,8 +184,8 @@ function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetr
   let waitingKnown = !!ready
   for (const question of [...questions, ...escalation].filter(m => ms(m.created_at) < until)) {
     const row = from(question)!
-    const reply = list.filter(m => m.thread_id === question.id && m.id !== question.id &&
-      (m.to_handle === `dispatch:${row.dispatch}` || m.to_handle === row.terminal) && ms(m.created_at) >= ms(question.created_at))
+    const reply = list.filter(m => threadOf(m) === question.id && m.id !== question.id &&
+      (recipientOf(m) === `dispatch:${row.dispatch}` || recipientOf(m) === row.terminal) && ms(m.created_at) >= ms(question.created_at))
       .sort((a, b) => ms(a.created_at) - ms(b.created_at))[0]
     if (!reply) { waitingKnown = false; continue }
     intervals.push([ms(question.created_at), Math.min(ms(reply.created_at), until)])

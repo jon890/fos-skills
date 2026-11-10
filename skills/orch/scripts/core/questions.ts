@@ -1,4 +1,5 @@
 import { context, isoTime } from './completion.ts'
+import { recipientOf, senderOf, threadOf } from './message-fields.ts'
 
 export const KINDS = new Set(['question', 'escalation'])
 
@@ -8,11 +9,11 @@ export type Message = Record<string, unknown>
 export function unanswered(rows: Message[], run: string): Message[] {
   const scoped = rows.filter((m) => m.run_id === run)
   const answered = new Set(
-    scoped.filter((r) => r.thread_id && r.id !== r.thread_id && r.to_handle && r.to_handle !== `run:${run}`).map((r) => r.thread_id),
+    scoped.filter((r) => threadOf(r) && r.id !== threadOf(r) && recipientOf(r) && recipientOf(r) !== `run:${run}`).map((r) => threadOf(r)),
   )
-  const asked = [...new Map(scoped.filter((m) => KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && m.id)
+  const asked = [...new Map(scoped.filter((m) => KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && m.id)
     .map((m) => [m.id, m])).values()]
-  const key = (m: Message) => dispatchOf(m) || m.from_handle || m.id
+  const key = (m: Message) => dispatchOf(m) || senderOf(m) || m.id
   const later = (a: Message, b: Message) => String(a.created_at || '') === String(b.created_at || '')
     ? asked.indexOf(a) > asked.indexOf(b) : String(a.created_at || '') > String(b.created_at || '')
   const latestAnswered = new Map<unknown, Message>()
@@ -41,7 +42,7 @@ export function questionLocations(questions: { id?: unknown; dispatch?: unknown;
   const limit = 5
   const refs = questions.slice(0, limit).map((q) => {
     const dispatch = q.dispatch || dispatchOf(q)
-    const from = dispatch ? `dispatch:${dispatch}` : String(q.from_handle || '-')
+    const from = dispatch ? `dispatch:${dispatch}` : String(senderOf(q as Message) || '-')
     return `${String(q.id || '-').replace(/\s+/g, '_')}@${from.replace(/\s+/g, '_')}`
   })
   const extra = questions.length > limit ? ` (외 ${questions.length - limit}개)` : ''
@@ -51,6 +52,6 @@ export function questionLocations(questions: { id?: unknown; dispatch?: unknown;
 export function dispatchOf(message: Message): string | null {
   const dispatch = context(message)[1]
   if (dispatch) return String(dispatch)
-  const from = String(message.from_handle ?? '')
+  const from = senderOf(message)
   return from.startsWith('dispatch:') ? from.slice('dispatch:'.length) : null
 }

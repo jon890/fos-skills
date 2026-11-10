@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { classify, context, payload } from '../lib/completion.ts'
+import { senderOf } from '../core/message-fields.ts'
 import { orcaJson } from '../lib/orca.ts'
 import { ghJson } from '../lib/gh.ts'
 import { linkBoardPr } from '../lib/board.ts'
@@ -82,7 +83,7 @@ export async function watchCompletions(repo: string, run: string, base: string):
         if (existsSync(boardPath(repo)) && typeof pr.branch === 'string') linkBoardPr(boardPath(repo), String(pr.number), pr.branch)
       }
       if (!seen.events.includes(id)) {
-        await fire('worker-done', { worker: { task, dispatch, terminal: message.from_handle ?? message.fromHandle ?? null, worktree: null, spec: null }, outcome: message.outcome ?? payload(message).outcome ?? null, evidence: verified.status, pr }, { repo, run, base })
+        await fire('worker-done', { worker: { task, dispatch, terminal: senderOf(message) || null, worktree: null, spec: null }, outcome: message.outcome ?? payload(message).outcome ?? null, evidence: verified.status, pr }, { repo, run, base })
         seen.events.push(id); save()
       }
       if (verified.status === 'suspicious' && !seen.suspects.includes(dispatch)) {

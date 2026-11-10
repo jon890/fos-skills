@@ -19,6 +19,7 @@
 
 import { objectOr } from './json.ts'
 import { jsonEqual } from './json.ts'
+import { senderOf } from './message-fields.ts'
 
 type Json = Record<string, unknown>
 
@@ -88,7 +89,7 @@ export function context(message: Json): [unknown, unknown] {
 }
 
 function sender(message: Json): unknown {
-  return message.from_handle || message.fromHandle
+  return senderOf(message)
 }
 
 // 시각이 둘 다 있으면 before 가 after 보다 앞서야 한다. 없으면 현재 묶음에서 먼저 온 상태만 인정한다.
@@ -98,7 +99,10 @@ function earlier(candidate: Json, item: Json, batch: Json[], equal: (a: unknown,
   const after = item.created_at || item.createdAt
   if (before && after) {
     const times = [isoTime(before), isoTime(after)]
-    return times[0] !== null && times[1] !== null && times[0] < times[1]
+    if (times[0] === null || times[1] === null) return false
+    if (times[0] !== times[1]) return times[0] < times[1]
+    // created_at 은 초 단위라 status 와 worker_done 을 같은 초에 보내면 같다. Orca 가 매기는 순번(sequence)으로 가린다.
+    return typeof candidate.sequence === 'number' && typeof item.sequence === 'number' && candidate.sequence < item.sequence
   }
   // 옛 명령과 같이 값으로 비교한다. 같은 메시지가 이력과 묶음에 따로 담겨 와도 같은 것으로 본다
   return batch.some((message) => equal(message, candidate))

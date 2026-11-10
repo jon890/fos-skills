@@ -458,6 +458,7 @@ import { emit, short } from '../lib/output.ts'
 import { branchesOf } from '../lib/spec.ts'
 import { waiterPids } from '../lib/waiters.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from '../lib/workers.ts'
+import { senderOf } from '../core/message-fields.ts'
 
 const USAGE = [
   '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop [--all] | --status | --foreground) [--once]',
@@ -1447,7 +1448,7 @@ function askers(pending: Record<string, unknown>[]): Waiting {
   for (const message of pending) {
     const dispatch = questionContext(message)[1]
     if (dispatch) dispatches.add(String(dispatch))
-    if (message.from_handle) terminals.add(String(message.from_handle))
+    if (senderOf(message)) terminals.add(senderOf(message))
   }
   return { dispatches, terminals }
 }
