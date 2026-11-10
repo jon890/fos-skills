@@ -26,7 +26,7 @@ test('Run 메시지와 환경을 유지하고 consumer_fenced 만 발신자 없�
   assert.equal(bin.calls().length, 3)
 })
 
-test('옛 알림은 전송 실패하면 보존하고 성공 뒤 cursor 와 함께 휴지통으로 옮긴다', t => {
+test('옛 알림은 DIGEST 에 쌓은 뒤 cursor 와 함께 휴지통으로 옮기고 바로 보내지 않는다', t => {
   const dir = tempDir('legacy-notice-', t)
   const saved = { ...process.env }
   t.after(() => { for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved) })
@@ -41,11 +41,11 @@ test('옛 알림은 전송 실패하면 보존하고 성공 뒤 cursor 와 함�
   registerRun(dir, 'R', null)
   const trash = join(dir, 'trash')
   migrateLegacyNotices(dir, trash, true, () => {})
-  assert.equal(existsSync(file), true); assert.equal(existsSync(cursor), true)
-  assert.equal(existsSync(join(state, 'wait')), false)
-  bin.setRules([{ stdout: ok }]); migrateLegacyNotices(dir, trash, true, () => {})
   assert.equal(existsSync(file), false); assert.equal(existsSync(cursor), false)
-  const args = bin.calls().at(-1)!.argv; assert.equal(args[args.indexOf('--body') + 1], 'OLD row 2')
+  assert.equal(existsSync(join(state, 'wait')), false)
+  assert.equal(bin.calls().filter(call => call.argv.includes('send')).length, 0)
+  const queued = JSON.parse(readFileSync(join(state, 'notice-digest', 'R.json'), 'utf8')).items
+  assert.deepEqual(queued.map((item: any) => [item.kind, item.text]), [['LEGACY-NOTICE', 'OLD row 2']])
 })
 
 test('실제 Run 을 알 수 없는 옛 파일과 Run 없는 단일 파일은 보내거나 버리지 않는다', t => {

@@ -85,6 +85,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `hooks` | `timeouts` | 이벤트 이름에서 초로. 모르는 이벤트 이름이나 양수가 아닌 값은 사용법 오류다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | number | 300 | 틱 간격 |
+| `pipeline` | `digest_sec` | number | 1800 | 안내성 루프 알림(WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED)을 DIGEST 하나로 모아 보내는 주기(초) |
 | `pipeline` | `ready_slots` | number | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |
 | `pipeline` | `docs_merge` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 문서 PR 바로 머지는 하지 않는다 |
 | `pipeline` | `after_queue_interval_sec` | number | 0 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `after-queue` 는 묶이지 않는다 |

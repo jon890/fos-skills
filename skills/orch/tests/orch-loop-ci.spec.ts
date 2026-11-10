@@ -14,6 +14,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
+import { queuedNotices } from './fixtures/queued-notices.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
@@ -185,10 +186,11 @@ function jsonl(file: string): Json[] {
 
 // 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => {
+  const sent = jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => {
     if (args[1] !== 'send' || !args.includes('--payload')) return []
     return [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }]
   })
+  return [...sent, ...queuedNotices(orchFile())]
 }
 
 function received(event: string): Json[] {

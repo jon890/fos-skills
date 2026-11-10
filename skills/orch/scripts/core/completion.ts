@@ -9,6 +9,7 @@
 // 같은 dispatch 의 준비 상태를 우선하고 그 안에서 가장 늦은 시각을 고른다. 없으면 같은 Task 의 다른 dispatch 에도 같은 기준을 쓴다.
 // 리뷰 dispatch(지시서에 `리뷰 PR:` 줄이 있다. 부르는 쪽이 options.isReview 로 알린다)는 PR 을 열지 않아 준비 상태가 없다.
 //   그 dispatch 는 준비 상태가 없으면 같은 dispatch, 같은 발신자가 앞서 보낸 결과 status 를 근거로 센다.
+//   띄우기 기록이 없거나 지시서를 못 읽어 isReview 가 모르는 dispatch 도, 같은 발신자의 첫 status 가 `판정:` 줄이면 리뷰로 본다(옛 wait 와 같다)
 //   결과 status 는 제목이나 본문의 한 줄이 `판정:`, `완료:`, `미완료:` 로 시작하는 것이다(목록 기호와 굵은 글씨는 받는다).
 //   `완료:`, `미완료:` 는 verify 보고의 첫 줄이다. 다른 dispatch 의 결과는 세지 않는다. 리뷰를 다시 띄우면 새 결과를 보내야 한다
 // classify 는 메시지의 복사본에 completionVerification 을 붙인다.
@@ -29,6 +30,13 @@ const ISO = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?)(\.\d+)?)?(Z|[+-
 
 // 리뷰 결과 줄(머리 주석의 「리뷰 dispatch」). 줄 경계는 READY 와 같이 \n 만이다
 const VERDICT = /(?<=^|\n)[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:판정|완료|미완료)(?:\*\*)?[ \t]*[:：]/
+// 리뷰 worker 의 첫 status. 띄우기 기록이 없어 isReview 가 모를 때의 근거라 `판정:` 만 받는다
+const REVIEW_VERDICT = /(?<=^|\n)[ \t]*(?:[-*][ \t]+)?(?:\*\*)?판정(?:\*\*)?[ \t]*[:：]/
+
+// 첫 status 가 `판정:` 줄이면 리뷰 worker 의 결과다(옛 wait-important 와 같은 기준이다)
+function startsWithReviewVerdict(message: Json): boolean {
+  return REVIEW_VERDICT.test(`${String(message.subject || '')}\n${String(message.body || '')}`)
+}
 
 export type ClassifyOptions = { isReview?: (dispatch: string) => boolean }
 
@@ -133,11 +141,19 @@ export function classify(messages: Json[], history: Json[] = [], options: Classi
           selected = candidate
           ready = { status: 'ready', ...found, statusMessageId: candidate.id ?? null }
         }
-        if (!ready && task && dispatch && options.isReview?.(String(dispatch))) {
+        if (!ready && task && dispatch) {
           const from = sender(item)
-          const results = previous.filter((candidate) => candidate.type === 'status' && from && sender(candidate) === from
-            && context(candidate)[0] === task && context(candidate)[1] === dispatch && hasVerdict(candidate)
+          const isReview = options.isReview?.(String(dispatch)) === true
+          const own = previous.filter((candidate) => candidate.type === 'status' && from && sender(candidate) === from
+            && context(candidate)[0] === task && context(candidate)[1] === dispatch
             && earlier(candidate, item, messages.slice(0, output.length), equal))
+          // 리뷰 지시서로 띄운 dispatch 는 결과 줄 전부를, 기록을 모르는 dispatch 는 첫 status 가 `판정:` 일 때만 리뷰로 본다
+          const first = own.reduce<Json | null>((best, candidate) => {
+            if (!best) return candidate
+            const [time, bestTime] = [isoTime(candidate.created_at || candidate.createdAt), isoTime(best.created_at || best.createdAt)]
+            return time !== null && bestTime !== null && time < bestTime ? candidate : best
+          }, null)
+          const results = isReview ? own.filter(hasVerdict) : first && startsWithReviewVerdict(first) ? own.filter(hasVerdict) : []
           const latest = results.reduce<Json | null>((best, candidate) => {
             if (!best) return candidate
             const [time, bestTime] = [isoTime(candidate.created_at || candidate.createdAt), isoTime(best.created_at || best.createdAt)]

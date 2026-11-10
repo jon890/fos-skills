@@ -41,6 +41,7 @@ export const QUEUE_KEYS: readonly string[] = [
 export const PIPELINE_KEYS: readonly string[] = [
   'enabled',
   'tick_sec',
+  'digest_sec',
   'ready_slots',
   'docs_merge',
   'after_queue_interval_sec',

@@ -12,8 +12,22 @@ Orca 가 check 명령을 지정한 깨움은 그 명령으로 읽는다. orch �
 
 루프는 등록된 Run 에 status 메시지를 보낸다. subject 첫 낱말은 알림 종류이고 payload 의 source 는 orch-loop 다. 알림 종류의 원본은 `scripts/loop/orch-loop.ts` 이다.
 CI 실패, 충돌, 멈춤과 조회 실패는 기존 중복 억제 규칙을 따른다. 보내지 못하면 NOTICE-FAIL 을 기록하고 다음 틱에서 다시 시도한다. Run 없는 옛 루프는 로그에만 남긴다.
-DONE-SUSPECT 는 준비 근거 없는 완료 보고, WORKER-LOST 는 끊긴 worker 를 뜻한다. 완료·끊김 이벤트와 보드 PR 연결도 루프가 맡는다. 첫 루프 틱은 지난 완료 보고를 알리지 않는다.
+DONE-SUSPECT 는 준비 근거 없는 완료 보고, WORKER-LOST 는 끊긴 worker 를 뜻한다. 완료·끊김 이벤트와 보드 PR 연결도 루프가 맡는다. 첫 루프 틱은 지난 완료 보고를 알리지 않는다. 리뷰 worker 는 PR 을 열지 않아, 리뷰 지시서로 띄웠거나(정리가 띄우기 기록을 지운 뒤에는 영구 이력으로 본다) 첫 status 가 `판정:` 줄이면 정상 완료로 본다.
+DONE-SUSPECT 는 `state/done-seen/<Run>.json` 의 `suspects`(dispatch 목록), WORKER-LOST 는 `state/wait-important-lost.json` 의 `<Run>.<dispatch>` 가 보낸 기록이다. 루프를 다시 띄워도 이 파일이 남아 같은 dispatch 의 알림을 한 번만 보낸다.
 UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음은 다시 보내지 않고 질문이 추가되거나 해결되면 다시 확인한다.
+
+### 바로 보내는 알림과 모아 보내는 알림
+
+코디네이터가 무언가 해야 하는 알림만 그 틱에 바로 보낸다. 안내성이거나 다음 틱에 풀리는 알림은 `loop.log` 에 남기고 Run 메시지는 모아 DIGEST 하나로 보낸다(사용자 결정 2026-11-10). 원본은 `scripts/lib/notice-digest.ts` 이다.
+
+| 방식 | kind |
+|---|---|
+| 바로 | CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
+| 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
+
+모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 그 틱에 바로 한 번 보낸다.
+
+한 Run 에 저장소마다 루프가 등록돼 있으면 같은 알림이 루프 수만큼 오지 않게, 보내기 전에 머신 폴더의 `run-notices/<Run>/<해시>` 를 본다. 다른 저장소의 루프가 10분 안에 같은 Run, kind, 본문을 보냈으면 보내지 않는다(`lib/run-notice.ts`). 완료 보고 확인은 이 저장소가 띄우지 않은 dispatch 의 PR 조회가 실패하면 건너뛴다. 띄운 저장소의 루프가 맡는다.
 
 ## 새 사용자 결정을 놓치지 않기
 

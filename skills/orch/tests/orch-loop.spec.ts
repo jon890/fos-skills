@@ -222,8 +222,20 @@ function jsonl(file: string): Json[] {
 
 // 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
+  return [...sentEvents(), ...queuedEvents()]
+}
+
+// Orca 로 실제 보낸 알림
+function sentEvents(): Json[] {
   return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args.includes('--payload')
     ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
+}
+
+// 모아 보내려고 쌓아 둔 알림(state/notice-digest). 아직 DIGEST 로 보내기 전이다
+function queuedEvents(): Json[] {
+  const dir = orchFile('state', 'notice-digest')
+  return existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.json') && !name.startsWith('__'))
+    .flatMap((name) => (JSON.parse(readFileSync(join(dir, name), 'utf8')).items as Json[]).map((item) => ({ kind: item.kind, text: item.text }))) : []
 }
 
 function received(event: string): Json[] {
@@ -450,7 +462,7 @@ describe('질문 확인', () => {
     assert.equal(argsOf('sweep').length, 1)
     assert.equal(argsOf('board').length, 1)
     once()
-    assert.equal(notStalls().length, 2, '전송하지 못한 실패는 다음 틱이 다시 시도한다')
+    assert.equal(notStalls().length, 1, '같은 이유는 다시 쌓지 않는다')
     // loop.log 에는 실패할 때마다 쓴다
     assert.equal(logText().match(/^WATCH-ERROR questions: /gm)?.length, 2, logText())
     orca({})
@@ -458,7 +470,7 @@ describe('질문 확인', () => {
     assert.equal(loopState()?.errors && (loopState()?.errors as Json)['questions@r'], null)
     orca({ fail: true })
     once()
-    assert.equal(notStalls().length, 3, JSON.stringify(events()))
+    assert.equal(notStalls().length, 2, JSON.stringify(events()))
   })
 })
 
@@ -988,6 +1000,11 @@ describe('여러 Run', () => {
   }
 
   function runEvents(run: string): Json[] {
+    const queued = orchFile('state', 'notice-digest', `${run}.json`)
+    const waiting = existsSync(queued) ? (JSON.parse(readFileSync(queued, 'utf8')).items as Json[]) : []
+    return [...waiting, ...sentRunEvents(run)]
+  }
+  function sentRunEvents(run: string): Json[] {
     return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args[args.indexOf('--to') + 1] === `run:${run}` ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
   }
 
@@ -1032,8 +1049,9 @@ describe('여러 Run', () => {
     assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
     assert.deepEqual(kinds('B').sort(), ['questions'])
     const errors = result.errors as Json
-    assert.equal(errors['questions@A'], null)
-    assert.equal(errors['questions@B'], null)
+    // 쌓아 둔 알림은 보낸 것으로 기록해 같은 이유를 다시 쌓지 않는다
+    assert.match(String(errors['questions@A']), /offline/)
+    assert.match(String(errors['questions@B']), /offline/)
     assert.deepEqual([errors['stalls@A'], errors['stalls@B']], [null, null])
   })
 
@@ -1187,23 +1205,12 @@ test('질문 조회 실패 중에도 완료 보고 감시는 같은 틱에 실�
   assert.equal(events().filter(e=>e.kind==='DONE-SUSPECT').length,1)
 })
 
-test('다시 시작 알림 전송이 실패하면 loop.json 에 남기고 다음 시작에서 재시도한다', () => {
+test('다시 시작 알림은 바로 깨우지 않고 DIGEST 로 모을 것에 쌓는다', () => {
   const since='2026-01-01T00:00:00Z'
   write(orchFile('state','loop.json'),JSON.stringify({pid:999999,run:'r',runs:['r'],alive_at:since,tick_sec:300}))
   write(orchFile('state','loop-runs','r.json'),JSON.stringify({run:'r',specs_dir:null,registered_at:since}))
   orca({send_fail:true});once()
-  assert.equal((loopState()?.restart_notices as Json).r,since)
-  orca({});once()
   assert.deepEqual(loopState()?.restart_notices,{})
-  assert.equal(events().filter(e=>e.kind==='LOOP-RESTARTED').length,2)
-})
-
-test('앞 루프에서 등록을 뺀 Run 은 재시작 알림이 거절돼도 한 번만 시도한다', () => {
-  const since='2026-01-01T00:00:00Z'
-  write(orchFile('state','loop.json'),JSON.stringify({pid:999999,run:'old',runs:['old','r'],alive_at:since,tick_sec:300}))
-  for(const run of ['old','r']) write(orchFile('state','loop-runs',`${run}.json`),JSON.stringify({run,specs_dir:null,registered_at:since}))
-  orca({send_fail_runs:['run:old']});once();once()
-  assert.deepEqual(loopState()?.restart_notices,{})
-  const rejected = jsonl(join(tmp,'orca-calls.jsonl')).filter((args:any) => args[1] === 'send' && args[args.indexOf('--to') + 1] === 'run:old')
-  assert.equal(rejected.length,1)
+  assert.deepEqual(sentEvents().filter(e=>e.kind==='LOOP-RESTARTED'),[])
+  assert.equal(queuedEvents().filter(e=>e.kind==='LOOP-RESTARTED').length,1)
 })

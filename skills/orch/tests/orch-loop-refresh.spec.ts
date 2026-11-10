@@ -14,6 +14,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
+import { queuedNotices } from './fixtures/queued-notices.ts'
 
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 
@@ -226,10 +227,11 @@ function records(): Record<string, Json> {
 }
 
 function events(): Json[] {
-  return (existsSync(join(tmp, 'orca-calls.jsonl')) ? readFileSync(join(tmp, 'orca-calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []).flatMap((args: any) => {
+  const sent = (existsSync(join(tmp, 'orca-calls.jsonl')) ? readFileSync(join(tmp, 'orca-calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []).flatMap((args: any) => {
     if (args[1] !== 'send' || !args.includes('--payload')) return []
     return [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }]
   })
+  return [...sent, ...queuedNotices(orchFile())]
 }
 
 describe('update-branch', () => {
