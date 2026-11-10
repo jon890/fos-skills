@@ -1,0 +1,85 @@
+{
+  "name": "orca-wake",
+  "description": "Orca 메시지로 루프 알림과 코디네이터 깨우기를 통일한다",
+  "pr_scope": "자체 대기를 없애고 감시와 알림을 상주 루프와 Orca 메시지로 옮긴다.",
+  "deferred": [
+    {
+      "what": "core-layer: 결과 계산층과 호출층 분리, 중복 제거; 이 PR 머지 뒤 시작",
+      "why": "별도 PR 로 동작 변경과 구조 변경을 나눈다",
+      "after": "orca-wake 머지"
+    },
+    {
+      "what": "loop-steps: 루프 단계 분리; core-layer 뒤",
+      "why": "별도 PR 로 동작 변경과 구조 변경을 나눈다",
+      "after": "orca-wake 머지"
+    },
+    {
+      "what": "queue-steps: 머지 큐 단계 분리; core-layer 뒤",
+      "why": "별도 PR 로 동작 변경과 구조 변경을 나눈다",
+      "after": "orca-wake 머지"
+    },
+    {
+      "what": "cleanup-steps: 정리 단계 분리; core-layer 뒤",
+      "why": "별도 PR 로 동작 변경과 구조 변경을 나눈다",
+      "after": "orca-wake 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-10",
+  "spec": "docs/features/orch-lib-layers/spec.md",
+  "design": "docs/features/orch-lib-layers/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ8",
+    "REQ9",
+    "REQ14",
+    "REQ15",
+    "REQ16",
+    "REQ17",
+    "REQ19"
+  ],
+  "total_phases": 3,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ3",
+        "REQ4",
+        "REQ6",
+        "REQ9",
+        "REQ16"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ5",
+        "REQ14",
+        "REQ15"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ8",
+        "REQ17",
+        "REQ19"
+      ]
+    }
+  ]
+}
