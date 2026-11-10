@@ -12,7 +12,7 @@
 //      60초가 지났으면 그 대기를 건너뛴다(`<PR> 체크가 60초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
 //      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 //      (--up-to-date-when overlap 이면 base 최신을 품지 않아도 단위가 겹치지 않으면 merge 없이 3 으로 간다)
-//   3. 실패한 체크, 미해결 리뷰 스레드, 기능 완료 근거 블록 불일치(독립 리뷰 줄의 「대기」 포함)가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
+//   3. 실패한 체크, 미해결 리뷰 스레드, 설정한 리뷰 판정, 기능 완료 근거 블록 불일치(독립 리뷰 줄의 「대기」 포함)가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
 //      mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다. 체크 대기를 넘지 못해도(실패, 시간 초과) 이 조건을 모두 보고, 걸린 이유를
 //      `; ` 로 이어 STOP 줄 하나와 worker 에게 보내는 이유 하나에 낸다. 판정은 steps/gate.ts 의 gateReasons 이고 `orch queue gate`(gate.ts)가 같은 함수를 쓴다.
 //      이 조건은 겹침 판정, 합친 사본 검사, before-merge 보다 먼저 본다

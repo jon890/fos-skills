@@ -1,7 +1,10 @@
 // 머지 전 조건 판정. 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 같은 함수를 쓴다.
-// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 기능 완료 근거 블록(독립 리뷰 줄 포함).
+// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 판정, 기능 완료 근거 블록(독립 리뷰 줄 포함).
 // 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
 
+import { autoMergeConfig } from '../../lib/auto-merge.ts'
+import { judgePrReview } from '../../lib/review-judgement.ts'
+import { loadConfig } from '../../lib/config.ts'
 import { baseMergesOnly, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
@@ -14,7 +17,7 @@ import { field, prEnv } from './pr.ts'
 import { chomp, log, namesJson, nap, stop } from './runtime.ts'
 
 // ci 는 체크, threads 와 evidence 는 worker 가 고칠 것, conflict 는 base 와의 충돌, mergeable 은 그 밖의 합칠 수 없는 상태, lookup 은 조회 실패다
-export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'lookup'
+export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup'
 export type GateReason = { kind: GateKind; text: string }
 // none 은 체크를 보지 않고, failed 는 실패한 체크만 보고(체크를 기다린 뒤), all 은 진행 중이거나 나타나지 않은 체크도 본다
 export type GateChecks = 'none' | 'failed' | 'all'
@@ -139,6 +142,20 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   if (m === 'CONFLICTING') reasons.push({ kind: 'conflict', text: `base(${p.base}) 와 충돌한다(mergeable=CONFLICTING)` })
   else if (m !== 'MERGEABLE') reasons.push({ kind: 'mergeable', text: `mergeable=${m || '조회 실패'}` })
 
+  const review = autoMergeConfig(loadConfig(state.repoDir)).review
+  if (review) {
+    const got = ghJson<{ reviews: unknown; comments: unknown; headRefOid: string; body: string }>(['pr', 'view', n, '--json', 'reviews,comments,headRefOid,body', '--jq', '.'], { cwd: o.repo, cache: false })
+    if (!got.ok || !got.data || !Array.isArray(got.data.reviews) || !Array.isArray(got.data.comments)) {
+      reasons.push({ kind: 'lookup', text: '리뷰 판정 조회 실패' })
+    } else if (got.data.headRefOid !== p.ph) {
+      throw new HeadChanged(`${n} 리뷰 조회 중 HEAD 가 바뀌었다`)
+    } else {
+      const feature = Boolean(featureBranch(o.repo, p.branch)) || (typeof got.data.body === 'string' && got.data.body.includes('fos-feature-evidence'))
+      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base }, got.data, review, feature)
+      if (!judged.ok) reasons.push({ kind: 'review', text: judged.missing && judged.condition === 'verdict-on-head' ? `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다` : judged.wait })
+    }
+  }
+
   const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
   if (!evidence.ok) {
     reasons.push({ kind: 'lookup', text: '기능 완료 근거 또는 HEAD 조회 실패' })
@@ -156,6 +173,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.
 // 충돌이 있으면 큐에서 빼는 충돌 처리로, worker 가 고칠 것(스레드, 근거 블록)이 있으면 worker 에게 알리는 보류로, 그 밖에는 알리지 않는 보류로 간다.
 // 체크 실패는 상주 루프의 CI 감시가 worker 에게 알리므로 체크만 걸렸을 때는 알리지 않는다
+// 리뷰 판정 대기와 보류는 일반 보류다. 리뷰 봇 재실행과 worker 수정 중 어느 쪽이 필요한지 알 수 없어 자동 알림을 보내지 않는다
 export function holdWith(state: StepState, reasons: GateReason[]): never {
   const n = state.p.n
   const joined = reasons.map((r) => r.text).join('; ')
