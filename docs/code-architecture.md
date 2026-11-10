@@ -216,7 +216,9 @@ core 는 core 안의 상대 모듈과 허용한 내장 모듈만 가져온다. �
 ```
 skills/orch/scripts/<묶음>/<명령>.ts     명령. 폴더는 명령 표(lib/commands.ts)의 묶음과 같다. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
 skills/orch/scripts/orch-doctor.py       doctor 의 Python 진입점. ts_shim.py 와 함께 scripts/ 바로 아래에 남는다. 옛 .py 진입점은 이 둘 외에는 orch 5.0.0 에서 지웠다
-skills/orch/scripts/loop/orch-loop.ts    상주 루프. 분리된 프로세스로 돈다. 틱이 하는 일은 머리 주석이 소유한다
+skills/orch/scripts/loop/orch-loop.ts    상주 루프의 진입 파일. 분리된 프로세스로 돈다. 사용법과 틱의 단계 순서는 머리 주석이 소유한다
+skills/orch/scripts/loop/lifecycle.ts    루프의 시작·멈춤·잠금과, 틱 자식을 띄우고 loop.json 을 쓰는 부모
+skills/orch/scripts/loop/steps/<단계>.ts 틱의 단계 하나씩. 그 단계가 하는 일과 알림은 파일 머리 주석이 소유한다
 skills/orch/scripts/lib/commands.ts      명령 표. 새 꼴과 옛 이름을 스크립트 경로와 인자로 푸는 유일한 원본이다. 스크립트끼리 부르는 경로는 scriptPath 로 푼다
 skills/orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받은 명령이 진행 중인 자식을 끊는 일 한 벌. 함수와 반환 형태는 머리 주석이 소유한다
 skills/orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다

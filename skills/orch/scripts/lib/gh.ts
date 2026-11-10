@@ -88,7 +88,7 @@ export function isOwnPr(pr: { author: { login: string } }, authors: string[]): b
 }
 
 // base 를 합치는 유일한 경로다. 머지 차례가 온 PR(merge-turn), 뒤처진 draft(behind-draft), 상주 루프가 머지 차례 전에
-// 미리 최신화하는 ready PR(refresh. orch-loop.ts 머리 주석의 「최신화」)에만 부른다.
+// 미리 최신화하는 ready PR(refresh. loop/steps/refresh.ts 머리 주석의 「최신화」)에만 부른다.
 // reason 은 호출 이유를 출력과 기록에 남기려고 받는다. draft 여부는 부르는 쪽이 gh 조회에서 받아 넘긴다.
 // refresh 는 draft 를 거부한다. draft 는 CI 를 미루는 저장소가 있어 최신화해도 머지 차례를 앞당기지 못한다.
 // host 를 주면 `api --hostname <host>` 로 부른다. `gh api` 는 origin 을 보지 않아 PR URL 의 호스트를 넘겨야 한다.

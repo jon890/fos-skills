@@ -584,7 +584,7 @@ describe('정리와 보드 동기화', () => {
   test('Run id 가 없으면 경고 한 줄을 내고 질문을 확인하지 않으며 정리에 --run 을 넘기지 않는다', () => {
     const r = once({}, [])
     assert.equal(r.stdout.match(/^경고: Run id 가 없어 질문 확인을 건너뛴다/gm)?.length, 1, r.stdout)
-    // run-current 는 명의를 적으려는 호출이다(머리 주석의 「명의」). 질문 조회는 없다
+    // run-current 는 명의를 적으려는 호출이다(loop/lifecycle.ts 머리 주석의 「명의」). 질문 조회는 없다
     assert.deepEqual(jsonl(join(tmp, 'orca-calls.jsonl')).filter((argv) => (argv as unknown as string[])[1] !== 'run-current'), [])
     assert.equal(loopState()?.run, null)
     assert.ok(!argsOf('sweep')[0].includes('--run'), JSON.stringify(argsOf('sweep')))

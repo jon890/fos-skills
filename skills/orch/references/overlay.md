@@ -116,7 +116,7 @@
 
 **`pipeline.refresh_slots` 는 상주 루프가 건 최신화 가운데 동시에 CI 가 도는 PR 수의 상한이다. 기본 0 이고 0 이면 끈다.**
 동작과 효과는 [`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」 가 소유한다. 최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
-대상과 미루는 경우는 `orch-loop.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
+대상과 미루는 경우는 `loop/steps/refresh.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
 
 **값은 CI runner 수보다 작게 둔다.** 최신화 하나가 PR CI 한 벌을 돌린다. worker 의 push, 머지 큐 차례의 CI, base 브랜치의 CI 도 같은 runner 를 쓰므로 runner 를 모두 주면 그쪽이 줄을 선다.
 runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함께 돌려 runner 를 여럿 쓰면 그만큼 줄인다.

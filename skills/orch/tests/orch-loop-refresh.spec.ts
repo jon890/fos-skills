@@ -1,4 +1,4 @@
-// orch-loop.ts 의 최신화(머리 주석의 「최신화」)를 가짜 orca, gh, ps, send-to-worker 와 임시 git 저장소(bare origin 과 clone)로 본다.
+// orch-loop.ts 의 최신화(loop/steps/refresh.ts 머리 주석의 「최신화」)를 가짜 orca, gh, ps, send-to-worker 와 임시 git 저장소(bare origin 과 clone)로 본다.
 // Orca 와 GitHub 에는 닿지 않는다. 가짜 gh 는 테스트가 정한 PR 목록을 열린 내 PR 로 내고, update-branch 호출은 기록만 하고 0 으로 끝난다.
 // 가짜 ps 는 ps-lines.txt 의 줄만 낸다. 머지 큐의 차례 기록은 테스트가 .orch/state/queue-turn/ 에 직접 둔다.
 // 필수 체크는 config.json 의 queue.required 로 주어 CI 감시가 규칙 API 를 부르지 않게 한다.

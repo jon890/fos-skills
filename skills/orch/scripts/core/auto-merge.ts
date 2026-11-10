@@ -1,4 +1,4 @@
-// 상주 루프의 자동 머지(orch-loop.ts 머리 주석의 「자동 머지」)가 쓰는 판정의 한 벌이다. 근거는 docs/adr/016-orch-auto-merge.md 다.
+// 상주 루프의 자동 머지(loop/steps/auto-merge.ts 머리 주석의 「자동 머지」)가 쓰는 판정의 한 벌이다. 근거는 docs/adr/016-orch-auto-merge.md 다.
 //
 // 함수는 gh, git, 파일 시스템을 부르지 않는다. 입력은 부르는 쪽이 이미 읽은 값(경로 목록, 리뷰 본문, 보드 항목)이다.
 // 테스트가 가짜 프로세스 없이 경계 값을 볼 수 있게 하려는 것이다.
@@ -280,7 +280,7 @@ export const REVIEW_WAIT = '리뷰 대기'
 export const REVIEW_HOLD = '리뷰 보류'
 
 // require 의 조건을 적은 순서대로 보고 처음 막힌 조건으로 멈춘다. 모두 통과하면 조건마다의 근거를 낸다.
-// 미해결 스레드, CI, 보류 표시는 조합과 상관없이 루프가 따로 본다(orch-loop.ts 머리 주석의 「자동 머지」 3)
+// 미해결 스레드, CI, 보류 표시는 조합과 상관없이 루프가 따로 본다(loop/steps/auto-merge.ts 머리 주석의 「자동 머지」 3)
 export function judgeReview(input: ReviewInput, config: ReviewConfig): ReviewJudgement {
   if (config.unknown.length > 0) return { ok: false, condition: null, wait: unknownConditionsText(config.unknown), missing: false }
   const all = verdicts(input.notes, config)
