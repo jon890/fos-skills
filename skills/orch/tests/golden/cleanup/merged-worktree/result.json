@@ -1,0 +1,9 @@
+{
+  "stdout": "cleanup-sweep dry-run: <TMP>/repo (base main)\n정리 <TMP>/worktree (feat, PR MERGED)\nFINISH-MISSING #1 feat: 머지 뒤 마무리(finish-pr)가 돈 적이 없다. 배포 확인, 업무 완료, 보드 done 이 빠졌을 수 있다\n  worktree 와 로컬 브랜치를 지울 것 feat\n  원격 브랜치 이미 없음 feat\n",
+  "stderr": "",
+  "code": 0,
+  "states": {
+    "state/gh/logs/2026-11-10.jsonl": "{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"repo view\",\"durationMs\":0,\"cacheHit\":false}\n{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"api graphql\",\"durationMs\":0,\"cacheHit\":false}\n{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"pr list\",\"durationMs\":0,\"cacheHit\":false}\n",
+    "state/merged-prs.json": "{}\n"
+  }
+}

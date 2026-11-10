@@ -1,0 +1,9 @@
+{
+  "stdout": "cleanup-sweep dry-run: <TMP>/repo (base main)\nLEGACY-STATE <TMP>/repo/.orch/state/loop-events/r.jsonl\nLEGACY-STATE <TMP>/repo/.orch/state/wait\n",
+  "stderr": "",
+  "code": 0,
+  "states": {
+    "state/loop-events/r.jsonl": "{\"text\":\"옛 알림\"}\n",
+    "state/wait/old.json": "{}"
+  }
+}
