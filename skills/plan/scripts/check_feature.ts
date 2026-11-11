@@ -118,6 +118,8 @@ function checkDecisions(body: string): string[] {
     if (!title) problems.push(`${did}: 무엇을 정했는지 결정 칸이 비었다`)
     if (OPEN_ANSWERS.has(answer.toLowerCase())) problems.push(`${did}: 답이 닫히지 않았다(${answer || '빈칸'}). 사용자에게 묻거나 근거를 남겨 정한다`)
     if (!DECIDER.test(decider)) problems.push(`${did}: 누가 칸은 「사용자 YYYY-MM-DD」, 「작성자」, 「작성자(위임)」 중 하나다(지금 ${decider || '빈칸'})`)
+    const explanation = /\(([^()]*)\)$/.exec(decider)?.[1] ?? ''
+    if (/대기|미정|tbd/i.test(explanation)) problems.push(`${did}: 누가 칸의 괄호 설명에 미확정 상태가 있다(${explanation}). 결정을 확정한 뒤 기록한다`)
     if (!reason) problems.push(`${did}: 근거 칸이 비었다`)
   }
   return problems

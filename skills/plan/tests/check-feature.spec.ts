@@ -98,9 +98,11 @@ test('사용자 날짜 뒤 괄호 설명은 스펙과 설계에서 받고 미확
   assert.equal(check(feature(annotated), SPEC).code, 0)
   const design = DESIGN.replace('없음: 기존 구조를 유지한다.', '| DECISION1 | 저장소 | 기존 DB | 사용자 2026-11-02 (리뷰 뒤) | 합의 |')
   assert.equal(check(designRepo(VALID_REQ, design), SPEC, '--design', DESIGN_PATH).code, 0)
-  for (const decider of ['사용자 대기', '사용자 2026-11-02 설명', '사용자 2026-11-02 ()', '작성자(임의)']) {
+  for (const decider of ['사용자 대기', '사용자 2026-11-02 설명', '사용자 2026-11-02 ()', '작성자(임의)', '사용자 2026-11-02 (확인 대기)', '사용자 2026-11-02 (미정)', '사용자 2026-11-02 (TBD)', '사용자 2026-11-02 (tbd)']) {
     assert.equal(check(feature(VALID.replace('사용자 2026-11-02', decider)), SPEC).code, 1, decider)
   }
+  const waitingDesign = design.replace('사용자 2026-11-02 (리뷰 뒤)', '사용자 2026-11-02 (확인 대기)')
+  assert.equal(check(designRepo(VALID_REQ, waitingDesign), SPEC, '--design', DESIGN_PATH).code, 1)
   assert.equal(check(feature(annotated.replace('| 소유자만 |', '| 미정 |')), SPEC).code, 1)
 })
 
