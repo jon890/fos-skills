@@ -53,7 +53,7 @@ node "$SKILL_DIR/scripts/docker_volumes.ts" --peek all --json-out "$VOLUMES"
 - `survey_system.ts` 는 기본 절 말고 설치 대기 업데이트가 든 updater 캐시, `~/.cache` 의 큰 하위 디렉터리, Codex 이전 버전, Cursor snapshots, `mise prune --dry-run` 후보(버전별 크기와 실행중 표시)를 절로 보인다. 등급과 지우는 조건은 `targets.md` 가 소유한다.
 - `docker_images.ts` 와 `docker_volumes.ts` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌린다.
   `docker_volumes.ts` 의 옵션(`--peek all`, `--json-out`)과 후보 기준은 머리 주석이 소유한다. 사용자에게 보인 목록과 `delete_volumes.ts` 에 넘길 목록이 한 번의 조사에서 나오므로 따로 `--json` 을 돌리지 않는다.
-- **Colima 가 꺼져 있으면 건너뛰고 끝내지 않는다.** 실제 세션에서 건너뛴 뒤 켜 보니 전체 확보량 100Gi 가운데 50.9GiB 가 Docker 에서 나왔다. VM 디스크 파일의 점유 크기를 읽어 3단계에 보이고, 켜서 조사할지를 승인 묶음으로 묻는다. `survey_system.ts` 의 Docker 절도 같은 이유로 건너뛰었으면 Colima 가 올라온 뒤 그 절만 다시 본다.
+- **Colima 가 꺼져 있으면 건너뛰고 끝내지 않는다.** Docker 가 확보량의 큰 몫일 수 있다. VM 디스크 파일의 점유 크기를 읽어 3단계에 보이고, 켜서 조사할지를 승인 묶음으로 묻는다. `survey_system.ts` 의 Docker 절도 같은 이유로 건너뛰었으면 Colima 가 올라온 뒤 그 절만 다시 본다.
 
   ```bash
   du -sh ~/.colima/_lima/_disks/colima/datadisk
@@ -85,8 +85,7 @@ reference 가 처리 절차를 정한 거절(`branch -d` 의 `not fully merged`)
 ## 5. 재측정과 보고
 
 1단계에서 적은 세 수치를 같은 방법으로 다시 읽고, 정리 전후 표로 보고한다.
-Docker 를 Colima 에서 정리했다면 `colima_trim.ts` 까지 돌아야 호스트 디스크가 늘어난다(`targets.md`).
-이 스크립트가 trim 결과를 재서 부족하면 다시 돌고, 호스트 확보량을 출력한다. 종료 코드 2 면 남은 차이를 보고에 적는다.
+Docker 를 Colima 에서 정리했다면 `colima_trim.ts` 까지 돌아야 호스트 디스크가 늘어난다(`targets.md`). 종료 코드 2 면 남은 차이를 보고에 적는다.
 
 ```bash
 node "$SKILL_DIR/scripts/colima_trim.ts"
