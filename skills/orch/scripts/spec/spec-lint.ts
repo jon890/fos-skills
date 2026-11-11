@@ -1,3 +1,4 @@
+import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
 // worker 를 띄우기 전에 지시서끼리, 그리고 저장소 계약과 어긋나는 곳을 찾는다.
 //
 // 지시서를 띄운 뒤에야 담당 파일이 겹치거나, 가리킨 함수가 없거나, 금지 명령을 요구한다는 것을 알게 되면
@@ -108,7 +109,7 @@ import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { boardIdOfLine, interimOf, LINE_BREAK, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { boardIdOfLine, interimOf, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
@@ -140,11 +141,6 @@ const RESUME_TEMP_HINT = '임시 폴더라 PC 를 다시 켜면 사라진다. �
 
 class UsageError extends Error {}
 
-function splitLines(text: string): string[] {
-  const lines = text.split(LINE_BREAK)
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  return lines
-}
 
 function ticks(line: string): string[] {
   return [...line.matchAll(TICK)].map((m) => m[1])
@@ -451,26 +447,9 @@ const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스
 const LOOP_SPEC = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/
 const LOOP_NONE = /^루프 없이\s*:(.*)$/
 const LOOP_NEW = '새로 쓴다'
-const CONFIRMED = /^확인:\s*(\d{4}-\d{2}-\d{2})\s*$/
 
 // 상대경로 스펙을 읽을 곳. 기본은 origin/<base> 이고, launch-worker 가 worker 가 실제로 일할 곳을 준다
 type LoopSource = { ref: string } | { root: string }
-
-function validDate(text: string): boolean {
-  const [y, m, d] = text.split('-').map(Number)
-  const at = new Date(Date.UTC(y, m - 1, d))
-  return at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d
-}
-
-// 스펙 본문에서 확인 줄 문제. 없으면 null. 제목과 첫 `## ` 절 사이만 본다(check_feature.ts 의 check_confirmed)
-function confirmProblem(text: string): string | null {
-  for (const line of outsideFences(splitLines(text))) {
-    if (/^##\s/.test(line)) break
-    const m = CONFIRMED.exec(line.trim())
-    if (m) return validDate(m[1]) ? null : `확인 줄의 날짜가 올바르지 않다: ${m[1]}`
-  }
-  return '제목 아래에 `확인: YYYY-MM-DD` 줄이 없다. 사용자가 확인한 스펙만 넘긴다. 확인 전이면 `루프를 쓴다(스펙: 새로 쓴다)` 로 spec 단계부터 맡긴다'
-}
 
 // 스펙 경로를 읽는다. 절대경로(`~/` 는 홈)는 디스크에서, 상대경로는 source 에서 읽는다. 못 읽으면 이유
 function readLoopSpec(repoRoot: string, source: LoopSource, target: string): { text: string } | { why: string } {

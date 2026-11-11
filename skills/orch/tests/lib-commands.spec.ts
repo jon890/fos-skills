@@ -27,6 +27,9 @@ function fails(argv: string[]): string {
 }
 
 describe('표의 행', () => {
+  test('보드 자동 진행 확인 명령은 전용 스크립트로 푼다', () => {
+    assert.equal(ok(['board', 'auto-check', 'a']).command.script, 'board/auto-check.ts')
+  })
   test('모든 행의 스크립트가 있다', () => {
     for (const c of COMMANDS) {
       assert.ok(existsSync(join(SCRIPTS, c.script)), `${form(c)} → ${c.script}`)

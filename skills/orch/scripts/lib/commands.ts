@@ -167,6 +167,7 @@ const ROWS: Row[] = [
   { group: 'board', verb: 'approval check', script: 'board/board-approval.ts', prepend: ['check'], context: ['repo'], usage: 'orch board approval check <id> [--version <버전>]' },
   { group: 'board', verb: 'sync', script: 'board/board-sync.ts', context: ['repo'], legacy: { name: 'board-sync', flags: [] }, usage: 'orch board sync' },
   { group: 'board', verb: 'release', script: 'board/board-release.ts', context: ['repo'], legacy: { name: 'board-release', flags: [] }, usage: 'orch board release --pr <N>' },
+  { group: 'board', verb: 'auto-check', script: 'board/auto-check.ts', context: ['repo', 'run'], usage: 'orch board auto-check <항목>' },
   { group: 'board', verb: 'goal', script: 'board/goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
   // routing
   { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--json | --full]' },
