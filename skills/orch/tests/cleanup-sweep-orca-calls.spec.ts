@@ -19,6 +19,7 @@ test('Run 을 지정한 정리는 다른 Run 의 워크트리와 목록을 조�
   const out = runSweep(['--run', 'own', '--apply'])
   exists(foreign, out)
   assert.match(out, /이 Run 의 워크트리가 아니다/)
+  assert.match(out, /FINISH-MISSING #\d+.*실제 담당 Run/)
   assert.doesNotMatch(calls(), /run-list|worker-list.*--run foreign|task-list.*--run foreign/)
 })
 

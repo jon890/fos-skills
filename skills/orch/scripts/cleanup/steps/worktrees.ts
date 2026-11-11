@@ -23,6 +23,9 @@
 // 사용자가 말하지 않아도 깨어날 때마다 돈다. 코디네이터가 끝난 항목을 직접 지우지 않는다.
 //
 // 일하는 중 (--run 을 줬을 때, 워크트리마다 맨 처음):
+//     이 Run 의 worker 행이 없는 경로는 삭제하지 않는다. 다만 머지 PR 에 마무리 표시가 없으면 FINISH-MISSING 을 내므로
+//     코디네이터가 실제 담당 Run 으로 마무리를 재개할 수 있다. 남은 미등록 경로는 코디네이터가 --run 없는
+//     orch cleanup sweep --repo <repo> 로 확인한다. 그 명령도 전체 소유 확인과 사용자 터미널 보호를 통과해야 지운다.
 //     worker 상태는 lib/worker-state.ts 의 판정이 정한다. 그 경로의 이 Run worker 행 가운데 살아 있는 dispatch 가 있으면
 //     터미널 소유 확인과 PR 조회(gh) 앞에서 건너뛴다. 워크트리가 많을 때 그 조회가 루프의 제한 시간을 다 썼다.
 //     판정이 working 이면 `건너뜀 <경로>: 살아 있는 worker <dispatch>. 근거: <이유>`, taken_over 면
@@ -364,7 +367,15 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
   const mine = workersAt(workers, path)
   // --run 으로 맡긴 정리는 그 Run 의 워크트리만 본다. 남의 경로를 판정하려고 전체 Run 을 읽지 않는다.
-  if (args.run && mine.length === 0) return keep('이 Run 의 워크트리가 아니다', `건너뜀 ${path}: 이 Run 의 워크트리가 아니다`)
+  if (args.run && mine.length === 0) {
+    if (branch && !protectedReason(repo, branch, args.base)) {
+      const previous = merged(repo, branch, args.base)
+      if (previous.pr?.state === 'MERGED' && !finishStarted(repo, String(previous.pr.number))) {
+        log(`FINISH-MISSING #${previous.pr.number} ${branch}: ${path} 는 이 Run 의 worker 행이 없고 머지 뒤 마무리 표시가 없다. 코디네이터가 실제 담당 Run 으로 마무리하고 남은 경로를 Run 범위 없는 정리로 확인한다`)
+      }
+    }
+    return keep('이 Run 의 워크트리가 아니다', `건너뜀 ${path}: 이 Run 의 워크트리가 아니다`)
+  }
   // 살아 있는 dispatch 의 워크트리는 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많으면 그 조회가 정리 시간을 다 쓴다(머리 주석의 「일하는 중」)
   if (mine.some(isLive)) {
     const verdict = judge({ rows: mine, screens: readScreens(screenHandles(mine)) })
