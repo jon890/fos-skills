@@ -69,7 +69,7 @@ test('idle_min=0 에서 알림을 바로 보내고 재시작·꼬리표 변경·
   const args = c.sent()[0], value = (flag: string) => args[args.indexOf(flag) + 1]
   assert.equal(value('--to'), 'run:R')
   assert.equal(value('--subject'), 'STEP-READY a auto 2. [auto] 다음')
-  assert.equal(value('--body'), 'a 2. [auto] 다음')
+  assert.equal(value('--body'), 'a auto 2. [auto] 다음')
   assert.deepEqual(JSON.parse(value('--payload')), { source: 'orch-loop', kind: 'STEP-READY', pr: null, repo: c.repo })
   c.tick()
   c.put([c.item('2. [auto] 다음 (#700 merge)')]); c.tick()

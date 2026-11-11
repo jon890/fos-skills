@@ -16,7 +16,7 @@ test('STEP-READY 는 제목과 본문을 나누고 같은 Run 의 다른 저장�
   process.env.ORCH_MACHINE_DIR = join(dir, 'machine')
   const bin = fakeBin(dir, 'orca', [{ stdout: ok }])
   process.env.ORCA = bin.path
-  const body = 'a 2. [auto] 다음', subject = 'STEP-READY a auto 2. [auto] 다음'
+  const body = 'a auto 2. [auto] 다음', subject = 'STEP-READY a auto 2. [auto] 다음'
   setNoticeOwner('/repo/a')
   assert.equal(notifyRun('R', 'STEP-READY', body, null, { subject, repo: '/repo/a' }).ok, true)
   setNoticeOwner('/repo/b')

@@ -33,7 +33,7 @@ export async function notifyStepReady(ctx: StepContext, state: StepState): Promi
     for (const { id, notice } of result.fire) {
       const subject = `STEP-READY ${id} ${notice.mark} ${notice.step}`
       try {
-        sendNotice('STEP-READY', null, `${id} ${notice.step}`, ctx.primary, ctx.repo, false, { subject })
+        sendNotice('STEP-READY', null, `${id} ${notice.mark} ${notice.step}`, ctx.primary, ctx.repo, false, { subject })
         result.records[id] = notice
         log(subject)
       } catch (error) { failed.push(oneLine(error)) }
