@@ -105,10 +105,15 @@ export function pendingStep(item: Json): string | null {
   return null
 }
 
+export function liveWorkerOn(item: { worktree: string | null; branch: string | null }, live: ReadonlySet<string>, branches: ReadonlyMap<string, string>): boolean {
+  const names = new Set([...live].map(value => basename(value)))
+  const byBranch = item.branch ? branches.get(item.branch) : undefined
+  return !!((item.worktree && names.has(basename(item.worktree))) || (byBranch && live.has(byBranch)))
+}
+
 // 머리 주석의 「멈춘 단계」. live 는 살아 있는 dispatch 의 워크트리 경로, branches 는 {브랜치: 워크트리 경로},
 // recent 는 워크트리 경로가 idleMin 분 안에 바뀌었는지 묻는 함수다
 export function stalledStages(items: Json[], live: ReadonlySet<string>, branches: ReadonlyMap<string, string>, recent: (path: string) => boolean): StageVerdict[] {
-  const liveNames = new Set([...live].map((path) => basename(path)))
   const pathsByName = new Map([...branches.values()].map((path) => [basename(path), path]))
   const found: StageVerdict[] = []
   for (const item of items) {
@@ -120,7 +125,7 @@ export function stalledStages(items: Json[], live: ReadonlySet<string>, branches
     if (!worktree && !branch) continue
     const name = worktree ? basename(worktree) : null
     const byBranch = branch ? (branches.get(branch) ?? null) : null
-    if ((name && liveNames.has(name)) || (byBranch && live.has(byBranch))) continue
+    if (liveWorkerOn({ worktree, branch }, live, branches)) continue
     const path = byBranch ?? (name ? (pathsByName.get(name) ?? null) : null)
     if (path && recent(path)) continue
     found.push({ id: item.id, step, worktree, branch })
