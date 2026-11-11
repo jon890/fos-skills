@@ -1,4 +1,4 @@
-import { withoutEvidence } from "./evidence.ts"
+import { withoutEvidence } from './evidence.ts'
 import { stagesOf } from './milestones.ts'
 
 export type BoardItem = Record<string, unknown> & { id: string }

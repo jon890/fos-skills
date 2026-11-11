@@ -25,4 +25,3 @@ export function confirmProblem(text: string): string | null {
   }
   return '제목 아래에 `확인: YYYY-MM-DD` 줄이 없다. 사용자가 확인한 스펙만 넘긴다. 확인 전이면 `루프를 쓴다(스펙: 새로 쓴다)` 로 spec 단계부터 맡긴다'
 }
-

@@ -1,4 +1,3 @@
-import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
 // worker 를 띄우기 전에 지시서끼리, 그리고 저장소 계약과 어긋나는 곳을 찾는다.
 //
 // 지시서를 띄운 뒤에야 담당 파일이 겹치거나, 가리킨 함수가 없거나, 금지 명령을 요구한다는 것을 알게 되면
@@ -97,6 +96,7 @@ import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
 import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
 import { taskFirstLine } from '../lib/spec.ts'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
@@ -140,7 +140,6 @@ const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사�
 const RESUME_TEMP_HINT = '임시 폴더라 PC 를 다시 켜면 사라진다. 재개 절에는 회신과 측정 결과를 본문에 옮겨 적고 임시 경로를 가리키지 않는다'
 
 class UsageError extends Error {}
-
 
 function ticks(line: string): string[] {
   return [...line.matchAll(TICK)].map((m) => m[1])
