@@ -46,7 +46,7 @@ board.md 의 PR A 과도기 안내를 실제 동작으로 맞추고 변경 조�
 
 단위 테스트로 기록 유지·글 변경·한도 재알림의 경계와 날짜 파싱을 확인한다.
 실제 보드 도구·가짜 CLI 로 틱을 실행해 동일 틱 알림, 재시작, 전송 실패 재시도,
-조회 실패와 ask, 설정 false, 한도 기록과 멈춘 실행 auto 를 확인한다.
+조회 실패와 ask, 설정 false 의 번호 없는 참고 줄과 문자열·객체 형식에서도 멈춤 알림이 표시된 단계 글을 가리키는지, 한도 기록과 멈춘 실행 auto 를 확인한다.
 기존 loop-order/golden 결과는 새 오류 출처 외 의도하지 않은 변경이 없는지 확인한다.
 
 ## 검증
@@ -90,3 +90,6 @@ node --test skills/orch/tests/core-step-ready.spec.ts skills/orch/tests/orch-loo
 | `skills/orch/scripts/core/workers.ts` | 수정 |
 | `skills/orch/tests/golden/loop/**/result.json` | 수정 |
 | `skills/orch/tests/loop-order/**/result.json` | 수정 |
+| `docs/features/board-auto-advance/design.md` | 수정 |
+| `skills/orch/references/waiting.md` | 수정 |
+| `skills/orch/tests/docs-contract.spec.ts` | 수정 |

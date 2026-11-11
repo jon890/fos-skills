@@ -26,6 +26,7 @@
 //   - worktree 나 branch 칸이 있다. 둘 다 없는 항목은 worker 를 띄운 적이 없는, 코디네이터나 사용자가 맡은 일이다
 //   - 그 worktree(이름이나 경로의 끝 이름)나 branch 의 워크트리에 살아 있는 dispatch 가 없다
 //   - 그 워크트리 폴더가 있으면 그 파일이 idleMin 분 안에 바뀌지 않았다. 맡은 Run 밖의 worker 가 일하는 중일 수 있다
+//   - 표시를 읽은 줄은 기능을 꺼도 첫 미완료 번호 단계 글을 알린다.
 //   - [wait] 는 항상 건너뛴다. 자동 진행이 켜졌으면 [ask] 와 띄운 기록 없는 [auto] 도 건너뛴다.
 //   - 띄운 [auto] 는 doing/wait 와 빈 worktree·branch 도 본다. 그 단계의 dispatch·브랜치와 항목 필드로 worker·PR 을 찾는다.
 //     열린 PR 목록을 모르면 보류한다. 표시의 첫 미완료 단계는 board.ts steps 로 읽고, 띄운 기록은 사건 꼬리표를 뗀 글로 맞춘다.

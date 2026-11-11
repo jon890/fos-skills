@@ -19,8 +19,9 @@ test('자동 진행 표시와 거절 이유, 코디네이터의 다음 단계 �
   const board = section(read('references', 'board.md'), '## 자동 진행 표시').join('\n')
   for (const word of ['[auto]', '[ask]', '[wait]', '(스펙:', '(계획:', '(앞 사건:', 'real', '외부로 나가는 글', '범위가 바뀌는 일']) assert.ok(board.includes(word), word)
   const reply = section(read('references', 'replying.md'), '## 다음 단계 이어 가기').join('\n')
-  for (const word of ['orch board auto-check', '다음 단계 자동 진행:', '보드 항목 id:', 'board.auto_advance', 'WORKER-LIMITED', '--on', ...Object.values(ADVANCE_REASONS)]) assert.ok(reply.includes(word), word)
-  assert.match(read('references', 'waiting.md'), /다음 단계 이어 가기/)
+  for (const word of ['STEP-READY auto', 'STEP-READY ask', 'orch board auto-check', '다음 단계 자동 진행:', '보드 항목 id:', 'board.auto_advance', 'WORKER-LIMITED', '--on', ...Object.values(ADVANCE_REASONS)]) assert.ok(reply.includes(word), word)
+  const waiting = read('references', 'waiting.md')
+  for (const word of ['STEP-READY auto', 'STEP-READY ask', '다음 단계 이어 가기']) assert.ok(waiting.includes(word), word)
   assert.equal(read('templates', 'spec-common.md').split('orch-rule: remaining-prs').length - 1, 1)
 })
 

@@ -9,4 +9,4 @@
 | REQ6 | 지난/미래/잘못된 시각 wait | `node --test skills/orch/tests/board-sync.spec.ts skills/orch/tests/orch-loop-step-ready.spec.ts` | 지난 줄만 순서와 무관하게 완료, 상태 유지, 같은 틱에 다음 auto 알림 | 임시 저장소와 가짜 orca CLI | worker | 없음 | PR 전 |
 | REQ9 | 한도 기록과 앞 알림/띄운 기록 | `node --test skills/orch/tests/core-step-ready.spec.ts skills/orch/tests/board-auto-check.spec.ts skills/orch/tests/orch-loop-step-ready.spec.ts` | 30분 내 auto-check 거부, 이후 기존 미실행 auto 만 한 번 더 알림, 늦게 처음 알린 단계는 중복 없음 | 격리된 테스트 | worker | 없음 | PR 전 |
 | REQ10 | 표시 없는 보드 | 기존 lib-movement·board-sync·loop-order 테스트 실행 | 이전 동작 유지 | 격리된 테스트 | worker | 없음 | PR 전 |
-| REQ11 | false 와 잘못된 설정 | 위 틱 테스트와 auto-check 테스트 | false 면 알림 없음, wait 는 그대로 완료, boolean 아니면 시작 오류 | 임시 저장소와 가짜 orca CLI | worker | 없음 | PR 전 |
+| REQ11 | false 와 잘못된 설정 | 위 틱 테스트와 auto-check 테스트 | false 면 STEP-READY 없음, auto·ask 멈춤 알림의 대상 글은 첫 미완료 번호 단계이며 문자열·객체 형식 모두 확인, wait 는 그대로 완료, boolean 아니면 시작 오류 | 임시 저장소와 가짜 orca CLI | worker | 없음 | PR 전 |

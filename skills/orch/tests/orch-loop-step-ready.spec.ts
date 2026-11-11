@@ -160,17 +160,20 @@ test('실행한 auto 는 연결 필드가 빈 wait 항목이어도 worker 가 �
 })
 
 
-test('번호 없는 참고 줄 앞에서도 wait 는 깨우지 않고 false 의 auto·ask 는 기존 멈춤 알림을 쓴다', t => {
+test('번호 없는 참고 줄 앞에서도 wait 는 깨우지 않고 false 의 auto·ask 는 표시 줄의 멈춤을 알린다', t => {
   const c = setup(t)
   c.config({ board: { auto_advance: false }, pipeline: { idle_min: 30, idle_exited: false, authors: ['me'] } })
-  c.put(['auto', 'ask', 'wait'].map(mark => c.item(undefined, { id: mark, worktree: 'gone', details: [{ text: '참고: 설명', done: false }, { text: `1. [${mark}] 다음`, done: false }] })))
+  c.put(['auto', 'ask', 'wait'].flatMap(mark => ['string', 'object'].map(format => {
+    const details = ['참고: 설명', `1. [${mark}] 다음`]
+    return c.item(undefined, { id: `${mark}-${format}`, branch: 'gone', details: format === 'string' ? details : details.map(text => ({ text, done: false })) })
+  })))
   c.tick()
-  // 보드 동기화가 없는 워크트리 칸을 비우므로 branch 는 기존 멈춤 경로의 연결 필드로 남긴다.
-  c.put(['auto', 'ask', 'wait'].map(mark => c.item(undefined, { id: mark, branch: 'gone', details: [{ text: '참고: 설명', done: false }, { text: `1. [${mark}] 다음`, done: false }] })))
-  c.tick(NOW + MIN)
-  const later = c.tick(NOW + 31 * MIN)
-  assert.match(later.stdout, /STAGE-STALLED auto /)
-  assert.match(later.stdout, /STAGE-STALLED ask /)
-  assert.doesNotMatch(later.stdout, /STAGE-STALLED wait /)
+  const later = c.tick(NOW + 30 * MIN)
+  for (const format of ['string', 'object']) {
+    assert.match(later.stdout, new RegExp(`STAGE-STALLED auto-${format} gone 30분 1\\. \\[auto\\] 다음`))
+    assert.match(later.stdout, new RegExp(`STAGE-STALLED ask-${format} gone 30분 1\\. \\[ask\\] 다음`))
+  }
+  assert.doesNotMatch(later.stdout, /STAGE-STALLED wait-/)
+  assert.doesNotMatch(later.stdout, /STAGE-STALLED .*참고:/)
   assert.equal(c.sent().length, 0)
 })

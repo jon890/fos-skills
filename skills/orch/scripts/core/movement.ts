@@ -127,7 +127,8 @@ export function stalledStages(items: Json[], live: ReadonlySet<string>, branches
     const launched = options?.autoAdvance && fact?.mark === 'auto' && fact.launches.length > 0
     if (options?.autoAdvance && fact?.mark && !launched) continue
     if (launched ? !['doing', 'wait'].includes(String(item.status)) : item.status !== 'doing') continue
-    const step = launched ? fact.step : pendingStep(item)
+    // 표시를 읽은 줄은 기능을 꺼도 첫 번호 단계를 쓴다. 옛 표시 없는 줄의 판정은 유지한다.
+    const step = fact?.mark ? fact.step : pendingStep(item)
     if (step === null) continue
     const worktree = typeof item.worktree === 'string' && item.worktree.trim() ? item.worktree.trim() : null
     const branch = typeof item.branch === 'string' && item.branch.trim() ? item.branch.trim() : null

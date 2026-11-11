@@ -303,6 +303,10 @@ describe('자동 진행 표시의 멈춘 단계', () => {
       assert.equal(judge('wait', [], {}, [], on).length, 0)
       assert.equal(judge('ask', [], {}, [], on).length, on ? 0 : 1)
       assert.equal(judge('auto', [], {}, [], on).length, on ? 0 : 1)
+      if (!on) {
+        assert.equal(judge('auto', [], {}, [], on)[0].step, '2. 다음')
+        assert.equal(judge('ask', [], { details: ['참고: 설명', '2. 다음'] }, [], on)[0].step, '2. 다음')
+      }
     }
   })
   test('실행한 auto 는 연결 필드가 비어도 doing 과 wait 에서 찾고 dispatch·PR·모름은 보류한다', () => {
