@@ -344,6 +344,15 @@ describe('--check-answer', () => {
     assert.ok(r.stderr.includes('빠진 결정만 코디네이터에게 다시 묻는다'), r.stderr)
   })
 
+  test('값이 빈 답(D2= 뒤에 아무것도 없음)은 빠진 결정으로 센다', () => {
+    fake('{}', 0)
+    for (const answer of ['D1=A\nD2=', 'D1=A\nD2=  \nD3=A\nD4=B', 'D1=A\nD2=\nD3=A\nD4=B']) {
+      const r = ask('--check-answer', answer, '--question', four)
+      assert.deepEqual([r.code, r.stdout.trim()].slice(0, 1), [2], answer)
+      assert.ok(r.stdout.startsWith('MISSING D2'), `${answer}: ${r.stdout}`)
+    }
+  })
+
   test('보낸 질문 없이 주면 사용법 오류 2 다', () => {
     fake('{}', 0)
     assert.equal(ask('--check-answer', 'D1=A').code, 2)

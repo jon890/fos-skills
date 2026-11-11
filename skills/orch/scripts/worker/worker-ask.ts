@@ -230,11 +230,11 @@ function blockProblems(lines: string[]): string[] {
   return problems
 }
 
-// 블록이 둘 이상인 결정 질문의 답에서 `D<번호>=` 줄이 없는 블록 번호. 블록이 하나면 자유로운 답도 받으니 보지 않는다
+// 블록이 둘 이상인 결정 질문의 답에서 `D<번호>=<값>` 줄이 없는 블록 번호. 값이 빈 `D2=` 도 빠진 것으로 센다. 블록이 하나면 자유로운 답도 받으니 보지 않는다
 function missingAnswers(question: string, answer: string): string[] {
   const count = decisionBlocks(questionLines(question)).length
   if (count < 2) return []
-  const given = new Set([...answer.matchAll(/^\s*D(\d+)\s*[=:]/gimu)].map((m) => Number(m[1])))
+  const given = new Set([...answer.matchAll(/^[ \t]*D(\d+)[ \t]*[=:][ \t]*\S/gimu)].map((m) => Number(m[1])))
   const missing: string[] = []
   for (let n = 1; n <= count; n++) if (!given.has(n)) missing.push(`D${n}`)
   return missing
