@@ -13,7 +13,7 @@
 모델 표를 보기 전에 Claude 와 Codex 중 어느 쪽에 맡길지 먼저 정한다.
 같은 계열을 기본값으로 두지 않는다.
 
-- 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)을 사용한다. `technical-design` 은 아래 설계 작업 선택 규칙을 따른다. Codex 매니페스트는 hook 을 싣지 않는다
+- 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)을 사용한다. `technical-design` 은 [설계 작업 선택 규칙](#설계-작업-선택-규칙)을 따른다. Codex 매니페스트는 hook 을 싣지 않는다
 - 코드 작업에 딸린 ADR, flow 문서 수정은 위 규칙에 들지 않는다. 주 산출물이 코드면 코드 중심 구현으로 본다.
 - 코드 중심 구현은 `gpt-6.1-sol` 과 Claude Sonnet 5.5 를 비교해 고르고, 고른 이유를 `worker 선택:` 줄에 남긴다. `gpt-6.1-sol` `medium` 은 Claude Opus 5.5 `medium` 과 같은 등급으로 본다
 - Claude 가 만든 PR 의 머지 전 독립 리뷰는 Codex 로 띄운다. 보안 리뷰는 아래 표대로 Claude 다
@@ -41,7 +41,10 @@ Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 - `launch-worker` 는 이 표의 행에 있는 모델만 띄운다. 후보 밖 모델이 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다.
 - `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Fable 과 Terra 는 선택 줄에 해당 모델의 `Fable 실험 N/5` 또는 `Terra 실험 N/5`(N 은 1~5)가 있으면 허용한다. Terra 는 Sonnet 이 후보인 행에서만 이 예외를 쓴다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
-- 질문이 남은 Task 도 sol 을 쓸 수 있다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 로 띄운다. `technical-design` 과 `hard-design` 은 Claude Opus 5.5 `medium` 과 sol 을 번갈아 쓰고 결과를 실측 기록으로 비교한다.
+
+### 설계 작업 선택 규칙
+
+질문이 남은 Task 도 sol 을 쓸 수 있다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 로 띄운다. `technical-design` 과 `hard-design` 은 Claude Opus 5.5 `medium` 과 sol 을 번갈아 쓰고 결과를 실측 기록으로 비교한다.
 
 ### Opus `high`
 
@@ -89,7 +92,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
 
-주 산출물이 한국어 문서인 작업은 Codex 로 바꾸지 않고 한 단계 아래 Claude 로 내린다. `technical-design` 은 위 설계 작업 선택 규칙을 따른다. hook 이 없는 쪽으로 옮기면 한국어 표기 검사가 빠진다.
+주 산출물이 한국어 문서인 작업은 Codex 로 바꾸지 않고 한 단계 아래 Claude 로 내린다. `technical-design` 은 [설계 작업 선택 규칙](#설계-작업-선택-규칙)을 따른다. hook 이 없는 쪽으로 옮기면 한국어 표기 검사가 빠진다.
 바꾼 모델은 이어 쓰는 지시서의 `worker 선택:` 줄에 반영한다. 줄과 다르면 `launch-worker` 가 거부한다.
 
 ### 기본 후보에서 뺀 모델

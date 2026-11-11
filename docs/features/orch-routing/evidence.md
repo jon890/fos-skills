@@ -147,7 +147,7 @@
 
 기존 모델 선택 지침에 있던 조사 기록을 보존한다. 현재 선택 규칙은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 가 소유한다.
 
-아래 두 모델은 worker 와 하위 에이전트의 후보에 넣지 않는다. `gpt-6-astra` 는 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 실험이 끝날 때까지 뺀다(사용자 결정 2026-11-10, 아래 「Fable 5.2 실험」). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
+아래 두 모델은 worker 와 하위 에이전트의 후보에 넣지 않는다. `gpt-6-astra` 는 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 실험이 끝날 때까지 뺀다(사용자 결정 2026-11-10, [Fable 5.2 실험](../../../skills/orch/references/agent-selection.md#fable-52-실험)). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
 
 | 모델 | 입력 / 출력 ($/1M 토큰) | 뺀 이유 |
 | --- | --- | --- |
@@ -176,7 +176,7 @@
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](../../../skills/orch/references/launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
 - effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
-- astra 행은 비교를 위해 두었다. 후보에서 뺀 이유는 위 「기본 후보에서 뺀 모델」 이 갖는다
+- astra 행은 비교를 위해 두었다. 후보에서 뺀 이유는 [기본 후보에서 뺀 모델](../../../skills/orch/references/agent-selection.md#기본-후보에서-뺀-모델) 이 갖는다
 - Fable 5.2 행은 2026-11-10 공개 자료다. 공식 권장 용도와 상대 속도는 Anthropic 발표, 가격과 비용 배수는 Artificial Analysis 와 Fortune 보도다. 수치 출처와 독립 측정은 [evidence](evidence.md) 의 2026-11-10 Fable 5.2 절이다.
 - terra 는 중간급 코딩 모델이다. 코딩 지수는 sol 보다 낮다([evidence](evidence.md) 의 2026-11-10 절). OpenAI 는 가장 복잡한 코딩에 sol·astra 를 권한다. 범위가 분명한 실행 하위 일에 쓴 사례가 있다([사례](https://github.com/makeitworkcloud/charts/pull/132)). 한국어 품질의 근거는 없으니 한국어 문서에는 넣지 않는다. Sonnet 이 맡던 구현을 terra 로 옮길지는 experiment 다섯 번을 본 뒤 정한다
 - 출처: [astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
