@@ -589,3 +589,63 @@ describe('실제 notify CLI 대표 경계', () => {
     assert.equal(notifyWith(SCRIPT, []).code, 2)
   })
 })
+
+// 계약 머리 자동 합치기(lib/contract-merge.ts). 상주 루프의 충돌 처리도 같은 resolveConflict 를 쓴다
+describe('계약 머리 자동 합치기', () => {
+  function contracts(command: string): void {
+    mkdirSync(join(repo, '.orch'), { recursive: true })
+    writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ contracts: { merge_command: command, paths: ['^a\\.txt$'] } }))
+  }
+
+  test('충돌 파일이 모두 계약 파일이면 합쳐 push 하고 worker 에게 알리지 않는다', () => {
+    const path = setupConflict()
+    contracts("printf '1\\nboth\\n3\\n' > a.txt && git add a.txt")
+    const before = git(path, 'rev-parse', 'HEAD')
+    const r = notify()
+    assert.match(r.stdout, /^CONTRACT-MERGED 7 [0-9a-f]{8}$/m, r.both)
+    assert.deepEqual(sent(), [])
+    assert.equal(existsSync(stateFile()), false, '알린 기록을 남기지 않는다')
+    git(repo, 'fetch', '-q', 'origin')
+    const head = git(repo, 'rev-parse', 'origin/feat')
+    assert.notEqual(head, before)
+    assert.equal(git(repo, 'rev-parse', `${head}^1`), before)
+    assert.equal(git(repo, 'rev-parse', `${head}^2`), baseSha())
+    assert.equal(git(repo, 'show', `${head}:a.txt`), '1\nboth\n3')
+    assert.equal(git(repo, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).length, 3)
+  })
+
+  test('명령이 풀지 못하면 CONTRACT-MERGE-FAIL 을 내고 지금처럼 worker 에게 알린다', () => {
+    setupConflict()
+    contracts('echo 본문 충돌이 남았다; exit 1')
+    const r = notify()
+    assert.match(r.stdout, /^CONTRACT-MERGE-FAIL 7 합치기 명령이 종료 코드 1 로 끝났다$/m, r.both)
+    assert.match(r.stdout, /본문 충돌이 남았다/)
+    assert.equal(sent().length, 1)
+    assert.equal(git(repo, 'ls-remote', 'origin', 'refs/heads/feat').split('\t')[0], git(repo, 'rev-parse', 'feat'))
+  })
+
+  test('명령이 0 으로 끝나도 충돌 표시가 남으면 push 하지 않는다', () => {
+    setupConflict()
+    contracts('git add a.txt')
+    const r = notify()
+    assert.match(r.stdout, /^CONTRACT-MERGE-FAIL 7 충돌 표시가 남았다: a\.txt$/m, r.both)
+    assert.equal(sent().length, 1)
+  })
+
+  test('계약 파일이 아닌 충돌이면 합치지 않는다', () => {
+    setupConflict()
+    mkdirSync(join(repo, '.orch'), { recursive: true })
+    writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ contracts: { merge_command: 'exit 0', paths: '^contracts/' } }))
+    const r = notify()
+    assert.doesNotMatch(r.stdout, /CONTRACT-MERGE/, r.both)
+    assert.equal(sent().length, 1)
+  })
+
+  test('--dry-run 은 합칠 것만 낸다', () => {
+    setupConflict()
+    contracts('exit 0')
+    const r = notify('--dry-run')
+    assert.match(r.stdout, /^CONTRACT-MERGE 7 합칠 것: a\.txt$/m, r.both)
+    assert.equal(git(repo, 'ls-remote', 'origin', 'refs/heads/feat').split('\t')[0], git(repo, 'rev-parse', 'feat'))
+  })
+})

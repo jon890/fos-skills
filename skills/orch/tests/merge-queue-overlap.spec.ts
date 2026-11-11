@@ -581,3 +581,62 @@ describe('merge_queue 와 진짜 판정 명령', { skip: !HAS_TOOLS && 'jq 와 b
     has(c.log(), `pr merge 1 --merge --match-head-commit ${next}`)
   })
 })
+
+// 계약 머리 자동 합치기(lib/contract-merge.ts). 차례가 온 PR 이 뒤처졌고 충돌 파일이 계약 파일뿐이면 update-branch 대신 로컬에서 합쳐 push 한다
+describe('merge_queue 계약 머리 자동 합치기', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  const RESOLVE = "printf 'version: 3\\n' > contracts/a.yaml && git add contracts/a.yaml"
+  // 설정은 branches 뒤에 쓴다. 먼저 쓰면 feat 커밋에 들어가 main 으로 돌아올 때 사라진다
+  function contracts(c: Ctx, command = RESOLVE): void {
+    mkdirSync(join(c.repo, '.orch'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ contracts: { merge_command: command, paths: '^contracts/' } }))
+  }
+  const run = (c: Ctx) =>
+    spawnDone([process.execPath, FUNCTION_RUNNER, '--repo', c.repo, '--threads-cmd', 'echo 0', '--no-sweep', '--required', 'CI', '--require-up-to-date', '1'], { env: c.env })
+
+  test('계약 파일만 충돌하면 로컬에서 합쳐 push 하고 새 HEAD 로 머지한다', async (t) => {
+    const c = setup(t)
+    c.branches({ 'contracts/a.yaml': 'version: 2-feat\n' }, { 'contracts/a.yaml': 'version: 2-main\n' })
+    contracts(c)
+    const origin = `${c.repo}-origin.git`
+    patchPr(c, { head_from: origin, update_fails: 'merge conflict', statusCheckRollup: [CI] }, 1)
+    const before = (c.state()['1'] as Json).headRefOid as string
+    const r = await run(c)
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'CONTRACT-MERGED')
+    lacks(c.log(), 'update-branch')
+    // 머지 뒤 큐가 원격 브랜치를 지우므로 가짜 gh 가 읽어 둔 HEAD 를 본다
+    const head = (c.state()['1'] as Json).headRefOid as string
+    assert.notEqual(head, before)
+    assert.equal(c.git(['--git-dir', origin, 'rev-list', '--parents', '-n', '1', head]).split(' ').length, 3)
+    assert.equal(c.git(['--git-dir', origin, 'show', `${head}:contracts/a.yaml`]), 'version: 3')
+    has(c.log(), `pr merge 1 --merge --match-head-commit ${head}`)
+    assert.equal(c.worktreeCount(), 1)
+  })
+
+  test('다른 파일도 충돌하면 합치지 않고 지금처럼 update-branch 충돌로 멈춘다', async (t) => {
+    const c = setup(t)
+    c.branches(
+      { 'contracts/a.yaml': 'version: 2-feat\n', 'a.txt': '1\n2\nfeat\n4\n5\n' },
+      { 'contracts/a.yaml': 'version: 2-main\n', 'a.txt': '1\n2\nmain\n4\n5\n' },
+    )
+    contracts(c)
+    patchPr(c, { update_fails: 'merge conflict', statusCheckRollup: [CI] }, 1)
+    const r = await run(c)
+    assert.equal(r.code, 1, both(r))
+    lacks(r.stdout, 'CONTRACT-MERGED')
+    has(c.log(), 'update-branch')
+    has(r.stdout, 'CONFLICT 1 update-branch 가 충돌로 실패했다')
+  })
+
+  test('합치기 명령이 실패하면 CONTRACT-MERGE-FAIL 을 남기고 update-branch 로 간다', async (t) => {
+    const c = setup(t)
+    c.branches({ 'contracts/a.yaml': 'version: 2-feat\n' }, { 'contracts/a.yaml': 'version: 2-main\n' })
+    contracts(c, 'exit 1')
+    patchPr(c, { update_fails: 'merge conflict', statusCheckRollup: [CI] }, 1)
+    const r = await run(c)
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'CONTRACT-MERGE-FAIL 합치기 명령이 종료 코드 1 로 끝났다')
+    has(r.stdout, 'CONFLICT 1 update-branch 가 충돌로 실패했다')
+    assert.equal(c.worktreeCount(), 1)
+  })
+})

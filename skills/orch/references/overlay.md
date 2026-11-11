@@ -79,6 +79,7 @@
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 정규식 목록이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 | `adr` | `dirs` | 이름에서 ADR 폴더로 가는 객체. `orch queue reserve --kind adr` 가 이 폴더에 번호를 예약한다. 폴더마다 번호가 따로이고 자동 머지는 읽지 않는다 |
+| `contracts` | `merge_command`, `paths` | 계약 머리만 충돌한 PR 을 로컬에서 합쳐 push 하는 명령과 계약 파일 정규식. 아래 「계약 머리 자동 합치기」 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
 | `board` | `auto_advance` | 자동 진행 여부. 기본은 `true` 이고 `false` 면 `orch board auto-check` 가 거절한다. boolean 이 아니면 설정 오류다 |
 | `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
@@ -134,6 +135,27 @@ runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함�
     "require_up_to_date": true,
     "up_to_date_when": "overlap",
     "shared_paths": ["^contracts/", "^modules/common/"]
+  }
+}
+```
+
+### 계약 머리 자동 합치기
+
+**`contracts.merge_command` 와 `contracts.paths` 를 함께 두면, base 와의 충돌 파일이 모두 계약 파일인 PR 을 orch 가 로컬에서 합쳐 push 한다.** 병렬 PR 이 계약 파일 맨 위의 버전과 변경 설명 줄을 함께 고쳐 나는 충돌을 worker 없이 푼다.
+상주 루프의 충돌 처리와 `notify-conflicts` 는 worker 에게 알리기 전에, 머지 큐는 차례가 온 PR 의 update-branch 앞에서 같은 절차를 쓴다.
+다른 파일도 충돌하거나, 명령이 0 이 아닌 코드로 끝나거나, 풀리지 않은 파일이나 충돌 표시가 남으면 `CONTRACT-MERGE-FAIL` 을 남기고 지금처럼 worker 에게 넘긴다. 절이 없으면 지금 동작 그대로다.
+
+- `merge_command`: bash 명령 문자열. `git merge` 가 충돌로 멈춘 임시 워크트리(MERGE_HEAD 가 base)에서 돈다. 푼 파일은 `git add` 하고, 풀지 못한 파일이 있으면 0 이 아닌 코드로 끝낸다. 환경에 `ORCH_BASE`, `ORCH_BASE_SHA`, `ORCH_PR`, `ORCH_PR_BRANCH` 가 있다
+- `paths`: 계약 파일 정규식 문자열이나 그 목록(Python 정규식, 목록은 `|` 로 잇는다). 충돌 파일이 하나라도 여기 맞지 않으면 합치지 않는다
+- 합친 merge 커밋은 저장소 훅 없이(`--no-verify`) 만들고 강제 push 없이 올린다. 합친 결과는 PR CI 가 검증한다. 기능 완료 근거는 이 커밋을 base 합치기로 받아들인다
+
+절차와 출력 줄은 `lib/contract-merge.ts` 머리 주석이 소유한다.
+
+```json
+{
+  "contracts": {
+    "merge_command": "python3 scripts/dev/merge-contract-versions.py",
+    "paths": "^contracts/[^/]+\\.yaml$"
   }
 }
 ```

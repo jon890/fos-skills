@@ -15,7 +15,11 @@
 //   둘이 겹쳐 돌면 둘 다 기록을 읽은 뒤 보내므로 두 번 보낼 수 있다. 기록 파일에는 잠금이 없다.
 //
 // PR 하나의 처리: 부르는 쪽이 기록을 보고, 브랜치의 워크트리와 worker 행을 찾은 뒤(lib/workers.ts) 두 함수를 이 순서로 부른다.
-//   resolveConflict   찾은 worker 에게 보내고 결과를 낸다. 보내는 방법과 send-to-worker 종료 코드의 분류는
+//   resolveConflict   먼저 계약 머리 자동 합치기(lib/contract-merge.ts)를 본다. config.json 의 contracts 절이 있고, 같은 저장소 PR 이고,
+//                     충돌 파일이 모두 contracts.paths 에 맞으면 합쳐 push 하고 `CONTRACT-MERGED <PR> <새 HEAD 앞 8자리>` 를 낸 뒤 skip 이다.
+//                     새 HEAD 를 다음 실행이 다시 본다. 합치지 못하면 `CONTRACT-MERGE-FAIL <PR> <이유>` 를 내고 아래처럼 worker 에게 보낸다.
+//                     dryRun 이면 `CONTRACT-MERGE <PR> 합칠 것` 만 내고 skip 이다.
+//                     그다음 찾은 worker 에게 보내고 결과를 낸다. 보내는 방법과 send-to-worker 종료 코드의 분류는
 //                     notify-conflicts.ts 머리 주석의 표가 원본이다. 그 명령의 줄은 out 으로, 이유 줄은 stderr 로 같은 문구로 낸다.
 //                     결과가 record 면 기록하고, skip 이면 기록하지 않고(다음 실행이 다시 본다), usage 면 부르는 쪽이 충돌 처리를 멈춘다
 //   concludeConflict  기록한 뒤 pr-conflict 를 낸다. 이벤트를 내지 못한 오류는 stderr 에 한 줄 남기고 넘어간다
@@ -31,6 +35,8 @@ import { join } from 'node:path'
 import { INTERIM } from './board.ts'
 import { fire } from './events.ts'
 import type { FireContext } from './events.ts'
+import { loadConfig } from './config.ts'
+import { contractSettings, mergeContracts, onlyContracts } from './contract-merge.ts'
 import { conflicts, git } from './git.ts'
 import { ghJson } from './gh.ts'
 import { makeParent, pathOf } from './paths.ts'
@@ -237,6 +243,22 @@ export async function resolveConflict(args: {
 }): Promise<ConflictOutcome> {
   const { repo, base, baseSha, pr, files, found, run, dryRun, out } = args
   const number = pr.number
+  const contracts = pr.isCrossRepository ? null : contractSettings(loadConfig(repo))
+  if (contracts && onlyContracts(files, contracts)) {
+    if (dryRun) {
+      out(`CONTRACT-MERGE ${number} 합칠 것: ${files.join(', ')}`)
+      return { kind: 'skip' }
+    }
+    const merged = mergeContracts(repo, { number, branch: pr.headRefName, head: pr.headRefOid, base, baseSha }, contracts)
+    if (merged.kind === 'pushed') {
+      out(`CONTRACT-MERGED ${number} ${merged.head.slice(0, 8)}`)
+      if (merged.output) out(`  ${merged.output.replaceAll('\n', '\n  ')}`)
+      return { kind: 'skip' }
+    }
+    const why = merged.kind === 'failed' ? merged.reason : merged.kind === 'other' ? `다른 파일도 충돌한다: ${merged.files.join(', ')}` : 'git 이 충돌 없이 합쳤다'
+    out(`CONTRACT-MERGE-FAIL ${number} ${why}`)
+    if (merged.kind === 'failed' && merged.output) out(`  ${merged.output.replaceAll('\n', '\n  ')}`)
+  }
   if ('orphan' in found) return orphaned(out, number, found.orphan, null, dryRun)
   const { path, row } = found
   const dispatch = String(row.dispatchId)

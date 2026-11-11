@@ -72,11 +72,21 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
 // HEAD 부터 첫 부모를 따라 BASE_MERGE_LIMIT 개까지 보고, 지나는 커밋이 모두 아래를 채우고 검증 커밋에 닿으면 true 다.
 //   부모가 둘이다. 둘째 부모가 origin/<base> 에 든다(base 쪽이다).
 //   커밋의 tree 가 두 부모를 `git merge-tree --write-tree` 로 합친 tree 와 같다. 충돌을 풀거나 merge 커밋에 손댄 변경은 다르다.
+//   resolved(config.json 의 contracts.paths)를 주면, 합친 tree 가 충돌했고 충돌 파일과 커밋 tree 와 다른 파일이 모두 resolved 에 맞는
+//   merge 도 받아들인다. 계약 머리 자동 합치기(lib/contract-merge.ts)나 worker 가 계약 파일 충돌만 푼 merge 다
 // 커밋이 로컬에 없거나 git 이 실패하면 false 다. 부르는 쪽은 origin/<base> 와 PR HEAD 를 받아 둔다.
 // 이 경우 머지 조건은 지금 HEAD 의 CI 통과로 대신한다. 머지 큐와 자동 머지는 지금 HEAD 의 필수 체크 통과를 따로 본다.
 export const BASE_MERGE_LIMIT = 50
 
-export function baseMergesOnly(repo: string, head: string, verified: string, base: string): boolean {
+// 충돌한 합친 tree 와 커밋 tree 사이에서 바뀐 파일과 충돌 파일이 모두 resolved 에 맞는지
+function resolvedOnly(repo: string, merged: string, tree: string, conflicted: string[], resolved: RegExp): boolean {
+  if (conflicted.length === 0 || !conflicted.every((file) => resolved.test(file))) return false
+  const diff = git(repo, ['diff', '--name-only', '--no-renames', merged, tree])
+  if (diff.code !== 0) return false
+  return diff.stdout.split('\n').filter((x) => x).every((file) => resolved.test(file))
+}
+
+export function baseMergesOnly(repo: string, head: string, verified: string, base: string, resolved: RegExp | null = null): boolean {
   const line = (args: string[]): string | null => {
     const done = git(repo, args)
     return done.code === 0 ? done.stdout.trim() : null
@@ -89,8 +99,10 @@ export function baseMergesOnly(repo: string, head: string, verified: string, bas
     const [, first, second] = parents
     if (git(repo, ['merge-base', '--is-ancestor', second, `refs/remotes/origin/${base}`]).code !== 0) return false
     const tree = line(['rev-parse', `${commit}^{tree}`])
-    const merged = line(['merge-tree', '--write-tree', '--no-messages', first, second])?.split('\n')[0]
-    if (!tree || !merged || tree !== merged) return false
+    const result = git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', first, second])
+    const [merged, ...conflicted] = result.stdout.split('\n').filter((x) => x)
+    if (!tree || !merged || !/^[0-9a-f]{40,64}$/.test(merged)) return false
+    if (tree !== merged && !(resolved && result.code === 1 && resolvedOnly(repo, merged, tree, conflicted, resolved))) return false
     commit = first
   }
   return false
@@ -151,9 +163,9 @@ export function featureCompletionProblem(repo: string, number: string, branch = 
 }
 
 // origin/<base> 와 HEAD 를 받은 뒤 baseMergesOnly 로 본다. 정리와 마무리처럼 미리 받아 두지 않은 쪽이 쓴다
-export function fetchedBaseMerges(repo: string, head: string, verified: string, base: string): boolean {
+export function fetchedBaseMerges(repo: string, head: string, verified: string, base: string, resolved: RegExp | null = null): boolean {
   if (!base) return false
   git(repo, ['fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`])
   if (git(repo, ['cat-file', '-e', `${head}^{commit}`]).code !== 0) git(repo, ['fetch', '-q', 'origin', head])
-  return baseMergesOnly(repo, head, verified, base)
+  return baseMergesOnly(repo, head, verified, base, resolved)
 }

@@ -216,6 +216,34 @@ describe('baseMergesOnly', () => {
     assert.equal(baseMergesOnly(tmp, side, verified, 'main'), false)
   })
 
+  // 계약 머리 자동 합치기(lib/contract-merge.ts)가 만든 꼴. 계약 파일 충돌만 푼 merge 는 resolved 를 줄 때만 받아들인다
+  test('resolved 에 맞는 파일의 충돌만 푼 merge 는 resolved 를 줄 때만 받아들인다', () => {
+    git('reset', '-q', '--hard', verified)
+    commit('api.yaml', 'version: feat\n')
+    const featHead = git('rev-parse', 'HEAD')
+    git('checkout', '-q', 'main')
+    git('update-ref', 'refs/remotes/origin/main', commit('api.yaml', 'version: main\n'))
+    git('checkout', '-q', 'feat')
+    const resolve = (extra?: [string, string]): string => {
+      git('reset', '-q', '--hard', featHead)
+      spawnSync('git', ['-C', tmp, 'merge', '-q', '--no-ff', '--no-commit', 'main'], { env })
+      writeFileSync(join(tmp, 'api.yaml'), 'version: both\n')
+      if (extra) writeFileSync(join(tmp, extra[0]), extra[1])
+      git('add', '-A')
+      git('commit', '-q', '-m', 'merge')
+      return git('rev-parse', 'HEAD')
+    }
+    const merged = resolve()
+    const contracts = /^api\.yaml$/
+    assert.equal(baseMergesOnly(tmp, merged, featHead, 'main'), false)
+    assert.equal(baseMergesOnly(tmp, merged, featHead, 'main', contracts), true)
+    // 충돌하지 않은 파일까지 merge 커밋에서 고쳤으면 받아들이지 않는다
+    const edited = resolve(['feat.txt', 'changed in merge\n'])
+    assert.equal(baseMergesOnly(tmp, edited, featHead, 'main', contracts), false)
+    // 충돌 파일이 resolved 밖이면 받아들이지 않는다
+    assert.equal(baseMergesOnly(tmp, merged, featHead, 'main', /^other\.yaml$/), false)
+  })
+
   test('HEAD 가 검증 커밋 자신이거나 모르는 커밋이면 false 다', () => {
     assert.equal(baseMergesOnly(tmp, verified, verified, 'main'), false)
     assert.equal(baseMergesOnly(tmp, 'f'.repeat(40), verified, 'main'), false)
