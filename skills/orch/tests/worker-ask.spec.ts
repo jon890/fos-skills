@@ -259,6 +259,95 @@ describe('결정 질문 형식', () => {
     assert.deepEqual(r.calls, [])
   })
 
+  const block = (n: number) => `결정: 결정 ${n}\n- A: 하나\n- B: 둘\n권장: A`
+  const blocks = (n: number) => Array.from({ length: n }, (_, i) => block(i + 1)).join('\n\n')
+
+  test('결정 블록이 4개면 보내고 5개면 4개씩 나눠 보내라고 알리며 묻지 않는다', () => {
+    fake('{"result":{"answer":"x"}}', 0)
+    const four = ask('--from', 'term_w', '--question', blocks(4), '--decision')
+    assert.equal(four.code, 0, four.stderr)
+    rmSync(log)
+    fake('{"result":{"answer":"x"}}', 0)
+    const five = ask('--from', 'term_w', '--question', blocks(5), '--decision')
+    assert.equal(five.code, 2, five.stderr)
+    assert.ok(five.stderr.includes('결정 블록이 5개다. 한 질문에는 4개까지 담는다. 4개씩 나눠 질문마다 보내고'), five.stderr)
+    assert.deepEqual(five.calls, [], '4개를 넘는 질문은 orca 를 부르지 않는다')
+  })
+
+  test('--decision 이 없으면 블록 수를 세지 않는다', () => {
+    fake('{"result":{"answer":"x"}}', 0)
+    assert.equal(ask('--from', 'term_w', '--question', blocks(6)).code, 0)
+  })
+
+  test('바로 받은 답에 빠진 결정이 있으면 stderr 로 알리고 0 으로 끝난다', () => {
+    fake('{"result":{"answer":"D1=A\\nD3=B"}}', 0)
+    const r = ask('--from', 'term_w', '--question', blocks(4), '--decision')
+    assert.equal(r.code, 0, r.stderr)
+    assert.ok(r.stderr.includes('답에 빠진 결정이 있다(D2, D4)'), r.stderr)
+    fake('{"result":{"answer":"D1=A\\nD2=B"}}', 0)
+    assert.ok(!ask('--from', 'term_w', '--question', blocks(2), '--decision').stderr.includes('빠진 결정'))
+  })
+})
+
+describe('--question-file', () => {
+  const file = () => join(tmp, 'question.md')
+
+  test('파일 내용을 질문으로 보내고 끝 줄바꿈 하나는 뗀다', () => {
+    fake('{"result":{"answer":"둔다"}}', 0)
+    writeFileSync(file(), `${DECISION}\n`)
+    const r = ask('--from', 'term_w', '--question-file', file(), '--decision')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: 둔다'])
+    assert.ok(r.calls.join('\n').includes(`[--question][${DECISION}]`), r.calls.join('\n'))
+  })
+
+  test('--decision 이면 파일 내용의 첫 줄을 검사한다', () => {
+    fake('{"result":{"answer":"x"}}', 0)
+    writeFileSync(file(), `배경: 첫 줄이 다르다\n${DECISION}\n`)
+    const r = ask('--from', 'term_w', '--question-file', file(), '--decision')
+    assert.equal(r.code, 2, r.stderr)
+    assert.ok(r.stderr.includes('첫 줄이 `결정:` 으로 시작해야 한다'), r.stderr)
+    assert.deepEqual(r.calls, [])
+  })
+
+  test('파일이 없거나 비었거나 --question 과 함께 주면 사용법 오류 2 이고 묻지 않는다', () => {
+    fake('{"result":{"answer":"x"}}', 0)
+    const missing = ask('--from', 'term_w', '--question-file', join(tmp, 'none.md'))
+    assert.equal(missing.code, 2)
+    assert.ok(missing.stderr.includes('--question-file 을 읽을 수 없다'), missing.stderr)
+    writeFileSync(file(), '\n')
+    const empty = ask('--from', 'term_w', '--question-file', file())
+    assert.equal(empty.code, 2)
+    assert.ok(empty.stderr.includes('--question-file 이 비었다'), empty.stderr)
+    writeFileSync(file(), '질문')
+    const both = ask('--from', 'term_w', '--question', 'q', '--question-file', file())
+    assert.equal(both.code, 2)
+    assert.ok(both.stderr.includes('함께 줄 수 없다'), both.stderr)
+    assert.deepEqual(both.calls, [])
+  })
+})
+
+describe('--check-answer', () => {
+  const four = ['결정: a', '결정: b', '결정: c', '결정: d'].map((t) => `${t}\n- A: 1\n- B: 2\n권장: A`).join('\n')
+
+  test('모든 블록의 답이 있으면 ANSWER-OK 와 0 이고 orca 를 부르지 않는다', () => {
+    fake('{}', 0)
+    const r = ask('--check-answer', 'D1=A\nD2=B\nD3=A 그리고 덧붙임\nD4=B', '--question', four)
+    assert.deepEqual([r.code, r.stdout.trim()], [0, 'ANSWER-OK 4'])
+    assert.deepEqual(r.calls, [])
+  })
+
+  test('빠진 번호를 MISSING 으로 알리고 2 다. 파일로 준 질문도 같다', () => {
+    fake('{}', 0)
+    writeFileSync(join(tmp, 'q.md'), four)
+    const r = ask('--check-answer', 'D1=A\nD3=A', '--question-file', join(tmp, 'q.md'))
+    assert.deepEqual([r.code, r.stdout.trim()], [2, 'MISSING D2,D4'])
+    assert.ok(r.stderr.includes('빠진 결정만 코디네이터에게 다시 묻는다'), r.stderr)
+  })
+
+  test('보낸 질문 없이 주면 사용법 오류 2 다', () => {
+    fake('{}', 0)
+    assert.equal(ask('--check-answer', 'D1=A').code, 2)
+  })
 })
 
 describe('읽지 않은 메시지', () => {

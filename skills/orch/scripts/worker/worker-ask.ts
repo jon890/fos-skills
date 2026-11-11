@@ -1,11 +1,19 @@
 // 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문을 보낸 뒤, 답을 기다리지 않고 끝난다.
 //
-// 사용: worker-ask.ts --from HANDLE --question TEXT
+// 사용: worker-ask.ts --from HANDLE (--question TEXT | --question-file FILE)
 //                    [--options CSV] [--run ID] [--force] [--decision]
+//       worker-ask.ts --check-answer TEXT (--question TEXT | --question-file FILE)
+// --question-file: 질문 본문을 파일에서 읽는다. 긴 결정 블록을 셸 인자로 붙이지 않고 파일 경로로 보내려는 것이다.
+// --question 과 함께 줄 수 없고, 파일이 없거나 비었으면 사용법 오류(2)다. --decision 이면 파일 내용의 첫 줄을 검사한다.
 // 질문을 보내면 worker 는 턴을 끝낸다. 답이 오면 Orca 가 worker 를 깨우고, 깬 뒤 orca orchestration check 로 읽는다.
 // --decision: 사용자가 정할 결정 질문이다. 본문이 docs/data-schema.md 「사용자 결정 질문 형식」
 // (첫 줄 `결정:` 과 비지 않은 제목, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 따르는지 보고, 어긋나면 묻지 않고 줄마다 stderr 에 낸다.
 // `결정:` 줄이 여럿이면 그 줄마다 블록을 나눠 블록마다 같은 규칙을 보고, 위반 줄 앞에 `결정 블록 N:` 을 붙인다.
+// 블록은 한 질문에 MAX_BLOCKS(4)개까지다. 사용자에게 묻는 구조화 질문 도구가 한 번에 4개까지라서, 넘으면 보내지 않고 2 로 끝나며
+// 「4개씩 나눠 질문마다 보낸다」 고 알린다. 앞 질문의 답이 온 뒤에 다음 질문을 보낸다.
+// 답 대조: 블록이 둘 이상인 결정 질문의 답은 블록 순서대로 `D1=<고른 답>` 한 줄씩이다. 바로 받은 답(`answer: `)은 이 명령이 줄을 세고,
+// 빠진 번호가 있으면 stderr 로 알린다(종료 코드는 그대로 0). 깨운 뒤 `check` 로 읽은 답은 `--check-answer <답 본문>` 에 보낸 질문
+// (`--question` 이나 `--question-file`)을 함께 줘서 대조한다. 모두 있으면 `ANSWER-OK <블록 수>` 와 0, 빠졌으면 `MISSING D3,D4` 와 2 다.
 // 없어진 옵션: `--resume` 은 orca 를 부르지 않고 안내 한 줄과 2 로 끝난다. `--timeout-ms`, `--max-wait` 는 값을 보지 않고
 // 안내 한 줄만 내고 무시한다. 옛 규칙대로 도는 worker 가 어떤 값을 넘겨도 멈추지 않게 하려는 것이다.
 // 종료: 0 보냈다(`ASKED <질문 id>`) 또는 바로 답을 받았다(`answer: `), 2 사용법·실행 오류(--decision 형식 위반, --resume, 다시 불러도 바쁜 Orca,
@@ -65,9 +73,12 @@ function asked(id: string, output: string): void {
 }
 
 const USAGE = [
-  '사용: worker-ask.ts --from HANDLE --question TEXT',
+  '사용: worker-ask.ts --from HANDLE (--question TEXT | --question-file FILE)',
   '                   [--options CSV] [--run ID] [--force] [--decision]',
+  '      worker-ask.ts --check-answer TEXT (--question TEXT | --question-file FILE)',
 ].join('\n')
+// 결정 질문 하나에 담는 블록의 상한. 사용자에게 묻는 AskUserQuestion 이 한 번에 4개까지다
+const MAX_BLOCKS = 4
 // ask 가 바로 돌아오게 주는 --timeout-ms. 끝난 worker 의 ask 는 Orca 가 답이 올 때까지 막아 두므로 짧게 끊는다(머리 주석).
 // ORCH_ASK_RETURN_MS 는 이 값을 바꾼다. 테스트만 쓴다
 const ASK_RETURN_MS = Number(process.env.ORCH_ASK_RETURN_MS) || 5_000
@@ -176,18 +187,31 @@ function unreadOf(output: string, sender: string, seenFile: string): string {
   return lines.join('\n').trim()
 }
 
+function questionLines(question: string): string[] {
+  return question === '' ? [] : question.replace(new RegExp(`(?:${LINE_BREAK.source})$`, 'u'), '').split(LINE_BREAK).map((line) => line.trim())
+}
+
+// `결정:` 줄마다 블록을 나눈다. 첫 `결정:` 줄 앞의 줄은 어느 블록에도 넣지 않는다
+function decisionBlocks(lines: string[]): string[][] {
+  const blocks: string[][] = []
+  for (const line of lines) {
+    if (line.startsWith('결정:')) blocks.push([line])
+    else if (blocks.length) blocks[blocks.length - 1].push(line)
+  }
+  return blocks
+}
+
 function decisionProblems(question: string): string[] {
-  const lines = question === '' ? [] : question.replace(new RegExp(`(?:${LINE_BREAK.source})$`, 'u'), '').split(LINE_BREAK).map((line) => line.trim())
+  const lines = questionLines(question)
   const problems: string[] = []
   if (lines.length === 0 || !lines[0].startsWith('결정:')) {
     problems.push('첫 줄이 `결정:` 으로 시작해야 한다')
     return problems.concat(blockProblems(lines))
   }
   // 결정 블록 여러 개를 한 질문으로 보낼 수 있다(spec 인터뷰). `결정:` 줄마다 블록을 나눠 각각 검사한다
-  const blocks: string[][] = []
-  for (const line of lines) {
-    if (line.startsWith('결정:')) blocks.push([line])
-    else blocks[blocks.length - 1].push(line)
+  const blocks = decisionBlocks(lines)
+  if (blocks.length > MAX_BLOCKS) {
+    problems.push(`결정 블록이 ${blocks.length}개다. 한 질문에는 ${MAX_BLOCKS}개까지 담는다. ${MAX_BLOCKS}개씩 나눠 질문마다 보내고, 앞 질문의 답이 온 뒤 다음 질문을 보낸다`)
   }
   if (blocks.length === 1) return blockProblems(blocks[0])
   blocks.forEach((block, i) => {
@@ -206,6 +230,16 @@ function blockProblems(lines: string[]): string[] {
   return problems
 }
 
+// 블록이 둘 이상인 결정 질문의 답에서 `D<번호>=` 줄이 없는 블록 번호. 블록이 하나면 자유로운 답도 받으니 보지 않는다
+function missingAnswers(question: string, answer: string): string[] {
+  const count = decisionBlocks(questionLines(question)).length
+  if (count < 2) return []
+  const given = new Set([...answer.matchAll(/^\s*D(\d+)\s*[=:]/gimu)].map((m) => Number(m[1])))
+  const missing: string[] = []
+  for (let n = 1; n <= count; n++) if (!given.has(n)) missing.push(`D${n}`)
+  return missing
+}
+
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
@@ -216,6 +250,8 @@ async function main(argv: string[]): Promise<number> {
     const optionSpec = {
       from: { type: 'string' },
       question: { type: 'string', default: '' },
+      'question-file': { type: 'string', default: '' },
+      'check-answer': { type: 'string' },
       // 없어진 옵션. 모르는 옵션 오류가 나지 않게 받기만 한다
       resume: { type: 'string', default: '' },
       options: { type: 'string', default: '' },
@@ -227,7 +263,7 @@ async function main(argv: string[]): Promise<number> {
       help: { type: 'boolean', short: 'h' },
     } as const
     // `--question "- 선택지"` 처럼 값이 - 로 시작해도 값으로 받는다
-    const joined = ['from', 'question', 'resume', 'options', 'run', 'timeout-ms', 'max-wait']
+    const joined = ['from', 'question', 'question-file', 'check-answer', 'resume', 'options', 'run', 'timeout-ms', 'max-wait']
     values = parseArgs({ args: expandArgs(argv, optionSpec, joined), options: optionSpec }).values
   } catch (e) {
     err(`${USAGE}\nworker-ask: ${(e as Error).message}`)
@@ -235,6 +271,40 @@ async function main(argv: string[]): Promise<number> {
   }
   if (values.help) {
     process.stdout.write(`${USAGE}\n`)
+    return 0
+  }
+  // 질문 본문은 --question 이나 --question-file 중 하나다. 파일은 끝 줄바꿈 하나만 뗀다
+  let question = values.question as string
+  const questionFile = values['question-file'] as string
+  if (questionFile) {
+    if (question) {
+      err(`${USAGE}\nworker-ask: --question 과 --question-file 은 함께 줄 수 없다`)
+      return 2
+    }
+    try {
+      question = readFileSync(questionFile, 'utf8').replace(/\r?\n$/, '')
+    } catch {
+      err(`${USAGE}\nworker-ask: --question-file 을 읽을 수 없다: ${questionFile}`)
+      return 2
+    }
+    if (!question.trim()) {
+      err(`${USAGE}\nworker-ask: --question-file 이 비었다: ${questionFile}`)
+      return 2
+    }
+  }
+  const checked = values['check-answer']
+  if (checked !== undefined) {
+    if (!question) {
+      err(`${USAGE}\nworker-ask: --check-answer 는 보낸 질문(--question 이나 --question-file)과 함께 준다`)
+      return 2
+    }
+    const missing = missingAnswers(question, checked)
+    if (missing.length) {
+      process.stdout.write(`MISSING ${missing.join(',')}\n`)
+      err(`worker-ask: 답에 빠진 결정이 있다(${missing.join(', ')}). 빠진 결정만 코디네이터에게 다시 묻는다`)
+      return 2
+    }
+    process.stdout.write(`ANSWER-OK ${decisionBlocks(questionLines(question)).length}\n`)
     return 0
   }
   const sender = values.from
@@ -249,10 +319,9 @@ async function main(argv: string[]): Promise<number> {
   if (values['timeout-ms'] !== undefined || values['max-wait'] !== undefined) {
     err('worker-ask: --timeout-ms, --max-wait 는 없어진 옵션이라 무시했다')
   }
-  const question = values.question as string
   const options = values.options as string
   if (!question) {
-    err(`${USAGE}\nworker-ask: --question 이 필요하다`)
+    err(`${USAGE}\nworker-ask: --question 이나 --question-file 이 필요하다`)
     return 2
   }
   if (values.decision) {
@@ -300,6 +369,8 @@ async function main(argv: string[]): Promise<number> {
       const answer = answerOf(output)
       if (answer) {
         answered(answer, output)
+        const missing = values.decision ? missingAnswers(question, answer) : []
+        if (missing.length) err(`worker-ask: 답에 빠진 결정이 있다(${missing.join(', ')}). 빠진 결정만 코디네이터에게 다시 묻는다`)
         return 0
       }
       if (messageId) {
