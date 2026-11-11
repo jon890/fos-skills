@@ -8,6 +8,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { unanswered } from '../scripts/lib/questions.ts'
+import { parseQuestions } from '../../../extensions/work-board/hooks/register.js'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/send-to-worker.ts', import.meta.url))
 // 다시 띄우라는 안내 줄이 가리키는 명령. 실행 규칙의 꼴이다
@@ -176,6 +177,62 @@ function both(r: Result): string {
 }
 
 describe('살아 있는 dispatch', () => {
+  for (const type of ['question', 'escalation']) {
+    test(`--reply-to 를 빠뜨리고 미답변 ${type} 이 하나면 원래 질문 ID 를 안내한다`, () => {
+      state({ dispatches: worker('dispatched'), inbox: [message('q_only', 'term_w', type, 2)] })
+      const r = send('--body', '답')
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /warning: .*--reply-to.*q_only/)
+      assert.match(r.stdout, /orch worker send --dispatch ctx_1 --reply-to q_only/)
+      assert.match(r.stdout, /--no-reply/)
+      assert.match(lines('orca orchestration reply')[0], /--id q_only /)
+    })
+
+    test(`요청문대로 ${type} 스레드에 답하면 보드의 미답변에서 빠진다`, () => {
+      const question = { ...message('q_only', 'term_w', type), run_id: 'run_x', to_handle: 'run:run_x', thread_id: 'q_only' }
+      state({ dispatches: worker('dispatched'), inbox: [question] })
+      const pending = (messages: Json[]) => parseQuestions(JSON.stringify({ messages }), 'run_x')
+      assert.equal(pending([question]).length, 1)
+      const r = send('--body', '답', '--reply-to', question.id)
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stdout, /warning:/)
+      const args = lines('orca orchestration reply')[0].split(' ')
+      const answer = { id: 'msg_new', type: 'reply', run_id: 'run_x', from_handle: args[args.indexOf('--from') + 1],
+        to_handle: 'dispatch:ctx_1', thread_id: args[args.indexOf('--id') + 1] }
+      assert.deepEqual(pending([question, answer]), [])
+    })
+  }
+
+  test('미답변이 여러 개면 하나로 추정하는 경고를 내지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('q1', 'term_w', 'question', 1), message('q2', 'term_w', 'escalation', 2)] })
+    const r = send('--body', '답')
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stdout, /warning:/)
+  })
+
+  for (const id of ['msg_stop_auto', 'msg_chaterr_auto']) {
+    test(`자동 알림 ${id} 만 있으면 질문 ID 경고를 내지 않는다`, () => {
+      state({ dispatches: worker('dispatched'), inbox: [message(id, 'term_w', 'escalation')] })
+      const r = send('--body', '확인')
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stdout, /warning:/)
+    })
+  }
+
+  test('다른 dispatch 의 질문과 자동 알림은 단일 질문 경고의 수에 넣지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [
+      { ...message('q_other', 'dispatch:ctx_other', 'question'), payload: { dispatchId: 'ctx_other' } },
+      { ...message('q_only', 'term_w', 'escalation', 2), subject: 'Worker stopped without reporting' },
+      message('msg_stop_auto', 'term_w', 'escalation', 3),
+      message('msg_chaterr_auto', 'term_w', 'escalation', 4),
+    ] })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--body', '답')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^NOTE .*--reply-to.*q_only/m)
+    assert.equal(r.stdout.split('\n').filter((line) => line.startsWith('NOTE ')).length, 1)
+  })
+
   test('본문과 --spec 을 함께 주면 본문만 보내고 무시한 옵션을 알린다', () => {
     state({ dispatches: worker('dispatched') })
     const r = send('--body', '답', '--spec', join(tmp, '없는-지시서.md'), '--no-reply')
@@ -201,6 +258,7 @@ describe('살아 있는 dispatch', () => {
     const r = send('--body', '계속 진행')
     assert.equal(r.code, 0, both(r))
     assert.match(lines('orca orchestration reply')[0], /--id progress /)
+    assert.doesNotMatch(r.stdout, /warning:/)
   })
 
   test('질문 뒤에 status 가 와도 최신 미답변 질문에 답한다', () => {
@@ -220,6 +278,7 @@ describe('살아 있는 dispatch', () => {
     const r = send('--body', '별도 진행 지시', '--no-reply')
     assert.equal(r.code, 0, both(r))
     assert.equal(lines('orca orchestration reply').length, 0)
+    assert.doesNotMatch(r.stdout, /warning:/)
     assert.equal(lines('orca orchestration send').length, 1)
   })
 
@@ -939,10 +998,10 @@ describe('짧은 출력', () => {
     writeFileSync(launch, 'echo "launch $*" >> "$FAKE_LOG"\necho "LAUNCHED out=${ORCH_OUTPUT:-}"\n')
   })
 
-  test('답한 뒤 REPLIED 와 깨운 자식의 짧은 줄만 내고 자식에 신호를 넘긴다', () => {
+  test('질문 ID 를 명시해 답하면 REPLIED 와 DELIVERED 만 낸다', () => {
     state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)] })
     env.ORCH_OUTPUT = 'short'
-    const r = send('--body', '그렇게 한다')
+    const r = send('--body', '그렇게 한다', '--reply-to', 'm_q')
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(r.stdout.trim().split('\n'), ['REPLIED m_q msg_new', 'DELIVERED msg_new'])
   })
