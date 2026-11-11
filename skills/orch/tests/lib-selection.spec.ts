@@ -134,12 +134,9 @@ test('손상된 JSON 과 잘못된 필드 줄은 경고하고 정상 이력의 �
   } finally { mocked.mock.restore() }
 })
 
-test('행 id 는 agent-selection.md 의 `## 모델` 표에서만 읽고 id 집합을 고정한다', () => {
-  const text = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
-  assert.deepEqual(modelRowIds(text), ['impl-planned', 'small-fix', 'simple-apply', 'impl-explore', 'hard-design', 'visual', 'review', 'security-review'])
-  // 다른 절의 표 첫 칸은 행 id 가 아니다
-  for (const other of ['low', 'gpt-6-astra', 'gpt-6.1-sol']) assert.ok(!modelRowIds(text).includes(other), other)
-  assert.ok(text.includes('| `gpt-6-astra` |'), '모델 표 밖에 이 id 로 시작하는 표가 있어야 좁힌 효과를 본다')
+test('행 id 는 모델 절의 표에서만 읽는다', () => {
+  const table = '## 모델\n| `impl-planned` | 설명 | `gpt-6.1-sol` | low |\n### 비교 근거\n| `gpt-6-astra` | 가격 |'
+  assert.deepEqual(modelRowIds(table), ['impl-planned'])
   const spec = '행: low'
   assert.match(selectionVerdict(`worker 선택: \`codex\` \`gpt-6.1-sol\` effort \`low\`. ${spec}`, tmpdir()).join(), /행 id 가 모델 표에 없다: low/)
 })

@@ -7,7 +7,7 @@
 | ID | 해결 방법 | PR |
 | --- | --- | --- |
 | REQ1 | `lib/spec.ts` 의 `selectionsOf` 가 `high 근거:` 조각을 읽는다. 판정은 새 공용 함수 `selectionVerdict`(`lib/selection.ts`) 하나가 한다. Opus 에 `high`, `xhigh`, `max` 면 근거를 요구하고, `medium 실패 <dispatch>` 는 띄우기 이력(`lib/launch-history.ts`)에서 그 dispatch 가 Opus `medium` 인지 대조한다. `spec-lint` 의 `선택` 발견과 `launch-worker` 의 차례 0(`selectionReject`)이 같은 함수를 부른다. 차례 0 은 `--lint-ack` 으로 넘길 수 없고, `--effort` 도 지시서와 대조한다 | PR-B |
-| REQ2 | `agent-selection.md` 의 모델 표에 행 id 열, Opus `high` 허용 조건, Codex 행 조건을 더하고, 「비교 근거」 표에 `모델 id` 열을 더하며, 「실측 기록」 절을 근거 링크와 측정일·표본 수로 고친다 | PR-A |
+| REQ2 | `agent-selection.md` 의 모델 표에 행 id 열, Opus `high` 허용 조건, Codex 행 조건을 더하고, 근거 문서의 「비교 근거」 표에 `모델 id` 열을 두며, 「실측 기록」 절을 근거 링크와 측정일·표본 수로 고친다 | PR-A |
 | REQ3 | 공통 지시서 틀에 새 `orch-rule: no-reconfirm` 항목과, `status-only` 항목 뒤 새 `orch-rule: status-not-escalation` 항목을 더한다. `spec-lint` 의 `공통` 경고는 표지를 틀에서 읽으므로 코드 변경이 없다 | PR-A |
 | REQ4 | `lib/launched.ts` 의 `Launch` 에 `agent`, `model`, `effort`, `effective`, `experiment` 를 더한다. `launch-worker` 가 `recordLaunch` 와 같은 자리에서 이력에도 한 줄을 더한다 | PR-B |
 | REQ5 | 새 `lib/routing-log.ts` 가 한 줄을 모으고 쓴다. `finish-pr` 가 MERGED 확인 직후·정리 전에, `cleanup-sweep` 이 CLOSED PR 을 만났을 때 부른다 | PR-C |
@@ -69,7 +69,7 @@ experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `mediu
 
 - 명령 표(`lib/commands.ts`)에 묶음 `routing`, 동작 `report` 를 더한다. 인자: `--repo DIR`(여러 번), `--since YYYY-MM-DD`, `--json`.
 - 행: (agent/model, effort, task_row). 열: 표본 수, 준비 중앙(시간), 첫 리뷰 P1·P2 평균, 리뷰 뒤 커밋 평균, CI 실패 평균, 질문 평균, 출력 토큰 중앙, 비용 추정 중앙, 다시 띄운 PR 비율(첫 dispatch 기준). 표본 10건 미만 행은 「표본 적음」 표시.
-- 비용 추정의 가격 원본은 `agent-selection.md` 「비교 근거」 표다. PR-A 가 그 표에 `모델 id` 열(`claude-opus-5-5`, `gpt-6.1-sol` 같은 `--model` 값)을 더하고, 명령은 그 열로 기록의 모델을 찾아 $/1M 값을 쓴다. 캐시 읽기·쓰기 배수는 공식 가격 문서의 값을 명령 안 상수로 두고 출처 주석을 단다. 표를 읽지 못하거나 모델이 표에 없으면 그 행의 비용 열은 비운다.
+- 비용 추정의 가격 원본은 `evidence.md` 「비교 근거」 표다. PR-A 가 그 표에 `모델 id` 열(`claude-opus-5-5`, `gpt-6.1-sol` 같은 `--model` 값)을 더하고, 명령은 그 열로 기록의 모델을 찾아 $/1M 값을 쓴다. 캐시 읽기·쓰기 배수는 공식 가격 문서의 값을 명령 안 상수로 두고 출처 주석을 단다. 표를 읽지 못하거나 모델이 표에 없으면 그 행의 비용 열은 비운다.
 - 짧은 출력: `ROUTING-ROW <행 요약>` 줄. `--full` 이면 Markdown 표.
 
 ## 실패와 일관성

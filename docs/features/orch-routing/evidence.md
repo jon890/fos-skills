@@ -8,7 +8,7 @@
 - 출처: Orca `orchestration.db`(dispatch, 메시지, 질문 스레드)를 읽기 전용으로 읽고, GitHub PR·리뷰·CI 실행과 Orca 의 Claude·Codex 사용량 파일을 PR 에 이었다. 집계는 그 세션의 `aggregate.py`, `analyze.py` 가 했다.
 - 모델과 effort 는 `worker-start` 의 `launch.effective` 값이다. 한 PR 에 dispatch 가 여럿이면 몫을 나눠 셌다.
 - 「준비」 는 띄운 때부터 `준비됨` status(또는 merge_ready)까지다. 「첫 리뷰 P1·P2」 는 첫 `claude-review` 판정의 실질 지적 수다. 「크기」 는 저장소의 PR 크기 등급(A 가 작다)이다.
-- 비용은 사용량 파일의 토큰에 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 「비교 근거」 의 가격을 곱한 추정이다. Claude 캐시 쓰기 배수는 추정이다.
+- 비용은 사용량 파일의 토큰에 이 문서 「비교 근거」 의 가격을 곱한 추정이다. Claude 캐시 쓰기 배수는 추정이다.
 - PR 제목과 업무 번호는 옮기지 않았다.
 
 ## 표 1. 결과 품질과 속도 (표본 20건 이상)
@@ -142,3 +142,48 @@
 ## 2026-11-10 질문이 남은 설계 작업의 sol 후보
 
 사용자 결정(2026-11-10)으로 사용자 결정이나 설계 판단이 남은 Task 에도 sol 을 후보로 둔다. `orch worker ask` 가 질문을 보내고 바로 끝나도록 바뀐 뒤(#404), 같은 날 Codex worker 들이 마이그레이션 순서·gate·보드 명령에 관한 판단 질문을 문제없이 보냈다는 코디네이터의 관측을 근거로 삼았다. 질문 처리 사례이며 설계 품질의 우위를 입증한 비교 실험은 아니다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 를 유지하고, `technical-design` 과 `hard-design` 은 Claude Opus 5.5 medium 과 sol 을 번갈아 쓴 결과를 실측 기록으로 비교한다.
+
+## 지침에서 옮긴 모델 조사와 제외 근거
+
+기존 모델 선택 지침에 있던 조사 기록을 보존한다. 현재 선택 규칙은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 가 소유한다.
+
+아래 두 모델은 worker 와 하위 에이전트의 후보에 넣지 않는다. `gpt-6-astra` 는 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 실험이 끝날 때까지 뺀다(사용자 결정 2026-11-10, 아래 「Fable 5.2 실험」). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
+
+| 모델 | 입력 / 출력 ($/1M 토큰) | 뺀 이유 |
+| --- | --- | --- |
+| Claude Fable 5.2 | 8 / 40 | Opus 5.5(4 / 20)의 2배다. 작업 한 건 비용은 2.6배다(Artificial Analysis, 2026-11-10). 실험 다섯 건의 결과를 본 뒤 후보에 넣을지 정한다 |
+| `gpt-6-astra` | 10 / 50 | sol(2 / 10)의 5배다. sol 의 공식 설명이 「astra 에 가까운 성능을 낮은 가격에」 다 |
+
+출처는 아래 비교 근거와 같다. Fable 5.2 행은 2026-11-10 공개 자료로 확인했다.
+
+
+### 비교 근거
+
+비교 근거다(2026-10-01 공식 자료 조사, Claude 행은 2026-10-30 claude-api 스킬로 재확인, `gpt-6.1-sol` 과 `gpt-6-astra` 행은 2026-10-30 공식 문서와 `codex debug models`(codex-cli 0.166.0)로 확인, `gpt-6.1-terra` 행은 2026-10-28 확인. 값이 바뀌면 아래 출처에서 다시 확인한다).
+
+| 모델 | 모델 id | 공식 권장 용도 | 공식 effort 시작점 | 입력 / 출력 ($/1M 토큰) | 상대 속도 |
+| --- | --- | --- | --- | --- | --- |
+| `gpt-6-astra` | `gpt-6-astra` | 가장 어려운 작업. 복잡한 추론, 코딩, 컴퓨터 사용, 조사, 문서 작성 | 공식 문서에 기본값 없음. `codex debug models` 기본값은 `medium` | 10 / 50 | 공식 수치 없음 |
+| `gpt-6.1-sol` | `gpt-6.1-sol` | 복잡한 코딩, 컴퓨터 사용, 전문 작업. 공식 설명은 「astra 에 가까운 성능을 낮은 가격에」 | 공식 문서와 `codex debug models` 모두 `medium`(기본) | 2 / 10 | Fast 2배(사용량 증가) |
+| `gpt-6.1-terra` | `gpt-6.1-terra` | 시각 추론, 정밀한 컴퓨터 사용, 분명하고 자연스러운 글쓰기 | 기본 `medium`. Codex 안내에 시작점이 없고 `codex debug models` 기본값은 `low` | 1 / 5 | 공식 수치 없음 |
+| `gpt-6-luna` | `gpt-6-luna` | 집중된 대량 작업, focused coding | `high` | 0.10 / 0.50 | Fast 1.5배 |
+| Claude Sonnet 5.5 | `claude-sonnet-5-5` | 일상 코딩과 에이전트 | 잘 정의된 Task 는 `medium`, 어렵거나 긴 Task 는 `high`(기본) | 2 / 10 | Fast |
+| Claude Opus 5.5 | `claude-opus-5-5` | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
+| Claude Haiku 5.5 | `claude-haiku-5-5` | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
+| Claude Fable 5.2 | `claude-fable-5-2` | 가장 어려운 기술 과제 | `high`(Anthropic 권장 기본값) | 8 / 40 | Fable 5.1 보다 최대 30% 빠름 |
+
+- 보안 리뷰 행의 근거: 2026-10-20 인프라 저장소의 PR 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
+- worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](../../../skills/orch/references/launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
+- 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
+- effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
+- astra 행은 비교를 위해 두었다. 후보에서 뺀 이유는 위 「기본 후보에서 뺀 모델」 이 갖는다
+- Fable 5.2 행은 2026-11-10 공개 자료다. 공식 권장 용도와 상대 속도는 Anthropic 발표, 가격과 비용 배수는 Artificial Analysis 와 Fortune 보도다. 수치 출처와 독립 측정은 [evidence](evidence.md) 의 2026-11-10 Fable 5.2 절이다.
+- terra 는 중간급 코딩 모델이다. 코딩 지수는 sol 보다 낮다([evidence](evidence.md) 의 2026-11-10 절). OpenAI 는 가장 복잡한 코딩에 sol·astra 를 권한다. 범위가 분명한 실행 하위 일에 쓴 사례가 있다([사례](https://github.com/makeitworkcloud/charts/pull/132)). 한국어 품질의 근거는 없으니 한국어 문서에는 넣지 않는다. Sonnet 이 맡던 구현을 terra 로 옮길지는 experiment 다섯 번을 본 뒤 정한다
+- 출처: [astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
+- 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
+
+### effort 와 하네스 관측
+
+기존 지침은 높은 effort 가 추가 작업과 비용을 늘릴 수 있다고 설명했다. Claude 의 xhigh·max 는 리뷰 라운드와 reviewer subagent 를 스스로 돌릴 수 있고, high 이상에서 요청하지 않은 변경이나 저장소 관례와 다른 커밋 제목을 낼 수 있다는 관측을 기록했다. 공식 effort 안내는 [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort) 다.
+
+Codex 매니페스트에 hook 을 싣지 않는 선택은 [ADR-007](../../adr/007-codex-manifest-without-hooks.md) 에 있다. 기존 지침은 공통 지시서에 review-subagents 요청이 없으면 Codex worker 가 검토를 코디네이터에게 넘기는 사례와, terra 의 시각 작업 effort 는 아직 실측 전이라는 한계도 기록했다.

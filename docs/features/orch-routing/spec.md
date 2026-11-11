@@ -32,7 +32,7 @@
 | ID | 요구사항 | 관측할 인수 조건 |
 | --- | --- | --- |
 | REQ1 | 지시서의 `worker 선택:` 이 Claude Opus 5.5 에 effort `high` 를 고르면 DECISION1 의 근거가 있어야 한다. 실험 후보로 띄우면(DECISION7) 근거가 없어도 된다 | 근거가 없거나, 꼴이 틀리거나, 적은 dispatch 가 그 저장소의 띄우기 이력에서 Opus `medium` 이 아니면 `spec-lint` 가 `선택` 발견(종료 코드 1)으로 막고 `launch-worker` 가 워크트리를 만들기 전에 거부한다. 기록에 모델이 없는 옛 dispatch 는 꼴만 맞으면 통과한다. 「사용자 지정 YYYY-MM-DD」 근거, effort `medium` 이하, Opus 가 아닌 모델은 통과한다 |
-| REQ2 | 지침의 모델 표와 effort 표가 실측과 맞는다 | `agent-selection.md` 에 Opus `high` 허용 조건(REQ1), Codex 구현 행의 「사용자 결정이나 설계 판단이 남지 않은 Task」 조건, 실측 근거 링크와 측정일·표본 수가 있다 |
+| REQ2 | 지침의 모델 표와 effort 표가 실측과 맞는다 | `agent-selection.md` 에 Opus `high` 허용 조건(REQ1), 질문이 남은 설계 작업의 sol 허용 규칙과 실측 근거 링크가 있다. 측정일·표본 수는 `evidence.md` 에 둔다 |
 | REQ3 | worker 가 닫힌 결정을 실행 전에 다시 묻지 않고, 머지 대기는 status 로 알린다 | 공통 지시서 틀에 DECISION3 범위의 규칙이 `orch-rule` 표지와 함께 있고, `spec-lint` 가 그 표지가 빠진 저장소 사본에 `공통` 경고를 낸다 |
 | REQ4 | 띄운 worker 기록에 에이전트, 모델, effort 가 남는다 | `launch-worker` 로 띄운 뒤 `state/launched-workers/<dispatch>.json` 에 요청한 `agent`, `model`, `effort` 와 `launch.effective` 값, 실험 이름(있으면)이 있다. 옛 기록은 그대로 읽힌다 |
 | REQ5 | 머지된 PR 과 머지 없이 닫힌 PR 마다 `<orch 루트>/state/routing-log.jsonl` 에 한 줄이 남는다 | 머지된 PR 은 마무리가 `outcome: merged` 로, 닫힌 PR 은 정리가 `outcome: closed` 로 PR 하나에 한 줄을 쓴다. 아래 「기록 항목」 의 키가 모두 있고 얻지 못한 값은 `null` 이다. 같은 PR 을 두 번 마무리하거나 정리해도 줄이 늘지 않는다 |
@@ -73,7 +73,7 @@
 | DECISION6 | `routing-log.jsonl` 의 자리 | 저장소별 orch 상태 폴더(`<orch 루트>/state/routing-log.jsonl`). 집계 명령이 저장소 여럿을 받아 합친다 | 사용자 2026-11-05 | 지침이 이미 정한 자리다. 저장소 밖에 새 상태 파일을 만들지 않는다 |
 | DECISION7 | `experiment:` 줄의 꼴과 배정 | 꼴: 「experiment: <이름>. 후보: `<에이전트>` `<모델>` effort `<effort>` / `<에이전트>` `<모델>` effort `<effort>`.」 `worker 선택:` 줄은 그대로 두고 그 값이 후보 가운데 하나여야 한다. `launch-worker` 가 같은 실험 이름으로 띄운 기록을 세어 가장 적게 띄운 후보와 `worker 선택:` 이 다르면 거부하고 그 후보를 알린다. 실험 후보는 DECISION1 의 근거 없이 Opus `high` 를 띄울 수 있다 | 사용자 2026-11-05 | 지시서 쏠림이 코디네이터 선택에서 생겼다. 스크립트가 배정해야 비교가 공정하다 |
 | DECISION8 | 지침 수치를 다시 재는 때와 집계 명령 | 지금 규칙(지침 행마다 10건 또는 한 달)을 유지하고, `routing-log.jsonl` 을 모델·effort·지침 행별로 모아 표본 수와 함께 내는 orch 명령을 더한다. 지침 수치마다 측정일과 표본 수를 적는다 | 사용자 2026-11-05 | 규칙은 있었지만 모아 보는 도구가 없어 지켜지지 않았다 |
-| DECISION9 | Codex 구현 행의 조건 문구 | 「계획서가 있고 수정 위치와 검증 명령이 정해진 구현」 행과 「여러 파일 구현」 행의 sol 후보에 「결정이 닫혀 질문 없이 끝낼 Task」 를 더했다(2026-11-05). 사용자 결정(2026-11-09)으로 이 조건을 「사용자 결정이나 설계 판단이 남지 않은 Task」 로 바꾼다. 사용자 결정이나 설계 판단이 남은 Task 는 Claude 로 띄우고, 실행 전 확인처럼 답이 정해진 질문은 sol 을 막지 않는다. sol `medium` 은 Opus `medium` 과 같은 등급으로 본다 | 작성자 | 사용자 결정 2026-11-09. 표 2 의 sol 질문과 코디네이터 지시가 많았고, #404 로 질문 하나가 worker 를 붙잡지 않게 됐다(evidence 표 2, 2026-11-09 절) |
+| DECISION9 | 질문이 남은 Task 의 sol 선택 | 질문이 남은 Task 도 sol 을 쓸 수 있다. 한국어 문서가 주 산출물인 spec 인터뷰는 Claude 로 띄우고, technical-design 과 hard-design 은 Opus medium 과 sol 을 번갈아 쓰며 실측을 비교한다 | 사용자 2026-11-10 | [evidence](evidence.md) 의 「2026-11-10 질문이 남은 설계 작업의 sol 후보」 |
 | DECISION10 | 머지 대기 알림의 통로 | 머지 대기 알림은 따로 보내지 않고 `준비됨` 줄이 그 알림이며, escalation 은 막혔을 때만 쓴다는 항목을 틀의 `status-only` 항목 뒤에 새 표지로 더한다. `ready-status` 는 「끝내기」 번호 목록 안이라 사이에 넣으면 뒤 번호가 밀려 `done-after-merged` 본문 경고가 모든 사본에 난다 | 작성자 | 사용자 요청 2. 틀이 이미 `준비됨` 을 status 로 정했고(`ready-status`), escalation 은 머리말이 「막혔을 때」 로 정했다 |
 | DECISION11 | 기록을 쓰는 시점 | 마무리(`finish-pr`)가 MERGED 를 확인한 직후, worker 정리 전 | 작성자 | 정리(`cleanup-sweep`)가 띄운 worker 기록을 지운다(`lib/launched.ts` 의 `forgetLaunch`). 머지 직후가 사용자 요청이다 |
 | DECISION12 | 띄운 worker 기록의 `branch` | 이미 있다. 이번에는 `agent`, `model`, `effort`, `effective`, `experiment` 만 더한다 | 작성자 | `lib/launched.ts` 의 `Launch` 형에 `branch` 가 있다 |

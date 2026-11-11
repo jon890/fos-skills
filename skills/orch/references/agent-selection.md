@@ -6,15 +6,16 @@
 문서의 명령 예시는 이 단계에서 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 기본으로 뺀 모델은 아래 「기본 후보에서 뺀 모델」 이 정하고, 사용자나 오버레이가 지정하면 그것을 따른다.
 사용 한도에 걸렸을 때의 모델 변경은 아래 「사용 한도에 걸렸을 때」 표를 따른다.
+선택 근거와 조사 기록은 [evidence.md](../../../docs/features/orch-routing/evidence.md) 에 둔다.
 
 ## 제공자
 
 모델 표를 보기 전에 Claude 와 Codex 중 어느 쪽에 맡길지 먼저 정한다.
 같은 계열을 기본값으로 두지 않는다.
 
-- 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)에 기대기 때문이다. Codex 매니페스트는 hook 을 싣지 않는다([ADR-007](../../../docs/adr/007-codex-manifest-without-hooks.md))
+- 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)을 사용한다. `technical-design` 은 아래 설계 작업 선택 규칙을 따른다. Codex 매니페스트는 hook 을 싣지 않는다
 - 코드 작업에 딸린 ADR, flow 문서 수정은 위 규칙에 들지 않는다. 주 산출물이 코드면 코드 중심 구현으로 본다.
-- 코드 중심 구현은 `gpt-6.1-sol` 과 Claude Sonnet 5.5 를 비교해 고르고, 고른 이유를 `worker 선택:` 줄에 남긴다. `gpt-6.1-sol` `medium` 은 Claude Opus 5.5 `medium` 과 같은 등급으로 본다(사용자 결정 2026-11-09)
+- 코드 중심 구현은 `gpt-6.1-sol` 과 Claude Sonnet 5.5 를 비교해 고르고, 고른 이유를 `worker 선택:` 줄에 남긴다. `gpt-6.1-sol` `medium` 은 Claude Opus 5.5 `medium` 과 같은 등급으로 본다
 - Claude 가 만든 PR 의 머지 전 독립 리뷰는 Codex 로 띄운다. 보안 리뷰는 아래 표대로 Claude 다
 - 화면과 이미지 판정은 `gpt-6.1-terra` 를 먼저 본다
 - Codex worker 를 띄울 때 걸리는 GitHub 게시 승인은 [`spec-writing.md`](spec-writing.md) 가, 준비 설정은 [`launch.md`](launch.md) 의 「codex 준비 판정」 이 다룬다
@@ -26,28 +27,27 @@
 
 | id | Task 성격 | 모델 | effort |
 | --- | --- | --- | --- |
-| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본. 위 「effort」 의 계획을 마친 구현 규칙) |
-| `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
+| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본) |
+| `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high` |
 | `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
 | `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `medium`(넘기지 않는다), Sonnet `high`(기본). 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
-| `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
-| `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
+| `hard-design` | 어려운 디버깅, 기술·계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
+| `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작 |
 | `review` | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
 | `security-review` | 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
 
-Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다. 분기 논리를 고친 Haiku PR 둘에서 첫 리뷰 차단 버그가 나왔다. 사용자 결정(2026-11-10)이고, 근거 수치는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
+Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 
 - `launch-worker` 는 이 표의 행에 있는 모델만 띄운다. 후보 밖 모델이 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다.
 - `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Fable 과 Terra 는 선택 줄에 해당 모델의 `Fable 실험 N/5` 또는 `Terra 실험 N/5`(N 은 1~5)가 있으면 허용한다. Terra 는 Sonnet 이 후보인 행에서만 이 예외를 쓴다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
-- 질문이 남은 Task 도 sol 을 쓸 수 있다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 로 띄운다. `technical-design` 과 `hard-design` 은 Claude Opus 5.5 `medium` 과 sol 을 번갈아 쓰고 결과를 실측 기록으로 비교한다. 근거는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 「2026-11-10 질문이 남은 설계 작업의 sol 후보」 에 있다.
+- 질문이 남은 Task 도 sol 을 쓸 수 있다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 로 띄운다. `technical-design` 과 `hard-design` 은 Claude Opus 5.5 `medium` 과 sol 을 번갈아 쓰고 결과를 실측 기록으로 비교한다.
 
 ### Opus `high`
 
 Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄에 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 를 적는다.
 
 - 근거로 적는 dispatch 는 그 저장소에서 Opus `medium` 으로 띄운 dispatch 다. 브랜치는 달라도 된다. 실패였는지는 코디네이터가 판단한다.
-- Opus `high` 는 `medium` 보다 준비와 비용이 두 배 남짓이었고 품질 개선 신호는 관측되지 않았다. 수치와 표본은 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다.
 - Sonnet `high` 와 sol `high` 는 이 규칙 밖이다. 위 표의 effort 칸을 따른다.
 
 ### 두 모델을 나란히 둔 행
@@ -62,8 +62,8 @@ Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄
 
 「리뷰와 검증은 구현과 다른 제공자」 는 코디네이터가 따로 띄우는 리뷰 worker 에만 지켜진다.
 
-- plan 의 critic 과 verify 의 code-reviewer 는 해당 worker 와 같은 제공자로 돈다. 기존 계획은 implementation 안에서 돈다. 팀원은 worker 의 하네스가 띄운다([`team-spawn.md`](../../implementation/references/team-spawn.md) 「하네스별 대응」)
-- Codex worker 도 자기 하위 에이전트 도구로 critic 과 검토자를 띄운다. Orca 머리말은 task 가 요청하지 않으면 하위 에이전트를 막는데, 공통 지시서 틀의 `review-subagents` 줄이 그 요청이다. 이 줄이 없는 공통 지시서로 띄우면 worker 가 검토를 빼거나 코디네이터에게 넘겨, 코디네이터가 검토를 대신 돌리는 동안 사용자 대화가 막힌다
+- plan 의 critic 과 verify 의 code-reviewer 는 해당 worker 와 같은 제공자로 돈다. 팀원은 worker 의 하네스가 띄운다([`team-spawn.md`](../../implementation/references/team-spawn.md) 「하네스별 대응」)
+- Codex worker 도 자기 하위 에이전트 도구로 critic 과 검토자를 띄운다. Orca 머리말은 task 가 요청하지 않으면 하위 에이전트를 막는데, 공통 지시서 틀의 `review-subagents` 줄이 그 요청이다.
 - 저장소 CI 리뷰의 제공자는 저장소마다 다르다. CI 리뷰가 구현과 같은 제공자면 그 PR 에는 다른 제공자의 눈이 없다
 - 다른 제공자의 리뷰가 필요하면 구현 worker 와 다른 제공자의 리뷰 worker 를 머지 전에 따로 띄우거나, 위 「리뷰 다양성」 으로 구현 제공자를 CI 리뷰와 다르게 고른다
 
@@ -84,28 +84,21 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | Claude Opus 5.5 | `gpt-6.1-sol` `high`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | `gpt-6.1-sol` `high` | Claude Opus 5.5 | `gpt-6.1-sol` `medium` |
 | `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
-| Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra`(코딩 근거가 Sonnet 보다 약하다, experiment 전) | Claude Haiku 5.5 |
+| Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra`(Terra 실험 표시가 있을 때) | Claude Haiku 5.5 |
 | `gpt-6.1-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
 
-주 산출물이 한국어 문서인 작업은 Codex 로 바꾸지 않고 한 단계 아래 Claude 로 내린다. hook 이 없는 쪽으로 옮기면 한국어 표기 검사가 빠진다.
+주 산출물이 한국어 문서인 작업은 Codex 로 바꾸지 않고 한 단계 아래 Claude 로 내린다. `technical-design` 은 위 설계 작업 선택 규칙을 따른다. hook 이 없는 쪽으로 옮기면 한국어 표기 검사가 빠진다.
 바꾼 모델은 이어 쓰는 지시서의 `worker 선택:` 줄에 반영한다. 줄과 다르면 `launch-worker` 가 거부한다.
 
 ### 기본 후보에서 뺀 모델
 
-아래 두 모델은 worker 와 하위 에이전트의 후보에 넣지 않는다. `gpt-6-astra` 는 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 실험이 끝날 때까지 뺀다(사용자 결정 2026-11-10, 아래 「Fable 5.2 실험」). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
+`gpt-6-astra` 와 Claude Fable 5.2 는 worker 와 하위 에이전트의 기본 후보에서 뺀다. 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다. Fable 은 아래 실험 조건을 만족할 때만 고른다.
 
-| 모델 | 입력 / 출력 ($/1M 토큰) | 뺀 이유 |
-| --- | --- | --- |
-| Claude Fable 5.2 | 8 / 40 | Opus 5.5(4 / 20)의 2배다. 작업 한 건 비용은 2.6배다(Artificial Analysis, 2026-11-10). 실험 다섯 건의 결과를 본 뒤 후보에 넣을지 정한다 |
-| `gpt-6-astra` | 10 / 50 | sol(2 / 10)의 5배다. sol 의 공식 설명이 「astra 에 가까운 성능을 낮은 가격에」 다 |
+### Fable 5.2 실험
 
-출처는 아래 비교 근거와 같다. Fable 5.2 행은 2026-11-10 공개 자료로 확인했다.
-
-### Fable 5.2 실험 (2026-11-10)
-
-작업을 끝까지 해내는 능력을 먼저 보고, 가격은 그다음에 맞춘다(사용자 결정 2026-11-10). 그래서 Fable 5.2 를 바로 후보에 넣지 않고 크고 어려운 일 다섯 건에 먼저 쓴다.
+Fable 5.2 는 크고 어려운 일 다섯 건에 먼저 쓴다.
 
 - **대상.** 크고 어려운 일 다섯 건까지다. 큰 파일을 여러 시간 고치는 구조 정리(`impl-explore` 가운데 크기 C 이상)와 `technical-design` 이다.
 - **effort.** `high` 다(Anthropic 권장 기본값).
@@ -114,34 +107,9 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 - **기록.** 건마다 Task, 크기, 걸린 시간, 비용, 첫 리뷰 차단 건수, 다시 맡긴 횟수를 남긴다. 코디네이터가 보드 항목 `routing-fable-experiment` 의 단계 줄에 적는다. 비교는 같은 크기의 Opus·sol 작업 실측 기록(`routing-log.jsonl`)과 한다.
 - **끝.** 다섯 건이 끝나면 코디네이터가 결과를 사용자에게 올려 후보에 넣을지 정한다. 그때까지 Fable 은 기본 후보가 아니다.
 
-### 비교 근거
-
-비교 근거다(2026-10-01 공식 자료 조사, Claude 행은 2026-10-30 claude-api 스킬로 재확인, `gpt-6.1-sol` 과 `gpt-6-astra` 행은 2026-10-30 공식 문서와 `codex debug models`(codex-cli 0.166.0)로 확인, `gpt-6.1-terra` 행은 2026-10-28 확인. 값이 바뀌면 아래 출처에서 다시 확인한다).
-
-| 모델 | 모델 id | 공식 권장 용도 | 공식 effort 시작점 | 입력 / 출력 ($/1M 토큰) | 상대 속도 |
-| --- | --- | --- | --- | --- | --- |
-| `gpt-6-astra` | `gpt-6-astra` | 가장 어려운 작업. 복잡한 추론, 코딩, 컴퓨터 사용, 조사, 문서 작성 | 공식 문서에 기본값 없음. `codex debug models` 기본값은 `medium` | 10 / 50 | 공식 수치 없음 |
-| `gpt-6.1-sol` | `gpt-6.1-sol` | 복잡한 코딩, 컴퓨터 사용, 전문 작업. 공식 설명은 「astra 에 가까운 성능을 낮은 가격에」 | 공식 문서와 `codex debug models` 모두 `medium`(기본) | 2 / 10 | Fast 2배(사용량 증가) |
-| `gpt-6.1-terra` | `gpt-6.1-terra` | 시각 추론, 정밀한 컴퓨터 사용, 분명하고 자연스러운 글쓰기 | 기본 `medium`. Codex 안내에 시작점이 없고 `codex debug models` 기본값은 `low` | 1 / 5 | 공식 수치 없음 |
-| `gpt-6-luna` | `gpt-6-luna` | 집중된 대량 작업, focused coding | `high` | 0.10 / 0.50 | Fast 1.5배 |
-| Claude Sonnet 5.5 | `claude-sonnet-5-5` | 일상 코딩과 에이전트 | 잘 정의된 Task 는 `medium`, 어렵거나 긴 Task 는 `high`(기본) | 2 / 10 | Fast |
-| Claude Opus 5.5 | `claude-opus-5-5` | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
-| Claude Haiku 5.5 | `claude-haiku-5-5` | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
-| Claude Fable 5.2 | `claude-fable-5-2` | 가장 어려운 기술 과제 | `high`(Anthropic 권장 기본값) | 8 / 40 | Fable 5.1 보다 최대 30% 빠름 |
-
-- 보안 리뷰 행의 근거: 2026-10-20 인프라 저장소의 PR 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
-- worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
-- 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
-- effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
-- astra 행은 비교를 위해 두었다. 후보에서 뺀 이유는 위 「기본 후보에서 뺀 모델」 이 갖는다
-- Fable 5.2 행은 2026-11-10 공개 자료다. 공식 권장 용도와 상대 속도는 Anthropic 발표, 가격과 비용 배수는 Artificial Analysis 와 Fortune 보도다. 수치 출처와 독립 측정은 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 Fable 5.2 절이다.
-- terra 는 중간급 코딩 모델이다. 코딩 지수는 sol 보다 낮다([evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절). OpenAI 는 가장 복잡한 코딩에 sol·astra 를 권한다. 범위가 분명한 실행 하위 일에 쓴 사례가 있다([사례](https://github.com/makeitworkcloud/charts/pull/132)). 한국어 품질의 근거는 없으니 한국어 문서에는 넣지 않는다. Sonnet 이 맡던 구현을 terra 로 옮길지는 experiment 다섯 번을 본 뒤 정한다
-- 출처: [astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
-- 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
-
 ### 실측 기록
 
-공식 자료만으로는 같은 Task 에서 어느 모델이 나은지 알 수 없어 PR 마다 실측을 쌓는다. 기록 형식은 스펙 [「기록 항목」](../../../docs/features/orch-routing/spec.md), 표본과 한계는 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다.
+PR 마다 실측을 쌓는다. 기록 형식은 스펙 [「기록 항목」](../../../docs/features/orch-routing/spec.md) 을 따른다.
 
 - **기록.** `<orch 루트>/state/routing-log.jsonl` 에 PR 하나당 JSON 한 줄이다. `finish-pr` 와 `cleanup-sweep` 이 쓴다. 토큰만 남기고 금액은 집계 때 계산한다.
 - **집계.** `orch routing report --repo "$REPO" --since YYYY-MM-DD --full`. 읽는 법과 비용 추정 규칙은 `routing-report.ts` 와 `lib/routing-report.ts` 머리 주석이 소유한다.
@@ -151,7 +119,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 **모델마다 공식 시작점이 다르다. 계획서가 있으면 위 표의 낮은 쪽에서 시작한다.**
 
-- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다(사용자 2026-11-10). 「Fable 5.2 실험」 의 다섯 건만 예외다. 근거와 반대 근거는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
+- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다. 「Fable 5.2 실험」 의 다섯 건만 예외다.
 
 | 단계 | 올리거나 내리는 조건 |
 | --- | --- |
@@ -160,12 +128,6 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | `high` | 어려운 디버깅(`hard-design`)이나 깊은 계획. 계획을 마친 구현은 위 규칙대로 Sonnet 이 기본이다. 같은 Task 가 실패해도 sol 과 Opus 는 올리지 않고 모델을 바꾼다. Opus 는 위 「Opus `high`」 의 근거가 있을 때만 |
 | `xhigh`, `max` | 기본으로 쓰지 않는다. 같은 Task 에서 `high` 보다 낫다는 결과가 있을 때만. Opus 는 `high` 와 같은 「Opus `high`」 근거가 필요하다 |
 | `ultra` | worker 에 쓰지 않는다. 스스로 subagent 를 띄워 코디네이터가 모르는 작업자가 생긴다 |
-
-높은 effort 는 추가 작업과 비용을 늘릴 수 있다.
-
-- Claude 의 `xhigh`, `max` 는 스스로 리뷰 라운드를 돌리고 reviewer subagent 를 띄워 비용이 커진다
-- `high` 이상은 요청하지 않은 변경과 저장소 관례에 맞지 않는 커밋 제목을 낼 수 있다. 계획서가 충분하면 낮은 effort 로 빠르게 끝낸다
-- 출처: [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort)
 
 ## Codex 에 넘기는 방법
 
@@ -180,3 +142,5 @@ codex debug models | node -e "const d=JSON.parse(require('fs').readFileSync(0,'u
 `~/.codex/models_cache.json` 은 읽지 않는다. 대화형 codex 를 띄울 때만 갱신돼 새 모델이 빠진다.
 기본 service tier 가 `priority`(Fast)일 수 있고, Fast 는 사용량이 늘어난다. 실제 적용 값은 `worker-start` 응답의 `launch.effective` 로 확인한다.
 `~/.codex/config.toml` 에 `[shell_environment_policy] inherit = "core"` 가 있으면 Codex 셸에서 `SSH_AUTH_SOCK` 이 빠져 worker 의 `git push` 가 `Permission denied (publickey)` 로 막힌다. `launch-worker` 가 `--agent codex` 일 때 그 워크트리에만 걸리는 `core.sshCommand` 를 둔다(사용자가 정한 값은 덮지 않는다. 판정은 `launch-worker.ts` 머리 주석이 소유한다).
+
+worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 를 따른다.
