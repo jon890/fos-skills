@@ -38,7 +38,7 @@ describe('Orca 가 worker 반납 뒤 띄운 빈 셸', () => {
     has(calls(), 'orca terminal close --terminal term_shell')
   })
 
-  test('워크트리 둘을 정리해도 끝난 Run 의 worker 목록은 한 번만 읽는다', () => {
+  test('전체 worker 목록은 함께 쓰되 삭제 후보마다 끝난 Run 의 소유를 새로 읽는다', () => {
     const paths = ['feat-once-a', 'feat-once-b'].map((name) => {
       const path = worktree(name)
       squashMerge(name, path)
@@ -52,7 +52,7 @@ describe('Orca 가 worker 반납 뒤 띄운 빈 셸', () => {
     })) }
     const out = runSweep(['--run', 'run_finished', '--apply'])
     for (const path of paths) gone(path, out)
-    assert.equal(sweepCalls('worker-list').filter((line) => line.includes('--run run_finished')).length, 1, calls())
+    assert.equal(sweepCalls('worker-list').filter((line) => line.includes('--run run_finished')).length, 1 + paths.length, calls())
     for (let index = 0; index < paths.length; index++) has(calls(), `terminal close --terminal term_once_${index}`)
   })
 

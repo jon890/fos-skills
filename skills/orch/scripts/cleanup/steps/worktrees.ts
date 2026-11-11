@@ -182,7 +182,7 @@ import { idleShellVerdict } from '../../lib/idle-shells.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from '../../lib/worker-state.ts'
 import { isObject } from '../../core/json.ts'
 import { liveReviewPrs, originBranch, reviewPrOf, reviewPrOfBranch } from '../../lib/review.ts'
-import { blocker as ownershipBlocker } from '../../lib/ownership.ts'
+import { blocker as ownershipBlocker, rowHandles } from '../../lib/ownership.ts'
 import { realPath } from '../../lib/fs.ts'
 import { scriptCommand } from '../../lib/proc.ts'
 import { scriptPath } from '../../lib/commands.ts'
@@ -397,8 +397,15 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
   // 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널. 워크트리를 남기더라도 터미널은 닫고 dispatch 를 반납한다
   if (m.ok || m.pr?.state === 'CLOSED') {
-    if (args.run) args.foreign = await foreignHandles(args.run, args.allWorkers)
-    const owner = await ownershipBlocker(path, taken, args.allWorkers)
+    let fresh: WorkerRow[]
+    try { fresh = await args.worktreeWorkers(path) }
+    catch (e) { return keep('터미널 소유 상태 조회 실패', `남김: 터미널 소유 상태 조회 실패 (${path}): ${(e as Error).message}`) }
+    if (workersAt(fresh, path).some(isLive)) return keep('살아 있는 dispatch 가 경로를 쓴다', `건너뜀 ${path}: 살아 있는 dispatch 가 경로를 쓴다`)
+    if (args.run) args.foreign = await foreignHandles(args.run, async () => fresh)
+    // 원래 user_owned 였던 예외만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
+    const previouslyTaken = new Set(mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]))
+    const ignored = new Set([...taken].filter((handle) => previouslyTaken.has(handle)))
+    const owner = await ownershipBlocker(path, ignored, async () => fresh)
     if (owner) return keep(owner, `남김: ${owner} (${path})`)
   }
   const closing = closedOwnTerminals(s, m.pr, mine, terminals, path)

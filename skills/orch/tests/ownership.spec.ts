@@ -43,6 +43,19 @@ test('전체 소유 조회 실패는 같은 틱에서 반복하지 않고 다음
   assert.ok(orca.calls().length > reads)
 })
 
+test('run-list 를 지원하지 않아도 all 범위의 새 소유 상태를 확인한다', async () => {
+  const rules = (state: string) => [
+    { args: ['terminal', 'list'], stdout: ok({ terminals: [{ handle: 'worker', worktreePath: wt }] }) },
+    { args: ['run-list'], code: 1 },
+    { args: ['worker-list'], stdout: ok({ scope: { source: 'all' }, workers: [row('worker', state)] }) },
+  ]
+  orca.setRules(rules('owned'))
+  const snapshot = workerSnapshot()
+  await snapshot.all()
+  orca.setRules(rules('user_owned'))
+  assert.equal(await blocker(wt, new Set(), () => snapshot.forWorktree(wt)), KEPT)
+})
+
 let tmp: string
 let wt: string
 let orca: FakeBin
@@ -333,6 +346,6 @@ describe('실행 단위 스냅샷과 끝난 Run 캐시', () => {
     orca.setRules(rules(true))
     assert.equal(await blocker(wt, new Set(), () => snapshot.forWorktree(wt)), KEPT)
     const again = calls('--run').slice(before).map((c) => c.argv[c.argv.indexOf('--run') + 1]).sort()
-    assert.deepEqual(again, ['run_a', 'run_changed', 'run_new'])
+    assert.deepEqual(again, ['run_a', 'run_b', 'run_changed', 'run_new'])
   })
 })

@@ -396,7 +396,7 @@ describe('다른 Run 의 터미널', () => {
     lacks(calls(), '--terminal term_codex')
   })
 
-  test('bound 범위면 Run 마다 읽어 정리하되 정리 한 번에 한 번만 읽는다', () => {
+  test('bound 범위면 Run 목록을 함께 쓰되 삭제 전에는 소유를 새로 확인한다', () => {
     const path = worktree('feat-b1')
     squashMerge('feat-b1', path)
     fx.terminals = [
@@ -408,9 +408,9 @@ describe('다른 Run 의 터미널', () => {
     gone(path, out)
     lacks(out, '터미널 소유 상태 조회 실패')
     has(calls(), 'orca terminal close --terminal term_mine')
-    // Run 목록과 Run 마다의 페이지를 끝까지 따라가되, 정리 한 번에 한 번만 읽는다
-    assert.equal(sweepCalls('run-list').length, 3, calls())
-    assert.equal(sweepCalls('--run run_other').length, 1, calls())
+    // Run 갱신 시각이 없는 응답이라 삭제 전에도 모든 페이지와 Run 을 새로 확인한다.
+    assert.equal(sweepCalls('run-list').length, Object.keys(fx.runs!).length * 2, calls())
+    assert.equal(sweepCalls('--run run_other').length, 2, calls())
   })
 
   test('bound 범위에서도 다른 Run 의 터미널은 남긴다', () => {

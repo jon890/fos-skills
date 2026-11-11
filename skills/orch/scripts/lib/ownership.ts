@@ -238,8 +238,16 @@ export function workerSnapshot(file?: string): {
         return typeof id === 'string' && id.includes('::') && inside(realPath(id.slice(id.indexOf('::') + 2)), target)
       }).map((row) => row.runId))
       const previous = new Map(runs.map((run) => [run.id, run.updated_at]))
-      const current = await workerRuns()
-      const selected = current.filter((run) => relevant.has(run.id) || !previous.has(run.id) ||
+      let current: RunInfo[]
+      try { current = await workerRuns() }
+      catch (e) {
+        if (!(e instanceof LookupError)) throw e
+        // run-list 가 없는 옛 Orca 도 삭제 전에는 all 범위의 새 응답을 확인해야 한다.
+        const fresh = await workerPages([], 'all')
+        if (fresh === null) throw e
+        return fresh
+      }
+      const selected = current.filter((run) => known.has(run.id) || relevant.has(run.id) || !previous.has(run.id) ||
         !run.updated_at || previous.get(run.id) !== run.updated_at)
       return readRuns(selected, (run) => runWorkers(run.id))
     },
