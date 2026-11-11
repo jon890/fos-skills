@@ -1,8 +1,8 @@
-# ADR-007: Codex 용 매니페스트를 따로 두고 hook 을 싣지 않는다
+# ADR-007: Codex 용 매니페스트를 따로 두고 hook 을 넣지 않는다
 
 - **status**: `accepted`
 - **결정**: `.codex-plugin/plugin.json` 을 두고 `.claude-plugin/plugin.json` 과 같은 `name` 과 `skills` 배열만 담는다. `hooks` 와 `version` 은 넣지 않는다.
-- **맥락**: Codex 0.163.0 은 플러그인에 `.codex-plugin/plugin.json` 이 없으면 `.claude-plugin/plugin.json` 을 읽고, 그 `hooks` 가 가리키는 명령 hook 을 싣는다.
+- **맥락**: Codex 0.163.0 은 플러그인에 `.codex-plugin/plugin.json` 이 없으면 `.claude-plugin/plugin.json` 을 읽고, 그 `hooks` 가 가리키는 명령 hook 을 로드한다.
   Codex 는 새 hook 이나 바뀐 hook 을 실행 전에 신뢰 확인 화면으로 묻는다.
   fdf53e1 이 orch hook 3개를 더한 뒤 Codex 설치본이 2026-10-22 에 316ea9e 로 갱신되자, Codex worker 가 시작 때 「Hooks need review, 3 hooks are new or changed」 에서 멈추고 dispatch 가 failed 가 됐다.
   orch hook 은 Claude Code 의 Bash 호출을 막는 것이라 Codex worker 에는 쓸모가 없다. work-board 의 hooks 모듈도 Codex 는 읽지 못하고 경고만 낸다.
@@ -17,7 +17,7 @@
 - **결과**:
   - 얻는 것: Claude 쪽 hook 을 더하거나 고쳐도 Codex worker 의 시작이 막히지 않는다.
   - 감당할 것: 스킬을 더하면 두 매니페스트의 `skills` 배열을 함께 고친다. `scripts/tests/test_plugin_manifest.py` 가 두 배열이 같은지, Codex 쪽에 `hooks` 가 없는지, 루트에 `hooks/hooks.json` 이 없는지 확인한다.
-- **전환**: main 에 머지된 뒤 Codex 설치본을 갱신한다. 갱신 전에는 옛 설치본이 그대로 hook 을 싣는다.
+- **전환**: main 에 머지된 뒤 Codex 설치본을 갱신한다. 갱신 전에는 옛 설치본이 그대로 hook 을 로드한다.
 
   ```bash
   codex plugin marketplace upgrade fos-skills

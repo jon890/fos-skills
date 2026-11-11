@@ -14,7 +14,7 @@ claude plugin details fos-skills@fos-skills
 ```
 
 이 설치로 매니페스트의 skills 배열에 등록한 스킬을 받는다.
-`content-preview` 와 `korean-check` 의 원본은 여기 있고, 스킬로는 사본을 싣는 팀 저장소의 플러그인으로 받는다.
+`content-preview` 와 `korean-check` 의 원본은 여기 있고, 스킬로는 사본을 넣는 팀 저장소의 플러그인으로 받는다.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
 파일은 이 플러그인의 설치 캐시에도 남으므로 경로로 직접 읽고 실행할 수 있다.
 

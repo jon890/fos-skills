@@ -37,7 +37,7 @@
 
 - 루프 선택 검사는 기존 `spec-lint` 의 발견 규칙 하나로 더한다. launch-worker 는 지금처럼 spec-lint 결과로 막거나 넘긴다(종료 코드 5, `--lint-ack`).
 - 스펙 확인 검사는 plan 의 `check_feature.py` 와 같은 규칙(제목 아래 `확인: YYYY-MM-DD`)으로 본다. 경로는 지시서 대상 저장소 루트 기준 상대경로나 절대경로다.
-- 공통 지시서 틀과 `feature-loop.md` 에 첫 줄 형식과 예를 적고, 띄우기 보고에 `루프 없이` 이유를 한 줄로 싣는 지시를 더한다.
+- 공통 지시서 틀과 `feature-loop.md` 에 첫 줄 형식과 예를 적고, 띄우기 보고에 `루프 없이` 이유를 한 줄로 넣는 지시를 더한다.
 - spec 스킬 description 은 skill-creator 기준으로 고친다.
 
 ## 결정
