@@ -131,12 +131,5 @@ orch study set --slug "$SLUG" --status "글 씀" --note "$POST"
 
 ## 옛 표 파일 옮기기
 
-orch 5.16.0 전에는 `study/candidates.md` 한 파일의 표 한 줄이 후보 하나였다. 이 파일이 남아 있으면 doctor 와 명령이 stderr 로 알린다. 그 안의 후보는 세지 않는다.
-줄마다 slug 를 지어 한 번 옮긴다. 번호는 표의 위에서부터 1 이다.
-
-```bash
-orch study migrate --slug 1=minio-object-key-length --slug 2=... --slug 8=expand-contract
-```
-
-slug 가 빠진 줄이 있으면 `NEED-SLUG` 목록만 내고 아무 파일도 만들지 않는다. 옮기는 규칙은 `scripts/study/study-candidates.ts` 머리 주석의 `migrate` 가 소유한다.
-표 앞의 규칙 글은 옮기지 않는다. 그 저장소만의 규칙이었으면 오버레이의 「공부 후보」 칸에 옮겨 적는다.
+doctor 나 명령이 옛 표 파일 `study/candidates.md` 가 남았다고 알리면 `orch study migrate` 로 한 번 옮긴다. 옮기기 전에는 그 파일의 후보를 세지 않는다.
+옮기는 규칙과 `--slug` 는 `scripts/study/study-candidates.ts` 머리 주석의 `migrate` 가 소유한다. 표 앞의 규칙 글이 그 저장소만의 규칙이었으면 오버레이의 「공부 후보」 칸에 옮겨 적는다.

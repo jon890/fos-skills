@@ -32,7 +32,7 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 
 ### 사용자 결정 요청 바꾸기
 
-`decision-pending` 은 기본 핸들러(`scripts/handlers/decision-pending.ts`)가 있는 이벤트다. 새 사용자 결정을 현재 코디네이터에게 「정할 것 묻기」 로 넣고, 재시도은 [`waiting.md`](waiting.md) 의 「새 사용자 결정을 놓치지 않기」 가 소유한다. 저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력 필드는 `events.ts` 머리 주석이 소유한다. 이 핸들러는 묻기를 요청할 뿐 사용자의 답을 대신 정하지 않고, 전달했을 때만 0 으로 끝난다.
+`decision-pending` 은 기본 핸들러(`scripts/handlers/decision-pending.ts`)가 있는 이벤트다. 새 사용자 결정을 현재 코디네이터에게 「정할 것 묻기」 로 넣고, 재시도는 [`waiting.md`](waiting.md) 의 「새 사용자 결정을 놓치지 않기」 가 소유한다. 저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력 필드는 `events.ts` 머리 주석이 소유한다. 이 핸들러는 묻기를 요청할 뿐 사용자의 답을 대신 정하지 않고, 전달했을 때만 0 으로 끝난다.
 사용자 결정은 `decision-pending` 만 코디네이터를 깨우고, `worker-question` 은 기술 질문과 일반 escalation 만 맡는다.
 
 동시에 도는 worker 가 상한에 닿았으면 새 worker 를 띄우지 않는 `before-launch` 핸들러다. `.orch/hooks/before-launch.ts` 에 둔다.
@@ -132,7 +132,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 | `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
-| `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
+| `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
 | `INVALID-CONFIG <설정 칸> ...` (그 밖) | `config.json` 의 값이 틀렸다. 자동 머지 리뷰 조건(`queue.auto_review.require`)이면 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | 줄에 나온 이름이나 키를 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」, `inbox` 절) |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
@@ -141,29 +141,9 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 
 ## 옛 설정 칸 옮기기
 
-orch 5.2.0에서 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`와 대응 명령줄 옵션을 지웠다(목록은 `scripts/lib/config.ts` 의 `REMOVED_CONFIG_KEYS`). 일반 런타임 명령은 남은 설정을 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다.
-`orch doctor migrate-hooks --apply` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다.
-
-머지 큐와 worker 가 돌지 않을 때 옮긴다. `$REPO` 는 대상 저장소의 주 checkout 이다.
-
-1. 미리보기로 만들 핸들러와 지울 키를 본다. `옮기지 못함` 이나 `겹침` 줄이 있으면 그 이유를 먼저 푼다
-
-   ```bash
-   orch doctor migrate-hooks
-   ```
-
-2. 핸들러를 쓰고 설정에서 그 키를 지운다
-
-   ```bash
-   orch doctor migrate-hooks --apply
-   ```
-
-3. 만든 `.orch/hooks/<이벤트>.ts` 를 열어 옛 명령이 그대로 들었는지 본다. 그 파일은 저장소의 것이라 고쳐 써도 된다.
-   `추적 파일` 줄이 나왔으면 공개 저장소에 올리면 안 되는 값이 없는지 본 뒤 그 `git add -f` 명령으로 더해 커밋한다
-
-- 폴더를 옮기기 전이면 `--hooks` 는 아무것도 바꾸지 않고 종료 코드 2 로 멈춘다. 먼저 [`overlay.md`](overlay.md) 의 「옛 구조에서 옮기기」 를 한다
-- `PR번호:명령` 은 그 PR 하나에만 붙이는 명령이라 옮기지 않는다
-- 판정과 종료 코드는 `scripts/doctor/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
+`INVALID-CONFIG ... migrate-hooks` 가 나오면 머지 큐와 worker 가 돌지 않을 때 `orch doctor migrate-hooks` 로 미리보기를 보고 `--apply` 로 옮긴다. 지운 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다.
+만든 `.orch/hooks/<이벤트>.ts` 를 열어 옛 명령이 그대로 들었는지 본다. `추적 파일` 줄이 나왔으면 공개 저장소에 올리면 안 되는 값이 없는지 본 뒤 그 `git add -f` 명령으로 더해 커밋한다.
+지운 칸의 목록은 `scripts/lib/config.ts` 의 `REMOVED_CONFIG_KEYS` 가, 판정과 종료 코드는 `scripts/doctor/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다.
 
 ## 가드가 막는 호출
 
