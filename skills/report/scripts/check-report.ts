@@ -11,6 +11,7 @@
 // korean-check 의 검사기는 .md 만 받고, HTML 을 그대로 넘기면 태그로 시작하는 줄을 건너뛰어 금지어를 놓친다.
 // 그래서 --korean 은 보이는 글을 임시 .md 로 써서 넘긴다. 줄 머리의 <, |, # 는 \ 를 붙여
 // 표 행이나 제목으로 읽혀 검사에서 빠지지 않게 한다.
+// 표기가 통과해도 의미 점검은 남는다. 성공 출력에 korean-check 의 점검 문서 경로를 알린다.
 // korean-check 는 KOREAN_CHECK 환경 변수, 이 스킬의 형제 디렉터리, ~/.claude/skills/korean-check 순서로 찾는다.
 // 플러그인 설치본은 저장소 전체를 복사하므로 형제 디렉터리에 있다.
 //
@@ -448,6 +449,7 @@ function korean(path: string, shown: string): number {
     // 임시 파일 이름 대신 보고서 이름으로 알린다. 줄 번호는 --text 출력의 줄이다
     write(1, (result.stdout ?? '').replaceAll(md, `${shown} (--text 줄)`))
     write(2, result.stderr ?? '')
+    if (result.status === 0) write(1, '다음 단계: korean-check 의 references/review-axes.md 로 의미를 직접 점검한다.\n')
     return result.status ?? 1
   } finally {
     rmSync(dir, { recursive: true, force: true })
