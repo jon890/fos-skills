@@ -60,7 +60,7 @@ Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄
 
 「리뷰와 검증은 구현과 다른 제공자」 는 코디네이터가 따로 띄우는 리뷰 worker 에만 지켜진다.
 
-- plan 의 critic 과 verify 의 code-reviewer 는 해당 worker 와 같은 제공자로 돈다. 기존 계획은 implementation 안에서 돈다. 팀원은 worker 의 하네스가 띄운다([`team-spawn.md`](../../implementation/references/team-spawn.md) 「하네스별 대응」)
+- plan 의 critic 과 verify 의 code-reviewer 는 해당 worker 와 같은 제공자로 돈다. 스펙 없는 계획은 implementation 안에서 돈다. 팀원은 worker 의 하네스가 띄운다([`team-spawn.md`](../../implementation/references/team-spawn.md) 「하네스별 대응」)
 - Codex worker 도 자기 하위 에이전트 도구로 critic 과 검토자를 띄운다. Orca 머리말은 task 가 요청하지 않으면 하위 에이전트를 막는데, 공통 지시서 틀의 `review-subagents` 줄이 그 요청이다. 이 줄이 없는 공통 지시서로 띄우면 worker 가 검토를 빼거나 코디네이터에게 넘겨, 코디네이터가 검토를 대신 돌리는 동안 사용자 대화가 막힌다
 - 저장소 CI 리뷰의 제공자는 저장소마다 다르다. CI 리뷰가 구현과 같은 제공자면 그 PR 에는 다른 제공자의 눈이 없다
 - 다른 제공자의 리뷰가 필요하면 구현 worker 와 다른 제공자의 리뷰 worker 를 머지 전에 따로 띄우거나, 위 「리뷰 다양성」 으로 구현 제공자를 CI 리뷰와 다르게 고른다

@@ -1,0 +1,3 @@
+- 인계 블록에 「저장소 규칙 후보」 줄을 더했다. docs-consolidate 가 이 줄을 입력으로 받는다.
+- 스펙 없는 계획의 절차 문서 이름을 `legacy-workflow.md` 에서 `no-spec-workflow.md` 로 바꿨다.
+- 3단계 phase 구현이 PR 생성 문서를 가리키던 참조를 뺐다.
