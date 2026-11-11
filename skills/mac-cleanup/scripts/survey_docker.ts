@@ -8,12 +8,12 @@
 // 같은 소켓을 가리키는 context 는 container_runtimes.ts 가 런타임 하나로 합쳤으므로 런타임마다 한 번만 조사한다.
 // --runtime ID 를 주면 그 런타임 하나만 켜짐 여부와 상관없이 조사한다(승인받아 방금 켠 런타임). 이 맥 밖의 엔진은 조사하지 않는다.
 // 런타임마다 `## 런타임 ID` 절로 나누고, `docker_images.ts --context` 와 `docker_volumes.ts --context --peek N --json-out` 의 출력을 그대로 보인다.
-// volume 조사 JSON 은 DIR/volumes-<ID 의 :을 _로 바꾼 이름>.json 에 쓰고 그 경로를 출력한다. `delete_volumes.ts` 가 이 파일을 입력으로 받는다.
+// volume 조사 JSON 은 DIR/volumes-<ID 의 :을 _로 바꾼 이름>.json 에 쓰고, 두 조사가 모두 성공했을 때만 그 경로를 출력한다. 실패하면 이전 실행의 같은 파일도 지운다. `delete_volumes.ts` 가 이 파일을 입력으로 받는다.
 // 사용자의 현재 context 설정은 바꾸지 않는다. 한 런타임의 조사가 실패해도 나머지를 계속한다.
 //
 // 종료 코드: 0 조사 완료, 1 한 런타임이라도 조사가 실패함, 2 입력 오류.
 
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { readArgs, type Entry } from './cli.ts'
 import { readRuntimesFile, type Runtime } from './container_runtimes.ts'
@@ -97,11 +97,14 @@ export function main(argv: string[]): number {
   for (const rt of targets) {
     write(1, `\n## 런타임 ${rt.id} (${rt.label}, context=${rt.context})\n`)
     const volumes = join(outDir, volumesFileName(rt.id))
+    rmSync(volumes, { force: true }) // 이전 실행의 파일이 이번 조사 결과로 읽히지 않게 한다
     const images = runSurvey('이미지', [script('docker_images.ts'), '--context', rt.context!])
     const vols = runSurvey('volume', [script('docker_volumes.ts'), '--context', rt.context!, '--peek', peek, '--json-out', volumes])
-    if (vols) write(1, `volume 조사 파일: ${volumes}\n`)
-    if (!images || !vols) {
+    if (images && vols) {
+      write(1, `volume 조사 파일: ${volumes}\n`)
+    } else {
       failed = true
+      rmSync(volumes, { force: true })
       write(1, `${rt.id}: 조사에 실패했다. 이 런타임의 이미지와 volume 은 정리 후보에 넣지 않는다\n`)
     }
   }

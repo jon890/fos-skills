@@ -47,11 +47,14 @@ const ENTRY: Entry = {
   },
 }
 
+// 준비를 기다리는 기본 최대 초. 도구의 명령 시간 한도(120초)에 맞춘 값이다(스펙 DECISION8)
+export const START_TIMEOUT_SEC = 120
+
 export function main(argv: string[]): number {
   const args = readArgs(argv, ENTRY)
   if (typeof args === 'number') return args
   const id = args.options.runtime as string
-  const timeout = args.options.timeout === undefined ? 120 : parsePyFloat(args.options.timeout as string)
+  const timeout = args.options.timeout === undefined ? START_TIMEOUT_SEC : parsePyFloat(args.options.timeout as string)
   const interval = args.options.interval === undefined ? 2 : parsePyFloat(args.options.interval as string)
   let rt
   try {
@@ -68,15 +71,15 @@ export function main(argv: string[]): number {
     write(2, `${rt.label}(${rt.id}) 는 이 스킬이 켜지 않는다. 켜는 명령이 정해져 있지 않다\n`)
     return 2
   }
-  if (dockerResponds(rt.context)) {
+  const clock = () => performance.now() / 1000
+  const began = clock()
+  if (dockerResponds(rt.context, 10)) {
     write(1, `이미 켜져 있다: ${rt.label}(${rt.id})\n`)
     return 0
   }
 
-  const clock = () => performance.now() / 1000
-  const began = clock()
   write(1, `켜는 중: ${rt.label}(${rt.id})  ${rt.start_command.join(' ')}\n`)
-  const started = runText(rt.start_command, { timeoutSec: Math.max(1, timeout), closeStdin: true })
+  const started = runText(rt.start_command, { timeoutSec: Math.max(1, timeout - (clock() - began)), closeStdin: true })
   if (started.failure || started.code !== 0) {
     write(2, `켜지 못함: ${rt.label}(${rt.id}) 켜는 명령이 실패했다: ${started.failure ? started.message : started.stderr.trim() || `종료 코드 ${started.code}`}\n`)
     return 1

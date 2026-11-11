@@ -74,6 +74,16 @@ describe('REQ4 런타임별 조사', () => {
     assert.ok(existsSync(join(outDir, 'volumes-docker-desktop.json')))
   })
 
+  test('조사가 실패하면 volume 조사 파일 경로를 내지 않고 이전 실행의 같은 파일도 지운다', () => {
+    const { run, outDir } = setup([{ args: ['--context', 'orbstack', 'images'], stderr: 'boom', code: 1 }])
+    const stale = write(join(outDir, 'volumes-orbstack.json'), '{"volumes": []}')
+    const done = run()
+    assert.equal(done.code, 1)
+    assert.ok(!done.stdout.includes('volumes-orbstack.json'), done.stdout)
+    assert.ok(!existsSync(stale))
+    assert.ok(done.stdout.includes('volume 조사 파일: ') && done.stdout.includes('volumes-docker-desktop.json'))
+  })
+
   test('알 수 없는 로컬 런타임도 docker CLI 로 이미지와 volume 을 조사하고 volume 조사 파일을 쓴다', () => {
     const box = new Sandbox()
     const docker = box.fake('docker', [])

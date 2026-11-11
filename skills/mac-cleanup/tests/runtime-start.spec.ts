@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Sandbox, write } from './helpers.ts'
+import { START_TIMEOUT_SEC } from '../scripts/runtime_start.ts'
 import { makeRow, type Row } from './runtimes-helpers.ts'
 
 // 켜는 명령의 가짜. 호출을 LOG 에 남기고 MARKER 를 만든다. docker 의 info 는 MARKER 가 있어야 성공한다
@@ -40,6 +41,10 @@ function setup(env: Record<string, string | undefined> = {}) {
 }
 
 describe('REQ3 켜기', () => {
+  test('기다리는 기본 최대 시간은 120초다', () => {
+    assert.equal(START_TIMEOUT_SEC, 120)
+  })
+
   test('Docker Desktop 은 open -a Docker 로 켜고 docker info 가 성공하면 0 이다', () => {
     const { run, calls } = setup()
     const done = run('docker-desktop')
