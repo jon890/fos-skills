@@ -1,11 +1,7 @@
-# 기존 계획의 호환 절차
+# 스펙 없는 계획 절차
 
-`spec` 필드가 없는 기존 계획을 이어 갈 때만 읽는다. 새 기능에는 적용하지 않는다.
-이 문서의 `$SKILL_DIR` 은 계속 implementation 번들 루트다.
-
-# implementation
-
-**목표: plan 이 만든 `tasks/` 를 읽어 구현하고, 검토를 거쳐 PR 을 만든다.**
+`spec` 필드가 없는 계획과 task 없이 리뷰부터 도는 요청에서만 읽는다. 스펙이 있는 기능 계획에는 적용하지 않는다.
+이 문서의 `$SKILL_DIR` 은 implementation 번들 루트다.
 
 - 계획에 결함이 있으면 구현 전에 찾아낸다.
 - plan 하나는 PR 하나다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다(기준은 `plan` 의 `plan-size.md` 가 소유한다). `orch` worker 가 이 스킬을 돌 때도 그 PR 이 머지되면 끝낸다. 뒤 plan 은 코디네이터가 새 worker 로 띄운다.
@@ -31,14 +27,7 @@ team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문�
 
 ## 레포 설정
 
-레포 고유의 값은 아래 순서로 찾는다. 앞에서 찾으면 뒤를 보지 않는다.
-
-1. `<repo-root>/.claude/implementation-overlay.md`
-2. 옛 이름 `<repo-root>/.claude/build-with-teams-overlay.md`
-3. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
-4. 어디에도 없으면 사용자에게 확인한다
-
-모노레포 판정과 하위 프로젝트 오버레이 탐색은 [plan 의 `references/monorepo.md`](../../plan/references/monorepo.md) 를 따른다.
+레포 고유의 값을 찾는 순서와 모노레포 판정은 [plan 의 `references/monorepo.md`](../../plan/references/monorepo.md) 를 따른다. 어디에도 없으면 사용자에게 확인한다.
 
 | 설정 값 | 쓰는 단계 |
 | --- | --- |

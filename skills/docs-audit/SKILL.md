@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
-  version: "5.0.2"
+  version: "6.0.0"
 ---
 # docs-audit
 
@@ -34,7 +34,6 @@ metadata:
 지정이 없으면 현재 경로와 변경 파일을 기준으로 판정에 필요한 최소 범위를 정한다.
 
 **`<repo-root>/.claude/docs-audit-overlay.md` 가 있으면 먼저 읽고 코어보다 우선한다.**
-새 이름이 없으면 같은 위치의 `docs-check-overlay.md` 를 읽고 stderr 에 옛 이름 경고를 낸다. 이 호환은 다음 major(5.0.0)에서 제거한다.
 오버레이는 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 을 소유한다.
 없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)에서 문서 경계와 검증 명령을 찾는다.
 

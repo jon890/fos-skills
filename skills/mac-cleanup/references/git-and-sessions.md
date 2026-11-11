@@ -76,21 +76,10 @@ node "$SKILL_DIR/scripts/delete_branches.ts" "$SURVEY" --only merged --apply
 
 ### 지우는 기준
 
-스크립트는 아래 판단대로 동작한다. 기준을 바꿀 때나 스크립트가 유지한 이유를 읽을 때 본다.
+분류마다 `-d` 와 `-D` 를 쓰는 조건은 `delete_branches.ts` 머리 주석이 소유한다.
 
-**삭제 후보(`-d`)는 `git branch -d` 로 지운다.** 실측으로 후보 둘이 `not fully merged` 로 거절된 적이 있다.
-`survey_git.ts` 는 원격 기준 브랜치(JSON 의 `base`)와 비교하고, `git branch -d` 는 upstream 이 사라진 브랜치를 로컬 HEAD 와 비교하기 때문이다.
-로컬 main 이 뒤처졌거나 detached HEAD 이면 `origin/<기준>` 에는 포함된 브랜치도 거절된다.
-거절되면 아래 두 조건을 모두 확인하고, 둘 다 맞을 때만 `-D` 로 지운다. 하나라도 다르면 유지한다.
-
-1. `git rev-parse "$BR"` 가 조사 JSON 의 `tip` 과 같다
-2. `git merge-base --is-ancestor "$BR" "$BASE"` 가 종료 코드 0 이다
-
-사용자 체크아웃(로컬 main pull 등)은 이 때문에 바꾸지 않는다.
-
-**PR 머지됨(`-D`)은 squash 머지처럼 `--is-ancestor` 로 보이지 않는 머지다.**
-PR 조회(`survey_git.ts` 의 기본 동작)가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
-조사와 실행 사이에 커밋이 생길 수 있으므로, 실행 직전 `git rev-parse` 값이 조사 JSON 의 `tip` 과 같을 때만 `-D` 를 쓴다. 다르면 지우지 않는다.
+**삭제 후보(`-d`)가 `not fully merged` 로 거절될 수 있다.** `survey_git.ts` 는 원격 기준 브랜치(JSON 의 `base`)와 비교하고, `git branch -d` 는 upstream 이 사라진 브랜치를 로컬 HEAD 와 비교하기 때문이다.
+로컬 main 이 뒤처졌거나 detached HEAD 이면 `origin/<기준>` 에는 포함된 브랜치도 거절된다. 스크립트가 이때의 `-D` 조건을 확인하므로 사용자 체크아웃(로컬 main pull 등)은 바꾸지 않는다.
 
 **스크립트가 건드리지 않는 것.**
 

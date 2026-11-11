@@ -28,7 +28,7 @@
 | 비밀값 규칙 | 읽지 않을 파일, 비밀값을 넘기는 방법 | 2 |
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
-| 지시서 폴더 | `orch cleanup sweep --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더에 남은 옛 위치의 PR 본문 파일 `pr-<이름>.md` 를 지운다. 새 PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
+| 지시서 폴더 | `orch cleanup sweep --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서를 지운다. PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 공부 후보 | 사용자가 고른 후보를 글로 쓸 스킬 이름과 글이 놓일 저장소. 없으면 글을 쓸 때 어디에 쓸지 묻는다. 절차는 [`study-candidates.md`](study-candidates.md) | - |
 | 진행 보드 | 보드 파일 위치, 목표 항목 id(`orch board sync --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
@@ -147,7 +147,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | --- | --- |
 | `overlay.md` | 이 문서가 다루는 저장소 규칙 |
 | `config.json` | 위 「마무리 설정 파일」 |
-| `specs/` | 지시서와 `spec-common.md`. 옛 위치의 PR 본문 `pr-<이름>.md` 는 그 부모인 `.orch/` 에 있다. 지금 PR 본문 파일은 worker 세션 임시 폴더에 둔다 |
+| `specs/` | 지시서와 `spec-common.md`. PR 본문 파일은 worker 세션 임시 폴더에 둔다 |
 | `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
 | `state/` | 상주 루프와 충돌 알림이 기억하는 것. 생존·완료·끊김·미답변 기록과 무거운 검사 대기열이 있다. 알림은 Orca Run 메일함이 소유한다([`data-schema.md`](../../../docs/data-schema.md)) |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
@@ -179,19 +179,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 ## 옛 구조에서 옮기기
 
 `.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/` 에 파일이 남은 저장소에서는
-설정, 오버레이, 지시서 폴더를 읽는 진입점이 옮기는 명령을 알리고 종료 코드 2 로 멈춘다.
-옛 위치를 읽지 않으므로 그대로 돌면 저장소 값이 빠지거나 빈 새 폴더에서 조용히 시작하기 때문이다.
-
-| 진입점 | 멈추는 때 |
-| --- | --- |
-| `finish-pr.ts`, `handoff-cleanup.ts` | 설정을 `--config` 로 주지 않았을 때 |
-| `merge-with-finish.ts` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
-| `spec-lint` | `--overlay` 를 주지 않았을 때 |
-| `cleanup-sweep.ts` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
-| `launch-worker` | 늘. 셸 스크립트는 `orch paths check` 로 같은 검사를 한다 |
-| `orch paths --ensure` | 늘 |
-
-`orch queue conflicts` 는 알리기만 한다. 옛 `orch wait` 은 안내와 함께 끝난다.
+설정, 오버레이, 지시서 폴더를 읽는 진입점이 옮기는 명령을 알리고 종료 코드 2 로 멈춘다. 옛 위치는 읽지 않는다.
 
 머지 큐와 worker 가 모두 끝난 때에 옮긴다. 먼저 미리보기로 옮길 것과 옛 경로를 적은 파일을 본다.
 `$REPO` 는 대상 저장소의 주 checkout 이다.
@@ -201,13 +189,11 @@ orch doctor migrate --repo "$REPO"
 orch doctor migrate --repo "$REPO" --apply
 ```
 
-- 기본으로 옮기는 쌍과 판정은 스크립트 머리 주석과 `scripts/lib/paths.ts` 의 `DEFAULT_MOVES` 가 소유한다. 다른 곳에 둔 파일은 `--move 옛=새` 로 더한다
-- 살아 있는 dispatch, 터미널을 쥔 worker, 돌고 있는 머지 큐나 마무리가 있으면 `--apply` 를 거부한다(종료 코드 3). worker 는 지시서를 절대경로로 읽으므로 그 사이에 옮기면 끊긴다
-- 「옛 경로 참조」 로 나온 파일(포장 스크립트, 추적 문서, 로컬 설정)은 바꾸지 않는다. 그 저장소가 고친다. 기본 출력은 `OLD-REF <파일>:<줄>` 이고 줄 내용은 `--full` 이다
-- 「추적 파일」 로 나온 것(기본 출력의 `TRACKED <명령>`)은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
-- 「스크립트」 가 붙은 옛 경로 참조(`OLD-REF-SCRIPT`)는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
-- 옮기다 실패하면 그때까지 옮긴 것을 보이고 멈춘다. 원인을 고친 뒤 다시 돌리면 남은 것을 옮기고, 옮긴 뒤 고치는 단계는 `.orch` 전체를 다시 본다
-- 폴더를 옮긴 뒤 `config.json` 에 5.2.0에서 지운 칸이 남았으면 `orch doctor migrate-hooks --apply` 로 핸들러로 바꾼다. 순서는 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 가 소유한다
+- 옮기는 쌍, `--move`, `--apply` 를 거부하는 조건과 종료 코드는 `scripts/doctor/migrate-orch-dir.ts` 머리 주석이 소유한다
+- `OLD-REF <파일>:<줄>` 로 나온 파일(포장 스크립트, 추적 문서, 로컬 설정)은 스크립트가 바꾸지 않는다. 그 저장소가 고친다
+- `TRACKED <명령>` 으로 나온 추적 파일은 보인 `git mv` 명령으로 옮겨 커밋한다
+- `OLD-REF-SCRIPT` 로 나온 스크립트는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 진입점이 다시 멈춘다
+- 폴더를 옮긴 뒤 `config.json` 에 지운 칸이 남았으면 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 를 따른다
 
 ## 예시
 

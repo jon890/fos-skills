@@ -17,14 +17,14 @@ metadata:
 | --- | --- | --- | --- |
 | 1 | 사전 확인 | `plan_precheck.ts` 가 중복 실행을 찾지 못했고, 계획 브랜치의 분리된 작업 공간이 있다. 이어 하는 작업이면 `current_phase` 와 기존 커밋을 대조했다 | `scripts/plan_precheck.ts` |
 | 2 | 읽기와 위임 | 스펙·설계·phase 를 읽었고 executor 에게 맡길지 순차로 할지 정했다 | [`team-spawn.md`](references/team-spawn.md), [`role-executor.md`](references/role-executor.md), [`executor-routing.md`](references/executor-routing.md) |
-| 3 | phase 구현 | phase 마다 phase 테스트가 통과했고, `verify_task.ts --staged` 종료 코드가 0 이며, 한 커밋으로 끝났다 | [`step-finish.md`](references/step-finish.md) |
+| 3 | phase 구현 | phase 마다 phase 테스트가 통과했고, `verify_task.ts --staged` 종료 코드가 0 이며, 한 커밋으로 끝났다 | |
 | 4 | 누적 개발 검증 | 누적 변경에 저장소의 개발 검증 명령 종료 코드가 0 이다 | |
 | 5 | 인계 | 아래 인계 블록의 항목이 모두 채워졌다 | |
 
 ## 입력과 설정
 
-plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획과 task 없는 기존 리뷰 요청은
-[기존 계획의 호환 절차](references/legacy-workflow.md)로 이어 간다. 새 기능은 plan 으로 돌린다.
+plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 계획과 task 없이 리뷰부터 도는 요청은
+[스펙 없는 계획 절차](references/no-spec-workflow.md)로 이어 간다. 새 기능은 plan 으로 돌린다.
 기능 계획은 [단계 인계](../spec/references/feature-docs.md), [레포 설정 탐색](../plan/references/monorepo.md)을 읽는다.
 기준 브랜치, 검증 명령과 작업 공간 규칙은 설정 탐색으로 얻는다. 옛 `.claude/build-with-teams-overlay.md` 도 읽기 호환으로 받는다.
 
@@ -58,9 +58,8 @@ node "$PLAN_SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "$TASKS_DIR"
 ```
 
 phase 커밋 전에는 다음 검사로 해당 phase 의 staged 파일을 대조한다.
-다음 `current_phase` 갱신은 같은 커밋에 포함한다. 자기 계획 폴더 바로 아래 `index.json` 과 `phase-*.md` 는 변경 파일 표 없이 허용된다.
-메타데이터만 보완하는 커밋은 구현 파일 누락 검사에서 분리한다. 이 통과를 phase 구현 완료로 보지 않는다.
-구현 파일이 함께 있으면 현재 index 의 범위·변경 종류·신규 파일 누락을 검사한다. 앞 커밋의 diff 를 합치지 않으므로 phase 구현은 한 커밋으로 끝낸다.
+다음 `current_phase` 갱신은 같은 커밋에 포함한다. 계획 메타데이터를 변경 파일 표 없이 받는 예외는 `verify_task.ts` 머리 주석이 소유한다.
+앞 커밋의 diff 를 합치지 않으므로 phase 구현은 한 커밋으로 끝낸다. 메타데이터만 보완한 커밋의 통과를 phase 구현 완료로 보지 않는다.
 
 ```bash
 node "$PLAN_SKILL_DIR/scripts/verify_task.ts" --staged "$PHASE_FILE"
@@ -82,8 +81,11 @@ plan / 인수 검증 계획: <경로>, 요구사항: <ID 목록>
 변경 파일: <목록>
 개발 검증: <명령과 결과>
 원격 검증과 남은 것: <선행 조건, 명령, 기대값 또는 없음>
+저장소 규칙 후보: <일반화한 규칙 한 줄과 제안하는 넣을 곳> | 없음
 다음: verify
 ```
+
+저장소 규칙 후보로 적을 실패의 기준은 [`step-finish.md`](references/step-finish.md) 의 「반복될 실패를 후보로 적는다」 가 소유한다.
 
 ## 완료 기준
 

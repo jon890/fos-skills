@@ -55,7 +55,7 @@
 - 검사할 저장소 루트에서 부른다. git 저장소가 아니면 정적 검사가 종료 코드 2 로 멈춘다
 - Node 24 가 필요하다. 구조 검사, 링크·ADR 검사, 모노레포 판정이 모두 TypeScript 로 돈다
 - ADR 폴더가 `docs/adr` 가 아니거나 여럿이면 루트 `.claude/plan-overlay.md` 의 「ADR 폴더」 에 적는다. 맞는 폴더가 없으면 ADR 검사를 건너뛰고 링크만 본다
-- 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 은 `<repo-root>/.claude/docs-audit-overlay.md` 에 적을 수 있다. 없으면 같은 위치의 `docs-check-overlay.md` 를 읽고 경고한다. 둘 다 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 본다
+- 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 은 `<repo-root>/.claude/docs-audit-overlay.md` 에 적을 수 있다. 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 본다
 
 ## 함께 쓰는 스킬
 
