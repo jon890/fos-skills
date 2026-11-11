@@ -95,8 +95,8 @@ node "$SKILL_DIR/scripts/runtime_start.ts" "$RUNTIMES" --runtime "$RUNTIME"
 node "$SKILL_DIR/scripts/survey_docker.ts" "$RUNTIMES" --out-dir "$DOCKER_DIR" --runtime "$RUNTIME"
 ```
 
-Docker 는 승인한 런타임의 context 를 지정해 지운다. `$CONTEXT` 는 그 런타임의 context(조사 출력의 `context=`)이고, `docker context use` 로 사용자의 현재 context 를 바꾸지 않는다.
-이미지와 빌드 캐시 명령은 `references/targets.md` 가 소유한다. volume 은 `delete_volumes.ts` 가 그 런타임의 조사 파일에 적힌 context 로만 지운다.
+Docker 는 승인한 런타임의 엔진에만 지운다. `$CONTEXT` 는 그 런타임의 context(조사 출력의 `context=`)이고, `docker context use` 로 사용자의 현재 context 를 바꾸지 않는다.
+이미지와 빌드 캐시는 `docker_cleanup.ts` 가, volume 은 `delete_volumes.ts` 가 보낸다. 둘 다 그 런타임의 context 로만 보내고, 이 맥 밖의 엔진이면 종료 코드 5 로 거부한다. 이미지와 빌드 캐시 명령은 `references/targets.md` 가 소유한다.
 
 ## 5. 재측정과 보고
 

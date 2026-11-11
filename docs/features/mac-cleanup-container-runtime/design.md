@@ -7,7 +7,7 @@
 | ID | 해결 방법 |
 | --- | --- |
 | REQ1 | `container_runtimes.ts` 가 런타임 표(`RUNTIMES`)와 `docker context ls` 로 런타임별 줄과 `--json-out` 을 낸다 |
-| REQ2 | 표에 맞지 않는 로컬 unix 소켓은 `unknown`, ssh·tcp 는 `remote` 로 분류한다. `delete_volumes.ts` 는 유효 엔드포인트가 로컬 unix 가 아니면 삭제 전에 종료 코드 5 로 끝난다 |
+| REQ2 | 표에 맞지 않는 로컬 unix 소켓은 `unknown`, ssh·tcp 는 `remote` 로 분류한다. `delete_volumes.ts` 와 `docker_cleanup.ts` 는 유효 엔드포인트가 로컬 unix 가 아니면 삭제 전에 종료 코드 5 로 끝난다 |
 | REQ3 | 꺼진 런타임 줄에 켜는 명령이 나온다. `runtime_start.ts` 가 표의 켜는 명령을 돌리고 `docker info` 를 최대 120초 기다리며, 넘으면 「켜지 못함」 과 종료 코드 1 이다 |
 | REQ4 | `container_runtimes.ts` 가 소켓을 realpath 로 풀어 context 를 런타임 하나로 합친다. `docker_images.ts`, `docker_volumes.ts`, `delete_volumes.ts` 는 `--context` 로 `docker --context` 를 붙인다. `survey_docker.ts` 가 켜진 런타임마다 두 조사를 돌린다. 현재 context 설정은 읽지도 쓰지도 않는다 |
 | REQ5 | `runtime_reclaim.ts` 가 런타임 표의 `reclaim` 값으로 갈라진다. `fstrim` 은 기존 `colima_trim.ts` 를 그대로 부르고, `disk-size` 는 전후 크기만 재고, `none` 은 회수하지 않았다고 보고한다 |
@@ -24,10 +24,11 @@ Java 로 빗대면 `RUNTIMES` 는 enum 이고, 각 스크립트는 그 enum 을 
 | `runtime_start.ts` | 승인된 런타임 하나를 켜고 준비를 기다린다 | 켜기 제한 시간 120초 |
 | `survey_docker.ts` | 켜진 로컬 런타임마다 이미지와 volume 조사를 돌려 런타임별 출력과 파일로 나눈다 | 런타임별 volume JSON 파일 이름 |
 | `docker_images.ts`, `docker_volumes.ts`, `delete_volumes.ts` | 이미 있던 조사와 삭제. `--context` 만 더한다 | 기존 출력 계약 |
+| `docker_cleanup.ts` | 승인한 런타임의 엔진에 이미지 삭제와 빌드 캐시 삭제를 보낸다. 맥 밖 엔진이면 종료 코드 5 로 거부한다 | 삭제 동작과 종료 코드 5 |
 | `runtime_reclaim.ts` | 정리 뒤 회수. 방법은 표에서 고른다 | 회수 결과 출력 |
 | `colima_trim.ts` | Colima 의 fstrim 반복. 바뀌지 않는다 | 재시도, 시간 상한, 종료 코드 0/1/2 |
 
-의존 방향은 `survey_docker`, `runtime_start`, `runtime_reclaim`, `delete_volumes` 에서 `container_runtimes` 로 간다. `container_runtimes` 는 `io`, `pylike` 만 쓴다. `docker_volumes.ts` 의 `docker()` 가 `--context` 를 붙이는 한 곳이다.
+의존 방향은 `survey_docker`, `runtime_start`, `runtime_reclaim`, `delete_volumes`, `docker_cleanup` 에서 `container_runtimes` 로 간다. `container_runtimes` 는 `io`, `pylike` 만 쓴다. `docker_volumes.ts` 의 `docker()` 가 `--context` 를 붙이는 한 곳이다.
 
 ## 결정
 
@@ -40,6 +41,9 @@ Java 로 빗대면 `RUNTIMES` 는 enum 이고, 각 스크립트는 그 enum 을 
 | 삭제 대상 context 기록 | `docker_volumes.ts --json-out` 이 `context` 를 적고 `delete_volumes.ts` 가 그 값을 쓴다 | 조사한 런타임과 지우는 런타임이 달라지지 않는다. 필드는 있을 때만 읽으므로 기존 파일도 읽힌다(없으면 현재 context) |
 | 원격 판정 | 유효 엔드포인트를 `docker context inspect [이름]` 으로 읽는다. context 를 안 줬으면 `DOCKER_CONTEXT`(docker 에서 `DOCKER_HOST` 보다 우선), 그다음 `DOCKER_HOST` 를 쓴다. unix 가 아니거나 비면 5 로 거부하고, 읽지 못하면 4 로 끝난다 | 삭제 도구는 실패하면 닫힌다(fail-closed). 맥 밖 데이터를 지우지 않는다는 DECISION9 를 지킨다 |
 | 런타임 ID | `docker-desktop`, `orbstack`, `colima:<프로필>`, `unknown:<context>`, `remote:<context>` | 사용자에게 묻는 묶음 이름과 명령 인자가 같은 문자열이다 |
+| 이미지·빌드 캐시 삭제 | `docker_cleanup.ts` 가 런타임 조사 파일과 id 를 받아 그 context 로만 보내고, 맥 밖 엔진은 5 로 거부한다. 문서에는 `docker rmi` 를 직접 쓰지 않는다 | 문서 규칙만으로는 조사 뒤 context 가 바뀌거나 잘못 고른 id 를 막지 못한다. volume 삭제와 같은 가드를 쓴다 |
+| 기대한 context 이름이 다른 엔진을 가리킬 때 | 소켓이 맞는 context 만 런타임에 잇는다. 이름이 이미 다른 엔드포인트에 쓰이면 그 런타임은 context 없이 꺼진 채 두고 켜지 않는다(`note` 에 이유) | 이름만으로 잇으면 원격 엔진이 로컬 런타임 정리 후보로 보인다 |
+| volume 조사 파일 이름 | 읽기 쉬운 id 조각에 id 전체의 해시 8자리를 붙인다 | `foo+bar` 와 `foo_bar` 가 같은 이름이 되면 한 파일이 다른 런타임의 조사를 덮는다 |
 | `survey_system.ts` Docker 절 | 뺀다 | 런타임별 조사는 `container_runtimes.ts` 가 한다. 이 절은 현재 context 하나와 Colima 만 봤다 |
 | 켜진 판정 | `docker --context <이름> info` 성공(15초 제한) | 소켓 파일은 런타임이 꺼져도 남을 수 있다. `colima status` 는 Colima 만 안다 |
 

@@ -1,5 +1,5 @@
 - 컨테이너 런타임(Docker Desktop, Colima, OrbStack)을 감지해 런타임마다 켜짐 여부, context, VM 디스크 크기를 조사한다. 꺼진 런타임은 런타임마다 승인받아 켜고 조사한다
-- 표에 없는 로컬 엔진은 「알 수 없는 런타임」 으로 조사와 정리만 하고, ssh·tcp 엔진은 크기만 보인다. `delete_volumes.ts` 는 맥 밖 엔진을 종료 코드 5 로 거부한다
+- 표에 없는 로컬 엔진은 「알 수 없는 런타임」 으로 조사와 정리만 하고, ssh·tcp 엔진은 크기만 보인다. `delete_volumes.ts` 와 이미지·빌드 캐시 삭제용 `docker_cleanup.ts` 는 맥 밖 엔진을 종료 코드 5 로 거부한다
 - 이미지와 volume 조사·삭제가 `--context` 로 런타임을 나눈다. `runtime_reclaim.ts` 가 정리 뒤 VM 디스크를 런타임별로 회수한다(Colima 는 기존 fstrim 반복)
 - 5단계 보고가 호스트 여유 전후(확보량), 런타임별 디스크 파일 전후(참고), 정리하지 않은 런타임을 따로 요구한다. 런타임별 값은 `references/runtimes.md` 가 소유한다
 - `survey_system.ts` 의 Colima 전용 Docker 절을 `container_runtimes.ts` 로 옮겼다

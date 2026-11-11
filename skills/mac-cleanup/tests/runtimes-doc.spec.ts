@@ -56,6 +56,7 @@ describe('REQ6 문서가 런타임 이름을 전제하지 않는다', () => {
   test('SKILL.md 가 부르는 스크립트와 references 파일이 모두 있다', () => {
     const scripts = new Set([...skill.matchAll(/scripts\/([a-z_]+\.ts)/g)].map((m) => m[1]))
     assert.ok(scripts.has('container_runtimes.ts') && scripts.has('runtime_start.ts') && scripts.has('runtime_reclaim.ts') && scripts.has('survey_docker.ts'))
+    assert.ok(targets.includes('docker_cleanup.ts') && !/docker --context \S+ (rmi|builder)|docker builder prune/.test(skill + targets), '이미지·빌드 캐시 삭제는 docker_cleanup.ts 로만 안내한다')
     for (const name of scripts) assert.ok(existsSync(join(SKILL_DIR, 'scripts', name)), name)
     for (const m of skill.matchAll(/references\/([a-z-]+\.md)/g)) assert.ok(existsSync(join(SKILL_DIR, 'references', m[1])), m[1])
   })

@@ -53,7 +53,7 @@ rm -rf "${DIR:?}"
 | uv | 안전 | `uv cache clean` |
 | pip | 안전 | `pip3 cache purge` |
 | pnpm | 안전 | `pnpm store prune` |
-| Docker 빌드 캐시 | 안전 | `docker --context "$CONTEXT" builder prune -af` (승인한 런타임마다. `$CONTEXT` 는 아래 「Docker」 참고) |
+| Docker 빌드 캐시 | 안전 | `docker_cleanup.ts builder-prune` (승인한 런타임마다. 아래 「Docker」 참고) |
 | bun | 안전 | `pgrep -fl 'bun install'` 로 설치 중인 bun 이 없는지 본 뒤 `rm -rf "${HOME:?}/.bun/install/cache"` |
 
 **`npm cache clean --force` 는 `~/.npm/_cacache` 만 비운다.** `~/.npm/_npx` 는 그대로라 종료 코드 0 이어도 확보량이 0 일 수 있다(실측: `~/.npm` 3.4GB 가 전부 `_npx` 였다). 확보량은 `~/.npm` 합계가 아니라 `_cacache` 크기로 약속한다.
@@ -84,8 +84,8 @@ rm -rf "${DIR:?}"
 ## Docker
 
 런타임이 하나가 아닐 수 있다. 런타임마다 다른 값(소켓, context, VM 디스크 파일, 켜는 명령, 회수 방법)은 `references/runtimes.md` 의 표가 소유한다. 이 절은 런타임과 무관한 정리 절차만 적는다.
-`$CONTEXT` 는 승인한 런타임의 docker context 이고 `survey_docker.ts` 출력의 `## 런타임 ... context=` 에 보인다. 모든 Docker 명령에 `--context "$CONTEXT"` 를 붙이고 사용자의 현재 context 는 바꾸지 않는다.
-이 맥 밖의 엔진(ssh·tcp)은 정리하지 않는다. `delete_volumes.ts` 는 그런 엔드포인트면 종료 코드 5 로 거부한다.
+`$RUNTIME` 은 승인한 런타임의 id 이고 `survey_docker.ts` 출력의 `## 런타임 ...` 에 보인다. 삭제 명령은 스크립트가 그 런타임의 context 를 지정해 보내므로 사용자의 현재 context 는 바뀌지 않는다.
+이 맥 밖의 엔진(ssh·tcp)은 정리하지 않는다. `delete_volumes.ts` 와 `docker_cleanup.ts` 는 그런 엔드포인트면 dry-run 도 --apply 도 종료 코드 5 로 거부한다.
 
 - **prune 해도 호스트 디스크는 바로 늘지 않을 수 있다.** VM 디스크 파일이 그대로면 `scripts/runtime_reclaim.ts` 로 회수해야 반영된다. 런타임마다 회수 방법이 다르고, 어떤 런타임은 디스크 파일을 스스로 줄이므로 `runtime_reclaim.ts` 는 전후 크기만 보고한다(`references/runtimes.md`).
   **volume 을 지운 직후 이어서 돌리면 회수가 덜 될 수 있다.** 재시도와 시간 상한, 종료 코드는 `runtimes.md` 의 `fstrim` 절이 소유한다.
@@ -109,11 +109,19 @@ node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES"                    # dry-
 node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply            # 테스트 DB
 node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply --kind other   # 따로 승인받은 other
 ```
-- 이미지는 `scripts/docker_images.ts --context "$CONTEXT"` 가 사용 중, 미사용, 최근 생성으로 나눈다(`survey_docker.ts` 가 런타임마다 돌린다).
-- 이미지는 각 줄 끝의 `rmi=` 값으로 `docker --context "$CONTEXT" rmi "$REF"` 처럼 지운다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 `repo:tag` 로 지운다. 다만 `repo:tag` 로 조회되지 않는 이미지도 이미지 ID 다. 이름이 `repo:tag@digest` 로 저장된 이미지는 `docker images` 가 태그를 보여 줘도 `docker rmi repo:tag` 가 `No such image` 로 실패한다. 실측 사례는 `ghcr.io/actions/actions-runner:2.338.0` 이다. 이 줄은 `rmi=4ffadc0002b2` 로 지워졌다.
+- 이미지는 `scripts/docker_images.ts` 가 사용 중, 미사용, 최근 생성으로 나눈다(`survey_docker.ts` 가 런타임마다 돌린다).
+- 이미지는 각 줄 끝의 `rmi=` 값을 `docker_cleanup.ts rmi` 에 넘겨 지운다(dry-run 으로 먼저 보인 뒤 승인한 것만 `--apply`). 옵션은 위치 인자 앞에 둔다. `$REF` 는 그 값이고, `docker rmi` 는 REF 마다 따로 불린다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 `repo:tag` 로 지운다. 다만 `repo:tag` 로 조회되지 않는 이미지도 이미지 ID 다. 이름이 `repo:tag@digest` 로 저장된 이미지는 `docker images` 가 태그를 보여 줘도 `docker rmi repo:tag` 가 `No such image` 로 실패한다. 실측 사례는 `ghcr.io/actions/actions-runner:2.338.0` 이다. 이 줄은 `rmi=4ffadc0002b2` 로 지워졌다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
 - 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.ts` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `runtime_reclaim.ts` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
+
+`$REF` 는 지울 이미지의 `rmi=` 값이다.
+
+```bash
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" "$RUNTIMES" rmi "$REF"                    # dry-run
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" rmi "$REF"
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" builder-prune
+```
 
 ## Gradle
 
