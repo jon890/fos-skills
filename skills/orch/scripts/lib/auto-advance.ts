@@ -32,8 +32,11 @@ export function firstPendingStep(file: string, item: Record<string, unknown>): P
     text: step.text, key: hideEventTag(step.text), body: parsed?.body ?? step.text }
 }
 
-function boardViews(file: string, items: Record<string, unknown>[]): BoardView[] {
-  return items.map(item => ({
+function boardViews(file: string, items: Record<string, unknown>[], pr: string): BoardView[] {
+  // 단계 고르기는 보드 도구가 맡되, 해당 PR 의 근거가 될 수 있는 항목만 조회한다.
+  const related = items.filter(item => prNumbers(item.pr).has(pr) || prNumbers(item['merged-pr']).has(pr) ||
+    JSON.stringify([item.details, item.next]).includes(`(#${pr} `))
+  return related.map(item => ({
     pr: [...prNumbers(item.pr)], mergedPr: [...prNumbers(item['merged-pr'])], stages: stagesOf(item),
     steps: (stagesOf(item) || JSON.stringify([item.details, item.next]).includes('(#') ?
       boardSteps(process.env.BOARD_BIN || BOARD_BIN, String(item.id), file) ?? [] : [])
@@ -75,12 +78,12 @@ export function checkAdvance(repo: string, id: string, opts: { board?: string; r
     const launches = stepLaunches(repo, id, step.key)
     input.launched = launches.length > 0
     input.busy = busyOf(repo, item, launches, opts.run)
-    let views: BoardView[] | undefined
+    const views = new Map<string, BoardView[]>()
     input.evidence = parseEvidence(step.body).map(evidence => {
       let problem: string | null = null
       if (evidence.kind === 'event') {
-        views ??= boardViews(file, items)
-        if (!eventDone(views, evidence.pr, evidence.event)) problem = R.eventPending
+        if (!views.has(evidence.pr)) views.set(evidence.pr, boardViews(file, items, evidence.pr))
+        if (!eventDone(views.get(evidence.pr)!, evidence.pr, evidence.event)) problem = R.eventPending
       } else {
         const expanded = evidence.path.startsWith('~/') ? join(homedir(), evidence.path.slice(2)) : evidence.path
         const target = isAbsolute(expanded) ? expanded : join(mainCheckout(repo), expanded)

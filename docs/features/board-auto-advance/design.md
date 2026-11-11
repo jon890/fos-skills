@@ -174,6 +174,8 @@ orch 의 층 규칙([ADR-028](../../adr/028-orch-core-layer.md))을 그대로 �
   - `pr`: `pr` 이나 `merged-pr` 필드에 N 이 있고 `stages` 의 pr 번호 줄이 끝났다.
   - `deploy`, `release`: 그 항목의 PR 이 N 하나뿐일 때만(`pr` 과 `merged-pr` 을 합쳐 N 뿐) `stages` 의 그 사건 번호 줄이 끝난 것을 받는다. PR 이 여럿인 항목은 앞 PR 의 배포가 그 줄을 이미 끝냈을 수 있어, 끝난 꼬리표 줄만 받는다.
 
+앞 사건의 단계 목록은 해당 PR 번호가 `pr`·`merged-pr` 필드에 있거나 줄 끝 꼬리표에 든 항목만 보드 도구로 읽는다. 관련 없는 마일스톤 항목은 프로세스를 띄우지 않고, 같은 PR 근거는 한 번 읽은 결과를 함께 쓴다.
+
 ### 띄운 기록 `state/step-launches.jsonl`
 
 worker 를 띄우는 두 곳(`launch-worker.ts`, 후속 지시서를 보내는 `send-to-worker.ts`)이, 지시서의 `보드 항목 id:` 줄(`lib/spec.ts` 의 `boardIdOf`)이 가리키는 항목의 첫 미완료 단계가 `[auto]` 이고 지시서 머리의 `자동 진행 단계: <번호>` 와 같을 때만 한 줄을 덧붙인다. 같은 항목의 다른 실행은 기록하지 않는다.

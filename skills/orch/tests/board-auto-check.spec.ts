@@ -30,15 +30,16 @@ function setup(t: { after(fn: () => void): void }) {
   const item = (text = '2. [auto] PR4 (계획: docs/plan)', extra = {}) => ({ id: 'a', status: 'doing', details: [{ text: '1. 앞 단계', done: true }, { text, done: false }], ...extra })
   const put = (rows = [item()]) => writeFileSync(board, JSON.stringify({ items: rows }))
   put()
+  const extraEnv: Record<string, string> = {}
   const run = (args: string[] = ['a', '--run', 'R'], cwd = repo, entry = script) => {
     const result = spawnSync(process.execPath, [entry, ...args], { cwd, encoding: 'utf8', env: { ...process.env,
       ORCH_DIR: join(repo, '.orch'), BOARD_BIN: '', ORCA: join(bin, 'orca'), GH: join(bin, 'gh'), ORCH_GH_CACHE: '0',
-      ORCH_SCRIPTS_DIR: fileURLToPath(new URL('../scripts', import.meta.url)), ORCH_OUTPUT: '',
+      ORCH_SCRIPTS_DIR: fileURLToPath(new URL('../scripts', import.meta.url)), ORCH_OUTPUT: '', ...extraEnv,
     } })
     return { ...result, first: result.stdout.trim().split('\n')[0] }
   }
   const launch = (text = '2. [auto] PR4 (계획: docs/plan)') => writeFileSync(join(repo, '.orch/state/step-launches.jsonl'), JSON.stringify({ item: 'a', step: text, dispatch: 'ctx_9', branch: 'feat/x' }) + '\n')
-  return { repo, root, board, log, put, item, run, setState, launch }
+  return { repo, root, board, log, put, item, run, setState, launch, extraEnv }
 }
 
 test('통과는 읽기만 하고 진입점에서는 판정 줄만 보인다', t => {
@@ -95,6 +96,24 @@ test('앞 사건은 완료 꼬리표와 merged-pr 을 모든 항목에서 찾는
   assert.equal(c.run().status, 0)
   c.put([next])
   assert.equal(c.run().first, 'AUTO-REJECT a 2 앞 사건이 끝나지 않았다')
+})
+
+test('앞 사건과 관련 없는 마일스톤 항목은 단계 조회 프로세스를 띄우지 않는다', t => {
+  const c = setup(t)
+  const calls = join(c.root, 'board-calls.jsonl')
+  const wrapper = join(c.root, 'board.ts')
+  const real = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
+  writeFileSync(wrapper, `import fs from 'node:fs'; import {spawnSync} from 'node:child_process'; const args=process.argv.slice(2); fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n'); const r=spawnSync(process.execPath,[${JSON.stringify(real)},...args],{stdio:'inherit'}); process.exitCode=r.status;`)
+  c.extraEnv.BOARD_BIN = wrapper
+  c.put([
+    c.item('2. [auto] 다음 (앞 사건: #665 merge) (앞 사건: #665 merge)'),
+    { ...c.item(), id: 'related', details: [{ text: '3. 머지 (#665 merge)', done: true }] },
+    ...Array.from({ length: 20 }, (_, i) => ({ ...c.item(), id: `other-${i}`, pr: i + 100, stages: 'pr=1,merge=2' })),
+  ])
+  const r = c.run()
+  assert.equal(r.status, 0, r.stderr)
+  const read = readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.deepEqual(read.map(args => args.slice(0, 2)), [['steps', 'a'], ['steps', 'related']])
 })
 
 test('진행 중인지 먼저 확인하고 같은 단계의 재실행을 막는다', t => {
