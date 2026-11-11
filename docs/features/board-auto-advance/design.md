@@ -386,7 +386,7 @@ PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). gh pr view 로 확인한다. 지
 | --- | --- | --- | --- |
 | 언제든 | PR M 「머지 알림 글」 | 머지를 worker 에게 알리는 글을 함수 하나로 모으고 바꾼다. 테스트 둘의 글 단언 | 없음. 표시와 무관하다 |
 | 0 | 보드 명령 구현(다른 기능) | 그 설계의 PR1~PR4: 잠금, 보드 파일 찾기, `orch board set`·`step`·`add-step`·`show`, 마지막 PR 규칙과 `BOARD-UNMATCHED` | 없음 |
-| 1 | PR A 「표시와 코디네이터 규칙」 | `step-marks.js`, `core/evidence.ts`, `core/auto-advance.ts`, `prSteps` 의 근거 괄호 빼기, `orch board auto-check`, 띄운 기록, `board.auto_advance`, `board.md`·`replying.md`·`waiting.md` 규칙과 공통 지시서 틀의 한 줄. 계획: [tasks/marks-and-rules](tasks/marks-and-rules/index.json) | 0 이 머지됨 |
+| 1 | PR A 「표시와 코디네이터 규칙」 | `step-marks.js`, `core/evidence.ts`, `core/auto-advance.ts`, `prSteps` 의 근거 괄호 빼기, `orch board auto-check`, 띄운 기록, `board.auto_advance`, `board.md`·`replying.md`·`waiting.md` 규칙과 공통 지시서 틀의 한 줄. 구현과 검증 기록: [보드 다음 단계의 자동 진행을 확인하고 기록한다](https://github.com/jon890/fos-skills/pull/446) | 0 이 머지됨 |
 | 2 | PR B 「루프 알림」 | `STEP-READY`, 알림 기록, 멈춘 단계 판정, 시각 wait(`waitTimeMs` 포함), 사용 한도 시각과 다시 알림, `auto-check` 의 한도 거절 | 1 이 머지됨 |
 | 그 뒤 | 보드 명령의 표시 전용 동작(다른 기능, 그 설계의 PR5) | `step … auto\|ask\|wait\|plain` | 1 이 머지됨 |
 | 그 뒤 | 승인 버튼 PR1(다른 기능) | `[ask]` 문단을 승인 대기로 바꾸기 | 1 이 머지됨. 먼저 머지되면 PR A 가 승인 대기 꼴로 바로 적는다 |
