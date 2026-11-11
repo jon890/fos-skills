@@ -1167,6 +1167,42 @@ test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 �
 })
 
 
+for (const mode of ['auto', 'ask', 'none', 'no-id', 'no-board', 'board-fails', 'record-fails', 'stalled', 'unrelated', 'other-step']) {
+  test(`단계 띄운 기록은 보드 갱신과 별개로 남긴다: ${mode}`, () => {
+    const init = spawnSync('git', ['init', '-b', 'feat/next', worktree], { env, encoding: 'utf8' })
+    assert.equal(init.status, 0, init.stderr)
+    writeFileSync(join(worktree, '.git/info/exclude'), '/.omc/\n/.orch/\n')
+    const file = join(worktree, '.omc/board.json')
+    const step = `2. ${mode === 'ask' ? '[ask] ' : mode === 'none' ? '' : '[auto] '}PR2 (계획: docs/p)`
+    if (mode !== 'no-board') {
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, JSON.stringify({ items: [{ id: 'board-id', status: 'doing', details: [{ text: '1. PR1', done: true }, { text: step, done: false }] }] }))
+    }
+    writeFileSync(spec, `# 다음 일\n허락: push\n브랜치: feat/next\n${mode === 'no-id' ? '' : '보드 항목 id: board-id\n'}${mode === 'unrelated' ? '' : `자동 진행 단계: ${mode === 'other-step' ? 3 : 2}\n`}\n## 할 일\n1. 구현\n`)
+    const record = join(worktree, '.orch/state/step-launches.jsonl')
+    if (mode === 'record-fails') mkdirSync(record, { recursive: true })
+    if (mode === 'board-fails') {
+      const bin = join(tmp, 'board-fails.ts')
+      const real = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
+      writeFileSync(bin, `import {spawnSync} from 'node:child_process'; if(process.argv[2]!=='steps') process.exit(1); const r=spawnSync(process.execPath,[${JSON.stringify(real)},...process.argv.slice(2)],{stdio:'inherit'}); process.exit(r.status);`)
+      env.BOARD_BIN = bin
+    }
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown(mode === 'stalled' ? 'worktree_creating' : 'input_accepted') } })
+    const r = launch(['--worktree', worktree, '--watch', mode === 'stalled' ? '1' : '0', '--', ...CODEX])
+    assert.equal(r.code, ['stalled', 'no-id'].includes(mode) ? 1 : 0, both(r))
+    if (mode === 'no-id') { assert.match(r.stderr, /보드 항목 id/); assert.deepEqual(lines('orca orchestration worker-start'), []) }
+    if (['auto', 'board-fails', 'stalled'].includes(mode)) {
+      const rows = readFileSync(record, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+      assert.equal(rows.length, 1)
+      assert.deepEqual({ ...rows[0], at: undefined }, { at: undefined, item: 'board-id', number: 2, step, dispatch: 'ctx_1', branch: 'feat/next' })
+    } else if (mode === 'record-fails') {
+      assert.match(r.stdout, /^LAUNCHED /m)
+      assert.match(r.stderr, /띄운 단계 기록을 남기지 못했다/)
+      assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, 'doing')
+    } else assert.equal(existsSync(record), false)
+  })
+}
+
 test('설정이 보드를 가리키는데 파일이 없으면 LAUNCHED 는 두고 알린다', () => {
   mkdirSync(join(worktree, '.orch'), { recursive: true })
   writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ finish: { board: '.omc/board.json' } }))

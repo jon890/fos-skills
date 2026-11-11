@@ -59,6 +59,15 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 const SELECTED = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.'
 const NO_LOOP = '## 할 일\n루프 없이: 테스트 지시서다'
 
+test('자동 진행 단계에서 항목 id가 빠졌거나 번호가 틀리면 실행 지시서를 거절한다', () => {
+  for (const header of ['자동 진행 단계: 2', '보드 항목 id: a\n자동 진행 단계: zero']) {
+    const r = lint([spec('auto', header)])
+    assert.equal(r.code, 1)
+    assert.match(r.stdout, /보드 자동 단계:/)
+  }
+  assert.equal(lint([spec('valid-auto', '보드 항목 id: a\n자동 진행 단계: 2')]).code, 0)
+})
+
 function spec(name: string, text: string): string {
   return write(join(specs, `${name}.md`), `${text}\n# ${name}\n${SELECTED}\n${NO_LOOP}\n`)
 }

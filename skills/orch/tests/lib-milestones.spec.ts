@@ -91,6 +91,9 @@ describe('단계 정의', () => {
 })
 
 describe('boardSettings', () => {
+  test('자동 진행 값은 다른 보드 설정을 읽을 때 검사하지 않는다', () => {
+    for (const auto_advance of ['no', false]) assert.deepEqual(boardSettings(repo({ board: { auto_advance } })), boardSettings(repo(undefined)))
+  })
   test('설정이 없으면 단계도 done 지점도 배포도 없다', () => {
     assert.deepEqual(boardSettings(repo(undefined)), { steps: null, doneAfter: null, deploy: null, taskLine: null })
   })

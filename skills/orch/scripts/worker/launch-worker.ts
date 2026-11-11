@@ -140,7 +140,8 @@ import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
-import { branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOf, branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { recordStepLaunch } from '../lib/auto-advance.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
@@ -610,6 +611,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (gate.stop !== null) return gate.stop
 
   const specText = readFileSync(a.spec, 'utf8')
+  const autoStep = autoStepNumberOf(specText)
   const candidateOverride = candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
@@ -824,6 +826,12 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       err(`launch-worker: 띄우기 이력을 기록하지 못했다: ${(e as Error).message}`)
     }
 
+    try {
+      const id = boardIdOf(text)?.id
+      if (id) recordStepLaunch(repo, id, dispatch, common.branch || null, autoStep)
+    } catch (e) {
+      err(`launch-worker: 띄운 단계 기록을 남기지 못했다: ${(e as Error).message}`)
+    }
     try {
       registerBoard(repo, a.spec, worktree, a.name, common.branch || '')
     } catch (e) {

@@ -1,3 +1,4 @@
+import { autoStepNumberOf } from '../scripts/lib/spec.ts'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -393,4 +394,14 @@ describe('liveSpecPaths', () => {
     )
     assert.deepEqual(liveSpecPaths('run_x'), new Set([spec]))
   })
+})
+
+test('자동 진행 단계는 지시서 머리에 명시한 번호만 읽는다', () => {
+  assert.equal(autoStepNumberOf('# 일\n보드 항목 id: a\n자동 진행 단계: 2\n'), 2)
+  assert.equal(autoStepNumberOf('# 일\n보드 항목 id: a\n'), null)
+  assert.throws(() => autoStepNumberOf('# 일\n자동 진행 단계: 2\n'), /보드 항목 id/)
+  assert.throws(() => autoStepNumberOf('# 일\n자동 진행 단계: 2\n## 할 일\n보드 항목 id: a\n'), /보드 항목 id/)
+  assert.equal(autoStepNumberOf('# 일\n## 할 일\n자동 진행 단계: 2\n'), null)
+  for (const value of ['0', '-1', '1.5', 'two', '9007199254740992']) assert.throws(() => autoStepNumberOf(`# 일\n자동 진행 단계: ${value}\n`))
+  assert.throws(() => autoStepNumberOf('# 일\n자동 진행 단계: 2\n자동 진행 단계: 3\n'))
 })
