@@ -33,6 +33,9 @@
 //   board.ts step-add <id> <글> [--event "PR 사건"] (번호가 없으면 가장 큰 번호 다음으로 더한다)
 //   step-edit 는 다른 번호나 사건 꼬리표를 지우는 글을 거절한다.
 //   step-add 는 이미 있는 번호와 done 항목을 거절한다. 두 동작은 결과 JSON 에 number 를 넣는다.
+//   board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>] (번호 뒤의 자동 진행 표시만 바꾼다. plain 은 지운다)
+//   step-mark 는 사건 단계(줄 앞 [merge] 따위, stages 칸이 가리키는 줄)를 거절한다. 줄 끝 꼬리표와 끝냄 상태는 그대로 둔다.
+//   표시의 꼴은 hooks/step-marks.js 가 소유한다. 조건은 wait 에만 줄 수 있다.
 // status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 // 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
 //   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
@@ -64,6 +67,7 @@ import { LockTimeout, withFileLock, type Lock } from './file-lock.ts'
 
 export { parseEventTag } from '../hooks/event-tags.js'
 import { STEP, parseEventTag, stageTag, withEventTag } from '../hooks/event-tags.js'
+import { withStepMark } from '../hooks/step-marks.js'
 
 const STATUSES = ['goal', 'decide', 'doing', 'wait', 'done']
 const DONE_MARKS = ['✓', '[x]', '[X]']
@@ -76,9 +80,10 @@ const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'view']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view']
+const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,view} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--exact] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -91,6 +96,8 @@ const HELP = `${USAGE}
 사용:
   board.ts step-edit <id> <번호> <글> [--event "PR 사건"]
   board.ts step-add <id> <글> [--event "PR 사건"]
+  board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]
+  step-mark 는 번호 뒤 자동 진행 표시만 바꾼다. 조건은 wait 에만 주고 사건 단계는 거절한다.
   step-edit 는 다른 번호와 사건 꼬리표를 지우는 글, step-add 는 중복 번호와 done 항목을 거절한다.
   --event 는 줄 끝 꼬리표를 붙이거나 바꾼다. 사건은 pr, merge, deploy, release 다.
   board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, lines)
@@ -324,6 +331,7 @@ type Args = {
   exact: boolean
   ifRev?: string
   event?: string
+  condition?: string
   fields: Partial<Record<(typeof FIELDS)[number], string>>
   detail?: string[]
   next?: string[]
@@ -356,16 +364,21 @@ function parse(argv: string[]): Args | 'help' {
   if (head.includes('-h') || head.includes('--help')) return 'help'
   const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: true })
   if (positionals.length === 0) throw new Error('cmd 가 필요하다')
-  const limit = ['detail-edit', 'step-edit'].includes(positionals[0]) ? 4 : 3
+  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit'].includes(positionals[0]) ? 4 : 3
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
-  const [cmd, id, status, text] = positionals
+  const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
   if (values.exact !== undefined && !['set', 'step'].includes(cmd)) throw new Error('--exact 는 set, step 에만 쓴다')
   if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
+  if (cmd === 'step-mark') {
+    if (!/^\d+$/.test(status ?? '')) throw new Error('step-mark 에는 단계 번호가 필요하다: board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]')
+    if (!MARKS.includes(text)) throw new Error(`step-mark 의 표시는 ${MARKS.join(', ')} 중 하나다: ${text ?? ''}`)
+    if (condition !== undefined && text !== 'wait') throw new Error('조건은 wait 에만 줄 수 있다')
+  }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, ifRev: values['if-rev'], event: values.event, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -405,6 +418,11 @@ function findStep(item: Item, id: string, number: number): { source: string; lin
   if (!indices.length || source === null) throw new Refused(`${number} 번 단계가 없다. 있는 번호: ${numbers.join(' ') || '없음'}`)
   if (indices.length > 1) throw new Refused(`${number} 번 단계 줄이 둘 이상이다: ${id}`)
   return { source, lines, index: indices[0] }
+}
+
+// stages 칸(「pr=1,merge=2」)이 가리키는 단계 번호들. 칸 값이 규칙 밖이면 비어 있다
+function stageNumbers(item: Item): number[] {
+  return typeof item.stages === 'string' && STAGES.test(item.stages) ? (item.stages.match(/=(\d+)/g) ?? []).map((part) => Number(part.slice(1))) : []
 }
 
 type View = ReturnType<typeof itemView>
@@ -510,6 +528,27 @@ function apply(a: Args, board: Board): boolean | View {
     if (typeof item.stages === 'string' && item.stages.trim() && parseEventTag(text)) {
       process.stderr.write(`${id} 는 stages 가 있는 항목이다. 줄 끝 꼬리표가 생기면 꼬리표 줄만 사건으로 끝나고 stages 의 단계는 저절로 끝나지 않는다\n`)
     }
+    return itemView(item, was, number)
+  }
+  if (a.cmd === 'step-mark') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    const number = Number(a.status)
+    const was = item.status
+    const { source, lines, index } = findStep(item, id, number)
+    const old = lines[index]
+    if (stageTag(old.text) || stageNumbers(item).includes(number)) {
+      throw new Refused(`${number} 번 줄은 사건 단계라 표시를 바꾸지 않는다: ${id}. 사건 단계는 머지와 배포 같은 사건이 끝낸다`)
+    }
+    const mark = a.text === 'plain' ? null : (a.text as 'auto' | 'ask' | 'wait')
+    const text = withStepMark(old.text, mark, a.condition ?? null)
+    if (text === null) {
+      throw new Refused(mark === 'wait'
+        ? `${number} 번 줄에 wait 표시를 붙이지 못했다. 조건은 비어 있지 않고 ] 와 줄바꿈이 없어야 한다: ${a.condition ?? ''}`
+        : `${number} 번 줄의 표시를 바꾸지 못했다. 번호 뒤에 알 수 없는 표시가 겹쳐 있으면 board.ts detail-edit 로 줄을 고친다: ${old.text}`)
+    }
+    lines[index] = { text, done: old.done }
+    item[source] = lines
     return itemView(item, was, number)
   }
   if (a.cmd === 'mark') {
