@@ -50,7 +50,7 @@ describe('Orca 가 worker 반납 뒤 띄운 빈 셸', () => {
       terminalState: 'released', agentTerminalHandle: `term_once_${index}`,
       resource: { terminalHandle: `term_once_${index}`, ownershipState: 'owned', worktreeId: `x::${path}` },
     })) }
-    const out = runSweep(['--run', 'run_x', '--apply'])
+    const out = runSweep(['--run', 'run_finished', '--apply'])
     for (const path of paths) gone(path, out)
     assert.equal(sweepCalls('worker-list').filter((line) => line.includes('--run run_finished')).length, 1, calls())
     for (let index = 0; index < paths.length; index++) has(calls(), `terminal close --terminal term_once_${index}`)

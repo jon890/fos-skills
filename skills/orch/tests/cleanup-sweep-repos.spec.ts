@@ -186,6 +186,7 @@ describe('저장소 밖 detached 워크트리', () => {
 
 function agentWithShell(name: string, child = false): string {
   const path = worktree(name)
+  fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: `repo::${path}` } }]
   squashMerge(name, path)
   const shell = idleShell(path, 'term_agent', child)
   fx.terminals = [{ handle: 'term_agent', worktreePath: path }]

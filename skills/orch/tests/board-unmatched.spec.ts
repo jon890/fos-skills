@@ -115,7 +115,7 @@ fs.writeSync(1, JSON.stringify({ok:true,result:{id:'message'}}))`)
   process.env.BOARD_SYNC = sync
   t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
   recordUnmatched(repo, { id: 'a' }, pending, '70')
-  const context = { repo, primary: 'primary-run', previous: {} } as StepContext
+  const context = { repo, primary: 'primary-run', previous: {}, completions: new Map() } as StepContext
   const state = { prs: { ok: false } } as StepState
   await syncBoard(context, state)
   await syncBoard({ ...context, previous: {} }, state)

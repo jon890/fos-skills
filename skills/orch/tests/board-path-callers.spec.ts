@@ -89,7 +89,7 @@ test('sync, release, goal, paths 는 설정 보드만 읽거나 고친다', () =
 test('기본 보드가 없어도 루프가 지정 보드의 동기화를 실행한다', async () => {
   rmSync(fallback)
   board([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }])
-  const ctx: StepContext = { ...context(repo, undefined, undefined), tick: 1, runs: [], primary: null, loaded: null, previous: {}, lookup: { runs: [], rows: new Map() } }
+  const ctx: StepContext = { ...context(repo, undefined, undefined), tick: 1, runs: [], primary: null, loaded: null, previous: {}, lookup: { runs: [], rows: new Map() }, completions: new Map() }
   const result = await syncBoard(ctx, initialState())
   assert.deepEqual(result.errors, { board: null })
   assert.equal(items()[0].status, 'done')
