@@ -14,6 +14,7 @@
 
 <!-- 이미 테스트가 절차를 표현하면 실제 테스트 경로·실행 명령을 참조한다. phase 의 개발 테스트를 복제하지 않는다.
 실행 담당은 `worker` 또는 `코디네이터` 다. 실행 환경이 실제 Orca 로 worker 를 띄우는 것처럼 worker 가 스스로 할 수 없는 것이면 담당을 `코디네이터` 로 적는다.
-판정 기준 낱말(실행 환경 칸에 있으면 담당 `worker` 를 막는다): `Orca`, `worker 띄우`, `worker 를 띄`, `worker 를 시작`, `워커 띄`, `코디네이터 세션`. 원본은 check_feature.ts 의 WORKER_IMPOSSIBLE 이다.
+검사 기준 낱말(실행 환경 칸에 있으면 담당 `worker` 를 막는다): `Orca`, `worker 띄우`, `worker 를 띄`, `worker 를 시작`, `워커 띄`, `코디네이터 세션`. 원본은 check_feature.ts 의 WORKER_IMPOSSIBLE 이다.
+`가짜 orca CLI`, `Orca 스텁` 같은 테스트 대역 명사구는 실제 환경으로 세지 않는다. 같은 칸에 실제 Orca 환경도 있으면 담당은 코디네이터다. 절차·기대값·본문 예시의 낱말은 실행 환경으로 읽지 않는다.
 원격 검증이 있으면 remote-verification.md 의 구체 행을 참조한다. 접속 절차·선행 조건의 원본은 그 목록이다.
 작은 계획은 이 절을 한 phase 에 넣고 index 의 verification_plan 에 그 phase 파일을 지정해도 된다. -->
