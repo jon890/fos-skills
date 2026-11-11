@@ -42,6 +42,20 @@ test('후보 목록은 모델 칸에서만 읽고 괄호 조건과 effort 칸을
   }
 })
 
+test('실제 모델 표의 행별 후보가 승인한 선택 규칙과 같다', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  assert.deepEqual(Object.fromEntries(modelRows(source)), {
+    'impl-planned': ['gpt-6.1-sol', 'claude-sonnet-5-5'],
+    'small-fix': ['claude-sonnet-5-5', 'claude-haiku-5-5', 'gpt-6-luna'],
+    'simple-apply': ['claude-haiku-5-5', 'gpt-6-luna'],
+    'impl-explore': ['gpt-6.1-sol', 'claude-sonnet-5-5'],
+    'hard-design': ['claude-opus-5-5', 'gpt-6.1-sol'],
+    visual: ['gpt-6.1-terra'],
+    review: [],
+    'security-review': ['claude-sonnet-5-5', 'claude-opus-5-5'],
+  })
+})
+
 test('후보 밖 이유는 선택 줄에서만 읽고 빈 이유 뒤의 다른 필드를 이유로 삼지 않는다', () => {
   const text = sol.replace('비교:', '후보 밖: 비교:')
   assert.match(selectionVerdict(text, repo, { launch: true }).join(), /후보 밖 이유/)
