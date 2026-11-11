@@ -424,6 +424,19 @@ describe('worker 선택 줄 대조', () => {
     })
   }
 
+  for (const row of ['impl-planned', 'review']) {
+    test(`후보 밖 이유가 있어도 실제 예외가 아니면 기록하지 않는다: ${row}`, () => {
+      writeFileSync(spec, SELECTED.replace('impl-planned', row).trimEnd() + ' 후보 밖: 선택 줄에서 복사한 이유.\n')
+      env.ORCH_OUTPUT = 'short'
+      const effective = { agent: 'codex', model: 'gpt-6.1-sol', effort: 'low' }
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, effective })
+      const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+      assert.equal(r.code, 0, both(r))
+      const line = r.stdout.split('\n').find(line => line.startsWith('LAUNCH-EFFECTIVE '))!
+      assert.deepEqual(JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)), effective)
+    })
+  }
+
   test('--terminal 로 이어 쓸 때도 선택 줄을 검사한다', () => {
     writeFileSync(spec, '# 일\n허락: push\n')
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })

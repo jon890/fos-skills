@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { bundleRoot } from './bundle.ts'
 import { launchHistory } from './launch-history.ts'
 import { readLaunch } from './launched.ts'
-import { experimentOf, selectionsOf, type Candidate } from './spec.ts'
+import { experimentOf, selectionsOf, type Candidate, type Selection } from './spec.ts'
 
 // agent-selection.md 의 `## 모델` 제목과 그 아래 첫 하위 제목 사이의 표에서 행 id 와 모델 칸을 읽는다.
 // 하위 절의 표(비교 근거, 가격 등)의 첫 칸이 행 id 로 통과하지 않게 좁힌다
@@ -22,16 +22,30 @@ export function modelRows(table: string): Map<string, string[]> {
 
 export function modelRowIds(table: string): string[] { return [...modelRows(table).keys()] }
 
+function readModelRows(file = join(bundleRoot(), 'references', 'agent-selection.md')): Map<string, string[]> {
+  return modelRows(readFileSync(file, 'utf8'))
+}
+
+function outsideCandidate(selection: Selection, candidates: string[] | undefined): boolean {
+  return selection.row !== 'review' && !!candidates?.length && !candidates.includes(selection.model ?? '')
+}
+
+export function candidateOverrideOf(text: string): { row: string | null; model: string | null; reason: string } | null {
+  const [selection] = selectionsOf(text)
+  if (!selection?.outsideReason) return null
+  const candidates = readModelRows().get(selection.row ?? '')
+  return outsideCandidate(selection, candidates) ? { row: selection.row, model: selection.model, reason: selection.outsideReason } : null
+}
+
 export function selectionVerdict(text: string, repo: string, options: { launch?: boolean; table?: string; retry?: boolean; continuation?: boolean } = {}): string[] {
   const choices = selectionsOf(text)
   if (!choices.length) return ['`worker 선택:` 줄이 없다']
   const selection = choices[0]
   const errors = choices.length > 1 ? ['`worker 선택:` 줄은 하나만 둔다'] : []
   errors.push(...selection.problems.filter(p => !(options.continuation && p === '행')).map(p => `${p} 가 빠졌거나 형식이 틀렸다`))
-  let table: string
-  try { table = readFileSync(options.table ?? join(bundleRoot(), 'references', 'agent-selection.md'), 'utf8') }
+  let rows: Map<string, string[]>
+  try { rows = readModelRows(options.table) }
   catch { return [...errors, '모델 표를 읽지 못했다'] }
-  const rows = modelRows(table)
   const ids = [...rows.keys()]
   if (!ids.length) errors.push('모델 표를 읽지 못했다')
   else if (selection.row && !ids.includes(selection.row)) {
@@ -43,7 +57,7 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
   const candidates = rows.get(selection.row ?? '')
   if (options.launch && candidates && selection.row !== 'review') {
     if (!candidates.length) errors.push(`행 ${selection.row} 의 후보 목록을 읽지 못했다`)
-    else if (!candidates.includes(selection.model ?? '') && !selection.outsideReason) {
+    else if (outsideCandidate(selection, candidates) && !selection.outsideReason) {
       const line = text.split('\n')[selection.no - 1]
       const trial = selection.model === 'claude-fable-5-2' ? 'Fable' : selection.model === 'gpt-6.1-terra' && candidates.includes('claude-sonnet-5-5') ? 'Terra' : null
       if (!trial || !new RegExp(`(?:^|\\s)${trial} 실험 [1-5]/5(?=\\s|[.]|$)`).test(line)) {

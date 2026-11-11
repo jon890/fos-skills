@@ -139,7 +139,7 @@ import type { Rule } from '../lib/output.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
-import { selectionVerdict } from '../lib/selection.ts'
+import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
 import { branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 
 const USAGE = [
@@ -610,6 +610,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (gate.stop !== null) return gate.stop
 
   const specText = readFileSync(a.spec, 'utf8')
+  const candidateOverride = candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
   let worktree: string
@@ -716,15 +717,13 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       }
       out(result.stdout + result.stderr)
       // 짧은 출력은 worker-start JSON 을 내지 않는다. 코디네이터가 고른 값과 대조하는 launch.effective 만 판정 줄로 남긴다(references/launch.md 「띄운 직후 확인」)
-      const selection = selectionsOf(specText)[0]
-      const override = selection?.outsideReason
-      if (result.code === 0 && override) {
+      if (result.code === 0 && candidateOverride) {
         let effective = {}
         try {
           const value = JSON.parse(result.stdout)?.result?.launch?.effective
           if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
         } catch { /* receipt 가 손상돼도 후보 밖 이유는 남긴다 */ }
-        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...effective, candidateOverride: { row: selection.row, model: selection.model, reason: override } })}`)
+        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...effective, candidateOverride })}`)
       } else if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
       // 실패한 시작의 receipt(failedStage, 남은 자원, request id)는 다시 불러 볼 수 없다. 다시 부르면 Task 가 하나 더 생긴다.
       // 그래서 짧은 출력에서도 receipt 전체를 한 줄로 남긴다
