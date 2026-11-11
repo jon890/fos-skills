@@ -53,7 +53,7 @@ rm -rf "${DIR:?}"
 | uv | 안전 | `uv cache clean` |
 | pip | 안전 | `pip3 cache purge` |
 | pnpm | 안전 | `pnpm store prune` |
-| Docker 빌드 캐시 | 안전 | `docker builder prune -af` |
+| Docker 빌드 캐시 | 안전 | `docker_cleanup.ts builder-prune` (승인한 런타임마다. 아래 「Docker」 참고) |
 | bun | 안전 | `pgrep -fl 'bun install'` 로 설치 중인 bun 이 없는지 본 뒤 `rm -rf "${HOME:?}/.bun/install/cache"` |
 
 **`npm cache clean --force` 는 `~/.npm/_cacache` 만 비운다.** `~/.npm/_npx` 는 그대로라 종료 코드 0 이어도 확보량이 0 일 수 있다. 확보량은 `~/.npm` 합계가 아니라 `_cacache` 크기로 약속한다.
@@ -81,11 +81,15 @@ rm -rf "${DIR:?}"
 
 ## Docker
 
-- **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `scripts/colima_trim.ts` 로 trim 해야 반영된다.
-  volume 을 지운 직후에는 trim 이 덜 될 수 있어 스크립트가 결과를 재고 다시 돈다. 종료 코드 2 면 남은 차이를 사용자에게 보고한다. 기준값, 시간 상한과 종료 코드는 스크립트 머리 주석이 소유한다.
+런타임이 하나가 아닐 수 있다. 런타임마다 다른 값(소켓, context, VM 디스크 파일, 켜는 명령, 회수 방법)은 `references/runtimes.md` 의 표가 소유한다. 이 절은 런타임과 무관한 정리 절차만 적는다.
+`$RUNTIME` 은 승인한 런타임의 id 이고 `survey_docker.ts` 출력의 `## 런타임 ...` 에 보인다. 삭제 명령은 스크립트가 그 런타임의 context 를 지정해 보내므로 사용자의 현재 context 는 바뀌지 않는다.
+이 맥 밖의 엔진(ssh·tcp)은 정리하지 않는다. `delete_volumes.ts` 와 `docker_cleanup.ts` 는 그런 엔드포인트면 dry-run 도 --apply 도 종료 코드 5 로 거부한다.
+
+- **prune 해도 호스트 디스크는 바로 늘지 않을 수 있다.** VM 디스크 파일이 그대로면 `scripts/runtime_reclaim.ts` 로 회수해야 반영된다. 런타임마다 회수 방법이 다르고, 어떤 런타임은 디스크 파일을 스스로 줄이므로 `runtime_reclaim.ts` 는 전후 크기만 보고한다(`references/runtimes.md`).
+  **volume 을 지운 직후 이어서 돌리면 회수가 덜 될 수 있다.** 재시도와 시간 상한, 종료 코드는 `runtimes.md` 의 `fstrim` 절이 소유한다.
 
 ```bash
-node "$SKILL_DIR/scripts/colima_trim.ts"
+node "$SKILL_DIR/scripts/runtime_reclaim.ts" "$RUNTIMES" --runtime "$RUNTIME"
 ```
 - **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `scripts/docker_volumes.ts` 가 dangling 인 것을 골라 생성 시각과 크기를 붙이고, 후보 합계를 낸다.
   **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다.
@@ -93,18 +97,29 @@ node "$SKILL_DIR/scripts/colima_trim.ts"
   `other` 는 에이전트 홈(`SOUL.md`, `auth.json`)이나 SQLite 파일(`gersang.db`)일 수 있어 테스트 DB 와 따로 묻는다.
   조사 때 열어 본 volume 만 `delete_volumes.ts` 로 지운다. 이름마다 `docker volume rm` 을 따로 부르고, 열지 않은 volume 과 최근 volume 은 건드리지 않는다. 기본 `--kind` 는 `postgres`, `mysql` 이고 `other` 는 승인 뒤 `--kind other` 로만 지운다.
   스크립트는 기준 시간(기본 24시간) 안에 생긴 volume 을 후보에서 빼 "최근" 으로 따로 보이고, ryuk 가 떠 있으면 경고한다. 경고가 나면 다른 세션이 테스트 중이니 지우기 전에 사용자에게 알린다.
+  `survey_docker.ts` 가 런타임마다 `volumes-<런타임 id 조각>-<해시>.json` 을 쓰고 `volume 조사 파일:` 경로로 알린다. `delete_volumes.ts` 는 그 파일에 적힌 context 의 엔진에만 지우므로, 조사한 런타임과 지우는 런타임이 어긋나지 않는다.
+
+`$VOLUMES` 는 승인한 런타임의 `volume 조사 파일:` 경로다.
 
 ```bash
-node "$SKILL_DIR/scripts/docker_volumes.ts" --peek all --json-out "$VOLUMES"
+node "$SKILL_DIR/scripts/survey_docker.ts" "$RUNTIMES" --out-dir "$DOCKER_DIR"
 node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES"                    # dry-run
 node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply            # 테스트 DB
 node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply --kind other   # 따로 승인받은 other
 ```
-- 이미지는 `scripts/docker_images.ts` 가 사용 중, 미사용, 최근 생성으로 나눈다.
-- 이미지는 각 줄 끝의 `rmi=` 값으로 지운다. 값을 고르는 규칙은 `docker_images.ts` 머리 주석이 소유한다.
+- 이미지는 `scripts/docker_images.ts` 가 사용 중, 미사용, 최근 생성으로 나눈다(`survey_docker.ts` 가 런타임마다 돌린다).
+- 이미지는 각 줄 끝의 `rmi=` 값을 `docker_cleanup.ts rmi` 에 넘겨 지운다(dry-run 으로 먼저 보인 뒤 승인한 것만 `--apply`). 옵션은 위치 인자 앞에 둔다. `$REF` 는 그 값이고, `docker rmi` 는 REF 마다 따로 불린다. 값을 고르는 규칙은 `docker_images.ts` 머리 주석이 소유한다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
-- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다. 호스트 디스크의 실제 확보는 `colima_trim.ts` 뒤에 잰다.
+- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다. 호스트 디스크의 실제 확보는 `runtime_reclaim.ts` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
+
+`$REF` 는 지울 이미지의 `rmi=` 값이다.
+
+```bash
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" "$RUNTIMES" rmi "$REF"                    # dry-run
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" rmi "$REF"
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" builder-prune
+```
 
 ## Gradle
 

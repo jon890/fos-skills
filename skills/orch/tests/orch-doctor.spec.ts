@@ -452,6 +452,22 @@ describe('orch 명령 판정', () => {
     ])
   })
 
+  test('__pycache__ 와 *.pyc 에 남은 옛 호출은 DIRECT-PATH 와 OLD-CALL 로 알리지 않는다', () => {
+    const repo = join(tmp, 'repo')
+    write(join(repo, '.claude', 'skills', 'mine', 'scripts', 'run.py'), 'print("소스에는 옛 호출이 없다")\n')
+    write(join(repo, '.claude', 'skills', 'mine', 'scripts', '__pycache__', 'run.cpython-312.pyc'), 'node "$ORCH_SCRIPTS/worker-ask.ts" --from x\n')
+    write(join(repo, '.claude', 'skills', 'mine', 'scripts', 'stray.pyc'), 'node "$ORCH_SCRIPTS/worker/worker-ask.ts" --from x\n')
+    write(join(repo, '.orch', 'bin', 'old.pyc'), '"$ORCH" heavy-slot -- make\n')
+    write(join(repo, '.claude', 'skills', 'mine', 'SKILL.md'), 'node "$ORCH_SCRIPTS/worker/worker-ask.ts" --from x\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', pluginSkill(), '--repo', repo])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    // 소스 파일(SKILL.md)의 호출은 그대로 알리고, 바이트코드의 호출만 건너뛴다
+    assert.deepEqual(r.stdout.split('\n').filter((l) => /^(OLD-CALL|DIRECT-PATH|  새 꼴)/.test(l)), [
+      'DIRECT-PATH .claude/skills/mine/SKILL.md:1 worker-ask.ts',
+      '  새 꼴: orch worker ask',
+    ])
+  })
+
   test('대기 출력의 LAST_DELIVERY 를 읽는 저장소 스크립트는 WAIT-READER 로 알리고 문서와 표지 줄은 보지 않는다', () => {
     const repo = join(tmp, 'repo')
     write(join(repo, '.orch', 'bin', 'summary.py'), "import json\nfor line in open(path):\n    if line.startswith('LAST_DELIVERY'):\n        pass\n")

@@ -1,16 +1,18 @@
 #!/usr/bin/env node
-// macOS 개발 머신의 디스크, 메모리, 스왑, 큰 디렉터리, Docker, 도구 캐시를 조사한다. 읽기 전용이다.
+// macOS 개발 머신의 디스크, 메모리, 스왑, 큰 디렉터리, 도구 캐시를 조사한다. 읽기 전용이다.
 //
 // 사용법: survey_system.ts
 // 걸리는 시간: du 때문에 1분에서 5분. 홈 디렉터리가 클수록 오래 걸린다.
 // 종료 코드: 0 조사 완료. 개별 항목이 없거나 실패해도 건너뛰고 0 으로 끝난다.
+//
+// 컨테이너 런타임(Docker Desktop, Colima, OrbStack 등)은 런타임마다 context 가 다르므로 `container_runtimes.ts` 가 따로 조사한다.
 //
 // 큰 디렉터리는 `du -xkd1` 한 번으로 하위 항목을 모두 읽는다. 셸 glob 을 쓰지 않으므로
 // 점으로 시작하는 디렉터리가 없어도 다른 항목이 빠지지 않는다.
 
 import { lstatSync, readdirSync } from 'node:fs'
 import { readArgs, type Entry } from './cli.ts'
-import { isMain, rjust, runOk, runText, which, write } from './io.ts'
+import { isMain, rjust, runText, which, write } from './io.ts'
 import { PY_SPACE, pySplitLines, pyStrCompare, pyStrip } from './kit/py.ts'
 import { basename, exists, expanduser, isDir, isSymlink, mtimeSeconds, osJoin, parsePyInt, pyFixed, pyFloorDiv, pyResolve, pyTime, splitWhitespace, walk } from './pylike.ts'
 
@@ -19,7 +21,7 @@ const USAGE = `usage: survey_system.ts [-h]
 
 // argparse 가 만든 도움말(80칸)과 같다. 옵션 이름 대신 파일 이름이 .ts 다
 const HELP = `${USAGE}
-macOS 개발 머신의 디스크, 메모리, 스왑, 큰 디렉터리, Docker, 도구 캐시를 조사한다. 읽기 전용이다.
+macOS 개발 머신의 디스크, 메모리, 스왑, 큰 디렉터리, 도구 캐시를 조사한다. 읽기 전용이다.
 
 options:
   -h, --help  show this help message and exit
@@ -282,17 +284,6 @@ function surveyBigDirs(): void {
   duTop(osJoin(HOME, 'Library/Application Support'), 10)
 }
 
-function surveyDocker(): void {
-  section('Docker')
-  if (which('docker') && runOk(['docker', 'info'])) {
-    write(1, run(['docker', 'system', 'df']) || '')
-    if (which('colima')) write(1, run(['colima', 'list']) || '')
-    sizeOf(osJoin(HOME, '.colima/_lima/_disks'))
-  } else {
-    write(1, 'docker 를 쓸 수 없어 건너뛴다\n')
-  }
-}
-
 function surveyToolCaches(): void {
   section('도구 캐시')
   sizeOf(osJoin(HOME, '.npm'))
@@ -427,7 +418,7 @@ function surveySnapshots(): void {
 export function main(argv: string[]): number {
   const args = readArgs(argv, ENTRY)
   if (typeof args === 'number') return args
-  for (const step of [surveyDisk, surveyMemory, surveyRss, surveyBigDirs, surveyDocker, surveyToolCaches, surveyUpdaters, surveyDotCache, surveyCodexReleases, surveyCursorSnapshots, surveyMisePrune, surveySnapshots]) step()
+  for (const step of [surveyDisk, surveyMemory, surveyRss, surveyBigDirs, surveyToolCaches, surveyUpdaters, surveyDotCache, surveyCodexReleases, surveyCursorSnapshots, surveyMisePrune, surveySnapshots]) step()
   return 0
 }
 

@@ -43,7 +43,6 @@ const TITLES = [
   '메모리와 스왑',
   '앱별 RSS 합계 상위 15',
   '큰 디렉터리',
-  'Docker',
   '도구 캐시',
   '업데이트 캐시 (*-updater, *.ShipIt)',
   '~/.cache 하위 (큰 것)',
@@ -54,7 +53,7 @@ const TITLES = [
 ]
 
 describe('절 순서와 앞 절', () => {
-  test('열두 절을 정해진 순서로 낸다', () => {
+  test('절을 정해진 순서로 낸다', () => {
     const { run } = setup()
     const done = run()
     assert.equal(done.code, 0, done.stderr)
@@ -172,25 +171,11 @@ describe('큰 디렉터리와 도구 캐시', () => {
 })
 
 describe('Docker', () => {
-  test('docker info 가 되면 df, colima list, VM 디스크 크기를 낸다', () => {
-    const { run, home } = setup({
-      extra: (b) => {
-        mkdirSync(join(b.home, '.colima/_lima/_disks'), { recursive: true })
-        b.fake('docker', [{ args: ['info'] }, { args: ['system', 'df'], stdout: 'TYPE TOTAL\nImages 3\n' }])
-        b.fake('colima', [{ args: ['list'], stdout: 'PROFILE STATUS\ndefault Running\n' }])
-        b.fake('du', [duSize(join(b.home, '.colima/_lima/_disks'), 52428800)])
-      },
-    })
-    assert.equal(section(run().stdout, 'Docker'), `TYPE TOTAL\nImages 3\nPROFILE STATUS\ndefault Running\n   50G\t${join(home, '.colima/_lima/_disks')}\n`)
-  })
-
-  test('colima 가 없으면 그 줄만 빠지고 docker info 가 실패하면 건너뛴다', () => {
-    const noColima = setup({ extra: (b) => b.fake('docker', [{ args: ['info'] }, { args: ['system', 'df'], stdout: 'T\n' }]) })
-    assert.equal(section(noColima.run().stdout, 'Docker'), 'T\n')
-    const down = setup({ extra: (b) => b.fake('docker', [{ code: 1 }]) })
-    assert.equal(section(down.run().stdout, 'Docker'), 'docker 를 쓸 수 없어 건너뛴다\n')
-    const none = setup()
-    assert.equal(section(none.run().stdout, 'Docker'), 'docker 를 쓸 수 없어 건너뛴다\n')
+  test('컨테이너 런타임은 container_runtimes.ts 가 조사하므로 Docker 절도 docker 호출도 없다', () => {
+    const { box, run } = setup({ extra: (b) => b.fake('docker', [{ args: ['info'] }, { args: ['system', 'df'], stdout: 'T\n' }]) })
+    const done = run()
+    assert.ok(!done.stdout.includes('\n## Docker\n'))
+    assert.deepEqual(box.fake('docker', []).calls(), [])
   })
 })
 

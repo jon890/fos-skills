@@ -13,7 +13,7 @@
 // - 새 REQ 형식의 계획은 design 경로가 필요하다. 기존 R 형식 계획은 기술 설계 연결을 강제하지 않는다.
 // - 결정 절은 `| D1 | 결정 | 답 | 누가 | 근거 |` 표이거나 `없음: <이유>` 한 줄이다.
 //   「답」 이 비었거나 미정·TBD·? 면 닫히지 않은 결정이다.
-//   「누가」 는 `사용자 YYYY-MM-DD`, `작성자`, `작성자(위임)` 중 하나다.
+//   「누가」 는 `사용자 YYYY-MM-DD`, `작성자`, `작성자(위임)` 중 하나다. 사용자 날짜 뒤에는 괄호 설명을 붙일 수 있다.
 // - 제목과 첫 `##` 절 사이에 `확인: YYYY-MM-DD` 줄(사용자 확인 날짜)이 있다. `--draft` 면 이 줄을 요구하지 않는다.
 //   `--plan` 과 함께 쓰면 계획이 가리킨 스펙에도 확인 줄을 요구한다. 확인 전에는 계획을 만들지 않는다.
 // - 옛 `## 미결정` 절은 결정 표로 바꾸라고 알린다.
@@ -30,7 +30,7 @@ const SECTIONS = ['목표', '범위', '요구사항과 인수 조건', '결정']
 const DESIGN_SECTIONS = ['요구사항 연결', '책임과 경계', '인터페이스와 데이터', '실패와 일관성', '검증 전략', '결정']
 const ID = /^(?:REQ|R)[1-9][0-9]*$/
 const DECISION_ID = /^(?:DECISION|D)[1-9][0-9]*$/
-const DECIDER = /^(사용자 \p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}|작성자|작성자\(위임\))$/u
+const DECIDER = /^(사용자 \p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}(?:\s*\([^()\n]+\))?|작성자|작성자\(위임\))$/u
 const OPEN_ANSWERS = new Set(['', '미정', 'tbd', '?', '-'])
 const CONFIRMED = pyre(/^확인:\s*(\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2})\s*$/u)
 const NO_DECISION = pyre(/^-?\s*없음:\s*\S[^\n]*$/)
@@ -118,6 +118,8 @@ function checkDecisions(body: string): string[] {
     if (!title) problems.push(`${did}: 무엇을 정했는지 결정 칸이 비었다`)
     if (OPEN_ANSWERS.has(answer.toLowerCase())) problems.push(`${did}: 답이 닫히지 않았다(${answer || '빈칸'}). 사용자에게 묻거나 근거를 남겨 정한다`)
     if (!DECIDER.test(decider)) problems.push(`${did}: 누가 칸은 「사용자 YYYY-MM-DD」, 「작성자」, 「작성자(위임)」 중 하나다(지금 ${decider || '빈칸'})`)
+    const explanation = /\(([^()]*)\)$/.exec(decider)?.[1] ?? ''
+    if (/대기|미정|tbd/i.test(explanation)) problems.push(`${did}: 누가 칸의 괄호 설명에 미확정 상태가 있다(${explanation}). 결정을 확정한 뒤 기록한다`)
     if (!reason) problems.push(`${did}: 근거 칸이 비었다`)
   }
   return problems
@@ -218,6 +220,11 @@ function inside(root: string, value: unknown): string {
 // 원본은 templates/verification-plan.md 의 주석이다. 둘을 함께 고친다
 const WORKER_IMPOSSIBLE = ['Orca', 'worker 띄우', 'worker 를 띄', 'worker 를 시작', '워커 띄', '코디네이터 세션']
 
+function workerEnvironment(environment: string): string {
+  // 테스트 대역을 뜻하는 명사구만 뺀다. 같은 칸에 실제 환경도 있으면 그 부분은 그대로 검사한다.
+  return environment.replace(/(?:가짜|모의|fake|mock|stub)\s+`?orca`?(?:\s+(?:cli|명령))?|`?orca`?\s+(?:대역|스텁|모형|mock|stub)/gi, '')
+}
+
 // 검증 계획의 구조와 PR 요구사항 연결만 본다. 절차의 충분성·실행 결과는 보지 않는다
 export function checkVerification(text: string, assigned: Set<string>): string[] {
   const body = sections(text).get('인수 검증 계획') ?? ''
@@ -248,7 +255,8 @@ export function checkVerification(text: string, assigned: Set<string>): string[]
       problems.push(`${rid}: 인수 검증 사례의 빈칸·미정·양식 자리표시자를 채운다`)
     }
     if (owned && owner !== 'worker' && owner !== '코디네이터') problems.push(`${rid}: 실행 담당은 worker 또는 코디네이터다: ${owner}`)
-    const blocked = WORKER_IMPOSSIBLE.find((word) => environment.toLowerCase().includes(word.toLowerCase()))
+    const actualEnvironment = workerEnvironment(environment).toLowerCase()
+    const blocked = WORKER_IMPOSSIBLE.find((word) => actualEnvironment.includes(word.toLowerCase()))
     if (owner === 'worker' && blocked) problems.push(`${rid}: 실행 환경에 \`${blocked}\` 가 있어 worker 가 할 수 없는 검증이다. 실행 담당을 코디네이터로 적는다`)
     if (timing !== 'PR 전' && timing !== 'PR 뒤') problems.push(`${rid}: 인수 검증 시점은 PR 전 또는 PR 뒤다`)
     if (!pyre(/^(없음|push|머지|배포)(?:\s|$|[(:])/).test(prerequisite)) problems.push(`${rid}: 선행 조건은 없음, push, 머지, 배포 중 하나로 시작한다`)
@@ -311,6 +319,24 @@ export function checkPlan(data: unknown, root: string, expectedSpec: string | nu
   if (!isStringList(assignedValue)) return [...problems, '계획 requirements 에 이번 PR 의 요구사항 ID 목록이 필요하다']
   const assigned = assignedValue
   if (new Set(assigned).size !== assigned.length || assigned.some((id) => !ids.has(id))) problems.push('계획 requirements 에 중복 또는 스펙에 없는 ID 가 있다')
+  // 계획 단계에서 이미 작성한 ADR 등 문서 요구사항은 파일을 근거로 연결한다.
+  // 명시한 ID 만 phase 배정에서 제외하며, 일반 구현 요구사항까지 자동 면제하지 않는다.
+  const documented = new Set<string>()
+  const planDocs = data.plan_commit_requirements
+  if (planDocs !== undefined) {
+    if (!isRecord(planDocs)) problems.push('plan_commit_requirements 는 요구사항 ID 와 문서 경로의 객체여야 한다')
+    else for (const [id, value] of Object.entries(planDocs)) {
+      if (!assigned.includes(id)) problems.push(`계획 문서에 이번 PR 범위 밖의 요구사항: ${id}`)
+      try {
+        const document = inside(root, value)
+        if (!document.endsWith('.md') || !pyStrip(readText(document))) throw new ValueError('내용이 있는 Markdown 문서가 필요하다')
+        documented.add(id)
+      } catch (error) {
+        if (!isExpected(error)) throw error
+        problems.push(`${id}: 계획 커밋의 문서를 읽을 수 없다: ${errorText(error)}`)
+      }
+    }
+  }
   const phases = data.phases
   if (!Array.isArray(phases) || phases.length === 0) return [...problems, '요구사항을 구현할 phases 배열이 필요하다']
   const covered = new Set<string>()
@@ -323,7 +349,7 @@ export function checkPlan(data: unknown, root: string, expectedSpec: string | nu
     if (reqs.some((id) => !assigned.includes(id))) problems.push(`phase ${i + 1}: 이번 PR 범위 밖의 요구사항 ID 가 있다`)
     for (const id of reqs) covered.add(id)
   })
-  const unassigned = assigned.filter((id) => !covered.has(id))
+  const unassigned = assigned.filter((id) => !covered.has(id) && !documented.has(id))
   if (unassigned.length) problems.push(`phase 에 배정하지 않은 요구사항: ${[...new Set(unassigned)].sort(pyStrCompare).join(', ')}`)
   problems.push(...checkVerificationFile(data, planPath, new Set(assigned), requireVerification))
   return problems
