@@ -1,0 +1,1 @@
+- `orch doctor` 의 `DIRECT-PATH`, `OLD-CALL` 검사가 `__pycache__` 폴더와 `*.pyc` 파일을 건너뛴다. 소스에 없는 옛 호출이 바이트코드에 남아 오경보가 나던 것을 막는다.
