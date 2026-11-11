@@ -216,7 +216,7 @@ orch board show <항목>
 | `step <항목> <번호> undo` | `step <항목> <번호> --undo --exact` | `BOARD-STEP <항목> <번호> undo` |
 | `step <항목> <번호> text "<글>"` | `step-edit <항목> <번호> <글>` | `BOARD-STEP <항목> <번호> text` |
 | `step <항목> <번호> auto\|ask\|plain` (PR5) | `step-mark <항목> <번호> <동작>` | `BOARD-STEP <항목> <번호> <동작>` |
-| `step <항목> <번호> wait ["<조건>"]` (PR5) | `step-mark <항목> <번호> wait [<조건>]` | `BOARD-STEP <항목> <번호> wait`(조건 글은 싣지 않는다) |
+| `step <항목> <번호> wait ["<조건>"]` (PR5) | `step-mark <항목> <번호> wait [<조건>]` | `BOARD-STEP <항목> <번호> wait`(조건 글은 넣지 않는다) |
 | `add-step <항목> "<글>"` | `step-add <항목> <글>` | `BOARD-STEP-ADD <항목> <번호>` |
 | `show <항목>` | `view <항목>` | `BOARD <항목> <상태> <끝낸>/<전체>`(진행률이 없으면 `진행률 없음`)과 끝나지 않은 단계 줄 |
 
@@ -277,7 +277,7 @@ orch board show <항목>
 
 - 표시(`[auto]`, `[ask]`, `[wait]`, `[wait: 조건]`)의 꼴과 읽고 쓰는 규칙은 자동 진행 구현(PR #446)이 둔 `extensions/work-board/hooks/step-marks.js` 가 원본이다(`event-tags.js` 옆). 표시를 바꾼 글을 만드는 `withStepMark` 도 거기 이미 있어 PR5 는 모듈에 함수를 더하지 않는다. 문법을 두 곳에서 구현하지 않으려는 처음 뜻은 그대로다.
 - `board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]` 은 `step-edit` 의 번호 풀이와 잠금을 쓴다. 줄 글을 `withStepMark(옛 글, 표시 또는 null, 조건)` 의 결과로 바꾸고 끝냄 상태는 옛 줄 것을 둔다. 조건은 위치 인자다. 새 옵션을 만들지 않아 지금 옵션의 줄임 꼴이 모호해지지 않는다.
-- `orch board step <항목> <번호> auto|ask|plain`, `wait ["<조건>"]` 이 이 동작을 부른다. 출력은 `BOARD-STEP <항목> <번호> <동작>` 한 줄이고 `wait` 의 조건 글은 싣지 않는다. 표시 자리에 올 수 없는 값, `wait` 가 아닌 표시의 조건, `--on` 과 함께 쓴 호출은 사용법 오류(종료 코드 2)다.
+- `orch board step <항목> <번호> auto|ask|plain`, `wait ["<조건>"]` 이 이 동작을 부른다. 출력은 `BOARD-STEP <항목> <번호> <동작>` 한 줄이고 `wait` 의 조건 글은 넣지 않는다. 표시 자리에 올 수 없는 값, `wait` 가 아닌 표시의 조건, `--on` 과 함께 쓴 호출은 사용법 오류(종료 코드 2)다.
 - 사건 단계에는 거절한다(종료 코드 1). 사건 단계는 줄 글에 줄 앞 꼬리표(`2. [merge] 머지`)가 있거나 항목의 `stages` 필드가 그 번호를 가리키는 줄이다. 띄우기가 만든 항목은 꼬리표를 글이 아니라 `stages` 에 두므로 둘 다 본다(DECISION21). `board.ts` 는 orch 의 `stagesOf` 를 import 하지 못해 같은 칸 형식(`STAGES`)을 읽는 작은 함수를 갖는다. 사건 단계에 표시를 붙이면 `2. [auto] [merge] 머지` 처럼 줄 앞 꼬리표가 번호 바로 뒤에서 밀려나 사건 단계로 읽히지 않고 그 줄이 사건에 저절로 끝나지 않으므로 거절한다. 줄 끝 꼬리표만 있는 줄은 받고 꼬리표를 그대로 남긴다(자동 진행 스펙 REQ6 이 `[wait]` 줄 끝의 `(#N 사건)` 을 쓴다).
 - 같은 표시로 바꾸는 호출은 거절하지 않는다. 결과가 같아 성공이다.
 - 자동 진행 구현이 머지되기 전의 임시 길(`step … text "<줄 전체>"`)은 그대로 쓸 수 있다.
