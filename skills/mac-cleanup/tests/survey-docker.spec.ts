@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
 import { Sandbox, write } from './helpers.ts'
+import { volumesFileName } from '../scripts/survey_docker.ts'
 import { makeRow, type Row } from './runtimes-helpers.ts'
 
 const ROWS: Row[] = [
@@ -43,11 +44,11 @@ describe('REQ4 런타임별 조사', () => {
     const { run, outDir } = setup()
     const done = run()
     for (const [id, context] of [['docker-desktop', 'desktop-linux'], ['orbstack', 'orbstack']]) {
-      const file = join(outDir, `volumes-${id}.json`)
+      const file = join(outDir, volumesFileName(id))
       assert.ok(done.stdout.includes(`volume 조사 파일: ${file}\n`), done.stdout)
       assert.equal(JSON.parse(readFileSync(file, 'utf8')).context, context)
     }
-    assert.ok(!existsSync(join(outDir, 'volumes-colima_default.json')))
+    assert.ok(!existsSync(join(outDir, volumesFileName('colima:default'))))
   })
 
   test('--runtime 은 꺼짐으로 적힌 런타임도 그 하나만 조사한다. 파일 이름의 :은 _ 다', () => {
@@ -55,7 +56,7 @@ describe('REQ4 런타임별 조사', () => {
     const done = run(['--runtime', 'colima:default'])
     assert.equal(done.code, 0, done.stderr)
     assert.deepEqual([...new Set(contexts())], ['colima'])
-    assert.equal(JSON.parse(readFileSync(join(outDir, 'volumes-colima_default.json'), 'utf8')).context, 'colima')
+    assert.equal(JSON.parse(readFileSync(join(outDir, volumesFileName('colima:default')), 'utf8')).context, 'colima')
   })
 
   test('이 맥 밖의 엔진과 없는 id 는 2 이고 docker 를 부르지 않는다', () => {
@@ -71,17 +72,17 @@ describe('REQ4 런타임별 조사', () => {
     assert.equal(done.code, 1)
     assert.ok(done.stdout.includes('orbstack: 조사에 실패했다. 이 런타임의 이미지와 volume 은 정리 후보에 넣지 않는다\n'), done.stdout)
     assert.ok(done.stderr.includes('boom'))
-    assert.ok(existsSync(join(outDir, 'volumes-docker-desktop.json')))
+    assert.ok(existsSync(join(outDir, volumesFileName('docker-desktop'))))
   })
 
   test('조사가 실패하면 volume 조사 파일 경로를 내지 않고 이전 실행의 같은 파일도 지운다', () => {
     const { run, outDir } = setup([{ args: ['--context', 'orbstack', 'images'], stderr: 'boom', code: 1 }])
-    const stale = write(join(outDir, 'volumes-orbstack.json'), '{"volumes": []}')
+    const stale = write(join(outDir, volumesFileName('orbstack')), '{"volumes": []}')
     const done = run()
     assert.equal(done.code, 1)
-    assert.ok(!done.stdout.includes('volumes-orbstack.json'), done.stdout)
+    assert.ok(!done.stdout.includes(volumesFileName('orbstack')), done.stdout)
     assert.ok(!existsSync(stale))
-    assert.ok(done.stdout.includes('volume 조사 파일: ') && done.stdout.includes('volumes-docker-desktop.json'))
+    assert.ok(done.stdout.includes('volume 조사 파일: ') && done.stdout.includes(volumesFileName('docker-desktop')))
   })
 
   test('알 수 없는 로컬 런타임도 docker CLI 로 이미지와 volume 을 조사하고 volume 조사 파일을 쓴다', () => {
@@ -94,7 +95,22 @@ describe('REQ4 런타임별 조사', () => {
     assert.ok(done.stdout.includes('## 런타임 unknown:podman (알 수 없는 런타임, context=podman)\n'), done.stdout)
     const verbs = docker.calls().map((c) => c.argv.slice(2).join(' '))
     assert.ok(verbs.some((v) => v.startsWith('images ')) && verbs.some((v) => v.startsWith('volume ls ')), verbs.join('\n'))
-    assert.equal(JSON.parse(readFileSync(join(outDir, 'volumes-unknown_podman.json'), 'utf8')).context, 'podman')
+    assert.equal(JSON.parse(readFileSync(join(outDir, volumesFileName('unknown:podman')), 'utf8')).context, 'podman')
+  })
+
+  test('이름이 문자 치환 뒤 같아지는 두 런타임도 파일과 context 가 각각 남는다', () => {
+    const box = new Sandbox()
+    box.fake('docker', [])
+    const rows = [makeRow('unknown:foo+bar', 'unknown', '알 수 없는 런타임', { context: 'foo+bar' }), makeRow('unknown:foo_bar', 'unknown', '알 수 없는 런타임', { context: 'foo_bar' })]
+    const file = write(join(box.root, 'r.json'), JSON.stringify({ runtimes: rows }))
+    const outDir = join(box.root, 'o')
+    const done = box.run('survey_docker', [file, '--out-dir', outDir])
+    assert.equal(done.code, 0, done.stderr)
+    const [a, b] = [join(outDir, volumesFileName('unknown:foo+bar')), join(outDir, volumesFileName('unknown:foo_bar'))]
+    assert.notEqual(a, b)
+    assert.equal(JSON.parse(readFileSync(a, 'utf8')).context, 'foo+bar')
+    assert.equal(JSON.parse(readFileSync(b, 'utf8')).context, 'foo_bar')
+    assert.ok(done.stdout.includes(`volume 조사 파일: ${a}\n`) && done.stdout.includes(`volume 조사 파일: ${b}\n`))
   })
 
   test('켜진 런타임이 없으면 그렇게 보이고 0 이다', () => {

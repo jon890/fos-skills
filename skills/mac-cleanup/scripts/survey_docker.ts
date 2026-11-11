@@ -8,11 +8,12 @@
 // 같은 소켓을 가리키는 context 는 container_runtimes.ts 가 런타임 하나로 합쳤으므로 런타임마다 한 번만 조사한다.
 // --runtime ID 를 주면 그 런타임 하나만 켜짐 여부와 상관없이 조사한다(승인받아 방금 켠 런타임). 이 맥 밖의 엔진은 조사하지 않는다.
 // 런타임마다 `## 런타임 ID` 절로 나누고, `docker_images.ts --context` 와 `docker_volumes.ts --context --peek N --json-out` 의 출력을 그대로 보인다.
-// volume 조사 JSON 은 DIR/volumes-<ID 의 :을 _로 바꾼 이름>.json 에 쓰고, 두 조사가 모두 성공했을 때만 그 경로를 출력한다. 실패하면 이전 실행의 같은 파일도 지운다. `delete_volumes.ts` 가 이 파일을 입력으로 받는다.
+// volume 조사 JSON 은 DIR/volumes-<ID 를 읽기 쉽게 바꾼 이름>-<ID 해시 8자리>.json 에 쓰고(ID 가 다르면 이름이 겹치지 않는다), 두 조사가 모두 성공했을 때만 그 경로를 출력한다. 실패하면 이전 실행의 같은 파일도 지운다. `delete_volumes.ts` 가 이 파일을 입력으로 받는다.
 // 사용자의 현재 context 설정은 바꾸지 않는다. 한 런타임의 조사가 실패해도 나머지를 계속한다.
 //
 // 종료 코드: 0 조사 완료, 1 한 런타임이라도 조사가 실패함, 2 입력 오류.
 
+import { createHash } from 'node:crypto'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { readArgs, type Entry } from './cli.ts'
@@ -49,7 +50,8 @@ const ENTRY: Entry = {
   },
 }
 
-export const volumesFileName = (id: string): string => `volumes-${id.replace(/[^A-Za-z0-9.-]/g, '_')}.json`
+// 런타임 id 마다 다른 파일 이름. 읽기 쉬운 이름 조각에 id 전체의 해시를 붙여 `foo+bar` 와 `foo_bar` 가 같은 파일로 겹치지 않는다
+export const volumesFileName = (id: string): string => `volumes-${id.replace(/[^A-Za-z0-9.-]/g, '_')}-${createHash('sha256').update(id).digest('hex').slice(0, 8)}.json`
 
 const script = (name: string): string => join(import.meta.dirname, name)
 

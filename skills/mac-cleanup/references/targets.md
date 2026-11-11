@@ -99,7 +99,7 @@ node "$SKILL_DIR/scripts/runtime_reclaim.ts" "$RUNTIMES" --runtime "$RUNTIME"
   `other` 는 에이전트 홈(`SOUL.md`, `auth.json`)이나 SQLite 파일(`gersang.db`)일 수 있어 테스트 DB 와 따로 묻는다. 실측: 후보 101개 중 Postgres 77개, MySQL 2개, `other` 22개였다.
   조사 때 열어 본 volume 만 `delete_volumes.ts` 로 지운다. 이름마다 `docker volume rm` 을 따로 부르고, 열지 않은 volume 과 최근 volume 은 건드리지 않는다. 기본 `--kind` 는 `postgres`, `mysql` 이고 `other` 는 승인 뒤 `--kind other` 로만 지운다.
   스크립트는 기준 시간(기본 24시간) 안에 생긴 volume 을 후보에서 빼 "최근" 으로 따로 보이고, ryuk 가 떠 있으면 경고한다. 경고가 나면 다른 세션이 테스트 중이니 지우기 전에 사용자에게 알린다.
-  `survey_docker.ts` 가 런타임마다 `volumes-<런타임 id>.json` 을 쓰고 `volume 조사 파일:` 경로로 알린다. `delete_volumes.ts` 는 그 파일에 적힌 context 의 엔진에만 지우므로, 조사한 런타임과 지우는 런타임이 어긋나지 않는다.
+  `survey_docker.ts` 가 런타임마다 `volumes-<런타임 id 조각>-<해시>.json` 을 쓰고 `volume 조사 파일:` 경로로 알린다. `delete_volumes.ts` 는 그 파일에 적힌 context 의 엔진에만 지우므로, 조사한 런타임과 지우는 런타임이 어긋나지 않는다.
 
 `$VOLUMES` 는 승인한 런타임의 `volume 조사 파일:` 경로다.
 
