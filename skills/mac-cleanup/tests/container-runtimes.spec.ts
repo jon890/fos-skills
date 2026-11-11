@@ -153,6 +153,31 @@ describe('REQ2 알 수 없는 런타임과 원격 엔진', () => {
     assert.equal(t.docker.calls().filter((c) => c.argv.includes('system')).length, 1)
   })
 
+  test('설치 흔적이 있어도 기대한 context 이름이 ssh 엔진을 가리키면 그 엔진을 Docker Desktop 으로 잇지 않는다', () => {
+    const t = survey({
+      dockerDesktop: { kb: GIB_KB },
+      contexts: () => [{ name: 'desktop-linux', endpoint: 'ssh://prod.example', responds: true, df: DF }],
+    })
+    assert.deepEqual(t.rows.map((r) => [r.id, r.kind, r.local, r.state, r.context, r.start_command]), [
+      ['docker-desktop', 'docker-desktop', true, 'stopped', null, null],
+      ['remote:desktop-linux', 'remote', false, 'running', 'desktop-linux', null],
+    ])
+    assert.equal(t.rows.flatMap((r) => r.contexts).filter((c) => c === 'desktop-linux').length, 1, '같은 context 가 두 런타임에 나오지 않는다')
+    assert.ok(t.text.includes('  주의: 기대한 context desktop-linux 가 이 런타임의 소켓이 아닌 ssh://prod.example 를 가리켜 조사하지 않는다\n'), t.text)
+    assert.ok(!t.text.includes('켜는 명령'))
+  })
+
+  test('기대한 context 이름이 다른 로컬 소켓을 가리키면 그 소켓은 알 수 없는 런타임이고 Docker Desktop 은 context 없이 남는다', () => {
+    const t = survey({
+      dockerDesktop: { kb: GIB_KB },
+      files: ['.other/docker.sock'],
+      contexts: ({ unix }) => [{ name: 'desktop-linux', endpoint: unix('.other/docker.sock'), responds: true, df: DF }],
+    })
+    assert.deepEqual(t.rows.map((r) => [r.id, r.kind, r.context]), [['docker-desktop', 'docker-desktop', null], ['unknown:desktop-linux', 'unknown', 'desktop-linux']])
+    assert.equal(t.rows[0].state, 'stopped')
+    assert.equal(t.rows[0].start_command, null)
+  })
+
   test('소켓이 없는 default context 는 런타임으로 세지 않는다', () => {
     const t = runtimeBox({ contexts: () => [{ name: 'default', endpoint: 'unix:///nonexistent-dir/docker.sock', responds: false }] })
     const done = t.box.run('container_runtimes', [], { env: t.env() })

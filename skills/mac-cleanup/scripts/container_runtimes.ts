@@ -77,6 +77,8 @@ export type Runtime = {
   disk_bytes: number | null
   start_command: string[] | null
   reclaim: Reclaim
+  // 설명이 필요한 상태(예: 기대한 context 이름이 다른 엔진을 가리킴). 없으면 null
+  note: string | null
 }
 
 type ContextInfo = { name: string; endpoint: string }
@@ -209,8 +211,22 @@ export function detectRuntimes(): Runtime[] {
     const traced = def.kind === 'colima' ? true : installed(def)
     if (!traced && inst.matched.length === 0) continue
     const expected = contextOf(def.kind, profile)
-    const context = pickContext(inst.matched, expected) ?? expected
     const [diskPath, diskBytes] = diskInfo(diskOf(def.kind, profile))
+    let context = pickContext(inst.matched, expected)
+    if (context === null) {
+      // 소켓이 맞는 context 가 없다. 기대한 이름이 아직 없으면 런타임이 켜질 때 만들 이름이라 그대로 쓴다.
+      // 이름이 이미 다른 엔드포인트(원격이나 다른 로컬 소켓)에 쓰이면 그 엔진을 이 런타임으로 오인하지 않도록 context 없이 두고 켜지도 않는다
+      const owner = contexts.find((c) => c.name === expected)
+      if (owner) {
+        out.push({
+          id: inst.id, kind: def.kind, label: inst.label, profile: def.kind === 'colima' ? profile : null, state: 'stopped', local: true, context: null, contexts: [], endpoint: null,
+          disk_path: diskPath, disk_bytes: diskBytes, start_command: null, reclaim: def.reclaim,
+          note: `기대한 context ${expected} 가 이 런타임의 소켓이 아닌 ${owner.endpoint} 를 가리켜 조사하지 않는다`,
+        })
+        continue
+      }
+      context = expected
+    }
     out.push({
       id: inst.id,
       kind: def.kind,
@@ -225,11 +241,12 @@ export function detectRuntimes(): Runtime[] {
       disk_bytes: diskBytes,
       start_command: startOf(def.kind, profile),
       reclaim: def.reclaim,
+      note: null,
     })
   }
   for (const names of unknownByKey.values()) {
     const context = pickContext([...names].sort(pyStrCompare), null)!
-    out.push({ id: `unknown:${context}`, kind: 'unknown', label: '알 수 없는 런타임', profile: null, state: dockerResponds(context) ? 'running' : 'unresponsive', local: true, context, contexts: [...names].sort(pyStrCompare), endpoint: localEndpoint.get(context) ?? null, disk_path: null, disk_bytes: null, start_command: null, reclaim: 'none' })
+    out.push({ id: `unknown:${context}`, kind: 'unknown', label: '알 수 없는 런타임', profile: null, state: dockerResponds(context) ? 'running' : 'unresponsive', local: true, context, contexts: [...names].sort(pyStrCompare), endpoint: localEndpoint.get(context) ?? null, disk_path: null, disk_bytes: null, start_command: null, reclaim: 'none', note: null })
   }
   const remoteSeen = new Set<string>()
   for (const ctx of remote) {
@@ -237,7 +254,7 @@ export function detectRuntimes(): Runtime[] {
     remoteSeen.add(ctx.endpoint)
     const names = remote.filter((c) => c.endpoint === ctx.endpoint).map((c) => c.name).sort(pyStrCompare)
     const context = pickContext(names, null)!
-    out.push({ id: `remote:${context}`, kind: 'remote', label: '이 맥 밖의 엔진', profile: null, state: dockerResponds(context) ? 'running' : 'unresponsive', local: false, context, contexts: names, endpoint: ctx.endpoint, disk_path: null, disk_bytes: null, start_command: null, reclaim: 'none' })
+    out.push({ id: `remote:${context}`, kind: 'remote', label: '이 맥 밖의 엔진', profile: null, state: dockerResponds(context) ? 'running' : 'unresponsive', local: false, context, contexts: names, endpoint: ctx.endpoint, disk_path: null, disk_bytes: null, start_command: null, reclaim: 'none', note: null })
   }
   return out
 }
@@ -252,6 +269,7 @@ export function describeRuntime(rt: Runtime, dfText: string | null = null): stri
   if (rt.kind === 'remote') lines.push(`  엔드포인트: ${rt.endpoint}`)
   if (rt.disk_path) lines.push(`  VM 디스크 파일: ${rt.disk_path}  ${rt.disk_bytes === null ? '?' : humanKb(rt.disk_bytes / 1024)}`)
   else if (rt.local && rt.kind !== 'unknown') lines.push('  VM 디스크 파일: 찾지 못함')
+  if (rt.note) lines.push(`  주의: ${rt.note}`)
   if (rt.state === 'stopped' && rt.start_command) {
     lines.push(`  켜는 명령: ${rt.start_command.join(' ')}`)
     lines.push(`  켜서 조사하기: 승인 묶음 후보${rt.disk_bytes === null ? '' : `(VM 디스크 ${humanKb(rt.disk_bytes / 1024)})`}`)

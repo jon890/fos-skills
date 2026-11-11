@@ -76,7 +76,7 @@ export function runtimeBox(fixture: RuntimeFixture = {}) {
   return { box, docker, dockerConfig, appsDir, env, unix, home }
 }
 
-export type Row = { id: string; kind: string; label: string; state: string; local: boolean; context: string | null; contexts: string[]; disk_path: string | null; disk_bytes: number | null; start_command: string[] | null; reclaim: string; profile: string | null; endpoint: string | null }
+export type Row = { id: string; kind: string; label: string; state: string; local: boolean; context: string | null; contexts: string[]; disk_path: string | null; disk_bytes: number | null; start_command: string[] | null; reclaim: string; profile: string | null; endpoint: string | null; note?: string | null }
 
 // 조사 파일(`container_runtimes.ts --json-out`)의 런타임 한 줄을 손으로 만든다. 기본은 이 맥 안에서 켜진 런타임이다
 export function makeRow(id: string, kind: string, label: string, extra: Partial<Row> = {}): Row {
