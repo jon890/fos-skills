@@ -74,6 +74,19 @@ describe('REQ4 런타임별 조사', () => {
     assert.ok(existsSync(join(outDir, 'volumes-docker-desktop.json')))
   })
 
+  test('알 수 없는 로컬 런타임도 docker CLI 로 이미지와 volume 을 조사하고 volume 조사 파일을 쓴다', () => {
+    const box = new Sandbox()
+    const docker = box.fake('docker', [])
+    const file = write(join(box.root, 'r.json'), JSON.stringify({ runtimes: [makeRow('unknown:podman', 'unknown', '알 수 없는 런타임', { context: 'podman' })] }))
+    const outDir = join(box.root, 'o')
+    const done = box.run('survey_docker', [file, '--out-dir', outDir])
+    assert.equal(done.code, 0, done.stderr)
+    assert.ok(done.stdout.includes('## 런타임 unknown:podman (알 수 없는 런타임, context=podman)\n'), done.stdout)
+    const verbs = docker.calls().map((c) => c.argv.slice(2).join(' '))
+    assert.ok(verbs.some((v) => v.startsWith('images ')) && verbs.some((v) => v.startsWith('volume ls ')), verbs.join('\n'))
+    assert.equal(JSON.parse(readFileSync(join(outDir, 'volumes-unknown_podman.json'), 'utf8')).context, 'podman')
+  })
+
   test('켜진 런타임이 없으면 그렇게 보이고 0 이다', () => {
     const box = new Sandbox()
     const file = write(join(box.root, 'r.json'), JSON.stringify({ runtimes: [ROWS[2]] }))
