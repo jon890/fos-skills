@@ -97,12 +97,12 @@ describe('permissionsOf', () => {
 describe('selectionsOf', () => {
   test('백틱 값의 첫째를 에이전트, 둘째를 모델로 읽고 effort 뒤의 값은 effort 로 뺀다', () => {
     const text = '# 일\n- **worker 선택:** effort `high` 로 `claude` `claude-opus-5-5` 를 고른다. 행: hard-design. 비교: `gpt-6.1-sol`. 이유: 계약 설계다.\n'
-    assert.deepEqual(selectionsOf(text), [{ row: 'hard-design', highReason: null, no: 2, agent: 'claude', model: 'claude-opus-5-5', effort: 'high', problems: [] }])
+    assert.deepEqual(selectionsOf(text), [{ row: 'hard-design', highReason: null, outsideReason: null, no: 2, agent: 'claude', model: 'claude-opus-5-5', effort: 'high', problems: [] }])
   })
 
   test('빠진 요소를 problems 에 적고 선택 줄이 아닌 줄은 건너뛴다', () => {
     const text = 'worker 선택 이유는 아래에 적는다\nworker 선택: `codex`\n'
-    assert.deepEqual(selectionsOf(text), [{ row: null, highReason: null, no: 2, agent: 'codex', model: null, effort: null, problems: ['행', '모델', 'effort', '비교', '이유'] }])
+    assert.deepEqual(selectionsOf(text), [{ row: null, highReason: null, outsideReason: null, no: 2, agent: 'codex', model: null, effort: null, problems: ['행', '모델', 'effort', '비교', '이유'] }])
   })
 })
 

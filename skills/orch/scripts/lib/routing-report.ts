@@ -15,7 +15,7 @@ export type ReportRow = {
   first_dispatch_samples: number; retried_pr_ratio: number | null
 }
 
-// 2026-11-06 공식 가격표의 캐시 배수. 기본 입력·출력 단가는 지침 표에서 읽는다.
+// 2026-11-06 공식 가격표의 캐시 배수. 기본 입력·출력 단가는 모델 조사 근거의 가격표에서 읽는다.
 // https://platform.claude.com/docs/en/about-claude/pricing
 // https://developers.openai.com/api/docs/pricing
 const CACHE_READ: Readonly<Record<string, number>> = {
@@ -25,7 +25,7 @@ const CACHE_READ: Readonly<Record<string, number>> = {
 // 기록에 TTL이 없어 Claude는 5분, Codex는 30분 쓰기 기준의 추정이다.
 const CACHE_WRITE = 1.25
 
-export function readPrices(file = join(bundleRoot(), 'references/agent-selection.md')): Prices {
+export function readPrices(file = join(bundleRoot(), '../../docs/features/orch-routing/evidence.md')): Prices {
   const prices: Prices = new Map()
   try {
     const text = readFileSync(file, 'utf8').split('### 비교 근거')[1]?.split(/^### /m)[0] ?? ''
