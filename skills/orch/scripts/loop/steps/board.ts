@@ -1,6 +1,7 @@
 // 보드 동기화(틱 3, 워크트리 정리 전): 보드 파일(lib/board-file.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
 //     결정이 남았을 때의 알림은 decisions.ts 가 맡는다.
 
+import { notifyUnmatched } from '../../lib/board-unmatched.ts'
 import { scriptPath } from '../../lib/commands.ts'
 import { isFile } from '../../lib/fs.ts'
 import { boardPath } from '../../lib/board-file.ts'
@@ -20,6 +21,7 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
       if (prs.ok) args.push('--open-prs', JSON.stringify(prs.mine.map((pr) => ({ number: pr.number, headRefName: pr.branch }))))
       const done = await runAsync(scriptCommand(sync, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
       relay(done)
+      if (done.code === 0) notifyUnmatched(ctx.repo, ctx.primary)
       report('board', done.code === 0 ? null : `종료 코드 ${done.code}`)
     } else {
       report('board', null)

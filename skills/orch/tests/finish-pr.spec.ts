@@ -914,11 +914,61 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
       const before = readFileSync(file, 'utf8')
       const r = await c.finish([mode, ...bin])
       assert.equal(r.code, 0, both(r))
-      assert.deepEqual(starting(c.calls(), 'board '), [])
+      assert.deepEqual(starting(c.calls(), 'board '), [`board steps tagged --file ${file}`])
       assert.equal(readFileSync(file, 'utf8'), before)
       has(r.stdout, '사건 꼬리표가 있어 board-sync 에 맡긴다')
     })
   }
+
+  for (const mode of ['--complete', '--intermediate', 'unknown']) {
+    test(`옛 단계 항목의 ${mode} 머지는 번호 있는 줄만 끝내고 next 를 보존한다`, async (t) => {
+      const c = setup(t)
+      const file = join(c.tmp, 'board.json')
+      writeFileSync(file, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: '#77', next: ['1. PR #77', '2. real 활성화'] }] }))
+      const r = await c.finish(['--board', file, ...(mode === 'unknown' ? [] : [mode])])
+      assert.equal(r.code, 0, both(r))
+      const row = JSON.parse(readFileSync(file, 'utf8')).items[0]
+      assert.equal(row.status, 'doing')
+      assert.deepEqual(row.next, [{ text: '1. PR #77', done: true }, { text: '2. real 활성화', done: false }])
+      assert.equal(row.pr, undefined)
+      assert.equal(row['merged-pr'], 77)
+      assert.equal(existsSync(join(c.repo, '.orch/state/board-unmatched.json')), false)
+    })
+  }
+
+  for (const kind of ['legacy', 'tagged', 'milestone', 'second', 'done-reference']) {
+    test(`못 맞춘 머지 기록: ${kind}`, async (t) => {
+      const c = setup(t)
+      const file = join(c.tmp, 'board.json')
+      const row = { id: 'a', status: 'doing', pr: '#77',
+        ...(kind === 'milestone' ? { stages: 'pr=8,merge=9' } : kind === 'second' ? { stages: 'pr=1,merge=2', 'merged-pr': '76' } : {}),
+        details: kind === 'tagged' ? ['1. 다른 PR (#78 merge)', '2. 확인'] :
+          kind === 'second' ? [{ text: '1. PR', done: true }, { text: '2. 머지', done: true }, '3. 확인'] :
+          kind === 'done-reference' ? [{ text: '1. PR #77', done: true }, '2. 확인'] : kind === 'milestone' ? ['10. 확인'] : ['1. 확인 (앞 사건: #77 merge)'],
+      }
+      writeFileSync(file, JSON.stringify({ items: [row] }))
+      const r = await c.finish(['--complete', '--board', file])
+      assert.equal(r.code, 0, both(r))
+      const recordsFile = join(c.repo, '.orch/state/board-unmatched.json')
+      if (['second', 'done-reference'].includes(kind)) {
+        assert.equal(existsSync(recordsFile), false)
+        assert.doesNotMatch(r.stdout, /BOARD-UNMATCHED/)
+      } else {
+        assert.match(r.stdout, /BOARD-UNMATCHED a PR #77/)
+        assert.equal(JSON.parse(readFileSync(recordsFile, 'utf8')).items.a['77'].notified, null)
+      }
+    })
+  }
+
+  test('--board-id 는 꼬리표와 남은 단계가 있어도 명시적으로 완료한다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'a', status: 'doing', details: ['1. 머지 (#78 merge)', '2. 수동 확인'] }] }))
+    const r = await c.finish(['--board', file, '--board-id', 'a'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, 'done')
+    assert.doesNotMatch(r.stdout, /BOARD-UNMATCHED/)
+  })
 
   test('pr 칸이 빈 항목을 브랜치로 찾아 마지막 PR 이면 done 으로 바꾼다', async (t) => {
     const c = setup(t)
@@ -950,6 +1000,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
       `board set task-x --detail 1. PR #77 --detail 남은 일: PR #78 --if-rev ${linesRev({ details: [{ text: '1. PR #77', done: false }, '남은 일: 옛 줄'] })} --file ${file}`,
       `board step task-x 1 --file ${file}`,
       `board set task-x --pr  --merged-pr 77 --file ${file}`,
+      `board set task-x doing --file ${file}`,
     ])
     has(r.stdout, '보드 task-x 는 중간 PR 이라 done 으로 바꾸지 않고 PR 77 를 merged-pr 에 적었다')
   })
@@ -960,7 +1011,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     const bin = board(c, [{ id: 'by-pr', status: 'doing', pr: 77 }])
     const r = await c.finish(['--intermediate', '--task-pattern', PATTERN, ...bin])
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(starting(c.calls(), 'board set'), [`board set by-pr --pr  --merged-pr 77 --file ${file}`])
+    assert.deepEqual(starting(c.calls(), 'board set'), [`board set by-pr --pr  --merged-pr 77 --file ${file}`, `board set by-pr doing --file ${file}`])
   })
 
   test('브랜치로 찾을 때 done 항목과 merged-pr 에 이 PR 이 든 항목은 뺀다', async (t) => {

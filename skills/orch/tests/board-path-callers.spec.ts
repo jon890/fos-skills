@@ -68,7 +68,7 @@ for (const [script, args, prefix] of [
 
 test('sync, release, goal, paths 는 설정 보드만 읽거나 고친다', () => {
   const original = readFileSync(fallback, 'utf8')
-  board([{ id: 'sync', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+  board([{ id: 'sync', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }])
   let done = cli('board/board-sync', ['--repo', repo])
   assert.equal(done.status, 0, done.stderr)
   assert.equal(items()[0].status, 'done')
@@ -88,7 +88,7 @@ test('sync, release, goal, paths 는 설정 보드만 읽거나 고친다', () =
 
 test('기본 보드가 없어도 루프가 지정 보드의 동기화를 실행한다', async () => {
   rmSync(fallback)
-  board([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+  board([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }])
   const ctx: StepContext = { ...context(repo, undefined, undefined), tick: 1, runs: [], primary: null, loaded: null, previous: {}, lookup: { runs: [], rows: new Map() } }
   const result = await syncBoard(ctx, initialState())
   assert.deepEqual(result.errors, { board: null })
@@ -158,7 +158,7 @@ for (const mode of ['once', 'always', 'error'] as const) {
 
 for (const command of ['sync', 'release']) {
   test(`${command} 는 오래된 목록을 거절한 항목을 건너뛰고 다음 항목을 처리한다`, () => {
-    const row = (id: string) => ({ id, status: 'doing', pr: '#7', ...(command === 'release' ? { stages: 'release=1' } : {}), details: ['1. 구현', '남은 일: 옛 줄'] })
+    const row = (id: string) => ({ id, status: 'doing', pr: '#7', ...(command === 'release' ? { stages: 'release=1' } : {}), details: ['1. 구현 #7', '남은 일: 옛 줄'] })
     board([row('a'), row('b')])
     process.env.ORCH_OUTPUT = 'short'
     const bin = racingBoard(repo)
