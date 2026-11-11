@@ -101,6 +101,7 @@ type Command = {
 | `cleanup handoff`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
 | `doctor` | repo | run 을 채우지 않는다(스펙 DECISION23). 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
 | `board sync`, `board release`, `study …`, `spec lint`, `paths` | repo | |
+| `board auto-check` | repo, run | |
 | `worker ask` | 없음 | worker 터미널은 Run 에 묶이지 않고, `worker-ask` 는 `check` 결과에서 Run 을 읽는다 |
 | 그 밖 | 없음 | |
 
