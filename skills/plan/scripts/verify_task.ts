@@ -52,6 +52,7 @@ import { capture, isExpected, isMain, readTextFile, ValueError, write } from './
 import { type Spec, parseCli, UsageError } from './cli.ts'
 import { run as checkFeature } from './check_feature.ts'
 import * as overlayValues from './overlay_values.ts'
+import { subprojects } from './overlay_paths.ts'
 import {
   fnmatchcase,
   PyRegExp,
@@ -1321,13 +1322,20 @@ function checkContractCommands(path: string, commands: Command[], cwds: string[]
 function checkIntegrationFilters(path: string, commands: Command[], entries: Entry[], repo: string, warnings: string[]): void {
   const filtered = commands.map(unwrap).filter((command) => ['gradle', 'gradlew'].includes(pathName(command[0] ?? '')) && command.some((arg) => /(?:^|:)test$/.test(arg)))
   if (!filtered.length) return
+  const markers = new Map<string | null, string[]>()
+  for (const sub of [null, ...subprojects(repo)]) {
+    const [value] = overlayValues.lookup(repo, ['plan'], '통합 테스트 표지', sub)
+    markers.set(sub, value ? overlayValues.codes(value) : [])
+  }
+  if (![...markers.values()].some((values) => values.length)) return
   const listed = capture(['git', '-C', repo, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'])
   const files = listed.code === 0 ? listed.stdout.split('\0') : entries.flatMap(([rel]) => isGlob(rel) ? globRel(repo, globPattern(rel)) : [rel])
   for (const rel of new Set(files.filter((rel) => /\.(?:java|kt)$/.test(rel) && isFile(pjoin(repo, rel))))) {
-    const [value] = overlayValues.lookup(repo, ['plan'], '통합 테스트 표지', overlayValues.targets(repo, [rel])[0])
-    if (!value) continue
+    const first = rel.split('/')[0]
+    const configured = markers.get(markers.has(first) ? first : null)!
+    if (!configured.length) continue
     const source = readTextFile(pjoin(repo, rel)).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')
-    if (!overlayValues.codes(value).some((marker) => source.split('\n').some((line) => {
+    if (!configured.some((marker) => source.split('\n').some((line) => {
       const trimmed = pyStrip(line)
       return trimmed.startsWith(marker) && !/[\p{L}\p{N}_$]/u.test(trimmed.slice(marker.length, marker.length + 1))
     }))) continue

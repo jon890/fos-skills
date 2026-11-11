@@ -1,7 +1,8 @@
 // 오버레이가 지정한 생성 파일, 계약 검증 명령, 통합 테스트 표지의 명령 경계 회귀 테스트.
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { inspect, Repo, verify, writePlan } from './helpers.ts'
+import { baseEnv, inspect, Repo, VERIFY, verify, write, writePlan } from './helpers.ts'
 
 test('staged 생성 파일 예외는 설정한 glob 만 허용하고 신규 테스트 누락은 막는다', () => {
   const repo = new Repo('plan-generated-', true)
@@ -98,4 +99,28 @@ test('일반 Gradle test 의 필터가 통합 테스트를 고르면 경고한�
 test('Gradle 필터 검사는 변경 목록 밖의 기존 테스트도 읽는다', () => {
   const r = inspect('### 1. 코드 수정', './gradlew :app:test --tests example.JobTest', [['src/app.java', '수정']], { files: integrationFiles, git: true })
   assert.ok(r.warnings.some((line) => line.includes('통합 테스트 표지')), r.stdout)
+})
+
+test('통합 테스트 표지가 없으면 파일 목록을 조회하지 않고 하위 프로젝트에만 있어도 검사한다', () => {
+  const repo = new Repo('plan-integration-skip-', true)
+  repo.file('docs/flow.md', '# 흐름')
+  repo.file('app/src/test/JobTest.java', '@IntegrationTest\nclass JobTest {}')
+  writePlan(repo, 'plan1-x', [{ command: './gradlew :app:test --tests JobTest', entries: [['app/src/test/JobTest.java', '수정']] }])
+  const counter = `${repo.root}/listed.txt`
+  write(`${repo.root}/bin/git`, `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const { spawnSync } = require('node:child_process');
+if (process.argv.includes('ls-files')) appendFileSync(${JSON.stringify(counter)}, 'listed\\n');
+const result = spawnSync('git', process.argv.slice(2), { stdio: 'inherit', env: { ...process.env, PATH: process.env.PLAN_REAL_PATH } });
+process.exit(result.status ?? 1);
+`, 0o755)
+  const run = () => repo.run(VERIFY, ['plan1-x', '--audit'], { env: baseEnv({ PATH: `${repo.root}/bin:${process.env.PATH}`, PLAN_REAL_PATH: process.env.PATH ?? '' }) })
+  const skipped = run()
+  assert.equal(skipped.code, 0, skipped.stdout + skipped.stderr)
+  assert.equal(existsSync(counter), false)
+  repo.file('app/.claude/plan-overlay.md', '| 통합 테스트 표지 | `@IntegrationTest` |\n')
+  const enabled = run()
+  assert.equal(enabled.code, 0, enabled.stdout + enabled.stderr)
+  assert.ok(enabled.stdout.includes('통합 테스트 표지'), enabled.stdout)
+  assert.equal(readFileSync(counter, 'utf8'), 'listed\n')
 })
