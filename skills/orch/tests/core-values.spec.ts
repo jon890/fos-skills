@@ -75,3 +75,24 @@ test('머지 알림 글은 조건 없이 끝내라고 하지 않고 머지 뒤 �
   assert.doesNotMatch(text, /다음 PR/)
   assert.doesNotMatch(mergeNotice(7, ''), /머지 커밋/)
 })
+
+import { prSteps, unmatchedMerge, unmatchedResolved } from '../scripts/core/board.ts'
+
+test('PR 줄 판정은 끝난 줄을 선택해 세고 근거 괄호의 번호는 제외한다', () => {
+  const steps = [
+    { number: 1, done: false, text: '1. 구현 (앞 사건: #665 merge)' },
+    { number: 2, done: true, text: '2. PR #665 머지' },
+    { number: 3, done: false, text: '3. PR #6650 머지' },
+    { number: 4, done: false, text: '4. PR #665 확인 (앞 사건: #665 merge)' },
+  ]
+  assert.deepEqual(prSteps(steps, '665'), [4])
+  assert.deepEqual(prSteps(steps, '665', true), [2, 4])
+  assert.equal(unmatchedMerge({}, steps.slice(0, 1), '665'), true)
+  assert.equal(unmatchedMerge({}, steps, '665'), false)
+  assert.equal(unmatchedMerge({ stages: 'pr=2,merge=8' }, steps, '700'), false)
+  assert.equal(unmatchedMerge({ stages: 'pr=8,merge=9' }, steps, '700'), true)
+  const tagged = [{ number: 1, done: true, text: '1. 완료 (#665 merge)' }, { number: 2, done: false, text: '2. 확인' }]
+  assert.equal(unmatchedResolved(tagged, '665', [{ pr: '665', done: true }]), true)
+  assert.equal(unmatchedResolved(tagged, '700', [{ pr: '665', done: true }]), false)
+  assert.equal(unmatchedResolved([], '700'), true)
+})
