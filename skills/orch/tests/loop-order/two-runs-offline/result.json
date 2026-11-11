@@ -1,5 +1,5 @@
 {
-  "stdout": "WATCH-ERROR questions: orca orchestration check --run r1 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR questions: orca orchestration check --run r2 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR prs: gh pr list --state open --limit 200 --json number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR stalls: worker 목록을 읽지 못했다: orca orchestration worker-list --run r1 --limit 100 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR stalls: worker 목록을 읽지 못했다: orca orchestration worker-list --run r2 --limit 100 가 종료 코드 1 로 끝났다: offline\nNOTICE-FAIL DIGEST orca orchestration send --to run:r1 --type status --subject DIGEST 3건 - 23:30 STAGE-STALLED item-r1 30분 pr - 00:00 WATCH-ERROR questions: orca orch --body 3건\n- 23:30 STAGE-STALLED item-r1 30분 pr\n- 00:00 WATCH-ERROR questions: orca orchestration check --run r1 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\n- 00:00 WATCH-ERROR prs: gh pr list --state open --limit 200 --json number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup 가 종료 코드 1 로 끝났다: offline --payload {\"source\":\"orch-loop\",\"kind\":\"DIGEST\",\"pr\":null} --from run:r1 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR done: orca orchestration check --run r1 --all --types worker_done 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR lost: orca orchestration worker-list --run r1 --limit 100 가 종료 코드 1 로 끝났다: offline\nNOTICE-FAIL DIGEST orca orchestration send --to run:r2 --type status --subject DIGEST 2건 - 23:30 STAGE-STALLED item-r2 30분 pr - 00:00 WATCH-ERROR questions: orca orch --body 2건\n- 23:30 STAGE-STALLED item-r2 30분 pr\n- 00:00 WATCH-ERROR questions: orca orchestration check --run r2 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline --payload {\"source\":\"orch-loop\",\"kind\":\"DIGEST\",\"pr\":null} --from run:r2 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR done: orca orchestration check --run r2 --all --types worker_done 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR lost: orca orchestration worker-list --run r2 --limit 100 가 종료 코드 1 로 끝났다: offline\n{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r1\":\"orca orchestration check --run r1 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\",\"questions@r2\":\"orca orchestration check --run r2 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\",\"prs@r1\":\"gh pr list --state open --limit 200 --json number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup 가 종료 코드 1 로 끝났다: offline\",\"board@r1\":null,\"cleanup@r1\":null,\"cleanup@r2\":null,\"stalls@r1\":null,\"stalls@r2\":null,\"movement@r1\":null,\"hook@r1\":null,\"hook@r2\":null,\"queue-turn@r1\":null,\"heavy-slot@r1\":null,\"waiter@r1\":null,\"waiter@r2\":null,\"done@r1\":null,\"lost@r1\":null,\"done@r2\":null,\"lost@r2\":null},\"open_prs\":null,\"stalls\":{}}\n",
+  "stdout": "orch-loop: 질문에서 완료 보고를 읽지 못했다: orca orchestration check --run r1 --all --types worker_done 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR questions: orca orchestration check --run r1 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\norch-loop: 질문에서 완료 보고를 읽지 못했다: orca orchestration check --run r2 --all --types worker_done 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR questions: orca orchestration check --run r2 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR prs: gh pr list --state open --limit 200 --json number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup 가 종료 코드 1 로 끝났다: offline\norch-loop: r1 의 worker 목록을 읽지 못해 정리를 건너뛴다: orca orchestration worker-list --run r1 --limit 100 가 종료 코드 1 로 끝났다: offline\norch-loop: r2 의 worker 목록을 읽지 못해 정리를 건너뛴다: orca orchestration worker-list --run r2 --limit 100 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR stalls: worker 목록을 읽지 못했다: orca orchestration worker-list --run r1 --limit 100 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR stalls: worker 목록을 읽지 못했다: orca orchestration worker-list --run r2 --limit 100 가 종료 코드 1 로 끝났다: offline\nNOTICE-FAIL DIGEST orca orchestration send --to run:r1 --type status --subject DIGEST 3건 - 23:30 STAGE-STALLED item-r1 30분 pr - 00:00 WATCH-ERROR questions: orca orch --body 3건\n- 23:30 STAGE-STALLED item-r1 30분 pr\n- 00:00 WATCH-ERROR questions: orca orchestration check --run r1 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\n- 00:00 WATCH-ERROR prs: gh pr list --state open --limit 200 --json number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup 가 종료 코드 1 로 끝났다: offline --payload {\"source\":\"orch-loop\",\"kind\":\"DIGEST\",\"pr\":null} --from run:r1 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR done: orca orchestration check --run r1 --all --types worker_done 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR lost: orca orchestration worker-list --run r1 --limit 100 가 종료 코드 1 로 끝났다: offline\nNOTICE-FAIL DIGEST orca orchestration send --to run:r2 --type status --subject DIGEST 2건 - 23:30 STAGE-STALLED item-r2 30분 pr - 00:00 WATCH-ERROR questions: orca orch --body 2건\n- 23:30 STAGE-STALLED item-r2 30분 pr\n- 00:00 WATCH-ERROR questions: orca orchestration check --run r2 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline --payload {\"source\":\"orch-loop\",\"kind\":\"DIGEST\",\"pr\":null} --from run:r2 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR done: orca orchestration check --run r2 --all --types worker_done 가 종료 코드 1 로 끝났다: offline\nWATCH-ERROR lost: orca orchestration worker-list --run r2 --limit 100 가 종료 코드 1 로 끝났다: offline\n{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r1\":\"orca orchestration check --run r1 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\",\"questions@r2\":\"orca orchestration check --run r2 --all --types question,escalation 가 종료 코드 1 로 끝났다: offline\",\"prs@r1\":\"gh pr list --state open --limit 200 --json number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup 가 종료 코드 1 로 끝났다: offline\",\"board@r1\":null,\"cleanup@r1\":null,\"cleanup@r2\":null,\"stalls@r1\":null,\"stalls@r2\":null,\"movement@r1\":null,\"hook@r1\":null,\"hook@r2\":null,\"queue-turn@r1\":null,\"heavy-slot@r1\":null,\"waiter@r1\":null,\"waiter@r2\":null,\"done@r1\":null,\"lost@r1\":null,\"done@r2\":null,\"lost@r2\":null},\"open_prs\":null,\"stalls\":{}}\n",
   "stderr": "",
   "code": 0,
   "states": {
@@ -16,6 +16,27 @@
     "orca": [
       [
         "orchestration",
+        "worker-list",
+        "--run",
+        "r1",
+        "--limit",
+        "100",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
+        "check",
+        "--run",
+        "r1",
+        "--all",
+        "--types",
+        "worker_done",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
         "check",
         "--run",
         "r1",
@@ -27,32 +48,33 @@
       ],
       [
         "orchestration",
+        "worker-list",
+        "--run",
+        "r2",
+        "--limit",
+        "100",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
+        "check",
+        "--run",
+        "r2",
+        "--all",
+        "--types",
+        "worker_done",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
         "check",
         "--run",
         "r2",
         "--all",
         "--types",
         "question,escalation",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r1",
-        "--limit",
-        "100",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r2",
-        "--limit",
-        "100",
         "--json",
         "--full"
       ],
@@ -87,16 +109,6 @@
       ],
       [
         "orchestration",
-        "worker-list",
-        "--run",
-        "r1",
-        "--limit",
-        "100",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
         "send",
         "--to",
         "run:r2",
@@ -121,16 +133,6 @@
         "--all",
         "--types",
         "worker_done",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r2",
-        "--limit",
-        "100",
         "--json",
         "--full"
       ]

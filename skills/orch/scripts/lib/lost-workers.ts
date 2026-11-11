@@ -105,9 +105,9 @@ function dropWorking(rows: Json[], lost: Lost[]): Lost[] {
   })
 }
 
-export async function watchLost(repo: string, run: string, base: string): Promise<void> {
+export async function watchLost(repo: string, run: string, base: string, workers?: ReturnType<typeof workerRows>): Promise<void> {
   const file = join(pathOf('state', repo), 'wait-important-lost.json')
-  const got = workerRows(run)
+  const got = workers ?? workerRows(run)
   if (!got.ok) throw new Error(got.error)
   const reported = loadReported(file, run)
   const found = unhandledLost(run, got.rows, new Set(Object.keys(reported)))

@@ -53,7 +53,7 @@ function reviewBranchGuard(repo: string, branch: string, base: string): string |
 }
 
 // 리뷰 worker 의 브랜치와 지시서를 PR 이 닫히고 그 dispatch 가 끝난 뒤 지운다(reviews.ts 파일 맨 위 설명의 「리뷰 흔적」)
-function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {
+async function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): Promise<void> {
   const listed = git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')
   if (listed.code !== 0) return
   const used = new Set(checkedOut)
@@ -80,11 +80,14 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
     }
   }
   if (found.size === 0) return
-  // --run 과 상관없이 모든 Run 의 살아 있는 지시서를 본다. 다른 Run 의 리뷰를 지우지 않으려는 것이다
-  const livePaths = allLiveSpecPaths()
-  const live = liveReviewPrs(livePaths)
+  // 열린 PR 만 있으면 전체 Run 을 조회하지 않는다. 실제 삭제 후보가 있을 때 한 번 읽는다.
+  let livePaths: Set<string> | null | undefined
   for (const [n, { branches, specs }] of [...found].sort(([a], [b]) => a - b)) {
     const pr = reviewPrState(repo, n)
+    if (pr === null) { log(`리뷰 흔적 남김 #${n}: PR 을 읽지 못했다`); continue }
+    if (pr.state === 'OPEN') continue
+    if (livePaths === undefined) livePaths = await (args.allLiveSpecs ?? allLiveSpecPaths)()
+    const live = liveReviewPrs(livePaths)
     const keep = reviewKeepReason(pr, n, live)
     if (keep === 'PR 이 열려 있다') continue
     if (keep || pr === null) {
@@ -109,6 +112,6 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
 }
 
 export async function cleanupReviews(ctx: StepContext, state: StepState): Promise<StepResult> {
-  sweepReviews(ctx.repo, ctx.args, state.remaining, state.specsDir, ctx.log)
+  await sweepReviews(ctx.repo, ctx.args, state.remaining, state.specsDir, ctx.log)
   return {}
 }

@@ -23,6 +23,9 @@
 // 사용자가 말하지 않아도 깨어날 때마다 돈다. 코디네이터가 끝난 항목을 직접 지우지 않는다.
 //
 // 일하는 중 (--run 을 줬을 때, 워크트리마다 맨 처음):
+//     이 Run 의 worker 행이 없는 경로는 삭제하지 않는다. 다만 머지 PR 에 마무리 표시가 없으면 FINISH-MISSING 을 내므로
+//     코디네이터가 실제 담당 Run 으로 마무리를 재개할 수 있다. 남은 미등록 경로는 코디네이터가 --run 없는
+//     orch cleanup sweep --repo <repo> 로 확인한다. 그 명령도 전체 소유 확인과 사용자 터미널 보호를 통과해야 지운다.
 //     worker 상태는 lib/worker-state.ts 의 판정이 정한다. 그 경로의 이 Run worker 행 가운데 살아 있는 dispatch 가 있으면
 //     터미널 소유 확인과 PR 조회(gh) 앞에서 건너뛴다. 워크트리가 많을 때 그 조회가 루프의 제한 시간을 다 썼다.
 //     판정이 working 이면 `건너뜀 <경로>: 살아 있는 worker <dispatch>. 근거: <이유>`, taken_over 면
@@ -171,7 +174,7 @@ import type { Verdict } from '../../lib/worker-state.ts'
 import type { WorkerRow } from '../../lib/ownership.ts'
 import { allLiveSpecPaths } from '../../lib/spec.ts'
 import { basename } from 'node:path'
-import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
+import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, foreignHandles, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
 import { closeTerminal as closeOrcaTerminal } from '../../lib/orca.ts'
 import { deleteRemote, merged, ownPr, prCandidates, protectedReason, remotePlan, unpushed } from './prs.ts'
 import { deleteSpecFiles, specsKept, trashLaunchedSpecs } from './specs.ts'
@@ -182,7 +185,7 @@ import { idleShellVerdict } from '../../lib/idle-shells.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from '../../lib/worker-state.ts'
 import { isObject } from '../../core/json.ts'
 import { liveReviewPrs, originBranch, reviewPrOf, reviewPrOfBranch } from '../../lib/review.ts'
-import { blocker as ownershipBlocker } from '../../lib/ownership.ts'
+import { blocker as ownershipBlocker, rowHandles } from '../../lib/ownership.ts'
 import { realPath } from '../../lib/fs.ts'
 import { scriptCommand } from '../../lib/proc.ts'
 import { scriptPath } from '../../lib/commands.ts'
@@ -240,7 +243,7 @@ async function sweepReviewWorktree(repo: string, path: string, n: number, args: 
     return at >= 0 && realPath(id.slice(at + 2)) === target && isLive(w)
   })
   if (using.length) return skip(`그 경로를 쓰는 살아 있는 dispatch ${using.map((w) => String(w.dispatchId ?? '?')).join(', ')}`)
-  const live = liveReviewPrs(allLiveSpecPaths())
+  const live = liveReviewPrs(await (args.allLiveSpecs ?? allLiveSpecPaths)())
   if (live === null) return skip('살아 있는 지시서 목록을 읽지 못했다')
   if (live.has(n)) return skip('리뷰 dispatch 가 살아 있다')
   if (dirty(path)) return skip('커밋 안 된 변경')
@@ -363,6 +366,16 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     report.skipped.push({ path, reason })
   }
   const mine = workersAt(workers, path)
+  // --run 으로 맡긴 정리는 그 Run 의 워크트리만 본다. 남의 경로를 판정하려고 전체 Run 을 읽지 않는다.
+  if (args.run && mine.length === 0) {
+    if (branch && !protectedReason(repo, branch, args.base)) {
+      const previous = merged(repo, branch, args.base)
+      if (previous.pr?.state === 'MERGED' && !finishStarted(repo, String(previous.pr.number))) {
+        log(`FINISH-MISSING #${previous.pr.number} ${branch}: ${path} 는 이 Run 의 worker 행이 없고 머지 뒤 마무리 표시가 없다. 코디네이터가 실제 담당 Run 으로 마무리하고 남은 경로를 Run 범위 없는 정리로 확인한다`)
+      }
+    }
+    return keep('이 Run 의 워크트리가 아니다', `건너뜀 ${path}: 이 Run 의 워크트리가 아니다`)
+  }
   // 살아 있는 dispatch 의 워크트리는 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많으면 그 조회가 정리 시간을 다 쓴다(머리 주석의 「일하는 중」)
   if (mine.some(isLive)) {
     const verdict = judge({ rows: mine, screens: readScreens(screenHandles(mine)) })
@@ -374,9 +387,11 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   releaseDispatches(mine.filter((w) => isFinished(w) && w.terminalState === 'reclaimable'), args.apply, log, '')
   const launched = launchedOwn(repo, mine, terminals, path)
   const taken = new Set<unknown>([...takenOverOwn(args, mine, terminals, path), ...launched])
-  const owner = await ownershipBlocker(path, taken, args.allWorkers)
-  if (owner) return keep(owner, `남김: ${owner} (${path})`)
-  if (!branch) return sweepDetached(repo, path, args, terminals, log, report)
+  if (!branch) {
+    const owner = await ownershipBlocker(path, taken, args.allWorkers)
+    if (owner) return keep(owner, `남김: ${owner} (${path})`)
+    return sweepDetached(repo, path, args, terminals, log, report)
+  }
   const prot = protectedReason(repo, branch, args.base)
   if (prot) return keep(`${prot} (${branch})`, `건너뜀 ${path}: ${prot} (${branch})`)
   let m = merged(repo, branch, args.base)
@@ -392,6 +407,18 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
   }
   // 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널. 워크트리를 남기더라도 터미널은 닫고 dispatch 를 반납한다
+  if (m.ok || m.pr?.state === 'CLOSED') {
+    let fresh: WorkerRow[]
+    try { fresh = await args.worktreeWorkers(path) }
+    catch (e) { return keep('터미널 소유 상태 조회 실패', `남김: 터미널 소유 상태 조회 실패 (${path}): ${(e as Error).message}`) }
+    if (workersAt(fresh, path).some(isLive)) return keep('살아 있는 dispatch 가 경로를 쓴다', `건너뜀 ${path}: 살아 있는 dispatch 가 경로를 쓴다`)
+    if (args.run) args.foreign = await foreignHandles(args.run, async () => fresh)
+    // 원래 user_owned 였던 예외만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
+    const previouslyTaken = new Set(mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]))
+    const ignored = new Set([...taken].filter((handle) => previouslyTaken.has(handle)))
+    const owner = await ownershipBlocker(path, ignored, async () => fresh)
+    if (owner) return keep(owner, `남김: ${owner} (${path})`)
+  }
   const closing = closedOwnTerminals(s, m.pr, mine, terminals, path)
   if (!m.ok) {
     if (closing && m.pr) {

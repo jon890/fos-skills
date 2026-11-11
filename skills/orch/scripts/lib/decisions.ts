@@ -28,9 +28,9 @@ function retryMs(failures: number): number {
 }
 
 // 조회 실패 시 앞 기록을 보존한다. 성공한 전달만 notified 에 적는다. 실패 재시도는 머리 주석을 따른다.
-export async function notifyDecisions(repo: string, run: string, pending: Message[], includeBoard: boolean, now = Date.now()): Promise<void> {
+export async function notifyDecisions(repo: string, run: string, pending: Message[], includeBoard: boolean, now = Date.now(), knownWorkers?: ReturnType<typeof workerRows>): Promise<void> {
   const questions = pending.filter(isUserDecision)
-  const workers = questions.length ? workerRows(run) : { ok: true as const, rows: [] }
+  const workers = questions.length ? (knownWorkers ?? workerRows(run)) : { ok: true as const, rows: [] }
   if (!workers.ok) throw new Error(workers.error)
   const items = includeBoard && existsSync(boardPath(repo)) ? readBoard(boardPath(repo)) : []
   const entries = decisionEntries(pending, items, workers.rows.filter((w) => LIVE_DISPATCH.has(String(w.dispatchStatus))))

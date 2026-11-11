@@ -1,5 +1,5 @@
 {
-  "stdout": "cleanup-sweep dry-run: <TMP>/repo (base main)\n정리 <TMP>/worktree (feat, PR MERGED)\nFINISH-MISSING #1 feat: 머지 뒤 마무리(finish-pr)가 돈 적이 없다. 배포 확인, 업무 완료, 보드 done 이 빠졌을 수 있다\n  worktree 와 로컬 브랜치를 지울 것 feat\n  원격 브랜치 이미 없음 feat\n",
+  "stdout": "cleanup-sweep dry-run: <TMP>/repo (base main)\nFINISH-MISSING #1 feat: <TMP>/worktree 는 이 Run 의 worker 행이 없고 머지 뒤 마무리 표시가 없다. 코디네이터가 실제 담당 Run 으로 마무리하고 남은 경로를 Run 범위 없는 정리로 확인한다\n건너뜀 <TMP>/worktree: 이 Run 의 워크트리가 아니다\n",
   "stderr": "",
   "code": 0,
   "states": {

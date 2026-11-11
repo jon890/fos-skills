@@ -6,7 +6,7 @@
 //                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
 //     --base        기준 브랜치. 없으면 저장소마다 origin/HEAD 를 읽고, 그것도 없으면 main
 //     --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다.
-//                   주면 다른 Run 의 worker 터미널이 있는 경로는 건너뛴다(worktrees.ts 파일 맨 위 설명의 「다른 Run」)
+//                   주면 그 Run 의 worker 행이 없는 워크트리는 건너뛴다. 다른 Run 조회는 삭제 후보의 소유 확인에서만 한다.
 //     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
 //                   `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다.
 //                   살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서는 지우지 않는다(lib/spec.ts 의 liveSpecPaths).
@@ -53,13 +53,15 @@ import type { SweepContext } from './output.ts'
 import type { WorkerRow } from '../../lib/ownership.ts'
 import { err } from './shared.ts'
 import { expandArgs } from '../../lib/args.ts'
-import { foreignHandles, liveTerminals } from './terminals.ts'
+import { liveTerminals } from './terminals.ts'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { liveSpecPaths } from '../../lib/spec.ts'
+import { allLiveSpecPaths, liveSpecPaths } from '../../lib/spec.ts'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { realPath } from '../../lib/fs.ts'
 import { short } from '../../lib/output.ts'
+import { isObject } from '../../core/json.ts'
 import { sweepLine } from './output.ts'
 
 const USAGE =
@@ -161,7 +163,48 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     return { code: 2 }
   }
   const specsDir = values['specs-dir'] || null
-  const snapshot = workerSnapshot()
+  // 루프가 만든 임시 폴더는 같은 틱의 Run 정리끼리만 공유한다. 삭제 직전 forWorktree 는 여전히 새로 조회한다.
+  const cacheDir = process.env.ORCH_SWEEP_CACHE
+  const snapshot = workerSnapshot(cacheDir ? join(cacheDir, 'workers.json') : undefined)
+  let supplied: WorkerRow[] | undefined
+  if (cacheDir) {
+    try {
+      const known: unknown = JSON.parse(readFileSync(join(cacheDir, 'known-workers.json'), 'utf8'))
+      if (isObject(known)) {
+        for (const [id, rows] of Object.entries(known)) {
+          if (Array.isArray(rows) && rows.every((row) => isObject(row) && (!row.runId || row.runId === id))) {
+            snapshot.seedRun(id, rows)
+            if (id === run) supplied = rows
+          }
+        }
+      }
+    } catch { /* 틱 목록이 없으면 필요한 Run 을 직접 읽는다 */ }
+  }
+  let globalSpecs: Promise<Set<string> | null> | undefined
+  const allLiveSpecs = () => globalSpecs ??= (async () => {
+    const file = cacheDir ? join(cacheDir, 'specs.json') : null
+    if (file) {
+      try {
+        const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+        if (value === null) return null
+        if (Array.isArray(value) && value.every((path) => typeof path === 'string')) return new Set<string>(value)
+      } catch { /* 같은 틱에서 처음 확인한다 */ }
+    }
+    let live: Set<string> | null
+    try {
+      const workers = await snapshot.all()
+      const runs = await snapshot.runIds()
+      live = allLiveSpecPaths(runs ? { runs, workers } : undefined)
+    } catch (e) {
+      if (!(e instanceof LookupError)) throw e
+      live = null
+    }
+    if (file) {
+      writeFileSync(`${file}.tmp`, JSON.stringify(live === null ? null : [...live]))
+      renameSync(`${file}.tmp`, file)
+    }
+    return live
+  })()
   const args: Args = {
     base: values.base ?? '',
     run,
@@ -180,19 +223,21 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     allWorkers: snapshot.all,
     worktreeWorkers: snapshot.forWorktree,
     liveSpecs: new Set(),
+    allLiveSpecs,
   }
   let workers: WorkerRow[] = []
+  let workersKnown = !run
   if (run) {
     try {
-      workers = await runWorkers(run)
+      workers = supplied ?? await runWorkers(run)
+      workersKnown = true
       snapshot.seedRun(run, workers)
     } catch (e) {
       if (!(e instanceof LookupError)) throw e
     }
-    args.foreign = await foreignHandles(run, args.allWorkers)
-    if (args.foreign === null) err('cleanup-sweep: 모든 Run 의 worker 를 읽지 못해 이 Run worker 의 터미널만 닫는다')
+    // 전체 Run 조회는 삭제 후보의 소유 확인까지 미룬다. 그 전에는 자기 worker 의 handle 만 닫을 수 있다.
   }
-  args.liveSpecs = specsDir ? liveSpecPaths(run) : new Set()
+  args.liveSpecs = specsDir ? (workersKnown ? liveSpecPaths(run, run ? workers : undefined) : null) : new Set()
   if (args.liveSpecs === null) err('cleanup-sweep: 살아 있는 dispatch 의 지시서 목록을 읽지 못해 지시서와 PR 본문은 지우지 않는다')
   return { repos, args, workers, terminals, log, brief, tally }
 }

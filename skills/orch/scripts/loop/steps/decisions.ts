@@ -5,7 +5,7 @@
 import { notifyDecisions } from '../../lib/decisions.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
-import { oneLine } from './shared.ts'
+import { oneLine, rowsOf } from './shared.ts'
 
 export async function notifyPendingDecisions(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { runs, primary } = ctx
@@ -15,7 +15,7 @@ export async function notifyPendingDecisions(ctx: StepContext, state: StepState)
   for (const { run } of runs) {
     if (!run || !pendingDecisions.has(run)) continue
     try {
-      await notifyDecisions(ctx.repo, run, pendingDecisions.get(run)!, run === primary)
+      await notifyDecisions(ctx.repo, run, pendingDecisions.get(run)!, run === primary, Date.now(), rowsOf(run, ctx.lookup))
       report('decisions', null, { run })
     } catch (e) {
       report('decisions', oneLine(e), { run })

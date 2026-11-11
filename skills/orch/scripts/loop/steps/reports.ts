@@ -8,7 +8,7 @@ import { flushDigest } from '../../lib/notice-digest.ts'
 import { watchCompletions } from '../completion-watch.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
-import { log, oneLine } from './shared.ts'
+import { log, oneLine, rowsOf } from './shared.ts'
 
 export async function checkReports(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { runs } = ctx
@@ -17,8 +17,12 @@ export async function checkReports(ctx: StepContext, state: StepState): Promise<
   for (const { run } of runs) {
     if (!run) continue
     try { flushDigest(ctx.repo, run, ctx.digestSec) } catch (e) { log(`orch-loop: DIGEST 를 보내지 못했다: ${oneLine(e)}`) }
-    for (const [source, action] of [['done', watchCompletions], ['lost', watchLost]] as const) {
-      try { await action(ctx.repo, run, defaultBase(ctx.repo) ?? ''); report(source, null, { run }) }
+    const actions = [
+      ['done', () => watchCompletions(ctx.repo, run, defaultBase(ctx.repo) ?? '', ctx.completions.get(run))],
+      ['lost', () => watchLost(ctx.repo, run, defaultBase(ctx.repo) ?? '', rowsOf(run, ctx.lookup))],
+    ] as const
+    for (const [source, action] of actions) {
+      try { await action(); report(source, null, { run }) }
       catch (e) {
         // 질문 조회가 같은 틱에 실패했으면 그 알림 하나로 둔다. 감시 자체는 독립적으로 실행한다.
         if (waiting.get(run) === null) {

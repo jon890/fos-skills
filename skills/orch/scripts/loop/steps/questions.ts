@@ -2,6 +2,7 @@
 //     알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓴다. 기술 질문의 REMINDER 는 worker-question 이벤트를 내고, Run 메시지는 미답변 질문 묶음의 UNANSWERED 가 맡는다.
 //     사용자 결정 재알림은 로그만 남기고 decision-pending 의 중복 억제를 따른다.
 //     새 질문(QUESTION)은 루프가 별도 메시지로 보내지 않는다. Orca 가 원래 question 메시지로 코디네이터를 깨운다
+//     틱의 worker 목록과 완료 보고를 먼저 읽는다. 끝난 dispatch 의 질문은 답변 메일함 조회와 재알림에서 뺀다.
 //     닫힌 질문(lib/questions.ts 의 「닫힌 질문」)의 REMINDER 는 내지 않고, 처음 닫힌 것으로 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓴다
 //     미답변 질문을 보낸 worker(waiting)와 닫히지 않은 미답변 질문(pending)을 뒤 단계에 넘긴다. 질문을 읽지 못한 Run 은 waiting 이 null 이고 pending 이 없다.
 
@@ -14,7 +15,8 @@ import { closedReason, notifyQuestion, poll, pruneSharedClosed, readClosed, shar
 import type { ClosedLookup } from '../../lib/questions.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
-import { log, oneLine } from './shared.ts'
+import { completionMessages } from '../completion-watch.ts'
+import { log, oneLine, rowsOf } from './shared.ts'
 import type { Waiting } from './shared.ts'
 
 export const REMIND_AFTER_SEC = 600
@@ -53,9 +55,18 @@ export async function checkQuestions(ctx: StepContext, state: StepState): Promis
       continue
     }
     let notices: ReturnType<typeof poll>['notices'] = []
+    const rows = rowsOf(run, ctx.lookup)
     try {
       for (const [id, reason] of Object.entries(closed[run] ?? {})) share(run, id, reason)
-      const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo)
+      let done: ReturnType<typeof completionMessages> = []
+      try {
+        done = completionMessages(run)
+        ctx.completions.set(run, done)
+      } catch (e) {
+        // 완료 조회 실패로 질문 확인까지 멈추지 않는다. 완료 보고 단계가 자기 오류를 기록한다.
+        log(`orch-loop: 질문에서 완료 보고를 읽지 못했다: ${oneLine(e)}`)
+      }
+      const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo, { rows, done })
       notices = polled.notices
       pendingDecisions.set(run, polled.pending)
       waiting.set(run, askers(polled.pending))
@@ -72,7 +83,7 @@ export async function checkQuestions(ctx: StepContext, state: StepState): Promis
       waiting.set(run, null)
       report('questions', oneLine(e), { run })
     }
-    const lookup: ClosedLookup = {}
+    const lookup: ClosedLookup = { rows }
     for (const notice of notices) {
       if (notice.reminder) {
         const id = String(notice.message.id)
