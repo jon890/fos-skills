@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.3 (2026-11-12)
+
+- description 의 ego-browser 문장에서 본문이 이미 갖는 소유 설명을 빼고 경계만 남겼다.
+
 ## 2.0.2 (2026-11-09)
 
 - browser-driver README 의 옛 링크 설명을 원본 체크아웃과 팀 사본으로 나눠, 팀 사본에는 옛 이름 진입이 없고 install 로 링크를 다시 건다고 적는다.

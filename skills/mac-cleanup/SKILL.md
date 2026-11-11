@@ -8,7 +8,7 @@ description: |
   컨테이너 런타임은 머신에 깔린 것을 감지해 런타임마다 조사하고 정리한다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "2.1.0"
+  version: "2.1.1"
 ---
 
 # mac-cleanup

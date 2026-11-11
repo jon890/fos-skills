@@ -1,1 +1,0 @@
-- description 의 ego-browser 문장에서 본문이 이미 갖는 소유 설명을 빼고 경계만 남겼다.

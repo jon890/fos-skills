@@ -5,7 +5,7 @@ description: |
   "알림 확인", "태그된 거 답해 줘", "멘션 온 거", "두레이 알림", "알림 답변", "알림함", "inbox" 요청과 /board 의 알림 답변 요청문에 쓴다.
   업무 문서 작성과 진행 기록 댓글은 dooray-task 가, 등록 전 렌더링은 content-preview 가 맡는다.
 metadata:
-  version: "1.3.0"
+  version: "1.3.1"
 ---
 
 # inbox
