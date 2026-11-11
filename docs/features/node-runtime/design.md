@@ -50,7 +50,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 테스트 helper(임시 git 저장소 템플릿, 가짜 실행 파일 재사용, 명령 실행)는 fos-test-speed 가 만드는 testkit 을 쓴다(스펙 DECISION5). 자리는 `modules/testkit/` 이다(사용자 2026-11-05).
 같은 경계가 테스트에도 걸린다. 팀 CI 는 내보낸 스킬의 `tests/` 를 팀 저장소 안에서 돈다. 그래서 내보내는 스킬의 테스트는 orch 의 `tests/fixtures/` 도, `modules/testkit/` 도 import 할 수 없다.
 
-- testkit 은 이 저장소의 테스트만 쓰고 팀에 싣지 않는다(사용자 2026-11-05). 복사본도 두지 않는다.
+- testkit 은 이 저장소의 테스트만 쓰고 팀에 넣지 않는다(사용자 2026-11-05). 복사본도 두지 않는다.
 - 내보내지 않는 영역(`scripts/`, `mac-cleanup`, `harness-cleanup`, `report`, `browser`, `pr-review`)의 테스트는 `modules/testkit/` 을 import 한다.
 - 팀으로 내보내는 스킬의 테스트는 Node 내장 모듈만 쓴다. 필요한 helper 는 그 테스트 파일 안에 둔다.
 - PR1 은 테스트 helper 를 쓰지 않는다. 그래도 시작 시점은 스펙 DECISION5 대로 testkit 머지 뒤다. 이 기능이 testkit 을 따로 만들지 않는다. 같은 helper 가 두 벌 생긴다.
@@ -74,7 +74,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
   - `scripts/export-to-team.sh` 의 `SHARED_TOOLS` 와 `tools/` 접두
   - `scripts/test-plugin-install.sh` 224줄: 캐시의 `tools/browser-driver/browser_driver.py` 실행 권한
   - `~/.claude/scripts/browser-driver` 링크. README 「링크로 설치」 의 `ln` 줄과 `docs/code-architecture.md` 의 드라이버 찾는 순서·링크 행을 새 자리로 고친다. 사용자의 개인 링크는 REQ7 과 같이 머지 뒤 후속 작업으로 바꾼다
-- 팀 사본 자리는 `tools/browser-driver` 로 고정한다. 내보내기가 원본 경로(`skills/browser/browser-driver/`)와 팀 경로(`tools/browser-driver/`)를 나눠 갖는다. `browser` 스킬은 내보내지 않으므로 드라이버 폴더만 팀 경로로 싣는다. 그래서 팀 래퍼와 팀 테스트의 경로는 그대로이고, 본체 이름만 마지막 팀 PR 이 바꾼다(「팀 저장소」 절).
+- 팀 사본 자리는 `tools/browser-driver` 로 고정한다. 내보내기가 원본 경로(`skills/browser/browser-driver/`)와 팀 경로(`tools/browser-driver/`)를 나눠 갖는다. `browser` 스킬은 내보내지 않으므로 드라이버 폴더만 팀 경로로 내보낸다. 그래서 팀 래퍼와 팀 테스트의 경로는 그대로이고, 본체 이름만 마지막 팀 PR 이 바꾼다(「팀 저장소」 절).
 - 옛 이름 진입 `browser_driver.py` 는 옛 자리 `tools/browser-driver/browser_driver.py` 에 둔다. 개인 링크와 저장소 밖 호출이 이 경로를 부른다. 이 진입은 새 자리의 `.ts` 를 import 한다. DECISION1 의 경계 밖이지만 내보내지 않는 진입이고, 플러그인 캐시는 저장소 루트 전체를 가져 경로가 깨지지 않는다. 팀 사본에도 옛 이름 진입이 필요한지는 PR10 의 계획이 팀 저장소를 다시 찾아 정한다.
 - `tools/` 폴더는 DECISION17 의 major(이 저장소 다음 major)에 옛 이름 진입과 함께 지운다. 그 PR 이 이 설계의 「도구(`tools/<이름>`)」 경계 문구도 지운다. 테스트 실행기는 `tests/` 아래를 스스로 찾으므로 CI 는 고치지 않는다.
 - [ADR-021](../../adr/021-skill-directory-layout.md) 과의 관계: [ADR-021](../../adr/021-skill-directory-layout.md) 은 「스킬 전용 코드는 소유 스킬 안에 둔다」 이다. browser-driver 는 `browser`, `content-preview`, `presentation` 이 함께 쓰지만 소유자는 `browser` 스킬 하나다. `browser` 스킬이 드라이버의 사용 절차와 공간 분리·로그인 규칙을 갖고, 드라이버의 변경 이력도 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17). 나머지 둘은 드라이버를 import 하지 않고 자식 프로세스로 부른다(DECISION1). 그래서 `browser` 스킬 안에 두는 것이 [ADR-021](../../adr/021-skill-directory-layout.md) 의 소유 스킬 규칙에 맞는다. 다른 단위가 import 해야 하는 공용 코드였다면 `modules/` 의 몫이다.

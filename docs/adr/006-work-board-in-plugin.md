@@ -1,4 +1,4 @@
-# ADR-006: 작업 현황 창(work-board)을 이 플러그인의 구성 요소로 싣는다
+# ADR-006: 작업 현황 창(work-board)을 이 플러그인의 구성 요소로 넣는다
 
 - **status**: `accepted`
 - **배치 변경**: 현재 파일 위치는 [ADR-021](022-extension-directory-layout.md)의 `extensions/work-board/`를 따른다.
@@ -13,9 +13,9 @@
 - **결과**:
   - 얻는 것: orch 스크립트가 board.py 를 자기 위치 기준 상대 경로로 찾는다. 체크아웃과 설치 캐시에서 같은 코드로 돌고, 창과 orch 가 같은 커밋으로 묶인다.
   - 얻는 것: `claude plugin validate .` 가 명령 훅과 mod 모듈을 한 플러그인에서 함께 받는다. mod 테스트는 저장소 루트의 `claude plugin test .` 로 돈다.
-  - 감당할 것: 창을 고친 결과는 main 머지와 `claude plugin update` 뒤에 보인다. 고치는 동안은 `claude --plugin-dir` 로 작업 트리를 싣는다.
+  - 감당할 것: 창을 고친 결과는 main 머지와 `claude plugin update` 뒤에 보인다. 고치는 동안은 `claude --plugin-dir` 로 작업 트리를 로드한다.
   - 감당할 것: 창만 끄려면 플러그인 전체를 꺼야 한다.
-  - `work-board/bin/` 은 플러그인 루트의 `bin/` 이 아니므로 PATH 에 실리지 않는다. [ADR-004](004-no-plugin-bin.md) 와 부딪치지 않는다.
+  - `work-board/bin/` 은 플러그인 루트의 `bin/` 이 아니므로 PATH 에 추가되지 않는다. [ADR-004](004-no-plugin-bin.md) 와 부딪치지 않는다.
 - **전환**: 기존 mod 와 `/board` 명령 이름이 겹친다. 이 결정을 담은 커밋을 받은 뒤 기존 mod 를 끄고, 홈 폴더 저장소에서 `~/.claude/mods/work-board` 를 지운다.
 
   ```bash
