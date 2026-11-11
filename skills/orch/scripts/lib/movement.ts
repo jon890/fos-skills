@@ -38,7 +38,7 @@
 
 import { DEFAULT_IDLE_MIN, worktreeOf, judgeWorker, openRows, stalledStages, readRecords } from '../core/movement.ts'
 import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } from '../core/movement.ts'
-import { firstPendingStep } from './auto-advance.ts'
+import { firstPendingStep, mayHaveStepMark } from './auto-advance.ts'
 import { autoAdvanceOf } from '../core/auto-advance.ts'
 import { stepLaunches } from './step-launches.ts'
 import type { StageOptions } from '../core/movement.ts'
@@ -162,7 +162,7 @@ export function collectStages(repo: string, live: ReadonlySet<string>, settings:
   const autoAdvance = autoAdvanceOf(loadConfig(repo))
   const steps = new Map<string, { mark: 'auto' | 'ask' | 'wait' | null; step: string; launches: ReturnType<typeof stepLaunches> }>()
   for (const item of items) {
-    if (!['doing', 'wait'].includes(String(item.status))) continue
+    if (!['doing', 'wait'].includes(String(item.status)) || !mayHaveStepMark(item)) continue
     const step = firstPendingStep(file, item)
     if (step) steps.set(String(item.id), { mark: step.mark, step: step.key, launches: step.mark === 'auto' ? stepLaunches(repo, String(item.id), step.key) : [] })
   }

@@ -23,6 +23,12 @@ import { workerRows, worktreePaths } from './workers.ts'
 
 export type PendingStep = { number: number; mark: 'auto' | 'ask' | 'wait' | null; condition: string | null; text: string; key: string; body: string }
 
+// 표시가 없으면 루프가 단계 조회 프로세스를 생략한다. 실제 단계 선택과 표시는 보드 도구·파서가 확인한다.
+export function mayHaveStepMark(item: Record<string, unknown>): boolean {
+  const text = JSON.stringify([item.details, item.next])
+  return ['[auto', '[ask', '[wait'].some(mark => text.includes(mark))
+}
+
 export function firstPendingStep(file: string, item: Record<string, unknown>): PendingStep | null {
   const steps = boardSteps(process.env.BOARD_BIN || BOARD_BIN, String(item.id), file)
   if (!steps) throw new Error(`단계 목록을 읽지 못했다: ${item.id}`)

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { itemBusy } from '../core/auto-advance.ts'
 import { isObject } from '../core/json.ts'
 import type { ReadyNotice, ReadyStep } from '../core/step-ready.ts'
-import { firstPendingStep } from './auto-advance.ts'
+import { firstPendingStep, mayHaveStepMark } from './auto-advance.ts'
 import { prNumbers, readBoard } from './board.ts'
 import { boardPath } from './board-file.ts'
 import { openRows, worktreeOf } from '../core/movement.ts'
@@ -26,7 +26,7 @@ export function liveSteps(rows: Record<string, unknown>[]): LiveSteps {
 export function boardReadySteps(repo: string, live: LiveSteps | null, branches: Map<string, string>, prs: OpenStepPrs | null): ReadyStep[] {
   const file = boardPath(repo)
   return readBoard(file).map(item => {
-    const step = item.status === 'done' ? null : firstPendingStep(file, item)
+    const step = item.status === 'done' || !mayHaveStepMark(item) ? null : firstPendingStep(file, item)
     const launches = step?.mark === 'auto' ? stepLaunches(repo, item.id, step.key) : []
     const text = (key: string) => typeof item[key] === 'string' ? (item[key] as string).trim() || null : null
     const busy = live && prs ? itemBusy({ worktree: text('worktree'), branch: text('branch'), pr: [...prNumbers(item.pr)] }, launches, live, branches, prs) : null
