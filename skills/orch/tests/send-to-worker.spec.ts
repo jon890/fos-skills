@@ -670,6 +670,24 @@ describe('Orca 후속 일과 기록', () => {
     assert.deepEqual(record.effective, { agent: null, model: null, effort: null })
   })
 
+  test('후속 지시서가 가리키는 자동 단계는 새 dispatch 로 기록한다', () => {
+    follow()
+    const st = readState()
+    st.dispatches.ctx_1.worker.worktreeId = `repo::${tmp}`
+    state(st)
+    const board = join(tmp, '.omc/board.json')
+    mkdirSync(dirname(board), { recursive: true })
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'next', status: 'doing', details: ['2. [auto] 다음 (계획: docs/p)'] }] }))
+    const spec = join(tmp, 'next.md')
+    writeFileSync(spec, readFileSync(spec, 'utf8') + '보드 항목 id: next\n')
+    const r = send('--spec', spec)
+    assert.equal(r.code, 0, both(r))
+    const rows = readFileSync(join(tmp, 'orch/state/step-launches.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    assert.equal(rows[0].dispatch, 'ctx_new')
+    assert.equal(rows[0].item, 'next')
+    assert.equal(rows[0].step, '2. [auto] 다음 (계획: docs/p)')
+  })
+
   for (const broken of ['', 'board', 'hook']) {
     test(`후속 일도 보드와 worker-launched 를 갱신하며 실패가 전달을 취소하지 않는다: ${broken || '정상'}`, () => {
       follow()

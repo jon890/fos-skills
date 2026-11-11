@@ -100,6 +100,7 @@ export function checkAdvance(repo: string, id: string, opts: { board?: string; r
   return { verdict: judgeAdvance(input), step, checks: input.evidence }
 }
 
+// 보드 갱신보다 먼저 부른다. 갱신 실패 뒤에도 중복 실행을 막을 기록은 남아야 한다.
 export function recordStepLaunch(repo: string, item: string, dispatch: string, branch: string | null): boolean {
   const file = boardPath(repo)
   if (!existsSync(file)) return false

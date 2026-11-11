@@ -34,7 +34,8 @@ import { pyStr, shQuote } from '../lib/py.ts'
 import { dismissQuestion } from '../lib/questions.ts'
 import { scriptPath } from '../lib/commands.ts'
 import { classify, screenLines } from '../lib/screen.ts'
-import { branchesOf, permissionsOf, selectionsOf } from '../lib/spec.ts'
+import { boardIdOf, branchesOf, permissionsOf, selectionsOf } from '../lib/spec.ts'
+import { recordStepLaunch } from '../lib/auto-advance.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { readLaunch, recordLaunch } from '../lib/launched.ts'
 import type { Effective } from '../lib/launched.ts'
@@ -340,6 +341,10 @@ async function recordFollowUp(a: Args, prior: Described, run: string, receipt: J
   catch (e) { err(`send-to-worker: 후속 worker 기록을 쓰지 못했다: ${(e as Error).message}`) }
   try { recordHistory(repo, { ...launch, at: new Date().toISOString(), title: spec.title, row: choice.row, retry_of: a.dispatch }) }
   catch (e) { err(`send-to-worker: 후속 worker 이력을 쓰지 못했다: ${(e as Error).message}`) }
+  try {
+    const id = boardIdOf(spec.text)?.id
+    if (id) recordStepLaunch(repo, id, dispatch, launch.branch || null)
+  } catch (e) { err(`send-to-worker: 띄운 단계 기록을 남기지 못했다: ${(e as Error).message}`) }
   try { registerBoard(repo, a.spec!, prior.worktree, '', launch.branch || '') }
   catch (e) { err(`send-to-worker: 보드를 갱신하지 못했다: ${(e as Error).message}`) }
   try {

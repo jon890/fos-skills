@@ -42,5 +42,7 @@ test('첫 미완료 자동 단계만 기록하고 사건 꼬리표는 비교할 
   }
   assert.deepEqual(stepLaunches(repo, 'a', '2. [auto] 다음'), [{ dispatch: 'ctx', branch: 'feat/x' }])
   assert.equal(recordStepLaunch(repo, 'missing', 'ctx', null), false)
+  writeFileSync(board, 'broken')
+  assert.throws(() => recordStepLaunch(repo, 'a', 'ctx', null))
   assert.ok(existsSync(board))
 })
