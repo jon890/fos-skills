@@ -2127,3 +2127,57 @@ describe('실제 spec-lint의 CLI와 함수 판정 대응', () => {
     })
   }
 })
+
+// 차례 1-2. 지시서의 `번호 예약:` 줄마다 예약 명령을 부르고 받은 번호를 지시서 블록에 적는다(lib/spec-reserve.ts)
+describe('번호 미리 잡기', () => {
+  function reserveFake(body: string): void {
+    const file = join(tmp, 'reserve.sh')
+    writeFileSync(file, `echo "reserve $*" >> "$FAKE_LOG"\n${body}\n`)
+    env.RESERVE_MIGRATION = file
+  }
+  const SPEC = '# 일\n\n브랜치: `feat/x`\n허락: push 는 허락했다.\n번호 예약: sql analysis-api care profile refresh\n번호 예약: adr analysis-api source tools\n'
+
+  test('줄마다 브랜치와 함께 예약하고 지시서에 잡아 준 번호 블록을 적는다. 다시 띄우면 블록을 바꿔 쓴다', () => {
+    writeFileSync(spec, SPEC)
+    reserveFake('case "$*" in *adr*) echo "RESERVED analysis-api ADR-105 docs/adr/105-source-tools.md";; *) echo "RESERVED analysis-api V157 db/V157__care_profile_refresh.sql reused";; esac')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    const calls = lines('reserve ')
+    assert.equal(calls.length, 2, calls.join('\n'))
+    assert.match(calls[0], /--kind sql --module analysis-api --name care profile refresh --branch feat\/x$/)
+    assert.match(calls[1], /--kind adr --module analysis-api --name source tools --branch feat\/x$/)
+    assert.match(r.stdout, /^RESERVED-FOR-SPEC sql analysis-api V157 db\/V157__care_profile_refresh\.sql$/m)
+    const text = readFileSync(spec, 'utf8')
+    assert.ok(text.includes('번호 예약: adr analysis-api source tools\n<!-- orch-reserved:'), text)
+    assert.ok(text.includes('- sql analysis-api care profile refresh: V157 `db/V157__care_profile_refresh.sql`\n'), text)
+    assert.ok(text.includes('- adr analysis-api source tools: ADR-105 `docs/adr/105-source-tools.md`\n<!-- /orch-reserved -->'), text)
+    // 같은 지시서로 다시 띄워도 블록은 하나다
+    state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+    assert.equal(launch(['--worktree', worktree, '--', ...CLAUDE]).code, 0)
+    assert.equal(readFileSync(spec, 'utf8').split('orch-reserved:').length, 2)
+  })
+
+  test('예약이 조회 실패로 끝나면 경고하고 그 줄은 적지 않은 채 띄운다', () => {
+    writeFileSync(spec, SPEC)
+    reserveFake('echo "LOOKUP-FAIL gh"; exit 1')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /경고: 번호를 잡지 못했다\(sql analysis-api care profile refresh, 종료 코드 1\)/)
+    assert.ok(!readFileSync(spec, 'utf8').includes('orch-reserved'))
+  })
+
+  test('예약의 사용법 오류, 틀린 줄, 브랜치 줄 없음은 worker 를 띄우기 전에 2 다', () => {
+    writeFileSync(spec, SPEC)
+    reserveFake('echo "모르는 모듈" >&2; exit 2')
+    assert.equal(launch(['--worktree', worktree, '--', ...CLAUDE]).code, 2)
+    writeFileSync(spec, '# 일\n\n브랜치: `feat/x`\n허락: push 는 허락했다.\n번호 예약: version analysis-api x\n')
+    const bad = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(bad.code, 2, both(bad))
+    assert.match(bad.stderr, /번호 예약 줄은/)
+    writeFileSync(spec, '# 일\n\n허락: push 는 허락했다.\n번호 예약: sql analysis-api x\n')
+    assert.equal(launch(['--worktree', worktree, '--', ...CLAUDE]).code, 2)
+    assert.equal(lines('orca orchestration worker-start').length, 0)
+  })
+})

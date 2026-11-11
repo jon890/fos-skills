@@ -43,6 +43,13 @@
 //        새 워크트리면 origin/<base>, --resume-remote 면 --spec-ref origin/<지시서 브랜치>, --worktree 면 --spec-root <그 워크트리> 다.
 //        첫 줄 검사(spec-lint 의 「루프」)에 걸려도 같은 5 다. 확인받은 스펙 없이 기능 worker 를 띄우지 않게 한다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
+//     1-2. 지시서에 `번호 예약:` 줄(lib/spec-reserve.ts)이 있으면 줄마다 reserve-migration(`orch queue reserve`)을
+//        --branch <지시서의 첫 브랜치 줄> --kind --module --name 으로 부르고(--base 는 넘긴다), 받은 번호를 지시서의 예약 블록에 적는다.
+//        줄마다 `RESERVED-FOR-SPEC <종류> <모듈> <label> <경로>` 를 낸다. 같은 브랜치, 모듈, 이름이면 다시 띄워도 같은 번호다(reused).
+//        줄 꼴이 틀리거나 브랜치 줄이 없거나 예약이 2(사용법 오류, 모르는 모듈 같은 것)로 끝나면 워크트리를 만들기 전에 2 로 멈춘다.
+//        1(조회 실패)이나 4(잠금)면 경고만 내고 그 줄은 적지 않는다. worker 가 공통 지시서대로 직접 예약한다.
+//        잡은 번호는 지금 예약처럼 PR 이 머지되거나 브랜치가 없어지면(지시서 정리와 워크트리 정리가 지운다) 다음 예약의 정리가 푼다.
+//        RESERVE_MIGRATION 으로 예약 명령을 바꾼다
 //     2. 워크트리를 만들거나 확인한다
 //     2-0. --agent codex 이고 코디네이터 환경에 SSH_AUTH_SOCK 이 있으면 그 워크트리에만 걸리는 git 설정 core.sshCommand 에
 //        `ssh -o IdentityAgent=<소켓>` 을 둔다(lib/ssh-agent.ts). Codex 의 `inherit = "core"` 가 SSH_AUTH_SOCK 을 빼 git 의 SSH 인증이
@@ -110,7 +117,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -139,6 +146,8 @@ import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { selectionVerdict } from '../lib/selection.ts'
+import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
+import type { Reserved } from '../lib/spec-reserve.ts'
 import { branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 
 const USAGE = [
@@ -527,6 +536,43 @@ async function prepareReview(worktree: string, repo: string, pr: number, execute
   return null
 }
 
+// 차례 1-2(머리 주석). 멈출 종료 코드를 내거나 null 이다
+async function reserveNumbers(a: Args, repo: string, execute: typeof runAsync): Promise<number | null> {
+  const text = readFileSync(a.spec, 'utf8')
+  const { requests, problems } = reserveRequestsOf(text)
+  if (problems.length > 0) {
+    for (const problem of problems) err(`거부: ${problem}`)
+    return 2
+  }
+  if (requests.length === 0) return null
+  const branch = branchesOf(text)[0]
+  if (!branch) {
+    err('거부: 번호 예약 줄이 있지만 지시서에 `브랜치:` 줄이 없어 예약할 브랜치를 모른다')
+    return 2
+  }
+  const reserve = process.env.RESERVE_MIGRATION || scriptPath('reserve-migration')
+  const got: Reserved[] = []
+  for (const request of requests) {
+    const args = ['--repo', repo, '--kind', request.kind, '--module', request.module, '--name', request.name, '--branch', branch]
+    if (a.base) args.push('--base', a.base)
+    const done = await execute(scriptCommand(reserve, args), { timeoutMs: LONG_MS })
+    const line = reservedLine(done.stdout)
+    if (done.code === 2) {
+      err(`거부: 번호 예약이 사용법 오류로 끝났다(${request.kind} ${request.module} ${request.name}): ${oneLine(done.stderr || done.stdout)}`)
+      return 2
+    }
+    if (done.code !== 0 || !line) {
+      err(`경고: 번호를 잡지 못했다(${request.kind} ${request.module} ${request.name}, 종료 코드 ${done.code}): ${oneLine(done.stdout || done.stderr)}. worker 가 직접 예약한다`)
+      continue
+    }
+    got.push({ ...request, ...line })
+    out(`RESERVED-FOR-SPEC ${request.kind} ${request.module} ${line.label} ${line.path}`)
+  }
+  const next = withReservedBlock(text, got)
+  if (next !== text) writeFileSync(a.spec, next, 'utf8')
+  return null
+}
+
 export function main(argv: string[], runner?: Runner, asyncRunner: typeof runAsync = runAsync): Promise<number> {
   return runner ? withRun(runner, () => executeMain(argv, asyncRunner)) : executeMain(argv, asyncRunner)
 }
@@ -607,6 +653,9 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
 
   const gate = await lintGate(a, continuation, execute)
   if (gate.stop !== null) return gate.stop
+
+  const reserved = await reserveNumbers(a, retryRepo, execute)
+  if (reserved !== null) return reserved
 
   const specText = readFileSync(a.spec, 'utf8')
   const reviewPr = reviewPrOfSpec(specText)
