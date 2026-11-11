@@ -1648,6 +1648,7 @@ function ago(at) {
 
 // 「오늘 시작」, 「정할 것 묻기」 버튼이 입력란에 채우는 요청문. 사용자가 Enter 를 눌러 보낸다.
 // 훅이 직접 보내는 prompt.submit 은 모델에 닿지 않아 쓰지 않는다
+const WORKER_REPLY_PROMPT = '질문과 막힘에 답할 때는 orch worker send --dispatch <id> --reply-to <질문 id> 로 원래 질문의 스레드에 답해 줘. 보드가 스레드에 보낸 답만 「답함」 으로 세기 때문이야. --reply-to 없는 send 는 질문이 없는 새 지시에만 써 줘. 답과 무관한 새 지시는 --no-reply 로 보내 줘. 자세한 절차는 orch 스킬의 references/replying.md 를 따라 줘.'
 export const START_PROMPT = [
   '오늘 작업을 시작하자.',
   '1. 먼저 어제 미룬 결정과 아침에 확인하기로 한 목록을 모아 줘. 보드의 결정 필요(decide) 항목과 끝나지 않은 확인 단계, 어제 대화에서 미룬 결정, 답하지 않은 worker 질문을 찾아 맨 앞에 짧게 보여 주고, 지금 정할 수 있는 것은 바로 물어봐 줘.',
@@ -1656,6 +1657,7 @@ export const START_PROMPT = [
   '4. orch 상주 루프와 대기(wait-important)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리해 줘.',
   '5. 열린 PR 의 CI 와 리뷰, 막힌 것, 내가 정할 것을 짧게 보고하고 정할 것은 바로 물어봐 줘.',
   '6. 보드의 끝나지 않은 단계 가운데 확인 단계(배포 뒤 확인, 회차·지표 확인, 원격 검증)를 모아 줘. 지금 확인할 수 있는 것은 PR, 배포, 운영 상태와 대조해 확인하고 그 근거로 단계를 끝내거나 고쳐 줘. 확인하지 못한 것과 사람이 할 확인만 5번 보고와 함께 짧게 알려 줘.',
+  WORKER_REPLY_PROMPT,
 ].join('\n')
 
 export const DECIDE_PROMPT = [
@@ -1663,11 +1665,11 @@ export const DECIDE_PROMPT = [
   '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
-  '4. 답한 보드 줄은 fos-skills 플러그인의 extensions/work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 orch worker send 로 전해 줘.',
+  '4. 답한 보드 줄은 fos-skills 플러그인의 extensions/work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게 전해 줘. ' + WORKER_REPLY_PROMPT,
   '5. worker 가 직접 올린 막힘은 먼저 확인해서 네가 처리할 수 있으면 처리하고, 사람이 정할 것만 결정으로 물어봐 줘.',
   '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
   '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',
-  '8. 처리한 막힘은 이어갈 일이 있는 worker 면 orch worker send 답장으로 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
+  '8. 처리한 막힘은 이어갈 일이 있는 worker 면 4번 규칙대로 원래 질문의 스레드에 답해 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
 ].join('\n')
 
 // 창 닫기(ui.close)가 확인 모드만 끄고 창을 남길지. 사람이 닫을 때(Esc, 닫기 표시)만이고 엔진의 unload 는 닫는다

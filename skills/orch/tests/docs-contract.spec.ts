@@ -10,9 +10,19 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { readTtl } from '../scripts/lib/gh-budget.ts'
 import { COMMANDS } from '../scripts/lib/commands.ts'
+import { ADVANCE_REASONS } from '../scripts/core/auto-advance.ts'
 
 const ORCH = fileURLToPath(new URL('..', import.meta.url))
 const read = (...parts: string[]) => readFileSync(join(ORCH, ...parts), 'utf8')
+
+test('자동 진행 표시와 거절 이유, 코디네이터의 다음 단계 처리는 문서와 같다', () => {
+  const board = section(read('references', 'board.md'), '## 자동 진행 표시').join('\n')
+  for (const word of ['[auto]', '[ask]', '[wait]', '(스펙:', '(계획:', '(앞 사건:', 'real', '외부로 나가는 글', '범위가 바뀌는 일']) assert.ok(board.includes(word), word)
+  const reply = section(read('references', 'replying.md'), '## 다음 단계 이어 가기').join('\n')
+  for (const word of ['orch board auto-check', '다음 단계 자동 진행:', '보드 항목 id:', 'board.auto_advance', 'WORKER-LIMITED', '--on', ...Object.values(ADVANCE_REASONS)]) assert.ok(reply.includes(word), word)
+  assert.match(read('references', 'waiting.md'), /다음 단계 이어 가기/)
+  assert.equal(read('templates', 'spec-common.md').split('orch-rule: remaining-prs').length - 1, 1)
+})
 
 test('보드 안내는 파일 직접 수정 대신 등록된 상태·단계 명령과 남는 board.ts 동작을 가리킨다', () => {
   const doc = read('references', 'board.md')

@@ -64,6 +64,7 @@
 | | `orch cleanup worktree <워크트리>` | `remove-worktree` | 없음 |
 | | `orch cleanup handoff` | `handoff-cleanup` | 없음 |
 | `board` | `orch board sync`, `release`, `goal <id>` | `board-sync`, `board-release`, `goal-progress` | 없음 |
+| `board` | `orch board auto-check <항목>` | `auto-check` | `--repo`, `--run` 을 문맥에서 읽는다 |
 | `study` | `orch study list`, `add`, `set`, `migrate` | `study-candidates <동작>` | 없음 |
 | `spec` | `orch spec lint`, `orch spec line <지시서>` | `spec-lint`, `spec-line` | 없음 |
 | `doctor` | `orch doctor` | `orch-doctor.py`, `orch-doctor` | 없음 |

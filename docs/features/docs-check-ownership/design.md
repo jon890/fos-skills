@@ -164,7 +164,7 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index [--adr-dir GLOB]...
 - 호환과 배포 순서:
   1. orch PR3 머지 뒤 fos-skills PR 을 연다(스펙 DECISION7). node-runtime 저장소 기반 PR(`repo-base`)이 먼저 머지됐으면 그 허용 목록(`scripts/runtime-policy.json` 의 `pending`)에서 지운 `check_adr_layout.py` 와 테스트를 뺀다.
   2. fos-skills PR 머지와 플러그인 갱신 뒤 ai-analysis PR 을 연다. 그 전에는 ai-analysis 가 옛 `check-docs.py` 로 돈다.
-  3. 팀 저장소는 node-runtime 의 팀 PR 이 함께 반영한다. 그 전 급한 내보내기는 `team-export` 브랜치(node-runtime DECISION10)를 쓰며, 이 기능의 변경은 싣지 않는다. 팀 사본은 Python 검사기에 머문다.
+  3. 팀 저장소는 node-runtime 의 팀 PR 이 함께 반영한다. 그 전 급한 내보내기는 `team-export` 브랜치(node-runtime DECISION10)를 쓰며, 이 기능의 변경은 넣지 않는다. 팀 사본은 Python 검사기에 머문다.
 
 ## 검증 전략
 

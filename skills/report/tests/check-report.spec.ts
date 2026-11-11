@@ -251,6 +251,24 @@ describe('--text', () => {
 })
 
 describe('--korean', () => {
+  for (const status of [0, 1, 2]) {
+    test(`표기 검사 종료 코드 ${status}와 경고를 유지하고 성공한 경우에만 의미 점검을 안내한다`, (t) => {
+      const s = setup(t)
+      const koreanCheck = join(s.dir, 'korean-check')
+      mkdirSync(join(koreanCheck, 'scripts'), { recursive: true })
+      writeFileSync(join(koreanCheck, 'scripts', 'check.ts'), `
+        process.stdout.write('경고: 문맥을 확인한다\\n')
+        process.stderr.write('검사기 진단\\n')
+        process.exitCode = ${status}
+      `)
+      const done = runCommand([...COMMAND, '--korean', s.write(OK_BODY)], { env: { ...process.env, KOREAN_CHECK: koreanCheck } })
+      assert.equal(done.code, status)
+      assert.ok(done.stdout.startsWith('경고: 문맥을 확인한다\n'))
+      assert.equal(done.stderr, '검사기 진단\n')
+      assert.equal(done.stdout.includes('references/review-axes.md'), status === 0)
+    })
+  }
+
   test('금지어를 찾으면 1 이고 보고서 이름으로 알린다', (t) => {
     const s = setup(t)
     const done = s.run('--korean', s.write(OK_BODY.replace('본문이다', '트리아지 결과다')))

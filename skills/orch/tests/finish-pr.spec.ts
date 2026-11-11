@@ -936,6 +936,18 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     })
   }
 
+  test('중간 PR 마무리는 앞 사건 근거가 가리키는 다음 단계를 끝내지 않는다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: 77, details: ['1. PR #77 구현', '2. [auto] PR4 (앞 사건: #77 merge)'] }] }))
+    const r = await c.finish(['--board', file, '--intermediate'])
+    assert.equal(r.code, 0, both(r))
+    const row = JSON.parse(readFileSync(file, 'utf8')).items[0]
+    assert.equal(row.details[0].done, true)
+    assert.equal(row.details[1].done, false)
+    assert.equal(row.status, 'doing')
+  })
+
   for (const kind of ['legacy', 'tagged', 'milestone', 'second', 'done-reference']) {
     test(`못 맞춘 머지 기록: ${kind}`, async (t) => {
       const c = setup(t)

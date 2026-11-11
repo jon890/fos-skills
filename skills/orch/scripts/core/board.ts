@@ -1,3 +1,4 @@
+import { withoutEvidence } from './evidence.ts'
 import { stagesOf } from './milestones.ts'
 
 export type BoardItem = Record<string, unknown> & { id: string }
@@ -56,7 +57,7 @@ export function withNote(details: BoardDetail[], note: string | null): BoardDeta
 // 근거 괄호 밖에 그 PR 번호(#N)가 적힌 단계. includeDone 은 참조 판정에서도 같은 규칙을 쓰게 한다.
 export function prSteps(steps: BoardStep[], pr: string, includeDone = false): number[] {
   const pattern = new RegExp(`#${pr}(?!\\d)`)
-  return steps.filter((step) => (includeDone || !step.done) && pattern.test(step.text.replace(/\(앞 사건:[^)]*\)/g, ''))).map((step) => step.number)
+  return steps.filter((step) => (includeDone || !step.done) && pattern.test(withoutEvidence(step.text))).map((step) => step.number)
 }
 
 // 중간 PR 을 옛 단계 항목(stages 칸이 없다)에 반영하는 board.ts 명령. 남은 일 줄을 바꾸고, 그 PR 의 단계를 끝내고, pr 칸을 비우고 merged-pr 에 쌓는다.

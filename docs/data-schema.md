@@ -103,6 +103,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `contracts` | `paths` | 정규식 문자열이나 그 목록(Python 정규식. 목록은 `\|` 로 잇는다) | 없음 | 계약 파일. 충돌 파일이 모두 여기 맞을 때만 자동 합치기를 한다. 기능 완료 근거도 이 파일만 푼 base 합치기 커밋을 받아들인다 |
 | `board` | `steps` | 비지 않은 문자열 목록. 줄 앞 꼬리표는 `[pr]`, `[merge]`, `[deploy]`, `[release]` 중 하나이고 한 번씩만 쓴다. 다른 꼬리표는 사용법 오류다 | `["[pr] PR", "[merge] 머지"]` | 띄울 때 만드는 보드 마일스톤 단계. 지시서의 `## 보드 단계` 절이 앞선다. 근거는 [ADR-018](adr/018-board-milestone-steps.md) 가 소유한다 |
 | `board` | `task_line` | 정규식 문자열. 이름 붙은 묶음 `number` 가 있어야 하고 `title` 은 선택이다. `m`, `u` 플래그로 읽는다 | `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안을 제목으로 읽는 꼴(`lib/milestones.ts` 의 `DEFAULT_TASK_LINE`) | 띄울 때 지시서에서 업무 번호와 제목을 읽는다. 번호는 보드 항목 제목 앞에 붙고, 같은 번호의 끝나지 않은 항목을 이어 쓰는 기준이 된다 |
+| `board` | `auto_advance` | `true` 나 `false`. 아니면 설정 오류다 | `true` | `false` 면 `orch board auto-check` 가 거절해 코디네이터가 다음 단계를 자동으로 띄우지 않는다 |
 | `board` | `done_after` | `merge`, `deploy`, `release` 중 하나 | `merge` | 마지막 PR 이 이 사건 단계에 닿으면 보드 항목을 done 으로 바꾼다. 항목에 그 단계가 없으면 가장 늦은 사건 단계에서 바꾼다 |
 | `heavy` | `exclusive`, `normal`, `light` | 정규식 목록 | 빈 목록 | 무거운 검사 분류. 앞의 목록부터 맞춰 본다. 어디에도 맞지 않으면 `normal` 이다 |
 | `heavy` | `wait_idle` | 정규식 목록 | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
@@ -128,6 +129,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | --- | --- | --- |
 | `state/approvals.json` | 승인 대기. 저장 꼴과 상태는 [승인 설계의 저장 꼴](features/board-approval/design.md#저장-꼴)이 소유한다. 잠금 안에서 옆 파일에 쓰고 이름을 바꾼다 | 쓰기마다 끝난 지 7일이 지난 기록을 지운다. 열린 기록과 마지막 버전 번호는 남긴다 |
 | `state/approvals.json.lock` | 승인 파일 잠금. [보드 쓰기 잠금](adr/029-board-write-lock.md)의 `withFileLock` 규약을 쓴다 | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
+| `state/step-launches.jsonl` | 자동 진행 단계의 실행 기록. 한 줄에 `at`(ISO 8601 UTC), `item`, `number`, `step`(사건 꼬리표를 뗀 글), `dispatch`, `branch`(문자열 또는 null). `launch-worker`, `send-to-worker` 가 쓰고 `orch board auto-check` 가 읽는다 | 자동으로 지우지 않는다 |
 | `state/launch-history.jsonl` | 띄울 때마다 남기는 영구 이력. `dispatch`, `task`, `run`, `terminal`, `at`, `branch`, `worktree`, `spec`, `title`, `agent`, `model`, `effort`, `effective`, `row`, `completion`, `experiment`, `retry_of`. 모르는 값은 null. 필드와 선택 검사 계약은 [orch-routing 설계](features/orch-routing/design.md) 가 소유한다 | 자동으로 지우지 않는다. launched-workers 정리와 별개다 |
 | `state/routing-log.jsonl` | worker PR이 머지되거나 닫힐 때 남기는 관측 기록. 필드는 [orch-routing 스펙의 기록 항목](features/orch-routing/spec.md#기록-항목), 수집과 쓰기는 [설계](features/orch-routing/design.md)가 소유한다. `version`과 `recorded_at`을 함께 둔다. 토큰 키는 `input`, `output`, `cache_read`, `cache_write`이고 입력은 캐시 읽기를 제외한 값이다. `tokens_source`는 토큰을 읽은 곳(`session`, `orca-usage`)이거나 `tokens`가 `null`인 이유(`stale`, `unavailable`)다 | PR마다 한 줄. 같은 결과는 보존하고 closed에서 merged로 바뀌면 교체한다. 자동으로 지우지 않는다 |
 | `state/routing-log.lock` | routing 기록을 원자적으로 바꿀 때 잡는 pid 잠금 | 쓰기를 끝내면 반납하고 죽은 잠금은 회수한다 |
