@@ -2,8 +2,11 @@
 // 이름이 64자리 hex 인 dangling 익명 volume 을 후보와 최근 생성으로 나눈다. 읽기 전용이다.
 //
 // 사용법:
-//   docker_volumes.ts [--recent-hours 24] [--peek N|all] [--peek-image IMAGE] [--json] [--json-out FILE]
+//   docker_volumes.ts [--context NAME] [--recent-hours 24] [--peek N|all] [--peek-image IMAGE] [--json] [--json-out FILE]
 //
+// --context NAME 은 그 docker context 의 엔진을 조사한다. 현재 context 설정은 바꾸지 않는다. 주면 텍스트 출력 첫 줄에 `## context: NAME` 이 붙고
+// JSON 맨 끝에 `context` 필드로 NAME 이 남는다(주지 않으면 필드가 없어 기존 출력과 같다). `delete_volumes.ts` 가 이 값으로 같은 엔진에 지운다.
+
 // --peek N 은 후보 중 큰 순서로 N개의 최상위 항목을 보인다. `all` 이면 후보를 모두 연다. 이미 있는 이미지로 컨테이너를 잠깐 띄워
 // volume 을 읽기 전용으로 붙여 `ls -A` 만 돌리고, 이미지를 pull 하지 않으며 네트워크를 끊는다.
 // --peek-image 가 없으면 로컬 이미지 중 alpine, busybox, debian, ubuntu 를 고른다.
@@ -21,8 +24,9 @@ import { isMain, rjust, runText, write } from './io.ts'
 import { PY_SPACE, pyHead, pySplitLines, pyStrCompare, pyStrip } from './kit/py.ts'
 import { dumpJson, formatLocal, fromIsoFormat, loadJson, osErrorMessage, parsePyFloat, parsePyInt, PyFloat, pyFixed, pyG, pyTime, splitWhitespace } from './pylike.ts'
 
-const USAGE = `usage: docker_volumes.ts [-h] [--recent-hours RECENT_HOURS] [--peek N|all]
-                         [--peek-image PEEK_IMAGE] [--json] [--json-out FILE]
+const USAGE = `usage: docker_volumes.ts [-h] [--context CONTEXT] [--recent-hours RECENT_HOURS]
+                         [--peek N|all] [--peek-image PEEK_IMAGE] [--json]
+                         [--json-out FILE]
 `
 
 // argparse 가 만든 도움말(80칸)과 같다. 옵션 이름 대신 파일 이름이 .ts 다
@@ -31,6 +35,7 @@ const HELP = `${USAGE}
 
 options:
   -h, --help            show this help message and exit
+  --context CONTEXT
   --recent-hours RECENT_HOURS
   --peek N|all
   --peek-image PEEK_IMAGE
@@ -50,6 +55,7 @@ const ENTRY: Entry = {
   help: HELP,
   spec: {
     options: [
+      { name: 'context', value: true },
       { name: 'recent-hours', value: true, float: true },
       { name: 'peek', value: true, check: (text) => (peekCount(text) === null ? '정수 또는 all 이어야 한다' : null) },
       { name: 'peek-image', value: true },
@@ -62,9 +68,19 @@ const ENTRY: Entry = {
 
 export class DockerError extends Error {}
 
+// `--context NAME` 으로 고른 context. 설정하면 이 모듈의 docker() 가 모든 명령에 `docker --context NAME` 을 붙인다.
+// 사용자의 현재 context 설정은 바꾸지 않는다. 스크립트 한 번의 실행 안에서 한 번만 정한다
+let activeContext: string | null = null
+export function useContext(name: string | null): void {
+  activeContext = name
+}
+
+// docker 에 넘길 인자. context 를 골랐으면 맨 앞에 `--context NAME` 을 붙인다
+export const dockerArgv = (args: string[]): string[] => ['docker', ...(activeContext ? ['--context', activeContext] : []), ...args]
+
 // docker 명령의 표준 출력. 실행하지 못하거나 시간이 넘거나 종료 코드가 0 이 아니면 DockerError 다(옛 구현의 RuntimeError, OSError, TimeoutExpired)
 export function docker(args: string[], timeoutSec = 120): string {
-  const done = runText(['docker', ...args], { timeoutSec })
+  const done = runText(dockerArgv(args), { timeoutSec })
   if (done.failure) throw new DockerError(done.message)
   if (done.code !== 0) throw new DockerError(done.stderr.trim())
   return done.stdout
@@ -185,6 +201,8 @@ export function main(argv: string[]): number {
   const recentHours = recentGiven === undefined ? 24 : parsePyFloat(recentGiven)
   const peekN = args.options.peek === undefined ? 0 : peekCount(args.options.peek as string)!
   const jsonOut = args.options['json-out'] as string | undefined
+  const context = (args.options.context as string | undefined) ?? null
+  useContext(context)
   let names: string[]
   let created: Map<string, number | null>
   let sizes: Map<string, number | null>
@@ -231,6 +249,7 @@ export function main(argv: string[]): number {
     totals,
     kind_totals: summarizeKinds(items),
     volumes: items.map((v) => ({ ...v, created_ts: v.created_ts === null ? null : new PyFloat(v.created_ts) })),
+    ...(context ? { context } : {}),
   }
   if (jsonOut) {
     try {
@@ -245,6 +264,7 @@ export function main(argv: string[]): number {
     return 0
   }
 
+  if (context) write(1, `## context: ${context}\n`)
   if (ryuk) write(1, '경고: testcontainers ryuk 가 떠 있다. 다른 세션이 테스트 중이므로 지우기 전에 사용자에게 알린다\n')
   for (const cls of ['후보', '최근']) {
     const title = cls === '후보' ? '후보(하루 넘은 dangling 익명 volume)' : `최근(${pyG(recentHours)}시간 안, 후보에서 뺀다)`

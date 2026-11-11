@@ -19,9 +19,12 @@ const vol = (name: string, kind: string | null, cls = '후보', extra: object = 
 
 function setup(opts: { ryuk?: boolean; dangling?: string[]; fail?: string[]; down?: boolean } = {}) {
   const box = new Sandbox()
+  // 실제 docker 는 엔진이 꺼져도 `context inspect` 가 된다. 삭제 도구가 먼저 엔드포인트를 읽으므로 두 경우 모두 로컬 소켓을 낸다
+  const endpoint: FakeRule = { args: ['context', 'inspect'], stdout: 'unix:///var/run/docker.sock\n' }
   const rules: FakeRule[] = opts.down
-    ? [{ stderr: 'Cannot connect to the Docker daemon', code: 1 }]
+    ? [endpoint, { stderr: 'Cannot connect to the Docker daemon', code: 1 }]
     : [
+        endpoint,
         { args: ['ps'], stdout: opts.ryuk ? 'postgres:17\ntestcontainers/ryuk:0.11.0\n' : 'postgres:17\n' },
         { args: ['volume', 'ls'], stdout: `${(opts.dangling ?? [PG, MY, OT, UNOPENED, FRESH]).join('\n')}\n` },
         ...(opts.fail ?? []).map((name) => ({ args: ['volume', 'rm', name], stderr: 'Error: volume is in use', code: 1 })),
@@ -169,10 +172,71 @@ describe('ryuk 와 docker 상태', () => {
     assert.equal(docker.calls().length, 0)
   })
 
-  test('- 는 표준 입력에서 읽고 docker 호출 순서는 ps 다음 volume ls 다', () => {
+  test('- 는 표준 입력에서 읽고 docker 호출 순서는 엔드포인트, ps, volume ls 다', () => {
     const { box, docker } = setup()
     const done = box.run('delete_volumes', ['-'], { input: JSON.stringify({ volumes: [vol(PG, 'postgres')] }) })
     assert.equal(done.code, 0)
-    assert.deepEqual(docker.calls().map((c) => c.argv), [['ps', '--format', '{{.Image}}'], ['volume', 'ls', '-f', 'dangling=true', '-q']])
+    assert.deepEqual(docker.calls().map((c) => c.argv), [['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], ['ps', '--format', '{{.Image}}'], ['volume', 'ls', '-f', 'dangling=true', '-q']])
+  })
+})
+
+describe('context 와 원격 엔진(REQ2, REQ4)', () => {
+  const rules = (endpoints: Record<string, string>): FakeRule[] => [
+    ...Object.entries(endpoints).map(([name, host]) => ({ args: ['context', 'inspect', name], stdout: `${host}\n` })),
+    { args: ['ps'], stdout: 'postgres:17\n' },
+    { args: ['volume', 'ls'], stdout: `${PG}\n` },
+    { args: ['volume', 'rm'] },
+  ]
+  const withContext = (context: string | undefined) => ({ context, volumes: [vol(PG, 'postgres')] })
+  const removes = (calls: { argv: string[] }[]) => calls.filter((c) => c.argv.includes('rm')).map((c) => c.argv)
+
+  test('ssh 와 tcp 엔드포인트는 dry-run 도 --apply 도 5 로 거부하고 volume rm 을 보내지 않는다', () => {
+    const { box, docker } = setup()
+    docker.setRules(rules({ prod: 'ssh://deploy@prod.example.com', lab: 'tcp://10.0.0.5:2376' }))
+    const file = write(join(box.root, 'ctx.json'), JSON.stringify(withContext('prod')))
+    for (const args of [[], ['--apply']]) {
+      const done = box.run('delete_volumes', [file, ...args])
+      assert.equal(done.code, 5, done.stderr)
+      assert.equal(done.stdout, '')
+      assert.ok(done.stderr.includes('거부: context prod 의 엔드포인트가 이 맥의 unix 소켓이 아니다(ssh://deploy@prod.example.com). 맥 밖 엔진의 volume 은 지우지 않는다\n'), done.stderr)
+    }
+    const flagOnly = write(join(box.root, 'plain.json'), JSON.stringify({ volumes: [vol(PG, 'postgres')] }))
+    const viaFlag = box.run('delete_volumes', [flagOnly, '--context', 'lab', '--apply'])
+    assert.equal(viaFlag.code, 5)
+    assert.deepEqual(removes(docker.calls()), [])
+    assert.ok(docker.calls().every((c) => c.argv[0] === 'context'), '엔드포인트를 읽는 호출 말고는 docker 를 부르지 않는다')
+  })
+
+  test('DOCKER_HOST 가 원격이고 context 를 안 줬으면 5 이고, 엔드포인트가 비거나 읽히지 않아도 5 나 4 로 닫는다', () => {
+    const { box, docker } = setup()
+    docker.setRules(rules({}))
+    const file = write(join(box.root, 'plain.json'), JSON.stringify({ volumes: [vol(PG, 'postgres')] }))
+    const remote = box.run('delete_volumes', [file, '--apply'], { env: box.env({ DOCKER_HOST: 'tcp://10.0.0.5:2376' }) })
+    assert.equal(remote.code, 5)
+    assert.deepEqual(docker.calls(), [])
+    const empty = box.run('delete_volumes', [file, '--apply'])
+    assert.equal(empty.code, 5)
+    assert.ok(empty.stderr.includes('(비어 있음)'))
+    assert.deepEqual(removes(docker.calls()), [])
+  })
+
+  test('조사 파일의 context 로만 지운다. 로컬 unix 소켓이면 모든 호출이 그 context 를 가진다', () => {
+    const { box, docker } = setup()
+    docker.setRules(rules({ desktop: 'unix:///Users/x/.docker/run/docker.sock' }))
+    const file = write(join(box.root, 'ctx.json'), JSON.stringify(withContext('desktop')))
+    const done = box.run('delete_volumes', [file, '--apply'])
+    assert.equal(done.code, 0, done.stderr)
+    assert.ok(done.stdout.startsWith('## 실행\ncontext: desktop\n'), done.stdout)
+    assert.deepEqual(removes(docker.calls()), [['--context', 'desktop', 'volume', 'rm', PG]])
+    assert.ok(docker.calls().slice(1).every((c) => c.argv[0] === '--context' && c.argv[1] === 'desktop'))
+  })
+
+  test('--context 가 조사 파일의 context 와 다르면 docker 를 부르기 전에 2 다', () => {
+    const { box, docker } = setup()
+    const file = write(join(box.root, 'ctx.json'), JSON.stringify(withContext('desktop')))
+    const done = box.run('delete_volumes', [file, '--context', 'orbstack', '--apply'])
+    assert.equal(done.code, 2)
+    assert.ok(done.stderr.includes('--context orbstack 가 조사 파일의 context desktop 와 다르다'))
+    assert.equal(docker.calls().length, 0)
   })
 })
