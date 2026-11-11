@@ -4,8 +4,9 @@
 //     text `<글>. 마무리를 뒤늦게 돌리려면 orch queue finish <PR> --repo <repo> [--run <Run>]`)으로 옮긴다. 같은 PR 은
 //     state/finish-missing.json 에 적어 한 번만 쓴다. 워크트리를 치우지 못해 다음 틱이 같은 줄을 내도 다시 깨우지 않는다
 
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { isObject } from '../../core/json.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
@@ -14,7 +15,7 @@ import { shQuote } from '../../lib/py.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
-import { iso, lines, log, oneLine, relay, SWEEP_TIMEOUT_MS } from './shared.ts'
+import { iso, lines, log, oneLine, relay, rowsOf, SWEEP_TIMEOUT_MS } from './shared.ts'
 
 // cleanup/steps/worktrees.ts 의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 에 Orca 메시지로 옮긴다. 같은 PR 은 한 번만 쓴다
 function relayFinishMissing(repo: string, stdout: string, run: string | null): void {
@@ -53,20 +54,36 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
 export async function sweepRuns(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { runs } = ctx
   const { report, errors } = reporter(ctx)
-  // 4. 정리. Run 마다 그 Run 범위로 돈다. 원격 브랜치 정리는 저장소 공유 일이라 주 Run 의 차례에서만 한다
-  for (const [i, { run, specsDir }] of runs.entries()) {
-    try {
-      const sweep = process.env.CLEANUP_SWEEP || scriptPath('cleanup-sweep')
-      const args = ['--repo', ctx.repo, '--kill-holders', ...(i === 0 ? ['--remote-branches'] : []), '--apply']
-      if (run) args.push('--run', run)
-      if (specsDir) args.push('--specs-dir', specsDir)
-      const done = await runAsync(scriptCommand(sweep, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
-      relay(done)
-      relayFinishMissing(ctx.repo, done.stdout, run)
-      report('cleanup', done.code === 0 ? null : `종료 코드 ${done.code}`, { run })
-    } catch (e) {
-      report('cleanup', oneLine(e), { run })
+  const cacheDir = mkdtempSync(join(tmpdir(), 'orch-sweep-'))
+  try {
+    const known = Object.fromEntries([...ctx.lookup.rows].flatMap(([run, result]) => result.ok ? [[run, result.rows]] : []))
+    writeFileSync(join(cacheDir, 'known-workers.json'), JSON.stringify(known))
+    // 4. 정리. Run 마다 그 Run 범위로 돈다. 원격 브랜치 정리는 저장소 공유 일이라 주 Run 의 차례에서만 한다
+    for (const [i, { run, specsDir }] of runs.entries()) {
+      try {
+        const sweep = process.env.CLEANUP_SWEEP || scriptPath('cleanup-sweep')
+        const args = ['--repo', ctx.repo, '--kill-holders', ...(i === 0 ? ['--remote-branches'] : []), '--apply']
+        if (run) args.push('--run', run)
+        if (run) {
+          const workers = rowsOf(run, ctx.lookup)
+          if (!workers.ok) {
+            // 같은 Orca 장애를 질문 단계가 이미 알렸으면 정리 실패로 다시 깨우지 않는다.
+            log(`orch-loop: ${run} 의 worker 목록을 읽지 못해 정리를 건너뛴다: ${workers.error}`)
+            report('cleanup', state.waiting.get(run) === null ? null : workers.error, { run })
+            continue
+          }
+        }
+        if (specsDir) args.push('--specs-dir', specsDir)
+        const done = await runAsync(scriptCommand(sweep, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS, env: { ORCH_SWEEP_CACHE: cacheDir } })
+        relay(done)
+        relayFinishMissing(ctx.repo, done.stdout, run)
+        report('cleanup', done.code === 0 ? null : `종료 코드 ${done.code}`, { run })
+      } catch (e) {
+        report('cleanup', oneLine(e), { run })
+      }
     }
+  } finally {
+    rmSync(cacheDir, { recursive: true, force: true })
   }
   return { errors }
 }

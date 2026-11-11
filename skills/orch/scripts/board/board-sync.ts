@@ -49,6 +49,8 @@
 //     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 extensions/work-board/bin/board.ts
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
 //     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName). 없으면 직접 조회한다
+//     --completed-reviews 루프 내부용. worker_done 을 받은 리뷰 PR 번호 JSON 목록.
+//                   review-pr-N 항목은 이 목록에 있거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
 //     --goal, --goal-items
 //                   --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다.
 //                   --goal-items 가 없으면 목표 항목의 단계 줄을 센다
@@ -102,6 +104,7 @@ const OPTIONS = {
   'board-bin': { type: 'string' },
   repo: { type: 'string' },
   'open-prs': { type: 'string' },
+  'completed-reviews': { type: 'string' },
   goal: { type: 'string' },
   'goal-items': { type: 'string' },
   'dry-run': { type: 'boolean' },
@@ -209,6 +212,15 @@ function main(argv: string[]): number {
   }
   const repo = resolve(values.repo ?? '.')
   const dryRun = values['dry-run'] === true
+  let completedReviews: number[] = []
+  try {
+    const parsed: unknown = JSON.parse(values['completed-reviews'] ?? '[]')
+    if (!Array.isArray(parsed) || !parsed.every((n) => Number.isInteger(n) && n > 0)) throw new Error('PR 번호 목록이 아니다')
+    completedReviews = parsed
+  } catch (e) {
+    err(`board-sync: --completed-reviews: ${(e as Error).message}`)
+    return 2
+  }
   let items: Record<string, unknown>[]
   try {
     const raw = (JSON.parse(readFileSync(board, 'utf8')) as { items?: unknown }).items
@@ -266,7 +278,17 @@ function main(argv: string[]): number {
       err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
       return 1
     }
-    if (tagged.length > 0) {
+    const review = /^review-pr-(\d+)$/.exec(id)
+    const reviewDone = review && !SKIP_STATUS.has(String(item.status)) &&
+      (completedReviews.includes(Number(review[1])) || stateFor(review[1]) === 'MERGED')
+    if (reviewDone) {
+      const steps = boardSteps(boardBin, id, board)
+      if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }
+      after.push(...steps.filter((step) => !step.done).map((step) => ['step', id, String(step.number)]), ['set', id, 'done', '--worktree', ''])
+      finish = true
+    } else if (review) {
+      // 리뷰 브랜치에는 구현 PR 을 연결하지 않는다. 리뷰 완료 보고나 대상 PR 머지로만 끝낸다.
+    } else if (tagged.length > 0) {
       // 꼬리표가 있는 수동 항목과 goal 은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
       for (const step of tagged.filter((step) => !step.done)) {
         const tag = parseEventTag(step.text)!

@@ -122,6 +122,26 @@ function answer(thread = 'q', extra: Json = {}): Json {
   return message('answer', 'status', { from_handle: 'run:r', to_handle: 'dispatch:d', thread_id: thread, ...extra })
 }
 
+test('끝난 dispatch 의 질문은 발신 터미널과 dispatch 메일함을 읽지 않는다', () => {
+  const statuses = ['completed', 'failed', 'cancelled', 'canceled', 'abandoned']
+  const questions = statuses.map((status) => message(status, 'question', { dispatch_id: status, from_handle: `term_${status}` }))
+  const live = message('live', 'question', { dispatch_id: 'live', from_handle: 'term_live' })
+  fake({ all: { messages: [...questions, live] } })
+  const got = snapshot('r', { rows: { ok: true, rows: statuses.map((status) => ({ dispatchId: status, dispatchStatus: status })) } })
+  assert.deepEqual(got.pending, [live])
+  assert.deepEqual(calls().filter((args) => args[0] === 'inbox').map((args) => args[args.indexOf('--terminal') + 1]), ['term_live', 'dispatch:live'])
+})
+
+test('worker_done 이 오면 아직 running 인 행의 질문도 조회하지 않고 다른 Run 의 보고는 무시한다', () => {
+  const question = message('q', 'question', { dispatch_id: 'd', from_handle: 'term_d' })
+  fake({ all: { messages: [question] } })
+  const rows = { ok: true as const, rows: [{ dispatchId: 'd', dispatchStatus: 'running' }] }
+  const done = message('done', 'worker_done', { dispatch_id: 'd' })
+  assert.deepEqual(snapshot('r', { rows, done: [done] }).pending, [])
+  assert.equal(calls().filter((args) => args[0] === 'inbox').length, 0)
+  assert.deepEqual(snapshot('r', { rows, done: [{ ...done, run_id: 'another' }] }).pending, [question])
+})
+
 describe('unanswered', () => {
   test('최신 질문의 답은 같은 dispatch 의 앞선 질문도 풀고 그 뒤의 새 질문은 남긴다', () => {
     const q1 = message('q1', 'question', { created_at: '2026-01-01T01:00:00Z', payload: { dispatchId: 'd' } })

@@ -63,6 +63,10 @@ function fakeScript(name: string): string {
   return `import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 const dir = process.env.FAKE_DIR
 appendFileSync(dir + '/${name}.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n')
+if ('${name}' === 'sweep' && process.env.ORCH_SWEEP_CACHE) {
+  writeFileSync(dir + '/sweep-workers.json', readFileSync(process.env.ORCH_SWEEP_CACHE + '/known-workers.json', 'utf8'))
+  writeFileSync(dir + '/sweep-cache.txt', process.env.ORCH_SWEEP_CACHE)
+}
 const st = existsSync(dir + '/${name}.json') ? JSON.parse(readFileSync(dir + '/${name}.json', 'utf8')) : {}
 if (st.ignore_term) process.on('SIGTERM', () => {})
 if (st.pid_file) writeFileSync(st.pid_file, process.pid + ' ' + process.ppid + '\\n')
@@ -211,6 +215,16 @@ function once(extra: NodeJS.ProcessEnv = {}, args: string[] = ['--run', 'r']): R
   return r
 }
 
+test('질문·멈춤·끊김 확인과 정리는 한 틱의 worker 목록을 함께 쓴다', () => {
+  orca({ workers: [{ dispatchId: 'done', dispatchStatus: 'completed', taskId: 't' }], messages: [] })
+  const result = loop(['--run', 'r', '--tick', '--tick-number', '1'])
+  assert.equal(result.code, 0, result.stdout + result.stderr)
+  const calls = jsonl(join(tmp, 'orca-calls.jsonl')) as unknown as string[][]
+  assert.equal(calls.filter((args) => args.includes('worker-list')).length, 1)
+  assert.deepEqual(JSON.parse(readFileSync(join(tmp, 'sweep-workers.json'), 'utf8')).r, [{ dispatchId: 'done', dispatchStatus: 'completed', taskId: 't' }])
+  assert.equal(existsSync(readFileSync(join(tmp, 'sweep-cache.txt'), 'utf8')), false, '틱이 끝나면 임시 목록을 치운다')
+})
+
 function jsonl(file: string): Json[] {
   return existsSync(file)
     ? readFileSync(file, 'utf8')
@@ -244,6 +258,31 @@ function received(event: string): Json[] {
 
 function argsOf(name: 'sweep' | 'board'): string[][] {
   return jsonl(join(tmp, `${name}.jsonl`)) as unknown as string[][]
+}
+
+test('첫 틱에 읽은 리뷰 완료 보고도 보드 동기화에 넘긴다', () => {
+  board()
+  write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{ id: 'review-pr-7', status: 'doing' }] }))
+  write(orchFile('state', 'launched-workers', 'review.json'), JSON.stringify({ dispatch: 'review', worktree: repo, run: 'r', spec: '/missing/spec-review-pr-7.md' }))
+  orca({ messages: [{ id: 'done', type: 'worker_done', run_id: 'r', payload: { dispatchId: 'review', outcome: 'succeeded' } }] })
+  once()
+  const args = argsOf('board')[0]
+  assert.deepEqual(JSON.parse(args[args.indexOf('--completed-reviews') + 1]), [7])
+})
+
+for (const report of [
+  { outcome: 'failed', payload: { dispatchId: 'review' } },
+  { payload: JSON.stringify({ dispatchId: 'review', outcome: 'failed' }) },
+  { payload: { dispatchId: 'review' } },
+]) {
+  test(`성공하지 않은 리뷰 완료 보고는 보드 완료로 넘기지 않는다: ${JSON.stringify(report)}`, () => {
+    board()
+    write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{ id: 'review-pr-7', status: 'doing' }] }))
+    write(orchFile('state', 'launched-workers', 'review.json'), JSON.stringify({ dispatch: 'review', worktree: repo, run: 'r', spec: '/missing/spec-review-pr-7.md' }))
+    orca({ messages: [{ id: 'done', type: 'worker_done', run_id: 'r', ...report }] })
+    once()
+    assert.equal(argsOf('board')[0].includes('--completed-reviews'), false)
+  })
 }
 
 function loopState(): Json | null {
@@ -315,6 +354,8 @@ describe('질문 확인', () => {
     const workers = [{ dispatchId: 'd', dispatchStatus: 'dispatched', agentTerminalHandle: 'term_w' }]
     orca({ messages: [ask('first')], workers })
     once()
+    const calls = jsonl(join(tmp, 'orca-calls.jsonl')) as unknown as string[][]
+    assert.equal(calls.filter((args) => args.includes('worker-list')).length, 1)
     assert.equal(received('decision-pending').length, 1)
     assert.equal(received('decision-pending')[0].run, 'r')
     assert.equal((received('decision-pending')[0].questions as Json[])[0].id, 'first')
@@ -361,7 +402,7 @@ describe('질문 확인', () => {
       ])
     const remindLater = () => write(orchFile('state', 'questions-seen.json'), JSON.stringify({ r: { q: Date.now() / 1000 - 700 } }))
 
-    test('dispatch 가 끝났고 PR 이 머지됐으면 재알림하지 않고 근거를 한 번만 로그에 쓴다', () => {
+    test('dispatch 가 끝났으면 PR 과 답변 메일함을 조회하지 않고 재알림도 하지 않는다', () => {
       hook('worker-question')
       orca({ messages: [question()], statuses: [ready], workers: settled('completed') })
       pr('MERGED')
@@ -369,15 +410,15 @@ describe('질문 확인', () => {
       once()
       assert.deepEqual(events(), [])
       assert.deepEqual(received('worker-question'), [])
-      assert.match(logText(), /^REMINDER-SKIP q: dispatch d completed, PR #7 MERGED$/m)
+      assert.doesNotMatch(logText(), /^(?:QUESTION|REMINDER|REMINDER-SKIP) q/m)
       const viewed = () => gh.calls().filter((c) => c.argv.includes('view')).length
-      assert.equal(viewed(), 1)
+      assert.equal(viewed(), 0)
       remindLater()
       once()
       assert.deepEqual(events(), [])
-      assert.equal(logText().match(/^REMINDER-SKIP /gm)?.length, 1, logText())
-      // 한 번 닫힌 질문은 다시 판정하지 않는다
-      assert.equal(viewed(), 1)
+      assert.equal(viewed(), 0)
+      const inbox = jsonl(join(tmp, 'orca-calls.jsonl')) as unknown as string[][]
+      assert.equal(inbox.filter((args) => args.includes('inbox')).length, 0)
     })
 
     for (const legacy of [false, true]) {
@@ -389,7 +430,7 @@ describe('질문 확인', () => {
         const blocked = join(tmp, 'blocked-machine')
         writeFileSync(blocked, 'directory unavailable')
         once({ ORCH_MACHINE_DIR: blocked })
-        assert.match(logText(), /공유 닫힌 질문 기록을 쓰지 못했다/)
+        if (legacy) assert.match(logText(), /공유 닫힌 질문 기록을 쓰지 못했다/)
         assert.doesNotMatch(logText(), /WATCH-ERROR questions/)
         assert.ok(existsSync(join(tmp, 'sweep.jsonl')), '공유 기록 실패 뒤에도 정리를 실행한다')
         assert.deepEqual(events().filter((event) => event.kind === 'REMINDER'), [])
@@ -413,31 +454,31 @@ describe('질문 확인', () => {
         remindLater()
         once()
         assert.deepEqual(events(), [])
-        assert.equal(gh.calls().filter((c) => c.argv.includes('view')).length, 1)
+        assert.equal(gh.calls().filter((c) => c.argv.includes('view')).length, 0)
       })
     }
 
-    for (const [name, workers, state, head] of [
-      ['dispatch 가 살아 있다', settled('running'), 'MERGED', SHA],
-      ['PR 이 열려 있다', settled('completed'), 'OPEN', SHA],
-      ['번호만 같은 다른 PR 이다', settled('completed'), 'MERGED', 'b'.repeat(40)],
+    for (const [name, workers, state, head, reminds] of [
+      ['dispatch 가 살아 있다', settled('running'), 'MERGED', SHA, true],
+      ['PR 이 열려 있어도 dispatch 는 끝났다', settled('completed'), 'OPEN', SHA, false],
+      ['번호만 같은 다른 PR 이어도 dispatch 는 끝났다', settled('completed'), 'MERGED', 'b'.repeat(40), false],
     ] as const) {
-      test(`${name}: 재알림한다`, () => {
+      test(`${name}: 살아 있는 dispatch 만 재알림한다`, () => {
         orca({ messages: [question()], statuses: [ready], workers })
         pr(state, head)
         remindLater()
         once()
-        assert.deepEqual(events().map((e) => e.kind), ['UNANSWERED'])
+        assert.deepEqual(events().map((e) => e.kind), reminds ? ['UNANSWERED'] : [])
         assert.doesNotMatch(logText(), /REMINDER-SKIP/)
       })
     }
 
-    test('준비 상태가 없으면 재알림한다', () => {
+    test('준비 상태가 없어도 끝난 dispatch 는 재알림하지 않는다', () => {
       orca({ messages: [question()], statuses: [], workers: settled('completed') })
       pr('MERGED')
       remindLater()
       once()
-      assert.deepEqual(events().map((e) => e.kind), ['UNANSWERED'])
+      assert.deepEqual(events().map((e) => e.kind), [])
     })
   })
 
@@ -458,8 +499,8 @@ describe('질문 확인', () => {
     assert.equal(first.length, 1, JSON.stringify(first))
     assert.equal(first[0].kind, 'WATCH-ERROR')
     assert.match(String(first[0].text), /^questions: .*offline/)
-    // 정리와 보드 동기화는 그래도 불린다
-    assert.equal(argsOf('sweep').length, 1)
+    // worker 목록이 없으면 정리는 건너뛰고 보드 동기화는 계속한다
+    assert.equal(argsOf('sweep').length, 0)
     assert.equal(argsOf('board').length, 1)
     once()
     assert.equal(notStalls().length, 1, '같은 이유는 다시 쌓지 않는다')

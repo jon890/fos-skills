@@ -38,6 +38,8 @@ export type Args = {
   allWorkers: () => Promise<WorkerRow[]>
   worktreeWorkers: (path: string) => Promise<WorkerRow[]>
   liveSpecs: Set<string> | null
+  // 실제 삭제 후보의 전체 Run 지시서 확인. 틱의 다른 Run 정리와도 결과를 함께 쓴다.
+  allLiveSpecs?: () => Promise<Set<string> | null>
 }
 
 // 저장소 하나를 읽지 못했다. main 이 stderr 에 내고 종료 코드를 2 로 하고 다음 저장소로 간다

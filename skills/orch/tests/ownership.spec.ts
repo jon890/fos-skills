@@ -14,6 +14,48 @@ import type { WorkerRow } from '../scripts/lib/ownership.ts'
 const KEPT = '사용자 보유 터미널'
 const FAILED = '터미널 소유 상태 조회 실패'
 
+test('같은 틱의 Run 정리는 전체 소유 목록을 함께 쓰고 삭제 직전에는 새로 확인한다', async () => {
+  const file = join(tmp, 'tick-workers.json')
+  const initial = row('worker', 'owned')
+  initial.resource = { ...(initial.resource as object), worktreeId: `repo::${wt}` }
+  orca.setRules(orcaRules([{ handle: 'worker', worktreePath: wt }], { run_a: [initial], run_b: [] }))
+  const first = workerSnapshot(file)
+  const before = await first.all()
+  const reads = orca.calls().filter((call) => call.argv.includes('worker-list')).length
+  const second = workerSnapshot(file)
+  assert.deepEqual(await second.all(), before)
+  assert.equal(orca.calls().filter((call) => call.argv.includes('worker-list')).length, reads)
+  assert.deepEqual(await second.runIds(), ['run_a', 'run_b'])
+  orca.setRules(orcaRules([{ handle: 'worker', worktreePath: wt }], { run_a: [row('worker', 'user_owned')], run_b: [] }))
+  assert.equal(await blocker(wt, new Set(), () => second.forWorktree(wt)), KEPT)
+  assert.ok(orca.calls().filter((call) => call.argv.includes('worker-list')).length > reads)
+})
+
+test('전체 소유 조회 실패는 같은 틱에서 반복하지 않고 다음 틱에 다시 확인한다', async () => {
+  const file = join(tmp, 'failed-tick.json')
+  orca.setRules(orcaRules([], { run_a: [], run_b: [] }, { failRun: 'run_b' }))
+  await assert.rejects(workerSnapshot(file).all(), /Orca 조회 실패/)
+  const reads = orca.calls().length
+  await assert.rejects(workerSnapshot(file).all(), /Orca 조회 실패/)
+  assert.equal(orca.calls().length, reads)
+  orca.setRules(orcaRules([], { run_a: [], run_b: [] }))
+  assert.deepEqual(await workerSnapshot(join(tmp, 'next-tick.json')).all(), [])
+  assert.ok(orca.calls().length > reads)
+})
+
+test('run-list 를 지원하지 않아도 all 범위의 새 소유 상태를 확인한다', async () => {
+  const rules = (state: string) => [
+    { args: ['terminal', 'list'], stdout: ok({ terminals: [{ handle: 'worker', worktreePath: wt }] }) },
+    { args: ['run-list'], code: 1 },
+    { args: ['worker-list'], stdout: ok({ scope: { source: 'all' }, workers: [row('worker', state)] }) },
+  ]
+  orca.setRules(rules('owned'))
+  const snapshot = workerSnapshot()
+  await snapshot.all()
+  orca.setRules(rules('user_owned'))
+  assert.equal(await blocker(wt, new Set(), () => snapshot.forWorktree(wt)), KEPT)
+})
+
 let tmp: string
 let wt: string
 let orca: FakeBin
@@ -304,6 +346,6 @@ describe('실행 단위 스냅샷과 끝난 Run 캐시', () => {
     orca.setRules(rules(true))
     assert.equal(await blocker(wt, new Set(), () => snapshot.forWorktree(wt)), KEPT)
     const again = calls('--run').slice(before).map((c) => c.argv[c.argv.indexOf('--run') + 1]).sort()
-    assert.deepEqual(again, ['run_a', 'run_changed', 'run_new'])
+    assert.deepEqual(again, ['run_a', 'run_b', 'run_changed', 'run_new'])
   })
 })

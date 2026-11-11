@@ -32,6 +32,7 @@ import { realPath, inside } from './fs.ts'
 import { orcaBin, withFull } from './orca.ts'
 import { runAsync } from './proc.ts'
 import { WorkerRunCache, type RunInfo } from './worker-run-cache.ts'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 // Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
 
@@ -175,19 +176,53 @@ async function readRuns(ids: RunInfo[], read: (run: RunInfo) => Promise<WorkerRo
 
 // 정리 실행 하나가 공유하는 스냅샷. 진행 중인 조회도 공유하며 시간이 지나도 전체 목록을 다시 읽지 않는다.
 // 삭제 직전에는 해당 경로의 Run 과 스냅샷 뒤 바뀌거나 새로 생긴 Run 만 다시 읽는다.
-export function workerSnapshot(): {
+export function workerSnapshot(file?: string): {
   all: () => Promise<WorkerRow[]>
+  runIds: () => Promise<string[] | null>
   seedRun: (run: string, rows: WorkerRow[]) => void
   forWorktree: (path: string) => Promise<WorkerRow[]>
 } {
   let runs: RunInfo[] = []
+  let listed = false
   const known = new Map<string, WorkerRow[]>()
-  const all = cached(() => allWorkers((listed) => { runs = listed }, known))
+  const save = (value: unknown) => {
+    if (!file) return
+    writeFileSync(`${file}.tmp`, JSON.stringify(value))
+    renameSync(`${file}.tmp`, file)
+  }
+  const all = cached(async () => {
+    if (file) {
+      let value: unknown
+      try {
+        value = JSON.parse(readFileSync(file, 'utf8'))
+      } catch { /* 이번 틱의 다른 정리에서 아직 쓰지 않았다 */ }
+      if (isObject(value)) {
+        if (typeof value.error === 'string') throw new LookupError(value.error)
+        if (Array.isArray(value.runs) && value.runs.every((r: unknown) => isObject(r) && typeof r.id === 'string') &&
+          Array.isArray(value.rows) && value.rows.every(isObject) && typeof value.listed === 'boolean') {
+          runs = value.runs
+          listed = value.listed
+          return value.rows as WorkerRow[]
+        }
+      }
+    }
+    let rows: WorkerRow[]
+    try {
+      rows = await allWorkers((ids) => { runs = ids; listed = true }, known)
+    } catch (e) {
+      // 다른 Run 이 같은 틱에 다시 실패한 전체 조회를 반복하지 않는다. 다음 틱은 새 파일로 재시도한다.
+      if (e instanceof LookupError) save({ error: e.message })
+      throw e
+    }
+    save({ runs, rows, listed })
+    return rows
+  })
   return {
     all,
+    async runIds() { await all(); return listed ? runs.map((run) => run.id) : null },
     // all() 을 부르기 전에 이미 읽은 자기 Run 을 넣는다. 이 행은 뒤에 읽는 Run 갱신 시각보다 오래될 수 있다.
     // forWorktree 는 갱신 시각이 같아도 경로·handle 로 관련 Run 을 골라 다시 읽으므로 삭제 전 확인은 생략되지 않는다.
-    seedRun: (run, rows) => { known.set(run, rows) },
+    seedRun: (run, rows) => { known.set(run, rows.map((row) => ({ ...row, runId: run }))) },
     async forWorktree(path) {
       const rows = await all()
       const target = realPath(path)
@@ -203,8 +238,16 @@ export function workerSnapshot(): {
         return typeof id === 'string' && id.includes('::') && inside(realPath(id.slice(id.indexOf('::') + 2)), target)
       }).map((row) => row.runId))
       const previous = new Map(runs.map((run) => [run.id, run.updated_at]))
-      const current = await workerRuns()
-      const selected = current.filter((run) => relevant.has(run.id) || !previous.has(run.id) ||
+      let current: RunInfo[]
+      try { current = await workerRuns() }
+      catch (e) {
+        if (!(e instanceof LookupError)) throw e
+        // run-list 가 없는 옛 Orca 도 삭제 전에는 all 범위의 새 응답을 확인해야 한다.
+        const fresh = await workerPages([], 'all')
+        if (fresh === null) throw e
+        return fresh
+      }
+      const selected = current.filter((run) => known.has(run.id) || relevant.has(run.id) || !previous.has(run.id) ||
         !run.updated_at || previous.get(run.id) !== run.updated_at)
       return readRuns(selected, (run) => runWorkers(run.id))
     },

@@ -1,7 +1,7 @@
 // lib/completion.ts 의 classify 를 본다. 부모 Dispatch ID 를 복사한 하위 세션의 완료를 PR 준비 보고와 구별한다.
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
@@ -221,4 +221,14 @@ test('띄우기 기록의 지시서에 리뷰 PR 줄이 있는 dispatch 만 리�
   assert.equal(reviewPrOfDispatch(repo, 'ctx_r'), 1159)
   assert.equal(reviewPrOfDispatch(repo, 'ctx_w'), null)
   assert.equal(reviewPrOfDispatch(repo, 'ctx_none'), null)
+})
+
+test('미리 읽은 실행 이력을 주면 dispatch 마다 이력 파일을 다시 읽지 않는다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'review-history-map-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  // 읽으려고 하면 EISDIR 이 나는 경로다. 호출자는 이미 읽은 이력만 전달한다.
+  mkdirSync(join(repo, '.orch/state/launch-history.jsonl'), { recursive: true })
+  const history = new Map([['review', { spec: '/missing/spec-review-pr-7.md' }]])
+  assert.equal(reviewPrOfDispatch(repo, 'review', history), 7)
+  assert.equal(reviewPrOfDispatch(repo, 'unknown', history), null)
 })

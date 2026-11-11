@@ -23,6 +23,27 @@
     "orca": [
       [
         "orchestration",
+        "worker-list",
+        "--run",
+        "r1",
+        "--limit",
+        "100",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
+        "check",
+        "--run",
+        "r1",
+        "--all",
+        "--types",
+        "worker_done",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
         "check",
         "--run",
         "r1",
@@ -60,6 +81,27 @@
         "dispatch:d-r1",
         "--limit",
         "200",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
+        "worker-list",
+        "--run",
+        "r2",
+        "--limit",
+        "100",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
+        "check",
+        "--run",
+        "r2",
+        "--all",
+        "--types",
+        "worker_done",
         "--json",
         "--full"
       ],
@@ -104,32 +146,12 @@
         "--full"
       ],
       [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r1",
-        "--limit",
-        "100",
-        "--json",
-        "--full"
-      ],
-      [
         "terminal",
         "read",
         "--terminal",
         "term_r1",
         "--screen",
         "--json"
-      ],
-      [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r2",
-        "--limit",
-        "100",
-        "--json",
-        "--full"
       ],
       [
         "terminal",
@@ -231,27 +253,6 @@
       ],
       [
         "orchestration",
-        "check",
-        "--run",
-        "r1",
-        "--all",
-        "--types",
-        "worker_done",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r1",
-        "--limit",
-        "100",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
         "task-list",
         "--run",
         "r1",
@@ -273,27 +274,6 @@
         "{\"source\":\"orch-loop\",\"kind\":\"DIGEST\",\"pr\":null}",
         "--from",
         "run:r2",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
-        "check",
-        "--run",
-        "r2",
-        "--all",
-        "--types",
-        "worker_done",
-        "--json",
-        "--full"
-      ],
-      [
-        "orchestration",
-        "worker-list",
-        "--run",
-        "r2",
-        "--limit",
-        "100",
         "--json",
         "--full"
       ],

@@ -48,6 +48,16 @@ function cases(): Record<string, Input> {
       },
     }
   }
+  const settled = structuredClone(found['two-runs-busy'])
+  settled.rules.orca = [
+    { args: ['worker-list', 'r1'], stdout: envelope({ workers: Array.from({ length: 6 }, (_, i) => ({ ...worker(`r1-${i}`), dispatchStatus: 'completed', workerState: 'succeeded' })), page: {}, scope: { source: 'flag' } }) },
+    { args: ['worker-list', 'r2'], stdout: envelope({ workers: [], page: {}, scope: { source: 'flag' } }) },
+    { args: ['check', '--all'], stdout: envelope({ messages: [] }) },
+    { args: ['check', 'r1'], stdout: envelope({ messages: Array.from({ length: 6 }, (_, i) => ({ ...question, id: `q${i}`, from_handle: `term_r1-${i}`, dispatch_id: `d-r1-${i}` })) }) },
+    { stdout: envelope({ messages: [], workers: [], runs: [], page: {}, message: { id: 'notice' }, scope: { source: 'all' } }) },
+  ]
+  settled.rules.gh = [{ args: ['pr', 'list'], stdout: '[]\n' }, { stdout: '[]\n' }]
+  found['settled-dispatches'] = settled
   return found
 }
 

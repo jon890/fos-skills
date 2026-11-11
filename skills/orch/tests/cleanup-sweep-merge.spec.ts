@@ -54,6 +54,7 @@ describe('머지 판정과 기본 정리', () => {
 
   test('이름이 워크트리와 달라도 브랜치 줄이 머지된 브랜치를 가리키는 지시서를 지운다', () => {
     const path = worktree('feat-a')
+    fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: `repo::${path}` } }]
     squashMerge('feat-a', path)
     const specs = join(fx.repo, '.orch/specs')
     mkdirSync(specs, { recursive: true })
@@ -376,13 +377,14 @@ describe('다른 Run 의 터미널', () => {
     const path = foreignTerminalAt('feat-o1')
     const out = runSweep(['--run', 'run_x', '--kill-holders', '--apply'])
     exists(path, out)
-    has(out, '다른 Run 의 worker 터미널 term_codex')
+    has(out, '이 Run 의 워크트리가 아니다')
     lacks(calls(), 'terminal close')
     assert.ok(branches().has('feat-o1'))
   })
 
   test('다른 곳의 다른 Run worker 는 이 경로를 막지 않는다', () => {
     const path = foreignTerminalAt('feat-o2')
+    fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', agentTerminalHandle: 'term_mine', resource: { worktreeId: `repo::${path}` } }]
     fx.allWorkers.push({ runId: 'run_x', dispatchId: 'ctx_a', agentTerminalHandle: 'term_mine' })
     fx.terminals = [
       { handle: 'term_mine', worktreePath: path },
@@ -394,7 +396,7 @@ describe('다른 Run 의 터미널', () => {
     lacks(calls(), '--terminal term_codex')
   })
 
-  test('bound 범위면 Run 마다 읽어 정리하되 정리 한 번에 한 번만 읽는다', () => {
+  test('bound 범위면 Run 목록을 함께 쓰되 삭제 전에는 소유를 새로 확인한다', () => {
     const path = worktree('feat-b1')
     squashMerge('feat-b1', path)
     fx.terminals = [
@@ -406,9 +408,9 @@ describe('다른 Run 의 터미널', () => {
     gone(path, out)
     lacks(out, '터미널 소유 상태 조회 실패')
     has(calls(), 'orca terminal close --terminal term_mine')
-    // Run 목록과 Run 마다의 페이지를 끝까지 따라가되, 정리 한 번에 한 번만 읽는다
-    assert.equal(sweepCalls('run-list').length, 3, calls())
-    assert.equal(sweepCalls('--run run_other').length, 1, calls())
+    // Run 갱신 시각이 없는 응답이라 삭제 전에도 모든 페이지와 Run 을 새로 확인한다.
+    assert.equal(sweepCalls('run-list').length, Object.keys(fx.runs!).length * 2, calls())
+    assert.equal(sweepCalls('--run run_other').length, 2, calls())
   })
 
   test('bound 범위에서도 다른 Run 의 터미널은 남긴다', () => {
@@ -449,6 +451,7 @@ describe('다른 Run 의 터미널', () => {
 
   test('Run 목록을 읽지 못하면 모르는 터미널을 남긴다', () => {
     const path = foreignTerminalAt('feat-o3')
+    fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: `repo::${path}` } }]
     fx.scope = 'bound'
     const out = runSweep(['--run', 'run_x', '--apply'])
     exists(path, out)
