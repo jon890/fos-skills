@@ -7,7 +7,7 @@ description: |
   청중 앞에서 넘기며 말하는 발표는 `presentation`, 외부에 게시할 글은 `content-preview`, 혼자 읽는 설명과 보고서는 `report` 가 맡는다.
   웹 조사는 하지 않는다. 조사가 필요하면 조사를 먼저 하고 그 결과를 넘긴다.
 metadata:
-  version: "2.0.2"
+  version: "2.1.0"
 ---
 
 # report
