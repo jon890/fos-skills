@@ -14,7 +14,7 @@
       "after": "선행 조건이 없다. 언제든 따로 낸다"
     }
   ],
-  "status": "pending",
+  "status": "in_progress",
   "created_at": "2026-11-10",
   "spec": "docs/features/board-auto-advance/spec.md",
   "design": "docs/features/board-auto-advance/design.md",
@@ -31,7 +31,7 @@
     "REQ12"
   ],
   "total_phases": 6,
-  "current_phase": 1,
+  "current_phase": 2,
   "phases": [
     {
       "number": 1,
