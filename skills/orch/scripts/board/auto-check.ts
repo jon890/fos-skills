@@ -26,7 +26,7 @@ function main(): number {
     emit(verdict.ok ? `AUTO-OK ${id} ${verdict.number} ${verdict.evidence}` : `AUTO-REJECT ${id} ${verdict.number ?? '-'} ${verdict.reason}`)
     if (step) emit(`단계: ${step.text}`)
     for (const row of checks) emit(`근거: ${row.text} ${row.problem ?? '통과'}`)
-    if (verdict.ok) emit(`안내: 지시서에 「보드 항목 id: ${id}」 줄을 적고 띄운다`)
+    if (verdict.ok) emit(`안내: 지시서 머리에 「보드 항목 id: ${id}」와 「자동 진행 단계: ${verdict.number}」 줄을 적고 띄운다`)
     return verdict.ok ? 0 : 1
   } catch (e) {
     process.stderr.write(`auto-check: ${(e as Error).message}\n`)

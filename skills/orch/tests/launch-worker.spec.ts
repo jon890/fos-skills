@@ -1167,7 +1167,7 @@ test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 �
 })
 
 
-for (const mode of ['auto', 'ask', 'none', 'no-id', 'no-board', 'board-fails', 'record-fails', 'stalled']) {
+for (const mode of ['auto', 'ask', 'none', 'no-id', 'no-board', 'board-fails', 'record-fails', 'stalled', 'unrelated', 'other-step']) {
   test(`단계 띄운 기록은 보드 갱신과 별개로 남긴다: ${mode}`, () => {
     const init = spawnSync('git', ['init', '-b', 'feat/next', worktree], { env, encoding: 'utf8' })
     assert.equal(init.status, 0, init.stderr)
@@ -1178,7 +1178,7 @@ for (const mode of ['auto', 'ask', 'none', 'no-id', 'no-board', 'board-fails', '
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, JSON.stringify({ items: [{ id: 'board-id', status: 'doing', details: [{ text: '1. PR1', done: true }, { text: step, done: false }] }] }))
     }
-    writeFileSync(spec, `# 다음 일\n허락: push\n브랜치: feat/next\n${mode === 'no-id' ? '' : '보드 항목 id: board-id\n'}\n## 할 일\n1. 구현\n`)
+    writeFileSync(spec, `# 다음 일\n허락: push\n브랜치: feat/next\n${mode === 'no-id' ? '' : '보드 항목 id: board-id\n'}${mode === 'unrelated' ? '' : `자동 진행 단계: ${mode === 'other-step' ? 3 : 2}\n`}\n## 할 일\n1. 구현\n`)
     const record = join(worktree, '.orch/state/step-launches.jsonl')
     if (mode === 'record-fails') mkdirSync(record, { recursive: true })
     if (mode === 'board-fails') {

@@ -33,16 +33,18 @@ test('첫 미완료 자동 단계만 기록하고 사건 꼬리표는 비교할 
   process.env.ORCH_DIR = join(repo, '.orch')
   delete process.env.BOARD_BIN
   t.after(() => { for (const [key, value] of Object.entries(old)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
-  assert.equal(recordStepLaunch(repo, 'a', 'ctx', null), false)
+  assert.equal(recordStepLaunch(repo, 'a', 'ctx', null, 2), false)
   mkdirSync(join(repo, '.omc'), { recursive: true })
   const board = join(repo, '.omc/board.json')
   for (const text of ['2. 다음', '2. [ask] 다음', '2. [auto] 다음 (#700 merge)']) {
     writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', details: [text] }] }))
-    assert.equal(recordStepLaunch(repo, 'a', 'ctx', 'feat/x'), text.includes('[auto]'))
+    assert.equal(recordStepLaunch(repo, 'a', 'ctx', 'feat/x', 2), text.includes('[auto]'))
   }
+  assert.equal(recordStepLaunch(repo, 'a', 'unrelated', 'feat/y', null), false)
+  assert.equal(recordStepLaunch(repo, 'a', 'wrong-step', 'feat/y', 3), false)
   assert.deepEqual(stepLaunches(repo, 'a', '2. [auto] 다음'), [{ dispatch: 'ctx', branch: 'feat/x' }])
-  assert.equal(recordStepLaunch(repo, 'missing', 'ctx', null), false)
+  assert.equal(recordStepLaunch(repo, 'missing', 'ctx', null, 2), false)
   writeFileSync(board, 'broken')
-  assert.throws(() => recordStepLaunch(repo, 'a', 'ctx', null))
+  assert.throws(() => recordStepLaunch(repo, 'a', 'ctx', null, 2))
   assert.ok(existsSync(board))
 })

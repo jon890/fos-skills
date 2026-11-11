@@ -140,7 +140,7 @@ import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
-import { boardIdOf, branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOf, branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { recordStepLaunch } from '../lib/auto-advance.ts'
 
 const USAGE = [
@@ -611,6 +611,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (gate.stop !== null) return gate.stop
 
   const specText = readFileSync(a.spec, 'utf8')
+  const autoStep = autoStepNumberOf(specText)
   const candidateOverride = candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
@@ -827,7 +828,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
 
     try {
       const id = boardIdOf(text)?.id
-      if (id) recordStepLaunch(repo, id, dispatch, common.branch || null)
+      if (id) recordStepLaunch(repo, id, dispatch, common.branch || null, autoStep)
     } catch (e) {
       err(`launch-worker: 띄운 단계 기록을 남기지 못했다: ${(e as Error).message}`)
     }

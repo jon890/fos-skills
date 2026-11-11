@@ -134,6 +134,17 @@ export function boardIdOf(text: string): { id: string; note: string } | null {
   return null
 }
 
+// 자동 단계를 맡는 실행만 명시한다. 본문에 든 예시는 실행 의도로 읽지 않는다.
+export function autoStepNumberOf(text: string): number | null {
+  const head = text.split(/^##\s/m)[0]
+  const matches = [...head.matchAll(/^\s*(?:[-*]\s*)?자동 진행 단계\s*:\s*(.*?)\s*$/gm)]
+  if (!matches.length) return null
+  if (matches.length !== 1 || !/^[1-9]\d*$/.test(matches[0][1]) || !Number.isSafeInteger(Number(matches[0][1]))) {
+    throw new Error('자동 진행 단계는 양의 단계 번호 하나로 적는다')
+  }
+  return Number(matches[0][1])
+}
+
 // 지시서 머리(첫 `## ` 제목 앞)의 `중간 과정:` 줄. 할 일 본문이 그 줄을 인용해도 잡지 않는다.
 // 줄이 없으면 null 이고, 값에 PR 번호(#N 을 먼저, 없으면 첫 숫자)가 없으면 pr 이 null 이다
 export function interimOf(text: string): { pr: string | null } | null {

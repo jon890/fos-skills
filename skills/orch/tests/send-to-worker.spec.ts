@@ -679,7 +679,7 @@ describe('Orca 후속 일과 기록', () => {
     mkdirSync(dirname(board), { recursive: true })
     writeFileSync(board, JSON.stringify({ items: [{ id: 'next', status: 'doing', details: ['2. [auto] 다음 (계획: docs/p)'] }] }))
     const spec = join(tmp, 'next.md')
-    writeFileSync(spec, readFileSync(spec, 'utf8') + '보드 항목 id: next\n')
+    writeFileSync(spec, '자동 진행 단계: 2\n' + readFileSync(spec, 'utf8') + '보드 항목 id: next\n')
     const r = send('--spec', spec)
     assert.equal(r.code, 0, both(r))
     const rows = readFileSync(join(tmp, 'orch/state/step-launches.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))

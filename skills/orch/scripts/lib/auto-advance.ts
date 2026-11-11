@@ -101,12 +101,13 @@ export function checkAdvance(repo: string, id: string, opts: { board?: string; r
 }
 
 // 보드 갱신보다 먼저 부른다. 갱신 실패 뒤에도 중복 실행을 막을 기록은 남아야 한다.
-export function recordStepLaunch(repo: string, item: string, dispatch: string, branch: string | null): boolean {
+export function recordStepLaunch(repo: string, item: string, dispatch: string, branch: string | null, number: number | null): boolean {
+  if (number === null) return false
   const file = boardPath(repo)
   if (!existsSync(file)) return false
   const found = readBoard(file).find(row => row.id === item)
   const step = found ? firstPendingStep(file, found) : null
-  if (step?.mark !== 'auto') return false
+  if (step?.mark !== 'auto' || step.number !== number) return false
   appendStepLaunch(repo, { item, number: step.number, step: step.key, dispatch, branch })
   return true
 }

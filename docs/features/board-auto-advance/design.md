@@ -176,7 +176,7 @@ orch 의 층 규칙([ADR-028](../../adr/028-orch-core-layer.md))을 그대로 �
 
 ### 띄운 기록 `state/step-launches.jsonl`
 
-worker 를 띄우는 두 곳(`launch-worker.ts`, 후속 지시서를 보내는 `send-to-worker.ts`)이, 지시서의 `보드 항목 id:` 줄(`lib/spec.ts` 의 `boardIdOf`)이 가리키는 항목의 첫 미완료 단계가 `[auto]` 면 한 줄을 덧붙인다.
+worker 를 띄우는 두 곳(`launch-worker.ts`, 후속 지시서를 보내는 `send-to-worker.ts`)이, 지시서의 `보드 항목 id:` 줄(`lib/spec.ts` 의 `boardIdOf`)이 가리키는 항목의 첫 미완료 단계가 `[auto]` 이고 지시서 머리의 `자동 진행 단계: <번호>` 와 같을 때만 한 줄을 덧붙인다. 같은 항목의 다른 실행은 기록하지 않는다.
 
 ```json
 {"at": "2026-11-10T07:00:00.000Z", "item": "trait-memory", "number": 4, "step": "4. [auto] PR4 회차 추이 API (계획: …)", "dispatch": "ctx_…", "branch": "feat/x-pr4"}
@@ -187,7 +187,7 @@ worker 를 띄우는 두 곳(`launch-worker.ts`, 후속 지시서를 보내는 `
 - 보드에 항목을 잇는 쓰기(`registerBoard`)와 따로 한다. 그 쓰기가 잠금을 못 잡아 실패해도 기록은 남긴다. 실패하면 「한 번만」 과 멈춤 알림을 함께 잃기 때문이다.
 - 덧붙이기만 한다. 한 줄이 짧아 겹쳐 써도 줄이 섞이지 않는다.
 - 읽는 쪽은 `auto-check`(이미 띄웠는지)와 멈춘 단계 판정(스펙 REQ5)이다.
-- 띄운 것을 코디네이터가 따로 적지 않는다. 지시서에 `보드 항목 id:` 줄이 있으면 저절로 남는다. 그래서 자동 진행 지시서에는 그 줄을 꼭 적는다(`replying.md` 에 적는다).
+- 띄운 것을 코디네이터가 따로 적지 않는다. 지시서 머리에 `보드 항목 id:` 와 `자동 진행 단계:` 를 함께 명시한 실행만 남는다. 그래서 자동 진행 지시서에는 그 줄을 꼭 적는다(`replying.md` 에 적는다).
 - 형식은 `docs/data-schema.md` 「orch 루트에 더하는 파일」 에 행을 더한다.
 
 ### 자동으로 띄운 단계의 줄을 끝내는 법
