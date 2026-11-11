@@ -128,8 +128,8 @@ export function liveReviews(): Set<number> | null {
 }
 
 // 머리 주석의 「리뷰 dispatch」. 리뷰 dispatch 면 그 PR 번호, 아니면 null
-export function reviewPrOfDispatch(repo: string, dispatch: string): number | null {
-  const spec = (readLaunch(repo, dispatch) ?? launchHistory(repo).find((row) => row.dispatch === dispatch))?.spec
+export function reviewPrOfDispatch(repo: string, dispatch: string, history?: ReadonlyMap<string, { spec?: string | null }>): number | null {
+  const spec = (readLaunch(repo, dispatch) ?? (history ? history.get(dispatch) : launchHistory(repo).find((row) => row.dispatch === dispatch)))?.spec
   if (!spec) return null
   let text: string | null
   try {

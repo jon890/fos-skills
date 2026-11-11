@@ -262,6 +262,7 @@ function argsOf(name: 'sweep' | 'board'): string[][] {
 
 test('첫 틱에 읽은 리뷰 완료 보고도 보드 동기화에 넘긴다', () => {
   board()
+  write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{ id: 'review-pr-7', status: 'doing' }] }))
   write(orchFile('state', 'launched-workers', 'review.json'), JSON.stringify({ dispatch: 'review', worktree: repo, run: 'r', spec: '/missing/spec-review-pr-7.md' }))
   orca({ messages: [{ id: 'done', type: 'worker_done', run_id: 'r', payload: { dispatchId: 'review' } }] })
   once()
