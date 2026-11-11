@@ -1,0 +1,3 @@
+- 저장소 설정 `contracts.merge_command`, `contracts.paths` 를 두면 충돌 파일이 모두 계약 파일인 PR 을 orch 가 로컬에서 합쳐 push 한다
+- 상주 루프의 충돌 처리, `notify-conflicts`, 머지 큐의 update-branch 앞이 같은 절차를 쓴다. 합치지 못하면 `CONTRACT-MERGE-FAIL` 을 남기고 worker 에게 넘긴다
+- 기능 완료 근거가 계약 파일 충돌만 푼 base 합치기 커밋을 받아들인다

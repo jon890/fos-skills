@@ -5,6 +5,7 @@
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
 import { judgePrReview } from '../../lib/review-judgement.ts'
 import { loadConfig } from '../../lib/config.ts'
+import { contractSettings } from '../../lib/contract-merge.ts'
 import { baseMergesOnly, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
@@ -165,7 +166,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   } else {
     // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 본다
     const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false,
-      (verified) => fetchPrRefs(stepContext, state) && baseMergesOnly(state.repoDir, p.ph, verified, p.base))
+      (verified) => fetchPrRefs(stepContext, state) && baseMergesOnly(state.repoDir, p.ph, verified, p.base, contractSettings(loadConfig(state.repoDir))?.paths ?? null))
     if (problem) reasons.push({ kind: 'evidence', text: problem })
   }
   reasons.push(...migrationReasons(state))

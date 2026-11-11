@@ -86,6 +86,8 @@ import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations 
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
+import { loadConfig } from '../../lib/config.ts'
+import { contractSettings } from '../../lib/contract-merge.ts'
 import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from '../../lib/feature-evidence.ts'
 import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
@@ -302,7 +304,7 @@ function judgeTarget(
   if (feature) {
     if (typeof data.body !== 'string' || data.headRefOid !== pr.head) return { wait: '기능 완료 근거 또는 HEAD 조회 실패' }
     // 검증 커밋 뒤에 base 를 합친 merge 만 있으면 받아들인다. 위에서 지금 HEAD 의 CI 가 passed 인 것을 보았다
-    const problem = featureEvidenceProblem(data.body, pr.head, feature, false, (verified) => fetchedBaseMerges(ctx.repo, pr.head, verified, pr.base))
+    const problem = featureEvidenceProblem(data.body, pr.head, feature, false, (verified) => fetchedBaseMerges(ctx.repo, pr.head, verified, pr.base, contractSettings(loadConfig(ctx.repo))?.paths ?? null))
     if (problem) return { wait: problem }
   }
   let basis = noReview

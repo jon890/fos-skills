@@ -6,7 +6,8 @@ process.env.ORCH_GH_CACHE = '0'
 // 가짜 gh 는 FAKE_STATE 의 JSON 상태로 움직이고 받은 인자를 FAKE_LOG 에 한 줄씩 적는다.
 // 머지 큐가 넘기는 --jq 식을 그대로 확인하려고 진짜 jq 로 평가한다. 그래서 jq 가 없으면 두 테스트를 건너뛴다.
 // 상태 키: <번호> 마다 PR 필드(state, statusCheckRollup, mergeable, url, headRefName, baseRefName, headRefOid,
-//   isCrossRepository, mergeStateStatus)와 흉내 칸(appear, update_fails(true 나 stderr 문구), after_update, after_update_head),
+//   isCrossRepository, mergeStateStatus)와 흉내 칸(appear, update_fails(true 나 stderr 문구), after_update, after_update_head,
+//   head_from(bare 저장소 경로. pr view 가 그 저장소의 headRefName 브랜치 끝을 headRefOid 로 읽고, 바뀌었으면 _behind 를 0 으로 둔다)),
 //   그리고 _behind, _behind_after_update, _api_fails, _rules, _rules_error, _view_fails, _remote_head, _base_head, _ls_remote_fails.
 //   쌓인 PR 칸: _based(`pr list --base` 가 내는 열린 PR 목록. `pr edit <n> --base` 가 그 PR 을 뺀다), _list_fails,
 //   _edit_fails, _user(`api user` 의 login. 기본 me).
@@ -102,6 +103,15 @@ if (args[0] === 'pr' && args[1] === 'view') {
     process.exit(1)
   }
   const pr = state[args[2]]
+  // orch 가 직접 push 한 브랜치 끝을 GitHub 이 보여 주는 것을 흉내 낸다
+  if (pr.head_from) {
+    const real = spawnSync('git', ['--git-dir', pr.head_from, 'rev-parse', 'refs/heads/' + pr.headRefName], { encoding: 'utf8' }).stdout.trim()
+    if (real && real !== pr.headRefOid) {
+      pr.headRefOid = real
+      state._behind = 0
+      save()
+    }
+  }
   // 쓰기 성공 뒤 조회 API 에 상태가 늦게 반영되는 경우다.
   if (args[args.indexOf('--json') + 1] === 'state' && pr.merge_pending) {
     pr.merge_pending -= 1

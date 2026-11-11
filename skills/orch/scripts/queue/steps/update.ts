@@ -1,12 +1,18 @@
 // 차례가 온 PR 의 base 최신화.
+// update-branch 앞에서 계약 머리 자동 합치기(lib/contract-merge.ts)를 본다. config.json 의 contracts 절이 있고 같은 저장소 PR 이며
+// origin/<base> 와 합친 충돌 파일이 모두 contracts.paths 에 맞으면 로컬에서 합쳐 push 하고 update-branch 를 부르지 않는다.
+// 합치지 못하면 `CONTRACT-MERGE-FAIL` 을 로그에 쓰고 지금처럼 update-branch 를 부른다(충돌이면 Conflict 로 worker 에게 간다).
 
+import { loadConfig } from '../../lib/config.ts'
+import { contractSettings, mergeContracts, onlyContracts } from '../../lib/contract-merge.ts'
 import { updateBranch } from '../../lib/gh.ts'
+import { conflicts, git as gitIn } from '../../lib/git.ts'
 import { TURN_PHASES } from '../../lib/queue-turn.ts'
 import { waitChecks } from './checks.ts'
 import type { StepContext } from './model.ts'
 import { Conflict, Deferred, NotReady, REJUDGE_LIMIT } from './model.ts'
 import type { StepState } from './model.ts'
-import { docsOnly, needsUpdate, overlapFiles, prFiles } from './overlap.ts'
+import { docsOnly, fetchPrRefs, needsUpdate, overlapFiles, prFiles } from './overlap.ts'
 import { api, field, turn } from './pr.ts'
 import { chomp, git, isDigits, log, nap, refuseWhenStopping, stop } from './runtime.ts'
 
@@ -17,6 +23,33 @@ export function remoteBase(stepContext: StepContext, state: StepState): string {
   const sha = done.code === 0 ? done.stdout.split('\t')[0].trim() : ''
   if (!sha) stop(`${p.n} base 조회 실패`)
   return sha
+}
+
+// 머리 주석의 계약 머리 자동 합치기. push 했으면 true 다. 설정이 없거나 합칠 대상이 아니거나 실패하면 false 다
+export function contractMerged(stepContext: StepContext, state: StepState): boolean {
+  const p = state.p
+  if (p.cross) return false
+  const settings = contractSettings(loadConfig(state.repoDir))
+  if (!settings) return false
+  if (!fetchPrRefs(stepContext, state)) {
+    log(`${p.n} CONTRACT-MERGE-FAIL PR HEAD 나 base 를 받지 못했다`)
+    return false
+  }
+  const baseSha = gitIn(state.repoDir, ['rev-parse', '--verify', '-q', `refs/remotes/origin/${p.base}`]).stdout.trim()
+  const judged = baseSha ? conflicts(state.repoDir, baseSha, p.ph) : null
+  if (!judged || !judged.ok) {
+    log(`${p.n} CONTRACT-MERGE-FAIL base 와 합쳐 보지 못했다`)
+    return false
+  }
+  if (!judged.conflict || !onlyContracts(judged.files, settings)) return false
+  const merged = mergeContracts(state.repoDir, { number: Number(p.n), branch: p.branch, head: p.ph, base: p.base, baseSha }, settings)
+  if (merged.kind === 'pushed') {
+    log(`${p.n} CONTRACT-MERGED ${merged.head.slice(0, 8)} 계약 머리만 충돌해 로컬에서 합쳐 push 했다: ${judged.files.join(', ')}`)
+    if (merged.output) log(merged.output)
+    return true
+  }
+  log(`${p.n} CONTRACT-MERGE-FAIL ${merged.kind === 'failed' ? merged.reason : merged.kind === 'other' ? `다른 파일도 충돌한다: ${merged.files.join(', ')}` : 'git 이 충돌 없이 합쳤다'}`)
+  return false
 }
 
 // 필수 체크를 기다리고, 켜져 있으면 base 최신화와 문서 PR 갱신을 한다
@@ -69,15 +102,17 @@ export async function bringUpToDate(stepContext: StepContext, state: StepState):
     // 차례가 온 이 PR 에만 base 를 합친다. 검사한 HEAD 를 넘겨, 그 뒤에 push 된 커밋이 있으면 GitHub 가 거부하게 한다.
     // merge-turn 은 draft 여부를 보지 않는다
     refuseWhenStopping(n)
-    const updated = updateBranch(`${p.owner}/${p.repo}`, { number: Number(n), isDraft: false }, 'merge-turn', {
-      host: p.apiHost,
-      expectedHead: p.ph,
-    })
-    if (updated.code !== 0) {
-      if (/conflict/i.test(updated.stderr + updated.stdout)) throw new Conflict(`${n} update-branch 가 충돌로 실패했다`)
-      stop(`${n} update-branch 실패`)
+    if (!contractMerged(stepContext, state)) {
+      const updated = updateBranch(`${p.owner}/${p.repo}`, { number: Number(n), isDraft: false }, 'merge-turn', {
+        host: p.apiHost,
+        expectedHead: p.ph,
+      })
+      if (updated.code !== 0) {
+        if (/conflict/i.test(updated.stderr + updated.stdout)) throw new Conflict(`${n} update-branch 가 충돌로 실패했다`)
+        stop(`${n} update-branch 실패`)
+      }
     }
-    // update-branch 는 비동기라 PR HEAD 가 바뀔 때까지 기다린다
+    // update-branch 는 비동기라 PR HEAD 가 바뀔 때까지 기다린다. 계약 합치기의 push 도 GitHub 에 보이기까지 같은 방법으로 기다린다
     let next = ''
     for (let i = 0; i < 12; i++) {
       await nap(stepContext, 5)

@@ -1,10 +1,10 @@
 import { isObject } from './json.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker' | 'routing' | 'inbox'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox'
 
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'board', 'review', 'docker', 'routing', 'inbox']
+export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox']
 
 export class ConfigError extends Error {}
 
@@ -63,6 +63,9 @@ export const MIGRATIONS_KEYS: readonly string[] = ['dirs', 'watch', 'before', 'b
 
 // adr 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 adr 행이다. reserve-migration.ts --kind adr 와 spec-lint 가 읽고, 자동 머지는 읽지 않는다.
 export const ADR_KEYS: readonly string[] = ['dirs']
+
+// contracts 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 contracts 행이다. lib/contract-merge.ts 가 읽는다.
+export const CONTRACTS_KEYS: readonly string[] = ['merge_command', 'paths']
 
 // board 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 board 행이다. 값의 판정은 lib/milestones.ts 의 boardSettings 가 소유한다.
 export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line']

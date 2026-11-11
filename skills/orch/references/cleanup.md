@@ -170,7 +170,7 @@ orch queue merge --require-up-to-date --required backend,frontend 101 102
 `--require-up-to-date` 만으로는 뒤 PR 이 차례마다 base 를 합치고 CI 를 기다려 CI 한 번씩 줄을 선다. 루프가 미리 합치면 CI 들이 함께 돌고, 차례가 온 PR 이 이미 최신이고 통과했으면 머지 큐가 기다리지 않고 머지한다.
 
 - 판정은 머지 큐와 같은 `queue` 키로 한다. 최신이거나 겹치지 않아 머지 큐가 바로 머지할 PR 은 건드리지 않는다
-- 충돌한 PR 은 지금처럼 충돌 처리가 그 worker 에게 보낸다. `pipeline.refresh_worker_paths` 에 맞는 파일을 양쪽이 바꾼 PR 은 `update-branch` 대신 그 worker 에게 base 를 합쳐 검증하고 한 번 push 하라고 보낸다
+- 충돌한 PR 은 지금처럼 충돌 처리가 그 worker 에게 보낸다. 충돌 파일이 모두 `contracts.paths` 에 맞으면 먼저 orch 가 합쳐 push 한다(`overlay.md` 「계약 머리 자동 합치기」). `pipeline.refresh_worker_paths` 에 맞는 파일을 양쪽이 바꾼 PR 은 `update-branch` 대신 그 worker 에게 base 를 합쳐 검증하고 한 번 push 하라고 보낸다
 - 도는 머지 큐의 차례 PR 은 건드리지 않는다. 큐 밖에서 HEAD 가 바뀌면 그 PR 이 `STOP` 으로 멈춘다. 큐에서 아직 머지되지 않은 앞 PR 과 겹치는 PR 은 그 머지 뒤로 미룬다. 곧 다시 뒤처져 방금 돌린 CI 가 쓸모없어지기 때문이다
 - 같은 (PR, base SHA) 에는 한 번만 건다. CI 가 passed 가 아닌 PR 은 걸지 않는다
 
