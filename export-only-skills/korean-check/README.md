@@ -85,7 +85,7 @@ ln -sfn "$CHECKOUT"/korean-check/scripts/check-readability.ts ~/.claude/scripts/
 ln -sfn "$CHECKOUT"/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
 ```
 
-**`korean-style.md` 하나만 건다.** 어휘와 문장 구성, 짧은 글 규칙은 채팅 답변에도 적용되므로 항상 실려야 한다.
+**`korean-style.md` 하나만 건다.** 어휘와 문장 구성, 짧은 글 규칙은 채팅 답변에도 적용되므로 항상 로드되어야 한다.
 `writing-structure.md` 와 `korean-examples.md` 는 문서를 쓰거나 검토할 때,
 `markdown-readability.md` 는 검사기를 돌릴 때만 쓰여 스킬이 발동할 때 읽는다.
 

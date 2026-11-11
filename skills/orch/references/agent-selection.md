@@ -13,7 +13,7 @@
 모델 표를 보기 전에 Claude 와 Codex 중 어느 쪽에 맡길지 먼저 정한다.
 같은 계열을 기본값으로 두지 않는다.
 
-- 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)을 사용한다. `technical-design` 은 [설계 작업 선택 규칙](#설계-작업-선택-규칙)을 따른다. Codex 매니페스트는 hook 을 싣지 않는다
+- 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)을 사용한다. `technical-design` 은 [설계 작업 선택 규칙](#설계-작업-선택-규칙)을 따른다. Codex 매니페스트는 hook 을 넣지 않는다
 - 코드 작업에 딸린 ADR, flow 문서 수정은 위 규칙에 들지 않는다. 주 산출물이 코드면 코드 중심 구현으로 본다.
 - 코드 중심 구현은 `gpt-6.1-sol` 과 Claude Sonnet 5.5 를 비교해 고르고, 고른 이유를 `worker 선택:` 줄에 남긴다. `gpt-6.1-sol` `medium` 은 Claude Opus 5.5 `medium` 과 같은 등급으로 본다
 - Claude 가 만든 PR 의 머지 전 독립 리뷰는 Codex 로 띄운다. 보안 리뷰는 아래 표대로 Claude 다

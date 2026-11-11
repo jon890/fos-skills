@@ -27,6 +27,18 @@ test('정할 것 묻기 요청문은 결정 모으기, 질문, 보드와 worker 
   }
 })
 
+test('시작과 결정 요청문은 질문 스레드 답장을 안내하고 별도 지시를 구분한다', () => {
+  for (const prompt of [START_PROMPT, DECIDE_PROMPT]) {
+    assert.match(prompt, /orch worker send --dispatch <id> --reply-to <질문 id>/)
+    assert.match(prompt, /보드가.*스레드.*답함/)
+    assert.match(prompt, /--reply-to 없는 send.*질문이 없는 새 지시/)
+    assert.match(prompt, /--no-reply/)
+  }
+  const lines = DECIDE_PROMPT.split('\n')
+  assert.match(lines.find((line) => line.startsWith('4. '))!, /--reply-to <질문 id>/)
+  assert.match(lines.find((line) => line.startsWith('8. '))!, /4번.*스레드/)
+})
+
 test('정할 것 묻기 요청문은 직접 올린 막힘과 Orca 자동 알림을 다루는 방법을 담는다 (docs/features/board-decision-box R7)', () => {
   for (const text of ['직접 올린 막힘', '사람이 정할 것만', '자동 알림', '한 줄로', '계정 한도', '터미널이 종료', '같은 워크트리', '깨워', '해제로 닫아']) {
     assert.ok(DECIDE_PROMPT.includes(text), text)

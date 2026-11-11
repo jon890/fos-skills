@@ -214,7 +214,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`report`](skills/report/README.md) | 있는 내용을 결론이 먼저 보이는 HTML 보고서 한 파일로 만들어 브라우저로 띄워요 |
 | [`browser`](skills/browser/README.md) | CLI 나 API 로 안 되는 웹 작업을 `browser-driver` 로 브라우저를 조작해 끝내요. 로그인과 되돌리기 어려운 버튼만 사람이 확인해요 |
 
-플러그인은 위 표의 스킬과 `/board` 창을 함께 실어요.
+플러그인은 위 표의 스킬과 `/board` 창을 함께 넣어요.
 [`content-preview`](export-only-skills/content-preview/README.md) 와 [`korean-check`](export-only-skills/korean-check/README.md) 의 원본도 여기 있지만, 스킬로는 팀 저장소의 플러그인으로 받아요.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않아요.
 
@@ -277,10 +277,10 @@ ln -sfn ~/personal/fos-skills/skills/browser/browser-driver/browser_driver.ts ~/
 | --- | --- | --- |
 | `skills/browser/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview`, `presentation` |
 
-소유자는 `browser` 스킬이에요. 팀 저장소에는 `tools/browser-driver` 로 실려요.
+소유자는 `browser` 스킬이에요. 팀 저장소에는 `tools/browser-driver` 로 들어가요.
 `tools/browser-driver/browser_driver.py` 는 옛 링크가 깨지지 않게 남긴 옛 이름 진입이에요. 새 `.ts` 를 불러요. 다음 major 에 지워요.
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
-이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
+이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 넣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 
 `extensions/work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
 orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여기 있어요. 동작은 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.
@@ -338,7 +338,7 @@ ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loo
 아래를 함께 고쳐요.
 
 - `.claude-plugin/plugin.json` 의 `skills` 배열
-- `.codex-plugin/plugin.json` 의 `skills` 배열. Codex 가 읽는 매니페스트라 hook 은 싣지 않아요([ADR-007](docs/adr/007-codex-manifest-without-hooks.md))
+- `.codex-plugin/plugin.json` 의 `skills` 배열. Codex 가 읽는 매니페스트라 hook 은 넣지 않아요([ADR-007](docs/adr/007-codex-manifest-without-hooks.md))
 - 이 README 의 스킬 목록 표
 - 팀에도 내보낼 스킬이면 `scripts/export-to-team.ts` 의 `SHARED_SKILLS`
 

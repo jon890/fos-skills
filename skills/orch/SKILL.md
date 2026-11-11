@@ -7,7 +7,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "7.38.0"
+  version: "7.38.1"
 ---
 
 # orch
@@ -35,7 +35,7 @@ metadata:
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 「고를 공부 후보 <개수>개가 <폴더> 에 있다」 로 알리기만 하고 고르라고 재촉하지 않는다.
 사용자 질문이나 결정에서 일반 기술 개념이 판단을 바꿨으면(뜻을 물은 경우 포함) 그 자리에서 공부 후보로 적는다. 아무 주제나 적지 않고 네 기준을 모두 채운 것만 적는다. 기준, 적는 법, 사용자가 고른 후보를 글로 잇는 법은 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
-`PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있으니 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다.
+`PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록이 가리키는 폴더가 없어 그 플러그인이 로드되지 않았다는 뜻이다. 이 스킬이 로드됐어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있으니 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다.
 `ORCA-SHAPE worker-list <키>` 는 Orca 출력 형식이 바뀌어 orch 가 읽는 키가 없다는 뜻이다. worker 판정과 정리가 빈 값으로 엇나가므로 orch 를 갱신하고, 최신에도 나오면 사용자에게 알린다.
 
 ```bash
