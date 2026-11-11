@@ -109,7 +109,7 @@ const ROWS: Row[] = [
     group: 'worker', verb: 'screen', script: 'worker/nudge-worker.ts', prepend: ['--state'], positional: { flag: '--terminal', repeat: false, required: true, what: '터미널' }, forbid: ['--state'],
     legacy: { name: 'nudge-worker', flags: ['--state'] }, usage: 'orch worker screen <터미널>',
   },
-  { group: 'worker', verb: 'ask', script: 'worker/worker-ask.ts', legacy: { name: 'worker-ask', flags: [] }, usage: 'orch worker ask --from <터미널> --question <질문> [--decision]' },
+  { group: 'worker', verb: 'ask', script: 'worker/worker-ask.ts', legacy: { name: 'worker-ask', flags: [] }, usage: 'orch worker ask --from <터미널> (--question <질문> | --question-file <파일>) [--decision]' },
   {
     group: 'worker', verb: 'adopt', script: 'worker/adopt-sessions.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'apply') ? [] : ['run']),
     legacy: { name: 'adopt-sessions', flags: [] }, usage: 'orch worker adopt [--apply <터미널>]',

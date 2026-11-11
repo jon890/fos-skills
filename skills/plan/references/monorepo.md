@@ -142,6 +142,9 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_AR
 | 파일 길이 대상 | plan | 인라인 코드로 적은 glob 목록. `/` 없는 패턴은 파일 이름에 맞춘다 | `` `*.java` `` | `verify_task.ts`. 없으면 코드 파일 전부다 |
 | PR 크기 예외 | plan | 저장소의 크기 예외 규칙을 가리키는 링크나 한 문장 | `` [크기 예외](../docs/contributing/pull-request.md#pr-크기) `` | critic 이 읽는다([critic 계약](../../implementation/references/role-critic.md) 7) |
 | 문서 검사 명령 | spec 또는 technical-design | 인라인 코드 하나가 명령 하나다. 저장소 루트에서 실행한다 | `` `scripts/verify.sh docs` `` | `run_doc_checks.ts`. technical-design 은 자기 오버레이에 없으면 spec 오버레이를 읽는다 |
+| 생성 파일 | plan | 저장소 루트 기준 glob 을 인라인 코드로 나열한다 | `` `docs/adr/INDEX.md` `generated/**/*.json` `` | `verify_task.ts --staged` 의 범위 밖 검사 |
+| 계약 검증 규칙 | plan | 저장소 루트 기준 JSON 파일 경로 | `` `.claude/contract-checks.json` `` | `verify_task.ts` 의 phase 검증 명령 검사 |
+| 통합 테스트 표지 | plan | 표지를 인라인 코드로 나열한다 | `` `@IntegrationTest` `` | `verify_task.ts` 의 일반 Gradle test 필터 경고 |
 
 크기 기준은 원본 설정 파일이 따로 있으면 `<JSON 파일>#<키>` 로 가리킨다. 숫자를 오버레이에 옮겨 적으면 원본만 바뀌었을 때 두 값이 어긋난다.
 「PR 변경 파일 상한」 이 있으면 저장소의 크기 측정처럼 계획 폴더만 빼고 변경 파일을 모두 센다.
@@ -157,3 +160,29 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_AR
 | 파일 길이 대상 | `*.java` |
 | 문서 검사 명령 | `scripts/verify.sh docs` |
 ```
+
+### 계획 검사의 저장소별 규칙
+
+plan 오버레이에 필요한 행만 추가한다. 값이 없으면 해당 검사를 하지 않는다. 하위 프로젝트가 있으면 변경 경로의 오버레이를 먼저 읽으며, glob 과 JSON 안 경로도 저장소 루트 기준이다.
+
+```markdown
+| 값 | 값 |
+| --- | --- |
+| 생성 파일 | `docs/adr/INDEX.md` `generated/**/*.json` |
+| 계약 검증 규칙 | `.claude/contract-checks.json` |
+| 통합 테스트 표지 | `@IntegrationTest` `@Tag("integration")` |
+```
+
+`계약 검증 규칙` 이 가리키는 JSON 은 아래 배열이다. `files` 에 맞는 변경 파일이 있으면 같은 phase 의 검증 셸 블록에 `commands` 중 하나가 있어야 한다. 명령과 인자를 토큰으로 대조하며, 주석·산문·echo 안의 문자열은 실행 명령으로 세지 않는다. 규칙을 여러 개 적으면 해당하는 규칙을 모두 만족해야 한다.
+
+```json
+[
+  {
+    "files": ["contracts/**/*.yaml"],
+    "commands": ["scripts/verify.sh contracts", "scripts/verify.sh backend"]
+  }
+]
+```
+
+`생성 파일` 은 목록에 없는 생성 결과의 범위 밖 위반만 제외한다. 표에 명시한 파일의 변경 종류나 신규 테스트 누락은 면제하지 않는다.
+`통합 테스트 표지` 는 기존 Java·Kotlin 파일의 표지를 읽고, 일반 Gradle `test --tests` 필터가 그 클래스를 고르면 0건 실행 가능성을 경고한다. 실제 제외 설정이나 아직 만들지 않은 테스트는 작성자가 확인한다. 검사기는 명령을 실행하지 않는다.
