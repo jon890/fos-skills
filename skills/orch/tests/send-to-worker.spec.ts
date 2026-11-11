@@ -679,13 +679,23 @@ describe('Orca 후속 일과 기록', () => {
     mkdirSync(dirname(board), { recursive: true })
     writeFileSync(board, JSON.stringify({ items: [{ id: 'next', status: 'doing', details: ['2. [auto] 다음 (계획: docs/p)'] }] }))
     const spec = join(tmp, 'next.md')
-    writeFileSync(spec, '자동 진행 단계: 2\n' + readFileSync(spec, 'utf8') + '보드 항목 id: next\n')
+    writeFileSync(spec, '자동 진행 단계: 2\n보드 항목 id: next\n' + readFileSync(spec, 'utf8'))
     const r = send('--spec', spec)
     assert.equal(r.code, 0, both(r))
     const rows = readFileSync(join(tmp, 'orch/state/step-launches.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
     assert.equal(rows[0].dispatch, 'ctx_new')
     assert.equal(rows[0].item, 'next')
     assert.equal(rows[0].step, '2. [auto] 다음 (계획: docs/p)')
+  })
+
+  test('자동 진행 단계의 항목 id가 없으면 후속 일을 보내기 전에 거절한다', () => {
+    follow()
+    const spec = join(tmp, 'next.md')
+    writeFileSync(spec, '자동 진행 단계: 2\n' + readFileSync(spec, 'utf8'))
+    const r = send('--spec', spec)
+    assert.notEqual(r.code, 0)
+    assert.match(both(r), /보드 항목 id/)
+    assert.deepEqual(lines('orca orchestration send'), [])
   })
 
   for (const broken of ['', 'board', 'hook']) {

@@ -142,6 +142,7 @@ export function autoStepNumberOf(text: string): number | null {
   if (matches.length !== 1 || !/^[1-9]\d*$/.test(matches[0][1]) || !Number.isSafeInteger(Number(matches[0][1]))) {
     throw new Error('자동 진행 단계는 양의 단계 번호 하나로 적는다')
   }
+  if (!boardIdOf(head)?.id) throw new Error('자동 진행 단계에는 지시서 머리의 보드 항목 id 줄이 필요하다')
   return Number(matches[0][1])
 }
 

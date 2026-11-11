@@ -1189,7 +1189,8 @@ for (const mode of ['auto', 'ask', 'none', 'no-id', 'no-board', 'board-fails', '
     }
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown(mode === 'stalled' ? 'worktree_creating' : 'input_accepted') } })
     const r = launch(['--worktree', worktree, '--watch', mode === 'stalled' ? '1' : '0', '--', ...CODEX])
-    assert.equal(r.code, mode === 'stalled' ? 1 : 0, both(r))
+    assert.equal(r.code, ['stalled', 'no-id'].includes(mode) ? 1 : 0, both(r))
+    if (mode === 'no-id') { assert.match(r.stderr, /보드 항목 id/); assert.deepEqual(lines('orca orchestration worker-start'), []) }
     if (['auto', 'board-fails', 'stalled'].includes(mode)) {
       const rows = readFileSync(record, 'utf8').trim().split('\n').map(line => JSON.parse(line))
       assert.equal(rows.length, 1)

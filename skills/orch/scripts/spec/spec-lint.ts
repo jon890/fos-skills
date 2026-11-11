@@ -109,7 +109,7 @@ import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { boardIdOfLine, interimOf, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOfLine, interimOf, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
@@ -515,6 +515,8 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
   }
 
   for (const spec of parsed) {
+    try { autoStepNumberOf(spec.lines.join('\n')) }
+    catch (e) { errors.push(`${spec.name}:1: 보드 자동 단계: ${(e as Error).message}`) }
     if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source))
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
       warnings.push(`${spec.name}:1: 제목: ${TITLE_HINT}`)
