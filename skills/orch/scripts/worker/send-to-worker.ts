@@ -1,5 +1,6 @@
 // worker 에게 답이나 후속 지시를 보낸다. Orca 가 메시지마다 worker 를 깨우므로 터미널에 입력하지 않는다.
 // 활성 dispatch 는 미답변 질문에 reply 하고, 답할 후보가 없거나 --no-reply 면 send 한다.
+// --reply-to 생략 시 미답변 질문·막힘이 하나면 ID 와 답장 명령을 경고한다. Orca 자동 알림은 이 경고에서 뺀다.
 // answer_conflict/dispatch_inactive 는 닫은 질문으로 기록한다. consumer_fenced 는 --from 없이 재시도한다.
 // stable_pane_required 는 plain reply, question 의 status answer 차례로 시도한다.
 // 끝난 dispatch 의 질문에 답만 달면 0 이다. --spec 이 있으면 허락/worker 선택을 검사한 한 줄 지시를 send 한다.
@@ -159,8 +160,14 @@ function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run
     return ka - kb || String(a.created_at || '').localeCompare(String(b.created_at || '')) || sa - sb
   })
   const latestAnswer = mine.findLastIndex((row) => ASKS.has(String(row.type)) && answered.has(String(row.id)))
-  return mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(String(row.id)) && index > latestAnswer))
-    .reverse().map((row) => String(row.id))
+  const pending = mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(String(row.id)) && index > latestAnswer)).reverse()
+  // 보드의 autoAlertKind 와 같이 자동 알림은 id 접두로 가린다. worker 가 같은 제목으로 보낸 막힘은 남긴다.
+  const asks = pending.filter((row) => ASKS.has(String(row.type)) && !/^msg_(?:stop|chaterr)_/.test(String(row.id)))
+  if (asks.length === 1) {
+    const id = String(asks[0].id)
+    out(`warning: --reply-to 를 생략했다. 미답변 질문·막힘 ${id} 가 하나 남아 있다. 답할 때는 orch worker send --dispatch ${dispatchId} --reply-to ${id} 를 쓰고, 별도 지시는 --no-reply 로 보낸다`)
+  }
+  return pending.map((row) => String(row.id))
 }
 
 function liveHandles(): Set<string> {

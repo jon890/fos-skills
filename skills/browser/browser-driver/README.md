@@ -35,7 +35,7 @@ $B doctor
 | `tests/` | `node:test` 함수 테스트와 대표 CLI 대조. 동기 가짜는 같은 본문을 함수로 평가하고 비동기 ego 스크립트는 실제 자식으로 실행한다. 가짜 백엔드와 임시 폴더만 쓰고 실제 브라우저를 열지 않는다. `fixtures/` 는 옛 구현이 낸 스크립트·도움말·진단 출력이다. 저장소 루트에서 `node scripts/run-tests.ts 'skills/browser/browser-driver/tests/*.spec.ts'` 로 돈다 |
 
 진입점만 실행 파일이다(`#!/usr/bin/env node`). 심링크로 불려도 Node 가 모듈 경로를 실체로 풀어 옆의 `driver` 폴더를 찾는다.
-이 폴더는 팀 저장소에 `tools/browser-driver` 로 실린다. 폴더 밖을 import 하지 않는다.
+이 폴더는 팀 저장소에 `tools/browser-driver` 로 들어간다. 폴더 밖을 import 하지 않는다.
 
 ## 부르는 쪽
 
@@ -180,7 +180,7 @@ ego 는 그 줄을 반환값 뒤에 줄바꿈 없이 붙이므로 그대로 두�
   다시 쓰고 없으면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
   이미 받은 핸들로는 되살릴 수 없다. `open` 을 다시 부른다.
 - 응답하지 않는 page 가 공간에 남아 있어도 `open` 은 막히지 않는다. 빈 page 를 다시 쓰려고
-  훑을 때 `task.tabs()` 가 실어 주는 url 만 보고, 훑기가 실패하면 새 page 를 만든다.
+  훑을 때 `task.tabs()` 가 돌려주는 url 만 보고, 훑기가 실패하면 새 page 를 만든다.
   page 마다 `page.evaluate` 를 부르는 방식으로 바꾸지 않는다. 멈춘 page 하나가 있으면
   목적지 주소와 무관하게 `page.evaluate timed out after 15000ms` 로 끝난다.
   멈춘 page 자체는 브라우저에서 닫거나 새로고침해야 사라진다.

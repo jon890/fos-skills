@@ -103,7 +103,7 @@
 | `skills/browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 드라이버가 스킬 폴더 안에 있어 캐시에서도 같은 상대 경로다 |
 | `skills/harness-cleanup/scripts/check_references.ts` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
 
-루트 `bin/` 에는 orch 실행기 `orch` 하나만 둔다. 설치 기록에서 번들을 골라 `skills/orch/bin/orch.ts` 에 넘기기만 한다. 번들 고르기의 원본은 `skills/orch/scripts/lib/install-record.ts` 이고, 실행기 머리 주석이 그 사본임을 적는다. `browser-driver` 명령은 팀 저장소의 플러그인이 PATH 에 싣는다. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 가 소유한다.
+루트 `bin/` 에는 orch 실행기 `orch` 하나만 둔다. 설치 기록에서 번들을 골라 `skills/orch/bin/orch.ts` 에 넘기기만 한다. 번들 고르기의 원본은 `skills/orch/scripts/lib/install-record.ts` 이고, 실행기 머리 주석이 그 사본임을 적는다. `browser-driver` 명령은 팀 저장소의 플러그인이 PATH 에 추가한다. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 가 소유한다.
 
 `${CLAUDE_PLUGIN_ROOT}` 는 쓰지 않는다. 스킬 본문에서만 치환되고 `references/` 파일과 Bash 명령에서는 치환되지 않으며, 링크 설치에서는 값이 없기 때문이다.
 `$SKILL_DIR` 은 플러그인 설치와 링크 설치에서 같은 방식으로 얻는다.
@@ -131,8 +131,8 @@
 `~/.claude/skills/plan` 같은 같은 이름의 링크와 함께 두면 둘 다 목록에 뜨고 어느 쪽도 다른 쪽을 가리지 않는다.
 전환할 때 링크를 지우는 순서는 [flow.md](flow.md) 의 「링크 설치에서 옮기기」 가 소유한다.
 
-팀 저장소의 플러그인은 `content-preview` 와 `korean-check` 의 사본을 싣는다.
-두 스킬의 원본은 여기 있지만, 스킬로는 사본을 싣는 팀 저장소의 플러그인으로 받는다.
+팀 저장소의 플러그인은 `content-preview` 와 `korean-check` 의 사본을 넣는다.
+두 스킬의 원본은 여기 있지만, 스킬로는 사본을 넣는 팀 저장소의 플러그인으로 받는다.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
 이 플러그인은 두 원본 디렉터리를 캐시에 복사하되 `skills` 배열에서 제외하므로 함께 설치해도 중복으로 뜨지 않는다.
 
@@ -162,10 +162,10 @@
 
 ## 다음 차수
 
-플러그인이 `PostToolUse` 훅을 실어 설치만으로 한국어 검사가 켜지게 하는 일은 이번에 하지 않는다.
+플러그인이 `PostToolUse` 훅을 넣어 설치만으로 한국어 검사가 켜지게 하는 일은 이번에 하지 않는다.
 플러그인 훅이 실제로 발화하는지는 세션을 띄워야 확인되는데 격리 환경에서 실측하지 못했다.
 그때까지 사외 머신에서 훅을 쓰려면 저장소를 clone 하고 `export-only-skills/korean-check/README.md` 의 링크를 건다.
-훅을 실을 때는 훅 정의 파일을 git 훅이 있는 `githooks/` 와 다른 경로에 둔다. 배치는 [ADR-005](adr/005-plugin-hooks-under-skill.md) 가 정한다.
+훅을 넣을 때는 훅 정의 파일을 git 훅이 있는 `githooks/` 와 다른 경로에 둔다. 배치는 [ADR-005](adr/005-plugin-hooks-under-skill.md) 가 정한다.
 
 ## 저장소 실행 규칙
 

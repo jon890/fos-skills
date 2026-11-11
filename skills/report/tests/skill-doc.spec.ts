@@ -2,8 +2,8 @@
 // 스펙 R4(틀의 부품), R1(부르는 말), R8(다른 스킬과 나누는 문장)이다.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 
 const SKILL = join(import.meta.dirname, '..')
@@ -36,4 +36,22 @@ describe('SKILL.md', () => {
     assert.ok(squash(description).includes(R8))
     assert.ok(body.includes(R8))
   })
+})
+
+test('작성 단계에서 연결한 참조 문서를 열 수 있다', () => {
+  const pending = [join(SKILL, 'SKILL.md')]
+  const visited = new Set<string>()
+  while (pending.length) {
+    const file = pending.pop()!
+    if (visited.has(file)) continue
+    visited.add(file)
+    const body = readFileSync(file, 'utf8')
+    for (const match of body.matchAll(/\]\(([^)#]+)(?:#[^)]*)?\)/g)) {
+      const target = match[1]
+      if (/^[a-z]+:/i.test(target)) continue
+      const linked = resolve(dirname(file), target)
+      assert.ok(existsSync(linked), `${file}: ${target}`)
+      if (linked.endsWith('.md')) pending.push(linked)
+    }
+  }
 })

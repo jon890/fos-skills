@@ -9,9 +9,14 @@
 
 **사용자가 정할 질문은 코디네이터가 권장안으로 대신 답하지 않는다.** 권장안을 보여 사용자가 고르게 하고, 고른 답을 worker 에게 보낸다. 대신 답하면 사용자가 정할 일을 코디네이터가 정한 것이 된다.
 worker 가 `--decision` 으로 보낸 질문은 `결정:` 줄과 `권장:` 줄을 그대로 옮겨 사용자에게 보인다. 코디네이터가 사용자에게 직접 묻는 결정도 같은 형식으로 쓴다. 형식과 검사 규칙은 저장소의 `docs/data-schema.md` 「사용자 결정 질문 형식」 이, 형식 예시는 `templates/spec-common.md` 가 소유한다.
-사용자 결정은 배경과 권장안을 붙여 `AskUserQuestion` 하나에 묶고, Codex 에서는 사용 가능한 구조화 질문 도구로 묻는다. 답을 받으면 각 질문의 원래 메시지 ID 에 `send-to-worker --reply-to` 로 전달한다.
-`--reply-to` 를 생략하면 최신 미답변 질문을 우선한다. 같은 dispatch 의 뒤 질문에 답하면 앞선 미답변 질문도 해결된 것으로 본다. worker 가 한 번에 한 답을 받으므로 재전송 질문이 보드에 남지 않게 하는 규칙이다. 서로 다른 dispatch 의 질문은 함께 닫지 않는다.
-답과 관계없는 진행 지시·CI 알림·머지 알림은 `--no-reply` 로 보낸다. 이 옵션은 질문 thread 에 답을 달지 않는다.
+사용자 결정은 배경과 권장안을 붙여 `AskUserQuestion` 하나에 묶고, Codex 에서는 사용 가능한 구조화 질문 도구로 묻는다. 답을 받으면 아래 「질문과 막힘에 답하기」 를 따른다.
+
+## 질문과 막힘에 답하기
+
+질문과 worker 가 직접 올린 막힘에는 원래 질문의 메시지 ID 를 `--reply-to` 로 명시한다. 보드는 그 질문의 스레드에 worker 쪽으로 보낸 메시지만 「답함」 으로 센다([ADR-015](../../../docs/adr/015-board-decide-clear.md)).
+`--reply-to` 없는 send 는 질문이 없는 새 지시에만 쓴다. 답과 관계없는 진행 지시·CI 알림·머지 알림은 `--no-reply` 로 보내 질문 스레드에 연결하지 않는다.
+생략한 경우의 자동 후보 선택과 경고 조건은 `send-to-worker.ts` 머리 주석이 소유한다. 경고에 나온 질문에 답하려던 것이 맞는지 확인하고, 이미 전달했다면 같은 답을 다시 보내지 않는다.
+같은 dispatch 의 뒤 질문에 답하면 앞선 미답변 질문도 해결된 것으로 본다. worker 가 한 번에 한 답을 받으므로 재전송 질문이 보드에 남지 않게 하는 규칙이다. 서로 다른 dispatch 의 질문은 함께 닫지 않는다.
 살아 있는 dispatch 에서 이미 해결된 질문도 처리 결과를 답해 thread 를 닫는다. 단 일이 끝난 worker 의 막힘은 답장 대신 `worker-release` 로 닫는다. 답장은 그 worker 를 다시 깨운다. inactive dispatch 의 질문은 보드 결정 필요에서 제외한다. ack 만 해서는 답한 것이 아니다.
 
 답한 뒤 보드가 다음 조회에서 해당 질문을 제외하는지 확인한다. 모두 답했다면 자동 질문 수는 0 이다.
@@ -25,10 +30,10 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 
 **끝난 dispatch 의 질문은 보드에서 제외한다.** 닫는 근거(PR 종료 상태와 워크트리 대조)와 닫은 질문 처리는 `lib/questions.ts` 의 「닫은 질문」 과 `send-to-worker.ts` 머리 주석이 소유한다([ADR-015](../../../docs/adr/015-board-decide-clear.md)). 살아 있는 dispatch 의 질문은 이 근거로 닫지 않고, 닫으려고 같은 답을 반복하지 않는다. 실제 후속 일이 있으면 `send-to-worker --spec` 으로 이어 쓴다. 세션이 바뀐 뒤 reply 가 계속 거부되면 사용자에게 알린다.
 
-`$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
+`$DISPATCH_ID` 는 그 worker 의 dispatch, `$MSG_ID` 는 원래 질문이나 막힘의 메시지 ID, `$BODY` 는 답이다.
 
 ```bash
-orch worker send --dispatch "$DISPATCH_ID" --body "$BODY"
+orch worker send --dispatch "$DISPATCH_ID" --reply-to "$MSG_ID" --body "$BODY"
 ```
 
 `send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤 `recipient_run_mismatch` 로 거절될 수 있다. 끝난 worker 는 후속 Task 로 다시 시작하고, 자동 해제로 닫힌 터미널도 다시 열린다. 연결된 서버처럼 후속 작업을 거절하는 경우에는 다시 띄우기로 넘어간다.

@@ -186,4 +186,4 @@
 
 기존 지침은 높은 effort 가 추가 작업과 비용을 늘릴 수 있다고 설명했다. Claude 의 xhigh·max 는 리뷰 라운드와 reviewer subagent 를 스스로 돌릴 수 있고, high 이상에서 요청하지 않은 변경이나 저장소 관례와 다른 커밋 제목을 낼 수 있다는 관측을 기록했다. 공식 effort 안내는 [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort) 다.
 
-Codex 매니페스트에 hook 을 싣지 않는 선택은 [ADR-007](../../adr/007-codex-manifest-without-hooks.md) 에 있다. 기존 지침은 공통 지시서에 review-subagents 요청이 없으면 Codex worker 가 검토를 코디네이터에게 넘기는 사례와, terra 의 시각 작업 effort 는 아직 실측 전이라는 한계도 기록했다.
+Codex 매니페스트에 hook 을 넣지 않는 선택은 [ADR-007](../../adr/007-codex-manifest-without-hooks.md) 에 있다. 기존 지침은 공통 지시서에 review-subagents 요청이 없으면 Codex worker 가 검토를 코디네이터에게 넘기는 사례와, terra 의 시각 작업 effort 는 아직 실측 전이라는 한계도 기록했다.
