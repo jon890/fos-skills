@@ -618,6 +618,15 @@ test('이미 끝난 사건 단계가 있는 둘째 PR 은 수동 단계가 남�
   assert.doesNotMatch(r.result.stdout, /BOARD-UNMATCHED/)
 })
 
+test('앞 사건 근거의 PR 이 머지되어도 다음 자동 단계는 남긴다', () => {
+  states['665'] = 'MERGED'
+  const r = sync([{ id: 'a', status: 'doing', pr: '665', details: ['1. PR #665 구현', '2. [auto] PR4 (앞 사건: #665 merge)'] }])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.a.status, 'doing')
+  assert.equal(r.board.a.details[0].done, true)
+  assert.equal(r.board.a.details[1].done, false)
+})
+
 test('못 맞춘 머지는 기록하고 다른 PR 은 따로 남기며 꼬리표로 풀면 지운다', () => {
   states['7'] = 'MERGED'
   states['8'] = 'MERGED'
