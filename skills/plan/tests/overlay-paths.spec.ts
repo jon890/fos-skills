@@ -1,7 +1,6 @@
 // overlay_paths 의 명령 경계 테스트. references/monorepo.md 의 판정 순서를 임시 저장소에서 JSON 출력으로 본다.
 
 import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { OVERLAY, Repo, run, type Result } from './helpers.ts'
@@ -44,85 +43,51 @@ test('이름이 바뀐 스킬은 같은 범위의 옛 오버레이 값을 읽는
   }
 })
 
-test('docs-audit 오버레이 이름 대체 규칙은 경우마다 한 번만 경고한다', () => {
+test('docs-audit 는 옛 이름 docs-check 오버레이를 읽지 않는다', () => {
   for (const scope of [null, 'backend']) {
-    for (const [current, legacy] of [[true, false], [false, true], [true, true], [false, false]]) {
-      const r = repo()
-      const directory = scope ? `${scope}/.claude` : '.claude'
-      const fresh = `${directory}/docs-audit-overlay.md`
-      const old = `${directory}/docs-check-overlay.md`
-      if (scope) r.file('backend/.claude/plan-overlay.md', LAYOUT('backend', 'be-'))
-      if (current) r.file(fresh, '설정')
-      if (legacy) r.file(old, '설정')
-      const { code, out, result } = main(r, scope ? ['--sub', scope] : [], { skill: 'docs-audit' })
-      assert.equal(code, 0)
-      const paths = out!.search[scope ?? '.']
-      const here = existing(paths)
-      const label = JSON.stringify({ scope, current, legacy })
-      assert.equal(here.includes(fresh), current, label)
-      assert.equal(here.includes(old), legacy && !current, label)
-      assert.equal(Boolean(result.stderr), legacy && !current, label)
-      if (legacy && !current) {
-        assert.equal(result.stderr.split('\n').filter(Boolean).length, 1, label)
-        assert.ok(result.stderr.includes(old), label)
-      }
-      if (current) assert.ok(!paths.includes(old), label)
-    }
+    const r = repo()
+    const directory = scope ? `${scope}/.claude` : '.claude'
+    if (scope) r.file('backend/.claude/plan-overlay.md', LAYOUT('backend', 'be-'))
+    r.file(`${directory}/docs-check-overlay.md`, '설정')
+    const { code, out, result } = main(r, scope ? ['--sub', scope] : [], { skill: 'docs-audit' })
+    const label = String(scope)
+    assert.equal(code, 0, label)
+    assert.ok(!out!.search[scope ?? '.'].some((p) => p.includes('docs-check')), label)
+    assert.equal(result.stderr, '', label)
+    r.file(`${directory}/docs-audit-overlay.md`, '설정')
+    assert.ok(existing(main(r, scope ? ['--sub', scope] : [], { skill: 'docs-audit' }).out!.search[scope ?? '.']).includes(`${directory}/docs-audit-overlay.md`), label)
   }
 })
 
-test('docs-consolidate 는 자기 오버레이가 없을 때만 docs-audit 대체 규칙을 쓴다', () => {
-  const cases: [boolean, boolean, boolean][] = [[false, false, true], [false, true, true], [true, false, true], [true, true, true], [false, false, false]]
-  for (const [own, current, legacy] of cases) {
+test('docs-consolidate 는 자기 오버레이가 없을 때만 docs-audit 오버레이를 읽는다', () => {
+  const cases: [boolean, boolean][] = [[false, false], [false, true], [true, false], [true, true]]
+  for (const [own, audit] of cases) {
     const r = repo()
-    for (const [name, exists] of [['docs-consolidate', own], ['docs-audit', current], ['docs-check', legacy]] as const) {
-      const rel = `.claude/${name}-overlay.md`
-      if (exists) r.file(rel, '설정')
-      else rmSync(join(r.root, rel), { force: true })
-    }
+    if (own) r.file('.claude/docs-consolidate-overlay.md', '설정')
+    if (audit) r.file('.claude/docs-audit-overlay.md', '설정')
+    r.file('.claude/docs-check-overlay.md', '옛 이름')
     const { code, out, result } = main(r, [], { skill: 'docs-consolidate' })
     assert.equal(code, 0)
-    const here = existing(out!.search['.'])
-    const label = JSON.stringify({ own, current, legacy })
+    const paths = out!.search['.']
+    const here = existing(paths)
+    const label = JSON.stringify({ own, audit })
     assert.equal(here.includes('.claude/docs-consolidate-overlay.md'), own, label)
-    assert.equal(here.includes('.claude/docs-audit-overlay.md'), current && !own, label)
-    assert.equal(here.includes('.claude/docs-check-overlay.md'), legacy && !current && !own, label)
-    assert.equal(Boolean(result.stderr), legacy && !current && !own, label)
+    assert.equal(here.includes('.claude/docs-audit-overlay.md'), audit && !own, label)
+    assert.equal(paths.some((p) => p.includes('docs-audit-overlay.md')), !own, label)
+    assert.ok(!paths.some((p) => p.includes('docs-check')), label)
+    assert.equal(result.stderr, '', label)
   }
 })
 
-test('docs-audit 는 JSON 을 stdout 에, 경고를 stderr 에 낸다', () => {
+test('docs-consolidate 는 하위 프로젝트와 루트에서 따로 자기 오버레이를 본다', () => {
   const r = repo()
-  r.file('.claude/docs-check-overlay.md', '설정')
-  const { code, out, result } = main(r, [], { skill: 'docs-audit' })
-  assert.equal(code, 0)
-  assert.ok(out!.search['.'].includes('.claude/docs-check-overlay.md'))
-  assert.equal(result.stderr.split('\n').filter(Boolean).length, 1)
-  assert.ok(result.stderr.includes('docs-audit-overlay.md'))
-  assert.ok(result.stderr.includes('docs-audit 스킬 5.0.0'))
-})
-
-test('대상이 여럿이어도 옛 오버레이는 한 번만 경고한다', () => {
-  for (const skill of ['docs-audit', 'docs-consolidate']) {
-    const r = repo()
-    monorepo(r)
-    r.file('.claude/docs-check-overlay.md', '공통')
-    const { code, out, result } = main(r, ['frontend/src/a.py', 'backend/src/b.py'], { skill })
-    assert.equal(code, 0, skill)
-    for (const target of ['frontend', 'backend']) assert.ok(out!.search[target].includes('.claude/docs-check-overlay.md'), `${skill} ${target}`)
-    assert.equal(result.stderr.split('\n').filter(Boolean).length, 1, skill)
-    assert.ok(result.stderr.includes('.claude/docs-check-overlay.md'), skill)
-  }
-})
-
-test('옛 이름의 하위 프로젝트 오버레이가 새 이름의 루트 오버레이보다 앞선다', () => {
-  const r = repo()
+  monorepo(r)
+  r.file('backend/.claude/docs-consolidate-overlay.md', '하위')
   r.file('.claude/docs-audit-overlay.md', '루트')
-  r.file('backend/.claude/docs-check-overlay.md', '하위')
-  const { out, result } = main(r, ['--sub', 'backend'], { skill: 'docs-audit' })
-  const paths = out!.search.backend
-  assert.ok(paths.indexOf('backend/.claude/docs-check-overlay.md') < paths.indexOf('.claude/docs-audit-overlay.md'))
-  assert.equal(result.stderr.split('\n').filter(Boolean).length, 1)
+  const paths = main(r, ['--sub', 'backend'], { skill: 'docs-consolidate' }).out!.search.backend
+  assert.ok(!paths.some((p) => p.includes('backend/.claude/docs-audit-overlay.md')))
+  assert.ok(paths.indexOf('backend/.claude/docs-consolidate-overlay.md') < paths.indexOf('.claude/docs-audit-overlay.md'))
+  assert.ok(existing(paths).includes('.claude/docs-audit-overlay.md'))
 })
 
 test('단일 저장소는 이전 순서를 지킨다', () => {

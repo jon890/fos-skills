@@ -28,7 +28,7 @@
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
 //
 // 차례:
-//     0. selectionVerdict 로 지시서의 행, 근거, 실험을 검사한다. 새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다
+//     0. selectionVerdict 로 지시서의 행, 후보 모델, 근거, 실험을 검사한다. 새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
@@ -84,6 +84,7 @@
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
 //        짧은 출력(진입점의 orch worker launch, lib/output.ts)은 `LAUNCHED <dispatch id> <터미널 또는 -> <워크트리>` 이고, worker-start 가 성공할 때마다
 //        `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄 또는 ->` 를, 실패하면 receipt 전체를 `START-FAIL <receipt 한 줄>` 로 낸다. 거부는 `REFUSED <이유 첫 줄>`,
+//        후보 밖 이유가 있으면 전체 출력에서도 LAUNCH-EFFECTIVE 에 candidateOverride(행·모델·이유)를 더한다.
 //        시작 확인 시간 초과는 `STALLED-START <dispatch> <단계 또는 -> <근거>` 다. 성공으로 알리지 않고 기록·이벤트 처리를 마친 뒤 1 로 끝난다.
 //        ack 줄과 REVIEW-*, SSH-AGENT 판정 줄 밖의 진행 줄과 worker-start JSON 은 내지 않는다
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
@@ -145,7 +146,7 @@ import type { Rule } from '../lib/output.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
-import { selectionVerdict } from '../lib/selection.ts'
+import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
 import { branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
@@ -658,6 +659,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (reserved !== null) return reserved
 
   const specText = readFileSync(a.spec, 'utf8')
+  const candidateOverride = candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
   let worktree: string
@@ -764,7 +766,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       }
       out(result.stdout + result.stderr)
       // 짧은 출력은 worker-start JSON 을 내지 않는다. 코디네이터가 고른 값과 대조하는 launch.effective 만 판정 줄로 남긴다(references/launch.md 「띄운 직후 확인」)
-      if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
+      if (result.code === 0 && candidateOverride) {
+        let effective = {}
+        try {
+          const value = JSON.parse(result.stdout)?.result?.launch?.effective
+          if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
+        } catch { /* receipt 가 손상돼도 후보 밖 이유는 남긴다 */ }
+        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...effective, candidateOverride })}`)
+      } else if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
       // 실패한 시작의 receipt(failedStage, 남은 자원, request id)는 다시 불러 볼 수 없다. 다시 부르면 Task 가 하나 더 생긴다.
       // 그래서 짧은 출력에서도 receipt 전체를 한 줄로 남긴다
       if (short() && result.code !== 0) out(`START-FAIL ${receiptLine(result)}`)

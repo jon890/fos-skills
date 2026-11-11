@@ -14,7 +14,7 @@ verify 가 호출하면 정확성·실패 처리·동시성·안전의 발견 �
 
 **모든 phase 가 끝난 누적 diff 를 `tasks/` 의 phase 파일과 대조한다.**
 발견마다 **어느 phase 의 변경인지**를 적는다. team-lead 가 그 phase 의 executor 를 다시 띄운다.
-task 없이 리뷰부터 도는 경로([`legacy-workflow.md`](legacy-workflow.md) 「task 없이 리뷰부터 도는 경로」)면 phase 파일 대신 team-lead 가 넘긴 지시서나 ADR 과 대조하고, phase 자리에 `-` 를 쓴다.
+task 없이 리뷰부터 도는 경로([`no-spec-workflow.md`](no-spec-workflow.md) 「task 없이 리뷰부터 도는 경로」)면 phase 파일 대신 team-lead 가 넘긴 지시서나 ADR 과 대조하고, phase 자리에 `-` 를 쓴다.
 
 이번 plan 이 변경한 파일만 본다. 범위는 **3-dot** 으로 잡는다.
 `$BASE_BRANCH`는 team-lead가 사전 검사에서 정해 전달한 기준 브랜치다.
@@ -42,7 +42,7 @@ git diff --name-only "origin/$BASE_BRANCH...HEAD"
   - 시각, 난수, 네트워크, 파일 경로가 고정되지 않았다
 - **검증 보고.** executor 가 보고한 명령과 결과가 phase 의 「검증」 절과 맞는가.
 phase 의 「검증」 절이 적은 명령을 다 보고했는지, 실행 결과 중 일부만 보고하지 않았는지 대조한다.
-리뷰어는 테스트를 다시 돌리지 않는다. 기능 계획의 테스트 실행은 verify 가 맡고, 기존 계획은 호환 절차의 6단계가 맡는다.
+리뷰어는 테스트를 다시 돌리지 않는다. 기능 계획의 테스트 실행은 verify 가 맡고, 스펙 없는 계획은 그 절차의 6단계가 맡는다.
 - **검증 우회.** 검사를 피해 간 자리가 있는가.
 lint 와 타입 검사 무시 주석, 타입 단언으로 오류 보고를 없앤 곳, 완화한 조건.
 `TODO`, 빈 함수, 미구현 분기를 포함한다.

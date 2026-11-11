@@ -32,7 +32,7 @@ import { pyStrCompare, pyStrip } from './kit/py.ts'
 // 오버레이의 「저장소 배치」 표에서 plan 접두사를 읽는다. 형식은 references/monorepo.md 가 정한다
 const PREFIX_ROW = pyre(/(?<![^\n])\|\s*plan 접두사\s*\|\s*`([^`]+)`\s*\|/)
 const HARNESS = ['AGENTS.md', 'CLAUDE.md']
-const ALIASES: Record<string, string> = { plan: 'planning', implementation: 'build-with-teams', 'docs-audit': 'docs-check' }
+const ALIASES: Record<string, string> = { plan: 'planning', implementation: 'build-with-teams' }
 
 const USAGE = `usage: overlay_paths.ts [-h] --skill SKILL [--sub SUB] [--plan PLAN] [paths ...]
 
@@ -110,33 +110,14 @@ function owner(path: string, subs: string[]): string | null {
 }
 
 // 값 하나마다 이 순서로 찾는다. 앞의 파일에 있으면 그것을 쓴다
-export function searchOrder(root: string, skill: string, sub: string | null, warned: Set<string> = new Set()): string[] {
+export function searchOrder(root: string, skill: string, sub: string | null): string[] {
   const names = [skill, ...(skill in ALIASES ? [ALIASES[skill]] : [])]
-  if (skill === 'docs-consolidate') names.push('docs-audit', 'docs-check')
+  // docs-consolidate 는 같은 위치에 자기 오버레이가 없을 때만 docs-audit 오버레이를 읽는다
+  const directories = sub ? [`${sub}/.claude`, '.claude'] : ['.claude']
   const order: string[] = []
-  if (sub) order.push(...names.map((name) => `${sub}/.claude/${name}-overlay.md`))
-  order.push(...names.map((name) => `.claude/${name}-overlay.md`))
-  const remove = (rel: string) => {
-    const at = order.indexOf(rel)
-    if (at < 0) throw new ValueError('list.remove(x): x not in list')
-    order.splice(at, 1)
-  }
-  if (skill === 'docs-audit' || skill === 'docs-consolidate') {
-    for (const scope of sub ? [sub, null] : [null]) {
-      const directory = scope ? `${scope}/.claude` : '.claude'
-      const current = `${directory}/docs-audit-overlay.md`
-      const legacy = `${directory}/docs-check-overlay.md`
-      if (skill === 'docs-consolidate' && isFile(`${root}/${directory}/${skill}-overlay.md`)) {
-        remove(current)
-        remove(legacy)
-        continue
-      }
-      if (isFile(`${root}/${current}`)) remove(legacy)
-      else if (isFile(`${root}/${legacy}`) && !warned.has(legacy)) {
-        warned.add(legacy)
-        write(2, `경고: ${legacy} 는 옛 이름입니다. ${current} 로 옮겨 주세요 (docs-audit 스킬 5.0.0에서 호환 제거).\n`)
-      }
-    }
+  for (const directory of directories) {
+    order.push(...names.map((name) => `${directory}/${name}-overlay.md`))
+    if (skill === 'docs-consolidate' && !isFile(`${root}/${directory}/${skill}-overlay.md`)) order.push(`${directory}/docs-audit-overlay.md`)
   }
   if (sub) order.push(...HARNESS.map((name) => `${sub}/${name}`))
   order.push(...HARNESS)
@@ -211,11 +192,10 @@ export function main(argv: string[]): number {
     write(2, `실행하지 못했다: ${error.message}\n`)
     return 2
   }
-  const warned = new Set<string>()
   const skill = parsed.options.skill as string
   const search = new Map<string, string[]>()
-  if (targets.length) for (const t of targets) search.set(t, searchOrder(root, skill, t, warned))
-  else search.set('.', searchOrder(root, skill, null, warned))
+  if (targets.length) for (const t of targets) search.set(t, searchOrder(root, skill, t))
+  else search.set('.', searchOrder(root, skill, null))
   const result = new Map<string, unknown>([
     ['monorepo', subs.length > 0],
     ['subprojects', subs],

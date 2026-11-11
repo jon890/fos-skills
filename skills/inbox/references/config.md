@@ -41,7 +41,7 @@
 `.orch/` 를 git 이 무시하는지 확인한다. 무시하지 않으면 사내 프로젝트 id 가 커밋된다.
 `config.json` 은 orch 가 읽는 파일이기도 하다. orch 의 새 번들을 설치한 뒤에만 `inbox` 절을 넣는다. 옛 번들은 모르는 절을 설정 오류로 거부한다.
 
-옛 자리 `<orch 폴더>/config/notification.json` 은 한 major 동안 함께 읽는다(사용자 2026-11-08). `inbox` 절이 없을 때만 읽고 「옛 자리」 경고를 stderr 에 한 줄 낸다. 둘 다 있으면 `inbox` 절을 쓰고 옛 파일은 무시한다고 알린다. 다음 major 에 옛 파일 읽기를 지운다.
+옛 자리 `<orch 폴더>/config/notification.json` 은 `inbox` 절이 없을 때만 읽고 「옛 자리」 경고를 stderr 에 한 줄 낸다. 둘 다 있으면 `inbox` 절을 쓰고 옛 파일은 무시한다고 알린다.
 옮기는 법은 옛 파일의 내용을 `config.json` 의 `inbox` 키 값으로 넣고 옛 파일을 지우는 것이다. `orch doctor --repo` 가 옛 파일을 찾으면 알린다.
 
 ```json
@@ -60,7 +60,7 @@
 ```json
 { "enabled": false }
 ```
-- 그 저장소에서 Claude Code 세션이 열리면 보드 훅이 필터 파일 경로를 상태 폴더의 목록에 적는다. 이 목록이 미분류 판정에 쓰인다.
+- 미분류 판정은 Claude Code 세션이 열린 적 있는 저장소의 필터만 센다.
 
 ## 상태
 
@@ -68,10 +68,6 @@
 지워도 다음 받기에서 다시 만든다. 넘김 기록(`dismissed.json`)과 출처별 커서(`last-ok.json`)는 함께 사라져, 다음 받기가 `days` 기간 전체를 다시 읽는다.
 파일마다 담는 것은 `scripts/lib/store.ts` 머리 주석이 소유한다.
 
-## Slack adapter 를 더할 때
+## adapter 를 더할 때
 
-1. `scripts/adapters/slack.ts` 에 `lib/model.ts` 의 `Adapter` 다섯 동작을 구현한다. 받기는 내 멘션 검색이나 Socket Mode, 맥락은 스레드 답글, 답변은 스레드에 보내기다.
-2. `scripts/adapters/index.ts` 의 표에 `slack` 줄을 더한다.
-3. 설정의 `adapters` 에 `{ "type": "slack" }` 을, 저장소 필터에 `"slack": { "channels": [...] }` 를 더한다.
-
-보드, 요청문, `inbox.ts` 명령은 바뀌지 않는다. 보드의 머리말을 「Slack」 으로 바꾸려면 `extensions/work-board/hooks/register.js` 의 `inboxTag` 에 한 줄을 더한다.
+새 도구의 adapter 를 더할 때 바뀌는 곳은 [`adding-adapter.md`](../../../docs/features/work-inbox/adding-adapter.md) 에 있다.

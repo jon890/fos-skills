@@ -6,6 +6,8 @@
 
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 구분하지 못한다. 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
+## worker 터미널을 닫는 기본 경로
+
 **worker 터미널을 닫는 기본 경로는 `orca orchestration worker-release --dispatch <id>` 다.** 이 문서가 소유하고, 다른 문서는 가리키기만 한다.
 `worker-release` 는 끝난 worker 의 터미널 하나만 닫고 출력 보관본을 남긴다. 결과가 `retained` 이면 먼저 `worker-show --full` 의 `retainedReason` 으로 이유를 구분한다.
 사용자가 Keep open(`worker-keep-open`, `--keep-open`)으로 남겼거나 사용자가 넘겨받은 터미널은 닫지 않는다. 직접 닫는 것은 신원 미확인(`identity_unproven`)처럼 Orca 가 소유를 증명하지 못했고, 사용자 보존이 아님이 확인된 터미널뿐이다.
@@ -15,9 +17,11 @@
 - 화면: `orca terminal read` 로 읽어 에이전트가 일하는 중이 아니고 사용자가 쓰는 흔적이 없다.
 - 프로세스: 그 터미널에서 도는 프로세스가 worker 의 claude·codex 가 아니고 빈 셸이다.
 
-Orca 의 판정을 그대로 믿지 않는 이유는 새 세션에서 띄운 worker 를 `user_takeover` 로 잘못 적은 일이 있어서다(`CHANGELOG.md` 2.3.0, `scripts/cleanup/steps/worktrees.ts` 의 「새 세션에서 띄운 worker」 주석, `orch-doctor.ts` 의 터미널 판정 주석).
+Orca 의 판정을 그대로 믿지 않는다. Orca 가 새 세션에서 띄운 worker 를 `user_takeover` 로 적기도 한다(`scripts/cleanup/steps/worktrees.ts` 파일 맨 위 설명).
 worker_done 을 받은 뒤 Orca 가 약 2분 뒤 자동으로 release 한다(`worker-show` 의 `autoReleaseAt`). 바로 정리할 때만 `worker-release` 를 부른다.
 PR 이 머지될 때까지 같은 worker 가 이어 받아야 하면 자동 release 를 막는다. 띄울 때 `worker-start --keep-open` 을 주거나 이미 뜬 worker 에 `worker-keep-open --dispatch <id>` 를 부른다. 머지 뒤 `worker-release` 가 그 보존을 풀고 닫는다. 새 워크트리(`new-child`, `new-top-level`)에 띄운 worker 는 처음부터 열려 있다.
+
+## 코디네이터가 띄운 터미널 정리
 
 **`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `scripts/cleanup/steps/worktrees.ts` 파일 맨 위 설명의 「코디네이터가 띄운 터미널」 과 「PR 없이 끝난 워크트리」 가 소유한다.
 
@@ -25,10 +29,10 @@ PR 이 머지될 때까지 같은 worker 가 이어 받아야 하면 자동 rele
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `scripts/cleanup/steps/worktrees.ts` 파일 맨 위 설명의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.ts` 와 `merge-with-finish.ts` 는 스스로 이 옵션을 더하지 않는다. `queue.sweep_args` 에 두면 머지 큐의 정리에 넘어가고, Run 이 없으면 옵션을 빼고 경고한다.
 
+## 머지
+
 머지는 worker 에게 맡기지 않는다.
 사용자가 머지까지 맡겼으면 코디네이터가 6단계 검증 뒤 머지한다. 맡기지 않았으면 6단계 검증 뒤 사용자에게 확인받고 머지한다.
-
-## 머지
 
 **PR 머지는 `merge-with-finish.ts` 로 건다. 사용자가 말하지 않아도 마무리까지 함께 건다.**
 이 스크립트가 PR 마다 `finish-pr.ts`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge_queue.ts` 를 돌린다.
@@ -105,7 +109,7 @@ orch queue conflicts --base "$BASE"
 orch queue merge --chain 101,102 101 102 103
 ```
 **보류한 PR 은 큐를 멈추지 않는다(기본).** 체크 실패, 근거 블록 불일치처럼 조건에 못 미친 PR 은 `STOP` 줄을 찍고 그 PR 만 빼고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다.
-뒤 PR 이 앞 PR 에 기대면 `--chain` 으로 묶는다. 첫 보류에서 멈추는 옛 동작이 필요하면 `--stop-on-hold` 를 준다. `--continue-on-hold` 는 기본과 같아 그대로 받는다.
+뒤 PR 이 앞 PR 에 기대면 `--chain` 으로 묶는다. 첫 보류에서 멈추려면 `--stop-on-hold` 를 준다.
 뺀 PR 과 이유는 차례 기록(`state/queue-turn/<pid>.json`)의 `held` 에 남고, 상주 루프가 `state/loop.log` 에 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 한 줄로 옮긴다.
 worker 가 고쳐야 하는 보류(근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패)는 큐가 그 PR 의 살아 있는 worker 에게 이유를 보낸다. Run 은 정리 인자의 `--run` 이다. 체크 실패와 충돌은 루프의 CI 감시와 충돌 처리가 보내므로 큐는 보내지 않는다.
 
@@ -255,12 +259,12 @@ orch queue merge 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
 | `--stop-on-overlap` | `STOP <PR> 겹침: <파일>` 로 멈춘다 | 합친 상태를 코디네이터가 따로 확인한다 |
 | `hooks/verify-merged.ts` | `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 핸들러가 0으로 끝나면 머지한다 | 오버레이가 핸들러의 검사 명령을 정해 둔다 |
 
-**파일이 겹치지 않아도 합치면 깨질 수 있다.** 두 PR 이 각자 통과했지만 합치니 같은 상한을 함께 넘은 일이 있었다.
+**파일이 겹치지 않아도 합치면 깨질 수 있다.** 두 PR 이 각자 상한 안이어도 합치면 같은 상한을 넘을 수 있다.
 그런 저장소는 오버레이가 `--verify-merged-when code` 를 정한다. 문서만 바꾼 PR 까지 검사하려면 `always` 다. 기본 `overlap` 은 겹칠 때만 검사한다.
 `--docs-glob` 을 주면 문서 PR 은 `overlap` 과 `code` 에서 합친 사본 검사를 생략한다. `--stop-on-overlap` 만 쓰면 문서 PR 도 겹침에서 멈춘다.
 
 문서 PR 도 최신 base 와 합친 CI 를 확인해야 하면 **`--update-docs-on-overlap` 을 더한다.** 조건은 스크립트 머리 주석이 소유한다.
-기존의 검사 생략 방식을 유지할 수 있도록 기본은 꺼져 있으며, 문서 겹침에서 큐가 멈추던 저장소의 오버레이에서 켠다.
+기본은 꺼져 있다. 문서 겹침에서 큐가 멈추는 저장소의 오버레이에서 켠다.
 
 합친 사본 검사가 실패하면 그 PR 을 만든 worker 가 이어 받아 기준 브랜치를 merge 하고 고친다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」). rebase 와 force push 는 쓰지 않는다.
 
@@ -341,9 +345,9 @@ orch queue merge --sweep-arg --kill-holders 101 102
 **`--sweep-arg` 를 명령줄에 하나라도 주면 설정의 `queue.sweep_args` 를 통째로 쓰지 않는다.** `--specs-dir` 처럼 설정에 둔 인자도 `--sweep-arg --specs-dir --sweep-arg "$SPECS_DIR"` 로 다시 준다.
 
 **`scripts/cleanup/steps/`의 설명이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
-저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 「메시지가 오면」).
+저장소가 여럿이면 `--repo` 를 저장소마다 준다.
 
-스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「메시지가 오면」 가 소유한다.
+스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다.
 
 **머지나 완료를 확인하면 사용자 지시를 기다리지 않고 worker 의 워크트리, 브랜치, 터미널을 정리한다.**
 같은 워크트리에서 후속 작업을 하는 worker 가 있으면 그 worker 가 끝날 때까지 남긴다.
@@ -424,7 +428,7 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sw
 
 ### Docker 자원 반납
 
-**작업이 띄운 컨테이너와 쌓은 이미지도 정리가 반납한다.** 검사 스크립트의 trap 은 셸이 신호로 죽으면 돌지 않아, 끊긴 worker 의 임시 DB 컨테이너가 계속 돌았다.
+**작업이 띄운 컨테이너와 쌓은 이미지도 정리가 반납한다.** 검사 스크립트의 trap 은 셸이 신호로 죽으면 돌지 않아, 끊긴 worker 의 컨테이너가 남는다.
 **귀속을 확인한 것만 지운다.** 같은 PC 에 다른 프로젝트의 Testcontainers, compose 컨테이너와 볼륨이 함께 있다.
 판정과 출력 줄은 `scripts/lib/docker.ts` 머리 주석이 소유한다.
 

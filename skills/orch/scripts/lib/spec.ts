@@ -29,7 +29,7 @@ const TICK = /`([^`]+)`/g
 // worker 선택 줄의 값. 줄 판정과 형식은 selectionsOf 가 소유한다
 export type Candidate = { agent: string | null; model: string | null; effort: string | null }
 export type HighReason = { kind: 'dispatch'; id: string } | { kind: 'user'; date: string }
-export type Selection = { row: string | null; highReason: HighReason | null; no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
+export type Selection = { row: string | null; highReason: HighReason | null; outsideReason: string | null; no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
 
 // 형식 예: worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: ...
 // `effort` 뒤의 백틱 값이 effort 이고, 그 밖의 백틱 값 가운데 첫째가 에이전트, 둘째가 모델이다.
@@ -49,6 +49,9 @@ export function selectionsOf(text: string): Selection[] {
     const reason = /high 근거:\s*(medium 실패\s+(ctx_[\w-]+)|사용자 지정\s+(\d{4}-\d{2}-\d{2}))(?=\s|[.]|$)/.exec(body)
     const highReason: HighReason | null = reason?.[2] ? { kind: 'dispatch', id: reason[2] } : reason?.[3] ? { kind: 'user', date: reason[3] } : null
     const problems: string[] = []
+    const outside = /후보 밖:(.*?)(?=\s+(?:행|비교|이유|high 근거):|$)/.exec(body)
+    const outsideReason = outside?.[1].replace(/[.\s]+$/, '').trim() || null
+    if (outside && !outsideReason) problems.push('후보 밖 이유')
     if (!row) problems.push('행')
     if (body.includes('high 근거:') && !highReason) problems.push('high 근거')
     if (values.length < 1) problems.push('에이전트')
@@ -56,7 +59,7 @@ export function selectionsOf(text: string): Selection[] {
     if (!effortAt) problems.push('effort')
     if (!/비교\s*:/.test(body)) problems.push('비교')
     if (!/이유\s*:/.test(body)) problems.push('이유')
-    found.push({ row, highReason, no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
+    found.push({ row, highReason, outsideReason, no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
   })
   return found
 }

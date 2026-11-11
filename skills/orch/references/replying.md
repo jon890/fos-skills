@@ -37,8 +37,8 @@ orch worker send --dispatch "$DISPATCH_ID" --body "$BODY"
 
 worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하나로 보내면 아래로 중계한다. worker 쪽 절차는 spec 스킬의 [`references/interview.md`](../../spec/references/interview.md) 가 정한다.
 
-1. 블록을 `AskUserQuestion` 한 번에 나눠 묻는다. 블록의 배경, 선택지와 영향, 권장을 그대로 옮긴다. 첫 라운드의 열린 질문은 선택지 없이 묻는다.
-2. 모든 블록의 답을 모은 뒤 원래 질문에 한 번 답한다. 답은 `D1=<고른 답>` 처럼 결정마다 한 줄이고, 사용자가 덧붙인 말은 그대로 붙인다.
+1. 블록을 `AskUserQuestion` 한 번에 묻는다. 한 질문에 블록은 4개까지다. 5개 이상은 `worker-ask` 가 받지 않고 worker 가 4개씩 나눠 질문마다 보내므로 코디네이터가 나누지 않는다. 블록의 배경, 선택지와 영향, 권장을 그대로 옮긴다. 첫 라운드의 열린 질문은 선택지 없이 묻는다.
+2. 모든 블록의 답을 모은 뒤 원래 질문에 한 번 답한다. 답은 `D1=<고른 답>` 처럼 질문 안 블록 순서대로 결정마다 한 줄이고, 사용자가 덧붙인 말은 그대로 붙인다. 블록 수와 답 줄 수가 같은지 보내기 전에 센다. worker 는 `worker-ask --check-answer` 로 같은 대조를 하고, 빠진 번호는 `MISSING` 으로 알려 다시 묻는다.
 3. worker 가 스펙 확인 요청을 보내면 스펙 요약(목표, 범위 밖, 요구사항 표, 결정 표)을 메시지 본문에 보이고 확인을 묻는다. `작성자(위임)` 행은 따로 짚는다.
 4. 사용자가 확인하면 「사용자 확인: YYYY-MM-DD」 로 답한다. 고칠 점이 나오면 그것을 답하고, 고친 스펙으로 다시 확인을 받는다.
 
@@ -107,9 +107,9 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 
 **끝난 dispatch 를 이어 쓸 때는 `--spec` 만 준다.** `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서> --run ...` 이면 된다. `--body` 는 남은 질문에 답할 때만 쓰고, 그 밖의 후속 지시는 지시서에서 읽는다. 살아 있는 dispatch 에 `--spec` 만 주면 보낼 글이 없어 종료 코드 2 로 거부한다.
 
-**`worker_done` 만으로는 터미널이 사용자 보유가 되지 않는다.** 실측(2026-10-23, `worker-list --terminal-state reclaimable`)에서 `worker_done` 뒤의 터미널은 `terminalState: reclaimable`, `ownershipState: owned`, `releaseState: not_requested` 였다. 이 상태는 닫고 새로 띄울 수 있다.
+**`worker_done` 만으로는 터미널이 사용자 보유가 되지 않는다.** `worker_done` 뒤의 터미널은 `terminalState: reclaimable`, `ownershipState: owned`, `releaseState: not_requested` 다(`worker-list --terminal-state reclaimable`). 이 상태는 닫고 새로 띄울 수 있다.
 `user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 전송이 거절돼 터미널을 다시 쓰는 복구 경로에서는 둘 다 닫지 않고 종료 코드 1 로 끝난다.
-이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 10-23 실측은 이 자동 release 가 없던 때의 것이고, 자동 release 뒤에도 `send-to-worker --spec` 이 Orca 후속 작업으로 다시 연다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다. 머지까지 계속 남겨야 하는 worker 는 `worker-keep-open` 으로 자동 release 를 막는다([`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」).
+이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 자동 release 뒤에도 `send-to-worker --spec` 이 Orca 후속 작업으로 다시 연다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다. 머지까지 계속 남겨야 하는 worker 는 `worker-keep-open` 으로 자동 release 를 막는다([`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」).
 
 1. `orca orchestration worker-show --dispatch <끝난 dispatch> --full --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
 2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다

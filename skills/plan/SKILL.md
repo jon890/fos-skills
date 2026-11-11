@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "PR 로 나눠줘", "스펙 구현 계획", "리팩토링 계획", "plan" 요청에 쓴다.
   "이 기능 설계해 보자" 처럼 요구사항은 spec, 구조와 경계 설계는 technical-design 이 맡는다. 구현은 implementation 가 맡는다.
 metadata:
-  version: "7.0.2"
+  version: "7.2.0"
 ---
 # plan
 
@@ -70,6 +70,7 @@ node "$SKILL_DIR/scripts/check_feature.ts" "$SPEC" --design "$DESIGN"
 
 기능 계획은 index 양식의 `spec`, `design`, `verification_plan`, `requirements` 와 phase 별 `requirements` 를 채운다.
 verification_plan 은 index.json 의 부모 기준 상대경로이고, spec/design 은 저장소 루트 기준 경로다.
+계획 단계에서 작성한 ADR 등 문서만으로 끝나는 요구사항은 [task 작성 규칙](references/task-create.md#indexjson-스키마)의 `plan_commit_requirements` 로 문서에 연결한다. 코드 구현이 필요한 요구사항은 phase 에 배정한다.
 스펙의 모든 요구사항을 한 PR 에 넣을 필요는 없다. 각 phase 는 맡은 ID 를 컨텍스트에 적고 같은 phase 안에서 테스트한다.
 
 ## 5. 검사와 critic
@@ -77,6 +78,8 @@ verification_plan 은 index.json 의 부모 기준 상대경로이고, spec/desi
 `$PLAN` 과 `$TASKS_DIR` 은 [기능 계획 경로](references/task-create.md#기능-계획-경로)가 정한다. 기존 계획이나 기능 없는 작업은 설정의 tasks 경로를 쓴다.
 기능 계획이면 이 검사가 스펙의 확인 줄과 요구사항 연결도 함께 본다.
 아래 명령은 새 기능 계획용이다. PR 하나라도 기능 계획과 인수 검증 계획을 남긴다. 기능 없는 작업과 기존 계획 재개는 --require-verification 을 빼고 실행한다.
+
+생성 파일은 plan 오버레이의 `생성 파일` 행에 저장소 루트 기준 glob 을 인라인 코드로 적는다. 계약 변경에 필요한 명령은 `계약 검증 규칙` 행에 JSON 파일 경로를, 통합 테스트를 구분하는 표지는 `통합 테스트 표지` 행에 적는다. 값이 없으면 해당 검사를 하지 않는다. [설정 형식과 예시](references/monorepo.md#계획-검사의-저장소별-규칙)를 따른다.
 
 ```bash
 node "$SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "$TASKS_DIR" --require-verification

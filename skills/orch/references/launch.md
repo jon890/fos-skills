@@ -1,7 +1,7 @@
 # 3. 띄우기
 
 여러 worker 를 동시에 두면 **지금 묶인 run 하나에** 띄운다. 묶인 run 은 `run-current` 로 본다.
-새 run 을 만들면 코디네이터가 그쪽으로 옮겨 묶인다. 이전 run 의 메일도 코디네이터를 깨우지만(Orca 1.4.254 가이드) worker 는 묶인 run 에 띄운다.
+새 run 을 만들면 코디네이터가 그쪽으로 옮겨 묶인다. 이전 run 의 메일도 코디네이터를 깨우지만 worker 는 묶인 run 에 띄운다.
 `check` 나 `worker-start --run` 이 `consumer_fenced` 로 거절되면 먼저 명령에 `--run <id>` 를 붙여 본다.
 그래도 거절되면 다른 터미널이 그 Run 을 쥔 것이다. `orca orchestration run-list` 로 살아 있는 다른 Run 을 보고, 있으면 `run-use` 가 그 Run 들의 메일을 끊는다는 것(Orca: 「run-use keeps only the Run it names」)을 사용자에게 알리고 물은 뒤에 `orca orchestration run-use --id "$RUN_ID"` 로 옮겨 붙는다.
 상태만 볼 때는 fenced 상태에서도 `worker-list --run "$RUN_ID"` 가 동작한다.
@@ -97,7 +97,7 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
 - `orca repo set --repo path:<repo> --external-worktree-visibility show`
 
 조치한 뒤에는 `--worktree` 로 이어 띄운다. exclude 와 `.claude/settings.local.json` 복사도 스크립트가 한다.
-이 복사는 `permissions` 의 허용 규칙에만 듣는다. Claude Code 자동 모드 분류기의 허용 기준(`autoMode.allow`)은 워크트리의 `.claude/settings.local.json` 에서 먹지 않았다(2026-10-31 실측).
+이 복사는 `permissions` 의 허용 규칙에만 듣는다. Claude Code 자동 모드 분류기의 허용 기준(`autoMode.allow`)은 워크트리의 `.claude/settings.local.json` 에서 먹지 않는다.
 worker 에게 push, PR 생성, 리뷰 회신과 resolve 를 맡기는 저장소는 worker 가 쓰는 Claude 프로필의 사용자 `settings.json` 에 그 저장소로 한정한 `autoMode.allow` 를 둔다.
 저장소를 한정하지 않으면 다른 저장소의 외부 쓰기까지 허용된다. 프로필 폴더는 `link-claude-profile.ts` 가 맞추는 곳이다.
 
@@ -231,7 +231,7 @@ Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본�
 1. `worker-show --dispatch "$DISPATCH_ID"` 로 dispatch 상태를 보고, `task-list` 로 Task 상태를 본다
 2. 워크트리에서 `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD` 와 `git -C "$WORKTREE" status --short` 로 끝난 커밋과 작업 트리의 변경을 확인한다. 커밋 안 된 변경은 버리지 않고 그대로 둔다
 3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다.
-   앞 worker 의 회신, 사용자 결정, 조사와 측정 결과는 내용을 이 절 본문에 옮겨 적고 임시 경로(`$TMPDIR`, `/tmp`, `/var/folders`, scratchpad)를 가리키지 않는다. 그 폴더의 파일은 PC 재시작이나 세션 종료 뒤 사라져 새 worker 가 막힌다(2026-11-10 재시작 때 측정 보고서와 지시서 생성 스크립트가 사라졌다). `spec-lint` 가 지시서의 그런 경로를 `임시` 경고로 알리고, 재개 절이면 안내를 덧붙인다
+   앞 worker 의 회신, 사용자 결정, 조사와 측정 결과는 내용을 이 절 본문에 옮겨 적고 임시 경로(`$TMPDIR`, `/tmp`, `/var/folders`, scratchpad)를 가리키지 않는다. 그 폴더의 파일은 PC 재시작이나 세션 종료 뒤 사라져 새 worker 가 막힌다. `spec-lint` 가 지시서의 그런 경로를 `임시` 경고로 알리고, 재개 절이면 안내를 덧붙인다
 4. 표대로 띄운다. 워크트리는 이전 dispatch 이력에서 읽는다
 5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 를 먼저 부르고, `identity_unproven` 으로 닫지 않았을 때만 [`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」 조건을 확인한 뒤 `orca terminal close` 를 쓴다
 

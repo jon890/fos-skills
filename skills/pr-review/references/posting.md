@@ -49,7 +49,7 @@ GH_HOST="$HOST" gh api "repos/$OWNER/$REPO/pulls/$PR/comments"
 
 ## 조회할 때의 함정
 
-`reviews/{id}/comments` 는 줄에 정상으로 붙은 댓글도 `line: null`, `position: 216` 으로 준다(실측).
+`reviews/{id}/comments` 는 줄에 정상으로 붙은 댓글도 `line: null`, `position: 216` 으로 준다.
 `pulls/{N}/comments` 는 같은 댓글을 `line: 216`, `subject_type: "line"` 으로 준다.
 그래서 `reviews/{id}/comments` 의 `line: null` 만 보고 줄에 못 붙었다고 판단하지 않는다.
 

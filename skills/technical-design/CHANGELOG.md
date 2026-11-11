@@ -1,5 +1,9 @@
 # CHANGELOG: technical-design
 
+## 1.6.2 (2026-11-12)
+
+- ADR 규칙과 병렬 PR 예시에서 결정 날짜, 사례 표, 출처 목록을 지우고 이유 한 줄만 남겼다.
+
 ## 1.6.1 (2026-11-06)
 
 - plan 의 `check_feature.ts`, `run_doc_checks.ts` 를 node 로 부른다
