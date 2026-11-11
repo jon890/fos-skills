@@ -57,7 +57,7 @@
 //     없으면 보드 파일(lib/board.ts 의 findBoardItems)에서 pr 칸에 이 PR 이 든 항목을 찾고, 없으면 pr 칸이 빈 항목 가운데
 //     branch 가 PR 브랜치이거나 worktree 가 그 브랜치의 워크트리 이름(정리 전에 읽는다)인 항목을 찾는다.
 //     브랜치로 찾을 때 done 항목과 merged-pr 에 이미 이 PR 이 든 항목은 뺀다.
-//     마지막 PR 이면 그 항목을 done 으로 바꾼다. 중간 PR 이면 lib/board.ts 의 intermediateCommands 로 그 PR 번호의 단계를 끝내고,
+//     마지막 PR 이어도 그 PR 번호의 단계만 끝내고 남은 단계가 없을 때 done 으로 바꾼다. 중간 PR 이면 lib/board.ts 의 intermediateCommands 로 그 PR 번호의 단계를 끝내고,
 //     하위 항목에 `남은 일: PR #31, 지시서 spec-b.md` 한 줄을 두고, pr 칸을 비우고 merged-pr 에 적는다.
 //     merged-pr 에 적은 PR 은 board-sync.ts 가 다시 판정하지 않으므로 --intermediate 가 덮이지 않는다.
 //     찾은 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다
@@ -127,6 +127,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { markFinishStarted } from '../lib/finish-marks.ts'
+import { recordUnmatched } from '../lib/board-unmatched.ts'
+import { prSteps } from '../core/board.ts'
 import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
 import type { BoardDetail, BoardStep } from '../lib/board.ts'
 import { conflictSpecFiles } from '../lib/conflicts.ts'
@@ -566,7 +568,11 @@ function updateBoardRows<T>(args: Args, repo: string, item: string, make: (row: 
         break
       }
     }
-    if (!stale) return made.value
+    if (!stale) {
+      const line = recordUnmatched(repo, { ...got.row, ...(made.value === 'done' ? { status: 'done' } : {}) }, got.steps, args.pr)
+      if (line) log(line)
+      return made.value
+    }
   }
   return false
 }
@@ -598,11 +604,16 @@ function boardRow(args: Args, repo: string, item: string): { row: Record<string,
   return { row, steps: parsed as BoardStep[] }
 }
 
-// 중간 PR 을 옛 단계 항목에 반영한다(lib/board.ts 의 intermediateCommands). 항목이나 단계 목록을 읽지 못하면 false 다
-function setBoardIntermediate(args: Args, repo: string, item: string, note: string | null): boolean {
-  return updateBoardRows(args, repo, item, (row, steps) => ({
-    cmds: intermediateCommands(item, (Array.isArray(row.details) ? row.details : []) as BoardDetail[], steps, args.pr, note, row['merged-pr']), value: true,
-  }))
+// 마지막 PR 이어도 그 PR 줄만 끝내고, 남은 수동 단계는 보존한다.
+function setBoardLegacy(args: Args, repo: string, item: string, last: boolean, note: string | null): 'done' | 'doing' | false {
+  return updateBoardRows(args, repo, item, (row, steps) => {
+    const matched = prSteps(steps, args.pr)
+    const done = last && steps.every((step) => step.done || matched.includes(step.number))
+    const cmds = intermediateCommands(item, (Array.isArray(row.details) ? row.details : []) as BoardDetail[], steps, args.pr, note, row['merged-pr'])
+    if (done) cmds.push(['set', item, 'done', '--worktree', ''])
+    else cmds.push(['set', item, 'doing'])
+    return { cmds, value: done ? 'done' as const : 'doing' as const }
+  })
 }
 
 // 마일스톤 항목(stages 칸이 있다)에 머지와 배포를 반영한다(lib/milestones.ts 의 mergedCommands). 배포가 성공했으면 [deploy] 단계까지 끝낸다.
@@ -688,7 +699,15 @@ async function finish(args: Args, repo: string): Promise<number> {
 
   const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
   const stages = item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
-  if (item && taggedBoardItem(args, repo, item.id)) {
+  if (item?.by === 'id') {
+    if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done`)
+    else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
+  } else if (item && taggedBoardItem(args, repo, item.id)) {
+    const got = boardRow(args, repo, item.id)
+    if (got) {
+      const line = recordUnmatched(repo, got.row, got.steps, args.pr)
+      if (line) log(line)
+    }
     log(`보드 ${item.id} 는 사건 꼬리표가 있어 board-sync 에 맡긴다`)
   } else if (item && stages) {
     // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
@@ -698,14 +717,11 @@ async function finish(args: Args, repo: string): Promise<number> {
     if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
     else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
-  } else if (item && (last || item.by === 'id')) {
-    if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
-    else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
   } else if (item) {
-    // 중간 PR 은 merged-pr 에 적어 board-sync 가 다시 판정하지 않게 한다. 다시 판정하면 PR~ 를 덮는다
-    if (setBoardIntermediate(args, repo, item.id, noteLine(verdict.prs, verdict.specs))) {
-      log(`보드 ${item.id} 는 중간 PR 이라 done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
-    } else problems.push(`보드 ${item.id} 에 중간 PR 을 적지 못했다`)
+    const result = setBoardLegacy(args, repo, item.id, last, last ? null : noteLine(verdict.prs, verdict.specs))
+    if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
+    else if (result === 'doing') log(`보드 ${item.id} 는 ${last ? '끝나지 않은 단계가 남아' : '중간 PR 이라'} done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
+    else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
   }
   if (problems.length > 0) return fail(problems.join('; '))
   out('FINISH-DONE')

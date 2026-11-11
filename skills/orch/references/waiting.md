@@ -24,7 +24,7 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 
 | 방식 | kind |
 |---|---|
-| 바로 | CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
+| 바로 | CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
 | 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
 
 모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 그 틱에 바로 한 번 보낸다.
@@ -46,3 +46,11 @@ WAITER-LEFT 는 옛 대기 프로세스가 남았다는 뜻이다. 출력의 pid
 
 플러그인 갱신은 이미 실행 중인 옛 번들 루프의 코드를 바꾸지 않는다. 갱신 뒤 `orch doctor --run <Run>` 으로 LOOP-STALE 을 확인하고, 그 Run 의 코디네이터 세션에서 안내한 stop·start 명령으로 루프를 다시 띄운다. start 만 부르면 옛 루프에 합류할 수 있다.
 다시 시작한 루프는 옛 파일에 남은 읽지 않은 알림을 정리 단계에서 Run 메시지로 전달한다. 앞 루프에서 등록을 뺀 Run 은 재시작 알림이 거절돼도 한 번만 시도하고, 지금 등록된 Run 의 일시 실패는 다음 틱에 재시도한다.
+
+## 못 맞춘 머지 알림
+
+`BOARD-UNMATCHED <항목> PR #<번호>` 는 머지를 가리키는 줄이 없어 남은 단계를 끝내지 못했다는 뜻이다. 보드 동기화나 마무리가 기록한 뒤 다음 틱 안에 주 Run 으로 바로 보낸다. 배포를 기다리는 마무리는 보드에 반영한 뒤부터 센다. 같은 항목·PR 은 성공한 전송을 저장해 루프를 다시 띄워도 한 번만 알린다. 전송 실패나 주 Run 없음은 다음 틱에 다시 본다.
+
+옛 단계 항목은 끝냈어야 할 줄에 `orch board step <항목> <번호> text "<줄 전체>" --on "<PR> merge"` 로 꼬리표를 붙인다. 그런 줄이 없으면 `orch board add-step <항목> "<PR 이 한 일>" --on "<PR> merge"` 로 더한다. 다음 동기화가 그 줄을 끝내면 기록을 지운다. `stages` 가 있는 마일스톤 항목에는 꼬리표를 붙이지 않는다. 사건 줄이 지워졌는지 확인하고 남은 단계를 직접 끝낸다.
+
+항목이 없어지거나 끝나지 않은 단계가 없어져도 기록을 지운다. 다른 PR 의 꼬리표 완료는 이 PR 의 기록을 지우지 않는다.

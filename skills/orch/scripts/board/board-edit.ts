@@ -4,6 +4,7 @@
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
 // 진입점의 --full 은 모든 줄도 낸다. 종료 코드: 0 성공, 1 거절, 2 사용법·설정 오류.
+import { unmatchedRecords, unmatchedLine, unmatchedResolved } from '../lib/board-unmatched.ts'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { BOARD_BIN } from '../lib/board.ts'
@@ -67,7 +68,10 @@ function main(argv: string[]): number {
   else if (verb === 'add-step') heading = `BOARD-STEP-ADD ${view.id} ${view.number}`
   else heading = `BOARD-STEP ${view.id} ${view.number} ${action}${view.was !== view.status ? ` status=${view.status}` : ''}`
   const lines = fullAsked() ? view.lines : verb === 'show' ? view.lines.filter((line) => line.number !== null && !line.done) : []
-  console.log([heading, ...lines.map((line) => `${line.done ? '✓ ' : ''}${line.text}`)].join('\n'))
+  const unmatched = verb === 'show' ? Object.keys(unmatchedRecords(values.repo ?? process.cwd())[id] ?? {})
+    .filter((pr) => !unmatchedResolved(view.lines.filter((line) => line.number !== null) as { number: number; done: boolean; text: string }[], pr))
+    .map((pr) => unmatchedLine(id, pr)) : []
+  console.log([heading, ...unmatched, ...lines.map((line) => `${line.done ? '✓ ' : ''}${line.text}`)].join('\n'))
   return 0
 }
 

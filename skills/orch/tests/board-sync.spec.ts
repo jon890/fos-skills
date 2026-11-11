@@ -87,7 +87,7 @@ const step = (text: string, done: boolean): Json => ({ text, done })
 describe('board-sync', () => {
   test('BOARD_BIN 이 없으면 저장소의 extensions/work-board/bin/board.ts 가 보드 항목을 done 으로 바꾼다', () => {
     states['7'] = 'MERGED'
-    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'done')
   })
@@ -95,20 +95,21 @@ describe('board-sync', () => {
   test('짧은 출력은 BOARD <id> 와 BOARD-SYNC 판정 줄이고 설명 줄이 없다', () => {
     states['7'] = 'MERGED'
     writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
-    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }] }))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }] }))
     const r = run(['--board', board, '--repo', tmp], { env: { ORCH_OUTPUT: 'short' } })
     assert.equal(r.code, 0, r.stderr)
     assert.deepEqual(r.stdout.trim().split('\n'), ['BOARD a done', 'BOARD-SYNC 1'])
     assert.equal(load().a.status, 'done')
   })
 
-  test('머지된 PR 은 남은 단계를 끝내고 항목을 done 으로 바꾼다', () => {
+  test('PR 번호가 없는 남은 단계는 머지로 끝내지 않는다', () => {
     states['7'] = 'MERGED'
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '2. PR 리뷰 반영', '✓ 3. 머지'] }])
     assert.equal(r.code, 0, r.result.stderr)
-    assert.equal(r.board.a.status, 'done')
-    assert.equal(r.board.a.pr, '#7')
-    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. PR 리뷰 반영', true), step('3. 머지', true)])
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, undefined)
+    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. PR 리뷰 반영', false), step('3. 머지', true)])
+    assert.match(r.result.stdout, /BOARD-UNMATCHED a PR #7/)
   })
 
   test('끝나지 않은 단계가 둘이면 그 PR 번호의 단계만 끝내고 pr 칸을 비운다', () => {
@@ -122,29 +123,29 @@ describe('board-sync', () => {
 
   test('끝나지 않은 단계가 하나면 항목을 끝낸다', () => {
     states['7'] = 'MERGED'
-    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '2. 머지'] }])
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '2. 머지 #7'] }])
     assert.equal(r.board.a.status, 'done')
-    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지', true)])
+    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지 #7', true)])
   })
 
   test('체크박스 단계는 보드 명령이 done 값으로 끝내고 본문에 표시를 저장하지 않는다', () => {
     states['7'] = 'MERGED'
     const r = sync([
       { id: 'a', status: 'doing', pr: '#7', details: ['[x] 1. 구현', '[ ] 2. 머지 #7', '[ ] 3. 배포'] },
-      { id: 'b', status: 'doing', pr: '#7', next: '[x] 1. 구현\n[ ] 2. 머지' },
+      { id: 'b', status: 'doing', pr: '#7', next: '[x] 1. 구현\n[ ] 2. 머지 #7' },
     ])
     assert.equal(r.code, 0, r.result.stderr)
     assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지 #7', true), step('3. 배포', false)])
     assert.equal(r.board.a.status, 'doing')
-    assert.deepEqual(r.board.b.next, [step('1. 구현', true), step('2. 머지', true)])
+    assert.deepEqual(r.board.b.next, [step('1. 구현', true), step('2. 머지 #7', true)])
     assert.equal(r.board.b.status, 'done')
   })
 
   test('참고 줄은 끝나지 않은 단계로 세지 않는다', () => {
     states['7'] = 'MERGED'
-    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '2. 머지', '참고: 후속 검토'] }])
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '2. 머지 #7', '참고: 후속 검토'] }])
     assert.equal(r.board.a.status, 'done')
-    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지', true), step('참고: 후속 검토', false)])
+    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지 #7', true), step('참고: 후속 검토', false)])
   })
 
   test('열린 PR 은 단계를 건드리지 않고 상태 줄도 쓰지 않는다', () => {
@@ -187,7 +188,7 @@ describe('board-sync', () => {
 
   test('--dry-run 은 보드를 고치지 않고 바뀔 항목과 부를 명령을 낸다', () => {
     states['7'] = 'MERGED'
-    const items = [{ id: 'a', status: 'doing', pr: '7', details: ['1. 구현'] }]
+    const items = [{ id: 'a', status: 'doing', pr: '7', details: ['1. 구현 #7'] }]
     const before = JSON.stringify({ items })
     const r = sync(items, ['--dry-run'])
     assert.equal(r.code, 0, r.result.stderr)
@@ -208,7 +209,7 @@ describe('board-sync', () => {
   test('--goal 은 동기화 뒤 목표 진행률을 추적 항목으로 센다', () => {
     writeFileSync(join(tmp, 'items.txt'), 'a\n')
     states['7'] = 'MERGED'
-    const r = sync([{ id: 'goal', status: 'goal' }, { id: 'a', status: 'doing', pr: '7', next: '1. 구현' }], ['--goal', 'goal', '--goal-items', join(tmp, 'items.txt')])
+    const r = sync([{ id: 'goal', status: 'goal' }, { id: 'a', status: 'doing', pr: '7', next: '1. 구현 #7' }], ['--goal', 'goal', '--goal-items', join(tmp, 'items.txt')])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.goal.progress, '1/1')
   })
@@ -249,13 +250,13 @@ test('같은 브랜치의 열린 PR 만 연결하고 다음 틱에도 보존한�
 
 test('pr 칸이 비어도 같은 브랜치의 머지 PR 로 남은 단계를 끝낸다', () => {
   const merged = [{ number: 9, headRefName: 'feat/a', state: 'MERGED' }]
-  const r = sync([{ id: 'a', status: 'doing', branch: 'feat/a', details: ['✓ 1. 구현', '2. 머지'] }], ['--open-prs', '[]'])
+  const r = sync([{ id: 'a', status: 'doing', branch: 'feat/a', details: ['✓ 1. 구현', '2. 머지 #9'] }], ['--open-prs', '[]'])
   writeFileSync(join(tmp, 'state.json'), JSON.stringify({ list: merged }))
   const result = run(['--board', board, '--repo', tmp, '--open-prs', '[]'])
   assert.equal(r.code, 0, r.result.stderr)
   assert.equal(result.code, 0, result.stderr)
   assert.equal(load().a.status, 'done')
-  assert.deepEqual(load().a.details, [step('1. 구현', true), step('2. 머지', true)])
+  assert.deepEqual(load().a.details, [step('1. 구현', true), step('2. 머지 #9', true)])
 })
 
 test('후속 단계가 여럿 남아 비운 PR 은 다음 틱에 다시 연결하지 않는다', () => {
@@ -292,15 +293,15 @@ describe('board-sync 마지막 PR 판정', () => {
     )
   }
 
-  test('마지막 PR 이면 남은 단계가 여럿이어도 끝내고 done 으로 바꾼다', () => {
+  test('마지막 PR 이어도 수동 단계는 보존한다', () => {
     rules()
     states['7'] = 'MERGED'
     states['info:7'] = { title: '[PROJ-1] 마무리', headRefName: 'feat/b' }
     states.open = [{ number: 8, title: '[PROJ-2] 다른 업무' }]
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. PR #7', '2. dev 확인', '3. 문서'] }])
     assert.equal(r.code, 0, r.result.stderr)
-    assert.equal(r.board.a.status, 'done')
-    assert.deepEqual(r.board.a.details, [step('1. PR #7', true), step('2. dev 확인', true), step('3. 문서', true)])
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual(r.board.a.details, [step('1. PR #7', true), step('2. dev 확인', false), step('3. 문서', false)])
     assert.match(r.result.stdout, /a 마지막 PR 판정: 마지막\(업무 PROJ-1, 남은 PR 없음, 남은 지시서 없음\)/)
   })
 
@@ -357,20 +358,21 @@ describe('board-sync 마지막 PR 판정', () => {
     rules()
     states['7'] = 'MERGED'
     states['info:7'] = { title: '[PROJ-1] 마무리', headRefName: 'feat/b' }
-    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '남은 일: PR #6', '2. 머지'] }])
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '남은 일: PR #6', '2. 머지 #7'] }])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'done')
-    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지', true)])
+    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지 #7', true)])
   })
 
-  test('판정하지 못하면 단계 수로 정한다', () => {
+  test('판정하지 못해도 PR 번호 없는 한 단계는 남긴다', () => {
     rules()
     states['7'] = 'MERGED'
     states['info:7'] = { title: '업무 번호 없는 제목', headRefName: 'feat/b' }
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
     assert.equal(r.code, 0, r.result.stderr)
-    assert.equal(r.board.a.status, 'done')
-    assert.match(r.result.stdout, /단계 수로 정함\(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다/)
+    assert.equal(r.board.a.status, 'doing')
+    assert.match(r.result.stdout, /BOARD-UNMATCHED a PR #7/)
+    assert.match(r.result.stdout, /PR 번호의 단계만 끝냄\(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다/)
   })
 
   test('done 과 goal 이 아닌 항목이면 wait 이어도 같은 브랜치의 열린 PR 을 연결한다', () => {
@@ -590,7 +592,7 @@ test('마무리 PID 가 없어도 후속 검증이 남은 기능 항목은 done 
 후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
 <!-- /fos-feature-evidence -->` }
   states['evidence:7'] = evidence
-  const items = [{ id: 'a', status: 'doing', pr: '#7', branch: 'feat/domain', details: ['1. 머지와 검증'] }]
+  const items = [{ id: 'a', status: 'doing', pr: '#7', branch: 'feat/domain', details: ['1. PR #7 머지와 검증'] }]
   const pending = sync(items)
   assert.equal(pending.code, 0, pending.result.stderr)
   assert.equal(pending.board.a.status, 'doing')
@@ -602,8 +604,30 @@ test('마무리 PID 가 없어도 후속 검증이 남은 기능 항목은 done 
 test('MERGED 조회 뒤 근거 조회가 실패해도 기능 여부를 추측해 완료하지 않는다', () => {
   states['7'] = 'MERGED'
   states.evidenceFails = true
-  const result = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 머지와 검증'] }])
+  const result = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. PR #7 머지와 검증'] }])
   assert.equal(result.code, 0, result.result.stderr)
   assert.equal(result.board.a.status, 'doing')
   assert.match(result.result.stdout, /근거 조회 실패/)
+})
+
+test('이미 끝난 사건 단계가 있는 둘째 PR 은 수동 단계가 남아도 못 맞춘 머지가 아니다', () => {
+  states['8'] = 'MERGED'
+  const r = sync([{ id: 'm', status: 'doing', pr: '8', 'merged-pr': '7', stages: 'pr=1,merge=2', details: [step('1. PR', true), step('2. 머지', true), '3. 수동 확인'] }])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.m.status, 'doing')
+  assert.doesNotMatch(r.result.stdout, /BOARD-UNMATCHED/)
+})
+
+test('못 맞춘 머지는 기록하고 다른 PR 은 따로 남기며 꼬리표로 풀면 지운다', () => {
+  states['7'] = 'MERGED'
+  states['8'] = 'MERGED'
+  const first = sync([{ id: 'a', status: 'doing', pr: '7', details: ['1. 확인 (앞 사건: #7 merge)'] }])
+  assert.match(first.result.stdout, /BOARD-UNMATCHED a PR #7/)
+  const file = join(tmp, '.orch/state/board-unmatched.json')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items.a['7'].notified, null)
+  const second = sync([{ ...first.board.a, pr: '8' }])
+  assert.match(second.result.stdout, /BOARD-UNMATCHED a PR #8/)
+  const fixed = sync([{ ...second.board.a, details: ['1. 머지 (#7 merge)', '2. 수동 확인'] }])
+  assert.equal(fixed.code, 0, fixed.result.stderr)
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(file, 'utf8')).items.a), ['8'])
 })

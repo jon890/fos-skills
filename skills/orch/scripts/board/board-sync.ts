@@ -4,13 +4,13 @@
 // PR 상태나 커밋 같은 자동 줄은 읽기 어렵고 단계와 섞여 보드를 흐린다(사용자 요청).
 //
 //     - pr 칸의 PR 이 MERGED 면 업무의 마지막 PR 인지 판정한다(lib/last-pr.ts 의 judgeLastPr, 규칙은 config.json 의 finish 절
-//       task_pattern, spec_task_pattern, specs_dir). 마지막이면 남은 단계를 끝내고 항목을 done 으로 바꾼다.
+//       task_pattern, spec_task_pattern, specs_dir). 마지막이어도 그 PR 번호의 단계만 끝내고, 남은 단계가 없을 때만 done 으로 바꾼다.
 //       중간이면 그 PR 번호(#N)가 적힌 단계만 끝내고 pr 칸을 비우고, 하위 항목에 `남은 일: PR #31 #33, 지시서 spec-b.md` 한 줄을 둔다.
 //       그 줄은 단계 줄이 아니라 진행률에 세지 않고, 다음 판정 때 새 줄로 바꾼다
 //     - gh 조회가 실패해 판정하지 못하면 그 항목을 고치지 않고 다음 틱에 다시 판정한다
-//     - 그 밖의 이유로 판정하지 못하면(task_pattern 이 없다, 제목에 업무 번호가 없다) 단계 수로 정한다. 끝나지 않은 단계가
-//       1개 이하면 남은 단계를 끝내고 done 으로 바꾸고, 2개 이상이면 그 PR 번호가 적힌 단계만 끝내고 pr 칸을 비운다.
-//       머지 뒤 검증이나 후속 PR 이 남은 항목을 끝난 것으로 보지 않기 위해서다. finish 절이 틀렸으면 stderr 에 한 줄 남기고 단계 수로 정한다
+//     - 그 밖의 이유로 판정하지 못하면(task_pattern 이 없다, 제목에 업무 번호가 없다) 그 PR 번호의 단계만 끝낸다.
+//       남은 단계가 있으면 pr 칸을 비우고 merged-pr 에 적는다.
+//       머지 뒤 검증이나 후속 PR 이 남은 항목을 끝난 것으로 보지 않기 위해서다. finish 절이 틀렸으면 stderr 에 한 줄 남기고 PR 번호의 단계만 끝낸다
 //     - 그 PR 의 마무리(finish-pr)가 돌고 있으면(<orch 작업 폴더>/queue/finish-<PR>.pid 의 프로세스가 살아 있으면) 머지를 반영하지 않는다.
 //       마무리가 배포 뒤 판정과 표시(PR!, PR~)로 항목을 고친다. merge-with-finish --finish-log-dir 로 폴더를 바꾸면 보지 못한다
 //     - done 으로 바꿀 때는 남은 일 줄을 지운다
@@ -62,6 +62,9 @@
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
+import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
+import { readBoard } from '../lib/board.ts'
+import type { BoardStep } from '../core/board.ts'
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -155,13 +158,13 @@ function deployedNow(repo: string, num: string, deploy: { workflow: string; bran
   return deployVerdict(cache.runs, oid, (ancestor, sha) => git(repo, ['merge-base', '--is-ancestor', ancestor, sha]).code === 0).verdict
 }
 
-// finish 절의 판정 규칙. 설정이 틀리면 알리고 null 이다(단계 수로 정한다)
+// finish 절의 판정 규칙. 설정이 틀리면 알리고 null 이다(PR 번호의 단계만 끝낸다)
 function lastPrRules(repo: string): LastPrRules | null {
   try {
     return rulesFrom(section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS), repo)
   } catch (e) {
     if (!(e instanceof ConfigError) && !(e instanceof Error)) throw e
-    err(`board-sync: 마지막 PR 판정 규칙을 읽지 못해 단계 수로 정한다: ${(e as Error).message}`)
+    err(`board-sync: 마지막 PR 판정 규칙을 읽지 못해 PR 번호의 단계만 끝낸다: ${(e as Error).message}`)
     return null
   }
 }
@@ -253,6 +256,7 @@ function main(argv: string[]): number {
     const cmds: string[][] = []
     const after: string[][] = []
     let finish = false
+    let reflected: { pr: string; steps: BoardStep[] } | null = null
     // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 과 goal 항목도 본다
     if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree)) cmds.push(['set', id, '--worktree', ''])
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
@@ -354,6 +358,7 @@ function main(argv: string[]): number {
             const got = mergedCommands({ ...item, details }, steps, stages, num, reached, { last, doneAfter, note })
             after.push(...got.cmds)
             finish = got.done
+            reflected = { pr: num, steps }
           }
         }
       } else if (merged && !stages) {
@@ -364,21 +369,21 @@ function main(argv: string[]): number {
         }
         if (rules === undefined) rules = lastPrRules(repo)
         const verdict = judge(repo, num, rules)
-        const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '단계 수로 정함') : verdict.last ? '마지막' : '중간'
+        const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : 'PR 번호의 단계만 끝냄') : verdict.last ? '마지막' : '중간'
         if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
         if (!verdict?.retry) {
-          const last = verdict?.last ?? (steps.filter((step) => !step.done).length <= 1)
-          if (last) {
-            finish = true
-            details = withNote(details, null)
-            after.push(...steps.filter((step) => !step.done).map((step) => ['step', id, String(step.number)]), ['set', id, 'done', '--worktree', ''])
-          } else {
-            const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
-            details = withNote(details, note)
-            // lib/board.ts 의 intermediateCommands 와 같은 순서다. 하위 항목은 위에서 한 번에 다시 쓴다
+          const last = verdict?.last !== false
+          const matched = prSteps(steps, num)
+          finish = last && steps.every((step) => step.done || matched.includes(step.number))
+          const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
+          details = withNote(details, note)
+          after.push(...matched.map((n) => ['step', id, String(n)]))
+          if (finish) after.push(['set', id, 'done', '--worktree', ''])
+          else {
             const mergedPrs = [...new Set([...prNumbers(item['merged-pr']), num])].join(', ')
-            after.push(...prSteps(steps, num).map((n) => ['step', id, String(n)]), ['set', id, '--pr', '', '--merged-pr', mergedPrs])
+            after.push(['set', id, 'doing', '--pr', '', '--merged-pr', mergedPrs])
           }
+          reflected = { pr: num, steps }
         }
       } else if (item.status === 'doing' && !stages && state !== 'OPEN' && (!num || state === 'CLOSED')) {
         // 머리 주석의 「단계를 모두 끝낸 doing 항목」
@@ -423,8 +428,23 @@ function main(argv: string[]): number {
         return 1
       }
     }
+    if (reflected && !finish) {
+      const line = recordUnmatched(repo, item, reflected.steps, reflected.pr)
+      if (line) out(line)
+    }
     changed.push(id)
     brief(`BOARD ${id} ${finish ? 'done' : 'updated'}`)
+  }
+  if (!dryRun) {
+    const records = unmatchedRecords(repo)
+    if (Object.keys(records).length > 0) {
+      const current = readBoard(board)
+      const rows = new Map<string, BoardStep[] | null | undefined>()
+      for (const id of Object.keys(records)) {
+        rows.set(id, current.some((row) => row.id === id) ? boardSteps(boardBin, id, board) ?? undefined : null)
+      }
+      pruneUnmatched(repo, rows)
+    }
   }
   if (values.goal && !dryRun) {
     const cmd = [values.goal, '--board', board, '--board-bin', boardBin]
