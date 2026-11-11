@@ -41,6 +41,8 @@ orch board approval cancel "$APPROVAL_ID" --reason chat
 orch board set <항목> <goal|decide|doing|wait|done>
 orch board step <항목> <번호> done|undo
 orch board step <항목> <번호> text "<번호를 포함한 줄 전체>" [--on "<PR> <사건>"]
+orch board step <항목> <번호> auto|ask|plain
+orch board step <항목> <번호> wait ["<조건>"]
 orch board add-step <항목> "<글>" [--on "<PR> <사건>"]
 orch board show <항목>
 공통: [--board <파일>] [--repo <폴더>] [--full]
@@ -50,11 +52,13 @@ orch board show <항목>
 
 `set` 은 있는 항목의 상태만 고치며 `doing` 에는 진행률이 있어야 한다. `step` 은 보이는 줄 앞 번호로 고른다. 같은 번호가 둘이거나 없으면 거절한다. `text` 는 번호를 포함한 줄 전체를 받고 번호가 다르거나 사건 꼬리표를 지우면 거절한다. 완료 표시를 쓰지 않으면 끝냄 상태는 유지된다. `undo` 는 항목 상태를 바꾸지 않고, `decide` 의 마지막 줄을 끝내면 항목도 `done` 이 된다.
 
+`auto`, `ask`, `wait`, `plain` 은 그 줄 번호 뒤의 자동 진행 표시(`[auto]`, `[ask]`, `[wait]`, `[wait: <조건>]`)만 바꾸고 `plain` 은 지운다. 나머지 글, 끝냄 상태, 줄 끝 사건 꼬리표는 그대로다. 조건은 `wait` 에만 줄 수 있고 `]` 와 줄바꿈은 안 된다. 줄 앞 `[merge]` 같은 사건 표시가 있는 줄과 `stages` 필드가 가리키는 번호의 줄은 사건이 끝내는 단계라 거절한다. 출력은 `BOARD-STEP <항목> <번호> <동작>` 한 줄이고 `wait` 의 조건 글은 싣지 않는다. `-` 로 시작하는 조건은 옵션으로 읽혀 사용법 오류가 난다.
+
 `add-step` 은 단계를 세는 쪽(details, 없으면 next)에 더한다. 번호가 없으면 가장 큰 번호 다음을 붙이고, 직접 쓴 번호가 겹치거나 항목이 `done` 이면 거절한다. `progress` 값이 있으면 새 단계가 진행률에 안 보일 수 있어 stderr 로 알린다.
 `-` 로 시작하는 글은 옵션으로 읽혀 사용법 오류가 난다. `orch board add-step <항목> "10. - 하위 항목"` 처럼 쓰려는 단계 번호를 앞에 붙인다.
 명시한 진행률을 지워 단계 수로 세려면 칸 수정 도구인 `board.ts set` 에 `--progress auto` 를 준다. `orch board set` 은 상태만 고치므로 이 옵션을 받지 않는다.
 
-`--on "1455 merge"` 는 줄 끝에 `(#1455 merge)` 를 붙이고 기존 꼬리표는 바꾼다. 사건은 `pr`, `merge`, `deploy`, `release` 다. `stages` 가 있는 항목에 붙이면 기존 사건 단계의 자동 완료가 멈출 수 있어 경고한다. 자동 진행 표시만 바꾸려면 `text` 로 줄 전체를 바꾼다.
+`--on "1455 merge"` 는 줄 끝에 `(#1455 merge)` 를 붙이고 기존 꼬리표는 바꾼다. 사건은 `pr`, `merge`, `deploy`, `release` 다. `stages` 가 있는 항목에 붙이면 기존 사건 단계의 자동 완료가 멈출 수 있어 경고한다. 자동 진행 표시만 바꿀 때는 줄 전체를 다시 쓰지 않고 위 `auto`, `ask`, `wait`, `plain` 동작을 쓴다.
 
 성공 출력은 `BOARD-SET <항목> <상태>`, `BOARD-STEP <항목> <번호> <동작>`, `BOARD-STEP-ADD <항목> <번호>` 한 줄이다. 단계 변경으로 상태도 바뀌면 `status=<상태>` 가 붙는다. `show` 는 `BOARD <항목> <상태> <끝낸>/<전체>` 와 미완료 번호 단계만 낸다. 명시 진행률이 앞서고 진행률이 없으면 `진행률 없음` 이다. `--full` 은 완료 단계와 참고 줄도 내며 완료 줄 앞에 `✓` 를 붙인다. 거절은 stderr 와 종료 코드 1, 사용법 오류는 2, 성공은 0 이다.
 
