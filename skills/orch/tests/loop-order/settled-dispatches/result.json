@@ -1,5 +1,5 @@
 {
-  "stdout": "{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r1\":null,\"questions@r2\":null,\"prs@r1\":null,\"board@r1\":null,\"decisions@r1\":null,\"decisions@r2\":null,\"cleanup@r1\":null,\"cleanup@r2\":null,\"ci@r1\":null,\"merged@r1\":null,\"stalls@r1\":null,\"stalls@r2\":null,\"movement@r1\":null,\"hook@r1\":null,\"hook@r2\":null,\"queue-turn@r1\":null,\"conflicts@r1\":null,\"heavy-slot@r1\":null,\"waiter@r1\":null,\"waiter@r2\":null,\"done@r1\":null,\"lost@r1\":null,\"done@r2\":null,\"lost@r2\":null},\"open_prs\":[],\"ci\":{},\"stalls\":{}}\n",
+  "stdout": "{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r1\":null,\"questions@r2\":null,\"prs@r1\":null,\"board@r1\":null,\"decisions@r1\":null,\"decisions@r2\":null,\"cleanup@r1\":null,\"cleanup@r2\":null,\"ci@r1\":null,\"merged@r1\":null,\"stalls@r1\":null,\"stalls@r2\":null,\"movement@r1\":null,\"step-ready@r1\":null,\"hook@r1\":null,\"hook@r2\":null,\"queue-turn@r1\":null,\"conflicts@r1\":null,\"heavy-slot@r1\":null,\"waiter@r1\":null,\"waiter@r2\":null,\"done@r1\":null,\"lost@r1\":null,\"done@r2\":null,\"lost@r2\":null},\"open_prs\":[],\"ci\":{},\"stalls\":{}}\n",
   "stderr": "",
   "code": 0,
   "states": {

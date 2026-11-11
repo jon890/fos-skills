@@ -91,7 +91,9 @@ import { boardPath } from '../lib/board-file.ts'
 import { pathOf } from '../lib/paths.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
-import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
+import { waitTimeMs } from '../core/step-ready.ts'
+import { parseStepMark } from '../../../../extensions/work-board/hooks/step-marks.js'
+import { stageTag, parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { emit, short } from '../lib/output.ts'
 import { scriptPath } from '../lib/commands.ts'
 
@@ -262,6 +264,7 @@ function main(argv: string[]): number {
     return tagStates.get(num) ?? null
   }
   const changed: string[] = []
+  const now = Date.now()
   itemsLoop:
   for (const item of items) {
     const id = String(item.id)
@@ -277,6 +280,18 @@ function main(argv: string[]): number {
     if (tagged === null) {
       err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
       return 1
+    }
+    // 시각 대기는 첫 미완료 여부와 무관하게 그 줄만 끝낸다. 상태는 바꾸지 않는다.
+    if (item.status !== 'done' && JSON.stringify([item.details, item.next]).includes('[wait:')) {
+      const steps = boardSteps(boardBin, id, board)
+      if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }
+      const events = Object.values(stagesOf(item) ?? {})
+      for (const step of steps) {
+        if (step.done || events.includes(step.number) || stageTag(step.text) !== null) continue
+        const mark = parseStepMark(step.text)
+        const at = mark?.mark === 'wait' ? waitTimeMs(mark.condition) : null
+        if (at !== null && at <= now) after.push(['step', id, String(step.number)])
+      }
     }
     const review = /^review-pr-(\d+)$/.exec(id)
     const reviewDone = review && !SKIP_STATUS.has(String(item.status)) &&

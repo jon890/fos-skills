@@ -5,10 +5,28 @@ import { join } from 'node:path'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import { registerRun } from '../scripts/lib/loop.ts'
-import { notifyRun } from '../scripts/lib/run-notice.ts'
+import { notifyRun, setNoticeOwner } from '../scripts/lib/run-notice.ts'
 import { migrateLegacyNotices } from '../scripts/cleanup/legacy-notices.ts'
 
 const ok = JSON.stringify({ ok: true, result: { message: { id: 'm' } } })
+test('STEP-READY 는 제목과 본문을 나누고 같은 Run 의 다른 저장소 알림은 억제하지 않는다', t => {
+  const saved = { ...process.env }
+  t.after(() => { for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved); setNoticeOwner(null) })
+  const dir = tempDir('step-ready-notice-', t)
+  process.env.ORCH_MACHINE_DIR = join(dir, 'machine')
+  const bin = fakeBin(dir, 'orca', [{ stdout: ok }])
+  process.env.ORCA = bin.path
+  const body = 'a auto 2. [auto] 다음', subject = 'STEP-READY a auto 2. [auto] 다음'
+  setNoticeOwner('/repo/a')
+  assert.equal(notifyRun('R', 'STEP-READY', body, null, { subject, repo: '/repo/a' }).ok, true)
+  setNoticeOwner('/repo/b')
+  assert.equal(notifyRun('R', 'STEP-READY', body, null, { subject, repo: '/repo/b' }).ok, true)
+  assert.equal(bin.calls().length, 2)
+  const args = bin.calls()[1].argv, flag = (name: string) => args[args.indexOf(name) + 1]
+  assert.equal(flag('--subject'), subject)
+  assert.equal(flag('--body'), body)
+  assert.deepEqual(JSON.parse(flag('--payload')), { source: 'orch-loop', kind: 'STEP-READY', pr: null, repo: '/repo/b' })
+})
 test('Run 메시지와 환경을 유지하고 consumer_fenced 만 발신자 없이 재시도한다', t => {
   const saved = { ...process.env }
   t.after(() => { for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved) })

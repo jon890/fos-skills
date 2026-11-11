@@ -4,7 +4,7 @@
 
 ## 메시지가 오면
 
-`worker_done` 이나 머지·배포 알림으로 깨어났을 때 그 보드 항목의 다음 단계가 `[auto]` 나 `[ask]` 면 [`replying.md` 「다음 단계 이어 가기」](replying.md#다음-단계-이어-가기)를 따른다.
+`STEP-READY auto`·`STEP-READY ask` 를 받았거나 `worker_done`·머지·배포 알림으로 깨어났을 때 그 보드 항목의 다음 단계가 `[auto]` 나 `[ask]` 면 [`replying.md` 「다음 단계 이어 가기」](replying.md#다음-단계-이어-가기)를 따른다.
 
 제목이 `APPROVED <id>`·`REVISE <id>` 이거나 payload `source` 가 `board-approval` 인 메시지는 [`replying.md` 「보드 승인」](replying.md#보드-승인)을 따른다.
 
@@ -22,11 +22,11 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 
 ### 바로 보내는 알림과 모아 보내는 알림
 
-코디네이터가 무언가 해야 하는 알림만 그 틱에 바로 보낸다. 안내성이거나 다음 틱에 풀리는 알림은 `loop.log` 에 남기고 Run 메시지는 모아 DIGEST 하나로 보낸다. 원본은 `scripts/lib/notice-digest.ts` 이다.
+`STEP-READY` 는 그 틱에 바로 보낸다. 받으면 [`replying.md` 「다음 단계 이어 가기」](replying.md#다음-단계-이어-가기)를 따른다. 코디네이터가 무언가 해야 하는 알림만 그 틱에 바로 보낸다. 안내성이거나 다음 틱에 풀리는 알림은 `loop.log` 에 남기고 Run 메시지는 모아 DIGEST 하나로 보낸다. 원본은 `scripts/lib/notice-digest.ts` 이다.
 
 | 방식 | kind |
 |---|---|
-| 바로 | CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
+| 바로 | STEP-READY, CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
 | 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
 
 모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 그 틱에 바로 한 번 보낸다.

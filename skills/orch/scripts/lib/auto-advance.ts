@@ -14,12 +14,20 @@ import { ghJson } from './gh.ts'
 import { mainCheckout } from './git.ts'
 import { registeredRuns } from './loop.ts'
 import { stagesOf } from './milestones.ts'
-import { openRows, worktreeOf } from './movement.ts'
+import { openRows, worktreeOf } from '../core/movement.ts'
 import { confirmProblem } from './spec-confirm.ts'
+import { LIMITED_PAUSE_MS } from '../core/step-ready.ts'
+import { workerLimitedAt } from './worker-limited.ts'
 import { appendStepLaunch, stepLaunches } from './step-launches.ts'
 import { workerRows, worktreePaths } from './workers.ts'
 
 export type PendingStep = { number: number; mark: 'auto' | 'ask' | 'wait' | null; condition: string | null; text: string; key: string; body: string }
+
+// 표시가 없으면 루프가 단계 조회 프로세스를 생략한다. 실제 단계 선택과 표시는 보드 도구·파서가 확인한다.
+export function mayHaveStepMark(item: Record<string, unknown>): boolean {
+  const text = JSON.stringify([item.details, item.next])
+  return ['[auto', '[ask', '[wait'].some(mark => text.includes(mark))
+}
 
 export function firstPendingStep(file: string, item: Record<string, unknown>): PendingStep | null {
   const steps = boardSteps(process.env.BOARD_BIN || BOARD_BIN, String(item.id), file)
@@ -77,6 +85,8 @@ export function checkAdvance(repo: string, id: string, opts: { board?: string; r
   if (autoAdvance && item && ['doing', 'wait'].includes(input.status!) && step?.mark === 'auto') {
     const launches = stepLaunches(repo, id, step.key)
     input.launched = launches.length > 0
+    const limitedAt = workerLimitedAt()
+    input.limited = limitedAt !== null && Date.now() - limitedAt < LIMITED_PAUSE_MS
     input.busy = busyOf(repo, item, launches, opts.run)
     const views = new Map<string, BoardView[]>()
     input.evidence = parseEvidence(step.body).map(evidence => {

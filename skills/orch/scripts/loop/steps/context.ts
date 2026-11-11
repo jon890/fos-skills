@@ -11,6 +11,7 @@
 //     finish 절은 lib/finish-options.ts 의 FINISH_KEYS 로, queue 절은 lib/config.ts 의 QUEUE_KEYS 로 읽는다.
 //     pipeline.enabled 는 읽지 않는다. 이 루프가 하는 일은 모두 그 값과 무관하게 돈다.
 
+import { autoAdvanceOf } from '../../core/auto-advance.ts'
 import { isObject } from '../../core/json.ts'
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
 import type { AutoMergeConfig } from '../../lib/auto-merge.ts'
@@ -42,6 +43,7 @@ export type Context = {
   skippedIsMissing: boolean
   stallTicks: Record<StallState, number>
   // pipeline.idle_min, pipeline.idle_exited(movement.ts 머리 주석의 「움직임 확인」)
+  autoAdvance: boolean
   movement: MovementSettings
   autoMerge: AutoMergeConfig
   // pipeline.refresh_slots 와 머지 큐의 최신화 기준(refresh.ts 머리 주석의 「최신화」, lib/refresh.ts 의 refreshSettings)
@@ -103,6 +105,7 @@ export function context(repo: string, run: string | undefined, specsDir: string 
     tickSec,
     skippedIsMissing: skipped,
     stallTicks: stallTicks(pipeline.stall_ticks),
+    autoAdvance: autoAdvanceOf(config),
     movement: movementSettings(repo),
     autoMerge: autoMergeConfig(config),
     refresh: refreshSettings(config),

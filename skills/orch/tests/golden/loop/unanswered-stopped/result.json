@@ -1,5 +1,5 @@
 {
-  "stdout": "QUESTION q question from=term_worker: 방법을 알려 주세요\nWORKER-IDLE d exited 0분 worktree term_worker\n{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r\":null,\"prs@r\":null,\"board@r\":null,\"decisions@r\":null,\"cleanup@r\":null,\"ci@r\":null,\"merged@r\":null,\"stalls@r\":null,\"movement@r\":null,\"hook@r\":null,\"queue-turn@r\":null,\"conflicts@r\":null,\"heavy-slot@r\":null,\"waiter@r\":null,\"done@r\":null,\"lost@r\":null},\"open_prs\":[],\"ci\":{},\"stalls\":{}}\n",
+  "stdout": "QUESTION q question from=term_worker: 방법을 알려 주세요\nWORKER-IDLE d exited 0분 worktree term_worker\n{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r\":null,\"prs@r\":null,\"board@r\":null,\"decisions@r\":null,\"cleanup@r\":null,\"ci@r\":null,\"merged@r\":null,\"stalls@r\":null,\"movement@r\":null,\"step-ready@r\":null,\"hook@r\":null,\"queue-turn@r\":null,\"conflicts@r\":null,\"heavy-slot@r\":null,\"waiter@r\":null,\"done@r\":null,\"lost@r\":null},\"open_prs\":[],\"ci\":{},\"stalls\":{}}\n",
   "stderr": "",
   "code": 0,
   "states": {

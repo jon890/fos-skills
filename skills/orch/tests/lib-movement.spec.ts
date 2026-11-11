@@ -23,6 +23,7 @@ import {
   tailHash,
 } from '../scripts/lib/movement.ts'
 import type { WorkerVerdict } from '../scripts/lib/movement.ts'
+import type { StageOptions } from '../scripts/core/movement.ts'
 
 type Json = Record<string, unknown>
 
@@ -285,5 +286,38 @@ describe('알림 기록', () => {
       stages: { a: { step: 's', since: 1, fired: false } },
     })
     assert.deepEqual(readRecords('broken'), { screens: {}, workers: {}, stages: {} })
+  })
+})
+
+
+describe('자동 진행 표시의 멈춘 단계', () => {
+  const base = { id: 'a', status: 'doing', worktree: 'wt', details: [{ text: '참고: 단계 아님' }, { text: '2. 다음', done: false }] }
+  const judge = (mark: 'auto' | 'ask' | 'wait' | null, launches: Array<{ dispatch: string; branch: string | null }> = [],
+    extra: Json = {}, openPrs: StageOptions['openPrs'] = [], autoAdvance = true, dispatches = new Set<string>()) => {
+    const options: StageOptions = { autoAdvance, steps: new Map([['a', { mark, step: '2. 다음', launches }]]), openPrs, dispatches }
+    return stalledStages([{ ...base, ...extra }], new Set(), new Map(), () => false, options)
+  }
+  test('표시 표대로 wait 는 항상 건너뛰고 ask 와 미실행 auto 는 켜졌을 때만 건너뛴다', () => {
+    for (const on of [true, false]) {
+      assert.equal(judge(null, [], {}, [], on).length, 1)
+      assert.equal(judge('wait', [], {}, [], on).length, 0)
+      assert.equal(judge('ask', [], {}, [], on).length, on ? 0 : 1)
+      assert.equal(judge('auto', [], {}, [], on).length, on ? 0 : 1)
+      if (!on) {
+        assert.equal(judge('auto', [], {}, [], on)[0].step, '2. 다음')
+        assert.equal(judge('ask', [], { details: ['참고: 설명', '2. 다음'] }, [], on)[0].step, '2. 다음')
+      }
+    }
+  })
+  test('실행한 auto 는 연결 필드가 비어도 doing 과 wait 에서 찾고 dispatch·PR·모름은 보류한다', () => {
+    const launches = [{ dispatch: 'd', branch: 'feat/a' }]
+    for (const status of ['doing', 'wait']) assert.deepEqual(judge('auto', launches, { worktree: '', status }), [
+      { id: 'a', step: '2. 다음', worktree: null, branch: null },
+    ])
+    assert.equal(judge('auto', launches, {}, null).length, 0)
+    assert.equal(judge('auto', launches, {}, [], true, new Set(['d'])).length, 0)
+    assert.equal(judge('auto', launches, {}, [{ number: '7', branch: 'feat/a' }]).length, 0)
+    assert.equal(judge('auto', launches, { pr: 8 }, [{ number: '8', branch: 'other' }]).length, 0)
+    assert.equal(judge('auto', launches, { status: 'todo' }).length, 0)
   })
 })

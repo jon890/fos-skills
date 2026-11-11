@@ -1,5 +1,5 @@
 {
-  "stdout": "CI-FAILED #1 Tests: 살아 있는 dispatch 없음\n#1 CONFLICTING feat: src/conflict.ts\nCONFLICT-ORPHAN 1 워크트리 없음. 새 worker 는 띄우지 않는다\n{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r\":null,\"prs@r\":null,\"board@r\":null,\"decisions@r\":null,\"cleanup@r\":null,\"ci@r\":null,\"merged@r\":null,\"stalls@r\":null,\"movement@r\":null,\"hook@r\":null,\"queue-turn@r\":null,\"conflicts@r\":null,\"heavy-slot@r\":null,\"waiter@r\":null,\"done@r\":null,\"lost@r\":null},\"open_prs\":[1],\"ci\":{\"1\":{\"head\":\"abc\",\"state\":\"failed\"}},\"stalls\":{}}\n",
+  "stdout": "CI-FAILED #1 Tests: 살아 있는 dispatch 없음\n#1 CONFLICTING feat: src/conflict.ts\nCONFLICT-ORPHAN 1 워크트리 없음. 새 worker 는 띄우지 않는다\n{\"tick_at\":\"2026-11-10T00:00:00.000Z\",\"errors\":{\"questions@r\":null,\"prs@r\":null,\"board@r\":null,\"decisions@r\":null,\"cleanup@r\":null,\"ci@r\":null,\"merged@r\":null,\"stalls@r\":null,\"movement@r\":null,\"step-ready@r\":null,\"hook@r\":null,\"queue-turn@r\":null,\"conflicts@r\":null,\"heavy-slot@r\":null,\"waiter@r\":null,\"done@r\":null,\"lost@r\":null},\"open_prs\":[1],\"ci\":{\"1\":{\"head\":\"abc\",\"state\":\"failed\"}},\"stalls\":{}}\n",
   "stderr": "",
   "code": 0,
   "states": {

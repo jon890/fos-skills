@@ -1,6 +1,8 @@
+import { itemBusy } from './auto-advance.ts'
+import { prNumbers } from './board.ts'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
-import { LIVE_DISPATCH } from './workers.ts'
+import { LIVE_DISPATCH, liveWorkerOn } from './workers.ts'
 import { objectOr as obj } from './json.ts'
 
 export type Json = Record<string, unknown>
@@ -105,27 +107,38 @@ export function pendingStep(item: Json): string | null {
   return null
 }
 
-export function liveWorkerOn(item: { worktree: string | null; branch: string | null }, live: ReadonlySet<string>, branches: ReadonlyMap<string, string>): boolean {
-  const names = new Set([...live].map(value => basename(value)))
-  const byBranch = item.branch ? branches.get(item.branch) : undefined
-  return !!((item.worktree && names.has(basename(item.worktree))) || (byBranch && live.has(byBranch)))
+
+export type StageOptions = {
+  autoAdvance: boolean
+  steps: ReadonlyMap<string, { mark: 'auto' | 'ask' | 'wait' | null; step: string; launches: ReadonlyArray<{ dispatch: string; branch: string | null }> }>
+  openPrs: ReadonlyArray<{ number: string; branch: string }> | null
+  dispatches: ReadonlySet<string>
 }
 
 // 머리 주석의 「멈춘 단계」. live 는 살아 있는 dispatch 의 워크트리 경로, branches 는 {브랜치: 워크트리 경로},
 // recent 는 워크트리 경로가 idleMin 분 안에 바뀌었는지 묻는 함수다
-export function stalledStages(items: Json[], live: ReadonlySet<string>, branches: ReadonlyMap<string, string>, recent: (path: string) => boolean): StageVerdict[] {
+export function stalledStages(items: Json[], live: ReadonlySet<string>, branches: ReadonlyMap<string, string>, recent: (path: string) => boolean, options?: StageOptions): StageVerdict[] {
   const pathsByName = new Map([...branches.values()].map((path) => [basename(path), path]))
   const found: StageVerdict[] = []
   for (const item of items) {
-    if (item.status !== 'doing' || typeof item.id !== 'string') continue
-    const step = pendingStep(item)
+    if (typeof item.id !== 'string') continue
+    const fact = options?.steps.get(item.id)
+    if (fact?.mark === 'wait') continue
+    const launched = options?.autoAdvance && fact?.mark === 'auto' && fact.launches.length > 0
+    if (options?.autoAdvance && fact?.mark && !launched) continue
+    if (launched ? !['doing', 'wait'].includes(String(item.status)) : item.status !== 'doing') continue
+    // 표시를 읽은 줄은 기능을 꺼도 첫 번호 단계를 쓴다. 옛 표시 없는 줄의 판정은 유지한다.
+    const step = fact?.mark ? fact.step : pendingStep(item)
     if (step === null) continue
     const worktree = typeof item.worktree === 'string' && item.worktree.trim() ? item.worktree.trim() : null
     const branch = typeof item.branch === 'string' && item.branch.trim() ? item.branch.trim() : null
-    if (!worktree && !branch) continue
+    if (!launched && !worktree && !branch) continue
     const name = worktree ? basename(worktree) : null
     const byBranch = branch ? (branches.get(branch) ?? null) : null
-    if (liveWorkerOn({ worktree, branch }, live, branches)) continue
+    if (launched) {
+      if (options.openPrs === null || itemBusy({ worktree, branch, pr: [...prNumbers(item.pr)] }, fact.launches,
+        { paths: live, dispatches: options.dispatches }, branches, options.openPrs)) continue
+    } else if (liveWorkerOn({ worktree, branch }, live, branches)) continue
     const path = byBranch ?? (name ? (pathsByName.get(name) ?? null) : null)
     if (path && recent(path)) continue
     found.push({ id: item.id, step, worktree, branch })
