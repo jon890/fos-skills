@@ -148,3 +148,4 @@ orch slot heavy --exclusive -- node scripts/run-tests.ts
 | `skills/orch/changes/board-step-marks-rules.minor.md` | 신규 |
 | `extensions/work-board/changes/step-marks.patch.md` | 신규 |
 | `skills/orch/tests/docs-contract.spec.ts` | 수정 (문서 단언) |
+| `scripts/runtime-policy.json` | 수정 (work-board 공용 JS 모듈 허용 목록에 step-marks 추가) |

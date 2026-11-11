@@ -4,6 +4,8 @@
 
 ## 메시지가 오면
 
+`worker_done` 이나 머지·배포 알림으로 깨어났을 때 그 보드 항목의 다음 단계가 `[auto]` 나 `[ask]` 면 [`replying.md` 「다음 단계 이어 가기」](replying.md#다음-단계-이어-가기)를 따른다.
+
 제목이 `APPROVED <id>`·`REVISE <id>` 이거나 payload `source` 가 `board-approval` 인 메시지는 [`replying.md` 「보드 승인」](replying.md#보드-승인)을 따른다.
 
 사용자와 대화 중에 깨어나면 **사용자 답을 먼저 하고 깨운 메시지는 답에 덧붙이거나 다음 턴에 처리한다. 결정 질문이면 사용자에게 같이 묻는다.** 사용자 입력 시각으로 알림을 미루지 않는다.
