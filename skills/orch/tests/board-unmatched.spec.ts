@@ -73,17 +73,19 @@ test('show 는 풀린 기록을 숨기고 파일을 쓰지 않는다', (t) => {
 test('별도 프로세스의 동시 기록과 알림 확정이 기존 항목·PR 을 보존한다', async (t) => {
   const repo = fixture(t)
   recordUnmatched(repo, { id: 'a' }, pending, '70')
+  const started = join(repo, 'sending')
+  const waitForSend = `while (!existsSync(${JSON.stringify(started)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);`
   const run = (source: string) => new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--input-type=module', '-e', `import { recordUnmatched, notifyUnmatched } from ${JSON.stringify(moduleFile)}; ${source}`], { stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `import { existsSync, writeFileSync } from 'node:fs'; import { recordUnmatched, notifyUnmatched } from ${JSON.stringify(moduleFile)}; ${source}`], { stdio: ['ignore', 'ignore', 'pipe'] })
     let error = ''
     child.stderr.on('data', (data) => { error += data })
     child.on('error', reject)
     child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(error)))
   })
   await Promise.all([
-    run(`notifyUnmatched(${JSON.stringify(repo)}, 'run', () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); return {ok:true,id:'s'} })`),
-    run(`recordUnmatched(${JSON.stringify(repo)}, {id:'a'}, ${JSON.stringify(pending)}, '70'); recordUnmatched(${JSON.stringify(repo)}, {id:'b'}, ${JSON.stringify(pending)}, '71')`),
-    run(`recordUnmatched(${JSON.stringify(repo)}, {id:'a'}, ${JSON.stringify(pending)}, '72')`),
+    run(`notifyUnmatched(${JSON.stringify(repo)}, 'run', () => { writeFileSync(${JSON.stringify(started)}, 'sending'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5500); return {ok:true,id:'s'} })`),
+    run(`${waitForSend} const start = Date.now(); recordUnmatched(${JSON.stringify(repo)}, {id:'a'}, ${JSON.stringify(pending)}, '70'); recordUnmatched(${JSON.stringify(repo)}, {id:'b'}, ${JSON.stringify(pending)}, '71'); if (Date.now() - start > 4000) throw new Error('전송이 기록을 막았다')`),
+    run(`${waitForSend} recordUnmatched(${JSON.stringify(repo)}, {id:'a'}, ${JSON.stringify(pending)}, '72')`),
   ])
   const records = unmatchedRecords(repo)
   assert.ok(records.a['70'].notified)
@@ -95,7 +97,7 @@ test('기록 실패는 머지 반영 호출을 실패로 바꾸지 않는다', (
   const repo = fixture(t)
   mkdirSync(join(repo, '.orch'), { recursive: true })
   writeFileSync(join(repo, '.orch/state'), 'not a directory')
-  assert.doesNotThrow(() => recordUnmatched(repo, { id: 'a' }, pending, '70'))
+  assert.equal(recordUnmatched(repo, { id: 'a' }, pending, '70'), null)
 })
 
 test('루프 보드 단계는 다음 틱에 주 Run 으로 한 번 보내고 새 상태에서도 다시 보내지 않는다', async (t) => {
