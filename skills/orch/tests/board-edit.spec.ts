@@ -59,7 +59,7 @@ test('도움말과 명령 표가 새 명령을 보이고 사용법 오류는 2 �
   const help = orch(['--help'])
   assert.equal(help.code, 0, help.err)
   for (const verb of ['set', 'step', 'add-step', 'show']) assert.match(help.out, new RegExp(`orch board ${verb}`))
-  for (const args of [['set', 'x'], ['set', 'x', 'done', 'extra'], ['show'], ['show', 'x', 'extra'], ['step', 'x', 'one', 'done'], ['step', 'x', '9', 'text'], ['step', 'x', '9', 'auto'], ['step', 'x', '9', 'ask'], ['step', 'x', '9', 'wait'], ['step', 'x', '9', 'plain'], ['step', 'x', '9', 'done', '--on', '1 merge'], ['add-step', 'x'], ['show', 'x', '--bad']]) {
+  for (const args of [['set', 'x'], ['set', 'x', 'done', 'extra'], ['show'], ['show', 'x', 'extra'], ['step', 'x', 'one', 'done'], ['step', 'x', '9', 'text'], ['step', 'x', '9', 'done', '--on', '1 merge'], ['step', 'x', '9', 'auto', '조건'], ['step', 'x', '9', 'ask', '--on', '1 merge'], ['step', 'x', '9', 'plain', '조건'], ['step', 'x', '9', 'Auto'], ['step', 'x', '9', 'wait', 'a', 'b'], ['step', 'x', '9', 'wait', '조건', '--on', '1 merge'], ['add-step', 'x'], ['show', 'x', '--bad']]) {
     refused(args, /사용법/, 2)
   }
 })
@@ -96,6 +96,34 @@ test('step 은 번호로 끝내기·되돌리기·글 수정을 하고 자동 �
   save([item({ details: ['9.붙임', '2 단계'] })])
   refused(['step', 'x', '9', 'done'], /있는 번호: 2/)
   ok(['step', 'x', '2', 'text', '2 바꾼 단계'], 'BOARD-STEP x 2 text')
+})
+test('step 은 번호 뒤 자동 진행 표시만 바꾸고 사건 단계와 끝냄 상태를 지킨다', () => {
+  save([item({ details: [{ text: '1. [merge] 머지', done: false }, { text: '2. [auto] PR4 API (계획: x)', done: true }, { text: '3. 기획 답 (#665 merge)', done: false }] })])
+  ok(['step', 'x', '2', 'ask'], 'BOARD-STEP x 2 ask')
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).items[0].details[1], { text: '2. [ask] PR4 API (계획: x)', done: true })
+  ok(['step', 'x', '3', 'wait', '2026-11-10 19:00'], 'BOARD-STEP x 3 wait')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details[2].text, '3. [wait: 2026-11-10 19:00] 기획 답 (#665 merge)')
+  ok(['step', 'x', '3', 'plain'], 'BOARD-STEP x 3 plain')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details[2].text, '3. 기획 답 (#665 merge)')
+  ok(['step', 'x', '2', 'ask', '--full'], 'BOARD-STEP x 2 ask\n1. [merge] 머지\n✓ 2. [ask] PR4 API (계획: x)\n3. 기획 답 (#665 merge)')
+  refused(['step', 'x', '1', 'auto'], /사건 단계/)
+  refused(['step', 'x', '9', 'auto'], /9 번 단계가 없다.*1 2 3/)
+  ok(['step', 'x', '3', 'wait'], 'BOARD-STEP x 3 wait')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details[2].text, '3. [wait] 기획 답 (#665 merge)')
+  refused(['step', 'x', '3', 'wait', ''], /조건/)
+  refused(['step', 'x', '3', 'wait', 'x] [Auto'], /조건/)
+  save([item({ details: ['1. 구현', '2. 머지'], stages: 'pr=1,merge=2' })])
+  refused(['step', 'x', '2', 'auto'], /사건 단계/)
+})
+test('워크트리에서 부른 표시 변경도 주 checkout 의 보드를 고친다', () => {
+  git('init', '-q')
+  git('commit', '--allow-empty', '-qm', 'init')
+  const wt = join(repo, 'wt')
+  git('worktree', 'add', '-q', wt, '-b', 'wt-branch')
+  save([item({ details: ['1. [auto] 구현 (계획: x)'] })])
+  ok(['step', 'x', '1', 'ask'], 'BOARD-STEP x 1 ask', wt)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details[0].text, '1. [ask] 구현 (계획: x)')
+  assert.equal(existsSync(join(wt, '.omc/board.json')), false)
 })
 test('next 단계의 글과 추가를 같은 쪽에 반영하고 최대 번호 다음을 고른다', () => {
   save([item({ details: ['참고'], next: '1. 구현\n9. 머지' })])

@@ -119,6 +119,7 @@ node --disable-warning=ExperimentalWarning "$BOARD_BIN" set order-api doing --ti
   --next "1. 구현" --next "2. 리뷰" --next "3. 머지"
 orch board step order-api 1 done        # 1번 단계를 끝내요
 orch board show order-api               # 남은 단계를 봐요
+orch board step order-api 3 ask         # 3번 단계 번호 뒤의 자동 진행 표시를 [ask] 로 바꿔요(auto, ask, wait, plain)
 orch board add-step order-api "배포" --on "877 deploy"
 node --disable-warning=ExperimentalWarning "$BOARD_BIN" list               # 모든 항목과 진행률을 봐요
 ```

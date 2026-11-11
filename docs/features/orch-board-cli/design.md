@@ -19,7 +19,7 @@ PR 은 「PR 나누기와 순서」 의 번호다.
 | REQ7 | `board.ts set --exact` 가 없는 항목을 만들지 않고 거절한다. 상태 값과 진행률 검사는 `board.ts set` 의 지금 검사다 | PR1, PR3 |
 | REQ8 | 엄격 호출과 새 동작은 성공하면 고친 뒤의 항목을 JSON 한 줄로 낸다. `board-edit.ts` 가 그 JSON 으로 `BOARD-SET`, `BOARD-STEP`, `BOARD-STEP-ADD` 한 줄을 만들고 `board.ts` 의 종료 코드와 stderr 를 그대로 넘긴다. 인자 검사는 `board-edit.ts` 가 하고 종료 코드 2 다 | PR1, PR3 |
 | REQ9 | 읽기 전용 새 동작 `board.ts view` 가 항목의 상태, 진행률, 줄 목록을 JSON 으로 낸다. `board-edit.ts` 가 머리 줄과 끝나지 않은 단계로 줄여 보인다. 안 풀린 `BOARD-UNMATCHED` 줄은 PR4 가 더한다 | PR1, PR3, PR4 |
-| REQ10 | 자동 진행 구현이 머지된 뒤 `board.ts step-mark` 와 `orch board step <항목> <번호> auto\|ask\|wait\|plain` 을 더한다. 그때까지 이 동작 이름은 사용법 오류다(아래 「자동 진행 표시 동작이 기다리는 방법」) | PR5 |
+| REQ10 | `board.ts step-mark` 와 `orch board step <항목> <번호> auto\|ask\|wait\|plain` 이 줄 번호 뒤의 표시만 바꾼다. 표시를 읽고 쓰는 코드는 자동 진행 구현이 머지한 `hooks/step-marks.js` 를 쓴다(아래 「자동 진행 표시 동작」) | PR5 |
 | REQ11 | 잠금은 새 모듈 `extensions/work-board/bin/file-lock.ts` 에 두고 `board.ts` 의 모든 쓰기 동작이 읽기부터 쓰기까지 잡는다. 낡은 목록은 `set --if-rev <줄 지문>` 으로 거절하고, 줄 목록을 통째로 저장하는 호출자가 읽을 때의 지문을 넘긴다 | PR1, PR2 |
 | REQ12 | 머지를 보드에 반영하는 두 자리(`board-sync.ts`, `finish-pr.ts`)가 같은 순수 판정으로 「가리키는 줄이 하나도 없는 머지」 를 가려 `state/board-unmatched.json` 에 기록한다. 루프의 보드 단계가 알리지 않은 기록마다 `BOARD-UNMATCHED` 를 한 번 보낸다 | PR4 |
 | REQ13 | 새 옵션을 주지 않은 `board.ts` 호출은 분기가 그대로다. 새 옵션 이름은 지금 옵션의 줄임 꼴과 겹치지 않게 짓는다. 예외는 잠금을 못 잡은 때의 종료 코드 1 이다 | PR1 |
@@ -100,6 +100,7 @@ flowchart TD
 | `step-edit <id> <번호> <글> [--event "<PR> <사건>"]` | 그 번호의 줄 전체를 새 글로 바꾼다. 단계가 있는 쪽(`details`, 없으면 `next`)의 줄을 고친다. 새 글에 앞 표시가 없으면 끝냄 상태는 그대로다 | 번호 풀이 거절(위와 같다), 새 글이 같은 번호로 시작하지 않음, 옛 줄에 있던 꼬리표가 새 글에 없음 |
 | `step-add <id> <글> [--event "<PR> <사건>"]` | 단계를 세는 쪽 끝에 끝나지 않은 줄을 더한다. 단계가 어느 쪽에도 없으면 `details` 다. 글이 번호로 시작하지 않으면 그쪽의 가장 큰 번호에 1 을 더해 `<번호>. <글>` 로 만든다. 앞 표시는 떼고 끝나지 않은 줄로 둔다 | 이미 있는 번호, `done` 항목, 항목 없음 |
 | `view <id>` | 보드를 고치지 않고 항목을 JSON 한 줄로 낸다 | 항목 없음 |
+| `step-mark <id> <번호> <auto\|ask\|wait\|plain> [<조건>]` (PR5) | 그 번호의 줄에서 번호 뒤 자동 진행 표시만 바꾼다(`plain` 은 지운다). 단계가 있는 쪽의 줄을 고치고 끝냄 상태와 줄 끝 꼬리표는 그대로 둔다. 결과는 `step-edit` 와 같은 JSON 이다 | 번호 풀이 거절, 사건 단계(줄 앞 꼬리표나 `stages` 번호), 조건이 비었거나 `]`·줄바꿈이 든 `wait`. 모르는 표시와 `wait` 가 아닌 표시의 조건은 사용법 오류(종료 코드 2) |
 
 - `--exact` 는 「있는 항목과 하나뿐인 번호에만 듣는다」 는 뜻이다. `step-edit`, `step-add` 는 늘 이 규칙이다.
 - `--event` 의 PR 은 `1455` 와 `#1455` 를 같게 받고 사건은 `pr`, `merge`, `deploy`, `release` 다. 다른 값은 거절이다. PR 번호 `0` 과 `0` 으로 시작하는 번호도 거절한다. 꼬리표를 읽는 쪽(`parseEventTag`)이 그 번호를 읽지 못해 끝나지 않는 줄이 된다. 줄 끝에 이미 `(#N 사건)` 이 있으면 바꾼다. `step-edit` 의 새 글에 꼬리표가 없어도 `--event` 를 주면 꼬리표가 있는 것으로 본다.
@@ -201,6 +202,8 @@ flowchart TD
 orch board set <항목> <상태>
 orch board step <항목> <번호> done|undo
 orch board step <항목> <번호> text "<글>" [--on "<PR> <사건>"]
+orch board step <항목> <번호> auto|ask|plain          (PR5)
+orch board step <항목> <번호> wait ["<조건>"]         (PR5)
 orch board add-step <항목> "<글>" [--on "<PR> <사건>"]
 orch board show <항목>
 공통: [--board <파일>] [--repo <폴더>] [--full]
@@ -212,11 +215,13 @@ orch board show <항목>
 | `step <항목> <번호> done` | `step <항목> <번호> --exact` | `BOARD-STEP <항목> <번호> done`. 상태가 바뀌었으면(`was` 와 `status` 가 다르면) 끝에 `status=<상태>` |
 | `step <항목> <번호> undo` | `step <항목> <번호> --undo --exact` | `BOARD-STEP <항목> <번호> undo` |
 | `step <항목> <번호> text "<글>"` | `step-edit <항목> <번호> <글>` | `BOARD-STEP <항목> <번호> text` |
+| `step <항목> <번호> auto\|ask\|plain` (PR5) | `step-mark <항목> <번호> <동작>` | `BOARD-STEP <항목> <번호> <동작>` |
+| `step <항목> <번호> wait ["<조건>"]` (PR5) | `step-mark <항목> <번호> wait [<조건>]` | `BOARD-STEP <항목> <번호> wait`(조건 글은 넣지 않는다) |
 | `add-step <항목> "<글>"` | `step-add <항목> <글>` | `BOARD-STEP-ADD <항목> <번호>` |
 | `show <항목>` | `view <항목>` | `BOARD <항목> <상태> <끝낸>/<전체>`(진행률이 없으면 `진행률 없음`)과 끝나지 않은 단계 줄 |
 
 - 모든 호출에 `--file <boardPath 의 결과>` 를 붙인다.
-- `board-edit.ts` 가 막는 사용법 오류(종료 코드 2, 사용법 출력): 위치 인자가 모자라거나 남는다, 번호 자리가 숫자가 아니다, `step` 의 동작 이름이 표에 없다. 그 밖의 거절은 `board.ts` 가 판정하고 stderr 와 종료 코드 1 을 그대로 넘긴다. `--on` 의 값이 틀린 것도 `board.ts` 의 거절이다(스펙 REQ6 이 종료 코드 1 로 정했다).
+- `board-edit.ts` 가 막는 사용법 오류(종료 코드 2, 사용법 출력): 위치 인자가 모자라거나 남는다, 번호 자리가 숫자가 아니다, `step` 의 동작 이름이 표에 없다, 조건을 `wait` 가 아닌 표시에 준다(PR5). 그 밖의 거절은 `board.ts` 가 판정하고 stderr 와 종료 코드 1 을 그대로 넘긴다. `--on` 의 값이 틀린 것도 `board.ts` 의 거절이다(스펙 REQ6 이 종료 코드 1 로 정했다).
 - `--full` 은 진입점이 떼어 신호로 넘긴다(`lib/output.ts` 의 `fullAsked`). 쓰는 명령은 한 줄 뒤에 그 항목의 모든 줄을 잇고, `show` 는 끝난 단계와 참고 줄도 낸다. 끝난 줄은 앞에 `✓ ` 를 붙인다. 스크립트를 경로로 직접 부르면 신호가 없어 짧은 출력이다. 출력은 `lib/output.ts` 의 `emit` 을 거치지 않고 직접 쓴다. `emit` 은 대문자 낱말로 시작하지 않는 줄을 버려 `show` 의 단계 줄(`2. 리뷰 반영`)이 사라진다.
 - 보드 파일이 없으면 `board.ts` 가 빈 보드로 읽어 `항목이 없다` 로 거절한다. 파일은 생기지 않는다.
 
@@ -268,13 +273,14 @@ orch board show <항목>
 - 마일스톤 항목은 이미 같은 규칙이다(「그 뒤에 끝나지 않은 수동 단계가 있으면 done 으로 바꾸지 않는다」, [ADR-018](../../adr/018-board-milestone-steps.md)). 바꾸지 않는다.
 - 띄우기가 만든 항목도 옛 꼴일 수 있다. `board.steps` 나 지시서의 `## 보드 단계` 가 사건 표시 없는 줄뿐이면 `stages` 필드가 생기지 않는다. 그런 저장소는 마지막 PR 이 머지돼도 `done` 대신 `doing` 과 `BOARD-UNMATCHED` 를 받는다. 단계 정의에 `[merge]` 를 붙이면 풀린다고 `board.md` 에 적는다.
 
-### 자동 진행 표시 동작이 기다리는 방법 (PR5)
+### 자동 진행 표시 동작 (PR5)
 
-- 표시(`[auto]`, `[ask]`, `[wait]`, `[wait: 조건]`)의 꼴과 읽는 규칙은 자동 진행 스펙이 원본이고, 읽는 코드는 그 구현이 만든다. 이 설계는 그 코드를 미리 만들지 않는다. 같은 문법을 두 곳에서 따로 구현하지 않으려는 것이다.
-- 자리만 정한다. 표시를 읽는 함수는 창, `board.ts`, orch 가 함께 import 하는 `extensions/work-board/hooks/` 에 둔다(`event-tags.js` 와 같은 자리). 자동 진행 설계가 다른 자리를 고르면 PR5 의 계획을 쓸 때 이 절을 고친다.
-- PR5 는 그 모듈에 「번호 뒤의 표시만 바꾼 글」 을 만드는 함수 하나를 더하고, `board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]` 과 `orch board step <항목> <번호> auto|ask|wait ["<조건>"]|plain` 을 더한다. 번호 풀이와 잠금은 `step-edit` 의 것을 쓴다. 사건 단계에는 거절한다. 사건 단계는 줄 글에 줄 앞 꼬리표가 있거나, 항목의 `stages` 필드가 그 번호를 가리키는 줄이다. 띄우기가 만든 항목은 꼬리표를 글이 아니라 `stages` 에 두므로 둘 다 본다. 줄 끝 꼬리표만 있는 줄은 받는다(자동 진행 스펙 REQ6 이 `[wait]` 줄 끝의 `(#N 사건)` 을 쓴다).
-- PR5 의 계획은 자동 진행 구현이 main 에 머지된 뒤에 쓴다. 그때까지 `orch board step` 은 `auto`, `ask`, `wait`, `plain` 을 모르는 동작 이름으로 보고 종료 코드 2 와 지금 쓸 수 있는 동작을 낸다.
-- 그 전에도 표시를 바꿀 길은 있다. 표시는 줄 글의 일부라 `step … text "<줄 전체>"` 로 바꿀 수 있다.
+- 표시(`[auto]`, `[ask]`, `[wait]`, `[wait: 조건]`)의 꼴과 읽고 쓰는 규칙은 자동 진행 구현(PR #446)이 둔 `extensions/work-board/hooks/step-marks.js` 가 원본이다(`event-tags.js` 옆). 표시를 바꾼 글을 만드는 `withStepMark` 도 거기 이미 있어 PR5 는 모듈에 함수를 더하지 않는다. 문법을 두 곳에서 구현하지 않으려는 처음 뜻은 그대로다.
+- `board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]` 은 `step-edit` 의 번호 풀이와 잠금을 쓴다. 줄 글을 `withStepMark(옛 글, 표시 또는 null, 조건)` 의 결과로 바꾸고 끝냄 상태는 옛 줄 것을 둔다. 조건은 위치 인자다. 새 옵션을 만들지 않아 지금 옵션의 줄임 꼴이 모호해지지 않는다.
+- `orch board step <항목> <번호> auto|ask|plain`, `wait ["<조건>"]` 이 이 동작을 부른다. 출력은 `BOARD-STEP <항목> <번호> <동작>` 한 줄이고 `wait` 의 조건 글은 넣지 않는다. 표시 자리에 올 수 없는 값, `wait` 가 아닌 표시의 조건, `--on` 과 함께 쓴 호출은 사용법 오류(종료 코드 2)다.
+- 사건 단계에는 거절한다(종료 코드 1). 사건 단계는 줄 글에 줄 앞 꼬리표(`2. [merge] 머지`)가 있거나 항목의 `stages` 필드가 그 번호를 가리키는 줄이다. 띄우기가 만든 항목은 꼬리표를 글이 아니라 `stages` 에 두므로 둘 다 본다(DECISION21). `board.ts` 는 orch 의 `stagesOf` 를 import 하지 못해 같은 칸 형식(`STAGES`)을 읽는 작은 함수를 갖는다. 사건 단계에 표시를 붙이면 `2. [auto] [merge] 머지` 처럼 줄 앞 꼬리표가 번호 바로 뒤에서 밀려나 사건 단계로 읽히지 않고 그 줄이 사건에 저절로 끝나지 않으므로 거절한다. 줄 끝 꼬리표만 있는 줄은 받고 꼬리표를 그대로 남긴다(자동 진행 스펙 REQ6 이 `[wait]` 줄 끝의 `(#N 사건)` 을 쓴다).
+- 같은 표시로 바꾸는 호출은 거절하지 않는다. 결과가 같아 성공이다.
+- 자동 진행 구현이 머지되기 전의 임시 길(`step … text "<줄 전체>"`)은 그대로 쓸 수 있다.
 
 ### 뒤 기능이 기대는 자리
 
@@ -282,7 +288,7 @@ orch board show <항목>
 | --- | --- | --- |
 | 잠금 | 잠금 규약(대상 파일 옆 `<이름>.lock`, 없을 때만 만들기, 표지 확인, 30초 넘은 잠금을 권리 파일로 넘겨받기)과 node 에서 도는 구현 `file-lock.ts` 의 `withFileLock`. 보드가 아닌 파일에도 쓸 수 있다. 창(`hooks/register.js`)은 node 의 파일 모듈이 아니라 창의 파일 API 로 돌고 5초를 멈춰 기다릴 수 없으므로, 창이 쓰는 쪽은 같은 규약을 「한 번 해 보고 안 되면 그만두는」 꼴로 승인 버튼 설계가 정한다 | 승인 버튼 스펙 DECISION12 의 승인 대기 저장 파일(명령 쪽은 `withFileLock`, 창 쪽은 같은 규약) |
 | 단계 끝내기 | `board.ts step <id> <번호>` 는 인자와 출력이 그대로다 | 자동 진행의 시각 wait 를 루프가 끝낼 때 |
-| 표시 바꾸기 | PR5 의 `orch board step <항목> <번호> auto\|ask\|wait\|plain`. 그 전에는 `step … text` | 자동 진행에서 `[auto]` 를 `[ask]` 로 바꿀 때 |
+| 표시 바꾸기 | `orch board step <항목> <번호> auto\|ask\|wait\|plain`(PR5) | 자동 진행에서 `[auto]` 를 `[ask]` 로 바꿀 때 |
 | 줄 읽기 | `board.ts view` 의 JSON `lines` 가 표시와 꼬리표가 든 원래 글을 낸다 | 단계 글을 읽어야 하는 코디네이터 규칙과 승인 대기의 `--item`, `--step` |
 | 저장 꼴 | 그대로다. 표시와 꼬리표는 줄 글에 들고 항목에 새 칸이 없다 | 두 기능 모두 |
 | PR 번호로 줄 고르기 | `core/board.ts` 의 `prSteps` 판정 하나(PR4 가 끝낼 줄과 가리키는 줄에 함께 쓴다) | 자동 진행이 근거 괄호 `(앞 사건: #N 사건)` 의 번호를 이 판정에서 뺄 때 |
@@ -324,7 +330,7 @@ orch board show <항목>
 | PR2 | `lib/board-file.ts` 와 호출자 옮기기, 통째 저장 호출자에 `--if-rev` 붙이기와 거절 뒤 다시 하기 | PR1 |
 | PR3 | 명령 표의 새 행, `board-edit.ts`, `board.md` 와 창 요청문 등 문서 | PR1, PR2 |
 | PR4 | 못 맞춘 머지의 판정, 기록, 알림, `show` 의 줄. 마지막 PR 과 남은 단계 규칙 | PR3 |
-| PR5 | 자동 진행 표시 동작 | PR3, 자동 진행 구현의 머지 |
+| PR5 | 자동 진행 표시 동작(자동 진행 구현은 머지됐다) | PR3 |
 
 - PR1 만 머지돼도 지금 쓰기끼리의 겹침이 없어진다. PR3 까지 가면 코디네이터가 새 명령을 쓴다.
 - 계획서는 PR 마다 쓰고 그 PR 에서 지운다. 뒤 PR 은 앞 PR 이 머지된 코드를 보고 쓴다.
@@ -350,7 +356,7 @@ orch board show <항목>
 | DECISION11 | 기록하는 곳과 알리는 쪽 | `state/board-unmatched.json` 에 기록하고 루프의 보드 단계가 알린다. 바로 보낸다 | 작성자 | 마무리는 루프 밖에서 도는 프로세스라 Run 을 깨울 길이 루프뿐이다. 보드 항목에 칸을 더하면 보드 형식이 바뀐다. `STAGE-STALLED` 처럼 모아 보내면 스펙의 「다음 틱 안에」 를 못 지킨다 |
 | DECISION12 | 줄 끝 꼬리표가 있는 항목의 못 맞춘 머지 | 마무리가 `board-sync` 에 맡길 때, 그 PR 을 가리키는 꼬리표 줄이 하나도 없으면 기록한다. 마무리 없이 머지된 꼬리표 항목은 판정하지 않는다 | 작성자 | 꼬리표의 PR 번호를 잘못 적은 항목이 조용히 남지 않는다. 마무리 없는 머지까지 보려면 틱마다 꼬리표 항목의 PR 상태를 더 조회해야 하고, 그 머지는 `FINISH-MISSING` 이 따로 알린다 |
 | DECISION13 | `finish-pr` 의 지문 거절 | 다시 읽어 한 번 더 한다 | 작성자 | 스펙은 `board-sync` 와 중간 과정 기록만 적었다. 마무리는 한 번 도는 프로세스라 다음 틱이 없고, 드문 겹침으로 `FINISH-FAIL` 이 되면 사람이 다시 돌려야 한다 |
-| DECISION14 | 자동 진행 표시 동작을 기다리는 방법 | 표시를 읽는 코드는 자동 진행 구현이 만들고 PR5 가 그 위에 쓰는 함수를 더한다. 그때까지 동작 이름은 사용법 오류다 | 작성자 | 스펙 DECISION6 이 구현 순서를 정했다. 문법을 두 곳에서 구현하면 `[Auto]` 같은 어긋남이 생긴다 |
+| DECISION14 | 자동 진행 표시 동작을 만드는 방법 | 표시를 읽고 쓰는 코드는 자동 진행 구현이 만든 `step-marks.js`(`withStepMark`)이고 PR5 는 새 함수를 더하지 않고 `board.ts step-mark` 와 명령이 그것을 부른다. 자동 진행 구현이 머지되기 전에는 동작 이름이 사용법 오류였다 | 작성자 | 스펙 DECISION6 이 구현 순서를 정했다. 문법을 두 곳에서 구현하면 `[Auto]` 같은 어긋남이 생긴다 |
 | DECISION15 | PR 나누기 | 위 「PR 나누기와 순서」 | 작성자 | 받는 쪽(`board.ts`)이 먼저 있어야 부르는 쪽이 듣는다. PR 마다 혼자 검증할 수 있는 선에서 잘랐다 |
 | DECISION16 | 창의 요청문 | 항목의 상태와 단계를 `board.ts` 경로로 고치라는 문장(항목 상태 확인, 대기 재개)만 `orch board` 명령으로 바꾼다. 결정 줄을 `mark` 로 끝내라는 문장은 새 명령에 `mark` 가 없어 그대로 두고, 「`board.json` 을 갱신하고 done 항목은 비워 줘」 는 직접 고치지 않게 명령(`orch board`, `board.ts del`)을 가리키도록 고친다 | 작성자 | 요청문이 플러그인 경로를 찾게 만든다. 스펙의 배경이 그 비용이다. `send-to-worker` 를 새 꼴로 바꾼 앞 사례(`docs/features/orch-cli/design.md` REQ8)와 같다 |
 | DECISION17 | 마지막 PR 과 남은 단계 | 옛 꼴 항목은 마지막 PR 이어도 그 PR 번호가 적힌 줄만 끝내고, 남은 단계가 있으면 `done` 으로 바꾸지 않는다 | 사용자 2026-11-10 | 설계 중 코디네이터가 넘긴 입력을 결정 질문으로 올려 사용자가 골랐다. 스펙 REQ15, DECISION18 에 더했다 |

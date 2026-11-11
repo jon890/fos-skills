@@ -1,5 +1,5 @@
 // 보드 상태와 단계 명령. 검사와 저장은 board.ts 에 맡기고 결과 JSON 을 짧게 보인다.
-// 사용법: orch board set <항목> <상태> | step <항목> <번호> done|undo|text "<글>"
+// 사용법: orch board set <항목> <상태> | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
 //         orch board add-step <항목> "<글>" | show <항목>
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
@@ -16,6 +16,8 @@ const USAGE = `사용법:
   orch board set <항목> <상태>
   orch board step <항목> <번호> done|undo
   orch board step <항목> <번호> text "<글>" [--on "<PR> <pr|merge|deploy|release>"]
+  orch board step <항목> <번호> auto|ask|plain
+  orch board step <항목> <번호> wait ["<조건>"]
   orch board add-step <항목> "<글>" [--on "<PR> <pr|merge|deploy|release>"]
   orch board show <항목>
   공통: [--repo <폴더>] [--board <파일>] [--full]
@@ -51,7 +53,9 @@ function main(argv: string[]): number {
     if (action === 'text' && args.length === 5) command = ['step-edit', id, third, text]
     else if (['done', 'undo'].includes(action) && args.length === 4 && values.on === undefined) {
       command = ['step', id, third, '--exact', ...(action === 'undo' ? ['--undo'] : [])]
-    } else return usage()
+    } else if (['auto', 'ask', 'plain'].includes(action) && args.length === 4 && values.on === undefined) command = ['step-mark', id, third, action]
+    else if (action === 'wait' && (args.length === 4 || args.length === 5) && values.on === undefined) command = ['step-mark', id, third, action, ...(text === undefined ? [] : [text])]
+    else return usage()
   } else return usage()
   if (values.on !== undefined) command.push('--event', values.on)
   try { command.push('--file', boardPath(values.repo ?? process.cwd(), values.board)) }
