@@ -31,6 +31,18 @@ test('같은 틱의 Run 정리는 전체 소유 목록을 함께 쓰고 삭제 �
   assert.ok(orca.calls().filter((call) => call.argv.includes('worker-list')).length > reads)
 })
 
+test('전체 소유 조회 실패는 같은 틱에서 반복하지 않고 다음 틱에 다시 확인한다', async () => {
+  const file = join(tmp, 'failed-tick.json')
+  orca.setRules(orcaRules([], { run_a: [], run_b: [] }, { failRun: 'run_b' }))
+  await assert.rejects(workerSnapshot(file).all(), /Orca 조회 실패/)
+  const reads = orca.calls().length
+  await assert.rejects(workerSnapshot(file).all(), /Orca 조회 실패/)
+  assert.equal(orca.calls().length, reads)
+  orca.setRules(orcaRules([], { run_a: [], run_b: [] }))
+  assert.deepEqual(await workerSnapshot(join(tmp, 'next-tick.json')).all(), [])
+  assert.ok(orca.calls().length > reads)
+})
+
 let tmp: string
 let wt: string
 let orca: FakeBin

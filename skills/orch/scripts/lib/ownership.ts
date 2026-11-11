@@ -185,23 +185,36 @@ export function workerSnapshot(file?: string): {
   let runs: RunInfo[] = []
   let listed = false
   const known = new Map<string, WorkerRow[]>()
+  const save = (value: unknown) => {
+    if (!file) return
+    writeFileSync(`${file}.tmp`, JSON.stringify(value))
+    renameSync(`${file}.tmp`, file)
+  }
   const all = cached(async () => {
     if (file) {
+      let value: unknown
       try {
-        const value = JSON.parse(readFileSync(file, 'utf8'))
+        value = JSON.parse(readFileSync(file, 'utf8'))
+      } catch { /* 이번 틱의 다른 정리에서 아직 쓰지 않았다 */ }
+      if (isObject(value)) {
+        if (typeof value.error === 'string') throw new LookupError(value.error)
         if (Array.isArray(value.runs) && value.runs.every((r: unknown) => isObject(r) && typeof r.id === 'string') &&
           Array.isArray(value.rows) && value.rows.every(isObject) && typeof value.listed === 'boolean') {
           runs = value.runs
           listed = value.listed
           return value.rows as WorkerRow[]
         }
-      } catch { /* 이번 틱의 다른 정리에서 아직 쓰지 않았다 */ }
+      }
     }
-    const rows = await allWorkers((ids) => { runs = ids; listed = true }, known)
-    if (file) {
-      writeFileSync(`${file}.tmp`, JSON.stringify({ runs, rows, listed }))
-      renameSync(`${file}.tmp`, file)
+    let rows: WorkerRow[]
+    try {
+      rows = await allWorkers((ids) => { runs = ids; listed = true }, known)
+    } catch (e) {
+      // 다른 Run 이 같은 틱에 다시 실패한 전체 조회를 반복하지 않는다. 다음 틱은 새 파일로 재시도한다.
+      if (e instanceof LookupError) save({ error: e.message })
+      throw e
     }
+    save({ runs, rows, listed })
     return rows
   })
   return {
