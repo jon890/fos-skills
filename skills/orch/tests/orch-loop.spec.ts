@@ -264,11 +264,26 @@ test('첫 틱에 읽은 리뷰 완료 보고도 보드 동기화에 넘긴다', 
   board()
   write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{ id: 'review-pr-7', status: 'doing' }] }))
   write(orchFile('state', 'launched-workers', 'review.json'), JSON.stringify({ dispatch: 'review', worktree: repo, run: 'r', spec: '/missing/spec-review-pr-7.md' }))
-  orca({ messages: [{ id: 'done', type: 'worker_done', run_id: 'r', payload: { dispatchId: 'review' } }] })
+  orca({ messages: [{ id: 'done', type: 'worker_done', run_id: 'r', payload: { dispatchId: 'review', outcome: 'succeeded' } }] })
   once()
   const args = argsOf('board')[0]
   assert.deepEqual(JSON.parse(args[args.indexOf('--completed-reviews') + 1]), [7])
 })
+
+for (const report of [
+  { outcome: 'failed', payload: { dispatchId: 'review' } },
+  { payload: JSON.stringify({ dispatchId: 'review', outcome: 'failed' }) },
+  { payload: { dispatchId: 'review' } },
+]) {
+  test(`성공하지 않은 리뷰 완료 보고는 보드 완료로 넘기지 않는다: ${JSON.stringify(report)}`, () => {
+    board()
+    write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{ id: 'review-pr-7', status: 'doing' }] }))
+    write(orchFile('state', 'launched-workers', 'review.json'), JSON.stringify({ dispatch: 'review', worktree: repo, run: 'r', spec: '/missing/spec-review-pr-7.md' }))
+    orca({ messages: [{ id: 'done', type: 'worker_done', run_id: 'r', ...report }] })
+    once()
+    assert.equal(argsOf('board')[0].includes('--completed-reviews'), false)
+  })
+}
 
 function loopState(): Json | null {
   try {

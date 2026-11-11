@@ -6,7 +6,7 @@ import { scriptPath } from '../../lib/commands.ts'
 import { isFile } from '../../lib/fs.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
-import { context } from '../../lib/completion.ts'
+import { context, payload } from '../../lib/completion.ts'
 import { reviewPrOfDispatch } from '../../lib/review.ts'
 import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
@@ -27,7 +27,7 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
         const number = /^review-pr-(\d+)$/.exec(String(item.id))?.[1]
         return number && item.status !== 'done' ? [Number(number)] : []
       }))
-      const messages = [...ctx.completions.values()].flat()
+      const messages = [...ctx.completions.values()].flat().filter((message) => (message.outcome ?? payload(message).outcome) === 'succeeded')
       if (pending.size && messages.length) {
         const history = new Map(launchHistory(ctx.repo).map((row) => [row.dispatch, row]))
         const known = new Map<string, number | null>()
