@@ -921,6 +921,8 @@ function checkStaged(path: string, text: string, repo: string, out: string[], wa
   if (changes.length && !implementation.length) return
   for (const [rel, action] of implementation) {
     const allowed = entries.filter(([pattern]) => matches(rel, pattern))
+    const [generated] = overlayValues.lookup(repo, ['plan'], '생성 파일', overlayValues.targets(repo, [rel])[0])
+    if (allowed.length === 0 && generated && overlayValues.codes(generated).some((pattern) => matches(rel, pattern))) continue
     if (allowed.length === 0) out.push(`${path} — phase 범위 밖의 staged 파일: ${rel}`)
     else if (!allowed.some(([, kind]) => accepts(kind, action))) out.push(`${path} — staged 변경 종류가 목록과 다르다: ${rel} (${action})`)
   }
@@ -1207,6 +1209,8 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
   checkForbiddenGrepPaths(path, commands, entries, warnings)
   checkPythonTestNames(path, commands, entries, out)
   checkRemoteCommands(path, commands, warnings)
+  checkContractCommands(path, commands, cwds, entries, repo, out)
+  checkIntegrationFilters(path, commands, entries, repo, warnings)
 
   const runs = (part: string) => commandsOf(`\`\`\`bash\n${part}\n\`\`\``).some((c) => testCommand(c, entries, repo))
 
@@ -1273,6 +1277,72 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
   for (const command of runners) {
     if (repoTestRunnerArgs(unwrap(command)) !== null) continue
     if (command.some((arg) => (arg.startsWith('./') ? arg.slice(2) : arg).startsWith('scripts/'))) warnings.push(`${path} — 저장소 스크립트의 테스트 범위와 실패 종료 코드는 직접 확인한다: ${command.join(' ')}`)
+  }
+}
+
+// 경로와 명령의 대응만 오버레이에서 읽는다. 명령은 실행하지 않는다.
+function checkContractCommands(path: string, commands: Command[], cwds: string[], entries: Entry[], repo: string, out: string[]): void {
+  const sources = new Map<string, string[]>()
+  for (const [rel] of entries) {
+    const [value] = overlayValues.lookup(repo, ['plan'], '계약 검증 규칙', overlayValues.targets(repo, [rel])[0])
+    if (value) sources.set(value, [...(sources.get(value) ?? []), rel])
+  }
+  for (const [value, changed] of sources) {
+    const config = overlayValues.codes(value)[0]
+    if (isAbsolutePath(config) || config.split('/').includes('..')) throw new ValueError('계약 검증 규칙은 저장소 안 JSON 파일의 상대경로여야 한다')
+    const rules: unknown = JSON.parse(readTextFile(pjoin(repo, config)))
+    if (!Array.isArray(rules)) throw new ValueError(`${config}: 계약 검증 규칙은 배열이어야 한다`)
+    for (const rule of rules) {
+      const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === 'string' && pyStrip(s) !== '')
+      if (!isRecord(rule) || !strings(rule.files) || !strings(rule.commands)) throw new ValueError(`${config}: 규칙마다 files glob 목록과 commands 명령 목록이 필요하다`)
+      const patterns = rule.files
+      const affected = changed.filter((rel) => patterns.some((pattern) => matches(rel, pattern) || (isGlob(rel) && matches(pattern, rel))))
+      if (!affected.length) continue
+      const expected = rule.commands.map((command) => {
+        const parsed = commandsOf(`\`\`\`bash\n${command}\n\`\`\``)
+        if (parsed.length !== 1 || !parsed[0].length) throw new ValueError(`${config}: commands 의 값 하나에는 명령 하나를 적는다`)
+        return parsed[0]
+      })
+      const present = commands.some((command, i) => expected.some((wanted) => {
+        const actual = unwrap(command).slice()
+        // cd 로 옮겨 실행한 상대 스크립트도 루트 기준 명령과 대조한다.
+        if (actual[0]?.includes('/') && !isAbsolutePath(actual[0])) actual[0] = posixNormpath(posixJoin(cwds[i], actual[0]))
+        const target = unwrap(wanted).slice()
+        if (target[0]?.startsWith('./')) target[0] = target[0].slice(2)
+        return actual.length === target.length && actual.every((arg, j) => arg === target[j])
+      }))
+      if (!present) out.push(`${path} — 계약 파일 변경에 필요한 검증 명령이 없다: ${affected.join(', ')} (${rule.commands.join(' 또는 ')})`)
+    }
+  }
+}
+
+// 일반 Gradle test 의 필터가 통합 테스트를 골라도 태그 제외로 0건 실행될 수 있다.
+// 기존 파일의 표지만 읽는다. 아직 없는 테스트와 실제 태그 제외 설정은 작성자가 확인한다.
+function checkIntegrationFilters(path: string, commands: Command[], entries: Entry[], repo: string, warnings: string[]): void {
+  const filtered = commands.map(unwrap).filter((command) => ['gradle', 'gradlew'].includes(pathName(command[0] ?? '')) && command.some((arg) => /(?:^|:)test$/.test(arg)))
+  if (!filtered.length) return
+  const listed = capture(['git', '-C', repo, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+  const files = listed.code === 0 ? listed.stdout.split('\0') : entries.flatMap(([rel]) => isGlob(rel) ? globRel(repo, globPattern(rel)) : [rel])
+  for (const rel of new Set(files.filter((rel) => /\.(?:java|kt)$/.test(rel) && isFile(pjoin(repo, rel))))) {
+    const [value] = overlayValues.lookup(repo, ['plan'], '통합 테스트 표지', overlayValues.targets(repo, [rel])[0])
+    if (!value) continue
+    const source = readTextFile(pjoin(repo, rel)).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')
+    if (!overlayValues.codes(value).some((marker) => source.split('\n').some((line) => {
+      const trimmed = pyStrip(line)
+      return trimmed.startsWith(marker) && !/[\p{L}\p{N}_$]/u.test(trimmed.slice(marker.length, marker.length + 1))
+    }))) continue
+    const packageName = /^\s*package\s+([\w.]+)/m.exec(source)?.[1]
+    const name = pathStem(rel)
+    const fullName = packageName ? `${packageName}.${name}` : name
+    for (const command of filtered) {
+      const filters = command.flatMap((arg, i) => arg === '--tests' ? [command[i + 1] ?? ''] : arg.startsWith('--tests=') ? [arg.slice(8)] : [])
+      if (filters.some((filter) => {
+        const classFilter = filter.includes('.') ? filter.slice(0, filter.lastIndexOf('.')) : filter
+        return fnmatchcase(name, filter) || fnmatchcase(fullName, filter) || fnmatchcase(name, classFilter) || fnmatchcase(fullName, classFilter)
+      })) {
+        warnings.push(`${path} — 통합 테스트 표지가 있는 ${rel} 을 일반 test 필터로 실행하면 제외되어 0건일 수 있다. 통합 테스트 실행 명령을 확인한다: ${command.join(' ')}`)
+      }
+    }
   }
 }
 

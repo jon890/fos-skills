@@ -93,6 +93,30 @@ test('올바른 스펙과 위임한 결정은 통과한다', () => {
   assert.equal(check(feature(VALID.replace('| 작성자 |', '| 작성자(위임) |')), SPEC).code, 0)
 })
 
+test('사용자 날짜 뒤 괄호 설명은 스펙과 설계에서 받고 미확정 결정은 막는다', () => {
+  const annotated = VALID.replace('사용자 2026-11-02 |', '사용자 2026-11-02 (설계 리뷰 뒤) |')
+  assert.equal(check(feature(annotated), SPEC).code, 0)
+  const design = DESIGN.replace('없음: 기존 구조를 유지한다.', '| DECISION1 | 저장소 | 기존 DB | 사용자 2026-11-02 (리뷰 뒤) | 합의 |')
+  assert.equal(check(designRepo(VALID_REQ, design), SPEC, '--design', DESIGN_PATH).code, 0)
+  for (const decider of ['사용자 대기', '사용자 2026-11-02 설명', '사용자 2026-11-02 ()', '작성자(임의)']) {
+    assert.equal(check(feature(VALID.replace('사용자 2026-11-02', decider)), SPEC).code, 1, decider)
+  }
+  assert.equal(check(feature(annotated.replace('| 소유자만 |', '| 미정 |')), SPEC).code, 1)
+})
+
+test('계획 커밋 문서로 끝난 요구사항은 문서 경로로 연결하고 다른 요구사항은 phase 에 배정한다', () => {
+  const repo = feature()
+  repo.file('docs/adr/choice.md', '# 결정\n기존 구조를 유지한다.\n')
+  const data = plan({ requirements: ['R1', 'R2'], plan_commit_requirements: { R2: 'docs/adr/choice.md' } })
+  assert.equal(checkPlan(repo, data).code, 0)
+  for (const mapping of [null, ['R2'], { R3: 'docs/adr/choice.md' }, { R2: 'missing.md' }, { R2: '../outside.md' }, { R2: '' }]) {
+    assert.equal(checkPlan(repo, { ...data, plan_commit_requirements: mapping }).code, 1, JSON.stringify(mapping))
+  }
+  repo.file('docs/adr/choice.md', '')
+  assert.equal(checkPlan(repo, data).code, 1)
+  assert.equal(checkPlan(feature(), plan({ requirements: ['R1', 'R2'] })).code, 1)
+})
+
 test('결정이 없으면 이유가 한 줄 필요하다', () => {
   const head = VALID.split('## 결정\n')[0]
   assert.equal(check(feature(head + '## 결정\n없음: 기존 API 를 그대로 노출한다\n'), SPEC).code, 0)
@@ -269,6 +293,17 @@ test('worker 가 할 수 없는 실행 환경의 검증은 담당이 코디네�
     const text = VERIFICATION.replace('격리된 API·DB 테스트 환경 | worker', `${word} 환경 | worker`)
     assert.equal(checkVerification(verificationRepo(text), withVerification()).code, 1, word)
   }
+})
+
+test('가짜 Orca 와 문서 예시는 실제 실행 환경이 아니며 같은 칸의 실제 Orca 는 막는다', () => {
+  for (const environment of ['가짜 orca CLI 를 PATH 에 둔 로컬 테스트', 'fake Orca CLI', 'Orca 스텁', 'mock orca']) {
+    const text = VERIFICATION.replaceAll('격리된 API·DB 테스트 환경', environment)
+    assert.equal(checkVerification(verificationRepo(text), withVerification()).code, 0, environment)
+  }
+  const mixed = VERIFICATION.replace('격리된 API·DB 테스트 환경', '가짜 orca CLI 와 실제 Orca 환경')
+  assert.equal(checkVerification(verificationRepo(mixed), withVerification()).code, 1)
+  const prose = VERIFICATION + '\n실제 Orca 예시\n```markdown\n| R1 | 준비 | 실행 | 성공 | 실제 Orca | worker | 없음 | PR 전 |\n```\n'
+  assert.equal(checkVerification(verificationRepo(prose), withVerification()).code, 0)
 })
 
 test('실행 담당은 worker 또는 코디네이터이고 담당 칸이 없는 옛 표도 받는다', () => {
