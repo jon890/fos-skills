@@ -35,13 +35,16 @@ export function worktreePaths(repo: string): Map<string, string> {
 }
 
 // strict 는 doctor 가 쓰던 계약이다. 객체가 아닌 응답은 실패하고 객체가 아닌 행은 건너뛴다.
+// 시간 초과로 실패한 페이지는 같은 인자로 한 번만 더 읽는다. 다른 실패는 바로 반환한다.
 // worker-list 의 행을 모든 페이지에 걸쳐 읽는다. 첫 페이지만 읽으면 다른 worker 를 놓친다(lib/orca.ts 머리 주석).
 export function workerRows(run: string | null, opts?: RunOptions, options: { strict?: boolean } = {}): { ok: true; rows: Json[] } | { ok: false; error: string } {
   const rows: Json[] = []
   const seen = new Set<string>()
   let cursor = ''
   for (;;) {
-    const got = orcaJson<unknown>(['orchestration', 'worker-list', ...(run ? ['--run', run] : []), '--limit', '100', ...(cursor ? ['--cursor', cursor] : [])], opts)
+    const args = ['orchestration', 'worker-list', ...(run ? ['--run', run] : []), '--limit', '100', ...(cursor ? ['--cursor', cursor] : [])]
+    let got = orcaJson<unknown>(args, opts)
+    if (!got.ok && got.timedOut) got = orcaJson<unknown>(args, opts)
     if (!got.ok) return got
     if (options.strict && !isObject(got.data)) return { ok: false, error: 'worker-list 의 응답이 객체가 아니다' }
     const result = objectOr(got.data)

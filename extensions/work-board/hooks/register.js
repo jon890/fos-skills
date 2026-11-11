@@ -20,6 +20,8 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
 //   3-1. 머지 줄: 같은 플러그인의 bin/merge-queue.ts 출력. orch 설정, 상태 파일과 루프 로그에서 PR 마다 머지 가능 여부와 대기 이유를 읽고
 //        gh 는 부르지 않는다. 열린 PR 상자의 PR 아래 한 줄로 붙인다. 큐를 쓰지 않는 저장소에서는 붙이지 않는다.
+//   3-2. 승인 대기: orch 가 쓰는 승인 파일(bin/approvals.ts where 가 경로를 낸다)의 열린 대기. 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그리고,
+//        사람이 「승인」, 「고쳐 달라」 를 누르면 bin/approvals.ts press 를 불러 기록과 신호를 쓴다. 창이 승인 기록을 쓰는 곳은 pressApproval 하나다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
 // 파일과 로컬 명령은 계속 읽는다. 네트워크 조회는 network-poll.js 가 창 표시와 최근 입력, 조회별 주기로 제한한다.
 
@@ -89,6 +91,14 @@ const UPDATE_TIMEOUT_MS = 180000
 const INBOX_ROWS = 9
 const QUESTION_HISTORY_LIMIT = 100 // Orca check --all/--peek 의 고정 상한
 const REPLY_LIMIT = 200
+const SELF_LIVE_MS = 60000 // 승인 대기가 있을 때 worker 터미널인지 다시 읽는 주기
+const SELF_TIMEOUT_MS = 40000
+// press 의 최악 시간: worker 조회 33초 + 잠금 5초 + 신호 보내기 30초(lib/approvals.ts) + 되돌리기 5초에 여유를 더한 값이다.
+// 이보다 짧으면 기록을 쓴 뒤 창이 자식을 끊어 기록만 남는다
+const PRESS_TIMEOUT_MS = 90000
+const REAL_ARM_MS = 10000 // real 대기의 「승인」 을 처음 누른 뒤 다시 눌러야 하는 기한
+const APPROVAL_OLD_MS = 24 * 60 * 60 * 1000
+const APPROVAL_KINDS = { post: '글 등록', spec: '스펙 확인', step: '단계 진행 허락', real: 'real 쓰기', command: '직접 실행' }
 const SECTIONS = [
   { status: 'goal', label: '목표', color: 'magenta', mark: '★' },
   { status: 'decide', label: '결정 필요', color: 'red', mark: '◆' },
@@ -129,6 +139,19 @@ let checkMode = false
 const dismissUndo = []
 // 넘김과 되돌리기마다 올린다. 그 전에 시작한 알림 읽기의 결과는 넘긴 항목을 되살리므로 버린다
 let inboxGeneration = 0
+
+// 승인 대기. open 은 승인 파일의 열린 대기(parseApprovals)이고 path 는 bin/approvals.ts where 가 낸 파일 경로다.
+// error 는 파일이 있는데 읽지 못했을 때만 둔다. where 를 못 부르면(옛 설치본 등) 상자를 그리지 않는다
+let approvals = { open: [], error: '', path: '' }
+let approvalSelf = { known: false, terminal: null, worker: null } // bin/approvals.ts self 의 결과. 한 번 worker 로 본 터미널은 계속 worker 로 둔다
+let approvalSelfBusy = false
+let approvalOrigin = 'none' // 마지막 ui.press, ui.input 이벤트의 origin.kind. 나중에 확인할 기록이고 버튼을 막는 조건이 아니다
+let armed = null // real 대기의 「승인」 을 처음 누른 { key, until }
+let reviseKey = '' // 「고쳐 달라」 글칸이 열린 대기의 버튼 키
+let approvalsRoot = '' // 승인 경로를 받은 주 checkout. 세션이 다른 저장소로 옮겨 가면 경로를 다시 받는다
+let approvalSelfFull = false // released 까지 읽은 전체 조회가 한 번 성공했는지. 그 전에는 --live 로 넘어가지 않는다
+let whereSkips = 0 // where 가 실패한 동안 5초마다 다시 부르지 않고 열두 번에 한 번만 부른다
+const pressing = new Set()
 
 // 플러그인 버전. install 은 설치본(installOf), latest 는 main 의 { commit, version } 이나 { error }, 아직 읽지 않았으면 undefined
 let plugin = { name: '', repository: '', install: null, error: '', latest: undefined }
@@ -1067,7 +1090,7 @@ export function updateVisible(install, latest) {
 }
 
 // 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 을 붙인다
-export function statusLine(items, state, inboxState = null, freshness = null) {
+export function statusLine(items, state, inboxState = null, freshness = null, approvalCount = 0) {
   const count = (status) => items.filter((item) => item.status === status).length
   const pausedLabel = (at) => {
     if (!freshness?.paused) return ''
@@ -1077,6 +1100,7 @@ export function statusLine(items, state, inboxState = null, freshness = null) {
   const parts = []
   const alerts = inboxSummary(inboxState).newCount
   if (alerts > 0) parts.push('알림 ' + alerts + pausedLabel(inboxState?.fetchedAt))
+  if (approvalCount > 0) parts.push('승인 ' + approvalCount)
   const decide = decideCount(items) + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
   if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
   else if (decide > 0 || state.questionsLimited) parts.push('결정 필요 ' + decide + (state.questionsLimited ? '(최근 질문 기준)' : ''))
@@ -1088,6 +1112,66 @@ export function statusLine(items, state, inboxState = null, freshness = null) {
   if (count('doing') > 0) parts.push('진행 ' + count('doing'))
   if (count('wait') > 0) parts.push('대기 ' + count('wait'))
   return parts.length === 0 ? '' : parts.join(' · ') + '   /board'
+}
+
+// ---- 승인 대기(순수 함수) ----
+
+// 승인 파일 글에서 열린 대기를 버전 순으로 낸다. 빈 글은 대기 없음, JSON 이 아니거나 꼴이 틀리면 { error } 다
+export function parseApprovals(source) {
+  if (!String(source || '').trim()) return { open: [] }
+  let data
+  try {
+    data = JSON.parse(source)
+  } catch (failure) {
+    return { error: String(failure && failure.message ? failure.message : failure) }
+  }
+  if (!data || !Array.isArray(data.entries)) return { error: '승인 파일 꼴이 틀려요' }
+  const open = data.entries
+    .filter((e) => e && e.state === 'open' && typeof e.id === 'string' && Number.isInteger(e.version) && typeof e.title === 'string')
+    .sort((a, b) => a.version - b.version)
+  return { open }
+}
+
+// 기다린 시간 글(분, 시간, 일)과 24시간을 넘겼는지
+export function approvalWait(createdAt, now) {
+  const at = Date.parse(createdAt || '')
+  const elapsed = at ? Math.max(0, now - at) : 0
+  return { text: spanText(elapsed / 60000), old: elapsed > APPROVAL_OLD_MS }
+}
+
+// 버튼 키. 보드를 다시 읽어 버전이 바뀌면 키도 바뀐다
+export function approvalKey(entry, action) {
+  return 'approval:' + entry.id + ':' + entry.version + ':' + action
+}
+
+// 이 창이 그 대기에 무엇을 그릴지: press(승인, 고쳐 달라), fill(명령 채우기), text(명령 글만), guide(누를 수 없다는 안내),
+// checking(이 창이 누를 수 있는 곳인지 읽는 중). self 는 bin/approvals.ts self 의 결과다. worker 이거나 worker 인지 모르면 guide 다. 숨기는 쪽이 안전하다
+export function approvalControls(entry, self) {
+  if (!self || !self.known) return 'checking'
+  if (self.worker !== false) return 'guide'
+  if (entry.kind === 'command') return self && self.terminal && self.terminal === entry.terminal ? 'fill' : 'text'
+  return 'press'
+}
+
+// 창 전용 스크립트 press 를 부르는 인자. 글은 --note=<글> 한 낱말이라 - 로 시작해도 옵션으로 읽히지 않는다
+export function approvalArgv(pluginRoot, repo, entry, action, note, origin) {
+  return ['node', '--disable-warning=ExperimentalWarning', pluginRoot + '/extensions/work-board/bin/approvals.ts',
+    'press', entry.id, String(entry.version), action, '--origin', origin || 'none', '--repo', repo, ...(note ? ['--note=' + note] : [])]
+}
+
+// self 를 부르는 인자. 전체 조회(released 포함)가 한 번 성공하기 전에는 live 를 줘도 --live 를 붙이지 않는다.
+// 그 전에 --live 로 넘어가면 끝난 worker 터미널이 worker 가 아닌 것으로 읽힌다
+export function approvalSelfArgs(live, fullDone) {
+  return ['self', ...(live && fullDone ? ['--live'] : [])]
+}
+
+// real 대기의 「승인」 두 번 누르기. 처음 누른 키를 REAL_ARM_MS 안에 다시 눌러야 armed 다
+export function armedState(armed, key, now) {
+  return armed && armed.key === key && now < armed.until ? 'armed' : 'idle'
+}
+
+export function pressToast(reason) {
+  return reason === '내용이 바뀌었어요' ? '내용이 바뀌었어요. 새 미리보기를 확인하세요' : reason
 }
 
 // ---- 읽기 ----
@@ -1109,7 +1193,7 @@ function github($, query) {
 let sentStatus
 function refreshStatus($) {
   const items = board && Array.isArray(board.items) ? board.items : []
-  const text = statusLine(items, live, inbox, { paused: networkPaused, prsAt: prsReadAt })
+  const text = statusLine(items, live, inbox, { paused: networkPaused, prsAt: prsReadAt }, approvals.open.length)
   if (sentStatus !== text) {
     sentStatus = text
     $.ui.status(text)
@@ -1437,6 +1521,118 @@ export async function updatePlugin($, install = plugin.install) {
   await loadLatest($)
 }
 
+// 승인 파일을 읽는다. 경로는 처음 한 번 bin/approvals.ts where 로 받는다(orch 루트 규칙을 창이 계산하지 않는다).
+// 못 받으면 상자를 그리지 않는다. force 는 /board 를 열 때 경로를 다시 받는다
+async function loadApprovals($, force = false) {
+  const root = await boardRoot($)
+  if (root !== approvalsRoot) {
+    approvalsRoot = root
+    approvals = { open: [], error: '', path: '' }
+    reviseKey = ''
+    whereSkips = 0
+    force = true
+  }
+  if (root && !approvals.path && !force) whereSkips++
+  if (root && (force || (!approvals.path && whereSkips % 12 === 1))) {
+    try {
+      const where = (await run($, ['node', '--disable-warning=ExperimentalWarning',
+        $.plugin.root + '/extensions/work-board/bin/approvals.ts', 'where', '--repo', root])).trim()
+      if (where.startsWith('/')) approvals.path = where
+    } catch {
+      /* 옛 설치본이나 orch 가 없으면 승인 대기를 보이지 않는다 */
+    }
+  }
+  if (!approvals.path) return
+  if (await $.fs.exists(approvals.path)) {
+    const parsed = parseApprovals(await $.fs.read(approvals.path))
+    approvals = { ...approvals, open: parsed.open || [], error: parsed.error || '' }
+  } else {
+    approvals = { ...approvals, open: [], error: '' }
+  }
+  if (reviseKey && !approvals.open.some((e) => approvalKey(e, 'revise') === reviseKey)) reviseKey = ''
+  // worker 터미널인지는 승인 대기가 있을 때만 읽는다. 조회가 무겁다
+  if (approvals.open.length > 0 && !approvalSelf.known) void loadApprovalSelf($, false)
+  refreshStatus($)
+}
+
+// 이 창의 터미널과 worker 여부를 읽는다. 한 번 worker 로 본 터미널은 그 세션 동안 worker 로 둔다. 조회가 실패하면 worker 를 모른다(null)고 두고 버튼을 숨긴다
+async function loadApprovalSelf($, live) {
+  if (approvalSelfBusy) return
+  approvalSelfBusy = true
+  // 전체 조회(released 포함)가 한 번 성공하기 전에 --live 로 넘어가면 끝난 worker 터미널이 worker 가 아닌 것으로 읽힌다
+  const useLive = live && approvalSelfFull
+  try {
+    const value = JSON.parse(await run($, ['node', '--disable-warning=ExperimentalWarning',
+      $.plugin.root + '/extensions/work-board/bin/approvals.ts', ...approvalSelfArgs(live, approvalSelfFull)], SELF_TIMEOUT_MS))
+    if (!useLive && typeof value.worker === 'boolean') approvalSelfFull = true
+    const worker = approvalSelf.worker === true || value.worker === true ? true : value.worker === false ? false : null
+    approvalSelf = { known: true, terminal: typeof value.terminal === 'string' ? value.terminal : null, worker }
+  } catch {
+    approvalSelf = { ...approvalSelf, known: true, worker: approvalSelf.worker === true ? true : null }
+  } finally {
+    approvalSelfBusy = false
+  }
+  $.ui.invalidate('ui.render')
+}
+
+// 터미널 링크(file://)가 로컬 파일을 여는지는 터미널마다 달라 버튼으로 연다
+async function openPreview($, path) {
+  try {
+    const { exitCode, stderr } = await $.process.run(['sh', '-c', 'open "$1" 2>/dev/null || xdg-open "$1"', 'sh', path], { timeoutMs: COMMAND_TIMEOUT_MS })
+    if (exitCode !== 0) $.ui.toast('미리보기를 열지 못했어요: ' + (String(stderr || '').trim().split('\n')[0] || '종료 코드 ' + exitCode))
+  } catch (failure) {
+    $.ui.toast('미리보기를 열지 못했어요: ' + String(failure.message || failure))
+  }
+}
+
+// 창이 승인 기록을 쓰는 유일한 자리다. 사람이 누른 버튼의 처리가 부른다. 스크립트가 지금 버전인지, 열려 있는지, worker 인지를 다시 확인한다.
+// 성공하면 그 대기를 상자에서 바로 빼고, 실패하면 이유를 toast 로 보이고 상자는 그대로 둔다
+async function pressApproval($, entry, action, note, origin) {
+  const key = approvalKey(entry, action)
+  if (pressing.has(key)) return
+  pressing.add(key)
+  // press 는 worker 터미널인지 다시 읽느라 몇 초 걸린다. 누른 자리에서 바로 보내는 중임을 보인다
+  const what = action === 'approve' ? '승인' : '고쳐 달라'
+  $.ui.toast(what + (action === 'approve' ? '을' : '를') + ' 보내는 중이에요: ' + entry.title)
+  $.ui.invalidate('ui.render')
+  try {
+    const root = (await boardRoot($)) || (await $.session.cwd())
+    await run($, approvalArgv($.plugin.root, root, entry, action, note, origin), PRESS_TIMEOUT_MS)
+    approvals = { ...approvals, open: approvals.open.filter((e) => e !== entry) }
+    $.ui.toast(what + (action === 'approve' ? '을' : '를') + ' 보냈어요: ' + entry.title)
+  } catch (failure) {
+    $.ui.toast(pressToast(String(failure.message || failure)))
+  } finally {
+    pressing.delete(key)
+    $.ui.invalidate('ui.render')
+    armed = null
+    // 누른 대기의 글칸만 닫는다. 다른 대기의 글칸에 적던 글을 지우지 않는다
+    if (reviseKey === approvalKey(entry, 'revise')) reviseKey = ''
+  }
+  await loadApprovals($)
+}
+
+// real 대기는 처음 누르면 기한만 걸고, 기한 안에 다시 눌러야 신호가 간다
+async function approveApproval($, entry, event) {
+  const key = approvalKey(entry, 'approve')
+  now = await $.clock.now()
+  if (entry.kind === 'real' && armedState(armed, key, now) !== 'armed') {
+    armed = { key, until: now + REAL_ARM_MS }
+    $.ui.toast('real 에 씁니다. 10초 안에 승인을 한 번 더 누르세요: ' + entry.title)
+    $.ui.invalidate('ui.render')
+    try {
+      $.clock.after(REAL_ARM_MS + 200, async () => {
+        now = await $.clock.now()
+        $.ui.invalidate('ui.render')
+      })
+    } catch {
+      /* 다음 5초 읽기가 처음 상태로 돌린다 */
+    }
+    return
+  }
+  await pressApproval($, entry, 'approve', '', (event && event.origin && event.origin.kind) || approvalOrigin)
+}
+
 function ago(at) {
   const time = typeof at === 'number' ? at : Date.parse(at || '')
   if (!time) return '-'
@@ -1505,6 +1701,14 @@ async function recordInput($, e, next) {
   return next(e)
 }
 
+// ui.press, ui.input 이벤트의 출처를 남긴다. 승인 기록에 확인용으로 실을 뿐 버튼을 막지 않는다.
+// 이 두 이벤트에는 origin 필드가 없다(2026-11-10 실측: 사용자가 누른 기록이 모두 none 이었다). 대신 훅 호출을 일으킨 쪽 next.origin.plugin 을 남긴다.
+// 사람이 누른 버튼은 엔진의 호출이라 engine 이다. 이 훅은 onPress, onSubmit 보다 먼저 돌아 그 처리가 이 값을 읽는다
+async function recordOrigin($, e, next) {
+  approvalOrigin = (e && e.origin && e.origin.kind) || (next && next.origin && next.origin.plugin) || 'none'
+  return recordInput($, e, next)
+}
+
 function onPromptSubmit($, e, next) {
   return ['composer', 'bridge'].includes(e.origin?.kind) ? recordInput($, e, next) : next(e)
 }
@@ -1520,8 +1724,11 @@ function onPaneFocus($, e, next) {
 export function register(on) {
   on('session.start', async ($, e, next) => {
     await loadFile($)
+    await loadApprovals($, true)
     networkPoll.input(await $.clock.now())
     $.clock.every(FILE_MS, () => loadFile($))
+    $.clock.every(FILE_MS, () => loadApprovals($))
+    $.clock.every(SELF_LIVE_MS, () => { if (approvals.open.length > 0 && approvalSelf.known) return loadApprovalSelf($, true) })
     $.clock.every(FILE_MS, () => pollNetwork($))
     $.clock.every(LIVE_MS, () => loadLive($))
     loadLive($)
@@ -1534,6 +1741,7 @@ export function register(on) {
     dismissMode = false
     checkMode = false
     await loadFile($)
+    await loadApprovals($, true)
     networkPoll.input(await $.clock.now())
     loadLive($)
     void pollNetwork($, true)
@@ -1548,14 +1756,14 @@ export function register(on) {
   on('prompt.change', onPromptChange)
   on('prompt.submit', onPromptSubmit)
   on('prompt.edit', recordInput)
-  on('ui.press', recordInput)
-  on('ui.input', recordInput)
+  on('ui.press', recordOrigin)
+  on('ui.input', recordOrigin)
   on('ui.select', recordInput)
   on('ui.focus', onPaneFocus)
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
-    const { Box, Text, Button, Link } = $.ui.resolve(e)
+    const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
     // 머리말(「두레이」나 「업무」, 「PR」)과 번호를 대괄호로 감싸 제목과 구분하고, 밑줄 친 링크와 색으로도 가린다. 주소가 없으면 글자만 그린다
     const TAG_COLORS = { PR: 'magenta' }
     const tagged = (key, tag, href, label) => {
@@ -1740,6 +1948,100 @@ export function register(on) {
         ...asked.map(questionView),
         ...decideRows.map((item) => itemView(item, SECTIONS[1])),
       ])]
+
+    // 승인 대기: 모든 Run 이 올린 열린 대기. 누를 수 있는 창에만 「승인」, 「고쳐 달라」, 「명령 채우기」 를 그린다.
+    // 판정(지금 버전인지, 열려 있는지, worker 인지)은 press 스크립트가 다시 하고, 창의 판정은 버튼을 그릴지 정하는 데만 쓴다
+    const approvalRow = (entry) => {
+      const wait = approvalWait(entry.createdAt, now)
+      const controls = approvalControls(entry, approvalSelf)
+      const approveKey = approvalKey(entry, 'approve')
+      const reviseKeyOf = approvalKey(entry, 'revise')
+      const armedNow = armedState(armed, approveKey, now) === 'armed'
+      const sending = pressing.has(approveKey) ? '승인' : pressing.has(reviseKeyOf) ? '고쳐 달라' : ''
+      const real = entry.kind === 'real' && entry.real ? entry.real : null
+      const stamp = clockOf(entry.createdAt)
+      return Box({
+        key: 'approval-' + entry.id,
+        flexDirection: 'column',
+        children: [
+          Box({
+            key: 'head',
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            columnGap: 1,
+            children: [
+              Text({ key: 'mark', color: entry.kind === 'real' ? 'red' : 'yellow', children: ['●'] }),
+              Text({ key: 'title', bold: true, wrap: 'wrap', children: [entry.title] }),
+              Text({ key: 'kind', color: entry.kind === 'real' ? 'red' : undefined, dimColor: entry.kind !== 'real', children: ['[' + (APPROVAL_KINDS[entry.kind] || entry.kind) + ']'] }),
+            ],
+          }),
+          indent('meta', 2, Box({
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            children: [
+              Text({ key: 'at', dimColor: true, children: [(stamp ? stamp + ' 올림  ·  ' : '') + '기다린 '] }),
+              Text({ key: 'wait', color: wait.old ? 'yellow' : undefined, dimColor: !wait.old, children: [wait.text] }),
+              ...(entry.item ? [Text({ key: 'item', dimColor: true, children: ['  ·  ' + entry.item + (entry.step ? ' ' + entry.step + '단계' : '')] })] : []),
+            ],
+          })),
+          ...(entry.then ? [indent('then', 2, dim('then', '승인하면: ' + entry.then))] : []),
+          ...(real ? [
+            indent('real-target', 2, Text({ key: 'real-target', color: 'red', wrap: 'wrap', children: ['대상 환경: ' + real.target] })),
+            indent('real-change', 2, Text({ key: 'real-change', color: 'red', wrap: 'wrap', children: ['바꿀 것: ' + real.change] })),
+            indent('real-rollback', 2, Text({ key: 'real-rollback', color: 'red', wrap: 'wrap', children: ['되돌리는 법: ' + real.rollback] })),
+          ] : []),
+          ...(entry.command ? [indent('command', 2, Text({ key: 'command', wrap: 'wrap', children: ['! ' + entry.command] }))] : []),
+          ...(entry.preview ? [indent('preview', 2, Box({
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            columnGap: 1,
+            children: [
+              Button({ key: 'approval:' + entry.id + ':' + entry.version + ':open', label: '미리보기 열기', plain: true,
+                onPress: () => { void openPreview($, entry.preview.path) } }),
+              Text({ key: 'path', dimColor: true, wrap: 'wrap', children: [entry.preview.path] }),
+            ],
+          }))] : []),
+          indent('controls', 2, controls === 'press' && sending
+            ? Text({ key: 'sending', color: 'yellow', bold: true, wrap: 'wrap', children: [sending + ' 보내는 중이에요…'] })
+            : controls === 'press'
+            ? Box({
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              columnGap: 4,
+              children: [
+                Button({ key: approveKey, label: armedNow ? '⚠ 한 번 더 누르세요' : '승인', variant: 'primary',
+                  onPress: (event) => { void approveApproval($, entry, event) } }),
+                Button({ key: reviseKeyOf, label: reviseKey === reviseKeyOf ? '고쳐 달라 그만' : '고쳐 달라',
+                  onPress: () => { reviseKey = reviseKey === reviseKeyOf ? '' : reviseKeyOf; $.ui.invalidate('ui.render') } }),
+                ...(armedNow ? [Text({ key: 'armed', color: 'red', bold: true, wrap: 'wrap', children: ['⚠ real 에 씁니다. 10초 안에 「승인」 을 한 번 더 누르세요'] })] : []),
+              ],
+            })
+            : controls === 'fill'
+              ? Button({ key: 'approval:' + entry.id + ':' + entry.version + ':fill', label: '명령 채우기',
+                onPress: () => {
+                  void $.prompt.fill({ text: '! ' + entry.command })
+                  $.ui.toast('입력란에 명령을 채웠어요. Enter 를 누르면 실행해요')
+                } })
+              : controls === 'text'
+                ? dim('text', '명령을 올린 코디네이터 창에서 눌러요')
+                : dim('guide', controls === 'checking' ? '누를 수 있는 창인지 확인하는 중이에요' : '코디네이터 창이나 다른 창에서 누르세요')),
+          ...(controls === 'press' && reviseKey === reviseKeyOf ? [indent('note', 2, Input({
+            key: 'approval-note:' + entry.id + ':' + entry.version,
+            label: '고칠 내용',
+            placeholder: '무엇을 고칠지 적으세요',
+            submitLabel: '보내기',
+            rows: 3,
+            autoFocus: true,
+            // 빈 글은 아무것도 부르지 않고 글칸을 남긴다
+            onSubmit: (value, event) => { if (value.trim()) void pressApproval($, entry, 'revise', value, (event && event.origin && event.origin.kind) || approvalOrigin) },
+          }))] : []),
+        ],
+      })
+    }
+    const approvalView = approvals.open.length === 0 && !approvals.error ? [] : [box('approvals', 'yellow', '승인 대기  ' + approvals.open.length, [
+      ...(approvals.error ? [dim('ae', '승인 대기를 읽지 못했어요: ' + approvals.error)] : []),
+      ...approvals.open.map(approvalRow),
+    ])]
 
     // 업무 알림: inbox 설정이 있을 때만 그린다. 새 항목 먼저, 앞 INBOX_ROWS 개에 숫자 단축키를 붙인다
     const alerts = inboxSummary(inbox)
@@ -1994,6 +2296,7 @@ export function register(on) {
         ...(board && board.error ? [Text({ color: 'red', wrap: 'wrap', children: ['board.json 을 읽지 못했어요: ' + board.error] })] : []),
         ...(nothing ? [dim('none', '보여 줄 작업이 없어요. orca run 이나 열린 PR, ' + BOARD_PATHS[0] + ' 중 하나가 있어야 해요.')] : []),
         ...manualView(SECTIONS[0]),
+        ...approvalView,
         ...decideView,
         ...inboxView,
         ...workerView,
