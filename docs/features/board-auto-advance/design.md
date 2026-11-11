@@ -45,7 +45,7 @@ flowchart TD
 | REQ3 | 띄우기 직전 확인은 글 규칙이 아니라 명령 `orch board auto-check <항목>` 이 한다. 판정은 `core/auto-advance.ts` 의 `judgeAdvance` 가 하고, 보드와 파일, worker 목록 읽기는 `lib/auto-advance.ts` 가 한다 | A |
 | REQ4 | 루프 틱에 새 단계 `loop/steps/step-ready.ts` 를 움직임 확인 바로 뒤에 둔다. 판정은 `core/step-ready.ts`, 알림 기록은 `state/step-ready.json` 이다 | B |
 | REQ5 | 멈춘 단계 판정(`core/movement.ts` 의 `stalledStages`)이 lib 이 미리 읽은 표시와 띄운 기록을 받는다. `[wait]` 와 `[ask]` 는 건너뛴다. `[auto]` 는 띄운 기록(`state/step-launches.jsonl`)이 있을 때만 보되, 표시 없는 줄의 상태·필드 조건이 아니라 스펙이 정한 「살아 있는 worker 도 열린 PR 도 없음」 으로 본다 | B |
-| REQ6 | 시각 wait 는 보드 동기화(`board/board-sync.ts`)가 줄 끝 사건 꼬리표를 끝내는 자리 옆에서 끝낸다. 시각 읽기는 `step-marks.js` 의 `waitTimeMs` 가 맡는다 | B |
+| REQ6 | 시각 wait 는 보드 동기화(`board/board-sync.ts`)가 줄 끝 사건 꼬리표를 끝내는 자리 옆에서 끝낸다. 시각 조건 읽기는 `core/step-ready.ts` 의 `waitTimeMs` 가 맡는다 | B |
 | REQ7 | 코디네이터 절차는 `references/replying.md` 의 새 절 「다음 단계 이어 가기」 가 소유하고 `waiting.md` 는 가리키기만 한다. PR A 는 머지와 배포를 보고 이어 가는 길을, PR B 는 `STEP-READY` 를 받는 길을 적는다 | A, B |
 | REQ8 | 같은 절에 `다음 단계 자동 진행: <무엇을>, <agent·모델>, <묻지 않은 이유(근거)>` 꼴을 적는다. `auto-check` 의 `AUTO-OK` 줄이 근거 글을 돌려줘 그대로 옮긴다 | A |
 | REQ9 | 「한 번만」 은 띄울 때 남기는 기록(`state/step-launches.jsonl`)을 `auto-check` 가 읽어 막는다. 사용 한도는 루프가 한도 알림 시각을 머신 폴더에 남기고, `auto-check` 가 30분 안이면 거절하며, 루프가 30분 뒤 한 번 더 알린다 | A(한 번만), B(한도) |
@@ -63,9 +63,10 @@ PR A 와 B 는 아래 「PR 나누기와 순서」 의 이름이다.
 
 - `parseStepMark(text)`: 단계 줄이면 `{ number, mark, condition, body }` 를, 아니면 `null` 을 돌려준다. `mark` 는 `'auto'`, `'ask'`, `'wait'`, `null` 중 하나다. `[Auto]`, `[maybe]`, `[auto: x]` 처럼 꼴이 다른 것은 `null` 이다.
 - `withStepMark(text, mark, condition)`: 표시만 바꾼 새 줄을 돌려준다. `mark` 가 `null` 이면 표시를 지운다. 보드 명령의 표시 전용 동작(보드 명령 스펙 REQ10)이 이 함수를 부른다.
-- `waitTimeMs(condition)`: `YYYY-MM-DD HH:MM` 이면 그 로컬 시각을 ms 로, 아니면 `null` 을 돌려준다. 없는 날짜(`2026-13-40`)도 `null` 이다. 쓰는 곳이 시각 wait 뿐이라 PR B 가 더한다.
 
 읽는 쪽과 쓰는 쪽이 같은 파일을 쓰므로 「붙인 표시를 루프가 못 읽는」 일이 생기지 않는다.
+
+표시에서 분리한 조건 문자열의 시각 해석은 `core/step-ready.ts` 의 `waitTimeMs(condition)` 가 맡는다. `YYYY-MM-DD HH:MM` 이면 머신 로컬 시각을 ms 로, 없는 날짜나 다른 글이면 `null` 을 돌려준다. 표시 구문을 다시 읽지 않는 순수 함수이며, 보드 동기화가 이를 호출한다.
 
 ### 판정은 core, 읽기는 lib, 틱은 steps
 
@@ -78,7 +79,7 @@ orch 의 층 규칙([ADR-028](../../adr/028-orch-core-layer.md))을 그대로 �
 | `lib/auto-advance.ts`(신규) | 보드와 근거 파일, worker 목록, 열린 PR 읽기. 첫 미완료 단계 고르기(`pendingMarkedStep`). `judgeAdvance` 에 넘길 값 모으기 | A |
 | `lib/step-launches.ts`(신규) | 띄운 기록 쓰기와 읽기 | A |
 | `board/auto-check.ts`(신규) | 명령 `orch board auto-check`. 인자 읽기와 한 줄 출력만 한다 | A |
-| `core/step-ready.ts`(신규) | 알릴 단계 고르기(`readySteps`), 알림 기록과 다시 알릴 때 정하기(`readyNotices`) | B |
+| `core/step-ready.ts`(신규) | 알림 기록과 다시 알릴 때 정하기(`readyNotices`), 조건 문자열의 로컬 시각 읽기(`waitTimeMs`) | B |
 | `loop/steps/step-ready.ts`(신규) | 틱에서 읽기, 기록, 알리기 | B |
 | `core/movement.ts`, `lib/movement.ts` | `stalledStages` 가 미리 읽은 표시를 받는다. 읽기는 `collectStages` 가 한다 | B |
 | `board/board-sync.ts` | 시각 wait 줄 끝내기 | B |
