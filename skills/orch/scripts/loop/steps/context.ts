@@ -129,6 +129,8 @@ export type StepContext = Context & {
   previous: Record<string, unknown>
   // 틱 안에서 한 번만 읽는 워크트리 목록과 Run 마다의 worker 행. CI 감시부터 최신화까지 함께 쓴다
   lookup: Lookup
+  // 질문 확인과 완료 보고가 함께 쓰는 이번 틱의 worker_done 목록.
+  completions: Map<string, Record<string, any>[]>
 }
 
 // Run 의 닫히지 않은 미답변 질문
@@ -167,7 +169,7 @@ export function stepContext(config: Context, n: number): StepContext {
   const before = loaded?.errors
   const previous = isObject(before) ? before : {}
   const runs = tickRuns(config)
-  return { ...config, tick: n, runs, primary: runs[0].run, loaded, previous, lookup: { runs, rows: new Map() } }
+  return { ...config, tick: n, runs, primary: runs[0].run, loaded, previous, lookup: { runs, rows: new Map() }, completions: new Map() }
 }
 
 export function initialState(): StepState {

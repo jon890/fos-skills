@@ -54,6 +54,7 @@ describe('머지 판정과 기본 정리', () => {
 
   test('이름이 워크트리와 달라도 브랜치 줄이 머지된 브랜치를 가리키는 지시서를 지운다', () => {
     const path = worktree('feat-a')
+    fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: `repo::${path}` } }]
     squashMerge('feat-a', path)
     const specs = join(fx.repo, '.orch/specs')
     mkdirSync(specs, { recursive: true })
@@ -376,13 +377,14 @@ describe('다른 Run 의 터미널', () => {
     const path = foreignTerminalAt('feat-o1')
     const out = runSweep(['--run', 'run_x', '--kill-holders', '--apply'])
     exists(path, out)
-    has(out, '다른 Run 의 worker 터미널 term_codex')
+    has(out, '이 Run 의 워크트리가 아니다')
     lacks(calls(), 'terminal close')
     assert.ok(branches().has('feat-o1'))
   })
 
   test('다른 곳의 다른 Run worker 는 이 경로를 막지 않는다', () => {
     const path = foreignTerminalAt('feat-o2')
+    fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', agentTerminalHandle: 'term_mine', resource: { worktreeId: `repo::${path}` } }]
     fx.allWorkers.push({ runId: 'run_x', dispatchId: 'ctx_a', agentTerminalHandle: 'term_mine' })
     fx.terminals = [
       { handle: 'term_mine', worktreePath: path },
@@ -449,6 +451,7 @@ describe('다른 Run 의 터미널', () => {
 
   test('Run 목록을 읽지 못하면 모르는 터미널을 남긴다', () => {
     const path = foreignTerminalAt('feat-o3')
+    fx.workers = [{ dispatchId: 'own', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: `repo::${path}` } }]
     fx.scope = 'bound'
     const out = runSweep(['--run', 'run_x', '--apply'])
     exists(path, out)

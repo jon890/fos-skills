@@ -1,9 +1,8 @@
 {
-  "stdout": "cleanup-sweep apply: <TMP>/repo (base main)\n정리 <TMP>/worktree (feat, PR MERGED)\nFINISH-MISSING #1 feat: 머지 뒤 마무리(finish-pr)가 돈 적이 없다. 배포 확인, 업무 완료, 보드 done 이 빠졌을 수 있다\n  removed <TMP>/worktree\n  Docker 정리 건너뜀: 컨테이너 목록을 읽지 못했다 (종료 코드 1)\n  원격 브랜치 이미 없음 feat\n",
+  "stdout": "cleanup-sweep apply: <TMP>/repo (base main)\n건너뜀 <TMP>/worktree: 이 Run 의 워크트리가 아니다\n",
   "stderr": "",
   "code": 0,
   "states": {
-    "state/gh/logs/2026-11-10.jsonl": "{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"repo view\",\"durationMs\":0,\"cacheHit\":false}\n{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"api graphql\",\"durationMs\":0,\"cacheHit\":false}\n{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"pr list\",\"durationMs\":0,\"cacheHit\":false}\n",
-    "state/merged-prs.json": "{}\n"
+    "state/gh/logs/2026-11-10.jsonl": "{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"repo view\",\"durationMs\":0,\"cacheHit\":false}\n{\"time\":\"2026-11-10T00:00:00.000Z\",\"command\":\"api graphql\",\"durationMs\":0,\"cacheHit\":false}\n"
   }
 }

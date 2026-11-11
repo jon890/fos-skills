@@ -4,6 +4,8 @@
 //
 // 이 Run 의 질문(question, escalation)을 읽고, 그다음 질문을 보낸 쪽마다 받은 답을 읽는다. 전역 inbox 는 읽지 않는다.
 // 전역 기록은 수십 MB 까지 커져 조회가 느려지고 출력 한도에 닿는다.
+// 루프가 이번 틱의 worker 행과 worker_done 을 주면 끝난 dispatch 의 질문은 답변 메일함을 읽기 전에 뺀다.
+// PR 이 열려 있어도 끝난 dispatch 에는 답을 전달할 수 없다. 후속 dispatch 의 질문은 별도 id 로 계속 확인한다.
 //
 // 조회 범위: Orca 는 check 의 기록과 --peek 을 100건까지 낸다. 그 한도에 닿으면 stderr 에 조회 범위를 알린다.
 // 그 Run 에서는 조회마다 나오는 안내라 stdout 으로 내지 않는다(watch-questions 가 Monitor 를 깨우지 않게).
@@ -61,7 +63,9 @@ function messages(data: Record<string, unknown>): Message[] {
 }
 
 // run 이 없으면 run-current 의 Run 이다. { run, pending } 을 낸다.
-export function snapshot(run?: string | null): { run: string; pending: Message[] } {
+export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[] }
+
+export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { run: string; pending: Message[] } {
   if (!run) {
     const current = (orca(['run-current']).run ?? {}) as Record<string, unknown>
     run = typeof current.id === 'string' ? current.id : ''
@@ -74,9 +78,16 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   }
   // 같은 id 는 뒤의 것(읽지 않은 질문)으로 덮되 처음 나온 자리를 지킨다
   const candidates = new Map<unknown, Message>()
+  const ended = new Set((lookup.rows?.ok ? lookup.rows.rows : [])
+    .filter((row) => SETTLED.has(String(row.dispatchStatus)))
+    .map((row) => String(row.dispatchId)))
+  for (const message of lookup.done ?? []) {
+    if (message.type === 'worker_done' && (message.run_id ?? message.runId) === run && dispatchOf(message)) ended.add(String(dispatchOf(message)))
+  }
   for (const m of [...history, ...unread]) {
     // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
-    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m)) candidates.set(m.id, m)
+    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m) &&
+      !ended.has(String(dispatchOf(m))) && !sharedClosedReason(run, String(m.id), true)) candidates.set(m.id, m)
   }
   // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다
   const handlesOf = (m: Message): string[] => {
@@ -116,8 +127,8 @@ function exists(file: string): boolean {
 // now 는 epoch 초다. 알릴 줄을 정하고 알린 시각을 state 에 적는다.
 // 처음 보는 미답변 질문은 QUESTION, 알린 뒤 remindAfter 초가 지나도 답이 없는 질문은 REMINDER 줄이다.
 // pending 은 알릴지와 무관한 미답변 질문 전부다. 상주 루프가 질문을 기다리는 worker 를 멈춘 것으로 보지 않는 데 쓴다.
-export function poll(run: string | null, state: string, now: number, remindAfter: number, repo: string): { run: string; notices: Notice[]; pending: Message[] } {
-  const found = snapshot(run)
+export function poll(run: string | null, state: string, now: number, remindAfter: number, repo: string, lookup: QuestionLookup = {}): { run: string; notices: Notice[]; pending: Message[] } {
+  const found = snapshot(run, lookup)
   const seen = (exists(state) ? JSON.parse(readFileSync(state, 'utf8')) : {}) as Seen
   const isMap = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value)
   const malformed = () => new Error(`알림 기록 형식이 잘못됐다: ${state}`)
@@ -189,7 +200,7 @@ export async function notifyQuestion(notice: Notice, repo: string, run: string |
 // 종료 근거는 머신 폴더 questions-closed/ 에 질문별로 공유한다. snapshot 이 다른 저장소에서도 미답변에서 뺀다.
 // 저장소의 옛 기록은 읽을 때 공유 기록으로 옮긴다. 미답변 목록에서 빠진 옛 기록은 지운다.
 
-export const SETTLED = new Set(['completed', 'failed', 'abandoned', 'canceled'])
+export const SETTLED = new Set(['completed', 'failed', 'abandoned', 'canceled', 'cancelled'])
 const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
 
 // 틱 안에서 Run 마다 한 번만 읽는 worker 행과 status 메시지

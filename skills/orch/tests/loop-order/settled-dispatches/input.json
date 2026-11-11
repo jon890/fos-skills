@@ -1,0 +1,110 @@
+{
+  "script": "loop/orch-loop.ts",
+  "args": [
+    "--repo",
+    "<TMP>/repo",
+    "--run",
+    "r1",
+    "--tick",
+    "--tick-number",
+    "1"
+  ],
+  "files": {
+    "repo/.orch/config.json": "{\"pipeline\":{\"authors\":[\"me\"]}}\n",
+    "repo/.orch/state/loop-runs/r1.json": "{\"run\":\"r1\",\"specs_dir\":null,\"registered_at\":\"2026-01-01T00:00:00Z\"}\n",
+    "repo/.orch/state/loop-runs/r2.json": "{\"run\":\"r2\",\"specs_dir\":null,\"registered_at\":\"2026-01-02T00:00:00Z\"}\n",
+    "repo/.orch/state/notice-digest/r1.json": "{\"sent_at\":\"2026-11-09T00:00:00.000Z\",\"items\":[{\"kind\":\"STAGE-STALLED\",\"text\":\"item-r1 30분 pr\",\"at\":\"2026-11-09T23:30:00.000Z\"}],\"streaks\":{}}\n",
+    "repo/.orch/state/notice-digest/r2.json": "{\"sent_at\":\"2026-11-09T00:00:00.000Z\",\"items\":[{\"kind\":\"STAGE-STALLED\",\"text\":\"item-r2 30분 pr\",\"at\":\"2026-11-09T23:30:00.000Z\"}],\"streaks\":{}}\n"
+  },
+  "rules": {
+    "orca": [
+      {
+        "args": [
+          "worker-list",
+          "r1"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[{\"taskId\":\"t-r1-0\",\"dispatchId\":\"d-r1-0\",\"dispatchStatus\":\"completed\",\"workerState\":\"succeeded\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1-0\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1-0\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}},{\"taskId\":\"t-r1-1\",\"dispatchId\":\"d-r1-1\",\"dispatchStatus\":\"completed\",\"workerState\":\"succeeded\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1-1\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1-1\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}},{\"taskId\":\"t-r1-2\",\"dispatchId\":\"d-r1-2\",\"dispatchStatus\":\"completed\",\"workerState\":\"succeeded\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1-2\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1-2\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}},{\"taskId\":\"t-r1-3\",\"dispatchId\":\"d-r1-3\",\"dispatchStatus\":\"completed\",\"workerState\":\"succeeded\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1-3\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1-3\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}},{\"taskId\":\"t-r1-4\",\"dispatchId\":\"d-r1-4\",\"dispatchStatus\":\"completed\",\"workerState\":\"succeeded\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1-4\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1-4\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}},{\"taskId\":\"t-r1-5\",\"dispatchId\":\"d-r1-5\",\"dispatchStatus\":\"completed\",\"workerState\":\"succeeded\",\"terminalState\":\"active\",\"agentTerminalHandle\":\"term_r1-5\",\"resource\":{\"worktreeId\":\"repo::<TMP>/worktree-r1-5\",\"ownershipState\":\"owned\"},\"projection\":{\"liveness\":{\"verdict\":\"exited\"}}}],\"page\":{},\"scope\":{\"source\":\"flag\"}}}\n"
+      },
+      {
+        "args": [
+          "worker-list",
+          "r2"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"workers\":[],\"page\":{},\"scope\":{\"source\":\"flag\"}}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "--all"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[]}}\n"
+      },
+      {
+        "args": [
+          "check",
+          "r1"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[{\"id\":\"q0\",\"type\":\"question\",\"from_handle\":\"term_r1-0\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1-0\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}},{\"id\":\"q1\",\"type\":\"question\",\"from_handle\":\"term_r1-1\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1-1\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}},{\"id\":\"q2\",\"type\":\"question\",\"from_handle\":\"term_r1-2\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1-2\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}},{\"id\":\"q3\",\"type\":\"question\",\"from_handle\":\"term_r1-3\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1-3\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}},{\"id\":\"q4\",\"type\":\"question\",\"from_handle\":\"term_r1-4\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1-4\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}},{\"id\":\"q5\",\"type\":\"question\",\"from_handle\":\"term_r1-5\",\"to_handle\":\"run:r1\",\"run_id\":\"r1\",\"task_id\":\"t-r1\",\"dispatch_id\":\"d-r1-5\",\"created_at\":\"2026-11-09T23:00:00Z\",\"body\":\"방법을 알려 주세요\",\"payload\":{\"question\":\"방법을 알려 주세요\"}}]}}\n"
+      },
+      {
+        "stdout": "{\"ok\":true,\"result\":{\"messages\":[],\"workers\":[],\"runs\":[],\"page\":{},\"message\":{\"id\":\"notice\"},\"scope\":{\"source\":\"all\"}}}\n"
+      }
+    ],
+    "gh": [
+      {
+        "args": [
+          "pr",
+          "list"
+        ],
+        "stdout": "[]\n"
+      },
+      {
+        "stdout": "[]\n"
+      }
+    ],
+    "git": [
+      {
+        "args": [
+          "--git-common-dir"
+        ],
+        "code": 128
+      },
+      {
+        "args": [
+          "worktree",
+          "list"
+        ],
+        "stdout": "worktree <TMP>/repo\nHEAD abc\nbranch refs/heads/main\n\n"
+      },
+      {
+        "args": [
+          "fetch"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "rev-parse",
+          "--verify"
+        ],
+        "stdout": "abc\n"
+      },
+      {
+        "args": [
+          "cat-file"
+        ],
+        "code": 0
+      },
+      {
+        "args": [
+          "merge-tree"
+        ],
+        "code": 1,
+        "stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsrc/conflict.ts\n"
+      },
+      {
+        "code": 1
+      }
+    ]
+  }
+}

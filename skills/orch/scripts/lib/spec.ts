@@ -198,9 +198,9 @@ function readAll<K extends string>(args: string[], key: K): { rows: Record<strin
 // run 을 주면 그 Run 만 본다. 그 run 이 옛 Run 을 가리키면 새 Run 의 worker 가 쓰는 지시서가 이 목록에 없어 지워질 수 있다.
 // 옮기기 전 live_specs.py 도 같았다.
 // 조회가 하나라도 실패하면(중간 페이지 실패 포함) null 이다.
-export function liveSpecPaths(run: string | null): Set<string> | null {
+export function liveSpecPaths(run: string | null, knownWorkers?: Record<string, unknown>[]): Set<string> | null {
   const scope = run === null ? [] : ['--run', run]
-  const workers = readAll(['orchestration', 'worker-list', ...scope, '--limit', PAGE_LIMIT], 'workers')
+  const workers = knownWorkers && run ? { rows: knownWorkers, source: 'flag' } : readAll(['orchestration', 'worker-list', ...scope, '--limit', PAGE_LIMIT], 'workers')
   if (workers === null) return null
   if (run === null && workers.source !== 'all') return null
   const tasks = readAll(['orchestration', 'task-list', ...scope], 'tasks')
@@ -239,7 +239,20 @@ function liveOf(workers: Record<string, unknown>[], tasks: Record<string, unknow
 // `run-list` 를 nextCursor 가 없을 때까지 따라 Run 마다 worker-list --run 과 task-list --run 을 읽어 합친다.
 // Run 마다 살아 있는 dispatch 의 Task 가 그 Run 의 task-list 에 없으면 null 이다. 그 지시서를 모른 채 지우지 않으려는 것이다.
 // 리뷰 흔적 정리(cleanup-sweep, remove-worktree)가 다른 Run 에서 도는 리뷰의 지시서와 브랜치를 지우지 않게 쓴다.
-export function allLiveSpecPaths(): Set<string> | null {
+export function allLiveSpecPaths(known?: { runs: string[]; workers: Record<string, unknown>[] }): Set<string> | null {
+  if (known) {
+    // 정리의 소유 확인이 모든 Run 을 이미 읽었다. worker 목록은 재사용하고 Task 만 Run 마다 확인한다.
+    const paths = new Set<string>()
+    if (known.workers.some((row) => !known.runs.includes(String(row.runId)))) return null
+    for (const run of known.runs) {
+      const workers = known.workers.filter((row) => row.runId === run)
+      const tasks = readAll(['orchestration', 'task-list', '--run', run], 'tasks')
+      const live = tasks === null ? null : liveOf(workers, tasks.rows)
+      if (live === null) return null
+      for (const path of live) paths.add(path)
+    }
+    return paths
+  }
   const direct = liveSpecPaths(null)
   if (direct !== null) return direct
   const ids: string[] = []

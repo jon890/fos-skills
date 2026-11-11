@@ -14,6 +14,23 @@ import type { WorkerRow } from '../scripts/lib/ownership.ts'
 const KEPT = '사용자 보유 터미널'
 const FAILED = '터미널 소유 상태 조회 실패'
 
+test('같은 틱의 Run 정리는 전체 소유 목록을 함께 쓰고 삭제 직전에는 새로 확인한다', async () => {
+  const file = join(tmp, 'tick-workers.json')
+  const initial = row('worker', 'owned')
+  initial.resource = { ...(initial.resource as object), worktreeId: `repo::${wt}` }
+  orca.setRules(orcaRules([{ handle: 'worker', worktreePath: wt }], { run_a: [initial], run_b: [] }))
+  const first = workerSnapshot(file)
+  const before = await first.all()
+  const reads = orca.calls().filter((call) => call.argv.includes('worker-list')).length
+  const second = workerSnapshot(file)
+  assert.deepEqual(await second.all(), before)
+  assert.equal(orca.calls().filter((call) => call.argv.includes('worker-list')).length, reads)
+  assert.deepEqual(await second.runIds(), ['run_a', 'run_b'])
+  orca.setRules(orcaRules([{ handle: 'worker', worktreePath: wt }], { run_a: [row('worker', 'user_owned')], run_b: [] }))
+  assert.equal(await blocker(wt, new Set(), () => second.forWorktree(wt)), KEPT)
+  assert.ok(orca.calls().filter((call) => call.argv.includes('worker-list')).length > reads)
+})
+
 let tmp: string
 let wt: string
 let orca: FakeBin

@@ -171,7 +171,7 @@ import type { Verdict } from '../../lib/worker-state.ts'
 import type { WorkerRow } from '../../lib/ownership.ts'
 import { allLiveSpecPaths } from '../../lib/spec.ts'
 import { basename } from 'node:path'
-import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
+import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, foreignHandles, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
 import { closeTerminal as closeOrcaTerminal } from '../../lib/orca.ts'
 import { deleteRemote, merged, ownPr, prCandidates, protectedReason, remotePlan, unpushed } from './prs.ts'
 import { deleteSpecFiles, specsKept, trashLaunchedSpecs } from './specs.ts'
@@ -240,7 +240,7 @@ async function sweepReviewWorktree(repo: string, path: string, n: number, args: 
     return at >= 0 && realPath(id.slice(at + 2)) === target && isLive(w)
   })
   if (using.length) return skip(`그 경로를 쓰는 살아 있는 dispatch ${using.map((w) => String(w.dispatchId ?? '?')).join(', ')}`)
-  const live = liveReviewPrs(allLiveSpecPaths())
+  const live = liveReviewPrs(await (args.allLiveSpecs ?? allLiveSpecPaths)())
   if (live === null) return skip('살아 있는 지시서 목록을 읽지 못했다')
   if (live.has(n)) return skip('리뷰 dispatch 가 살아 있다')
   if (dirty(path)) return skip('커밋 안 된 변경')
@@ -363,6 +363,8 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     report.skipped.push({ path, reason })
   }
   const mine = workersAt(workers, path)
+  // --run 으로 맡긴 정리는 그 Run 의 워크트리만 본다. 남의 경로를 판정하려고 전체 Run 을 읽지 않는다.
+  if (args.run && mine.length === 0) return keep('이 Run 의 워크트리가 아니다', `건너뜀 ${path}: 이 Run 의 워크트리가 아니다`)
   // 살아 있는 dispatch 의 워크트리는 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많으면 그 조회가 정리 시간을 다 쓴다(머리 주석의 「일하는 중」)
   if (mine.some(isLive)) {
     const verdict = judge({ rows: mine, screens: readScreens(screenHandles(mine)) })
@@ -374,9 +376,11 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   releaseDispatches(mine.filter((w) => isFinished(w) && w.terminalState === 'reclaimable'), args.apply, log, '')
   const launched = launchedOwn(repo, mine, terminals, path)
   const taken = new Set<unknown>([...takenOverOwn(args, mine, terminals, path), ...launched])
-  const owner = await ownershipBlocker(path, taken, args.allWorkers)
-  if (owner) return keep(owner, `남김: ${owner} (${path})`)
-  if (!branch) return sweepDetached(repo, path, args, terminals, log, report)
+  if (!branch) {
+    const owner = await ownershipBlocker(path, taken, args.allWorkers)
+    if (owner) return keep(owner, `남김: ${owner} (${path})`)
+    return sweepDetached(repo, path, args, terminals, log, report)
+  }
   const prot = protectedReason(repo, branch, args.base)
   if (prot) return keep(`${prot} (${branch})`, `건너뜀 ${path}: ${prot} (${branch})`)
   let m = merged(repo, branch, args.base)
@@ -392,6 +396,11 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
   }
   // 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널. 워크트리를 남기더라도 터미널은 닫고 dispatch 를 반납한다
+  if (m.ok || m.pr?.state === 'CLOSED') {
+    if (args.run) args.foreign = await foreignHandles(args.run, args.allWorkers)
+    const owner = await ownershipBlocker(path, taken, args.allWorkers)
+    if (owner) return keep(owner, `남김: ${owner} (${path})`)
+  }
   const closing = closedOwnTerminals(s, m.pr, mine, terminals, path)
   if (!m.ok) {
     if (closing && m.pr) {

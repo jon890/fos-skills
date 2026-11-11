@@ -85,6 +85,26 @@ function load(): Record<string, Json> {
 const step = (text: string, done: boolean): Json => ({ text, done })
 
 describe('board-sync', () => {
+  test('리뷰 완료 보고는 PR 이 열려 있어도 리뷰 항목의 남은 단계를 끝낸다', () => {
+    states['7'] = 'OPEN'
+    const result = sync([{ id: 'review-pr-7', status: 'doing', details: ['1. 리뷰', '2. 결과 보고'], worktree: 'review' }], ['--completed-reviews', '[7]'])
+    assert.equal(result.code, 0, result.result.stderr)
+    assert.equal(result.board['review-pr-7'].status, 'done')
+    assert.ok((result.board['review-pr-7'].details as Json[]).every((detail) => detail.done))
+  })
+
+  test('대상 PR 이 머지되면 PR 칸이 빈 리뷰 항목도 끝내고 열린 리뷰는 남긴다', () => {
+    states['7'] = 'MERGED'
+    states['8'] = 'OPEN'
+    const result = sync([
+      { id: 'review-pr-7', status: 'doing', details: ['1. 리뷰', '2. 결과 보고'] },
+      { id: 'review-pr-8', status: 'doing', details: ['1. 리뷰'] },
+    ])
+    assert.equal(result.code, 0, result.result.stderr)
+    assert.equal(result.board['review-pr-7'].status, 'done')
+    assert.equal(result.board['review-pr-8'].status, 'doing')
+  })
+
   test('BOARD_BIN 이 없으면 저장소의 extensions/work-board/bin/board.ts 가 보드 항목을 done 으로 바꾼다', () => {
     states['7'] = 'MERGED'
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])

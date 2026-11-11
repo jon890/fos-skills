@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
-import { BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
+import { allLiveSpecPaths, BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
@@ -26,6 +26,17 @@ after(() => {
 function envelope(result: unknown): string {
   return JSON.stringify({ ok: true, result })
 }
+
+test('정리가 읽은 전체 worker 목록으로 지시서를 확인할 때는 Task 만 조회한다', () => {
+  const file = join(base, 'live.md')
+  fake.setRules([{ args: ['task-list', '--run', 'r'], stdout: envelope({ tasks: [{ id: 't', status: 'running', spec: file }] }) }])
+  const before = fake.calls().length
+  const paths = allLiveSpecPaths({ runs: ['r'], workers: [{ runId: 'r', taskId: 't', dispatchStatus: 'running' }] })
+  assert.ok(paths?.has(file))
+  assert.ok(fake.calls().slice(before).every((call) => call.argv.includes('task-list')))
+  fake.setRules([{ stdout: envelope({ tasks: [] }) }])
+  assert.equal(allLiveSpecPaths({ runs: ['r'], workers: [{ runId: 'r', taskId: 'missing', dispatchStatus: 'running' }] }), null)
+})
 
 describe('BRANCH_LINE 과 branchesOf', () => {
   test('목록 기호와 굵은 글씨를 섞은 모든 꼴을 받는다', () => {

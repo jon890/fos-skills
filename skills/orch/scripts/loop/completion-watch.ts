@@ -29,11 +29,15 @@ function messages(args: string[]): Json[] {
 }
 const time = (m: Json): string => String(m.created_at ?? m.createdAt ?? '')
 
-export async function watchCompletions(repo: string, run: string, base: string): Promise<void> {
+export function completionMessages(run: string): Json[] {
+  return messages(['check', '--run', run, '--all', '--types', 'worker_done']).filter(m => m.type === 'worker_done')
+}
+
+export async function watchCompletions(repo: string, run: string, base: string, completed?: Json[]): Promise<void> {
   const file = join(pathOf('state', repo), 'done-seen', `${runKey(run)}.json`)
   let before: Seen | null = null
   if (existsSync(file)) before = JSON.parse(readFileSync(file, 'utf8'))
-  let done = messages(['check', '--run', run, '--all', '--types', 'worker_done']).filter(m => m.type === 'worker_done')
+  let done = completed ?? completionMessages(run)
   const oldest = (rows: Json[]) => rows.map(time).filter(Boolean).sort()[0] ?? ''
   if (done.length >= 100 && before && oldest(done) > before.last) {
     const inbox = messages(['inbox', '--terminal', `run:${run}`, '--limit', '3000'])
