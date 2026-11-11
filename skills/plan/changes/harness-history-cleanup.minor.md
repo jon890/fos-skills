@@ -1,3 +1,4 @@
 - 예시 문서 `test-boundaries.md` 를 지웠다. 어느 단계도 가리키지 않던 문서다.
 - plan 크기 문서에서 측정 표와 경과 설명을 지우고 검사 기준만 남겼다.
 - `--staged` 의 계획 메타데이터 예외 설명을 줄이고 `verify_task.ts` 설명을 가리키게 했다.
+- `overlay_paths.ts` 가 옛 이름 `docs-check-overlay.md` 를 찾지 않고 경고도 내지 않는다. docs-audit 와 docs-consolidate 의 호환 제거에 따른 것이다.
