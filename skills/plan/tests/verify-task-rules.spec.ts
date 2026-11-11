@@ -32,7 +32,7 @@ const contractFiles = {
   '.claude/plan-overlay.md': '| 계약 검증 규칙 | `.claude/contract-checks.json` |\n',
   '.claude/contract-checks.json': JSON.stringify(rules),
 }
-const inspectContract = (command: string, files = contractFiles, rel = 'contracts/api.yaml') => inspect('### 1. 계약 수정', command, [[rel, '수정']], { files })
+const inspectContract = (command: string, files: Record<string, string> = contractFiles, rel = 'contracts/api.yaml') => inspect('### 1. 계약 수정', command, [[rel, '수정']], { files })
 
 test('계약 경로에 대응하는 검증 명령은 같은 phase 의 셸 블록에 있어야 한다', () => {
   for (const command of ['scripts/verify.sh contracts', 'scripts/verify.sh backend', './scripts/verify.sh contracts']) {
@@ -55,6 +55,21 @@ test('계약 규칙 설정 오류를 조용히 무시하지 않는다', () => {
   const r = inspectContract('pytest', { ...contractFiles, '.claude/contract-checks.json': '[{"files":[],"commands":[]}]' })
   assert.equal(r.code, 2)
   assert.ok(r.stderr.includes('files glob 목록'), r.stderr)
+})
+
+test('계약 규칙 JSON 문법이 깨지면 실행 오류로 끝난다', () => {
+  const r = inspectContract('pytest', { ...contractFiles, '.claude/contract-checks.json': '[{"files":' })
+  assert.equal(r.code, 2)
+  assert.ok(r.stderr.startsWith('검사를 실행하지 못했다:'), r.stderr)
+  assert.equal(r.stdout, '')
+})
+
+test('계약 규칙 설정 파일이 없으면 실행 오류로 끝난다', () => {
+  const r = inspectContract('pytest', { '.claude/plan-overlay.md': contractFiles['.claude/plan-overlay.md'] })
+  assert.equal(r.code, 2)
+  assert.ok(r.stderr.startsWith('검사를 실행하지 못했다:'), r.stderr)
+  assert.ok(r.stderr.includes('contract-checks.json'), r.stderr)
+  assert.equal(r.stdout, '')
 })
 
 test('하위 프로젝트의 계약 검증 규칙은 그 경로에 적용한다', () => {
