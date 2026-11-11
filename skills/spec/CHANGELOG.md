@@ -1,5 +1,9 @@
 # CHANGELOG: spec
 
+## 3.8.0 (2026-11-12)
+
+- 결정 표의 사용자 확인 날짜 뒤에 괄호 설명을 붙일 수 있다. 확인 대기인 결정은 계속 막는다.
+
 ## 3.7.1 (2026-11-06)
 
 - plan 의 `check_feature.ts`, `run_doc_checks.ts` 를 node 로 부른다
