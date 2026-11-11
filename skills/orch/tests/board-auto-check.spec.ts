@@ -23,7 +23,7 @@ function setup(t: { after(fn: () => void): void }) {
   const bin = join(root, 'bin')
   mkdirSync(bin)
   const common = `const fs=require('node:fs'); const s=JSON.parse(fs.readFileSync(${JSON.stringify(state)},'utf8')); `
-  writeNodeBin(bin, 'orca', common + `fs.appendFileSync(${JSON.stringify(log)},'orca\\n'); if(s.orcaFail) process.exit(1); fs.writeSync(1,JSON.stringify({ok:true,result:{workers:s.workers||[]}}));`)
+  writeNodeBin(bin, 'orca', common + `fs.appendFileSync(${JSON.stringify(log)},'orca\\n'); if(s.orcaFail) process.exit(1); fs.writeSync(1,JSON.stringify({ok:true,result:s.rawResult||{workers:s.workers||[]}}));`)
   writeNodeBin(bin, 'gh', common + `if(s.ghFail) process.exit(1); fs.writeSync(1,JSON.stringify(s.prs||[]));`)
   const setState = (value: unknown) => writeFileSync(state, JSON.stringify(value))
   setState({})
@@ -100,7 +100,7 @@ test('앞 사건은 완료 꼬리표와 merged-pr 을 모든 항목에서 찾는
 test('진행 중인지 먼저 확인하고 같은 단계의 재실행을 막는다', t => {
   const c = setup(t)
   c.launch()
-  c.setState({ workers: [{ dispatchId: 'ctx_9', dispatchStatus: 'running', resource: {} }] })
+  c.setState({ workers: [{ dispatchId: 'ctx_9', taskId: 'task_9', dispatchStatus: 'running', workerState: 'working', agentTerminalHandle: 'term_9', resource: { worktreeId: null, ownershipState: 'owned' } }] })
   assert.equal(c.run().first, 'AUTO-REJECT a 2 worker 나 열린 PR 이 있다')
   c.setState({ prs: [{ number: 9, headRefName: 'feat/x' }] })
   assert.equal(c.run().first, 'AUTO-REJECT a 2 worker 나 열린 PR 이 있다')
@@ -111,7 +111,7 @@ test('진행 중인지 먼저 확인하고 같은 단계의 재실행을 막는�
   c.put([c.item('2. [auto] 다른 일 (계획: docs/plan)')])
   assert.equal(c.run().status, 0)
   c.put([c.item(undefined, { worktree: 'work' })])
-  c.setState({ workers: [{ dispatchId: 'ctx_1', dispatchStatus: 'running', resource: { worktreeId: 'repo::/tmp/work' } }] })
+  c.setState({ workers: [{ dispatchId: 'ctx_1', taskId: 'task_1', dispatchStatus: 'running', workerState: 'working', agentTerminalHandle: 'term_1', resource: { worktreeId: 'repo::/tmp/work', ownershipState: 'owned' } }] })
   assert.equal(c.run().first, 'AUTO-REJECT a 2 worker 나 열린 PR 이 있다')
 })
 
@@ -123,6 +123,20 @@ test('worker 또는 PR 조회 실패와 Run 누락은 진행 중 여부를 알 �
   }
   c.setState({})
   assert.equal(c.run(['a']).first, 'AUTO-REJECT a 2 worker 나 PR 을 확인하지 못했다')
+})
+
+test('필수 키가 빠진 worker 와 깨진 목록은 worker 없음으로 보지 않는다', t => {
+  const c = setup(t)
+  for (const rawResult of [{}, { workers: null }, { workers: {} }, { workers: [null] }, { workers: [{ dispatchId: 'ctx_live', resource: { worktreeId: 'repo::/tmp/work' } }] }]) {
+    c.setState({ rawResult })
+    const result = c.run()
+    assert.equal(result.status, 1)
+    assert.equal(result.first, 'AUTO-REJECT a 2 worker 나 PR 을 확인하지 못했다')
+  }
+  for (const prs of [[null], [{}], [{ number: 9 }], [{ number: 9, headRefName: '' }]]) {
+    c.setState({ prs })
+    assert.equal(c.run().first, 'AUTO-REJECT a 2 worker 나 PR 을 확인하지 못했다')
+  }
 })
 
 test('표시와 첫 미완료 단계, 상태가 맞지 않으면 외부 조회를 하지 않는다', t => {

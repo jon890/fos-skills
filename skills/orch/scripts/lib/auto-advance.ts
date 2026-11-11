@@ -46,7 +46,7 @@ function busyOf(repo: string, item: Record<string, unknown>, launches: ReturnTyp
   if (!runs.size) return null
   const live = { paths: new Set<string>(), dispatches: new Set<string>() }
   for (const id of runs) {
-    const got = workerRows(id, undefined, { strict: true })
+    const got = workerRows(id, undefined, { strict: true, requireShape: true })
     if (!got.ok) return null
     for (const row of openRows(got.rows)) {
       const path = worktreeOf(row)
@@ -55,7 +55,7 @@ function busyOf(repo: string, item: Record<string, unknown>, launches: ReturnTyp
     }
   }
   const prs = ghJson<Array<{ number: number; headRefName: string }>>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName'], { cwd: repo, cache: false })
-  if (!prs.ok || !Array.isArray(prs.data)) return null
+  if (!prs.ok || !Array.isArray(prs.data) || prs.data.some(pr => !pr || !Number.isInteger(pr.number) || pr.number < 1 || typeof pr.headRefName !== 'string' || !pr.headRefName.trim())) return null
   const value = (key: string) => typeof item[key] === 'string' ? (item[key] as string).trim() || null : null
   return itemBusy({ worktree: value('worktree'), branch: value('branch'), pr: [...prNumbers(item.pr)] }, launches, live, worktreePaths(repo), prs.data.map(pr => ({ number: String(pr.number), branch: pr.headRefName })))
 }
