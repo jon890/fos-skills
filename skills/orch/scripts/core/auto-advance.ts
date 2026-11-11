@@ -72,10 +72,10 @@ export function judgeAdvance(input: AdvanceInput): AdvanceVerdict {
   if (input.busy === null) return reject(ADVANCE_REASONS.unknownBusy)
   if (input.busy) return reject(ADVANCE_REASONS.busy)
   if (input.launched) return reject(ADVANCE_REASONS.launched)
-  if (input.limited) return reject(ADVANCE_REASONS.limited)
   if (!input.evidence.length) return reject(ADVANCE_REASONS.noEvidence)
   const bad = input.evidence.find(row => row.problem !== null)
   if (bad) return reject(bad.problem!)
+  if (input.limited) return reject(ADVANCE_REASONS.limited)
   return { ok: true, number: input.step.number, evidence: input.evidence.map(row => row.text).join(', ') }
 }
 
