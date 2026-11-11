@@ -136,6 +136,23 @@ describe('REQ2 알 수 없는 런타임과 원격 엔진', () => {
     assert.ok(!t.text.includes('켜서 조사하기'))
   })
 
+  test('이름만 colima 로 시작하는 ssh context 는 Colima 프로필이 아니라 맥 밖의 엔진이다', () => {
+    const t = survey({ contexts: () => [{ name: 'colima-prod', endpoint: 'ssh://deploy@prod.example.com', responds: true, df: DF }] })
+    assert.deepEqual(t.rows.map((r) => [r.id, r.kind]), [['remote:colima-prod', 'remote']])
+    assert.ok(!t.text.includes('colima start'))
+  })
+
+  test('같은 엔드포인트를 가리키는 원격 context 둘은 런타임 하나로 합친다', () => {
+    const t = survey({
+      contexts: () => [
+        { name: 'prod', endpoint: 'ssh://deploy@prod.example.com', responds: true, df: DF },
+        { name: 'prod-alias', endpoint: 'ssh://deploy@prod.example.com', responds: true, df: DF },
+      ],
+    })
+    assert.deepEqual(t.rows.map((r) => [r.id, r.contexts]), [['remote:prod', ['prod', 'prod-alias']]])
+    assert.equal(t.docker.calls().filter((c) => c.argv.includes('system')).length, 1)
+  })
+
   test('소켓이 없는 default context 는 런타임으로 세지 않는다', () => {
     const t = runtimeBox({ contexts: () => [{ name: 'default', endpoint: 'unix:///nonexistent-dir/docker.sock', responds: false }] })
     const done = t.box.run('container_runtimes', [], { env: t.env() })

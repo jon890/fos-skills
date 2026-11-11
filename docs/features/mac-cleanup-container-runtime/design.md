@@ -38,7 +38,7 @@ Java 로 빗대면 `RUNTIMES` 는 enum 이고, 각 스크립트는 그 enum 을 
 | `colima_trim.ts` 일반화 여부 | 일반화하지 않고 `runtime_reclaim.ts` 가 부른다 | `colima_trim.ts` 는 fstrim 과 재시도 전용이라 테스트와 종료 코드 계약이 굳어 있다. Docker Desktop 과 OrbStack 은 trim 이 없어 공통 코드가 거의 없다 |
 | context 전달 | 각 스크립트의 `--context NAME` 이 `docker --context NAME` 으로 간다 | 현재 context 설정을 바꾸지 않고, 가짜 docker 의 호출 인자에 context 가 남아 테스트가 쉽다. 환경변수 `DOCKER_CONTEXT` 도 같은 효과지만 호출 기록에 안 남는다 |
 | 삭제 대상 context 기록 | `docker_volumes.ts --json-out` 이 `context` 를 적고 `delete_volumes.ts` 가 그 값을 쓴다 | 조사한 런타임과 지우는 런타임이 달라지지 않는다. 필드는 있을 때만 읽으므로 기존 파일도 읽힌다(없으면 현재 context) |
-| 원격 판정 | 유효 엔드포인트를 `docker context inspect [이름]` 으로 읽는다. `DOCKER_HOST` 가 있고 context 를 안 줬으면 그 값을 쓴다. unix 가 아니거나 비면 5 로 거부하고, 읽지 못하면 4 로 끝난다 | 삭제 도구는 실패하면 닫힌다(fail-closed). 맥 밖 데이터를 지우지 않는다는 DECISION9 를 지킨다 |
+| 원격 판정 | 유효 엔드포인트를 `docker context inspect [이름]` 으로 읽는다. context 를 안 줬으면 `DOCKER_CONTEXT`(docker 에서 `DOCKER_HOST` 보다 우선), 그다음 `DOCKER_HOST` 를 쓴다. unix 가 아니거나 비면 5 로 거부하고, 읽지 못하면 4 로 끝난다 | 삭제 도구는 실패하면 닫힌다(fail-closed). 맥 밖 데이터를 지우지 않는다는 DECISION9 를 지킨다 |
 | 런타임 ID | `docker-desktop`, `orbstack`, `colima:<프로필>`, `unknown:<context>`, `remote:<context>` | 사용자에게 묻는 묶음 이름과 명령 인자가 같은 문자열이다 |
 | `survey_system.ts` Docker 절 | 뺀다 | 런타임별 조사는 `container_runtimes.ts` 가 한다. 이 절은 현재 context 하나와 Colima 만 봤다 |
 | 켜진 판정 | `docker --context <이름> info` 성공(15초 제한) | 소켓 파일은 런타임이 꺼져도 남을 수 있다. `colima status` 는 Colima 만 안다 |
@@ -67,7 +67,7 @@ Java 로 빗대면 `RUNTIMES` 는 enum 이고, 각 스크립트는 그 enum 을 
 ## 실패와 일관성
 
 - 한 런타임을 켜지 못하거나 조사에 실패해도 나머지는 계속한다. `survey_docker.ts` 는 실패를 런타임 줄에 적고 마지막에 종료 코드 1 로 끝난다.
-- `docker context ls` 가 실패하면(docker 없음) 설치 흔적만으로 런타임을 낸다. 꺼진 것으로 보고 `docker info` 도 부르지 않는다.
+- `docker context ls` 가 실패하면(docker 없음) context 없이 설치 흔적만으로 런타임을 낸다. 켜짐은 `docker info` 성공이라 docker 가 없으면 모두 꺼짐이다. 알 수 없는 런타임과 맥 밖의 엔진은 context 에서만 알 수 있어 이때 보이지 않는다.
 - 삭제 직전 검사는 `delete_volumes.ts` 의 기존 검사에 원격 거부 한 단계를 앞에 더한다. 원격 판정이 확정되기 전에는 `volume rm` 을 부르지 않는다.
 - 호환: `--context` 가 없으면 모든 스크립트가 지금과 같이 동작한다. 배포 순서 제약은 없다.
 

@@ -16,9 +16,9 @@
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readArgs, type Entry } from './cli.ts'
-import { isMain, ljust, runText, which, write } from './io.ts'
+import { isMain, runText, which, write } from './io.ts'
 import { pySplitLines, pyStrCompare } from './kit/py.ts'
-import { dumpJson, exists, expanduser, isDir, loadJson, osErrorMessage, pyResolve } from './pylike.ts'
+import { dumpJson, exists, expanduser, loadJson, osErrorMessage, pyResolve } from './pylike.ts'
 import { duKb, humanKb } from './survey_system.ts'
 
 const USAGE = `usage: container_runtimes.ts [-h] [--json-out FILE]
@@ -103,11 +103,13 @@ export function listContexts(): ContextInfo[] {
   return out
 }
 
-// 명령이 실제로 쓸 엔드포인트. context 를 줬으면 그 context 의 것이고, 안 줬으면 DOCKER_HOST, 없으면 현재 context 의 것이다.
+// 명령이 실제로 쓸 엔드포인트. context 를 줬으면 그 context 의 것이다. 안 줬으면 docker 의 우선순위를 따라 환경변수 DOCKER_CONTEXT(DOCKER_HOST 보다 우선),
+// 그다음 DOCKER_HOST, 없으면 현재 context 의 것이다.
 // docker 를 실행하지 못하거나 context 를 읽지 못하면 던진다. 값이 비어 있으면 빈 문자열이다(isLocalEndpoint 가 false 라 삭제 도구가 거부한다)
 export function contextEndpoint(context: string | null, environ: Record<string, string | undefined> = process.env): string {
-  if (!context && environ.DOCKER_HOST) return environ.DOCKER_HOST
-  const done = runText(['docker', 'context', 'inspect', ...(context ? [context] : []), '--format', '{{.Endpoints.docker.Host}}'], { timeoutSec: 30, closeStdin: true })
+  const name = context ?? (environ.DOCKER_CONTEXT || null)
+  if (!name && environ.DOCKER_HOST) return environ.DOCKER_HOST
+  const done = runText(['docker', 'context', 'inspect', ...(name ? [name] : []), '--format', '{{.Endpoints.docker.Host}}'], { timeoutSec: 30, closeStdin: true })
   if (done.failure) throw new Error(done.message)
   if (done.code !== 0) throw new Error(done.stderr.trim() || 'docker context inspect 가 실패했다')
   return done.stdout.trim()
@@ -127,7 +129,7 @@ function installed(def: RuntimeDef): boolean {
   return def.cli !== null && def.kind !== 'colima' && which(def.cli) !== null
 }
 
-// 설치된 Colima 프로필 이름. 디스크 디렉터리, 프로필 설정 파일, `colima`/`colima-<프로필>` context 에서 모은다
+// 설치된 Colima 프로필 이름. 디스크 디렉터리, 프로필 설정 파일, 그 프로필의 소켓을 가리키는 `colima`/`colima-<프로필>` context 에서 모은다
 export function colimaProfiles(contexts: ContextInfo[]): string[] {
   const found = new Set<string>()
   const list = (dir: string): string[] => {
@@ -142,9 +144,11 @@ export function colimaProfiles(contexts: ContextInfo[]): string[] {
     else if (name.startsWith('colima-')) found.add(name.slice('colima-'.length))
   }
   for (const name of list('~/.colima')) if (!name.startsWith('_') && exists(expanduser(`~/.colima/${name}/colima.yaml`))) found.add(name)
+  // 이름만 colima 로 시작하는 다른 엔진(ssh context 등)이 프로필로 잡히지 않게, 엔드포인트가 그 프로필의 소켓일 때만 인정한다
   for (const ctx of contexts) {
-    if (ctx.name === 'colima') found.add('default')
-    else if (ctx.name.startsWith('colima-') && ctx.name.length > 'colima-'.length) found.add(ctx.name.slice('colima-'.length))
+    const profile = ctx.name === 'colima' ? 'default' : ctx.name.startsWith('colima-') && ctx.name.length > 'colima-'.length ? ctx.name.slice('colima-'.length) : null
+    const path = unixPath(ctx.endpoint)
+    if (profile !== null && path !== null && socketKey(path) === socketKey(socketsOf('colima', profile)[0])) found.add(profile)
   }
   return [...found].sort(pyStrCompare)
 }
@@ -172,7 +176,6 @@ export function detectRuntimes(): Runtime[] {
   const instances: Instance[] = []
   for (const def of RUNTIMES) {
     const profiles = def.kind === 'colima' ? colimaProfiles(contexts) : ['default']
-    const isInstalled = def.kind === 'colima' ? profiles.length > 0 : installed(def)
     for (const profile of profiles) {
       instances.push({
         def,
@@ -183,7 +186,6 @@ export function detectRuntimes(): Runtime[] {
         matched: [],
       })
     }
-    if (!isInstalled) continue
   }
   const unknownByKey = new Map<string, string[]>()
   const remote: ContextInfo[] = []
@@ -291,8 +293,6 @@ export function main(argv: string[]): number {
     }
     write(1, `${describeRuntime(rt, df).join('\n')}\n`)
   }
-  void ljust
-  void isDir
   return 0
 }
 

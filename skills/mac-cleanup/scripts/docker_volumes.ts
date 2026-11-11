@@ -6,7 +6,7 @@
 //
 // --context NAME 은 그 docker context 의 엔진을 조사한다. 현재 context 설정은 바꾸지 않는다. 주면 텍스트 출력 첫 줄에 `## context: NAME` 이 붙고
 // JSON 맨 끝에 `context` 필드로 NAME 이 남는다(주지 않으면 필드가 없어 기존 출력과 같다). `delete_volumes.ts` 가 이 값으로 같은 엔진에 지운다.
-
+//
 // --peek N 은 후보 중 큰 순서로 N개의 최상위 항목을 보인다. `all` 이면 후보를 모두 연다. 이미 있는 이미지로 컨테이너를 잠깐 띄워
 // volume 을 읽기 전용으로 붙여 `ls -A` 만 돌리고, 이미지를 pull 하지 않으며 네트워크를 끊는다.
 // --peek-image 가 없으면 로컬 이미지 중 alpine, busybox, debian, ubuntu 를 고른다.

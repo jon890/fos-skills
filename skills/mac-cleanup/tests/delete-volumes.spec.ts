@@ -220,6 +220,26 @@ describe('context 와 원격 엔진(REQ2, REQ4)', () => {
     assert.deepEqual(removes(docker.calls()), [])
   })
 
+  test('엔드포인트를 읽지 못하면 4 로 닫고 volume rm 을 보내지 않는다', () => {
+    const { box, docker } = setup()
+    docker.setRules([{ args: ['context', 'inspect'], stderr: 'context "gone": context not found', code: 1 }, { args: ['volume', 'rm'] }])
+    const file = write(join(box.root, 'ctx.json'), JSON.stringify(withContext('gone')))
+    const done = box.run('delete_volumes', [file, '--apply'])
+    assert.equal(done.code, 4)
+    assert.ok(done.stderr.startsWith('docker 를 쓸 수 없다: context "gone": context not found'), done.stderr)
+    assert.deepEqual(removes(docker.calls()), [])
+  })
+
+  test('DOCKER_CONTEXT 가 원격이면 DOCKER_HOST 가 로컬이어도 5 다. docker 는 DOCKER_CONTEXT 를 먼저 쓴다', () => {
+    const { box, docker } = setup()
+    docker.setRules(rules({ prod: 'ssh://deploy@prod.example.com' }))
+    const file = write(join(box.root, 'plain.json'), JSON.stringify({ volumes: [vol(PG, 'postgres')] }))
+    const done = box.run('delete_volumes', [file, '--apply'], { env: box.env({ DOCKER_HOST: 'unix:///var/run/docker.sock', DOCKER_CONTEXT: 'prod' }) })
+    assert.equal(done.code, 5)
+    assert.ok(done.stderr.includes('(ssh://deploy@prod.example.com)'), done.stderr)
+    assert.deepEqual(removes(docker.calls()), [])
+  })
+
   test('조사 파일의 context 로만 지운다. 로컬 unix 소켓이면 모든 호출이 그 context 를 가진다', () => {
     const { box, docker } = setup()
     docker.setRules(rules({ desktop: 'unix:///Users/x/.docker/run/docker.sock' }))
