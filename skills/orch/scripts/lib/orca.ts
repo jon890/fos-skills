@@ -38,10 +38,13 @@ function brief(text: string): string {
 }
 
 // --json 을 붙여 부르고 응답 봉투의 result 를 data 로 낸다. 봉투 전체가 아니다.
-export function orcaJson<T>(args: string[], opts?: RunOptions): { ok: true; data: T } | { ok: false; error: string } {
+// 시간 초과여도 온전한 ok: true 와 result 가 있으면 성공이다. 그 밖의 비정상 종료는 실패이며,
+// 시간 초과 실패에는 재조회 판단용 timedOut 을 붙인다. 종료 코드 124 만으로 시간 초과를 추측하지 않는다.
+export function orcaJson<T>(args: string[], opts?: RunOptions): { ok: true; data: T } | { ok: false; error: string; timedOut?: boolean } {
   const command = `orca ${args.join(' ')}`
   const { done, envelope, parsed } = readEnvelope(args, opts)
-  if (done.code !== 0) return { ok: false, error: `${command} 가 종료 코드 ${done.code} 로 끝났다: ${brief(done.stderr || done.stdout)}` }
+  const completed = done.timedOut && parsed && isObject(envelope) && envelope.ok === true && 'result' in envelope
+  if (done.code !== 0 && !completed) return { ok: false, ...(done.timedOut ? { timedOut: true } : {}), error: `${command} 가 종료 코드 ${done.code} 로 끝났다: ${brief(done.stderr || done.stdout)}` }
   if (!parsed) return { ok: false, error: `${command} 의 출력이 JSON 이 아니다: ${brief(done.stdout)}` }
   if (typeof envelope !== 'object' || envelope === null || Array.isArray(envelope)) {
     return { ok: false, error: `${command} 의 응답이 봉투 객체가 아니다` }
