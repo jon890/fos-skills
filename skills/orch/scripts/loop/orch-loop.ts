@@ -69,6 +69,7 @@
 //     5-1. 머지 알림. steps/merged.ts
 //     6. 멈춤 확인. steps/stalls.ts
 //     6-1. 움직임 확인. steps/movement.ts
+//     6-2. 다음 단계 알림. steps/step-ready.ts
 //     7. tick 이벤트. steps/tick-event.ts
 //     8. 자동 머지. steps/auto-merge.ts
 //     8-1. 큐 기록. steps/queue-turns.ts
@@ -129,6 +130,7 @@ import { relayQueueTurns } from './steps/queue-turns.ts'
 import { refreshPrs } from './steps/refresh.ts'
 import { checkReports } from './steps/reports.ts'
 import { iso, log } from './steps/shared.ts'
+import { notifyStepReady } from './steps/step-ready.ts'
 import { checkStalls } from './steps/stalls.ts'
 import { fireTick } from './steps/tick-event.ts'
 import { checkUnanswered } from './steps/unanswered.ts'
@@ -157,6 +159,7 @@ async function tick(config: Context, n: number): Promise<number> {
   collect(state, await notifyMerged(ctx, state))
   collect(state, await checkStalls(ctx, state))
   collect(state, await checkMovement(ctx, state))
+  collect(state, await notifyStepReady(ctx, state))
   collect(state, await fireTick(ctx, state))
   collect(state, await runAutoMerge(ctx, state))
   collect(state, await relayQueueTurns(ctx, state))

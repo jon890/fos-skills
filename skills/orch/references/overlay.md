@@ -80,7 +80,7 @@
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 | `adr` | `dirs` | 이름에서 ADR 폴더로 가는 객체. `orch queue reserve --kind adr` 가 이 폴더에 번호를 예약한다. 폴더마다 번호가 따로이고 자동 머지는 읽지 않는다 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
-| `board` | `auto_advance` | 자동 진행 여부. 기본은 `true` 이고 `false` 면 `orch board auto-check` 가 거절한다. boolean 이 아니면 설정 오류다 |
+| `board` | `auto_advance` | 자동 진행 여부. 기본은 `true` 이고 `false` 면 `STEP-READY` 와 자동 띄우기를 끈다. `[wait]` 는 깨우지 않고 시각 wait 는 그대로 끝낸다. `orch board auto-check` 가 거절하며 루프도 같은 값을 읽는다. boolean 이 아니면 설정 오류다 |
 | `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
 | `docker` | `containers` | 정리가 지울 컨테이너 규칙의 목록. 규칙은 `label`(`키` 나 `키=값`)과 `name`(이름 전체에 맞출 정규식) 가운데 하나 이상을 둔 객체이고, 둘 다 두면 둘 다 맞아야 한다. `name` 에 이름 붙은 묶음 `pid` 가 있으면 그 프로세스가 없을 때만, 없으면 멈춘 컨테이너만 지운다. `cleanup-sweep.ts` 가 읽는다. 언제 무엇을 지우는지는 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 |
 | `docker` | `images` | 정리가 지울 이미지 규칙의 목록. 규칙은 `repository`(저장소 이름 전체에 맞출 정규식)와 `keep`(저장소 이름마다 남길 최근 태그 수, 0 이상의 정수, 기본 1)이다. 컨테이너가 쓰는 이미지는 남긴다 |

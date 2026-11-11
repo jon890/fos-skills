@@ -1,6 +1,6 @@
 import { basename } from 'node:path'
 import type { StageKind, Stages } from './milestones.ts'
-import { liveWorkerOn } from './movement.ts'
+import { liveWorkerOn } from './workers.ts'
 import { BOARD_KEYS, ConfigError, section } from './config.ts'
 import type { Config } from './config.ts'
 
@@ -42,6 +42,7 @@ export const ADVANCE_REASONS = {
   busy: 'worker 나 열린 PR 이 있다',
   unknownBusy: 'worker 나 PR 을 확인하지 못했다',
   launched: '이미 한 번 띄웠다',
+  limited: '사용 한도 알림 뒤 30분이 지나지 않았다',
   noEvidence: '근거가 없다',
   noSpec: '스펙 파일이 없다',
   unconfirmed: '스펙에 확인 줄이 없다',
@@ -55,6 +56,7 @@ export type AdvanceInput = {
   step: { number: number; mark: 'auto' | 'ask' | 'wait' | null } | null
   busy: boolean | null
   launched: boolean
+  limited?: boolean
   evidence: Array<{ text: string; problem: string | null }>
 }
 export type AdvanceVerdict =
@@ -70,6 +72,7 @@ export function judgeAdvance(input: AdvanceInput): AdvanceVerdict {
   if (input.busy === null) return reject(ADVANCE_REASONS.unknownBusy)
   if (input.busy) return reject(ADVANCE_REASONS.busy)
   if (input.launched) return reject(ADVANCE_REASONS.launched)
+  if (input.limited) return reject(ADVANCE_REASONS.limited)
   if (!input.evidence.length) return reject(ADVANCE_REASONS.noEvidence)
   const bad = input.evidence.find(row => row.problem !== null)
   if (bad) return reject(bad.problem!)

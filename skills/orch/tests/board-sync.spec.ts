@@ -84,6 +84,20 @@ function load(): Record<string, Json> {
 
 const step = (text: string, done: boolean): Json => ({ text, done })
 
+test('시각 wait 는 첫 단계가 아니어도 지난 줄만 끝내며 항목 상태는 유지한다', () => {
+  const details = ['참고: 설명', '1. 아직 앞 단계', '2. [wait: 2020-01-01 00:00] 지난 시각',
+    '3. [wait: 2099-01-01 00:00] 미래', '4. [wait: 2026-02-30 00:00] 잘못된 날짜', '5. [wait: 내일 아침] 글', '6. [wait] 조건']
+  const result = sync(['doing', 'wait', 'todo', 'goal', 'done'].map(status => ({ id: status, status, details })))
+  assert.equal(result.code, 0, result.result.stderr)
+  for (const status of ['doing', 'wait', 'todo', 'goal', 'done']) {
+    const item = result.board[status]
+    assert.equal(item.status, status)
+    const rows = item.details as Array<Json | string>
+    const marked = rows.filter(row => typeof row === 'object' && row.done === true).map(row => (row as Json).text)
+    assert.deepEqual(marked, status === 'done' ? [] : [details[2]])
+  }
+})
+
 describe('board-sync', () => {
   test('리뷰 완료 보고는 PR 이 열려 있어도 리뷰 항목의 남은 단계를 끝낸다', () => {
     states['7'] = 'OPEN'

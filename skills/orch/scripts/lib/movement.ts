@@ -20,12 +20,15 @@
 //   3. settings.idleMin 이 0 이면 보지 않는다. 멈춘 단계도 보지 않는다
 //   4. 움직임을 하나도 모르면(워크트리가 없고 화면 기록도 없다) 멈춤이 아니다. 모르는 것을 멈춤으로 알리지 않는다
 //   5. 움직임에서 idleMin 분이 지났으면 idle
-// 멈춘 단계(stalledStages): 보드 항목 가운데 아래를 모두 만족하는 것이다. 단계는 details 에서 done 이 아닌 첫 줄이다.
+// 멈춘 단계(stalledStages): 표시 없는 줄은 아래 규칙을 따른다. 단계는 details 에서 done 이 아닌 첫 줄이다.
 //   - status 가 doing 이다. todo, wait, done, decide, goal 은 보지 않는다(wait 는 일부러 기다리는 항목이다)
 //   - 끝나지 않은 단계가 있다
 //   - worktree 나 branch 칸이 있다. 둘 다 없는 항목은 worker 를 띄운 적이 없는, 코디네이터나 사용자가 맡은 일이다
 //   - 그 worktree(이름이나 경로의 끝 이름)나 branch 의 워크트리에 살아 있는 dispatch 가 없다
 //   - 그 워크트리 폴더가 있으면 그 파일이 idleMin 분 안에 바뀌지 않았다. 맡은 Run 밖의 worker 가 일하는 중일 수 있다
+//   - [wait] 는 항상 건너뛴다. 자동 진행이 켜졌으면 [ask] 와 띄운 기록 없는 [auto] 도 건너뛴다.
+//   - 띄운 [auto] 는 doing/wait 와 빈 worktree·branch 도 본다. 그 단계의 dispatch·브랜치와 항목 필드로 worker·PR 을 찾는다.
+//     열린 PR 목록을 모르면 보류한다. 표시의 첫 미완료 단계는 board.ts steps 로 읽고, 띄운 기록은 사건 꼬리표를 뗀 글로 맞춘다.
 // 알림 기록(idleNotices, stageNotices): 같은 멈춤을 틱마다 다시 알리지 않으려는 것이다.
 //   worker 는 알린 때의 reason 과 movedAt 을 둔다. reason 이 바뀌거나 그 뒤에 움직였다 다시 멈추면 다시 알린다.
 //   단계는 처음 본 시각(since)과 단계 글을 둔다. 같은 단계가 idleMin 분 넘게 이어지면 한 번 알리고, 단계 글이 바뀌면 새로 센다.
@@ -34,6 +37,10 @@
 
 import { DEFAULT_IDLE_MIN, worktreeOf, judgeWorker, openRows, stalledStages, readRecords } from '../core/movement.ts'
 import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } from '../core/movement.ts'
+import { firstPendingStep } from './auto-advance.ts'
+import { autoAdvanceOf } from '../core/auto-advance.ts'
+import { stepLaunches } from './step-launches.ts'
+import type { StageOptions } from '../core/movement.ts'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { readBoard } from './board.ts'
@@ -143,7 +150,7 @@ export function collectWorkers(input: {
 }
 
 // 보드의 멈춘 단계. idleMin 이 0 이거나 보드 파일이 없으면 빈 목록이고, 읽지 못하면 Error 다
-export function collectStages(repo: string, live: ReadonlySet<string>, settings: MovementSettings, now: number): StageVerdict[] {
+export function collectStages(repo: string, live: ReadonlySet<string>, settings: MovementSettings, now: number, context: { openPrs?: StageOptions['openPrs']; dispatches?: ReadonlySet<string>; branches?: Map<string, string> } = {}): StageVerdict[] {
   const file = boardPath(repo)
   if (settings.idleMin === 0 || !existsSync(file)) return []
   const items = readBoard(file) as Json[]
@@ -151,7 +158,16 @@ export function collectStages(repo: string, live: ReadonlySet<string>, settings:
     const ms = latestMtime(path)
     return ms !== null && now - ms < settings.idleMin * 60_000
   }
-  return stalledStages(items, live, worktreePaths(repo), recent)
+  const autoAdvance = autoAdvanceOf(loadConfig(repo))
+  const steps = new Map<string, { mark: 'auto' | 'ask' | 'wait' | null; step: string; launches: ReturnType<typeof stepLaunches> }>()
+  for (const item of items) {
+    if (!['doing', 'wait'].includes(String(item.status))) continue
+    const step = firstPendingStep(file, item)
+    if (step) steps.set(String(item.id), { mark: step.mark, step: step.key, launches: step.mark === 'auto' ? stepLaunches(repo, String(item.id), step.key) : [] })
+  }
+  return stalledStages(items, live, context.branches ?? worktreePaths(repo), recent, {
+    autoAdvance, steps, openPrs: context.openPrs ?? null, dispatches: context.dispatches ?? new Set(),
+  })
 }
 
 // 화면 기록(<orch 루트>/state/movement.json 의 screens)을 읽는다. 상주 루프가 쓰고 stalled-workers, orch-status 는 읽기만 한다. 없거나 읽지 못하면 빈 기록이다

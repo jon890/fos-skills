@@ -19,6 +19,7 @@ import type { ScreenMark } from '../../lib/movement.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { backgroundWork } from '../../lib/screen.ts'
+import { liveSteps } from '../../lib/step-ready.ts'
 import { worktreePaths } from '../../lib/workers.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
@@ -84,7 +85,13 @@ function watchMovement(
   let error: string | null = null
   if (workers.errors.size === 0) {
     try {
-      const found = stageNotices(previous.stages, collectStages(ctx.repo, workers.live, settings, now), now, settings.idleMin)
+      const rows = runs.map(run => rowsOf(run, lookup))
+      const known = rows.every(got => got.ok && got.shapeOk !== false)
+      const dispatches = liveSteps(rows.flatMap(got => got.ok ? got.rows : [])).dispatches
+      const openPrs = prs.ok && known && prs.mine.every(pr => pr.branch.trim())
+        ? prs.mine.map(pr => ({ number: String(pr.number), branch: pr.branch })) : null
+      const stagesNow = collectStages(ctx.repo, workers.live, settings, now, { openPrs, dispatches, branches: lookup.paths })
+      const found = stageNotices(previous.stages, stagesNow, now, settings.idleMin)
       stages = found.records
       for (const stage of found.fire) {
         const text = `${stage.id} ${stage.worktree ?? stage.branch ?? '-'} ${stage.minutes}분 ${stage.step}`

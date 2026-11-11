@@ -34,6 +34,7 @@ function setup(t: { after(fn: () => void): void }) {
   const run = (args: string[] = ['a', '--run', 'R'], cwd = repo, entry = script) => {
     const result = spawnSync(process.execPath, [entry, ...args], { cwd, encoding: 'utf8', env: { ...process.env,
       ORCH_DIR: join(repo, '.orch'), BOARD_BIN: '', ORCA: join(bin, 'orca'), GH: join(bin, 'gh'), ORCH_GH_CACHE: '0',
+      ORCH_MACHINE_DIR: join(root, 'machine'),
       ORCH_SCRIPTS_DIR: fileURLToPath(new URL('../scripts', import.meta.url)), ORCH_OUTPUT: '', ...extraEnv,
     } })
     return { ...result, first: result.stdout.trim().split('\n')[0] }
@@ -192,4 +193,14 @@ test('next 단계와 설정 오류, 깨진 보드, 사용법을 구분한다', t
   assert.match(broken.stderr, /보드를 읽지 못했다/)
   assert.equal(c.run([]).status, 2)
   assert.equal(c.run(['a', 'b']).status, 2)
+})
+
+test('머신의 마지막 사용 한도 알림 뒤 30분 안에는 자동 진행을 거절한다', t => {
+  const c = setup(t)
+  mkdirSync(join(c.root, 'machine'))
+  const file = join(c.root, 'machine/worker-limited.json')
+  writeFileSync(file, JSON.stringify({ at: Date.now() }))
+  assert.equal(c.run().first, 'AUTO-REJECT a 2 사용 한도 알림 뒤 30분이 지나지 않았다')
+  writeFileSync(file, JSON.stringify({ at: Date.now() - 30 * 60_000 }))
+  assert.equal(c.run().status, 0)
 })

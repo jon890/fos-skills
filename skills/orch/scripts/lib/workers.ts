@@ -37,9 +37,10 @@ export function worktreePaths(repo: string): Map<string, string> {
 // strict 는 doctor 가 쓰던 계약이다. 객체가 아닌 응답은 실패하고 객체가 아닌 행은 건너뛴다.
 // 시간 초과로 실패한 페이지는 같은 인자로 한 번만 더 읽는다. 다른 실패는 바로 반환한다.
 // worker-list 의 행을 모든 페이지에 걸쳐 읽는다. 첫 페이지만 읽으면 다른 worker 를 놓친다(lib/orca.ts 머리 주석).
-export function workerRows(run: string | null, opts?: RunOptions, options: { strict?: boolean; requireShape?: boolean } = {}): { ok: true; rows: Json[] } | { ok: false; error: string } {
+export function workerRows(run: string | null, opts?: RunOptions, options: { strict?: boolean; requireShape?: boolean; shapeStatus?: boolean } = {}): { ok: true; rows: Json[]; shapeOk?: boolean } | { ok: false; error: string } {
   const rows: Json[] = []
   const seen = new Set<string>()
+  let shapeOk = true
   let cursor = ''
   for (;;) {
     const args = ['orchestration', 'worker-list', ...(run ? ['--run', run] : []), '--limit', '100', ...(cursor ? ['--cursor', cursor] : [])]
@@ -48,6 +49,7 @@ export function workerRows(run: string | null, opts?: RunOptions, options: { str
     if (!got.ok) return got
     if (options.strict && !isObject(got.data)) return { ok: false, error: 'worker-list 의 응답이 객체가 아니다' }
     const result = objectOr(got.data)
+    shapeOk &&= isObject(got.data) && Array.isArray(result.workers) && result.workers.every(row => isObject(row) && missingRowKeys(row).length === 0)
     // 자동 진행은 목록 형식을 확인하지 못하면 worker 가 없다고 판단하지 않는다.
     // doctor 의 strict 조회는 누락 키를 따로 출력하므로 기존 동작을 유지한다.
     if (options.requireShape && (!Array.isArray(result.workers) || result.workers.some(row => !isObject(row) || missingRowKeys(row).length > 0))) {
@@ -57,7 +59,7 @@ export function workerRows(run: string | null, opts?: RunOptions, options: { str
     rows.push(...(options.strict ? listed.filter(isObject) : listed.map(value => objectOr(value))))
     const next = objectOr(result.page).nextCursor
     cursor = typeof next === 'string' ? next : ''
-    if (!cursor) return { ok: true, rows }
+    if (!cursor) return { ok: true, rows, ...(options.shapeStatus ? { shapeOk } : {}) }
     if (seen.has(cursor)) return { ok: false, error: 'worker-list 의 다음 페이지가 앞 페이지와 같다' }
     seen.add(cursor)
   }

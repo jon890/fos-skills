@@ -148,7 +148,7 @@ export function stallEntries(value: unknown): Record<string, Stall> {
 export function rowsOf(run: string, lookup: Lookup): ReturnType<typeof workerRows> {
   let rows = lookup.rows.get(run)
   if (!rows) {
-    rows = workerRows(run)
+    rows = workerRows(run, undefined, { shapeStatus: true })
     lookup.rows.set(run, rows)
   }
   return rows

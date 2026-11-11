@@ -14,8 +14,10 @@ import { ghJson } from './gh.ts'
 import { mainCheckout } from './git.ts'
 import { registeredRuns } from './loop.ts'
 import { stagesOf } from './milestones.ts'
-import { openRows, worktreeOf } from './movement.ts'
+import { openRows, worktreeOf } from '../core/movement.ts'
 import { confirmProblem } from './spec-confirm.ts'
+import { LIMITED_PAUSE_MS } from '../core/step-ready.ts'
+import { workerLimitedAt } from './worker-limited.ts'
 import { appendStepLaunch, stepLaunches } from './step-launches.ts'
 import { workerRows, worktreePaths } from './workers.ts'
 
@@ -77,6 +79,8 @@ export function checkAdvance(repo: string, id: string, opts: { board?: string; r
   if (autoAdvance && item && ['doing', 'wait'].includes(input.status!) && step?.mark === 'auto') {
     const launches = stepLaunches(repo, id, step.key)
     input.launched = launches.length > 0
+    const limitedAt = workerLimitedAt()
+    input.limited = limitedAt !== null && Date.now() - limitedAt < LIMITED_PAUSE_MS
     input.busy = busyOf(repo, item, launches, opts.run)
     const views = new Map<string, BoardView[]>()
     input.evidence = parseEvidence(step.body).map(evidence => {
