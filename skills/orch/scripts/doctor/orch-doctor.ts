@@ -583,7 +583,7 @@ function staleWaiters(configDir: string): string[] {
   return lines
 }
 
-// 머리 주석의 「옛 꼴과 직접 경로 판정」이 보는 파일. 저장소 루트 기준 상대경로와 절대경로다
+// 머리 주석의 「옛 꼴과 직접 경로 판정」이 보는 파일. 저장소 루트 기준 상대경로와 절대경로다. __pycache__ 폴더와 *.pyc 는 건너뛴다
 function callFiles(repo: string): string[] {
   const root = mainCheckout(repo)
   const orch = orchDir(root)
@@ -597,6 +597,8 @@ function callFiles(repo: string): string[] {
     }
     for (const entry of entries) {
       const full = join(dir, entry.name)
+      // __pycache__ 와 *.pyc 는 파이썬이 만든 옛 바이트코드라 소스에 없는 호출이 남아 있다. 보지 않는다
+      if (entry.name === '__pycache__' || entry.name.endsWith('.pyc')) continue
       if (entry.isDirectory() && depth > 0 && entry.name !== 'node_modules') walk(full, depth - 1)
       else if (entry.isFile()) files.push(full)
     }
