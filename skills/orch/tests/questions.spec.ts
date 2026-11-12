@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
+import { after, afterEach, before, beforeEach, describe, mock, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ageSeconds, dismissQuestion, poll, readDismissed, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
 
@@ -39,7 +39,7 @@ else if (sub === 'check' && argv.includes('--all')) {
   }
   reply(st.all === undefined ? { messages: [] } : st.all)
 } else if (sub === 'check') reply(st.peek === undefined ? { messages: [] } : st.peek)
-else if (sub === 'task-list') reply({ tasks: st.tasks || [] })
+else if (sub === 'task-list') { if (st.taskFail) { process.stderr.write('tasks offline'); process.exit(1) }; reply({ tasks: st.tasks || [] }) }
 else if (sub === 'inbox') reply({ messages: (st.inbox || {})[argv[argv.indexOf('--terminal') + 1]] || [] })
 `
 
@@ -162,9 +162,17 @@ test('해제된 dispatch 와 끝난 Task 는 답변 메일함을 읽기 전에 �
   assert.equal(calls().filter((args) => args[0] === 'inbox').length, 0)
 })
 
-test('Task 조회가 실패하거나 형식이 바뀌면 질문이 끝났다고 추측하지 않는다', () => {
-  fake({ all: { messages: [message('q', 'question', { task_id: 't' })] }, tasks: 'invalid' })
-  assert.throws(() => snapshot('r'), /Task 종료 상태를 읽지 못했다/)
+test('Task 조회 실패나 잘못된 형식은 한 줄 알리고 열린 질문을 남긴다', () => {
+  const q = message('q', 'question', { task_id: 't' })
+  for (const extra of [{ tasks: 'invalid' }, { taskFail: true }]) {
+    fake({ all: { messages: [q] }, ...extra })
+    const warning = mock.method(process.stderr, 'write', () => true)
+    try {
+      assert.deepEqual(snapshot('r').pending, [q])
+      assert.equal(warning.mock.calls.length, 1)
+      assert.match(String(warning.mock.calls[0].arguments[0]), /^Task 종료 상태를 확인하지 못해 질문을 남긴다: [^\n]+\n$/)
+    } finally { warning.mock.restore() }
+  }
 })
 
 test('열린 Task 와 상태를 모르는 dispatch 의 질문은 남긴다', () => {
