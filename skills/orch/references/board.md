@@ -5,7 +5,7 @@ work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 �
 
 orch 는 명령줄의 보드 파일, `finish.board`, 기본 위치 순서로 고른다. 설정의 상대경로는 주 checkout 기준이고, `finish.board` 가 빈 문자열이면 기본 위치를 쓴다. 설정이 깨졌거나 보드 값이 문자열이 아니면 한 줄 설명과 종료 코드 2 를 내고 기본 보드로 바꾸지 않는다. 루프에서는 `WATCH-ERROR` 로 알리고 뒤 단계와 다음 틱을 계속 실행한다.
 기존 `orch board sync`, `release`, `goal` 의 `--board` 상대경로는 명령을 부른 폴더 기준이다. `goal` 은 설정이 없으면 현재 작업 트리의 기본 보드를 쓰고, 정리 명령은 `cleanup.board` 를 먼저 쓴다.
-보드 창과 `board.ts` 직접 호출은 orch 설정을 읽지 않는다. `finish.board` 를 기본 위치와 다르게 두면 창이 다른 파일을 볼 수 있으므로 직접 명령에는 `--file` 로 같은 파일을 준다.
+보기와 지우기는 `orch board` 를 쓴다. 보드 창과 `board.ts set`, `board.ts mark` 는 orch 설정을 읽지 않으므로 다른 위치를 쓰면 직접 명령에 `--file` 로 같은 파일을 준다.
 
 동기화와 마무리는 읽은 단계 목록을 통째로 저장할 때 줄 지문을 함께 보낸다. 그 사이 글이나 완료 값이 바뀌었으면 덮어쓰지 않는다. 동기화는 그 항목을 다음 틱에 다시 읽고, 릴리스 반영은 다른 항목을 처리한 뒤 종료 코드 1 을 내므로 다시 실행한다. worker 등록과 마무리는 다시 읽어 한 번 재시도한다.
 `BOARD <id> stale` 은 읽은 뒤 줄이 바뀌어 그 항목의 저장을 건너뛰었다는 뜻이다. `sync` 는 다음 틱을 기다리고, `release` 는 종료 코드 1 을 확인한 뒤 다시 부른다.
@@ -16,7 +16,7 @@ orch 는 명령줄의 보드 파일, `finish.board`, 기본 위치 순서로 고
 진행률은 단계 줄에서 센다. `--progress 끝낸단계수/전체단계수` 는 단계로 나타낼 수 없을 때만 쓴다.
 PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단계와 섞이면 보드를 읽기 어렵다.
 
-**worker 는 보드를 고치지 않는다.** `orch board set`, `step`, `add-step` 과 `board.ts mark` 는 스크립트와 코디네이터만 쓴다. worker 가 단계를 체크하면 PR 전인데 100% 로 보인다.
+**worker 는 보드를 고치지 않는다.** `orch board set`, `step`, `add-step`, `del` 과 `board.ts mark` 는 스크립트와 코디네이터만 쓴다. worker 가 단계를 체크하면 PR 전인데 100% 로 보인다.
 
 ## 승인 대기
 
@@ -35,7 +35,7 @@ orch board approval cancel "$APPROVAL_ID" --reason chat
 
 ## 상태와 단계 고치기
 
-**`board.json` 은 직접 고치지 않는다.** 상태와 단계는 아래 명령으로 고친다. 새 항목을 만들거나 제목·PR·담당 워크트리 같은 칸을 고칠 때는 `board.ts set`, 번호 없는 줄을 끝낼 때는 `board.ts mark`, 항목을 지울 때는 `board.ts del` 을 쓴다.
+**`board.json` 은 직접 고치지 않는다.** 상태와 단계는 아래 명령으로 고친다. 새 항목을 만들거나 제목·PR·담당 워크트리 같은 칸을 고칠 때는 `board.ts set`, 번호 없는 줄을 끝낼 때는 `board.ts mark`, 항목을 지울 때는 아래 `orch board del` 을 쓴다.
 
 ```text
 orch board set <항목> <goal|decide|doing|wait|done>
@@ -44,11 +44,24 @@ orch board step <항목> <번호> text "<번호를 포함한 줄 전체>" [--on 
 orch board step <항목> <번호> auto|ask|plain
 orch board step <항목> <번호> wait ["<조건>"]
 orch board add-step <항목> "<글>" [--on "<PR> <사건>"]
-orch board show <항목>
+orch board show <항목> [--json]
+orch board get <항목> <칸> [--json]
+orch board get <항목> step <번호> [--json]
+orch board list [--status <상태>[,<상태>…]] [--json]
+orch board del <항목> [--force]
+orch board del --done
 공통: [--board <파일>] [--repo <폴더>] [--full]
 ```
 
 `--repo` 를 생략하면 워크트리에서도 주 checkout 의 보드를 쓴다. 직접 주면 `finish.board` 가 없을 때 그 작업 트리의 기본 보드를 쓴다. 새 명령의 `--board` 상대경로와 `finish.board` 는 주 checkout 기준이다. 기존 명령의 예외는 위 파일 안내를 따른다.
+
+`get` 은 값만 한 줄로 내므로 `b=$(orch board get <항목> branch)` 로 담는다. 칸 이름은 `board.ts set` 의 칸 옵션과 같고 `status`, `step <번호>` 가 더 있다. 목록은 `orch board get --help` 에서 본다. `progress` 는 끝낸 단계/전체 단계이고 `step` 은 완료 표시 없이 줄 글을 낸다. 제목 칸이 없으면 id 를 쓴다. 값이 없으면 stdout 이 비고 종료 코드 4 다. `set -e` 셸에서는 `if b=$(orch board get <항목> branch); then …` 이나 `|| true` 로 받는다.
+
+`list` 는 항목마다 `BOARD <항목> <상태> <끝낸>/<전체> <제목>` 을 내고, 없으면 `BOARD-NONE` 을 낸다. `--status` 에 쉼표로 상태를 여럿 줄 수 있고 모르는 상태는 종료 코드 1 이다. `--full` 은 모든 줄과 안 풀린 머지 기록도 낸다.
+
+`del` 은 `done` 항목만 지우며 다른 상태는 `--force` 가 필요하다. `--done` 은 끝난 항목 전부를 지운다. 묻지 않고 지우므로 먼저 보려면 `orch board list --status done` 을 쓴다. 지운 항목마다 `BOARD-DEL <항목>` 을 내고 없으면 `BOARD-NONE` 이다. 지우기 전 파일은 `<보드 파일>.bak` 에 한 세대 남으며 다음 통째 저장이나 삭제가 덮는다. 진행 중 항목을 강제로 지우면 동기화가 같은 id 를 다시 만들 수 있다.
+
+`get`, `list`, `show` 는 잠금을 잡지 않는다. `--json` 은 저장된 칸과 계산된 `progress`, `lines` 를 담은 항목 객체를 내며 `show` 는 `unmatched` 도 낸다. `get` 은 `{"id", "field", "value"}` 를 내고 빈 값은 `null` 이다. 거절하면 stdout 은 비고 이유는 stderr 에 나온다.
 
 `set` 은 있는 항목의 상태만 고치며 `doing` 에는 진행률이 있어야 한다. `step` 은 보이는 줄 앞 번호로 고른다. 같은 번호가 둘이거나 없으면 거절한다. `text` 는 번호를 포함한 줄 전체를 받고 번호가 다르거나 사건 꼬리표를 지우면 거절한다. 완료 표시를 쓰지 않으면 끝냄 상태는 유지된다. `undo` 는 항목 상태를 바꾸지 않고, `decide` 의 마지막 줄을 끝내면 항목도 `done` 이 된다.
 

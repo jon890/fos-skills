@@ -77,7 +77,7 @@
 - 마일스톤 단계: orch 가 띄울 때 만드는 항목은 지시서의 할 일이 아니라 사용자 마일스톤 단계(기본 「PR」, 「머지」)를 갖는다. `stages` 필드(「pr=1,merge=2」)가 어느 단계를 어느 사건이 끝내는지 기억하고, `board.ts set --stages` 로 쓴다. 사건은 `pr`, `merge`, `deploy`, `release` 다. 단계를 끝내는 시점은 [갱신 담당 표](../../../skills/orch/references/board.md#갱신-담당)가 소유한다
 - 직접 작성한 사건 단계: `3. develop 머지 (#665 merge)`, `4. dev 배포 (#665 deploy)`, `5. real 반영 (#665 release)` 처럼 줄 끝에 `(#PR번호 사건)` 을 붙인다. 사건은 `pr`, `merge`, `deploy`, `release` 다. 꼬리표가 있는 항목은 goal 도 사건별 단계만 끝내며, 꼬리표 없는 줄과 항목 상태는 자동으로 바꾸지 않는다. 진행률을 세는 쪽의 단계가 대상이다. 창에서는 꼬리표를 숨기고 파일과 `board.ts steps` 출력에는 보존한다
 - 단계 끝내기: `board.ts step <id> <n>` 이 진행률을 세는 줄에서 n 번 단계를 끝낸다. `done` 값만 `true` 로 바꾼다(`--undo` 는 `false`). `set --progress auto` 는 `progress` 값을 지워 단계 수로 세게 한다. `board.ts steps <id>` 는 진행률을 세는 단계 줄을 JSON 으로 낸다. orch 의 `board-sync.ts` 가 이것으로 단계를 판정한다. 단계 밖의 줄(참고 줄, 세지 않는 쪽의 줄)은 JSON 에 넣지 않고 stderr 에 「단계 밖의 줄(mark 번호):」 머리와 함께 낸다
-- 보드 쓰기 잠금: 모든 쓰기는 읽기 전부터 저장까지 `<보드 파일>.lock` 을 잡는다. 5초 안에 못 잡으면 종료 코드 1 이고, 30초 넘은 잠금은 권리 파일을 얻은 하나만 넘겨받는다. `list`, `steps`, `view` 는 잠그지 않는다. 갱신 전에 띄운 루프는 옛 `board.ts` 로 잠금 없이 쓰므로 doctor 의 `LOOP-STALE` 안내대로 다시 띄운다. 잠금 규약과 한계는 [ADR-029](../../../docs/adr/029-board-write-lock.md) 를 따른다.
+- 보드 쓰기 잠금: 모든 쓰기는 읽기 전부터 저장까지 `<보드 파일>.lock` 을 잡는다. 5초 안에 못 잡으면 종료 코드 1 이고, 30초 넘은 잠금은 권리 파일을 얻은 하나만 넘겨받는다. `list`, `steps`, `view`, `get`, `item`, `items` 는 잠그지 않는다. 갱신 전에 띄운 루프는 옛 `board.ts` 로 잠금 없이 쓰므로 doctor 의 `LOOP-STALE` 안내대로 다시 띄운다. 잠금 규약과 한계는 [ADR-029](../../../docs/adr/029-board-write-lock.md) 를 따른다.
 - 엄격 호출: `set <id> … --exact` 는 없는 항목을 만들지 않는다. `step <id> <번호> --exact` 는 없는 번호와 같은 번호의 줄이 둘 이상인 항목을 거절한다. 기존 옵션 없는 호출은 출력과 종료 코드가 같고, 잠금을 못 잡을 때만 종료 코드 1 이 추가된다.
 - 결과 JSON: `set --exact`, `step --exact`, `step-edit`, `step-add`, `step-mark` 는 저장한 항목을 JSON 한 줄로 낸다. `id`, `status`, `was`(바꾸기 전 상태), `progress`, `rev`(줄 지문), `lines` 를 담고 단계 동작은 `number` 도 담는다. `lines` 는 details 다음 next 순서이며 번호 없는 참고 줄도 담는다. 진행률을 세는 쪽의 단계에만 번호가 있고 나머지는 `null` 이다.
 - 항목 읽기: `view <id>` 는 위 JSON 을 내고 파일을 고치지 않는다. `status` 와 `was` 는 같다. 없는 항목은 종료 코드 1 이다.
@@ -155,3 +155,7 @@ PR 은 목록 조회에 성공한 시각, 알림은 inbox 가 넘긴 `fetchedAt`
 ## 플러그인에 넣기
 
 `.claude-plugin/plugin.json` 의 `hooks` 배열이 `extensions/work-board/hooks/hooks.json` 을 가리킨다. 훅 모듈은 `hooks/register.js` 하나다.
+
+- 칸 읽기: `get <id> <칸>`, `get <id> step <번호>` 는 JSON 으로 값을 내고 빈 값은 `null` 과 종료 코드 4 다.
+- 항목 읽기: `item <id>`, `items [<상태>[,<상태>…]]` 는 저장된 칸과 계산한 `progress`, `lines` 를 내며 `view` 와 달리 `was`, `rev` 는 없다.
+- 엄격한 삭제: `del <id> --exact` 는 있는 항목을, `del-done <id>` 는 끝난 항목을 지운다. `del-done` 은 끝난 항목을 모두 지운다. 결과는 지운 id 의 JSON 이고 성공한 삭제는 이전 파일을 `.bak` 에 남긴다. 옵션 없는 `del <id>` 는 상태를 보지 않으며 없는 id 도 성공하고 사본을 남기지 않는다.

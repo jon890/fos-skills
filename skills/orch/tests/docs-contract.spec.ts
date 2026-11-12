@@ -28,11 +28,12 @@ test('자동 진행 표시와 거절 이유, 코디네이터의 다음 단계 �
 test('보드 안내는 파일 직접 수정 대신 등록된 상태·단계 명령과 남는 board.ts 동작을 가리킨다', () => {
   const doc = read('references', 'board.md')
   assert.match(doc, /`board.json` 은 직접 고치지 않는다/)
-  for (const verb of ['set', 'step', 'add-step', 'show']) {
+  for (const verb of ['set', 'step', 'add-step', 'show', 'get', 'list', 'del']) {
     assert.ok(COMMANDS.some((row) => row.group === 'board' && row.verb === verb))
     assert.ok(doc.includes(`orch board ${verb}`))
   }
-  for (const verb of ['set', 'mark', 'del']) assert.ok(doc.includes(`board.ts ${verb}`))
+  for (const verb of ['set', 'mark']) assert.ok(doc.includes(`board.ts ${verb}`))
+  assert.ok(!doc.includes('board.ts del'))
   assert.ok(!doc.includes('`board.ts set/step/mark`'))
 })
 
