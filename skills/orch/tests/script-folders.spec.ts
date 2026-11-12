@@ -2,6 +2,7 @@
 // 스펙: docs/features/orch-cli/spec.md 의 REQ9, DECISION6. 다른 저장소의 직접 경로 호출은 doctor 의 DIRECT-PATH 가 본다.
 //
 // 기록 문서(ADR, 기능 문서, 변경 이력과 조각)는 그때의 배치를 적은 것이라 보지 않는다. tests/ 아래 파일은 옛 경로를 판정하는 입력을 갖고 있어 보지 않는다.
+// 절 참조 검사는 ADR 의 「적용 범위」 줄도 본다. 이 줄은 현재 규칙의 원본을 가리킨다.
 // 호환을 설명하는 줄은 그 줄이나 바로 윗줄의 orch-compat 표지로 뺀다(doctor 와 같은 표지).
 
 import assert from 'node:assert/strict'
@@ -134,11 +135,13 @@ describe('스크립트 폴더', () => {
     const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
     const scripts = new Map(tracked.filter((f) => /^skills\/orch\/scripts\/.*\.ts$/.test(f))
       .map((f) => [f, readFileSync(join(ROOT, f), 'utf8')]))
-    const sources = tracked.filter((f) => !SKIP.some((re) => re.test(f))
+    const sources = tracked.filter((f) => (!SKIP.some((re) => re.test(f)) || f.startsWith('docs/adr/'))
       && (/^skills\/orch\/(?:scripts|references)\//.test(f) || f.startsWith('docs/'))
       && /\.(?:md|ts|js|py|sh)$/.test(f))
     const errors = sources.flatMap((f) => {
-      const text = readFileSync(join(ROOT, f), 'utf8')
+      const raw = readFileSync(join(ROOT, f), 'utf8')
+      const text = f.startsWith('docs/adr/')
+        ? raw.split('\n').map((row) => row.includes('**적용 범위**') ? row : '').join('\n') : raw
       // 스크립트에서는 주석만 본다. 문자열 입력은 참조가 아니다.
       const comments = f.endsWith('.md') ? text : text.split('\n').map((row) => /^\s*\/\//.test(row) ? row : '').join('\n')
       return headerPointerErrors(f, comments, scripts)

@@ -37,4 +37,4 @@
     미해결 스레드 0 은 조합에서 빼지 못하게 늘 본다.
   - 감당할 것: 큐가 멈춘 PR 은 HEAD 가 바뀌기 전에는 다시 걸지 않는다. 코디네이터가 이유를 보고 직접 건다.
   - 감당할 것: 루프가 건 큐가 도는 동안 코디네이터가 큐를 따로 걸면 큐가 둘이 된다. 코디네이터는 `AUTO-MERGE` 를 받으면 그 PR 을 다시 걸지 않는다.
-- **적용 범위**: 판정은 `orch/scripts/lib/auto-merge.ts`, 틱의 자리와 기록은 `orch/scripts/orch-loop.ts` 머리 주석의 「자동 머지」, 설정 키는 [`../data-schema.md`](../data-schema.md) 의 「config.json 에 더하는 절」 이 소유한다.
+- **적용 범위**: 판정은 `orch/scripts/lib/auto-merge.ts`, 틱의 자리와 기록은 `skills/orch/scripts/loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」, 설정 키는 [`../data-schema.md`](../data-schema.md) 의 「config.json 에 더하는 절」 이 소유한다.
