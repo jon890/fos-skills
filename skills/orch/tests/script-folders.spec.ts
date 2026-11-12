@@ -40,19 +40,20 @@ function hasSection(text: string, section: string): boolean {
 function headerPointerErrors(source: string, text: string, scripts: Map<string, string>): string[] {
   const errors: string[] = []
   const pointer = /(?:`([^`\s]+\.ts)`|([\w./-]+\.ts))\s+머리 주석의\s+((?:「[^」]+」)(?:\s*(?:와|과|,)\s*「[^」]+」)*)/g
-  text.split('\n').forEach((row, i) => {
-    for (const match of row.matchAll(pointer)) {
-      const target = match[1] ?? match[2]
-      const local = relative(ROOT, resolve(dirname(join(ROOT, source)), target))
-      const candidates = [...scripts.keys()].filter((file) => file === target || file.endsWith(`/${target}`))
-      const file = scripts.has(local) ? local : candidates.length === 1 ? candidates[0] : undefined
-      for (const section of match[3].matchAll(/「([^」]+)」/g)) {
-        if (!file || !hasSection(scripts.get(file)!, section[1])) {
-          errors.push(`${source}:${i + 1}: ${target} 의 「${section[1]}」 절을 파일 맨 위 설명에서 찾을 수 없다`)
-        }
+  // 줄바꿈은 남겨 매치가 시작한 원래 줄을 알린다. 주석 기호만 빼야 다음 줄의 절도 읽힌다.
+  const content = text.split('\n').map((row) => row.replace(/^\s*\/\/[^\S\n]*/, '')).join('\n')
+  for (const match of content.matchAll(pointer)) {
+    const line = content.slice(0, match.index).split('\n').length
+    const target = match[1] ?? match[2]
+    const local = relative(ROOT, resolve(dirname(join(ROOT, source)), target))
+    const candidates = [...scripts.keys()].filter((file) => file === target || file.endsWith(`/${target}`))
+    const file = scripts.has(local) ? local : candidates.length === 1 ? candidates[0] : undefined
+    for (const section of match[3].matchAll(/「([^」]+)」/g)) {
+      if (!file || !hasSection(scripts.get(file)!, section[1])) {
+        errors.push(`${source}:${line}: ${target} 의 「${section[1]}」 절을 파일 맨 위 설명에서 찾을 수 없다`)
       }
     }
-  })
+  }
   return errors
 }
 
@@ -160,4 +161,15 @@ describe('스크립트 폴더', () => {
     assert.equal(hasSection('// 기록 형식은 다른 파일을 따른다\n', '기록'), false)
     assert.equal(hasSection('#!/usr/bin/env node\n// 기록: 설명\n', '기록'), true)
   })
+
+  test('줄이 나뉜 코드 주석과 문서 참조도 시작 줄을 알린다', () => {
+    const scripts = new Map([['skills/orch/scripts/lib/sample.ts', '// 실제 절: 설명\n']])
+    for (const prefix of ['// ', '']) {
+      const text = `${prefix}설명\n${prefix}lib/sample.ts 머리 주석의\n${prefix}「없는 절」 와\n${prefix}「실제 절」`
+      assert.deepEqual(headerPointerErrors('docs/example.md', text, scripts), [
+        'docs/example.md:2: lib/sample.ts 의 「없는 절」 절을 파일 맨 위 설명에서 찾을 수 없다',
+      ])
+    }
+  })
+
 })
