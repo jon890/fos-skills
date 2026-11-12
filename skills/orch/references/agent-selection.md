@@ -30,7 +30,7 @@
 | `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본) |
 | `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high` |
 | `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
-| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `medium`(넘기지 않는다), Sonnet `high`(기본). 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
+| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5, Claude Fable 5.2(큰 구조 정리만) | sol `medium`(넘기지 않는다), Sonnet `high`(기본), Fable `high`. 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
 | `hard-design` | 어려운 디버깅, 기술·계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
 | `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작 |
 | `review` | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
@@ -39,7 +39,8 @@
 Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 
 - `launch-worker` 는 이 표의 행에 있는 모델만 띄운다. 후보 밖 모델이 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 실제로 후보 밖인 모델에 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다.
-- `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Fable 과 Terra 는 선택 줄에 해당 모델의 `Fable 실험 N/5` 또는 `Terra 실험 N/5`(N 은 1~5)가 있으면 허용한다. Terra 는 Sonnet 이 후보인 행에서만 이 예외를 쓴다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
+- `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 선택 줄에 `Terra 실험 N/5`(N 은 1~5)가 있고 그 행의 후보에 Sonnet 이 있을 때만 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
+- `impl-explore` 의 Fable 은 큰 구조 정리에만 고른다. 후보 검사는 모델 이름만 보므로 조건은 고르는 쪽이 지킨다. 아래 「큰 구조 정리의 Fable」 이 조건을 정한다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
 
 ### 설계 작업 선택 규칙
@@ -89,6 +90,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
 | Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra`(Terra 실험 표시가 있을 때) | Claude Haiku 5.5 |
 | `gpt-6.1-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
+| Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
 
@@ -97,18 +99,16 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 ### 기본 후보에서 뺀 모델
 
-`gpt-6-astra` 와 Claude Fable 5.2 는 worker 와 하위 에이전트의 기본 후보에서 뺀다. 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다. Fable 은 아래 실험 조건을 만족할 때만 고른다.
+`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에서 뺀다. 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
 
-### Fable 5.2 실험
+### 큰 구조 정리의 Fable
 
-Fable 5.2 는 크고 어려운 일 다섯 건에 먼저 쓴다.
+Claude Fable 5.2 는 `impl-explore` 가운데 큰 구조 정리에만 후보다. 설계(`technical-design`, `hard-design`)는 Opus 5.5 와 sol 을 쓴다.
 
-- **대상.** 크고 어려운 일 다섯 건까지다. 큰 파일을 여러 시간 고치는 구조 정리(`impl-explore` 가운데 크기 C 이상)와 `technical-design` 이다.
-- **effort.** `high` 다(Anthropic 권장 기본값).
-- **예외.** 계획을 마친 구현에서 Opus·sol 을 `medium` 까지만 쓰는 규칙(아래 「effort」)의 예외다. 실험 다섯 건에만 적용한다.
-- **지시서 표시.** `worker 선택:` 줄에 `claude-fable-5-2` `high` 와 「Fable 실험 N/5」 를 적는다. 비교 칸에는 그 일을 원래 맡았을 모델을 적는다.
-- **기록.** 건마다 Task, 크기, 걸린 시간, 비용, 첫 리뷰 차단 건수, 다시 맡긴 횟수를 남긴다. 코디네이터가 보드 항목 `routing-fable-experiment` 의 단계 줄에 적는다. 비교는 같은 크기의 Opus·sol 작업 실측 기록(`routing-log.jsonl`)과 한다.
-- **끝.** 다섯 건이 끝나면 코디네이터가 결과를 사용자에게 올려 후보에 넣을지 정한다. 그때까지 Fable 은 기본 후보가 아니다.
+- **큰 구조 정리.** 여러 스킬이나 수십 파일에 걸친 리팩터링과 문서 정리로, 크기 C 이상이다. 한 스킬 안의 몇 파일 구현은 아니다.
+- **effort.** `high` 다(Anthropic 권장 기본값). 계획을 마친 구현에서 Opus·sol 을 `medium` 까지만 쓰는 규칙(아래 「effort」)은 Fable 에 적용하지 않는다.
+- **고르는 쪽.** 지시서 `worker 선택:` 줄의 비교 칸에 Opus 나 sol 을 적고, 이유에 큰 구조 정리인 까닭과 가격(Opus 의 2배)을 감수하는 까닭을 적는다. 한국어 문서가 주 산출물이어도 Claude 라 hook 이 걸린다.
+- **근거.** 구조 정리 두 건의 첫 리뷰 차단이 0 이었다([evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-12 절).
 
 ### Terra 실험
 
@@ -126,7 +126,7 @@ PR 마다 실측을 쌓는다. 기록 형식은 스펙 [「기록 항목」](../
 
 **모델마다 공식 시작점이 다르다. 계획서가 있으면 위 표의 낮은 쪽에서 시작한다.**
 
-- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다. 「Fable 5.2 실험」 의 다섯 건만 예외다.
+- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 와 Fable 5.2 는 `high` 가 기본이다.
 
 | 단계 | 올리거나 내리는 조건 |
 | --- | --- |
