@@ -23,5 +23,5 @@
   - 감당할 것: 체크아웃, worker 워크트리, CI 는 `npm ci` 를 먼저 돌아야 테스트가 돈다.
   - 감당할 것: Codex 설치본은 이 설치를 하지 않는다. `orch` 실행기가 Claude 설치 기록의 번들을 고르는 동안은 영향이 없다.
   - 감당할 것: 설치 스크립트가 필요한 의존(네이티브 모듈)과 git 의존은 설치되지 않는다. 그런 의존은 들이지 않는다.
-  - 감당할 것: 루트의 `"type": "module"` 이 CommonJS 진입(`bin/orch`, orch 의 gh·orca 감시)을 ES 모듈로 읽게 한다. 그 폴더에 `type` 만 담은 `package.json` 을 둔다.
+  - 감당할 것: 루트의 `"type": "module"` 이 CommonJS 진입(`bin/orch`, orch 의 gh·orca 감시)을 ES 모듈로 읽게 한다. `bin/` 에는 `type` 만 담은 `package.json` 을 두고, ES 모듈과 같은 폴더에 있는 guard shim 은 `type` 과 상관없이 도는 꼴로 고친다.
 - **확인 방법**: `scripts/runtime-policy.ts` 의 `package.json` 자리와 bare import 허용 목록 검사, orch core 경계 검사의 허용 의존, 의존 설치 실패 때 `orch doctor` 의 `CLI-DEPS-MISSING` 테스트.

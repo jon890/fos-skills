@@ -19,15 +19,15 @@ PR 은 「PR 나누기」 의 번호다.
 | REQ9 | `lib/config.ts` 의 새 `updateConfig` 가 `withFileLock`(`extensions/work-board/bin/file-lock.ts`) 안에서 다시 읽고, 바꾸고, 옆 파일에 쓴 뒤 이름을 바꾼다. 파일이 없으면 `ensure('config', repo)` 로 orch 루트를 만든다. 옛 위치에 설정이 남은 저장소는 `requireMigrated` 로 먼저 막는다. `doctor migrate` 의 설정 쓰기 두 길도 이 함수로 옮긴다 | PR2 |
 | REQ10 | 명령이 `CONFIG-SET`, `CONFIG-UNSET` 한 줄을 만든다. 이전 값은 잠금 안에서 읽은 값이다 | PR2 |
 | REQ11 | `core/config-schema.ts` 의 `RESTART_KEYS` 에 든 경로를 바꿨고 `lib/loop.ts` 의 `loopStatus` 가 살아 있음이나 다시 확인 필요를 내면 stderr 에 한 줄을 낸다 | PR2 |
-| REQ12 | `skills/orch/references/overlay.md` 에 「설정 바꾸기」 절을 두고, 값을 직접 두라는 안내(`replying.md`, `heavy-checks.md`, `board.md`, `hooks.md`, `cleanup.md`, `spec-writing.md`)를 `orch config set` 예시로 바꾼다. 키 타입 표는 PR1 이 코드 기준으로 맞춘다 | PR1, PR2 |
+| REQ12 | `skills/orch/references/overlay.md` 에 「설정 바꾸기」 절을 두고, 값을 직접 두라는 안내(`replying.md`, `heavy-checks.md`, `board.md`, `hooks.md`, `cleanup.md`, `spec-writing.md`)를 `orch config set` 예시로 바꾼다. 키 타입 표도 코드 기준으로 맞춘다 | PR2 |
 | REQ13 | 공통 지시서 틀(`skills/orch/templates/spec-common.md`)에 `<!-- orch-rule: no-config-edit -->` 항목을 더한다 | PR2 |
 
 ## PR 나누기
 
 | PR | 내용 | 앞 PR |
 | --- | --- | --- |
-| PR1 | 저장소 루트의 `package.json`·`package-lock.json`(zod), `.gitignore`, CI 의 `npm ci`, 저장소 실행 규칙과 검사 고침, [ADR-030](../../adr/030-plugin-npm-dependencies.md), 검사표(`core/config-schema.ts`), 순수 판정 다섯 개 옮기기, `orch doctor` 의 `INVALID-CONFIG` 확장, `docs/data-schema.md` 와 `overlay.md` 의 키 타입 맞추기 | 없음 |
-| PR2 | `orch config` 명령, 설정 쓰기 잠금과 `doctor migrate` 이전, 루프 재시작 알림, 문서 안내와 공통 지시서 규칙 | PR1 |
+| PR1 | 저장소 루트의 `package.json`·`package-lock.json`(zod), `.gitignore`, CI 의 `npm ci`, 저장소 실행 규칙과 검사 고침, [ADR-030](../../adr/030-plugin-npm-dependencies.md), 검사표(`core/config-schema.ts`), 순수 판정 다섯 개 옮기기, `orch doctor` 의 `INVALID-CONFIG` 확장 | 없음 |
+| PR2 | `orch config` 명령, 설정 쓰기 잠금과 `doctor migrate` 이전, 루프 재시작 알림, 문서 안내와 공통 지시서 규칙, `docs/data-schema.md` 와 `overlay.md` 의 키 타입 맞추기 | PR1 |
 
 PR1 만 머지돼도 doctor 가 틀린 값을 알려 쓸모가 있다. PR2 는 PR1 의 검사표 없이는 `set` 이 검사할 수 없다.
 
@@ -36,7 +36,7 @@ PR1 만 머지돼도 doctor 가 틀린 값을 알려 쓸모가 있다. PR2 는 P
 값 검사는 zod 4 로 쓴다. 저장소 루트(플러그인 루트)에 `package.json` 과 `package-lock.json` 을 두고, 사용자 머신의 설치는 Claude Code 의 플러그인 의존 설치에 맡긴다(사용자 결정 2026-11-12). 선택 이유와 기각한 대안은 [ADR-030](../../adr/030-plugin-npm-dependencies.md) 이 소유한다.
 
 - **패키지 파일:** 루트 `package.json` 에 `"private": true`, `"type": "module"`, 의존 `zod` 를 정확한 버전으로 둔다(설계 단계 4.6.7). Claude Code 는 레지스트리 패키지의 정확한 버전만 설치하고 `--ignore-scripts`, 60초 제한으로 돈다(공식 문서 plugins/loading 「Node.js package dependencies」). lock 은 `package-lock.json` 이다. `pnpm-lock.yaml` 은 그 설치가 건너뛰므로 쓰지 않는다.
-- **CommonJS 진입:** 루트의 `"type": "module"` 은 CommonJS 로 쓴 `bin/orch` 와 `skills/orch/scripts/lib/guard/gh`·`orca` 를 ES 모듈로 읽게 해 깨뜨린다(설계 검토에서 Node 24.22.1 로 재현). `bin/` 과 `skills/orch/scripts/lib/guard/` 에 `{"type": "commonjs"}` 만 담은 `package.json` 을 둔다. `"type"` 을 빼면 `.ts` 를 돌릴 때마다 `MODULE_TYPELESS_PACKAGE_JSON` 경고가 나와서 그 길은 쓰지 않는다. work-board 의 hooks `.js` 넷은 이미 ES 모듈이다.
+- **CommonJS 진입:** 루트의 `"type": "module"` 은 CommonJS 로 쓴 `bin/orch` 와 `skills/orch/scripts/lib/guard/gh`·`orca` 를 ES 모듈로 읽게 해 깨뜨린다(설계 검토에서 Node 24.22.1 로 재현). `bin/` 에는 `{"type": "commonjs"}` 만 담은 `package.json` 을 둔다(`bin/` 에는 `orch` 하나뿐이다). `skills/orch/scripts/lib/guard/` 는 같은 폴더에 ES 모듈 `guard.ts` 가 있어 그 방법을 쓰면 `guard.ts` 가 깨진다(계획 검토에서 재현). 그래서 shim `gh`·`orca` 를 `githooks/commit-msg` 처럼 `process.getBuiltinModule` 과 `process.argv[1]` 로 고쳐 `type` 과 상관없이 돌게 한다. `"type"` 을 빼면 `.ts` 를 돌릴 때마다 `MODULE_TYPELESS_PACKAGE_JSON` 경고가 나와서 그 길은 쓰지 않는다. work-board 의 hooks `.js` 넷은 이미 ES 모듈이다.
 - **`node_modules`:** 커밋하지 않는다. `.gitignore` 에 `/node_modules/` 를 둔다. 빌드 단계는 두지 않고 `.ts` 를 지금처럼 바로 실행한다.
 - **사용자 머신:** Claude Code 가 플러그인을 캐시에 복사할 때(설치, 버전 갱신, 캐시가 없을 때의 세션 시작) `<캐시>/<버전>/node_modules` 에 설치한다. 이 자동 설치는 끌 수 없다.
 - **개발과 CI:** 체크아웃과 worker 워크트리는 `npm ci` 로 설치한다. CI 의 테스트 job 은 테스트 앞에 `npm ci` 를 돈다. 이 저장소의 `.orch/overlay.md` 「로컬 검증」 첫 단계에 `npm ci` 를 두어 worker 가 워크트리에서 돈다.
@@ -159,7 +159,7 @@ orch config unset <경로>...
   - 기존 core 판정. 그 키 하나만 담은 설정(`{ queue: { auto_review: 값 } }`)으로 판정을 부르고, 던진 `ConfigError` 를 그 키 경로의 문제로 바꾼다. 판정 함수가 절의 모르는 키를 먼저 막거나 첫 오류 하나만 던져도, 키 하나만 넘기므로 다른 키에 가리지 않는다.
   - 판정이 다른 키 값에 따라 일부를 건너뛰는 경우(`refreshSettings` 는 `refresh_slots` 가 0 이면 `refresh_worker_paths` 를 보지 않는다)는 그 키에 따로 zod 스키마를 둔다.
 - `PAIRS`: 절마다 짝 규칙 목록. 규칙마다 `{ keys, check(body): string | null }` 다. zod 객체에 달지 않고 절의 원래 객체에 따로 돌린다. 규칙의 키 가운데 하나라도 자기 검사에서 틀렸으면 그 규칙은 건너뛴다. 같은 원인을 두 번 알리지 않으려는 것이다.
-- `problems(raw: unknown): Problem[]`. `Problem` 은 `{ path, reason }` 다. 차례는 최상위가 객체인지, 절 이름, 절이 객체인지, 옛 설정 칸, 키 이름, 키별 검사, 짝 규칙이다. 모든 키와 모든 짝 규칙을 서로 독립으로 돌린다. 깨진 JSON 은 파일 읽기 단계의 일이라 여기 들어오지 않는다.
+- `problems(raw: unknown): Problem[]`. `Problem` 은 `{ path, reason, kind }` 다. `kind` 는 `structure`(최상위·절의 꼴), `unknown`(모르는 절·키·이름), `removed`(옛 설정 칸), `value`(키별 검사), `pair`(짝 규칙)다. doctor 는 `removed` 의 안내에 `--repo <저장소>` 를 붙이고, 명령은 `kind` 로 이유를 고른다. 차례는 최상위가 객체인지, 절 이름, 절이 객체인지, 옛 설정 칸, 키 이름, 키별 검사, 짝 규칙이다. 모든 키와 모든 짝 규칙을 서로 독립으로 돌린다. 깨진 JSON 은 파일 읽기 단계의 일이라 여기 들어오지 않는다.
 - `knownPath(names: string[]): 'known' | 'unknown' | 'removed'`. `KEYS` 를 따라 내려간다. zod `strictObject` 는 `shape` 의 키, `record` 는 어떤 이름이든 안다. 기존 core 판정인 키는 아래 이름 목록을 함께 적는다(`queue.auto_review` 는 `pass`, `block`, `require`, `feature_head`, 원본은 `core/auto-merge.ts` 의 키 목록).
 - `RESTART_KEYS`: `pipeline.tick_sec`, `finish.run`, `finish.specs_dir`.
 
@@ -318,7 +318,7 @@ orch config unset <경로>...
 | DECISION16 | 짝 규칙과 기존 판정의 자리 | zod 객체의 `superRefine` 에 달지 않고 키별·규칙별로 따로 돌린다 | 작성자 | zod 는 객체 안의 키 하나가 틀리면 `superRefine` 을 건너뛴다(「설계 단계 실측」) |
 | DECISION17 | 바꾼 경로의 문제 | 옛 문제와 비교하지 않고 늘 거절 이유로 센다 | 작성자 | zod 의 이유 문구에 값이 들어가지 않아 비교하면 틀린 값끼리의 바꿈이 통과한다 |
 | DECISION19 | 여러 경로 한 호출 | `set`·`unset` 이 여러 경로를 한 잠금 안에서 함께 바꾸고 함께 검사한다 | 사용자 2026-11-12 | 스펙 DECISION22 |
-| DECISION20 | CommonJS 진입과 `"type": "module"` | `bin/`, `skills/orch/scripts/lib/guard/` 에 `type` 만 담은 `package.json` 을 둔다 | 작성자 | 세 파일을 고치지 않아 동작이 같다. `bin/orch` 가 낮은 Node 에서 버전 부족을 알리는 동작도 그대로다 |
+| DECISION20 | CommonJS 진입과 `"type": "module"` | `bin/` 에는 `type` 만 담은 `package.json` 을 두고, guard shim 둘은 `type` 과 상관없이 도는 꼴로 고친다 | 작성자 | `bin/orch` 는 고치지 않아 낮은 Node 에서 버전 부족을 알리는 동작이 그대로다. guard 폴더에는 ES 모듈 `guard.ts` 가 함께 있어 폴더 단위 `type` 을 쓸 수 없다. 형식 무관 진입은 `githooks/commit-msg` 가 이미 쓰는 꼴이다 |
 | DECISION21 | 워크트리 설치 확인 | `run-tests` 가 자기 `node_modules` 와 lock 의 버전 일치를 본다 | 작성자 | 워크트리는 주 checkout 아래에 있어 설치가 없으면 주 checkout 의 옛 의존을 쓴다(설계 검토) |
 | DECISION18 | 옛 위치에 설정이 남은 저장소 | 네 동작 모두 `requireMigrated` 로 막는다 | 작성자 | 다른 orch 명령과 같은 규칙이다(`lib/paths.ts` 59~61, 180행). 막지 않으면 `set` 이 새 파일을 만들어 옛 설정을 가린다 |
 
