@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
+import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/launch-worker-run.ts', import.meta.url))
@@ -821,21 +822,13 @@ describe('띄우기', () => {
   describe('띄운 worker 의 기록', () => {
     const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
 
-    for (const sample of [
-      { name: '리뷰 행', text: 'worker 선택: `claude` `m` effort `기본`. 행: review. 비교: codex. 이유: 리뷰.\n', none: true },
-      { name: '머지하지 않는 지시', text: '5. 머지하지 않는다. PR 주소를 status 로 보낸다.\n', none: true },
-      { name: '머지하지 않지만 준비 보고가 필요한 지시', text: '5. 머지하지 않는다.\n## 완료 기준\n- `준비됨 #PR` 을 보낸다.\n', none: false },
-      { name: '리뷰지만 준비 보고가 필요한 지시', text: 'worker 선택: `claude` `m` effort `기본`. 행: review. 비교: codex. 이유: 리뷰.\n## 완료 기준\n### 보고\n- 준비됨 을 보낸다.\n', none: false },
-      { name: '완료 기준 밖의 준비 보고 언급', text: '머지하지 않는다.\n## 완료 기준\n- PR 주소를 보낸다.\n## 배경\n준비됨 은 다른 작업의 신호다.\n', none: true },
-      { name: '인용한 배경', text: '- 배경: 지시서에 「머지하지 않는다」 가 있는 작업을 고친다.\n', none: false },
-      { name: '보통 구현', text: '완료 기준: 준비됨 status 를 보낸다.\n', none: false },
-    ]) test(`${sample.name}의 PR 준비 필요 여부를 기록한다`, () => {
+    for (const sample of prReadyCases) test(`${sample.name}의 PR 준비 필요 여부를 기록한다`, () => {
       writeFileSync(spec, readFileSync(spec, 'utf8') + '\n' + sample.text)
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
       const r = launch(['--spec', spec, '--worktree', worktree, '--watch', '0', '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
       const entry = JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8'))
-      assert.equal(entry.completion, sample.none ? 'none' : undefined)
+      assert.equal(entry.completion, sample.skip ? 'none' : undefined)
       assert.equal(launchHistory(worktree).at(-1)?.completion, entry.completion)
     })
 

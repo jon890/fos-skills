@@ -11,6 +11,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSy
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { inside, isFile, realPath } from './fs.ts'
 import { orcaJson } from './orca.ts'
+import { outsideFences } from './common-rules.ts'
 
 // 줄 머리의 `브랜치: \`x\``. 목록 기호(-, *)와 굵은 글씨(**브랜치:**, **브랜치**:)를 모두 받는다.
 // 어느 꼴이라도 놓치면 그 지시서가 지워지지 않거나 워크트리가 만들어지지 않는다.
@@ -67,8 +68,9 @@ export function selectionsOf(text: string): Selection[] {
 // 리뷰 행 또는 독립된 「머지하지 않는다」 지시는 PR 준비 보고 없이 끝나는 작업이다.
 // 배경 설명 속 인용이나 공통 지시서의 「머지는 코디네이터가 한다」 는 면제 근거로 삼지 않는다.
 export function skipsPrReady(text: string): boolean {
+  const visible = outsideFences(lines(text))
   let completionLevel = 0
-  for (const line of lines(text)) {
+  for (const line of visible) {
     const heading = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
     if (heading) {
       if (completionLevel && heading[1].length <= completionLevel) completionLevel = 0
@@ -77,8 +79,8 @@ export function skipsPrReady(text: string): boolean {
     // 완료 기준이 준비 보고를 요구하면 자동 제외보다 그 요구가 우선한다.
     if (completionLevel && line.includes('준비됨')) return false
   }
-  return selectionsOf(text)[0]?.row === 'review'
-    || lines(text).some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?머지하지 않는다(?:[.\s]|$)/.test(line))
+  return selectionsOf(visible.join('\n'))[0]?.row === 'review'
+    || visible.some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?머지하지 않는다(?:[.\s]|$)/.test(line))
 }
 
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
