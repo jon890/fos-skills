@@ -64,18 +64,28 @@ function messages(data: Record<string, unknown>): Message[] {
   return rows as Message[]
 }
 
+// cache 는 호출자가 틱마다 새로 만들고 Run 별 성공·실패 결과를 함께 보관한다. 넘기지 않으면 매 호출이 새로 읽는다.
 // task-list 는 필드 선택 옵션이 없어 --brief 로 spec 과 result 를 줄이고 id/status 만 보관한다.
 export type TaskStates = ReadonlyMap<string, string>
-function readTaskStates(run: string): TaskStates {
-  const tasks = orca(['task-list', '--run', run, '--brief']).tasks
-  if (!Array.isArray(tasks) || tasks.some(task => typeof task !== 'object' || task === null || Array.isArray(task) || typeof task.id !== 'string' || typeof task.status !== 'string')) {
-    throw new Error('Task 종료 상태를 읽지 못했다')
+function readTaskStates(run: string, cache?: Map<string, TaskStates | null>): TaskStates | null {
+  if (cache?.has(run)) return cache.get(run) ?? null
+  try {
+    const tasks = orca(['task-list', '--run', run, '--brief']).tasks
+    if (!Array.isArray(tasks) || tasks.some(task => typeof task !== 'object' || task === null || Array.isArray(task) || typeof task.id !== 'string' || typeof task.status !== 'string')) {
+      throw new Error('Task 종료 상태를 읽지 못했다')
+    }
+    const states: TaskStates = new Map(tasks.map(task => [task.id, task.status]))
+    cache?.set(run, states)
+    return states
+  } catch (e) {
+    cache?.set(run, null)
+    process.stderr.write(`Task 종료 상태를 확인하지 못해 질문을 남긴다: ${String((e as Error)?.message ?? e).replace(/\s+/g, ' ')}\n`)
+    return null
   }
-  return new Map(tasks.map(task => [task.id, task.status]))
 }
 
 // run 이 없으면 run-current 의 Run 이다. { run, pending } 을 낸다.
-export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[] }
+export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[]; tasks?: Map<string, TaskStates | null> }
 
 export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { run: string; pending: Message[] } {
   if (!run) {
@@ -105,15 +115,11 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   }
   // Task 종료가 dispatch 상태보다 먼저 반영될 수 있다. 남은 질문에 Task 가 있을 때만 Run 의 목록을 한 번 읽는다.
   if ([...candidates.values()].some((m) => context(m)[0])) {
-    try {
-      const tasks = readTaskStates(run)
-      const endedTasks = new Set([...tasks].filter(([, status]) => SETTLED.has(status)).map(([id]) => id))
-      for (const [id, message] of candidates) {
-        const task = context(message)[0]
-        if (task && endedTasks.has(String(task))) candidates.delete(id)
-      }
-    } catch (e) {
-      process.stderr.write(`Task 종료 상태를 확인하지 못해 질문을 남긴다: ${String((e as Error)?.message ?? e).replace(/\s+/g, ' ')}\n`)
+    const tasks = readTaskStates(run, lookup.tasks)
+    const endedTasks = new Set([...(tasks ?? [])].filter(([, status]) => SETTLED.has(status)).map(([id]) => id))
+    for (const [id, message] of candidates) {
+      const task = context(message)[0]
+      if (task && endedTasks.has(String(task))) candidates.delete(id)
     }
   }
   // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다

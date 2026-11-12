@@ -166,9 +166,13 @@ test('Task 조회 실패나 잘못된 형식은 한 줄 알리고 열린 질문�
   const q = message('q', 'question', { task_id: 't' })
   for (const extra of [{ tasks: 'invalid' }, { taskFail: true }]) {
     fake({ all: { messages: [q] }, ...extra })
+    const lookup = { tasks: new Map<string, ReadonlyMap<string, string> | null>() }
+    const before = calls().filter(args => args[0] === 'task-list').length
     const warning = mock.method(process.stderr, 'write', () => true)
     try {
-      assert.deepEqual(snapshot('r').pending, [q])
+      assert.deepEqual(snapshot('r', lookup).pending, [q])
+      assert.deepEqual(snapshot('r', lookup).pending, [q])
+      assert.equal(calls().filter(args => args[0] === 'task-list').length - before, 1)
       assert.equal(warning.mock.calls.length, 1)
       assert.match(String(warning.mock.calls[0].arguments[0]), /^Task 종료 상태를 확인하지 못해 질문을 남긴다: [^\n]+\n$/)
     } finally { warning.mock.restore() }
@@ -180,6 +184,22 @@ test('Task 조회는 짧은 응답을 요청하고 id/status 로만 종료를 �
   fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed', spec: '긴 지시서', result: '긴 결과' }] })
   assert.deepEqual(snapshot('r').pending, [])
   assert.deepEqual(calls().filter(args => args[0] === 'task-list'), [['task-list', '--run', 'r', '--brief']])
+})
+
+test('같은 틱의 Task 결과는 Run 별로 재사용하고 다음 틱에 다시 읽는다', () => {
+  const lookup = { tasks: new Map<string, ReadonlyMap<string, string> | null>() }
+  const q = message('q', 'question', { task_id: 't' })
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'running', spec: '보관하지 않는 본문' }] })
+  assert.deepEqual(snapshot('r', lookup).pending, [q])
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed' }] })
+  assert.deepEqual(snapshot('r', lookup).pending, [q])
+  assert.deepEqual([...lookup.tasks.get('r')!], [['t', 'running']])
+  const other = { ...q, run_id: 'other', to_handle: 'run:other' }
+  fake({ all: { messages: [other] }, tasks: [{ id: 't', status: 'completed' }] })
+  assert.deepEqual(snapshot('other', lookup).pending, [])
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed' }] })
+  assert.deepEqual(snapshot('r', { tasks: new Map() }).pending, [])
+  assert.deepEqual(calls().filter(args => args[0] === 'task-list').map(args => args[2]), ['r', 'other', 'r'])
 })
 
 test('열린 Task 와 상태를 모르는 dispatch 의 질문은 남긴다', () => {

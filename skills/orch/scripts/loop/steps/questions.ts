@@ -12,7 +12,7 @@ import { context as questionContext } from '../../lib/completion.ts'
 import { isUserDecision } from '../../lib/decisions.ts'
 import { pathOf } from '../../lib/paths.ts'
 import { closedReason, notifyQuestion, poll, pruneSharedClosed, readClosed, shareClosedQuestion, writeClosed } from '../../lib/questions.ts'
-import type { ClosedLookup } from '../../lib/questions.ts'
+import type { ClosedLookup, QuestionLookup } from '../../lib/questions.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { completionMessages } from '../completion-watch.ts'
@@ -48,6 +48,7 @@ export async function checkQuestions(ctx: StepContext, state: StepState): Promis
       log(`orch-loop: 공유 닫힌 질문 기록을 쓰지 못했다: ${oneLine(e)}`)
     }
   }
+  const tasks: QuestionLookup['tasks'] = new Map()
   let closedChanged = false
   for (const { run } of runs) {
     if (!run) {
@@ -66,7 +67,7 @@ export async function checkQuestions(ctx: StepContext, state: StepState): Promis
         // 완료 조회 실패로 질문 확인까지 멈추지 않는다. 완료 보고 단계가 자기 오류를 기록한다.
         log(`orch-loop: 질문에서 완료 보고를 읽지 못했다: ${oneLine(e)}`)
       }
-      const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo, { rows, done })
+      const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo, { rows, done, tasks })
       notices = polled.notices
       pendingDecisions.set(run, polled.pending)
       waiting.set(run, askers(polled.pending))
