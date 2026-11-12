@@ -34,6 +34,7 @@ function cases(): Record<string, Input> {
         orca: offline ? [{ code: 1, stderr: 'offline\n' }] : [
           { args: ['worker-list', 'r1'], stdout: envelope({ workers: [worker('r1')], page: {}, scope: { source: 'flag' } }) },
           { args: ['worker-list', 'r2'], stdout: envelope({ workers: [worker('r2')], page: {}, scope: { source: 'flag' } }) },
+          { args: ['task-list'], stdout: envelope({ tasks: [] }) },
           { args: ['check', '--all'], stdout: envelope({ messages: [] }) },
           { args: ['check', 'r1'], stdout: envelope({ messages: [question] }) },
           { args: ['check', 'r2'], stdout: envelope({ messages: [] }) },

@@ -4,7 +4,8 @@
 //
 // 이 Run 의 질문(question, escalation)을 읽고, 그다음 질문을 보낸 쪽마다 받은 답을 읽는다. 전역 inbox 는 읽지 않는다.
 // 전역 기록은 수십 MB 까지 커져 조회가 느려지고 출력 한도에 닿는다.
-// 루프가 이번 틱의 worker 행과 worker_done 을 주면 끝난 dispatch 의 질문은 답변 메일함을 읽기 전에 뺀다.
+// 루프가 이번 틱의 worker 행과 worker_done 을 주면 끝나거나 해제된 dispatch 의 질문은 답변 메일함을 읽기 전에 뺀다.
+// Task 가 있는 후보가 남으면 task-list --run 으로 종료 상태를 확인해 끝난 Task 의 질문도 뺀다. 조회 실패는 오류다.
 // PR 이 열려 있어도 끝난 dispatch 에는 답을 전달할 수 없다. 후속 dispatch 의 질문은 별도 id 로 계속 확인한다.
 //
 // 조회 범위: Orca 는 check 의 기록과 --peek 을 100건까지 낸다. 그 한도에 닿으면 stderr 에 조회 범위를 알린다.
@@ -24,6 +25,7 @@
 //
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
+import { objectOr } from '../core/json.ts'
 import { KINDS, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
 import type { Message, Notice } from '../core/questions.ts'
 import { createHash } from 'node:crypto'
@@ -78,16 +80,30 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   }
   // 같은 id 는 뒤의 것(읽지 않은 질문)으로 덮되 처음 나온 자리를 지킨다
   const candidates = new Map<unknown, Message>()
+  const dismissed = readDismissed()
   const ended = new Set((lookup.rows?.ok ? lookup.rows.rows : [])
-    .filter((row) => SETTLED.has(String(row.dispatchStatus)))
+    .filter((row) => SETTLED.has(String(row.dispatchStatus)) || row.dispatchStatus === 'released' || row.dispatchStatus === 'dispatch_inactive' ||
+      row.terminalState === 'released' || objectOr(row.resource).ownershipState === 'released' || objectOr(row.resource).releaseState === 'released')
     .map((row) => String(row.dispatchId)))
   for (const message of lookup.done ?? []) {
     if (message.type === 'worker_done' && (message.run_id ?? message.runId) === run && dispatchOf(message)) ended.add(String(dispatchOf(message)))
   }
   for (const m of [...history, ...unread]) {
     // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
-    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m) &&
+    if (m.id && !Object.hasOwn(dismissed, String(m.id)) && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m) &&
       !ended.has(String(dispatchOf(m))) && !sharedClosedReason(run, String(m.id), true)) candidates.set(m.id, m)
+  }
+  // Task 종료가 dispatch 상태보다 먼저 반영될 수 있다. 남은 질문에 Task 가 있을 때만 Run 의 목록을 한 번 읽는다.
+  if ([...candidates.values()].some((m) => context(m)[0])) {
+    const tasks = orca(['task-list', '--run', run]).tasks
+    if (!Array.isArray(tasks) || tasks.some((task) => typeof task !== 'object' || task === null || Array.isArray(task))) {
+      throw new Error('Task 종료 상태를 읽지 못했다')
+    }
+    const endedTasks = new Set(tasks.filter((task) => SETTLED.has(String(task.status))).map((task) => String(task.id)))
+    for (const [id, message] of candidates) {
+      const task = context(message)[0]
+      if (task && endedTasks.has(String(task))) candidates.delete(id)
+    }
   }
   // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다
   const handlesOf = (m: Message): string[] => {

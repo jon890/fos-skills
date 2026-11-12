@@ -39,6 +39,7 @@ else if (sub === 'check' && argv.includes('--all')) {
   }
   reply(st.all === undefined ? { messages: [] } : st.all)
 } else if (sub === 'check') reply(st.peek === undefined ? { messages: [] } : st.peek)
+else if (sub === 'task-list') reply({ tasks: st.tasks || [] })
 else if (sub === 'inbox') reply({ messages: (st.inbox || {})[argv[argv.indexOf('--terminal') + 1]] || [] })
 `
 
@@ -132,6 +133,38 @@ test('끝난 dispatch 의 질문은 발신 터미널과 dispatch 메일함을 �
   assert.deepEqual(calls().filter((args) => args[0] === 'inbox').map((args) => args[args.indexOf('--terminal') + 1]), ['term_live', 'dispatch:live'])
 })
 
+test('해제된 dispatch 와 끝난 Task 는 답변 메일함을 읽기 전에 뺀다', () => {
+  const cases = [
+    { dispatchStatus: 'released' },
+    { dispatchStatus: 'dispatch_inactive' },
+    { resource: { ownershipState: 'released' } },
+    { resource: { releaseState: 'released' } },
+    { terminalState: 'released' },
+  ]
+  for (const extra of cases) {
+    fake({ all: { messages: [message()] } })
+    assert.deepEqual(snapshot('r', { rows: { ok: true, rows: [{ dispatchId: 'd', dispatchStatus: 'running', ...extra }] } }).pending, [])
+  }
+  for (const status of ['completed', 'failed', 'cancelled', 'canceled']) {
+    fake({ all: { messages: [message('q', 'escalation', { task_id: 't' })] }, tasks: [{ id: 't', status }] })
+    assert.deepEqual(snapshot('r', { rows: { ok: true, rows: [{ dispatchId: 'd', dispatchStatus: 'running' }] } }).pending, [])
+  }
+  assert.equal(calls().filter((args) => args[0] === 'inbox').length, 0)
+})
+
+test('Task 조회가 실패하거나 형식이 바뀌면 질문이 끝났다고 추측하지 않는다', () => {
+  fake({ all: { messages: [message('q', 'question', { task_id: 't' })] }, tasks: 'invalid' })
+  assert.throws(() => snapshot('r'), /Task 종료 상태를 읽지 못했다/)
+})
+
+test('열린 Task 와 상태를 모르는 dispatch 의 질문은 남긴다', () => {
+  const q = message('q', 'question', { task_id: 't' })
+  for (const tasks of [[], [{ id: 't', status: 'running' }], [{ id: 'other', status: 'completed' }]]) {
+    fake({ all: { messages: [q] }, tasks })
+    assert.deepEqual(snapshot('r', { rows: { ok: false, error: 'offline' } }).pending, [q])
+  }
+})
+
 test('worker_done 이 오면 아직 running 인 행의 질문도 조회하지 않고 다른 Run 의 보고는 무시한다', () => {
   const question = message('q', 'question', { dispatch_id: 'd', from_handle: 'term_d' })
   fake({ all: { messages: [question] } })
@@ -186,12 +219,13 @@ describe('snapshot', () => {
   })
 
   test('닫은 질문(send-to-worker 가 답할 수 없다고 적은 것)은 미답변에서 뺀다', () => {
-    const old = message('q_old')
+    const old = message('q_old', 'question', { from_handle: 'dispatch:closed' })
     const open = message('q_open')
     fake({ all: { messages: [old, open] }, peek: { messages: [] } })
     dismissQuestion('q_old', 'dispatch_inactive')
     assert.deepEqual(snapshot('r').pending.map((m) => m.id), ['q_open'])
     assert.deepEqual(readDismissed(), { q_old: 'dispatch_inactive' })
+    assert.ok(!calls().some((args) => args.includes('dispatch:closed')))
   })
 
   test('턴만 끝낸 멈춤 보고는 질문이 아니고, 오류로 멈춘 보고는 질문으로 남는다', () => {

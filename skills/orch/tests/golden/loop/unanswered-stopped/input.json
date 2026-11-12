@@ -30,6 +30,12 @@
       },
       {
         "args": [
+          "task-list"
+        ],
+        "stdout": "{\"ok\":true,\"result\":{\"tasks\":[]}}\n"
+      },
+      {
+        "args": [
           "check",
           "--all"
         ],
