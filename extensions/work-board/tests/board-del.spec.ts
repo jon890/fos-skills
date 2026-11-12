@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { test } from 'node:test'
 import { saveBoard } from '../bin/board.ts'
 import { run, tempBoard, write } from './board-run.ts'
@@ -25,5 +25,17 @@ test('엄격 삭제는 상태를 확인하고 성공한 경우에만 사본을 �
     writeFileSync(`${t.file}.bak`, 'old backup')
     assert.equal(saveBoard(t.file, { items: [] }, { held: () => false }, true), false)
     assert.equal(readFileSync(`${t.file}.bak`, 'utf8'), 'old backup')
+  } finally { t.cleanup() }
+})
+
+test('저장 뒤 사본을 옮기지 못해도 삭제 결과와 경고를 낸다', () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'a', status: 'done' })
+    mkdirSync(`${t.file}.bak`)
+    const result = run(t.file, ['del-done', 'a'])
+    assert.equal(result.code, 0); assert.deepEqual(JSON.parse(result.stdout), { deleted: ['a'] })
+    assert.match(result.stderr, /보드는 저장했지만 사본을 옮기지 못했다/)
+    assert.deepEqual(JSON.parse(readFileSync(t.file, 'utf8')).items, [])
   } finally { t.cleanup() }
 })

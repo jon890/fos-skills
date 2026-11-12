@@ -762,7 +762,10 @@ export function saveBoard(path: string, board: unknown, lock: { held(): boolean 
     const hasBackup = backup && existsSync(path)
     if (hasBackup) copyFileSync(path, backupTmp)
     renameSync(tmp, path)
-    if (hasBackup) renameSync(backupTmp, `${path}.bak`)
+    if (hasBackup) {
+      try { renameSync(backupTmp, `${path}.bak`) }
+      catch (error) { process.stderr.write(`보드는 저장했지만 사본을 옮기지 못했다: ${(error as Error).message}\n`) }
+    }
     return true
   } finally {
     for (const file of [tmp, backupTmp]) {
