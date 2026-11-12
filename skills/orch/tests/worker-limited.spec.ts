@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { LIMIT_CHECK_MS, LIMIT_CHECK_TTL_MS, clearLimitCheck, notifyLimitChecks, recordWorkerLimited, workerLimitedAt } from '../scripts/lib/worker-limited.ts'
 
@@ -129,4 +129,23 @@ test('전송 중 프로세스가 끝나 남은 예약은 3분 뒤 다시 시도�
   let count = 0
   notifyLimitChecks(['A'], now + 180_000, () => { count++ })
   assert.equal(count, 1)
+})
+
+test('옛 at 파일에 checks를 추가해도 at 읽기가 유지되고 같은 시각은 성공 기록을 보존한다', t => {
+  const saved = process.env.ORCH_MACHINE_DIR
+  const root = tempDir('limit-check-legacy-', t)
+  process.env.ORCH_MACHINE_DIR = join(root, 'machine')
+  t.after(() => { if (saved === undefined) delete process.env.ORCH_MACHINE_DIR; else process.env.ORCH_MACHINE_DIR = saved })
+  mkdirSync(process.env.ORCH_MACHINE_DIR)
+  const file = join(process.env.ORCH_MACHINE_DIR, 'worker-limited.json')
+  writeFileSync(file, JSON.stringify({ at: 100 }))
+  assert.equal(workerLimitedAt(), 100)
+  notifyLimitChecks(['A'], LIMIT_CHECK_MS, () => assert.fail('옛 기록에서 제공자 추측'))
+  recordWorkerLimited(101, { run: 'A', provider: 'claude' })
+  notifyLimitChecks(['A'], 101 + LIMIT_CHECK_MS, () => {})
+  recordWorkerLimited(101, { run: 'A', provider: 'claude' })
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).checks['["A","claude"]'].checkedAt, 101 + LIMIT_CHECK_MS)
+  recordWorkerLimited(102 + LIMIT_CHECK_MS, { run: 'A', provider: 'claude' })
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).checks['["A","claude"]'].checkedAt, undefined)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).at, 102 + LIMIT_CHECK_MS)
 })

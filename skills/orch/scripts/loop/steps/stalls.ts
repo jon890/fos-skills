@@ -111,9 +111,9 @@ async function watchStalls(
           : `사용 한도 ${dispatch} ${terminal}: 사용자에게 계정 전환을 요청하고, 바꾼 뒤 ${orchWord()} worker resume --dispatch ${shQuote(dispatch)}. resume 이 실패하면 출력의 NEXT 를 먼저 따르고, 바꿀 계정이 없거나 그래도 안 되면 references/agent-selection.md 의 「사용 한도에 걸렸을 때」`
         try {
           const projection = isObject(row.projection) ? row.projection : {}
-          const provider = isObject(projection.provider) && typeof projection.provider.id === 'string' ? projection.provider.id : 'unknown'
-          recordWorkerLimited(Date.now(), { run, provider })
+          const provider = isObject(projection.provider) && typeof projection.provider.id === 'string' ? projection.provider.id.trim() : ''
           sendNotice('WORKER-LIMITED', null, text, run)
+          if (provider) recordWorkerLimited(Date.now(), { run, provider })
           limitedNotified = true
           log(text)
         } catch (e) {
