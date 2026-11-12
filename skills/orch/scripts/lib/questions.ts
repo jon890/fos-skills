@@ -137,7 +137,7 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
     replies.push(...rows.filter((m) => threads.has(threadOf(m))))
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
-  const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
+  const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run), dismissed)
     .filter((m) => !sharedClosedReason(run, String(m.id), true))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
