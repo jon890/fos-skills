@@ -86,6 +86,15 @@ describe('판정과 종료 코드', () => {
     assert.ok(done.stdout.includes('CLAUDE.md:1  [링크] 없다.md'))
   })
 
+  test('git 이 없으면 참조 검사는 안내와 실행 실패로 집계한다', () => {
+    const r = repo()
+    r.file('CLAUDE.md', '# 지침\n')
+    const done = r.run('run_checks', [r.root], { env: { ...process.env, PATH: '/nonexistent' } })
+    assert.equal(done.code, 2, done.stdout + done.stderr)
+    assert.ok(row(done, 'check_references').startsWith('| check_references | 2 | 실행 실패 |'), done.stdout)
+    assert.ok(done.stdout.includes('git 실행 파일을 찾을 수 없다. PATH 를 확인한다.'), done.stdout)
+  })
+
   test('대상 파일이 0 이면 실행 실패이고 2', () => {
     const r = repo()
     r.file('data.txt', 'x\n')
