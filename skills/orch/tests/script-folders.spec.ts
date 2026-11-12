@@ -48,7 +48,12 @@ function headerPointerErrors(source: string, text: string, scripts: Map<string, 
     const target = match[1] ?? match[2]
     const local = relative(ROOT, resolve(dirname(join(ROOT, source)), target))
     const candidates = [...scripts.keys()].filter((file) => file === target || file.endsWith(`/${target}`))
+    // 파일명만 썼으면 같은 폴더를 먼저 본다. 다른 폴더를 뜻하면 폴더 경로를 붙여 쓴다.
     const file = scripts.has(local) ? local : candidates.length === 1 ? candidates[0] : undefined
+    if (!file && candidates.length > 1) {
+      errors.push(`${source}:${line}: ${target} 이 여러 파일과 맞는다: ${candidates.join(', ')}. 폴더를 붙여 쓴다`)
+      continue
+    }
     for (const section of match[3].matchAll(/「([^」]+)」/g)) {
       if (!file || !hasSection(scripts.get(file)!, section[1])) {
         errors.push(`${source}:${line}: ${target} 의 「${section[1]}」 절을 파일 맨 위 설명에서 찾을 수 없다`)
@@ -173,6 +178,19 @@ describe('스크립트 폴더', () => {
         'docs/example.md:2: lib/sample.ts 의 「없는 절」 절을 파일 맨 위 설명에서 찾을 수 없다',
       ])
     }
+  })
+
+
+  test('같은 이름의 파일이 겹치면 후보 경로와 고치는 방법을 알린다', () => {
+    const scripts = new Map([
+      ['skills/orch/scripts/lib/sample.ts', '// lib 절: 설명\n'],
+      ['skills/orch/scripts/core/sample.ts', '// core 절: 설명\n'],
+    ])
+    assert.deepEqual(headerPointerErrors('docs/example.md', 'sample.ts 머리 주석의 「lib 절」', scripts), [
+      'docs/example.md:1: sample.ts 이 여러 파일과 맞는다: skills/orch/scripts/lib/sample.ts, skills/orch/scripts/core/sample.ts. 폴더를 붙여 쓴다',
+    ])
+    assert.deepEqual(headerPointerErrors('skills/orch/scripts/lib/caller.ts', 'sample.ts 머리 주석의 「lib 절」', scripts), [])
+    assert.deepEqual(headerPointerErrors('docs/example.md', 'core/sample.ts 머리 주석의 「core 절」', scripts), [])
   })
 
 })
