@@ -133,6 +133,16 @@ test('끝난 dispatch 의 질문은 발신 터미널과 dispatch 메일함을 �
   assert.deepEqual(calls().filter((args) => args[0] === 'inbox').map((args) => args[args.indexOf('--terminal') + 1]), ['term_live', 'dispatch:live'])
 })
 
+test('관측 뒤 재조회한 failed dispatch·completed Task·닫힌 질문은 조회하지 않는다', () => {
+  // 2026-11-12 재조회에서 읽은 상태만 보존한다. 식별자는 바꿨고, 반복 알림 당시 상태를 재현한 것은 아니다.
+  const qs = ['a', 'b'].map(id => message(`observed-${id}`, 'escalation', { dispatch_id: id, task_id: `task-${id}`, from_handle: `term_${id}` }))
+  const rows = ['a', 'b'].map(id => ({ dispatchId: id, taskId: `task-${id}`, dispatchStatus: 'failed', workerState: 'abandoned', terminalState: 'retained', resource: { ownershipState: 'owned', releaseState: 'not_requested' } }))
+  fake({ all: { messages: qs }, tasks: ['a', 'b'].map(id => ({ id: `task-${id}`, status: 'completed' })) })
+  for (const q of qs) dismissQuestion(String(q.id), 'dispatch_inactive')
+  assert.deepEqual(snapshot('r', { rows: { ok: true, rows } }).pending, [])
+  assert.ok(!calls().some(args => args[0] === 'inbox' || args[0] === 'task-list'))
+})
+
 test('해제된 dispatch 와 끝난 Task 는 답변 메일함을 읽기 전에 뺀다', () => {
   const cases = [
     { dispatchStatus: 'released' },
