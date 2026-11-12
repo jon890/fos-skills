@@ -44,6 +44,7 @@ test('PR 없는 작업과 실패 보고는 의심 알림을 보내지 않는다'
 for (const sample of [
   { name: '리뷰 행', text: 'worker 선택: `codex` `m` effort `medium`. 행: review. 비교: claude. 이유: 리뷰.', notices: 0 },
   { name: '머지하지 않는 지시', text: '5. 머지하지 않는다. PR 주소를 status 로 보낸다.', notices: 0 },
+  { name: '머지하지 않지만 준비 보고가 필요한 지시', text: '머지하지 않는다.\n## 완료 기준\n- 준비됨 을 보낸다.', notices: 1 },
   { name: '보통 구현', text: '완료 기준: 준비됨 status 를 보낸다.', notices: 1 },
 ]) for (const cleaned of [false, true]) test(`${sample.name}의 준비 보고 없는 완료${cleaned ? '는 정리 뒤 영구 이력' : '는 띄우기 기록'}으로 알림 여부를 정한다`, async () => {
   const launch = { dispatch: 'd', terminal: 'worker', worktree: repo, run: 'R', ...(skipsPrReady(sample.text) ? { completion: 'none' as const } : {}) }
