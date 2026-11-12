@@ -48,6 +48,7 @@ PR 번호, 파일 이름, 지적 내용은 예시다.
 ## 준비
 
 - Node 24 와 `gh` 가 필요하다. `gh` 는 대상 호스트에 로그인돼 있어야 한다. 호스트는 git remote 에서 찾고, SSH config 별칭도 실제 호스트로 되돌린다. `GH_HOST` 로 덮어쓸 수 있다
+- 단건·묶음 인라인은 DRY_RUN 에도 PR diff 를 조회하므로 네트워크와 `gh api --paginate --slurp` 지원이 필요하다. 줄 위치를 확인할 수 없으면 등록 전에 거절하며, patch 가 없는 파일은 GitHub 화면의 파일 단위 댓글을 이용한다
 - 미리보기는 `content-preview` 스킬이 맡으므로 그 스킬이 설치돼 있어야 한다
 - 저장소마다 `<repo-root>/.claude/pr-review-overlay.md` 를 둘 수 있다. git 호스트, 이 저장소의 P2 기준, 후속 업무를 등록할 곳, 저장소 고유 점검 항목, 사용자 문체 파일의 경로를 적는다
 - 오버레이가 없으면 `CLAUDE.md` 와 `REVIEW.md` 를 보고, 셋 다 없으면 사용자에게 묻는다
