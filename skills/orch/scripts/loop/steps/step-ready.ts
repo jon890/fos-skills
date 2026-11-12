@@ -1,11 +1,12 @@
 // 6-2. 다음 단계 알림. movement 설정과 무관하게 돌며 전송 성공만 step-ready.json 에 기록한다.
+// 한도 확인 알림은 보드 유무·자동 진행 설정과 무관하게 머신 기록으로 보낸다.
 // 한도 알림의 새 전이는 보드 유무·자동 진행 설정과 관계없이 머신 파일에 남긴다.
 import { existsSync } from 'node:fs'
 import { readyNotices } from '../../core/step-ready.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { boardReadySteps, liveSteps, readReadyNotices, writeReadyNotices } from '../../lib/step-ready.ts'
-import { recordWorkerLimited, workerLimitedAt } from '../../lib/worker-limited.ts'
+import { notifyLimitChecks, recordWorkerLimited, workerLimitedAt } from '../../lib/worker-limited.ts'
 import { missingRowKeys, worktreePaths } from '../../lib/workers.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
@@ -15,6 +16,9 @@ export async function notifyStepReady(ctx: StepContext, state: StepState): Promi
   const { report, errors } = reporter(ctx)
   try {
     const now = Date.now()
+    notifyLimitChecks(ctx.runs.flatMap(({ run }) => run ? [run] : []), now, check => {
+      sendNotice('LIMIT-CHECK', null, `${check.provider}: 아직 사용 한도인지 확인할 때다. 한도가 풀렸으면 새로 띄우는 일부터 모델 표의 후보로 돌아온다. references/agent-selection.md 의 사용 한도 대체 표를 확인한다.`, check.run)
+    })
     const before = stallEntries(ctx.loaded?.stalls)
     if (Object.entries(state.stalls ?? {}).some(([id, row]) => row.limitedNotified && !before[id]?.limitedNotified)) recordWorkerLimited(now)
     if (!ctx.autoAdvance || !existsSync(boardPath(ctx.repo))) { report('step-ready', null); return { errors } }
