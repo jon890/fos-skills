@@ -13,7 +13,7 @@
 | [ADR-007](007-codex-manifest-without-hooks.md) | Codex 용 매니페스트를 따로 두고 hook 을 넣지 않는다 | accepted | - |
 | [ADR-008](008-orch-own-dir.md) | orch 는 자기 작업 폴더 `.orch/` 를 갖고 `.omc` 에 기대지 않는다 | accepted | - |
 | [ADR-009](009-orch-event-handlers.md) | orch 는 단계마다 이벤트를 내고, 저장소 고유 일은 저장소의 이벤트 핸들러가 맡는다 | accepted | - |
-| [ADR-010](010-orch-typescript.md) | orch 와 work-board 의 Python 스크립트를 빌드 없는 TypeScript 로 한 번에 옮긴다 | accepted | [ADR-011](011-node-24-minimum.md) |
+| [ADR-010](010-orch-typescript.md) | orch 와 work-board 의 Python 스크립트를 빌드 없는 TypeScript 로 한 번에 옮긴다 | accepted | [ADR-011](011-node-24-minimum.md), [ADR-030](030-plugin-npm-dependencies.md) |
 | [ADR-011](011-node-24-minimum.md) | orch 와 work-board 의 최소 Node 를 24 로 올린다 | accepted | - |
 | [ADR-012](012-orch-loop-multi-run.md) | 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 | accepted | [ADR-027](027-orca-message-wake.md) |
 | [ADR-013](013-orch-worker-stalled.md) | 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 | accepted | [ADR-027](027-orca-message-wake.md) |
@@ -28,11 +28,12 @@
 | [ADR-022](022-extension-directory-layout.md) | 보드를 확장 기능 디렉터리에 둔다 | accepted | - |
 | [ADR-023](023-version-at-merge.md) | 스킬 버전과 CHANGELOG 절은 PR 이 아니라 머지 때 정한다 | accepted | - |
 | [ADR-024](024-decision-record-classification.md) | 결정 기록은 종류를 나누고 현재 규칙의 원본을 연결한다 | accepted | - |
-| [ADR-025](025-script-runtime-typescript.md) | 저장소의 스크립트와 테스트를 TypeScript(Node 24) 하나로 둔다 | accepted | - |
+| [ADR-025](025-script-runtime-typescript.md) | 저장소의 스크립트와 테스트를 TypeScript(Node 24) 하나로 둔다 | accepted | [ADR-030](030-plugin-npm-dependencies.md) |
 | [ADR-026](026-docs-checks-at-authoring-time.md) | 문서 링크와 ADR 검사는 plan 번들 검사기 하나가 작성 단계에서 맡는다 | accepted | - |
 | [ADR-027](027-orca-message-wake.md) | 코디네이터 깨우기는 Orca 메시지를 쓴다 | accepted | - |
 | [ADR-028](028-orch-core-layer.md) | 값 판정과 외부 실행을 폴더로 나눈다 | accepted | - |
 | [ADR-029](029-board-write-lock.md) | 보드 쓰기는 `board.ts` 의 파일 잠금을 지나고, 통째 저장은 읽을 때의 줄 지문으로 거절한다 | accepted | - |
+| [ADR-030](030-plugin-npm-dependencies.md) | 플러그인 루트의 package.json 으로 npm 의존을 두고 설치는 Claude Code 에 맡긴다 | accepted | - |
 
 ## 대체됨
 
