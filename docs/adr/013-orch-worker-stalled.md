@@ -38,4 +38,4 @@
   - 감당할 것: 다시 멈추기 전에 앞 오류 줄이 화면 위로 밀려나 오류 줄 수가 같으면 재발을 같은 멈춤으로 본다. 그만큼 출력하는 동안 루프가 작업 중 화면을 보면 항목이 지워져 새 멈춤으로 센다.
   - 감당할 것: Codex 가 끊김 문구를 바꾸면 끊긴 화면이 다시 `error` 로 보인다. 끊김 줄은 문구의 앞부분(`Conversation interrupted`)만 본다.
   - 감당할 것: 가드는 실수 방지 장치이고 보안 경계가 아니다. `ORCH_REAL_ORCA` 가 핸들러 환경에 보이므로 핸들러가 일부러 부르면 가드를 거치지 않고 입력할 수 있다. 코어 명령에 입력 길을 열어 둔 것도 같은 전제 위에 있다.
-- **적용 범위**: 판정은 `orch/scripts/lib/screen.ts` 머리 주석, 틱 순서와 멈춤 항목은 `orch/scripts/orch-loop.ts` 머리 주석의 「멈춤 확인」, 입력 필드와 환경은 `orch/scripts/lib/events.ts` 머리 주석, 핸들러 예시는 [`../../orch/references/hooks.md`](../../skills/orch/references/hooks.md), 상태 파일은 [`../data-schema.md`](../data-schema.md) 가 소유한다.
+- **적용 범위**: 판정은 `orch/scripts/lib/screen.ts` 머리 주석, 틱 순서와 멈춤 항목은 `skills/orch/scripts/loop/steps/stalls.ts` 머리 주석의 「멈춤 확인」, 입력 필드와 환경은 `orch/scripts/lib/events.ts` 머리 주석, 핸들러 예시는 [`../../orch/references/hooks.md`](../../skills/orch/references/hooks.md), 상태 파일은 [`../data-schema.md`](../data-schema.md) 가 소유한다.

@@ -33,4 +33,4 @@
     머지 큐는 보류한 PR 만 빼고 다음 PR 로 가는 것이 기본이다(`--stop-on-hold` 로 옛 동작). 차례 PR 이 update-branch 뒤 CI 를 기다리는 동안에는 묶음 밖이고 체크가 통과했고 최신화가 필요 없고 차례 PR 과 겹치지 않는 뒤 PR 을 먼저 머지한다.
     위 「대안 기각」 의 큐 순서 바꾸기는 겹치지 않는 PR 에만, 기다리는 동안에만 하는 것으로 좁혀 받아들였다. 겹치는 PR 과 묶음은 순서를 지킨다.
   - 감당할 것: 차례 기록을 읽은 뒤 `update-branch` 를 부르기까지의 짧은 틈에 큐가 그 PR 차례로 넘어오면 그 PR 은 `STOP` 으로 멈춘다. 부르기 직전에 차례 기록을 다시 읽어 틈을 줄인다. 멈춘 PR 은 HEAD 가 바뀌었으므로 다음 틱의 자동 머지가 다시 건다.
-- **적용 범위**: 판정과 설정은 `skills/orch/scripts/lib/refresh.ts`, 틱의 자리와 기록은 `skills/orch/scripts/orch-loop.ts` 머리 주석의 「최신화」, 차례 기록은 `skills/orch/scripts/lib/queue-turn.ts`, 설정 키와 상태 파일은 [`../data-schema.md`](../data-schema.md) 가 소유한다.
+- **적용 범위**: 판정과 설정은 `skills/orch/scripts/lib/refresh.ts`, 틱의 자리와 기록은 `skills/orch/scripts/loop/steps/refresh.ts` 머리 주석의 「최신화」, 차례 기록은 `skills/orch/scripts/lib/queue-turn.ts`, 설정 키와 상태 파일은 [`../data-schema.md`](../data-schema.md) 가 소유한다.

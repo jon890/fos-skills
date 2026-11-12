@@ -110,9 +110,7 @@ export function aheadInQueue(
   return null
 }
 
-// 기록: <orch 루트>/state/refresh.json 의 { "<PR>": RefreshRecord }. PR 마다 마지막으로 건 것 하나다.
-//   base 는 그때의 base SHA, from 은 그때의 PR HEAD, value 는 결과(update 는 updated 나 failed, worker 는 dispatch id 나 orphan)다.
-//   같은 (PR, base SHA) 에는 다시 걸지 않는다. 파일이 없거나 깨졌으면 빈 기록이다. 쓰기는 옆 파일에 쓰고 rename 한다
+// 기록 형식과 파일 읽기·쓰기는 lib/refresh.ts 머리 주석의 「기록」 을 따른다.
 export type RefreshRecord = { base: string; from: string; at: string; action: 'update' | 'worker'; value: string }
 export function isRecord(value: unknown): value is RefreshRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false

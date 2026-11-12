@@ -271,7 +271,7 @@ orch doctor migrate --repo "$REPO" --apply
 ### 자동 머지 리뷰 조건
 
 `queue.auto_review.require` 에 조건 이름을 적어 저장소마다 리뷰 판정을 조합한다.
-조건의 뜻은 `scripts/lib/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다. 모르는 이름을 적으면 루프가 어느 PR 도 걸지 않고 `orch-doctor` 가 `INVALID-CONFIG` 로 알린다.
+조건의 뜻은 `scripts/core/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다. 모르는 이름을 적으면 루프가 어느 PR 도 걸지 않고 `orch-doctor` 가 `INVALID-CONFIG` 로 알린다.
 
 `require` 를 적지 않은 저장소는 `verdict-on-head` 하나와 같다. 리뷰 뒤 코드 커밋을 더하면 다시 리뷰를 받아야 건다.
 

@@ -2,12 +2,13 @@
 // 스펙: docs/features/orch-cli/spec.md 의 REQ9, DECISION6. 다른 저장소의 직접 경로 호출은 doctor 의 DIRECT-PATH 가 본다.
 //
 // 기록 문서(ADR, 기능 문서, 변경 이력과 조각)는 그때의 배치를 적은 것이라 보지 않는다. tests/ 아래 파일은 옛 경로를 판정하는 입력을 갖고 있어 보지 않는다.
+// 절 참조 검사는 ADR 의 「적용 범위」 줄도 본다. 이 줄은 현재 규칙의 원본을 가리킨다.
 // 호환을 설명하는 줄은 그 줄이나 바로 윗줄의 orch-compat 표지로 뺀다(doctor 와 같은 표지).
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { COMMANDS, GROUPS } from '../scripts/lib/commands.ts'
@@ -19,6 +20,47 @@ const SKIP = [/^docs\/adr\//, /^docs\/features\//, /(^|\/)CHANGELOG\.md$/, /(^|\
 
 function marked(rows: string[], i: number): boolean {
   return rows[i].includes('orch-compat') || (i > 0 && rows[i - 1].includes('orch-compat'))
+}
+
+// 절은 맨 위의 연속된 // 주석에서만 찾는다. 본문이나 옮긴 곳을 안내하는 문장으로 통과시키지 않는다.
+function headerSections(text: string): string[] {
+  const rows = text.replace(/^#![^\n]*\n/, '').split('\n')
+  const header: string[] = []
+  for (const row of rows) {
+    if (!row.startsWith('//')) break
+    header.push(row.replace(/^\/\/\s*(?:-\s+)?/, ''))
+  }
+  return header
+}
+
+function hasSection(text: string, section: string): boolean {
+  return headerSections(text).some((row) => row.startsWith(section)
+    && /^(?:[:：(]|\s{2,}|$)/.test(row.slice(section.length)))
+}
+
+function headerPointerErrors(source: string, text: string, scripts: Map<string, string>): string[] {
+  const errors: string[] = []
+  const pointer = /(?:`([^`\s]+\.ts)`|([\w./-]+\.ts))\s+머리 주석의\s+((?:「[^」]+」)(?:\s*(?:와|과|,)\s*「[^」]+」)*)/g
+  // 줄바꿈은 남겨 매치가 시작한 원래 줄을 알린다. 주석 기호만 빼야 다음 줄의 절도 읽힌다.
+  const content = text.split('\n').map((row) => row.replace(/^\s*\/\/[^\S\n]*/, '')).join('\n')
+  for (const match of content.matchAll(pointer)) {
+    const line = content.slice(0, match.index).split('\n').length
+    const target = match[1] ?? match[2]
+    const local = relative(ROOT, resolve(dirname(join(ROOT, source)), target))
+    const candidates = [...scripts.keys()].filter((file) => file === target || file.endsWith(`/${target}`))
+    // 파일명만 썼으면 같은 폴더를 먼저 본다. 다른 폴더를 뜻하면 폴더 경로를 붙여 쓴다.
+    const file = scripts.has(local) ? local : candidates.length === 1 ? candidates[0] : undefined
+    if (!file && candidates.length > 1) {
+      errors.push(`${source}:${line}: ${target} 이 여러 파일과 맞는다: ${candidates.join(', ')}. 폴더를 붙여 쓴다`)
+      continue
+    }
+    for (const section of match[3].matchAll(/「([^」]+)」/g)) {
+      if (!file || !hasSection(scripts.get(file)!, section[1])) {
+        errors.push(`${source}:${line}: ${target} 의 「${section[1]}」 절을 파일 맨 위 설명에서 찾을 수 없다`)
+      }
+    }
+  }
+  return errors
 }
 
 describe('스크립트 폴더', () => {
@@ -93,4 +135,62 @@ describe('스크립트 폴더', () => {
     }
     assert.deepEqual(found, [], '스크립트는 scripts/<묶음>/<파일>.ts 에 있다. 호환 설명이면 그 줄이나 윗줄에 orch-compat 를 둔다')
   })
+
+  test('파일 맨 위 설명의 절을 가리키는 코드와 문서의 참조가 유효하다', () => {
+    const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
+    const scripts = new Map(tracked.filter((f) => /^skills\/orch\/scripts\/.*\.ts$/.test(f))
+      .map((f) => [f, readFileSync(join(ROOT, f), 'utf8')]))
+    const sources = tracked.filter((f) => (!SKIP.some((re) => re.test(f)) || f.startsWith('docs/adr/'))
+      && (/^skills\/orch\/(?:scripts|references)\//.test(f) || f.startsWith('docs/'))
+      && /\.(?:md|ts|js|py|sh)$/.test(f))
+    const errors = sources.flatMap((f) => {
+      const raw = readFileSync(join(ROOT, f), 'utf8')
+      const text = f.startsWith('docs/adr/')
+        ? raw.split('\n').map((row) => row.includes('**적용 범위**') ? row : '').join('\n') : raw
+      // 스크립트에서는 주석만 본다. 문자열 입력은 참조가 아니다.
+      const comments = f.endsWith('.md') ? text : text.split('\n').map((row) => /^\s*\/\//.test(row) ? row : '').join('\n')
+      return headerPointerErrors(f, comments, scripts)
+    })
+    assert.deepEqual(errors, [])
+  })
+
+  test('절 검사에서 본문과 참조 문장은 제외하고 파일과 줄을 알린다', () => {
+    const scripts = new Map([
+      ['skills/orch/scripts/lib/sample.ts', '// 실제 절: 설명\n//   - 세부 함수  설명\n\n// 사라진 절: 본문\n'],
+      ['skills/orch/scripts/core/sample.ts', '// 옮긴 곳의 설명이다. 「사라진 절」 을 참조한다\n'],
+    ])
+    const source = 'skills/orch/scripts/lib/caller.ts'
+    const text = '// sample.ts 머리 주석의 「실제 절」 와 「세부 함수」\n// lib/sample.ts 머리 주석의 「사라진 절」\n// `missing.ts` 머리 주석의 「없는 절」\n// `../lib/sample.ts` 머리 주석의 「실제 절」'
+    assert.deepEqual(headerPointerErrors(source, text, scripts), [
+      `${source}:2: lib/sample.ts 의 「사라진 절」 절을 파일 맨 위 설명에서 찾을 수 없다`,
+      `${source}:3: missing.ts 의 「없는 절」 절을 파일 맨 위 설명에서 찾을 수 없다`,
+    ])
+    assert.equal(hasSection(scripts.get('skills/orch/scripts/core/sample.ts')!, '사라진 절'), false)
+    assert.equal(hasSection('// 기록 형식은 다른 파일을 따른다\n', '기록'), false)
+    assert.equal(hasSection('#!/usr/bin/env node\n// 기록: 설명\n', '기록'), true)
+  })
+
+  test('줄이 나뉜 코드 주석과 문서 참조도 시작 줄을 알린다', () => {
+    const scripts = new Map([['skills/orch/scripts/lib/sample.ts', '// 실제 절: 설명\n']])
+    for (const prefix of ['// ', '']) {
+      const text = `${prefix}설명\n${prefix}lib/sample.ts 머리 주석의\n${prefix}「없는 절」 와\n${prefix}「실제 절」`
+      assert.deepEqual(headerPointerErrors('docs/example.md', text, scripts), [
+        'docs/example.md:2: lib/sample.ts 의 「없는 절」 절을 파일 맨 위 설명에서 찾을 수 없다',
+      ])
+    }
+  })
+
+
+  test('같은 이름의 파일이 겹치면 후보 경로와 고치는 방법을 알린다', () => {
+    const scripts = new Map([
+      ['skills/orch/scripts/lib/sample.ts', '// lib 절: 설명\n'],
+      ['skills/orch/scripts/core/sample.ts', '// core 절: 설명\n'],
+    ])
+    assert.deepEqual(headerPointerErrors('docs/example.md', 'sample.ts 머리 주석의 「lib 절」', scripts), [
+      'docs/example.md:1: sample.ts 이 여러 파일과 맞는다: skills/orch/scripts/lib/sample.ts, skills/orch/scripts/core/sample.ts. 폴더를 붙여 쓴다',
+    ])
+    assert.deepEqual(headerPointerErrors('skills/orch/scripts/lib/caller.ts', 'sample.ts 머리 주석의 「lib 절」', scripts), [])
+    assert.deepEqual(headerPointerErrors('docs/example.md', 'core/sample.ts 머리 주석의 「core 절」', scripts), [])
+  })
+
 })
