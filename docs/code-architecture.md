@@ -209,7 +209,7 @@
 ### 배치
 
 orch 의 값 판정은 `scripts/core/`, 외부 조회와 기록은 `scripts/lib/` 와 명령 파일이 맡는다.
-core 는 core 안의 상대 모듈과 허용한 내장 모듈만 가져온다. 기존 lib 경로는 호환 재수출로 남는다.
+core 는 core 안의 상대 모듈, 허용한 내장 모듈과 `config-schema.ts` 의 `zod` 만 가져온다. 기존 lib 경로는 호환 재수출로 남는다.
 [ADR-028](adr/028-orch-core-layer.md)이 선택 이유를, [경계 검사](../skills/orch/tests/core-boundary.spec.ts)가 허용 의존과 외부 상태 접근 금지를 소유한다.
 
 ```

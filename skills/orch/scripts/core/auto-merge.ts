@@ -68,7 +68,7 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
-const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head']
+export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head']
 
 // 값이 모두 비지 않은 문자열인 객체. 아니면 ConfigError
 function stringMap(value: unknown, name: string): Record<string, string> {

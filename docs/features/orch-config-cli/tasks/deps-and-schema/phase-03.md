@@ -53,7 +53,7 @@
 ### 4. `skills/orch/tests/core-config-schema.spec.ts`(신규)
 
 - 키 목록 대조: 절마다 `KEYS` 의 키 집합이 지금 키 목록(위 컨텍스트의 목록, `finish` 는 `FINISH_KEYS`)과 같다. `SECTIONS` 의 모든 절이 `KEYS` 에 있다.
-- 표본: 키마다 `{ good: [...], bad: [...] }` 표본을 이 테스트 파일 안의 표 하나로 두고, 표에 없는 키가 있으면 실패한다. good 은 `problems({ [절]: { [키]: 값 } })` 에 그 키 경로나 그 아래의 `value`·`unknown` 문제가 없다는 뜻이다(짝 규칙 문제는 짝 키가 없어 생길 수 있으므로 여기서 보지 않는다). bad 는 그 키 경로나 그 아래의 `value` 문제가 하나 이상이다. 설계 「키별 검사 기준」 의 경계 값을 표본에 넣는다(예: `tick_sec` 2147483 good, 2147484 bad. `worker_done_timeout` 0 good, `merge_timeout` 0 bad. `finish.run` null good. `finish.specs_dir` null bad. `queue.required` `"A,,B"` good. `inbox.enabled` `"false"` bad).
+- 표본: 키마다 `{ good: [...], bad: [...] }` 표본을 `skills/orch/tests/fixtures/config-samples.ts` 의 표 하나로 두고(phase 04 의 테스트가 같은 표를 쓴다), 표에 없는 키가 있으면 실패한다. good 은 `problems({ [절]: { [키]: 값 } })` 에 그 키 경로나 그 아래의 `value`·`unknown` 문제가 없다는 뜻이다(짝 규칙 문제는 짝 키가 없어 생길 수 있으므로 여기서 보지 않는다). bad 는 그 키 경로나 그 아래의 `value` 문제가 하나 이상이다. 설계 「키별 검사 기준」 의 경계 값을 표본에 넣는다(예: `tick_sec` 2147483 good, 2147484 bad. `worker_done_timeout` 0 good, `merge_timeout` 0 bad. `finish.run` null good. `finish.specs_dir` null bad. `queue.required` `"A,,B"` good. `inbox.enabled` `"false"` bad).
 - 짝 규칙: 일곱 규칙마다 위반 하나와 통과 하나. 같은 절에 오타 키(`poll_min_secs`)나 다른 키의 틀린 값이 있어도 짝 규칙 문제가 나온다.
 - 구조: 최상위 배열, 모르는 절 `queu`, 객체가 아닌 절, 옛 칸 `queue.before` 가 각각 문제 하나다.
 - `knownPath`: `queue.auto_review.pass` known, `queue.auto_review.prass` unknown, `hooks.timeouts.after-queue` known, `hooks.timeouts.foo` unknown, `migrations.dirs.anything` known, `queue.before` removed, `queu.x` unknown.
@@ -78,4 +78,5 @@ node scripts/run-tests.ts --tsc-only
 | `skills/orch/tests/core-boundary.spec.ts` | 수정 (`zod` 허용) |
 | `scripts/runtime-policy.json` | 수정 (`bare_imports` 에 `zod`) |
 | `docs/code-architecture.md` | 수정 (core 의 허용 의존) |
+| `skills/orch/tests/fixtures/config-samples.ts` | 신규 (키별 표본 표. phase 04 의 읽는 곳 대조 테스트도 쓴다) |
 | `skills/orch/tests/core-config-schema.spec.ts` | 신규 |
