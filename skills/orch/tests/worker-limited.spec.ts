@@ -89,6 +89,9 @@ test('24시간 뒤에는 Run 등록 여부와 무관하게 정리하고 명시 �
   assert.equal(cleared.status, 0, cleared.stderr)
   assert.match(cleared.stdout, /LIMIT-CLEARED claude/)
   assert.equal(spawnSync(process.execPath, [fileURLToPath(command)], { env: process.env }).status, 2)
+  const help = spawnSync(process.execPath, [fileURLToPath(command), '--help'], { env: process.env, encoding: 'utf8' })
+  assert.equal(help.status, 0, help.stderr)
+  assert.match(help.stdout, /사용법: orch worker limit-clear/)
   clearLimitCheck('A', 'claude')
   const sent: string[] = []
   notifyLimitChecks(['A'], 100 + LIMIT_CHECK_MS, check => sent.push(check.provider))
