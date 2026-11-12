@@ -58,6 +58,8 @@ import { constants } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HEAVY_KEYS, loadConfig, section } from '../lib/config.ts'
+import { compileHeavy as compileHeavyWith } from '../core/heavy.ts'
+import type { Heavy } from '../core/heavy.ts'
 import { killGraceMs } from '../lib/env.ts'
 import { real, realPath } from '../lib/fs.ts'
 import { ensure, requireMigrated } from '../lib/paths.ts'
@@ -83,7 +85,6 @@ const LOCK_HELPER = [
 ].join(' ')
 
 export type Kind = 'exclusive' | 'normal' | 'light'
-export type Heavy = Record<'exclusive' | 'normal' | 'light' | 'wait_idle', RegExp[]>
 type Row = { pid: number; ticket: number; exclusive: boolean; held: boolean; slots: number; held_at?: number; command?: string }
 
 class Usage extends Error {}
@@ -98,24 +99,9 @@ class PsFailed extends Error {
   }
 }
 
-// heavy 절을 정규식으로 바꾼다. 값이 문자열 목록이 아니면 ConfigError, 정규식이 틀리면 Usage 다(둘 다 종료 코드 2).
+// heavy 절을 정규식으로 바꾼다. 판정은 core/heavy.ts 가 소유한다. 정규식이 틀리면 종료 코드 2 로 가려 잡는 Usage 를 던진다.
 export function compileHeavy(body: Record<string, unknown>): Heavy {
-  const heavy: Heavy = { exclusive: [], normal: [], light: [], wait_idle: [] }
-  for (const key of HEAVY_KEYS as readonly (keyof Heavy)[]) {
-    const value = body[key]
-    if (value === undefined) continue
-    if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-      throw new ConfigError(`설정 파일의 heavy.${key} 는 정규식 문자열 목록이어야 한다`)
-    }
-    heavy[key] = value.map((source: string) => {
-      try {
-        return new RegExp(source)
-      } catch (e) {
-        throw new Usage(`heavy.${key} 의 정규식이 틀렸다: ${source}: ${(e as Error).message}`)
-      }
-    })
-  }
-  return heavy
+  return compileHeavyWith(body, (message) => new Usage(message))
 }
 
 // 명령을 조각으로 나눈다. 옛 heavy-slot.py 의 classify 와 같은 꼴이다.

@@ -80,6 +80,40 @@ export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern
 // enabled 는 false 로 그 저장소의 알림을 끄고, 나머지는 adapter 이름이다. adapter 를 더하면 이 목록에도 더한다
 export const INBOX_KEYS: readonly string[] = ['enabled', 'dooray', 'slack']
 
+// docker 절의 아는 키. 값의 판정은 core/docker.ts 의 dockerRules 가 소유한다.
+export const DOCKER_KEYS: readonly string[] = ['containers', 'images']
+
+// 이벤트 핸들러의 이벤트 이름. lib/events.ts 의 EVENTS 키와 같은 순서이고, skills/orch/tests/lib-events.spec.ts 가 두 목록이 같은지 본다.
+// hooks.timeouts 의 아는 이름이다
+export const HOOK_EVENT_NAMES: readonly string[] = [
+  'before-launch',
+  'worker-launched',
+  'worker-question',
+  'decision-pending',
+  'worker-done',
+  'worker-lost',
+  'worker-stalled',
+  'before-ready',
+  'pr-ready',
+  'ci-passed',
+  'ci-failed',
+  'ci-missing',
+  'pr-conflict',
+  'before-merge',
+  'verify-merged',
+  'after-merge',
+  'after-queue',
+  'after-deploy',
+  'before-cleanup',
+  'after-cleanup',
+  'tick',
+  'session-resume',
+]
+
+// cleanup 절의 아는 키. cleanup/handoff-cleanup.ts 의 OPTIONS 에서 옵션 이름의 하이픈을 밑줄로 바꾼 것이다(config 와 help 는 뺀다).
+// handoff-cleanup.ts 가 시작할 때 두 목록이 같은지 본다
+export const CLEANUP_KEYS: readonly string[] = ['repo', 'gh_host', 'run', 'orch_dir', 'previews', 'board', 'trash', 'queue_days', 'folder_days', 'data_days', 'data_ext', 'apply']
+
 // 옛 알림 필터 파일(<orch 루트>/config/notification.json)의 orch 루트 기준 상대 경로. 한 major 동안 inbox 가 함께 읽고 다음 major 에 지운다
 export const LEGACY_INBOX_FILTER = 'config/notification.json'
 

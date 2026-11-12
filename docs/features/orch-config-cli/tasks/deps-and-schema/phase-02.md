@@ -40,7 +40,7 @@
 
 ### 4. `compileHeavy` → `skills/orch/scripts/core/heavy.ts`
 
-`slot/heavy-slot.ts` 101-119행의 `compileHeavy` 와 `Heavy` 타입을 옮긴다. 시그니처는 `compileHeavy(body: Record<string, unknown>, badRegex?: (message: string) => Error): Heavy` 다. `heavy-slot.ts` 는 `(message) => new Usage(message)` 를 넘긴다(`Usage` 는 `heavy-slot.ts` 89행의 `class Usage extends Error {}` 다).
+`slot/heavy-slot.ts` 101-119행의 `compileHeavy` 와 `Heavy` 타입을 옮긴다. 시그니처는 `compileHeavy(body: Record<string, unknown>, badRegex?: (message: string) => Error): Heavy` 다. `heavy-slot.ts` 는 `compileHeavy(body)` 를 그대로 내보내되 안에서 `(message) => new Usage(message)` 를 넘겨 core 의 것을 부른다(테스트가 `heavy-slot.ts` 에서 `compileHeavy` 를 import 한다. `Usage` 는 `heavy-slot.ts` 89행의 `class Usage extends Error {}` 다).
 
 ### 5. `stallTicks` → `skills/orch/scripts/core/loop.ts`
 
@@ -79,6 +79,7 @@ node scripts/run-tests.ts --tsc-only
 | `skills/orch/scripts/core/heavy.ts` | 신규 |
 | `skills/orch/scripts/core/loop.ts` | 수정 (`stallTicks`, `DEFAULT_STALL_TICKS`) |
 | `skills/orch/scripts/core/config.ts` | 수정 (`HOOK_EVENT_NAMES`, `CLEANUP_KEYS`, `DOCKER_KEYS` 재수출) |
+| `skills/orch/scripts/lib/config.ts` | 수정 (`CLEANUP_KEYS`, `DOCKER_KEYS`, `HOOK_EVENT_NAMES` 재수출) |
 | `skills/orch/scripts/lib/contract-merge.ts` | 수정 (재수출) |
 | `skills/orch/scripts/lib/docker.ts` | 수정 (재수출) |
 | `skills/orch/scripts/lib/reservations.ts` | 수정 (재수출) |

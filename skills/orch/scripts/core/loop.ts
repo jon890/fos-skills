@@ -1,3 +1,6 @@
+import { ConfigError } from './config.ts'
+import { isObject } from './json.ts'
+
 export const DEFAULT_TICK_SEC = 300
 export const MIN_DEAD_SEC = 120
 
@@ -35,4 +38,26 @@ export function judgeLoop(state: LoopState | null, now: number, pidAlive: boolea
     return loopProcess !== false ? { alive: false, reason, recheck: true } : { alive: false, reason }
   }
   return { alive: true, state }
+}
+
+// pipeline.stall_ticks 의 키. loop/steps/shared.ts 의 StallState 와 같다(core 는 loop 를 import 하지 못한다)
+export type StallTickState = 'error' | 'idle'
+
+// pipeline.stall_ticks 의 기본값(stalls.ts 머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
+export const DEFAULT_STALL_TICKS: Readonly<Record<StallTickState, number>> = Object.freeze({ error: 2, idle: 0 })
+
+export function stallTicks(value: unknown): Record<StallTickState, number> {
+  if (value === undefined) return { ...DEFAULT_STALL_TICKS }
+  const shape = '설정 파일의 pipeline.stall_ticks 는 {"error": 틱 수, "idle": 틱 수} 객체여야 한다'
+  if (!isObject(value)) throw new ConfigError(shape)
+  const unknown = Object.keys(value).filter((key) => !Object.hasOwn(DEFAULT_STALL_TICKS, key))
+  if (unknown.length > 0) throw new ConfigError(`${shape}. 모르는 키: ${unknown.sort().join(', ')}`)
+  const ticks = { ...DEFAULT_STALL_TICKS }
+  for (const key of Object.keys(DEFAULT_STALL_TICKS) as StallTickState[]) {
+    const n = value[key]
+    if (n === undefined) continue
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new ConfigError(`설정 파일의 pipeline.stall_ticks.${key} 는 0 이상의 정수여야 한다: ${JSON.stringify(n)}`)
+    ticks[key] = n
+  }
+  return ticks
 }

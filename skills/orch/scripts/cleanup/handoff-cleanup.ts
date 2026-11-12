@@ -70,7 +70,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { ConfigError, loadConfig, section } from '../lib/config.ts'
+import { CLEANUP_KEYS, ConfigError, loadConfig, section } from '../lib/config.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
@@ -105,10 +105,11 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
 } as const
 
-// 설정 절의 키. 옵션 이름의 하이픈을 밑줄로 바꾼 것이고 config 와 help 는 뺀다
-const CLEANUP_KEYS: readonly string[] = Object.keys(OPTIONS)
+// 설정 절의 키(core/config.ts 의 CLEANUP_KEYS)는 옵션 이름의 하이픈을 밑줄로 바꾼 것이고 config 와 help 는 뺀다. 두 벌이 어긋나면 시작할 때 던진다
+const OPTION_KEYS: readonly string[] = Object.keys(OPTIONS)
   .filter((name) => name !== 'config' && name !== 'help')
   .map((name) => name.replaceAll('-', '_'))
+if (OPTION_KEYS.join() !== CLEANUP_KEYS.join()) throw new Error('CLEANUP_KEYS 가 OPTIONS 와 다르다')
 
 class Usage extends Error {}
 
