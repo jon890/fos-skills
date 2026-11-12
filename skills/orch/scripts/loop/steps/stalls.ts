@@ -113,8 +113,11 @@ async function watchStalls(
           const projection = isObject(row.projection) ? row.projection : {}
           const provider = isObject(projection.provider) && typeof projection.provider.id === 'string' ? projection.provider.id.trim() : ''
           sendNotice('WORKER-LIMITED', null, text, run)
-          if (provider) recordWorkerLimited(Date.now(), { run, provider })
           limitedNotified = true
+          if (provider) {
+            try { recordWorkerLimited(Date.now(), { run, provider }) }
+            catch (error) { log(`orch-loop: 사용 한도 확인 기록을 쓰지 못했다: ${oneLine(error)}`) }
+          }
           log(text)
         } catch (e) {
           log(`orch-loop: 사용 한도 알림을 쓰지 못했다: ${oneLine(e)}`)

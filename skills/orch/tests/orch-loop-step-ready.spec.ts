@@ -211,3 +211,16 @@ test('한도 확인 전송이 실패해도 같은 틱의 다음 단계 알림을
   c.fake({}); c.tick(NOW + 61 * MIN)
   assert.equal(Object.values(JSON.parse(readFileSync(file, 'utf8')).checks).some((row: any) => row.checkedAt), true)
 })
+
+test('머신 기록 쓰기가 실패해도 성공한 사용 한도 알림을 다음 틱에 중복 전송하지 않는다', t => {
+  const c = setup(t)
+  writeFileSync(join(c.root, 'machine'), 'not-a-directory')
+  c.fake({ workers: [worker({ projection: { provider: { id: 'claude' } } })], screen: "You've hit your usage limit" })
+  const first = c.tick()
+  assert.equal(first.result.stalls.d.limitedNotified, true)
+  assert.match(first.stdout, /사용 한도 확인 기록을 쓰지 못했다/)
+  c.tick()
+  const sent = readFileSync(c.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
+    .filter(args => args[1] === 'send' && args[args.indexOf('--subject') + 1].startsWith('WORKER-LIMITED'))
+  assert.equal(sent.length, 1)
+})
