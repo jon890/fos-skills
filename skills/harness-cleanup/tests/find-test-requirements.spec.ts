@@ -231,13 +231,28 @@ describe('대상 문서를 읽는 테스트 후보', () => {
     assert.ok(done.stdout.includes('문서를 읽는 테스트 후보: skills/a/SKILL.md\n  후보 없음'), done.stdout)
   })
 
+  test('스킬 밖 문서는 저장소 전체 테스트에서 후보를 찾고 문장 검색도 유지한다', () => {
+    const r = base()
+    r.file('CLAUDE.md', '# 지침\n')
+    r.file('.claude/rules/writing.md', '# 규칙\n')
+    r.file('tests/root.spec.ts', `readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8')`)
+    r.file('src/tests/rules.spec.ts', `readFileSync(join(ROOT, '.claude', 'rules', 'writing.md'), 'utf8')`)
+    const done = find(r, '## 일곱 단계', '--document', 'CLAUDE.md', '--document', '.claude/rules/writing.md')
+    assert.equal(done.code, 0, done.stderr)
+    assert.ok(done.stdout.includes('테스트가 요구: tests/check.sh:1'), done.stdout)
+    assert.ok(done.stdout.includes('문서를 읽는 테스트 후보: CLAUDE.md\n  단언 확인: tests/root.spec.ts'), done.stdout)
+    assert.ok(done.stdout.includes('문서를 읽는 테스트 후보: .claude/rules/writing.md\n  단언 확인: src/tests/rules.spec.ts'), done.stdout)
+    r.file('AGENTS.md', '# 지침\n')
+    const missing = find(r, '없는 문장', '--document', 'AGENTS.md')
+    assert.equal(missing.code, 0, missing.stderr)
+    assert.ok(missing.stdout.includes('문서를 읽는 테스트 후보: AGENTS.md\n  후보 없음'), missing.stdout)
+  })
+
   test('잘못된 문서 옵션은 종료 코드 2 다', () => {
     const r = base()
     for (const args of [
       ['--document'], ['--document', '--loose'], ['--document', 'missing.md'],
       ['--document', '../outside.md'], ['--document', 'skills/a'],
     ]) assert.equal(find(r, '문장', ...args).code, 2, args.join(' '))
-    r.file('loose.md', '# 문서\n')
-    assert.equal(find(r, '문장', '--document', 'loose.md').code, 2)
   })
 })

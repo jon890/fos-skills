@@ -21,6 +21,7 @@
 //
 // `--document` 를 주면 대상 문서와 같은 스킬의 tests/test/__tests__ 아래에서
 // readFileSync 를 쓰고 그 문서 파일 이름을 따옴표로 적은 테스트를 후보로 함께 낸다.
+// 스킬 밖 문서는 저장소 전체 테스트에서 후보를 찾는다.
 // 문서 경로는 저장소 기준이며 반복해서 줄 수 있다. 같은 스킬은 가장 가까운 SKILL.md 로 정한다.
 // 후보는 문장을 요구한다는 증거가 아니다. 구절·상수로 만든 단언까지 직접 읽어 확인한다.
 // Usage: node find_test_requirements.ts <repo-root> <문자열> [<문자열> ...] [--loose] [--document <대상 문서>]
@@ -53,7 +54,7 @@ git 저장소가 아니면 디렉터리를 순회하고 \`.git\`, \`node_modules
 \`확인\` 처럼 흔한 낱말은 이 줄이 수백 건이 되어, 펼치면 진짜 근거가 묻힌다.
 찾지 못해도 종료 코드는 0 이다. 출력의 「없음」 으로 판정한다.
 
-문서 테스트 후보는 --document 로 대상 문서를 지정한다. 같은 스킬의 테스트에서 readFileSync 와 문서 파일 이름을 찾는다.
+문서 테스트 후보는 --document 로 대상 문서를 지정한다. 같은 스킬의 테스트에서 readFileSync 와 문서 파일 이름을 찾는다. 스킬 밖이면 저장소 전체 테스트를 본다.
 후보의 단언은 직접 읽는다. 문자열 검색의 「없음」 만으로 문서를 바꿔도 된다고 판단하지 않는다.
 
 Usage: node find_test_requirements.ts <repo-root> <문자열> [<문자열> ...] [--loose] [--document <대상 문서>]
@@ -156,15 +157,14 @@ export function main(args: string[]): number {
     return 2
   }
 
-  const documentScopes: [string, string][] = []
+  const documentScopes: [string, string | null][] = []
   try {
     for (const document of documents) {
       const target = resolveScope(root, document)!
       if (!isFile(target)) throw new ValueError(`대상 문서가 파일이 아니다: ${document}`)
       let skill = pathParent(target)
       while (!isFile(pjoin(skill, 'SKILL.md')) && skill !== root) skill = pathParent(skill)
-      if (!isFile(pjoin(skill, 'SKILL.md'))) throw new ValueError(`대상 문서의 스킬을 찾을 수 없다: ${document}`)
-      documentScopes.push([target, skill])
+      documentScopes.push([target, isFile(pjoin(skill, 'SKILL.md')) ? skill : null])
     }
   } catch (error) {
     if (!(error instanceof ValueError)) throw error
@@ -205,10 +205,12 @@ export function main(args: string[]): number {
   for (const [document, skill] of documentScopes) {
     out += `\n문서를 읽는 테스트 후보: ${relativeTo(document, root)}\n`
     const readers = contents.filter(([rel, lines]) => {
-      const path = pjoin(root, rel)
-      if (!isRelativeTo(path, skill)) return false
-      const parts = pathParts(relativeTo(path, skill))
-      if (!TEST_DIRS.has(parts[0])) return false
+      if (skill !== null) {
+        const path = pjoin(root, rel)
+        if (!isRelativeTo(path, skill)) return false
+        const parts = pathParts(relativeTo(path, skill))
+        if (!TEST_DIRS.has(parts[0])) return false
+      }
       const text = lines.join('\n')
       const name = pathName(document)
       return /\breadFileSync\s*\(/u.test(text) && ['"', "'", '`'].some((quote) => text.includes(`${quote}${name}${quote}`))
