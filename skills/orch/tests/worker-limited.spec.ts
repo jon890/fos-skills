@@ -98,3 +98,35 @@ test('24시간 뒤에는 Run 등록 여부와 무관하게 정리하고 명시 �
   assert.deepEqual(sent, ['codex'])
   assert.deepEqual(JSON.parse(readFileSync(join(root, 'machine/worker-limited.json'), 'utf8')).checks, {})
 })
+
+test('전송 중에도 새 한도를 기록할 수 있고 옛 전송이 새 기록을 덮지 않는다', t => {
+  const saved = process.env.ORCH_MACHINE_DIR
+  process.env.ORCH_MACHINE_DIR = join(tempDir('limit-check-inflight-', t), 'machine')
+  t.after(() => { if (saved === undefined) delete process.env.ORCH_MACHINE_DIR; else process.env.ORCH_MACHINE_DIR = saved })
+  recordWorkerLimited(100, { run: 'A', provider: 'claude' })
+  const sent: string[] = []
+  const now = 100 + LIMIT_CHECK_MS
+  notifyLimitChecks(['A'], now, check => {
+    assert.deepEqual(notifyLimitChecks(['A'], now, () => assert.fail('전송 중 중복')), [])
+    recordWorkerLimited(now + 1, { run: 'A', provider: 'claude' })
+    sent.push(check.provider)
+  })
+  notifyLimitChecks(['A'], now + LIMIT_CHECK_MS, () => assert.fail('새 한도 시각 전'))
+  notifyLimitChecks(['A'], now + LIMIT_CHECK_MS + 1, check => sent.push(check.provider))
+  assert.deepEqual(sent, ['claude', 'claude'])
+})
+
+test('전송 중 프로세스가 끝나 남은 예약은 3분 뒤 다시 시도한다', t => {
+  const saved = process.env.ORCH_MACHINE_DIR
+  process.env.ORCH_MACHINE_DIR = join(tempDir('limit-check-crash-', t), 'machine')
+  t.after(() => { if (saved === undefined) delete process.env.ORCH_MACHINE_DIR; else process.env.ORCH_MACHINE_DIR = saved })
+  recordWorkerLimited(100, { run: 'A', provider: 'claude' })
+  const module = new URL('../scripts/lib/worker-limited.ts', import.meta.url).href
+  const now = 100 + LIMIT_CHECK_MS
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import {notifyLimitChecks} from ${JSON.stringify(module)}; notifyLimitChecks(['A'], ${now}, () => process.exit(0));`], { env: process.env })
+  assert.equal(child.status, 0)
+  notifyLimitChecks(['A'], now + 180_000 - 1, () => assert.fail('전송 예약 기한 전'))
+  let count = 0
+  notifyLimitChecks(['A'], now + 180_000, () => { count++ })
+  assert.equal(count, 1)
+})

@@ -1,11 +1,13 @@
 // 사용 한도 알림 시각은 머신 전체가 공유한다. 별도 파일 잠금 안에서 최신 시각만 남긴다.
+import { randomUUID } from 'node:crypto'
+import type { Lock } from '../../../../extensions/work-board/bin/file-lock.ts'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
 import { machineDir } from './machine.ts'
 
 const fileOf = () => join(machineDir(), 'worker-limited.json')
-type Check = { run: string; provider: string; at: number; checkedAt?: number }
+type Check = { run: string; provider: string; at: number; checkedAt?: number; claim?: { id: string; at: number } }
 type Limited = { at: number; checks?: Record<string, Check> }
 export const LIMIT_CHECK_MS = 60 * 60_000
 export const LIMIT_CHECK_TTL_MS = 24 * LIMIT_CHECK_MS
@@ -36,7 +38,7 @@ export function recordWorkerLimited(at: number, event?: { run: string; provider:
     writeFileSync(tmp, JSON.stringify({ at: Math.max(previous?.at ?? -Infinity, at), ...(Object.keys(checks).length ? { checks } : {}) }) + '\n')
     if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
     renameSync(tmp, file)
-  }, { staleMs: 180_000 })
+  })
 }
 
 // 한도 해제 시각을 알 수 없으므로 시간마다 확인을 요청한다. Run·제공자별 성공 시각을
@@ -45,28 +47,46 @@ export function notifyLimitChecks(runs: string[], now: number, notify: (check: C
   const failures: unknown[] = []
   const file = fileOf()
   for (const key of Object.keys(readLimited()?.checks ?? {})) {
-    // Orca 전송은 최대 60초씩 두 번 시도하므로 전송 중 잠금을 넘겨받지 않게 한다.
-    try { withFileLock(file, lock => {
-      const value = readLimited()
-      const check = value?.checks?.[key]
-      if (value && check && now - check.at >= LIMIT_CHECK_TTL_MS) {
-        delete value.checks![key]
-        const tmp = `${file}.${process.pid}.tmp`
-        writeFileSync(tmp, JSON.stringify(value) + '\n')
-        if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
-        renameSync(tmp, file)
-        return
-      }
-      if (!value || !check || !runs.includes(check.run) || now - (check.checkedAt ?? check.at) < LIMIT_CHECK_MS) return
-      notify(check)
-      check.checkedAt = now
-      const tmp = `${file}.${process.pid}.tmp`
-      writeFileSync(tmp, JSON.stringify(value) + '\n')
-      if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
-      renameSync(tmp, file)
-    }, { staleMs: 180_000 }) } catch (error) { failures.push(error) }
+    try {
+      const claimed = withFileLock(file, lock => {
+        const value = readLimited()
+        const check = value?.checks?.[key]
+        if (!value || !check) return null
+        if (now - check.at >= LIMIT_CHECK_TTL_MS) {
+          delete value.checks![key]
+          saveLimited(value, lock)
+          return null
+        }
+        if (!runs.includes(check.run) || now - (check.checkedAt ?? check.at) < LIMIT_CHECK_MS) return null
+        // 잠금 안에서는 전송 예약만 한다. 프로세스가 사라져도 기한 뒤 다시 시도한다.
+        if (check.claim && now - check.claim.at < 180_000) return null
+        check.claim = { id: randomUUID(), at: now }
+        saveLimited(value, lock)
+        return check
+      })
+      if (!claimed) continue
+      let sent = false
+      try { notify(claimed); sent = true } catch (error) { failures.push(error) }
+      withFileLock(file, lock => {
+        const value = readLimited()
+        const check = value?.checks?.[key]
+        // 명시 해제나 새 한도가 옛 전송의 완료 기록으로 덮이지 않게 한다.
+        if (!value || !check || check.claim?.id !== claimed.claim?.id) return
+        if (sent) check.checkedAt = now
+        delete check.claim
+        saveLimited(value, lock)
+      })
+    } catch (error) { failures.push(error) }
   }
   return failures
+}
+
+function saveLimited(value: Limited, lock: Lock): void {
+  const file = fileOf()
+  const tmp = `${file}.${process.pid}.tmp`
+  writeFileSync(tmp, JSON.stringify(value) + '\n')
+  if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
+  renameSync(tmp, file)
 }
 
 // 해제를 확인한 코디네이터가 자기 Run의 제공자 알림만 끝낸다. at는 기존 자동 진행 기준이라 보존한다.
@@ -81,5 +101,5 @@ export function clearLimitCheck(run: string, provider: string): void {
     writeFileSync(tmp, JSON.stringify(value) + '\n')
     if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
     renameSync(tmp, file)
-  }, { staleMs: 180_000 })
+  })
 }
