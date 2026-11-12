@@ -691,7 +691,7 @@ describe('마무리 빠짐과 대기 확인', () => {
     assert.ok(!inboxes.some(handle => ['dispatch:settled', 'dispatch:released', 'dispatch:task-ended'].includes(handle)))
   })
 
-  test('--reply-to 로 보낸 답이 dispatch 메일함에 있으면 UNANSWERED 를 보내지 않는다', () => {
+  test('현재 동작 고정: --reply-to 의 스레드 답변은 미답변 알림에서 빠진다', () => {
     const q = question()
     orca({ messages: [q], inbox: { 'dispatch:d': [{ id: 'reply', run_id: 'r', type: 'status', from_handle: 'term_coord', to_handle: 'dispatch:d', thread_id: 'q' }] } })
     once()
