@@ -147,7 +147,7 @@ export function normalizeBase(base: string | null | undefined): string | null | 
 // 명시 인자, 저장소 Git 설정, 원격 기본 브랜치 순으로 정한다.
 export function resolveBase(repo: string, explicit?: string | null): string {
   let base = normalizeBase(
-    explicit || tryRun(['git', 'config', '--local', '--get', 'implementation.baseBranch'], repo) || tryRun(['git', 'config', '--local', '--get', 'build-with-teams.baseBranch'], repo),
+    explicit || tryRun(['git', 'config', '--local', '--get', 'implementation.baseBranch'], repo),
   )
   if (!base) {
     const remote = run(['git', 'ls-remote', '--symref', 'origin', 'HEAD'], repo)

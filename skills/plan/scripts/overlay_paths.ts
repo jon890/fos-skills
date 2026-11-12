@@ -32,7 +32,6 @@ import { pyStrCompare, pyStrip } from './kit/py.ts'
 // 오버레이의 「저장소 배치」 표에서 plan 접두사를 읽는다. 형식은 references/monorepo.md 가 정한다
 const PREFIX_ROW = pyre(/(?<![^\n])\|\s*plan 접두사\s*\|\s*`([^`]+)`\s*\|/)
 const HARNESS = ['AGENTS.md', 'CLAUDE.md']
-const ALIASES: Record<string, string> = { plan: 'planning', implementation: 'build-with-teams' }
 
 const USAGE = `usage: overlay_paths.ts [-h] --skill SKILL [--sub SUB] [--plan PLAN] [paths ...]
 
@@ -111,12 +110,11 @@ function owner(path: string, subs: string[]): string | null {
 
 // 값 하나마다 이 순서로 찾는다. 앞의 파일에 있으면 그것을 쓴다
 export function searchOrder(root: string, skill: string, sub: string | null): string[] {
-  const names = [skill, ...(skill in ALIASES ? [ALIASES[skill]] : [])]
   // docs-consolidate 는 같은 위치에 자기 오버레이가 없을 때만 docs-audit 오버레이를 읽는다
   const directories = sub ? [`${sub}/.claude`, '.claude'] : ['.claude']
   const order: string[] = []
   for (const directory of directories) {
-    order.push(...names.map((name) => `${directory}/${name}-overlay.md`))
+    order.push(`${directory}/${skill}-overlay.md`)
     if (skill === 'docs-consolidate' && !isFile(`${root}/${directory}/${skill}-overlay.md`)) order.push(`${directory}/docs-audit-overlay.md`)
   }
   if (sub) order.push(...HARNESS.map((name) => `${sub}/${name}`))
