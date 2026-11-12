@@ -51,12 +51,12 @@ function readModelPolicies(file = join(bundleRoot(), 'references', 'agent-select
   return modelPolicies(readFileSync(file, 'utf8'))
 }
 
-function effortExceeded(selection: Selection, policy: ModelPolicy | undefined): string | null {
+function effortExceeded(selection: Selection, policy: ModelPolicy | undefined, experiment = false): string | null {
   if (selection.row === 'review') return null
   const limit = policy?.limits.get(selection.model ?? '')
   if (!limit) return null
   // hard-design 의 Opus 고effort 는 기존 high 근거 검사에서 따로 검증한다.
-  if (selection.row === 'hard-design' && selection.model?.startsWith('claude-opus-') && selection.highReason && ['high', 'xhigh', 'max'].includes(selection.effort ?? '')) return null
+  if (selection.row === 'hard-design' && selection.model?.startsWith('claude-opus-') && (selection.highReason || experiment) && ['high', 'xhigh', 'max'].includes(selection.effort ?? '')) return null
   const effort = resolvedEffort(selection, policy)
   return effort && EFFORTS.indexOf(effort) > EFFORTS.indexOf(limit) ? limit : null
 }
@@ -69,7 +69,7 @@ export function candidateOverrideOf(text: string): { row: string | null; model: 
   const [selection] = selectionsOf(text)
   if (!selection?.outsideReason) return null
   const policy = readModelPolicies().get(selection.row ?? '')
-  const effortLimit = effortExceeded(selection, policy)
+  const effortLimit = effortExceeded(selection, policy, !!experimentOf(text))
   if (!outsideCandidate(selection, policy?.models) && !effortLimit) return null
   return { row: selection.row, model: selection.model, reason: selection.outsideReason,
     ...(effortLimit ? { effort: resolvedEffort(selection, policy), effortLimit } : {}),
@@ -111,7 +111,7 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
     if (!EFFORTS.includes(resolvedEffort(selection, policy) ?? '')) {
       errors.push(`effort 상한을 검사하려면 명시한 effort 나 표의 기본값이 필요하다: ${selection.effort}`)
     }
-    const limit = effortExceeded(selection, policy)
+    const limit = effortExceeded(selection, policy, !!experiment)
     if (limit && !selection.outsideReason) {
       errors.push(`행 ${selection.row} 의 ${selection.model} effort 상한: ${limit} (요청: ${selection.effort}). 꼭 필요하면 \`worker 선택:\` 줄에 \`후보 밖: <이유>\` 를 적는다`)
     }

@@ -115,12 +115,12 @@ test('근거 dispatch 는 effective 우선, 옛 기록은 모델이 없을 때 �
 test('실험은 띄울 때만 최소 배정과 동률 순서를 검사하며 재시도는 세지 않는다', () => {
   assert.deepEqual(selectionVerdict(`${sol}\n${experiment}`, repo), [])
   assert.match(selectionVerdict(`${sol}\n${experiment}`, repo, { launch: true }).join(), /다음 experiment 후보: claude/)
-  assert.deepEqual(selectionVerdict(`${opus('high', '후보 밖: 실험 비교.')}\n${experiment}`, repo, { launch: true }), [])
+  assert.deepEqual(selectionVerdict(`${opus()}\n${experiment}`, repo, { launch: true }), [])
   recordHistory(repo, row({ experiment: 'trial-a', effort: 'high', retry_of: 'ctx_first' }))
   assert.match(selectionVerdict(`${sol}\n${experiment}`, repo, { launch: true }).join(), /다음 experiment/)
   recordHistory(repo, row({ dispatch: 'ctx_new', experiment: 'trial-a', effort: 'high', at: '2026-11-06T00:00:00Z' }))
   assert.deepEqual(selectionVerdict(`${sol}\n${experiment}`, repo, { launch: true }), [])
-  assert.deepEqual(selectionVerdict(`${opus('high', '후보 밖: 실험 비교.')}\n${experiment}`, repo, { launch: true, retry: true }), [])
+  assert.deepEqual(selectionVerdict(`${opus()}\n${experiment}`, repo, { launch: true, retry: true }), [])
   assert.equal(latestTerminal(repo, 'term_a')?.dispatch, 'ctx_new')
 })
 
@@ -261,4 +261,11 @@ test('표에 명시한 모델 기본값은 허용하고 상한이 더 낮은 행
   writeFileSync(table, source.replaceAll('Sonnet `high`(기본)', 'Sonnet `low`(기본)'))
   const text = 'worker 선택: `claude` `claude-sonnet-5-5` effort `기본`. 행: small-fix. 비교: sol. 이유: 기본값 확인.'
   assert.deepEqual(selectionVerdict(text, repo, { launch: true, table }), [])
+})
+
+
+test('Opus 실험의 high 근거 면제는 effort 검사와 예외 기록에서도 유지한다', () => {
+  const text = `${opus()}\n${experiment}`
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+  assert.equal(candidateOverrideOf(`${opus('high', '후보 밖: 이전 선택에서 복사.')}\n${experiment}`), null)
 })
