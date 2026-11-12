@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, mock, test } from 'node:test'
-import { modelRowIds, modelRows, selectionVerdict } from '../scripts/lib/selection.ts'
+import { candidateOverrideOf, modelPolicies, modelRowIds, modelRows, selectionVerdict } from '../scripts/lib/selection.ts'
 import { experimentOf, selectionsOf } from '../scripts/lib/spec.ts'
 import { launchHistory, latestTerminal, recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
 import { forgetLaunch, readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
@@ -12,8 +12,8 @@ let repo: string
 beforeEach(() => { repo = mkdtempSync(join(tmpdir(), 'selection-')); process.env.ORCH_DIR = join(repo, 'orch') })
 afterEach(() => { delete process.env.ORCH_DIR; rmSync(repo, { recursive: true, force: true }) })
 const opus = (effort = 'high', reason = '') => `worker 선택: \`claude\` \`claude-opus-5-5\` effort \`${effort}\`. 행: hard-design. ${reason} 비교: sol. 이유: 계약 설계.`
-const sol = 'worker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-planned. 비교: Sonnet. 이유: 닫힌 결정.'
-const experiment = 'experiment: trial-a. 후보: `claude` `claude-opus-5-5` effort `high` / `codex` `gpt-6.1-sol` effort `medium`.'
+const sol = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Sonnet. 이유: 닫힌 결정.'
+const experiment = 'experiment: trial-a. 후보: `claude` `claude-opus-5-5` effort `high` / `codex` `gpt-6.1-sol` effort `low`.'
 const row = (extra: Partial<LaunchHistory> = {}): LaunchHistory => ({ dispatch: 'ctx_old', task: 'task_a', terminal: 'term_a', worktree: repo, branch: 'feat/a', run: 'run_a', at: '2026-11-05T00:00:00Z', title: '계약 설계', row: 'hard-design', agent: 'claude', model: 'claude-opus-5-5', effort: 'medium', retry_of: null, ...extra })
 
 test('파서는 행, 근거, 실험을 읽고 후보 꼴과 중복 줄을 검사한다', () => {
@@ -137,7 +137,7 @@ test('근거의 실제 모델이나 effort 가 다르면 거부한다', () => {
 })
 
 test('실험의 기본 effort 는 옵션을 주지 않은 이력으로 집계한다', () => {
-  const experiment = 'experiment: default-effort. 후보: `claude` `haiku` effort `기본` / `codex` `gpt-6.1-sol` effort `medium`.'
+  const experiment = 'experiment: default-effort. 후보: `claude` `haiku` effort `기본` / `codex` `gpt-6.1-sol` effort `low`.'
   recordHistory(repo, row({ model: 'haiku', effort: null, experiment: 'default-effort' }))
   assert.deepEqual(selectionVerdict(`${sol}\n${experiment}`, repo, { launch: true }), [])
 })
@@ -179,4 +179,100 @@ test('행 id 가 모델 표에 없으면 표의 행 id 목록을 함께 내고, 
   const plain = verdict('typo')
   assert.ok(plain.includes(`모델 표의 행 id: ${ids}`), plain)
   assert.doesNotMatch(plain, /작업 종류 id 를 쓴다/)
+})
+
+test('모든 후보의 effort 상한을 모델 표에서 읽고 표의 값이 바뀌면 검사도 바뀐다', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  const policies = modelPolicies(source)
+  for (const [row, policy] of policies) {
+    if (row === 'review') continue
+    for (const model of policy.models) assert.ok(policy.limits.has(model), `${row}: ${model} 상한 누락`)
+  }
+  const table = join(repo, 'limits.md')
+  writeFileSync(table, source.replace('sol `low`, Sonnet', 'sol `medium`, Sonnet'))
+  assert.deepEqual(selectionVerdict(sol.replace('`low`', '`medium`'), repo, { launch: true, table }), [])
+  writeFileSync(table, source.replace('sol `low`, Sonnet', 'sol 지정 없음, Sonnet'))
+  assert.match(selectionVerdict(sol, repo, { launch: true, table }).join(), /effort 상한을 읽지 못했다/)
+})
+
+test('행별 상한과 낮은 effort, high 근거와 리뷰 예외를 지킨다', () => {
+  assert.deepEqual(selectionVerdict(sol, repo, { launch: true }), [])
+  for (const effort of ['medium', 'high', 'xhigh', 'max', 'ultra']) {
+    assert.match(selectionVerdict(sol.replace('`low`', `\`${effort}\``), repo, { launch: true }).join(), /effort 상한: low/)
+  }
+  const explore = sol.replace('impl-planned', 'impl-explore').replace('`low`', '`medium`')
+  assert.deepEqual(selectionVerdict(explore, repo, { launch: true }), [])
+  assert.match(selectionVerdict(explore.replace('`medium`', '`high`'), repo, { launch: true }).join(), /effort 상한: medium/)
+  assert.deepEqual(selectionVerdict(explore.replace('`medium`', '`high`') + ' 후보 밖: 복잡한 재현.', repo, { launch: true }), [])
+  assert.deepEqual(selectionVerdict(sol.replace('impl-planned', 'hard-design').replace('`low`', '`high`'), repo, { launch: true }), [])
+  assert.deepEqual(selectionVerdict(sol.replace('impl-planned', 'review').replace('`low`', '`high`'), repo, { launch: true }), [])
+  assert.deepEqual(selectionVerdict(opus('high', 'high 근거: 사용자 지정 2026-11-12.'), repo, { launch: true }), [])
+})
+
+
+test('기본값이나 알 수 없는 effort 로 상한 검사를 건너뛰지 않는다', () => {
+  for (const effort of ['기본', 'unknown']) {
+    assert.match(selectionVerdict(sol.replace('`low`', `\`${effort}\``), repo, { launch: true }).join(), /명시한 effort/)
+  }
+  const haiku = 'worker 선택: `claude` `claude-haiku-5-5` effort `기본`. 행: small-fix. 비교: luna. 이유: 문구 수정.'
+  assert.deepEqual(selectionVerdict(haiku, repo, { launch: true }), [])
+  assert.match(selectionVerdict(haiku.replace('`기본`', '`high`'), repo, { launch: true }).join(), /effort 상한: medium/)
+})
+
+
+test('effort 예외 기록에는 요청값과 상한을 남기고 정상 선택에는 남기지 않는다', () => {
+  const reason = '후보 밖: 복잡한 재현.'
+  assert.equal(candidateOverrideOf(`${sol} ${reason}`), null)
+  assert.deepEqual(candidateOverrideOf(`${sol.replace('`low`', '`high`')} ${reason}`), {
+    row: 'impl-planned', model: 'gpt-6.1-sol', reason: '복잡한 재현', effort: 'high', effortLimit: 'low',
+  })
+  assert.equal(candidateOverrideOf(`${sol.replace('impl-planned', 'review').replace('`low`', '`high`')} ${reason}`), null)
+})
+
+
+test('visual 의 시작 effort 는 상한이 아니므로 medium 과 high 도 허용한다', () => {
+  for (const effort of ['low', 'medium', 'high']) {
+    const text = `worker 선택: \`codex\` \`gpt-6.1-terra\` effort \`${effort}\`. 행: visual. 비교: sol. 이유: 화면 확인.`
+    assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+    assert.equal(candidateOverrideOf(`${text} 후보 밖: 이전 선택에서 복사.`), null)
+  }
+})
+
+
+test('검증된 이어하기만 상한 검사를 생략하고 재시도 표지만으로는 생략하지 않는다', () => {
+  const text = sol.replace('`low`', '`medium`')
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true, continuation: true }), [])
+  assert.match(selectionVerdict(text, repo, { launch: true, retry: true }).join(), /effort 상한: low/)
+})
+
+
+test('표에 명시한 모델 기본값은 허용하고 상한이 더 낮은 행에서는 거부한다', () => {
+  for (const [model, row] of [['claude-sonnet-5-5', 'impl-planned'], ['claude-fable-5-2', 'impl-explore'], ['claude-haiku-5-5', 'simple-apply']]) {
+    const text = `worker 선택: \`claude\` \`${model}\` effort \`기본\`. 행: ${row}. 비교: sol. 이유: 기본값 확인.`
+    assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+    if (model === 'claude-sonnet-5-5') {
+      assert.match(selectionVerdict(text.replace(row, 'small-fix'), repo, { launch: true }).join(), /effort 상한: medium/)
+    }
+  }
+  const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  const table = join(repo, 'defaults.md')
+  writeFileSync(table, source.replaceAll('Sonnet `high`(기본)', 'Sonnet `low`(기본)'))
+  const text = 'worker 선택: `claude` `claude-sonnet-5-5` effort `기본`. 행: small-fix. 비교: sol. 이유: 기본값 확인.'
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true, table }), [])
+})
+
+
+test('Opus 실험의 high 근거 면제는 effort 검사와 예외 기록에서도 유지한다', () => {
+  const text = `${opus()}\n${experiment}`
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+  assert.equal(candidateOverrideOf(`${opus('high', '후보 밖: 이전 선택에서 복사.')}\n${experiment}`), null)
+})
+
+
+test('Opus high 근거는 security-review 행에서도 같은 예외를 준다', () => {
+  const text = opus('high', 'high 근거: 사용자 지정 2026-11-12.').replace('hard-design', 'security-review')
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+  assert.equal(candidateOverrideOf(`${text} 후보 밖: 이전 선택에서 복사.`), null)
+  assert.match(selectionVerdict(opus().replace('hard-design', 'security-review'), repo, { launch: true }).join(), /high 근거/)
+  assert.match(selectionVerdict(opus('high', 'high 근거: 사용자 지정 2026-02-30.').replace('hard-design', 'security-review'), repo, { launch: true }).join(), /날짜/)
 })
