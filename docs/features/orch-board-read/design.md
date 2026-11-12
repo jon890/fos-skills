@@ -65,7 +65,7 @@ flowchart TD
 
 | 층 | 파일 | 맡는 것 |
 | --- | --- | --- |
-| work-board | `extensions/work-board/bin/board.ts` | 받는 칸 목록, 칸 값을 글로 바꾸는 규칙, 빈 값 판정, 제목이 없을 때 id 로 대신하기, 항목 객체의 꼴, 상태 값 검사와 상태 필터, 없는 항목과 `done` 이 아닌 항목의 거절, 지우기 전 사본. 보드 파일을 쓰는 유일한 코드인 것은 그대로다 |
+| work-board | `extensions/work-board/bin/board.ts` | 받는 칸 목록, 칸 값을 글로 바꾸는 규칙, 빈 값 판정, 제목 칸이 없을 때 id 로 대신하기, 항목 객체의 꼴, 상태 값 검사와 상태 필터, 없는 항목과 `done` 이 아닌 항목의 거절, 지우기 전 사본. 보드 파일을 쓰는 유일한 코드인 것은 그대로다 |
 | orch 명령 표 | `skills/orch/scripts/lib/commands.ts` | 새 동작 이름과 사용법 한 줄, 문맥 인자(`--repo`). 판정은 두지 않는다 |
 | orch 스크립트 | `skills/orch/scripts/board/board-edit.ts` | 위치 인자와 옵션의 꼴 검사(종료 코드 2), 보드 파일 찾기, `board.ts` 호출, 받은 JSON 을 한 줄 출력으로 바꾸거나 그대로 내기, `BOARD-UNMATCHED` 줄과 `unmatched` 더하기 |
 | orch lib | `skills/orch/scripts/lib/board-unmatched.ts` | 못 맞춘 머지 기록 읽기. 고치지 않고 `show` 가 쓰던 함수를 `list --full` 과 `show --json` 이 함께 쓴다 |
@@ -98,7 +98,7 @@ flowchart TD
 | 칸 | 값 |
 | --- | --- |
 | `status`, `owner`, `branch`, `worktree`, `task`, `stages` | 저장된 글 그대로 |
-| `title` | 저장된 글. 칸이 없거나 빈 문자열이면 id(`itemTitle`). 빈 문자열까지 id 로 바꾸는 까닭은 DECISION10 이다 |
+| `title` | 저장된 글. `title` 키가 없는 항목만 id 다(`itemTitle`). 키가 있는데 빈 문자열이면 다른 칸처럼 빈 값이다(DECISION10) |
 | `pr`, `merged-pr` | 저장된 값을 글로 쓴 것. 숫자 `555` 는 `555`, 글 `492, 495` 는 그대로 |
 | `progress` | `progressOf` 가 낸 `<끝낸>/<전체>`. `show` 머리와 같은 셈이다 |
 | `step <번호>` | `findStep` 이 고른 줄의 `text`. 끝냄 표시는 `text` 에 들어 있지 않아 붙지 않는다 |
@@ -161,7 +161,7 @@ flowchart TD
 | `lines` | `view` 의 `lines` 를 만드는 코드를 함께 쓴다. `details` 다음 `next` 순서, 빈 줄 제외, 단계를 세는 쪽의 단계 줄에만 `number` |
 
 - `was`, `rev`, `details`, `next` 는 넣지 않는다(스펙 DECISION10). `view` 의 출력은 그대로 두고 `show` 의 JSON 없는 출력은 지금처럼 `view` 를 쓴다.
-- 제목이 없는 항목은 `title` 키가 없다. id 로 대신하는 것은 `get title` 과 `list` 의 한 줄 출력뿐이다.
+- 제목 칸이 없는 항목은 항목 객체에도 `title` 키가 없고, 빈 문자열 제목은 빈 문자열 그대로 든다. id 로 대신하는 것은 `title` 키가 없는 항목의 `get title` 과 `list` 한 줄 출력뿐이다.
 
 ### 새 명령
 
@@ -189,7 +189,7 @@ orch board del --done
 - 모든 호출에 `--file <boardPath 의 결과>` 를 붙인다. `--status` 의 값만은 `--file` 뒤, `--` 다음에 둔다. `--status=-x` 처럼 `-` 로 시작하는 값이 `board.ts` 의 옵션으로 읽혀 사용법 오류(종료 코드 2)가 되지 않고 상태 값 거절(종료 코드 1)이 되게 하려는 것이다. `board.ts` 의 stderr 와 종료 코드는 그대로 넘긴다. 종료 코드가 0 도 4 도 아니면 stdout 에 아무것도 쓰지 않는다(스펙 DECISION14).
 - `board-edit.ts` 가 막는 사용법 오류(종료 코드 2, 사용법 출력): 위치 인자가 모자라거나 남는다, `get … step` 뒤의 번호가 숫자가 아니다, `--json` 을 `get`, `list`, `show` 밖에 준다, `--status` 를 `list` 밖에 준다, `--force` 나 `--done` 을 `del` 밖에 준다, `--done` 을 항목 id 나 `--force` 와 함께 준다, `--on` 을 새 동작에 준다, `get` 의 칸 이름이 `GET_FIELDS` 에 없다. 상태 값은 검사하지 않는다.
 - `board-edit.ts` 의 사용법 글은 받는 칸을 `GET_FIELDS` 에서 읽어 보이고, 칸 이름도 같은 상수에 드는지만 본다. 목록을 글로 한 번 더 적지 않아 원본은 하나다. 감싸기가 먼저 막는 까닭은 `board.ts` 의 사용법 오류가 `board.ts` 의 긴 사용법 줄을 내 `orch board` 사용자에게 맞지 않기 때문이다. `board.ts get` 도 직접 호출을 위해 같은 검사를 한다.
-- `list` 한 줄의 진행률은 `show` 머리와 같은 식이다(없으면 `진행률 없음`). 상태는 글일 때만 그 값이고 아니면(칸이 없거나 글이 아니면) `show` 머리처럼 `null` 이다. 제목은 `itemTitle` 이다.
+- `list` 한 줄의 진행률은 `show` 머리와 같은 식이다(없으면 `진행률 없음`). 상태는 글일 때만 그 값이고 아니면(칸이 없거나 글이 아니면) `show` 머리처럼 `null` 이다. 제목 자리는 `get title` 과 같은 값(`itemTitle`)이다. `title` 키가 없으면 id 이고(스펙 DECISION16), 키가 있는데 값이 없으면(빈 문자열) 제목 없이 `BOARD <항목> <상태> <끝낸>/<전체>` 까지만 내고 줄 끝에 공백을 두지 않는다. 스펙 REQ5 는 빈 제목의 꼴을 정하지 않았고, 없는 값을 id 로 채우지 않는 것이 REQ4 와 같다.
 - `list --full` 은 항목마다 머리 줄, 그 항목의 안 풀린 `BOARD-UNMATCHED` 줄, 모든 줄(끝난 줄 앞에 `✓ `)을 `show --full` 과 같은 순서로 잇는다. 못 맞춘 머지 기록은 한 번만 읽는다. `--full` 이 없는 `list` 와 `get` 은 그 기록을 읽지 않는다.
 - `unmatched` 는 `show` 가 지금 `BOARD-UNMATCHED` 줄을 고르는 판정(`unmatchedRecords`, `unmatchedResolved`)을 그대로 쓰고, 남은 PR 번호를 숫자로 바꿔 넣는다. 판정에 넘기는 단계 줄은 항목 객체의 `lines` 다.
 - `--json` 과 `--full` 을 함께 주면 JSON 만 낸다. JSON 은 늘 온전한 내용이라 더 낼 것이 없다. `del` 은 `--full` 이어도 출력이 같다.
@@ -266,4 +266,4 @@ orch board del --done
 | DECISION7 | 「아침 정리」 의 자리 | 창의 「오늘 시작」 요청문(`START_PROMPT`)을 구현 PR 에서 `orch board del --done` 으로 바꾼다 | 작성자 | 스펙은 저장소 문서에서 이 절차를 찾지 못했다고 적었다. 설계에서 창의 요청문이 `board.ts del` 을 시키는 것을 찾았다. 요청문이 플러그인 경로를 찾게 만드는 것이 스펙의 배경이고, 보드 고치기 설계 DECISION16 이 같은 요청문을 같은 이유로 고쳤다 |
 | DECISION8 | PR 나누기 | 구현 PR 하나 | 작성자 | 위 「PR 나누기와 순서」 |
 | DECISION9 | 지운 항목이 동기화로 다시 생기는 틈 | 이번에 막지 않고 문서에 적는다 | 작성자 | 지금 `board.ts del` 에도 있는 틈이고, 막으려면 동기화의 `set` 을 모두 엄격 호출로 바꿔야 한다. 스펙 범위(읽기와 지우기 입구) 밖이다. 구현 PR 본문에서 후속 후보로 알린다 |
-| DECISION10 | 빈 문자열 제목 | `title` 칸이 빈 문자열이어도 없는 것처럼 id 를 낸다(`get title`, `list` 의 제목) | 작성자 | 스펙 REQ3 은 「칸이 없는 옛 항목」 만 적었고 REQ4 는 빈 문자열을 값 없음으로 정했다. 둘이 겹치는 자리를 REQ3 쪽으로 읽었다. `board.ts` 가 새 항목을 만들 때 `title \|\| id` 로 채우는 규칙과 같고(스펙 DECISION16 의 근거), `set --title ''` 은 칸을 지우므로 빈 제목은 파일을 직접 고친 보드에만 있다 |
+| DECISION10 | 빈 문자열 제목 | 값 없음으로 본다. `get title` 은 stdout 을 비우고 종료 코드 4 이며 `--json` 의 `value` 는 `null` 이다. id 로 대신하는 것은 `title` 키가 없는 항목뿐이다. `list` 는 제목 자리를 비운다 | 작성자 | 스펙 REQ4 가 빈 문자열을 값 없음으로 정했고 REQ3 과 DECISION16 이 id 로 대신하게 한 것은 「칸이 없는 옛 항목」 이다. 처음 설계는 빈 문자열까지 id 로 넓혔다가 PR 리뷰에서 스펙과 다르다는 지적을 받아 되돌렸다. 넓히면 값을 받는 셸이 빈 제목을 성공으로 다룬다 |

@@ -19,7 +19,7 @@
   - `get <id> <칸>` → `{"id","field","value"}`, `get <id> step <번호>` → `{"id","field":"step","number","value"}`. 값이 비면 `value` 가 `null` 이고 종료 코드 4 다. 칸 이름이 목록 밖이면 종료 코드 2 다.
   - `item <id>` → 항목 객체(`id`, 저장된 칸들, `progress`, `lines`).
   - `items [<상태>[,<상태>…]]` → 항목 객체 배열. 상태 값이 틀리면 종료 코드 1 이다.
-  - `board.ts` 가 `GET_FIELDS`(받는 칸 목록)와 `itemTitle(item)`(제목이 없으면 id)을 내보낸다.
+  - `board.ts` 가 `GET_FIELDS`(받는 칸 목록)와 `itemTitle(item)` 을 내보낸다. `itemTitle` 은 `title` 키가 없는 항목에만 id 를 주고, 키가 있는데 빈 문자열이면 `null` 을 준다.
 - `show` 의 JSON 없는 출력은 지금처럼 `board.ts view` 를 쓴다. 바꾸지 않는다(설계 DECISION5).
 - `--full` 은 진입점이 떼어 신호로 넘기고 스크립트는 `fullAsked()` 로 읽는다. `--json` 은 진입점이 떼지 않아 스크립트의 옵션으로 온다.
 - 못 맞춘 머지: `show` 가 지금 `unmatchedRecords(repo)[id]` 의 PR 가운데 `unmatchedResolved(단계 줄, pr)` 이 거짓인 것을 `unmatchedLine(id, pr)` 로 보인다. 단계 줄은 `lines` 에서 `number !== null` 인 것이다.
@@ -58,7 +58,7 @@
   - `show --json`: `command` 는 `['item', 항목]` 이다. `--json` 이 없으면 지금의 `['view', 항목]` 이다.
 - 종료 코드: `board.ts` 의 종료 코드를 그대로 돌려준다. stdout 을 쓰는 것은 종료 코드 0 과 `get` 의 4 뿐이다. 그 밖에는 지금처럼 stdout 에 아무것도 쓰지 않는다.
 - `get` 의 출력: `--json` 이면 받은 stdout 을 그대로 쓴다. 아니면 `value` 가 `null` 이 아닐 때만 `value` 와 줄바꿈을 쓴다. 앞뒤에 다른 글을 붙이지 않는다.
-- `list` 의 출력: `--json` 이면 받은 stdout 을 그대로 쓴다. 아니면 배열이 비었을 때 `BOARD-NONE`, 있으면 항목마다 `BOARD <id> <status> <끝낸>/<전체> <제목>` 한 줄이다. 진행률은 `show` 머리와 같은 식(`progress` 가 `null` 이면 `진행률 없음`), 상태는 글일 때만 그 값이고 아니면 `show` 머리처럼 `null`, 제목은 `itemTitle(item)` 이다. 머리 줄을 만드는 식은 `show` 와 함께 쓰는 함수 하나로 둔다.
+- `list` 의 출력: `--json` 이면 받은 stdout 을 그대로 쓴다. 아니면 배열이 비었을 때 `BOARD-NONE`, 있으면 항목마다 `BOARD <id> <status> <끝낸>/<전체> <제목>` 한 줄이다. 진행률은 `show` 머리와 같은 식(`progress` 가 `null` 이면 `진행률 없음`), 상태는 글일 때만 그 값이고 아니면 `show` 머리처럼 `null`, 제목은 `itemTitle(item)` 이다. `itemTitle` 이 `null` 이면(빈 문자열 제목) 제목과 그 앞 공백을 붙이지 않고 `BOARD <id> <status> <끝낸>/<전체>` 까지만 낸다. `?? item.id` 로 채우지 않는다(설계 DECISION10). 머리 줄을 만드는 식은 `show` 와 함께 쓰는 함수 하나로 둔다.
 - `list` 에서 `fullAsked()` 가 참이고 `--json` 이 없으면 항목마다 머리 줄 뒤에 그 항목의 안 풀린 `BOARD-UNMATCHED` 줄, 모든 줄(끝난 줄 앞에 `✓ `)을 잇는다. `show --full` 과 같은 순서다. `unmatchedRecords` 는 한 번만 부르고, `--full` 이 없는 `list` 와 `get` 에서는 부르지 않는다. 기록의 키는 문자열이라 `String(item.id)` 로 찾는다.
 - `show --json` 의 출력: 받은 항목 객체에 `unmatched` 를 더해 `JSON.stringify` 한 줄로 쓴다. `unmatched` 는 지금 `show` 가 `BOARD-UNMATCHED` 줄을 고르는 판정에서 남은 PR 번호를 `Number` 로 바꾼 배열이다(없으면 `[]`). 안 풀린 PR 을 고르는 식은 `show`, `show --json`, `list --full` 이 함께 쓰는 함수 하나로 둔다.
 - `--json` 과 `--full` 을 함께 받으면 JSON 만 쓴다.
@@ -71,11 +71,11 @@
 
 `board-edit.spec.ts` 에 새 `test` 를 더한다. 기존 사례는 고치지 않는다(도움말 사례의 동작 목록에 `get`, `list` 를 더하는 것은 된다). 이 파일의 `orch`, `ok`, `refused`, `save`, `item`, `git`, `config` 를 쓴다. 종료 코드 4 는 `ok` 가 받지 않으므로 `orch` 의 결과를 직접 단언한다.
 
-- `get` 의 값: `get x branch` 의 stdout 이 `<브랜치>\n` 과 바이트가 같다. `pr`(숫자로 저장된 값), `progress`(`1/2`), 제목 없는 항목의 `title`(id), `get x step 9`(`9) 리뷰`)를 본다.
-- `get` 의 빈 값: 브랜치 칸이 없는 항목에서 stdout 이 빈 문자열이고 종료 코드 4 다. `--json` 을 붙이면 종료 코드 4 이고 `JSON.parse(stdout).value` 가 `null` 이다.
+- `get` 의 값: `get x branch` 의 stdout 이 `<브랜치>\n` 과 바이트가 같다. `pr`(숫자로 저장된 값), `progress`(`1/2`), `title` 키가 없는 항목의 `title`(id), `get x step 9`(`9) 리뷰`)를 본다.
+- `get` 의 빈 값: 브랜치 칸이 없는 항목에서 stdout 이 빈 문자열이고 종료 코드 4 다. `title: ''` 인 항목의 `get … title` 도 stdout 이 비고 종료 코드 4 다. `--json` 을 붙이면 종료 코드 4 이고 `JSON.parse(stdout).value` 가 `null` 이다.
 - `get --json`: `{"id":"x","field":"progress","value":"1/2"}` 와 같은 객체, `step` 은 `number` 가 숫자다.
 - `get` 의 거절: 없는 항목(종료 코드 1, `항목이 없다`), `step 5`(종료 코드 1, `있는 번호: 1 9`), 숫자 id 항목(`항목이 없다`), `get x foo`(종료 코드 2, stderr 가 `orch board` 사용법이고 `branch` 와 `merged-pr` 가 있으며 `사용법: board.ts` 가 없다). `--json` 을 붙여도 stdout 이 빈다.
-- `list`: 상태가 다른 항목 셋인 보드에서 세 줄이 파일 순서로 나온다(진행률 없는 항목은 `진행률 없음`, 제목 없는 항목은 id). `--status done` 은 한 줄, `--status doing,wait` 는 두 줄, 결과가 없으면 `BOARD-NONE`, 보드 파일이 없어도 `BOARD-NONE` 이고 파일이 생기지 않는다. `--status foo` 와 `--status=-x` 는 종료 코드 1 이고 stderr 에 허용 값이 있다.
+- `list`: 상태가 다른 항목 셋인 보드에서 세 줄이 파일 순서로 나온다(진행률 없는 항목은 `진행률 없음`, `title` 키가 없는 항목은 id, `title: ''` 인 항목은 제목 없이 줄이 `진행률 없음` 이나 `<끝낸>/<전체>` 로 끝난다). `--status done` 은 한 줄, `--status doing,wait` 는 두 줄, 결과가 없으면 `BOARD-NONE`, 보드 파일이 없어도 `BOARD-NONE` 이고 파일이 생기지 않는다. `--status foo` 와 `--status=-x` 는 종료 코드 1 이고 stderr 에 허용 값이 있다.
 - `list --json`: 배열 길이가 항목 수와 같고 `--status done --json` 은 `done` 항목 수다. 결과가 없으면 `[]` 다. 항목 객체에 `unmatched`, `was`, `rev` 키가 없다.
 - `list --full`: 머리 줄 아래에 그 항목의 줄이 `show --full` 과 같은 꼴(`✓ 1. 구현`)로 나온다. 못 맞춘 머지 기록을 둔 항목은 머리 줄 바로 아래에 `BOARD-UNMATCHED x PR #70` 이 나오고, `--full` 이 없으면 나오지 않는다. 기록은 `skills/orch/tests/board-unmatched.spec.ts` 처럼 `recordUnmatched(repo, { id: 'x' }, [{ number: 9, done: false, text: '9) 리뷰' }], '70')` 로 둔다.
 - `show --json`: `branch` 가 저장된 값이고 `lines` 가 있고 `unmatched` 가 `[]` 다. 기록을 둔 뒤에는 `[70]` 이다. `show x --json --full` 의 stdout 이 `--full` 없는 것과 같다. JSON 없는 `show x` 의 출력은 지금 사례 그대로다.
