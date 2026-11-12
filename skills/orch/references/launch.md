@@ -242,5 +242,5 @@ orca orchestration worker-release --dispatch "$OLD_DISPATCH_ID"
 
 `$OLD_DISPATCH_ID` 는 끊긴 dispatch 다. `terminal close` 로 넘어가면 `worker-show` 의 `worker.agentTerminalHandle` 이 새로 띄운 worker 의 터미널과 다른지 확인한 뒤 닫는다.
 
-PR 없는 조사·정리 작업은 `orch worker launch --no-pr` 로 띄워 완료 근거 경고에서 제외한다. 이 값은 재시도·resume 기록에도 이어진다.
+PR 없는 조사·정리 작업은 `orch worker launch --no-pr` 로 띄워 완료 근거 경고에서 제외한다. 재시도·resume·터미널 재사용도 이번 요청과 지시서로 다시 정한다. `--no-pr` 로만 제외했던 작업은 그 옵션을 다시 준다.
 `review` 행이나 독립된 `머지하지 않는다` 지시도 같은 기록을 남긴다. 인용과 목록 표기의 구분은 [`waiting.md`](waiting.md) 의 DONE-SUSPECT 규칙을 따른다.

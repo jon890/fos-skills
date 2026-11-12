@@ -849,7 +849,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
-      ...(a.noPr || skipsPrReady(text) || retryLaunch?.completion === 'none' || inherited?.completion === 'none' ? { completion: 'none' as const } : {}),
+      ...(a.noPr || skipsPrReady(text) ? { completion: 'none' as const } : {}),
       dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch,
       run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,
       spec: resolve(a.spec),

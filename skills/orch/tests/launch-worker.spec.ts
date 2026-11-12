@@ -506,6 +506,17 @@ describe('선택 정책과 영구 이력', () => {
     assert.deepEqual([history()[1].agent, history()[1].model, history()[1].effort], ['codex', 'gpt-6.1-sol', 'medium'])
   })
 
+  for (const noPr of [false, true]) test(`터미널을 다시 쓰는 구현은 이전 리뷰의 제외 표시 대신 이번 요청을 기록한다(no-pr=${noPr})`, () => {
+    select()
+    recordHistory(worktree, prior({ completion: 'none', row: 'review' }))
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, ...(noPr ? ['--no-pr'] : []), '--', '--terminal', 'term_old'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.equal(history()[1].completion, noPr ? 'none' : undefined)
+    const entry = JSON.parse(readFileSync(join(worktree, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
+    assert.equal(entry.completion, noPr ? 'none' : undefined)
+  })
+
   test('같은 Task 재시도는 이력의 워크트리를 쓰고 새 Task 나 배정을 만들지 않는다', () => {
     select()
     recordHistory(tmp, prior({ completion: 'none' }))
@@ -516,7 +527,7 @@ describe('선택 정책과 영구 이력', () => {
     assert.match(call, /--task task_1 --retry-of ctx_old/)
     assert.doesNotMatch(call, /--spec/)
     assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).retry_of, 'ctx_old')
-    assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).completion, 'none')
+    assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).completion, undefined)
     assert.deepEqual(lines('make'), [])
   })
 
