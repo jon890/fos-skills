@@ -45,6 +45,14 @@ cp "$T/.omc/board.json" "$T/board.orig.json"
   console.log(recordUnmatched(process.argv[2], { id: "a" }, [{ number: 3, done: false, text: "3. 배포 확인" }], "99"))' "$R" "$T"
   ```
 
+- 「잠금을 잃은 저장」 은 저장 함수를 잠금 표지 확인이 거짓인 상태로 부르는 아래 명령이다. `false` 한 줄을 낸다.
+
+  ```bash
+  node --disable-warning=ExperimentalWarning --input-type=module -e '
+  const { saveBoard } = await import(process.argv[1] + "/extensions/work-board/bin/board.ts")
+  console.log(saveBoard(process.argv[2], { items: [] }, { held: () => false }, true))' "$R" "$T/.omc/board.json"
+  ```
+
 - `jq` 가 없으면 `node -e` 로 같은 값을 읽는다.
 - 끝나면 `git -C "$T" worktree remove --force "$T/wt"; rm -rf "$T"` 로 치운다.
 
@@ -65,6 +73,7 @@ cp "$T/.omc/board.json" "$T/board.orig.json"
 | REQ7 | 보드 되돌리기 | `orch_ board del --done` 을 부르고 `cp "$T/.omc/board.json" "$T/after.json"; sleep 1` 뒤 한 번 더 부른다. `cmp "$T/.omc/board.json" "$T/after.json"` 을 본다. 이어 `del --done b; echo $?`, `del --done --force; echo $?` 를 부른다 | 첫 호출은 `BOARD-DEL b`, `BOARD-DEL c`, `BOARD-DEL 7` 세 줄이고 `a`, `d` 만 남는다. 둘째 호출은 `BOARD-NONE` 과 종료 코드 0 이고 보드 바이트가 그대로다(다시 저장했다면 `updatedAt` 의 초가 달라진다). 뒤의 둘은 종료 코드 2 다 | 같다 | worker | 없음 | PR 전 |
 | REQ7 | 보드 파일이 없는 새 임시 저장소 | 그 안에서 `orch_ board del --done` 을 부른다 | `BOARD-NONE` 과 종료 코드 0 이고 `.omc` 폴더가 생기지 않는다 | 같다 | worker | 없음 | PR 전 |
 | REQ8 | 보드 되돌리기 | `orch_ board del a`(거절) 뒤 `.bak` 가 없는지 본다. `del b` 뒤 `cmp "$T/.omc/board.json.bak" "$T/board.orig.json"` 을 본다. `cp "$T/.omc/board.json" "$T/before2.json"` 뒤 `del --done` 을 부르고 `.bak` 를 `before2.json` 과 비교한다. 이어 `del a`(거절)를 부르고 `.bak` 를 다시 `before2.json` 과 비교한다 | 거절 뒤에는 `.bak` 가 없다. `del b` 뒤의 `.bak` 가 지우기 전 보드와 같다. `del --done` 뒤의 `.bak` 가 그 호출 직전 보드와 같다. 뒤의 거절이 `.bak` 를 바꾸지 않는다 | 같다 | worker | 없음 | PR 전 |
+| REQ8 | 보드 되돌리기 | `echo keep > "$T/.omc/board.json.bak"` 로 사본을 미리 둔다. 아래 「잠금을 잃은 저장」 명령으로 `saveBoard` 를 잠금을 잃은 상태로 부른 뒤 `cat "$T/.omc/board.json.bak"` 과 `cmp "$T/.omc/board.json" "$T/board.orig.json"` 을 본다 | 명령이 `false` 를 내고 `.bak` 의 내용이 `keep` 그대로이고 보드가 그대로다. `ls "$T/.omc"` 에 `.tmp` 로 끝나는 파일이 없다. 잠금을 30초 넘게 쥐고 멈춘 프로세스는 셸에서 만들기 어려워 저장 함수를 직접 부른다 | 같다 | worker | 없음 | PR 전 |
 | REQ9 | 보드 되돌리기 | `show a --json`, `list --status done --json`, `get b branch --json`, `get a progress --json`, `get nope status --json` 을 부르고 `jq` 로 읽는다 | 각각 `.branch` 가 `feat/a`, `.pr` 이 숫자 `555`, `.progress` 가 `[1,3]`, `.unmatched` 가 `[]`, `.lines` 의 길이가 3 이다. 배열 길이가 3 이고 원소에 `unmatched` 키가 없다. `.value` 가 `null` 이고 종료 코드 4 다. `.value` 가 `"1/3"` 이다. 마지막은 stdout 이 비고 종료 코드 1 이다 | 같다 | worker | 없음 | PR 전 |
 | REQ9 | 보드 되돌리기, 기록 두기 | `orch_ board show a --json` 을 `jq .unmatched` 로 읽은 뒤 기록 지우기 | `[99]` 다(숫자 배열) | 같다 | worker | 없음 | PR 전 |
 | REQ10 | 보드 되돌리기 | `echo other > "$T/.omc/board.json.lock"` 을 두고 `orch_ board get a branch` 와 `list` 가 걸리는 시간을 본 뒤 잠금 파일을 지운다 | 둘 다 5초를 기다리지 않고 바로 값을 낸다 | 같다 | worker | 없음 | PR 전 |
