@@ -33,7 +33,7 @@
 // `--scope` 는 읽는 파일을 그 아래로 제한한다. 두 범위 모두 같다.
 //
 // 사용법: node check_references.ts [repo-root] [--scope <저장소 안 경로>]
-// 종료 코드: 0 깨진 참조 없음, 1 깨진 참조 있음, 2 `--scope` 인자 오류. 경고만 있으면 0 이다.
+// 종료 코드: 0 깨진 참조 없음, 1 깨진 참조 있음, 2 `--scope` 인자 오류 또는 git 실행 파일 없음. 경고만 있으면 0 이다.
 
 import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -227,7 +227,10 @@ function run(argv: string[]): number {
   // git 이 추적하는 텍스트 파일. git 저장소가 아니면 비어 있다. 바이너리와 디코딩 실패는 건너뛴다
   function trackedTextFiles(): [string, string][] {
     const done = spawnSync('git', ['ls-files', '-z'], { cwd: root })
-    if (done.error) throw done.error
+    if (done.error) {
+      if ((done.error as NodeJS.ErrnoException).code === 'ENOENT') throw new ValueError('git 실행 파일을 찾을 수 없다. PATH 를 확인한다.')
+      throw done.error
+    }
     if (done.status !== 0) return []
     const out: [string, string][] = []
     for (const name of new TextDecoder('utf-8', { ignoreBOM: true }).decode(done.stdout).split('\0')) {
@@ -401,7 +404,13 @@ function rstripChars(text: string, chars: string): string {
 }
 
 export function main(argv: string[]): number {
-  return run(argv)
+  try {
+    return run(argv)
+  } catch (error) {
+    if (!(error instanceof ValueError)) throw error
+    write(2, `${error.message}\n`)
+    return 2
+  }
 }
 
 if (isMain(import.meta.url, import.meta.main)) process.exitCode = main(process.argv.slice(2))
