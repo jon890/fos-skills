@@ -109,6 +109,18 @@ describe('단계 구분과 후보 파일', () => {
     assert.ok(done.stdout.includes('tests/t.txt:1'))
   })
 
+  test('PATH 에 git 이 없으면 안내하고 디렉터리 순회로 검색을 계속한다', () => {
+    const r = base()
+    r.file('skills/a/tests/reader.spec.ts', `readFileSync('SKILL.md', 'utf8')`)
+    r.file('build/tests/ignored.txt', '## 일곱 단계')
+    const done = r.run('find_test_requirements', [r.root, '## 일곱 단계', '--document', 'skills/a/SKILL.md'], { env: { ...process.env, PATH: '/nonexistent' } })
+    assert.equal(done.code, 0, done.stderr)
+    assert.equal(done.stderr, '경고: git 실행 파일을 찾을 수 없어 디렉터리를 순회해 테스트를 찾는다.\n')
+    assert.ok(done.stdout.includes('테스트가 요구: tests/check.sh:1'), done.stdout)
+    assert.ok(done.stdout.includes('단언 확인: skills/a/tests/reader.spec.ts'), done.stdout)
+    assert.ok(!done.stdout.includes('build/tests/ignored.txt'), done.stdout)
+  })
+
   test('git 저장소는 무시된 파일을 빼고 새 파일은 읽는다', () => {
     const r = new Repo('hc-ftr-', true)
     r.file('.gitignore', 'build/\n')

@@ -7,6 +7,7 @@
 // `tests/data/` 같은 fixture 폴더도 읽는다.
 //
 // 후보 파일은 git 저장소면 `git ls-files -co --exclude-standard` 로 정한다. git 이 무시하는 빌드 결과물은 빠진다.
+// git 실행 파일이 없으면 stderr 로 알리고 디렉터리 순회로 계속한다.
 // git 저장소가 아니면 디렉터리를 순회하고 `.git`, `node_modules`, `.venv`, `worktrees`, `__pycache__` 와
 // 빌드 결과물 폴더(`build`, `dist`, `out`, `target`, `coverage`, `.next`)를 건너뛴다.
 //
@@ -42,6 +43,7 @@ const USAGE = `지우거나 이름을 바꾸려는 문자열을 저장소의 테
 \`tests/data/\` 같은 fixture 폴더도 읽는다.
 
 후보 파일은 git 저장소면 \`git ls-files -co --exclude-standard\` 로 정한다. git 이 무시하는 빌드 결과물은 빠진다.
+git 실행 파일이 없으면 stderr 로 알리고 디렉터리 순회로 계속한다.
 git 저장소가 아니면 디렉터리를 순회하고 \`.git\`, \`node_modules\`, \`.venv\`, \`worktrees\`, \`__pycache__\` 와
 빌드 결과물 폴더(\`build\`, \`dist\`, \`out\`, \`target\`, \`coverage\`, \`.next\`)를 건너뛴다.
 
@@ -83,7 +85,11 @@ function isTestFile(path: string, root: string): boolean {
 // git 저장소면 추적 파일과 무시되지 않은 새 파일. 저장소가 아니면 null
 function gitCandidates(root: string): string[] | null {
   const done = spawnSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: root })
-  if (done.error) throw done.error
+  if (done.error) {
+    if ((done.error as NodeJS.ErrnoException).code !== 'ENOENT') throw done.error
+    write(2, '경고: git 실행 파일을 찾을 수 없어 디렉터리를 순회해 테스트를 찾는다.\n')
+    return null
+  }
   if (done.status !== 0) return null
   const names = new TextDecoder('utf-8', { ignoreBOM: true }).decode(done.stdout).split('\0')
   return [...new Set(names)].sort(pyStrCompare).filter((name) => name).map((name) => pjoin(root, name))
