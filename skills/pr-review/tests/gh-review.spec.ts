@@ -237,10 +237,15 @@ describe('gh-review-post', () => {
       { filename: 'binary.ts' },
       { filename: 'deleted.ts', patch: '@@ -1,3 +0,0 @@' },
     ]]) }])
-    for (const file of ['missing.ts', 'binary.ts', 'deleted.ts']) {
+    for (const [file, reason] of [
+      ['missing.ts', /PR 의 변경 파일에 없습니다/],
+      ['binary.ts', /diff patch 가 없어.*GitHub 화면에서 파일 단위 댓글/],
+      ['deleted.ts', /PR head 의 새 파일 쪽 diff 범위/],
+    ] as const) {
       const done = post(s, ['o/r', '5', file, '1', body, '낱말A'], { DRY_RUN: '1' })
       assert.equal(done.code, 1)
       assert.ok(done.stderr.includes(`${file}:1`))
+      assert.match(done.stderr, reason)
     }
     assert.ok(s.calls().every((call) => call.input === null))
   })

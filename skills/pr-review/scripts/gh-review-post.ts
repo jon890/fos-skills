@@ -114,7 +114,11 @@ function validateInlineLocations(host: string, repo: string, pr: string, locatio
   const files = pages.flat()
   for (const location of locations) {
     const file = files.find((entry) => entry.filename === location.path)
-    const ranges = [...(file?.patch ?? '').matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
+    if (!file) die(`PR 의 변경 파일에 없습니다: ${location.path}:${location.line} — 새 파일 쪽 경로를 확인하세요.`)
+    if (!file.patch) {
+      die(`diff patch 가 없어 인라인 위치를 확인할 수 없습니다: ${location.path}:${location.line} — GitHub 화면에서 파일 단위 댓글로 남기세요.`)
+    }
+    const ranges = [...file.patch.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
     const inside = ranges.some((match) => {
       const start = Number(match[1])
       const count = match[2] === undefined ? 1 : Number(match[2])
