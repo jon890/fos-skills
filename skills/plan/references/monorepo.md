@@ -20,9 +20,6 @@ git diff --name-only origin/main...HEAD | node "$PLAN_SKILL_DIR/scripts/overlay_
 | 1 | 모노레포인데 대상을 정하지 못했다. 사용자에게 묻고 `--sub` 로 다시 돌린다 |
 | 2 | 실행하지 못했다. 저장소 밖이거나 `--sub` 에 오버레이가 없다 |
 
-새 이름 `plan` 은 `planning-overlay.md`, `implementation` 은 `build-with-teams-overlay.md` 를 읽기 호환으로 받는다.
-하위 프로젝트의 새 이름, 옛 이름, 루트의 새 이름, 옛 이름 순으로 값을 찾는다. 새 이름의 값이 우선이며 사본을 만들지 않는다.
-
 `docs-consolidate` 도 이 탐색기를 사용한다. 같은 위치에 자기 오버레이가 있으면 그것을 읽고, 없으면 `docs-audit-overlay.md` 를 읽는다.
 
 ## 단일 저장소

@@ -5,7 +5,7 @@ description: |
   "task 실행해줘", "phase 실행", "agent team 으로 빌드", "implementation" 요청에 쓴다.
   독립 리뷰와 인수 검증은 verify, PR·머지와 정리는 orch 가 조율한다.
 metadata:
-  version: "8.1.0"
+  version: "9.0.0"
 ---
 # implementation
 
@@ -26,7 +26,7 @@ metadata:
 plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 계획과 task 없이 리뷰부터 도는 요청은
 [스펙 없는 계획 절차](references/no-spec-workflow.md)로 이어 간다. 새 기능은 plan 으로 돌린다.
 기능 계획은 [단계 인계](../spec/references/feature-docs.md), [레포 설정 탐색](../plan/references/monorepo.md)을 읽는다.
-기준 브랜치, 검증 명령과 작업 공간 규칙은 설정 탐색으로 얻는다. 옛 `.claude/build-with-teams-overlay.md` 도 읽기 호환으로 받는다.
+기준 브랜치, 검증 명령과 작업 공간 규칙은 설정 탐색으로 얻는다.
 
 ## 절차
 

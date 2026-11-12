@@ -1,36 +1,14 @@
 # CHANGELOG: plan
 
-## 7.2.0 (2026-11-12)
+## 8.0.0 (2026-11-12)
 
-- 예시 문서 `test-boundaries.md` 를 지웠다. 어느 단계도 가리키지 않던 문서다.
-- plan 크기 문서에서 측정 표와 경과 설명을 지우고 검사 기준만 남겼다.
-- `--staged` 의 계획 메타데이터 예외 설명을 줄이고 `verify_task.ts` 설명을 가리키게 했다.
-- `overlay_paths.ts` 가 옛 이름 `docs-check-overlay.md` 를 찾지 않고 경고도 내지 않는다. docs-audit 와 docs-consolidate 의 호환 제거에 따른 것이다.
+- 호환성: 옛 이름 오버레이를 읽지 않는다. plan-overlay.md 와 implementation-overlay.md 로 이름을 바꿔야 한다.
 
-## 7.1.0 (2026-11-12)
+## 7.x
 
-- 사용자 결정 날짜 뒤의 괄호 설명을 받고, 계획 단계에서 작성한 문서로 끝나는 요구사항을 문서 경로에 연결한다.
-- plan 오버레이에서 생성 파일 glob, 계약 파일별 검증 명령, 통합 테스트 표지를 읽어 범위와 검증 누락을 검사한다.
-- 인수 검증의 실행 환경에서 가짜 Orca CLI 같은 테스트 대역을 실제 Orca 환경으로 읽던 오탐을 고친다.
-
-## 7.0.2 (2026-11-09)
-
-- `node scripts/run-tests.ts <파일·폴더>` 를 테스트 실행기로 알아보고, 인자를 작업 항목의 테스트 범위 대조에 쓴다. `node <스크립트>` 는 bash·python 처럼 스크립트 경로로 판정한다.
-- 변경 파일 표의 「변경」 칸 오류 문구가 허용 값과 `수정 (설명)` 꼴을 알려 주고, phase 양식에 그 행을 더했다.
-- 인수 검증 계획 표에 「실행 담당」(worker/코디네이터) 칸을 더했다. 실행 환경이 Orca 로 worker 를 띄우는 것처럼 worker 가 할 수 없는 것이면 담당을 코디네이터로 적어야 한다. 칸이 없는 옛 표는 그대로 받는다.
-
-## 7.0.1 (2026-11-09)
-
-- `check_feature` 가 `RULE-<도메인>-<번호>` 처럼 하이픈으로 이은 RULE ID 도 받는다.
-- 앞 phase 의 glob 이 덮는 신규 파일은 「이미 존재한다」 대신 「앞 phase 의 glob <패턴> 이 이미 덮는다」 로 알린다.
-- `adr-docs` 가 같은 이름 제목이 둘 이상인 문서로 가는 앵커 링크(`#제목`, `#제목-1`)에 stderr 경고(AMBIGUOUS_ANCHOR)를 낸다. 종료 코드는 그대로다.
-
-## 7.0.0 (2026-11-06)
-
-- 호환성: 스크립트 일곱을 Node 24 의 `.ts` 로 바꿨다(`verify_task`, `check_feature`, `run_doc_checks`, `overlay_paths`, `overlay_values`, `plan_number`, `plan_numbers`)
-- `plan_number.sh` 는 `plan_number.ts` 가 됐다. `node "$SKILL_DIR/scripts/verify_task.ts" …` 처럼 확장자만 바꿔 부른다. Node 24 이상이 필요하다
-- 옵션, 출력, 종료 코드는 그대로다. 저장소의 스펙 13개와 계획 폴더 16개(뒤튼 phase 포함)에서 옛 구현과 같은 결과를 확인했다
-- 옛 `python3 …/verify_task.py` 와 `bash …/plan_number.sh` 호출(허용 규칙과 오버레이 포함)은 새 이름으로 바꿔야 한다
+- 기능 스펙과 기술 설계를 PR 하나의 계획으로 연결하고 인수 검증 계획을 확인한다.
+- 오버레이의 저장소 검사 규칙과 변경 파일·테스트 범위를 대조한다.
+- 계획 양식과 문서 검사를 보완하고 쓰지 않는 문서를 정리했다.
 
 ## 6.x
 

@@ -30,16 +30,26 @@ function main(r: Repo, args: string[], opts: { skill?: string; cwd?: string; inp
 
 const existing = (paths: string[]) => paths.filter((p) => !p.startsWith('(없음)'))
 
-test('이름이 바뀐 스킬은 같은 범위의 옛 오버레이 값을 읽는다', () => {
-  for (const [name, old] of [['plan', 'planning'], ['implementation', 'build-with-teams']]) {
-    const r = repo()
-    r.file(`.claude/${name}-overlay.md`, 'new root')
-    r.file(`backend/.claude/${old}-overlay.md`, 'old local')
-    let paths = main(r, ['--sub', 'backend'], { skill: name }).out!.search.backend
-    assert.ok(paths.indexOf(`backend/.claude/${old}-overlay.md`) < paths.indexOf(`.claude/${name}-overlay.md`), name)
-    r.file(`backend/.claude/${name}-overlay.md`, 'new local')
-    paths = main(r, ['--sub', 'backend'], { skill: name }).out!.search.backend
-    assert.ok(paths.indexOf(`backend/.claude/${name}-overlay.md`) < paths.indexOf(`backend/.claude/${old}-overlay.md`), name)
+test('이름이 바뀐 스킬은 옛 오버레이를 무시하고 새 이름만 읽는다', () => {
+  // 삭제한 이름은 조각으로 구성해 현재 사용법 검색과 회귀 사례를 구분한다.
+  for (const [name, old] of [['plan', 'planning'], ['implementation', ['build', 'with', 'teams'].join('-')]]) {
+    for (const scope of [null, 'backend']) {
+      const r = repo()
+      const directory = scope ? `${scope}/.claude` : '.claude'
+      const args = scope ? ['--sub', scope] : []
+      r.file(`${directory}/${old}-overlay.md`, '옛 설정')
+      const { code, out, result } = main(r, args, { skill: name })
+      const paths = out!.search[scope ?? '.']
+      assert.equal(code, 0)
+      assert.ok(!paths.some((p) => p.includes(`${old}-overlay.md`)))
+      assert.ok(!existing(paths).some((p) => p.endsWith(`/${name}-overlay.md`)))
+      assert.equal(result.stderr, '')
+      r.file(`.claude/${name}-overlay.md`, '루트 설정')
+      if (scope) r.file(`${directory}/${name}-overlay.md`, '하위 설정')
+      const current = existing(main(r, args, { skill: name }).out!.search[scope ?? '.'])
+      assert.ok(current.includes(`${directory}/${name}-overlay.md`))
+      if (scope) assert.ok(current.indexOf(`${directory}/${name}-overlay.md`) < current.indexOf(`.claude/${name}-overlay.md`))
+    }
   }
 })
 

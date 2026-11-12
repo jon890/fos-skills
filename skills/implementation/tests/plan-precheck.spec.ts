@@ -125,10 +125,12 @@ describe('판정과 출력', () => {
     assert.equal(s.run(['plan001', '--repo', s.repo]).code, 0)
   })
 
-  test('저장소 설정의 기준 브랜치를 쓰고 옛 이름 설정도 읽는다', () => {
+  test('옛 이름의 기준 브랜치 설정을 무시하고 새 이름 설정을 읽는다', () => {
     const s = setup()
     planBranch(s)
-    s.git('config', 'build-with-teams.baseBranch', 'main')
+    s.git('config', `${['build', 'with', 'teams'].join('-')}.baseBranch`, 'nope-legacy-branch')
+    assert.equal(s.run(['plan001', '--repo', s.repo]).code, 0)
+    s.git('config', 'implementation.baseBranch', 'main')
     assert.equal(s.run(['plan001', '--repo', s.repo]).code, 0)
     s.git('config', 'implementation.baseBranch', 'nope-branch')
     const done = s.run(['plan001', '--repo', s.repo])

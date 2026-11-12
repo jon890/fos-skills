@@ -240,7 +240,7 @@ claude plugin install fos-skills@fos-skills
 ### 단계 이름 변경
 
 `planning` 은 `plan`, `build-with-teams` 는 `implementation` 으로 바뀌었어요. 예전 명령 대신 새 이름으로 불러요.
-기존 계획 경로와 R1/D1 ID 는 읽기 호환으로 유지해요. 기존 planning/build-with-teams 오버레이도 읽으며 새 이름의 값이 우선해요.
+기존 계획 경로와 R1/D1 ID 는 읽기 호환으로 유지해요. 오버레이는 `.claude/plan-overlay.md`, `.claude/implementation-overlay.md` 로 이름을 바꿔요.
 
 문서 감사는 `/fos-skills:docs-audit` 로 불러요. 옛 이름 `docs-check` 의 오버레이는 읽지 않아요. 남아 있으면 `.claude/docs-audit-overlay.md` 로 이름을 바꿔요.
 

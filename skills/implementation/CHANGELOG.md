@@ -1,23 +1,13 @@
 # CHANGELOG: implementation
 
-## 8.1.0 (2026-11-12)
+## 9.0.0 (2026-11-12)
 
-- 인계 블록에 「저장소 규칙 후보」 줄을 더했다. docs-consolidate 가 이 줄을 입력으로 받는다.
-- 스펙 없는 계획의 절차 문서 이름을 `legacy-workflow.md` 에서 `no-spec-workflow.md` 로 바꿨다.
-- 3단계 phase 구현이 PR 생성 문서를 가리키던 참조를 뺐다.
+- 호환성: 옛 이름 오버레이와 Git 설정 키를 읽지 않는다. implementation-overlay.md 와 implementation.baseBranch 를 쓴다.
 
-## 8.0.2 (2026-11-06)
+## 8.x
 
-- plan 의 `verify_task.ts` 를 node 로 부른다
-
-## 8.0.1 (2026-11-06)
-
-- 심볼릭 링크로 부른 진입도 import.meta.main 이 없는 Node 24.0·24.1 에서 일을 하도록 직접 실행 판정을 실체 경로로 비교한다
-
-## 8.0.0 (2026-11-06)
-
-- 호환성: 스크립트 둘을 `.sh`, `.py` 에서 Node 24 의 `.ts` 로 바꿨다. `node "$SKILL_DIR/scripts/plan_precheck.ts"` 처럼 확장자만 바꿔 부른다
-- 옵션, 출력, 종료 코드는 그대로다. 이 스킬을 쓰려면 Node 24 이상이 필요하다
+- Node 24 의 TypeScript 스크립트로 사전 검사와 계획 검증을 실행한다.
+- 인계 블록에 저장소 규칙 후보를 남기고 스펙 없는 계획 절차의 참조를 정리했다.
 
 ## 7.x
 
