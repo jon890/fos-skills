@@ -199,7 +199,6 @@ describe('단계 구분과 후보 파일', () => {
   })
 })
 
-
 describe('대상 문서를 읽는 테스트 후보', () => {
   test('browser 와 report 의 구절·상수 단언은 문장 검색이 없어도 테스트를 안내한다', () => {
     const r = new Repo('hc-ftr-doc-')

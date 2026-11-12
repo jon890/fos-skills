@@ -524,7 +524,6 @@ describe('홈 경로', () => {
   })
 })
 
-
 test('PATH 에 git 이 없으면 한 줄 안내와 종료 코드 2 를 낸다', () => {
   const c = new Case()
   c.claude('# 지침\n')
