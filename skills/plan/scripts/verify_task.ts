@@ -889,6 +889,28 @@ function checkForbiddenGrepPaths(path: string, commands: Command[], entries: Ent
   }
 }
 
+// 실행 정책이 있는 저장소에서만 새 JS 경로를 대조한다. staged 검사는 index 의 정책을 읽는다.
+function checkNewJsPolicy(path: string, entries: Entry[], repo: string, out: string[], staged = false): void {
+  const policyPath = 'scripts/runtime-policy.json'
+  let text: string
+  if (staged) {
+    const result = capture(['git', 'show', `:${policyPath}`], { cwd: repo })
+    if (result.code !== 0) return
+    text = result.stdout
+  } else {
+    if (!existsSync(`${repo}/${policyPath}`)) return
+    text = readTextFile(`${repo}/${policyPath}`)
+  }
+  const policy = JSON.parse(text) as { entry_js?: unknown; legacy?: unknown }
+  if (!Array.isArray(policy.entry_js) || !Array.isArray(policy.legacy)) throw new ValueError(`${policyPath} 의 JS 허용 목록이 잘못됐다`)
+  const allowed = new Set([...policy.entry_js, ...policy.legacy])
+  for (const [rel, action] of entries) {
+    if (action === '신규' && rel.endsWith('.js') && !isGlob(rel) && !allowed.has(rel)) {
+      out.push(`${path} — 새 JS 파일을 runtime-policy 허용 목록에 더한다: ${rel}`)
+    }
+  }
+}
+
 function checkStaged(path: string, text: string, repo: string, out: string[], warnings: string[]): void {
   const entries = manifest(path, text, out, warnings)
   if (entries.some(([rel]) => omitted(rel))) {
@@ -911,6 +933,7 @@ function checkStaged(path: string, text: string, repo: string, out: string[], wa
       changes.push([renamed, '신규'])
     } else changes.push([rel, ({ A: '신규', D: '삭제' } as Record<string, string>)[status] ?? '수정'])
   }
+  checkNewJsPolicy(path, changes, repo, out, true)
   if (changes.length === 0) out.push(`${path} — staged 변경이 없다`)
   const planDir = posixNormpath(pathParent(pjoin(repo, path)))
   const implementation = changes.filter(([rel]) => {
@@ -1618,6 +1641,7 @@ export function main(argv: string[]): number {
           allFiles.add(rel)
           allEntries.add(`${rel}\0${action}`)
         }
+        checkNewJsPolicy(path, entries, repo, out)
         if (!audit) checkFileState(path, entries, repo, virtual, out, warnings, legacyManifest(text), created)
         checkBashCwd(path, text, out)
         for (const [n, line] of iterProse(text)) {
