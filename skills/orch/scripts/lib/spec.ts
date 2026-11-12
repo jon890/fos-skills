@@ -64,6 +64,13 @@ export function selectionsOf(text: string): Selection[] {
   return found
 }
 
+// 리뷰 행 또는 독립된 「머지하지 않는다」 지시는 PR 준비 보고 없이 끝나는 작업이다.
+// 배경 설명 속 인용이나 공통 지시서의 「머지는 코디네이터가 한다」 는 면제 근거로 삼지 않는다.
+export function skipsPrReady(text: string): boolean {
+  return selectionsOf(text)[0]?.row === 'review'
+    || lines(text).some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?머지하지 않는다(?:[.\s]|$)/.test(line))
+}
+
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
 
 export function experimentOf(text: string): Experiment | null {

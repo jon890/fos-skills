@@ -27,6 +27,7 @@ import { ensure, pathOf } from './paths.ts'
 export type Effective = { agent?: string | null; model?: string | null; effort?: string | null }
 
 export type Launch = {
+  // PR 준비 보고를 요구하지 않는 dispatch. --no-pr, 리뷰 행, 머지하지 않는 지시서에서 정한다.
   completion?: "none" | null
   branch?: string | null; dispatch: string; task?: string | null; terminal: string | null; worktree: string; run: string | null; spec?: string | null; lint_ack?: string | null
   agent?: string | null; model?: string | null; effort?: string | null

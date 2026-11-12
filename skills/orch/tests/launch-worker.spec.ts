@@ -810,6 +810,21 @@ describe('띄우기', () => {
   describe('띄운 worker 의 기록', () => {
     const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
 
+    for (const sample of [
+      { name: '리뷰 행', text: 'worker 선택: `claude` `m` effort `기본`. 행: review. 비교: codex. 이유: 리뷰.\n', none: true },
+      { name: '머지하지 않는 지시', text: '5. 머지하지 않는다. PR 주소를 status 로 보낸다.\n', none: true },
+      { name: '인용한 배경', text: '- 배경: 지시서에 「머지하지 않는다」 가 있는 작업을 고친다.\n', none: false },
+      { name: '보통 구현', text: '완료 기준: 준비됨 status 를 보낸다.\n', none: false },
+    ]) test(`${sample.name}의 PR 준비 필요 여부를 기록한다`, () => {
+      writeFileSync(spec, readFileSync(spec, 'utf8') + '\n' + sample.text)
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--spec', spec, '--worktree', worktree, '--watch', '0', '--', ...CLAUDE])
+      assert.equal(r.code, 0, both(r))
+      const entry = JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8'))
+      assert.equal(entry.completion, sample.none ? 'none' : undefined)
+      assert.equal(launchHistory(worktree).at(-1)?.completion, entry.completion)
+    })
+
     test('--no-pr 는 정리 기록과 영구 이력에 PR 없는 작업을 남긴다', () => {
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } } })
       const r = launch(['--spec', spec, '--worktree', worktree, '--run', 'run_a', '--no-pr', '--watch', '0', '--', ...CLAUDE])

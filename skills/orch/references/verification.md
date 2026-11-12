@@ -41,6 +41,7 @@ git diff "origin/$BASE" -- "$FILE"
 ## 완료 전에 온 worker_done
 
 상주 루프는 PR 준비 근거 없는 성공 보고를 DONE-SUSPECT 메시지로 알린다. 근거 규칙은 `lib/completion.ts`, 완료·보드 연결은 `loop/completion-watch.ts` 가 소유한다. 코디네이터는 아래 마무리 절차의 MERGED 확인을 그대로 한다.
+PR 준비 보고가 필요 없는 dispatch 는 알리지 않는다. 제외 기록과 지시서 해석은 [`waiting.md`](waiting.md) 의 DONE-SUSPECT 규칙을 따른다.
 이 검사는 발신 프로세스 인증이나 지시서 전체의 완료 증명이 아니다.
 이미 전송된 `worker_done` 은 Orca 에서 settled 로 기록된다. 분류 결과만으로 worker 를 해제하지 않고 아래 절차로 검증한다.
 

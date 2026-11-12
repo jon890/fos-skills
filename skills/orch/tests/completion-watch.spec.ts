@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
 import { watchCompletions } from '../scripts/loop/completion-watch.ts'
-import { recordLaunch } from '../scripts/lib/launched.ts'
+import { forgetLaunch, recordLaunch } from '../scripts/lib/launched.ts'
 import { recordHistory } from '../scripts/lib/launch-history.ts'
+import { skipsPrReady } from '../scripts/lib/spec.ts'
 let repo: string, bin: FakeBin
 const saved = { ...process.env }
 const envelope = (messages: unknown[]) => JSON.stringify({ ok: true, result: { messages } })
@@ -39,6 +40,20 @@ test('PR 없는 작업과 실패 보고는 의심 알림을 보내지 않는다'
   recordLaunch(repo, { dispatch:'none', terminal:'worker', worktree:repo, run:'R', completion:'none' })
   rules([done('none'), { ...done('failed'), outcome:'failed' }]); await watchCompletions(repo,'R','main')
   assert.equal(notices().length, 0)
+})
+for (const sample of [
+  { name: '리뷰 행', text: 'worker 선택: `codex` `m` effort `medium`. 행: review. 비교: claude. 이유: 리뷰.', notices: 0 },
+  { name: '머지하지 않는 지시', text: '5. 머지하지 않는다. PR 주소를 status 로 보낸다.', notices: 0 },
+  { name: '보통 구현', text: '완료 기준: 준비됨 status 를 보낸다.', notices: 1 },
+]) for (const cleaned of [false, true]) test(`${sample.name}의 준비 보고 없는 완료${cleaned ? '는 정리 뒤 영구 이력' : '는 띄우기 기록'}으로 알림 여부를 정한다`, async () => {
+  const launch = { dispatch: 'd', terminal: 'worker', worktree: repo, run: 'R', ...(skipsPrReady(sample.text) ? { completion: 'none' as const } : {}) }
+  recordLaunch(repo, launch)
+  recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  if (cleaned) forgetLaunch(repo, 'd')
+  rules([done('d')]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, sample.notices)
+  assert.deepEqual(state().suspects, sample.notices ? ['d'] : [])
+  assert.ok(state().ids.includes('d'))
 })
 test('최초 틱은 기존 보고를 본 것으로만 기록한다', async () => {
   process.env.ORCH_DIR = join(repo,'fresh')
