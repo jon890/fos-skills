@@ -625,3 +625,90 @@ test('산문 위반은 검사 이름을 줄에 낸다', () => {
   assert.ok(!has(r.violations, '전체 삭제 경로'))
   assert.match(r.violations.find((line) => line.includes('모호한 범위 지시'))!, /phase-01\.md:\d+ — 모호한 범위 지시: 전체 삭제를 한다$/)
 })
+
+test('계획과 staged 에서 새 JS 를 실행 허용 목록과 대조한다', () => {
+  const policy = JSON.stringify({ entry_js: ['src/allowed.js'], legacy: [] })
+  const entries: Entry[] = [['src/new.js', '신규'], ['src/allowed.js', '신규'], ['src/new.ts', '신규']]
+  const planned = new Repo()
+  planned.file('scripts/runtime-policy.json', policy)
+  const result = check(planned, [entries])
+  const violations = result.violations.filter((line) => line.includes('runtime-policy 허용 목록'))
+  assert.equal(violations.length, 1)
+  assert.ok(violations[0].includes('src/new.js'))
+
+  const repo = stagedRepo()
+  repo.file('scripts/runtime-policy.json', policy)
+  commitAll(repo)
+  for (const [rel] of entries) repo.file(rel, 'content')
+  repo.git('add', 'src')
+  // 작업 트리에서만 허용해도 index 에 빠졌으면 위반이다.
+  repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: ['src/allowed.js', 'src/new.js'], legacy: [] }))
+  const rows = entries.map(([rel, action]) => `| \`${rel}\` | ${action} |`).join('\n')
+  const bad = staged(repo, rows)
+  assert.equal(bad.violations.filter((line) => line.includes('runtime-policy 허용 목록')).length, 1)
+  repo.git('add', 'scripts/runtime-policy.json')
+  const good = staged(repo, `${rows}\n| \`scripts/runtime-policy.json\` | 수정 |`)
+  assert.ok(!has(good.violations, 'runtime-policy 허용 목록'), good.stdout)
+})
+
+
+test('계획에서 정책을 같은 phase 나 앞 phase 에 수정하면 staged 검사에 맡긴다', () => {
+  for (const phases of [
+    [[['src/new.js', '신규'], ['scripts/runtime-policy.json', '수정']]],
+    [[['scripts/runtime-policy.json', '수정']], [['src/new.js', '신규']]],
+  ] as Entry[][][]) {
+    const repo = new Repo()
+    repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: [], legacy: [] }))
+    assert.ok(!has(check(repo, phases).violations, 'runtime-policy 허용 목록'))
+    assert.ok(has(verify(repo, ['plan1-x', '--audit']).violations, 'runtime-policy 허용 목록'))
+  }
+})
+
+
+test('계획과 staged 검사에서 mjs 와 cjs 도 확인한다', () => {
+  const repo = stagedRepo()
+  repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: [], legacy: [] }))
+  commitAll(repo)
+  const entries: Entry[] = [['src/a.mjs', '신규'], ['src/b.cjs', '신규']]
+  const planned = check(repo, [entries])
+  assert.equal(planned.violations.filter((line) => line.includes('runtime-policy 허용 목록')).length, 2)
+  for (const [rel] of entries) repo.file(rel, '')
+  repo.git('add', 'src')
+  const rows = entries.map(([rel, action]) => `| \`${rel}\` | ${action} |`).join('\n')
+  assert.equal(staged(repo, rows).violations.filter((line) => line.includes('runtime-policy 허용 목록')).length, 2)
+})
+
+
+test('정책이 깨졌거나 형식이 다르면 경고하고 다른 검사는 계속한다', () => {
+  for (const policy of ['{', '{}', '{"entry_js":[1],"legacy":[]}']) {
+    const repo = stagedRepo()
+    repo.file('scripts/runtime-policy.json', policy)
+    commitAll(repo)
+    const result = check(repo, [[['src/new.js', '신규']]])
+    assert.ok(has(result.warnings, 'JS 허용 목록을 읽지 못해'))
+    assert.notEqual(result.code, 2)
+    repo.file('src/new.js', '')
+    repo.git('add', 'src')
+    const checked = staged(repo, '| `src/new.js` | 신규 |')
+    assert.ok(has(checked.warnings, 'JS 허용 목록을 읽지 못해'))
+    assert.equal(checked.code, 0)
+  }
+})
+
+
+test('정책이 없는 저장소는 새 JS 검사를 건너뛴다', () => {
+  const repo = new Repo()
+  const result = check(repo, [[['src/new.js', '신규']]])
+  assert.ok(!has(result.violations, 'runtime-policy 허용 목록'))
+  assert.ok(!has(result.warnings, 'JS 허용 목록'))
+})
+
+test('staged 이름 변경으로 생긴 새 JS 도 검사한다', () => {
+  const repo = stagedRepo()
+  repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: ['src/old.js'], legacy: [] }))
+  repo.file('src/old.js', 'content')
+  commitAll(repo)
+  repo.git('mv', 'src/old.js', 'src/new.js')
+  const result = staged(repo, '| `src/old.js` | 삭제 |\n| `src/new.js` | 신규 |')
+  assert.ok(has(result.violations, 'runtime-policy 허용 목록에 더한다: src/new.js'))
+})
