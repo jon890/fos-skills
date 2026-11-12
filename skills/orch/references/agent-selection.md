@@ -55,6 +55,7 @@ Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄에 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 를 적는다.
 
 - 근거로 적는 dispatch 는 그 저장소에서 Opus `medium` 으로 띄운 dispatch 다. 브랜치는 달라도 된다. 실패였는지는 코디네이터가 판단한다.
+- Opus 의 유효한 high 근거는 `security-review` 를 포함해 행과 관계없이 effort 상한의 예외로 적용한다.
 - `experiment:` 줄로 후보를 비교하는 Opus 는 기존 high 근거 검사와 effort 상한의 예외를 유지한다. 실험 후보 형식과 배정 순서 검사는 그대로 적용한다.
 - Sonnet `high` 와 sol `high` 는 이 규칙 밖이다. 위 표의 effort 칸을 따른다.
 

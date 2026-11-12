@@ -269,3 +269,12 @@ test('Opus 실험의 high 근거 면제는 effort 검사와 예외 기록에서�
   assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
   assert.equal(candidateOverrideOf(`${opus('high', '후보 밖: 이전 선택에서 복사.')}\n${experiment}`), null)
 })
+
+
+test('Opus high 근거는 security-review 행에서도 같은 예외를 준다', () => {
+  const text = opus('high', 'high 근거: 사용자 지정 2026-11-12.').replace('hard-design', 'security-review')
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+  assert.equal(candidateOverrideOf(`${text} 후보 밖: 이전 선택에서 복사.`), null)
+  assert.match(selectionVerdict(opus().replace('hard-design', 'security-review'), repo, { launch: true }).join(), /high 근거/)
+  assert.match(selectionVerdict(opus('high', 'high 근거: 사용자 지정 2026-02-30.').replace('hard-design', 'security-review'), repo, { launch: true }).join(), /날짜/)
+})

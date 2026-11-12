@@ -55,8 +55,8 @@ function effortExceeded(selection: Selection, policy: ModelPolicy | undefined, e
   if (selection.row === 'review') return null
   const limit = policy?.limits.get(selection.model ?? '')
   if (!limit) return null
-  // hard-design 의 Opus 고effort 는 기존 high 근거 검사에서 따로 검증한다.
-  if (selection.row === 'hard-design' && selection.model?.startsWith('claude-opus-') && (selection.highReason || experiment) && ['high', 'xhigh', 'max'].includes(selection.effort ?? '')) return null
+  // Opus 고effort 는 행과 관계없이 기존 high 근거 검사에서 따로 검증한다.
+  if (selection.model?.startsWith('claude-opus-') && (selection.highReason || experiment) && ['high', 'xhigh', 'max'].includes(selection.effort ?? '')) return null
   const effort = resolvedEffort(selection, policy)
   return effort && EFFORTS.indexOf(effort) > EFFORTS.indexOf(limit) ? limit : null
 }
