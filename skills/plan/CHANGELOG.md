@@ -1,5 +1,9 @@
 # CHANGELOG: plan
 
+## 8.0.1 (2026-11-12)
+
+- 계획과 staged 검사에서 새 JS 파일이 실행 허용 목록에 있는지 확인한다.
+
 ## 8.0.0 (2026-11-12)
 
 - 호환성: 옛 이름 오버레이를 읽지 않는다. plan-overlay.md 와 implementation-overlay.md 로 이름을 바꿔야 한다.
