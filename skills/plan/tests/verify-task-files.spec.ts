@@ -626,7 +626,6 @@ test('산문 위반은 검사 이름을 줄에 낸다', () => {
   assert.match(r.violations.find((line) => line.includes('모호한 범위 지시'))!, /phase-01\.md:\d+ — 모호한 범위 지시: 전체 삭제를 한다$/)
 })
 
-
 test('계획과 staged 에서 새 JS 를 실행 허용 목록과 대조한다', () => {
   const policy = JSON.stringify({ entry_js: ['src/allowed.js'], legacy: [] })
   const entries: Entry[] = [['src/new.js', '신규'], ['src/allowed.js', '신규'], ['src/new.ts', '신규']]
@@ -694,4 +693,22 @@ test('정책이 깨졌거나 형식이 다르면 경고하고 다른 검사는 �
     assert.ok(has(checked.warnings, 'JS 허용 목록을 읽지 못해'))
     assert.equal(checked.code, 0)
   }
+})
+
+
+test('정책이 없는 저장소는 새 JS 검사를 건너뛴다', () => {
+  const repo = new Repo()
+  const result = check(repo, [[['src/new.js', '신규']]])
+  assert.ok(!has(result.violations, 'runtime-policy 허용 목록'))
+  assert.ok(!has(result.warnings, 'JS 허용 목록'))
+})
+
+test('staged 이름 변경으로 생긴 새 JS 도 검사한다', () => {
+  const repo = stagedRepo()
+  repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: ['src/old.js'], legacy: [] }))
+  repo.file('src/old.js', 'content')
+  commitAll(repo)
+  repo.git('mv', 'src/old.js', 'src/new.js')
+  const result = staged(repo, '| `src/old.js` | 삭제 |\n| `src/new.js` | 신규 |')
+  assert.ok(has(result.violations, 'runtime-policy 허용 목록에 더한다: src/new.js'))
 })
