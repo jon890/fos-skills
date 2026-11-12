@@ -254,4 +254,5 @@ export function hasEventTags(item: Record<string, unknown>): boolean {
 export { INTERIM, prNumbers, NOTE, detailText, detailArgs, noteLine, withNote, prSteps, intermediateCommands } from '../core/board.ts'
 export { guardedCommands } from '../core/board.ts'
 export { linesRev }
+export { GET_FIELDS, itemTitle } from '../../../../extensions/work-board/bin/board.ts'
 export type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'

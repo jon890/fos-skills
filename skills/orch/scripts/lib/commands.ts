@@ -157,7 +157,8 @@ const ROWS: Row[] = [
   // board
   ...[
     ['set', '<항목> <상태>'], ['step', '<항목> <번호> done|undo|text [글] [--on 사건]|auto|ask|plain|wait [조건]'],
-    ['add-step', '<항목> <글> [--on 사건]'], ['show', '<항목>'],
+    ['add-step', '<항목> <글> [--on 사건]'], ['show', '<항목> [--json]'],
+    ['get', '<항목> <칸>|step <번호> [--json]'], ['list', '[--status <상태,...>] [--json]'],
   ].map(([verb, args]): Row => ({
     group: 'board', verb, script: 'board/board-edit.ts', prepend: [verb], context: ['repo'], usage: `orch board ${verb} ${args}`,
   })),

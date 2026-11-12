@@ -203,3 +203,18 @@ test('깨진 설정은 기본 보드를 쓰지 않고 명시 보드는 설정보
   writeFileSync(join(repo, '.orch/config.json'), '{broken')
   refused(['set', 'x', 'done'], /config|설정|JSON/, 2)
 })
+
+test('보드 읽기 명령은 값과 목록 및 JSON 을 출력한다', () => {
+  save([item({ branch: 'feat/test', pr: 555 }), { id: 'blank', status: 'done', title: '' }])
+  const before = readFileSync(file, 'utf8')
+  ok(['get', 'x', 'branch'], 'feat/test')
+  ok(['get', 'x', 'progress'], '1/2')
+  assert.equal(orch(['get', 'blank', 'title']).code, 4)
+  assert.equal(JSON.parse(orch(['get', 'blank', 'title', '--json']).out).value, null)
+  assert.equal(JSON.parse(orch(['get', 'x', 'step', '9', '--json']).out).number, 9)
+  ok(['list', '--status', 'done'], 'BOARD blank done 진행률 없음')
+  assert.equal(JSON.parse(orch(['list', '--json']).out).length, 2)
+  assert.deepEqual(JSON.parse(orch(['show', 'x', '--json']).out).unmatched, [])
+  for (const args of [['get', 'x', 'foo'], ['get', 'x', 'step'], ['list', 'extra'], ['set', 'x', 'done', '--json']]) refused(args, /사용법/, 2)
+  assert.equal(readFileSync(file, 'utf8'), before)
+})
