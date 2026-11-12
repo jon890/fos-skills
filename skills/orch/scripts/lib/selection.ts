@@ -6,35 +6,64 @@ import { launchHistory } from './launch-history.ts'
 import { readLaunch } from './launched.ts'
 import { experimentOf, selectionsOf, type Candidate, type Selection } from './spec.ts'
 
-// agent-selection.md 의 `## 모델` 제목과 그 아래 첫 하위 제목 사이의 표에서 행 id 와 모델 칸을 읽는다.
-// 하위 절의 표(비교 근거, 가격 등)의 첫 칸이 행 id 로 통과하지 않게 좁힌다
-export function modelRows(table: string): Map<string, string[]> {
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+type ModelPolicy = { models: string[]; limits: Map<string, string> }
+
+// 모델 목록과 상한을 같은 행에서 읽는다. 모델 별칭은 id 에서 만들고 상한값은 표에만 둔다.
+export function modelPolicies(table: string): Map<string, ModelPolicy> {
   const lines = table.split('\n')
   const start = lines.indexOf('## 모델')
   if (start === -1) return new Map()
   const rest = lines.slice(start + 1)
   const end = rest.findIndex(line => /^#{1,6} /.test(line))
-  return new Map([...(end === -1 ? rest : rest.slice(0, end)).join('\n').matchAll(/^\| `([a-z][a-z0-9-]*)` \|[^|]*\|([^|]*)\|/gm)].map(m => [
-    m[1], [...m[2].matchAll(/`((?:gpt|claude)-[^`]+)`|Claude ([A-Za-z]+) (\d+(?:\.\d+)+)/g)]
-      .map(model => model[1] ?? `claude-${model[2].toLowerCase()}-${model[3].replaceAll('.', '-')}`),
-  ]))
+  return new Map([...(end === -1 ? rest : rest.slice(0, end)).join('\n').matchAll(/^\| `([a-z][a-z0-9-]*)` \|[^|]*\|([^|]*)\|([^|]*)\|/gm)].map(m => {
+    const models = [...m[2].matchAll(/`((?:gpt|claude)-[^`]+)`|Claude ([A-Za-z]+) (\d+(?:\.\d+)+)/g)]
+      .map(model => model[1] ?? `claude-${model[2].toLowerCase()}-${model[3].replaceAll('.', '-')}`)
+    const aliases = models.map(model => model.startsWith('claude-') ? model.split('-')[1] : model.split('-').at(-1)!)
+    const named = aliases.some(alias => new RegExp(`\\b${alias}\\b`, 'i').test(m[3]))
+    const limits = new Map<string, string>()
+    models.forEach((model, index) => {
+      // 쉼표와 마침표로 나눈 모델별 설명에서 첫 effort 가 상한이다. 이름이 없는 칸은 모든 후보에 적용한다.
+      const clause = named ? m[3].split(/,|\.\s/).find(part => new RegExp(`\\b${aliases[index]}\\b`, 'i').test(part)) : m[3]
+      const effort = /`(low|medium|high|xhigh|max|ultra)`/.exec(clause ?? '')?.[1]
+      if (effort) limits.set(model, effort)
+    })
+    return [m[1], { models, limits }]
+  }))
 }
 
+export function modelRows(table: string): Map<string, string[]> {
+  return new Map([...modelPolicies(table)].map(([id, policy]) => [id, policy.models]))
+}
 export function modelRowIds(table: string): string[] { return [...modelRows(table).keys()] }
 
-function readModelRows(file = join(bundleRoot(), 'references', 'agent-selection.md')): Map<string, string[]> {
-  return modelRows(readFileSync(file, 'utf8'))
+function readModelPolicies(file = join(bundleRoot(), 'references', 'agent-selection.md')): Map<string, ModelPolicy> {
+  return modelPolicies(readFileSync(file, 'utf8'))
+}
+
+function effortExceeded(selection: Selection, policy: ModelPolicy | undefined): string | null {
+  if (selection.row === 'review') return null
+  const limit = policy?.limits.get(selection.model ?? '')
+  if (!limit) return null
+  // hard-design 의 Opus 고effort 는 기존 high 근거 검사에서 따로 검증한다.
+  if (selection.row === 'hard-design' && selection.model?.startsWith('claude-opus-') && selection.highReason && ['high', 'xhigh', 'max'].includes(selection.effort ?? '')) return null
+  const effort = selection.effort === '기본' && selection.model?.startsWith('claude-haiku-') ? 'medium' : selection.effort
+  return effort && EFFORTS.indexOf(effort) > EFFORTS.indexOf(limit) ? limit : null
 }
 
 function outsideCandidate(selection: Selection, candidates: string[] | undefined): boolean {
   return selection.row !== 'review' && !!candidates?.length && !candidates.includes(selection.model ?? '')
 }
 
-export function candidateOverrideOf(text: string): { row: string | null; model: string | null; reason: string } | null {
+export function candidateOverrideOf(text: string): { row: string | null; model: string | null; reason: string; effort?: string | null; effortLimit?: string } | null {
   const [selection] = selectionsOf(text)
   if (!selection?.outsideReason) return null
-  const candidates = readModelRows().get(selection.row ?? '')
-  return outsideCandidate(selection, candidates) ? { row: selection.row, model: selection.model, reason: selection.outsideReason } : null
+  const policy = readModelPolicies().get(selection.row ?? '')
+  const effortLimit = effortExceeded(selection, policy)
+  if (!outsideCandidate(selection, policy?.models) && !effortLimit) return null
+  return { row: selection.row, model: selection.model, reason: selection.outsideReason,
+    ...(effortLimit ? { effort: selection.effort, effortLimit } : {}),
+  }
 }
 
 export function selectionVerdict(text: string, repo: string, options: { launch?: boolean; table?: string; retry?: boolean; continuation?: boolean } = {}): string[] {
@@ -43,8 +72,8 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
   const selection = choices[0]
   const errors = choices.length > 1 ? ['`worker 선택:` 줄은 하나만 둔다'] : []
   errors.push(...selection.problems.filter(p => !(options.continuation && p === '행')).map(p => `${p} 가 빠졌거나 형식이 틀렸다`))
-  let rows: Map<string, string[]>
-  try { rows = readModelRows(options.table) }
+  let rows: Map<string, ModelPolicy>
+  try { rows = readModelPolicies(options.table) }
   catch { return [...errors, '모델 표를 읽지 못했다'] }
   const ids = [...rows.keys()]
   if (!ids.length) errors.push('모델 표를 읽지 못했다')
@@ -54,7 +83,8 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
     errors.push(`행 id 가 모델 표에 없다: ${selection.row}. 모델 표의 행 id: ${ids.join(', ')}${modelName ? '. 행에는 작업 종류 id 를 쓴다' : ''}`)
   }
   const experiment = experimentOf(text)
-  const candidates = rows.get(selection.row ?? '')
+  const policy = rows.get(selection.row ?? '')
+  const candidates = policy?.models
   if (options.launch && candidates && selection.row !== 'review') {
     if (!candidates.length) errors.push(`행 ${selection.row} 의 후보 목록을 읽지 못했다`)
     else if (outsideCandidate(selection, candidates) && !selection.outsideReason) {
@@ -64,6 +94,16 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
       if (!terra || !/(?:^|\s)Terra 실험 [1-5]\/5(?![0-9A-Za-z/])/.test(line)) {
         errors.push(`행 ${selection.row} 의 후보: ${candidates.join(', ')}. 후보 밖이면 \`worker 선택:\` 줄에 \`후보 밖: <이유>\` 를 적는다`)
       }
+    }
+  }
+  if (options.launch && candidates?.includes(selection.model ?? '') && selection.row !== 'review') {
+    if (!policy?.limits.has(selection.model ?? '')) errors.push(`행 ${selection.row} 의 ${selection.model} effort 상한을 읽지 못했다`)
+    if (!EFFORTS.includes(selection.effort ?? '') && !(selection.effort === '기본' && selection.model?.startsWith('claude-haiku-'))) {
+      errors.push(`effort 상한을 검사하려면 명시한 effort 가 필요하다: ${selection.effort}`)
+    }
+    const limit = effortExceeded(selection, policy)
+    if (limit && !selection.outsideReason) {
+      errors.push(`행 ${selection.row} 의 ${selection.model} effort 상한: ${limit} (요청: ${selection.effort}). 꼭 필요하면 \`worker 선택:\` 줄에 \`후보 밖: <이유>\` 를 적는다`)
     }
   }
   const effortOf = (value: string | null | undefined) => value === '기본' ? null : value ?? null

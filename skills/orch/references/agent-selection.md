@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본) |
 | `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high` |
-| `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
+| `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
 | `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5, Claude Fable 5.2(큰 구조 정리만) | sol `medium`(넘기지 않는다), Sonnet `high`(기본), Fable `high`. 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
 | `hard-design` | 어려운 디버깅, 기술·계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
 | `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작 |
@@ -38,8 +38,8 @@
 
 Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 
-- `launch-worker` 는 이 표의 행에 있는 모델만 띄운다. 후보 밖 모델이 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 실제로 후보 밖인 모델에 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다.
-- `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 선택 줄에 `Terra 실험 N/5`(N 은 1~5)가 있고 그 행의 후보에 Sonnet 이 있을 때만 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
+- `launch-worker` 는 이 표의 행에 있는 모델과 모델별 effort 상한을 검사한다. 후보 밖 모델이나 상한을 넘는 effort 가 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 실제로 모델이나 effort 가 후보 밖이고 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다. effort 를 넘겼으면 `effort` 와 `effortLimit` 도 남긴다.
+- `review` 행은 모델 후보와 effort 상한을 검사하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 선택 줄에 `Terra 실험 N/5`(N 은 1~5)가 있고 그 행의 후보에 Sonnet 이 있을 때만 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - `impl-explore` 의 Fable 은 큰 구조 정리에만 고른다. 후보 검사는 모델 이름만 보므로 조건은 고르는 쪽이 지킨다. 아래 「큰 구조 정리의 Fable」 이 조건을 정한다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
 
