@@ -5,7 +5,7 @@ work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 �
 
 orch 는 명령줄의 보드 파일, `finish.board`, 기본 위치 순서로 고른다. 설정의 상대경로는 주 checkout 기준이고, `finish.board` 가 빈 문자열이면 기본 위치를 쓴다. 설정이 깨졌거나 보드 값이 문자열이 아니면 한 줄 설명과 종료 코드 2 를 내고 기본 보드로 바꾸지 않는다. 루프에서는 `WATCH-ERROR` 로 알리고 뒤 단계와 다음 틱을 계속 실행한다.
 기존 `orch board sync`, `release`, `goal` 의 `--board` 상대경로는 명령을 부른 폴더 기준이다. `goal` 은 설정이 없으면 현재 작업 트리의 기본 보드를 쓰고, 정리 명령은 `cleanup.board` 를 먼저 쓴다.
-보기와 지우기는 `orch board` 를 쓴다. 보드 창과 `board.ts set`, `board.ts mark` 는 orch 설정을 읽지 않으므로 다른 위치를 쓰면 직접 명령에 `--file` 로 같은 파일을 준다.
+보기와 지우기는 `orch board list`, `orch board del` 을 쓴다. 보드 창과 `board.ts set`, `board.ts mark` 는 orch 설정을 읽지 않으므로 다른 위치를 쓰면 직접 명령에 `--file` 로 같은 파일을 준다.
 
 동기화와 마무리는 읽은 단계 목록을 통째로 저장할 때 줄 지문을 함께 보낸다. 그 사이 글이나 완료 값이 바뀌었으면 덮어쓰지 않는다. 동기화는 그 항목을 다음 틱에 다시 읽고, 릴리스 반영은 다른 항목을 처리한 뒤 종료 코드 1 을 내므로 다시 실행한다. worker 등록과 마무리는 다시 읽어 한 번 재시도한다.
 `BOARD <id> stale` 은 읽은 뒤 줄이 바뀌어 그 항목의 저장을 건너뛰었다는 뜻이다. `sync` 는 다음 틱을 기다리고, `release` 는 종료 코드 1 을 확인한 뒤 다시 부른다.
