@@ -23,11 +23,13 @@ const USAGE = `사용법:
   orch board get <항목> <칸> [--json] (칸: ${GET_FIELDS.filter((field) => field !== 'step').join(' ')})
   orch board get <항목> step <번호> [--json]
   orch board list [--status <상태>[,<상태>…]] [--json]
+  orch board del <항목> [--force]
+  orch board del --done
   공통: [--repo <폴더>] [--board <파일>] [--full]
   - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
 const OPTIONS = {
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
-  json: { type: 'boolean' }, status: { type: 'string' },
+  json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 } as const
 
@@ -51,8 +53,12 @@ function main(argv: string[]): number {
   let command: string[]
   let trailing: string[] = []
   const usage = () => { process.stderr.write(`${USAGE}\n`); return 2 }
+  if ((values.done || values.force) && verb !== 'del') return usage()
+  if (verb === 'del' && (values.json || values.status !== undefined || values.on !== undefined)) return usage()
   if ((values.json && !['get', 'list', 'show'].includes(verb)) || (values.status !== undefined && verb !== 'list') || (values.on !== undefined && ['get', 'list', 'show'].includes(verb))) return usage()
-  if (verb === 'get' && GET_FIELDS.includes(third as typeof GET_FIELDS[number]) && ((third === 'step' && args.length === 4 && /^\d+$/.test(action)) || (third !== 'step' && args.length === 3))) command = ['get', id, third, ...(third === 'step' ? [action] : [])]
+  if (verb === 'del' && args.length === 2 && !values.done) command = values.force ? ['del', id, '--exact'] : ['del-done', id]
+  else if (verb === 'del' && args.length === 1 && values.done && !values.force) command = ['del-done']
+  else if (verb === 'get' && GET_FIELDS.includes(third as typeof GET_FIELDS[number]) && ((third === 'step' && args.length === 4 && /^\d+$/.test(action)) || (third !== 'step' && args.length === 3))) command = ['get', id, third, ...(third === 'step' ? [action] : [])]
   else if (verb === 'list' && args.length === 1) { command = ['items']; if (values.status !== undefined) trailing = ['--', values.status] }
   else if (verb === 'set' && args.length === 3 && values.on === undefined) command = ['set', id, third, '--exact']
   else if (verb === 'show' && args.length === 2 && values.on === undefined) command = [values.json ? 'item' : 'view', id]
@@ -72,6 +78,11 @@ function main(argv: string[]): number {
   const result = run(scriptCommand(process.env.BOARD_BIN || BOARD_BIN, command), { timeoutMs: NO_LIMIT_MS })
   process.stderr.write(result.stderr)
   if (result.code !== 0 && !(verb === 'get' && result.code === 4)) return result.code
+  if (verb === 'del') {
+    const deleted = JSON.parse(result.stdout).deleted as unknown[]
+    console.log(deleted.length ? deleted.map((id) => `BOARD-DEL ${String(id)}`).join('\n') : 'BOARD-NONE')
+    return 0
+  }
   if (verb === 'get') {
     if (values.json) process.stdout.write(result.stdout)
     else { const value = JSON.parse(result.stdout).value; if (value !== null) console.log(value) }

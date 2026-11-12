@@ -218,3 +218,15 @@ test('보드 읽기 명령은 값과 목록 및 JSON 을 출력한다', () => {
   for (const args of [['get', 'x', 'foo'], ['get', 'x', 'step'], ['list', 'extra'], ['set', 'x', 'done', '--json']]) refused(args, /사용법/, 2)
   assert.equal(readFileSync(file, 'utf8'), before)
 })
+
+test('보드 삭제는 끝난 항목만 지우고 강제 삭제와 사본을 지원한다', () => {
+  save([item(), { id: 'done', status: 'done' }, { id: 99, status: 'done' }])
+  const before = readFileSync(file, 'utf8')
+  refused(['del', 'x'], /지금 doing.*--force/)
+  refused(['del', ''], /id 가 필요하다/)
+  ok(['del', '--done'], 'BOARD-DEL done\nBOARD-DEL 99')
+  assert.equal(readFileSync(`${file}.bak`, 'utf8'), before)
+  ok(['del', '--done'], 'BOARD-NONE')
+  ok(['del', 'x', '--force'], 'BOARD-DEL x')
+  for (const args of [['del'], ['del', 'x', '--done'], ['del', '--done', '--force'], ['del', 'x', '--json']]) refused(args, /사용법/, 2)
+})
