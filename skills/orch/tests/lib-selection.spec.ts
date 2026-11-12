@@ -246,3 +246,19 @@ test('검증된 이어하기만 상한 검사를 생략하고 재시도 표지�
   assert.deepEqual(selectionVerdict(text, repo, { launch: true, continuation: true }), [])
   assert.match(selectionVerdict(text, repo, { launch: true, retry: true }).join(), /effort 상한: low/)
 })
+
+
+test('표에 명시한 모델 기본값은 허용하고 상한이 더 낮은 행에서는 거부한다', () => {
+  for (const [model, row] of [['claude-sonnet-5-5', 'impl-planned'], ['claude-fable-5-2', 'impl-explore'], ['claude-haiku-5-5', 'simple-apply']]) {
+    const text = `worker 선택: \`claude\` \`${model}\` effort \`기본\`. 행: ${row}. 비교: sol. 이유: 기본값 확인.`
+    assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+    if (model === 'claude-sonnet-5-5') {
+      assert.match(selectionVerdict(text.replace(row, 'small-fix'), repo, { launch: true }).join(), /effort 상한: medium/)
+    }
+  }
+  const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  const table = join(repo, 'defaults.md')
+  writeFileSync(table, source.replaceAll('Sonnet `high`(기본)', 'Sonnet `low`(기본)'))
+  const text = 'worker 선택: `claude` `claude-sonnet-5-5` effort `기본`. 행: small-fix. 비교: sol. 이유: 기본값 확인.'
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true, table }), [])
+})

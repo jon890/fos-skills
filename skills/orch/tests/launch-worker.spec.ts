@@ -410,6 +410,14 @@ describe('worker 선택 줄 대조', () => {
     })
   }
 
+  test('Sonnet 기본 effort 는 옵션을 생략해도 표의 기본값으로 검사하고 띄운다', () => {
+    writeFileSync(spec, SELECTED.replace('`codex` `gpt-6.1-sol` effort `low`', '`claude` `claude-sonnet-5-5` effort `기본`'))
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-sonnet-5-5'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
+  })
+
   for (const reason of ['', ' 후보 밖:', ' 후보 밖:   .']) {
     test(`후보 밖 모델은 유효한 이유 없이 시작하지 않는다: ${reason || '표시 없음'}`, () => {
       writeFileSync(spec, SELECTED.replace('gpt-6.1-sol', 'gpt-6-astra').trimEnd() + reason + '\n')

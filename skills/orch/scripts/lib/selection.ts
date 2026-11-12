@@ -7,7 +7,7 @@ import { readLaunch } from './launched.ts'
 import { experimentOf, selectionsOf, type Candidate, type Selection } from './spec.ts'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
-type ModelPolicy = { models: string[]; limits: Map<string, string | null> }
+type ModelPolicy = { models: string[]; limits: Map<string, string | null>; defaults: Map<string, string> }
 
 // 모델 목록과 상한을 같은 행에서 읽는다. 모델 별칭은 id 에서 만들고 상한값은 표에만 둔다.
 export function modelPolicies(table: string): Map<string, ModelPolicy> {
@@ -16,20 +16,30 @@ export function modelPolicies(table: string): Map<string, ModelPolicy> {
   if (start === -1) return new Map()
   const rest = lines.slice(start + 1)
   const end = rest.findIndex(line => /^#{1,6} /.test(line))
-  return new Map([...(end === -1 ? rest : rest.slice(0, end)).join('\n').matchAll(/^\| `([a-z][a-z0-9-]*)` \|[^|]*\|([^|]*)\|([^|]*)\|/gm)].map(m => {
+  const policies = new Map([...(end === -1 ? rest : rest.slice(0, end)).join('\n').matchAll(/^\| `([a-z][a-z0-9-]*)` \|[^|]*\|([^|]*)\|([^|]*)\|/gm)].map(m => {
     const models = [...m[2].matchAll(/`((?:gpt|claude)-[^`]+)`|Claude ([A-Za-z]+) (\d+(?:\.\d+)+)/g)]
       .map(model => model[1] ?? `claude-${model[2].toLowerCase()}-${model[3].replaceAll('.', '-')}`)
     const aliases = models.map(model => model.startsWith('claude-') ? model.split('-')[1] : model.split('-').at(-1)!)
     const named = aliases.some(alias => new RegExp(`\\b${alias}\\b`, 'i').test(m[3]))
     const limits = new Map<string, string | null>()
+    const defaults = new Map<string, string>()
     models.forEach((model, index) => {
       // 쉼표와 마침표로 나눈 모델별 설명에서 첫 effort 가 상한이다. 이름이 없는 칸은 모든 후보에 적용한다.
       const clause = named ? m[3].split(/,|\.\s/).find(part => new RegExp(`\\b${aliases[index]}\\b`, 'i').test(part)) : m[3]
       const effort = /`(low|medium|high|xhigh|max|ultra)`/.exec(clause ?? '')?.[1]
       if (effort) limits.set(model, /에서 시작/.test(clause ?? '') ? null : effort)
+      const defaultEffort = /`(low|medium|high|xhigh|max|ultra)`\s*\(기본\)|기본값\s*`(low|medium|high|xhigh|max|ultra)`/.exec(clause ?? '')
+      if (defaultEffort) defaults.set(model, defaultEffort[1] ?? defaultEffort[2])
     })
-    return [m[1], { models, limits }]
+    return [m[1], { models, limits, defaults }]
   }))
+  // 기본값은 모델의 속성이다. 어느 행에서든 명시된 기본값을 같은 모델에 적용한다.
+  const defaults = new Map([...policies.values()].flatMap(policy => [...policy.defaults]))
+  return new Map([...policies].map(([id, policy]) => [id, { ...policy, defaults }]))
+}
+
+function resolvedEffort(selection: Selection, policy: ModelPolicy | undefined): string | null {
+  return selection.effort === '기본' ? policy?.defaults.get(selection.model ?? '') ?? null : selection.effort
 }
 
 export function modelRows(table: string): Map<string, string[]> {
@@ -47,7 +57,7 @@ function effortExceeded(selection: Selection, policy: ModelPolicy | undefined): 
   if (!limit) return null
   // hard-design 의 Opus 고effort 는 기존 high 근거 검사에서 따로 검증한다.
   if (selection.row === 'hard-design' && selection.model?.startsWith('claude-opus-') && selection.highReason && ['high', 'xhigh', 'max'].includes(selection.effort ?? '')) return null
-  const effort = selection.effort === '기본' && selection.model?.startsWith('claude-haiku-') ? 'medium' : selection.effort
+  const effort = resolvedEffort(selection, policy)
   return effort && EFFORTS.indexOf(effort) > EFFORTS.indexOf(limit) ? limit : null
 }
 
@@ -62,7 +72,7 @@ export function candidateOverrideOf(text: string): { row: string | null; model: 
   const effortLimit = effortExceeded(selection, policy)
   if (!outsideCandidate(selection, policy?.models) && !effortLimit) return null
   return { row: selection.row, model: selection.model, reason: selection.outsideReason,
-    ...(effortLimit ? { effort: selection.effort, effortLimit } : {}),
+    ...(effortLimit ? { effort: resolvedEffort(selection, policy), effortLimit } : {}),
   }
 }
 
@@ -98,8 +108,8 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
   }
   if (options.launch && !options.continuation && candidates?.includes(selection.model ?? '') && selection.row !== 'review' && policy?.limits.get(selection.model ?? '') !== null) {
     if (!policy?.limits.has(selection.model ?? '')) errors.push(`행 ${selection.row} 의 ${selection.model} effort 상한을 읽지 못했다`)
-    if (!EFFORTS.includes(selection.effort ?? '') && !(selection.effort === '기본' && selection.model?.startsWith('claude-haiku-'))) {
-      errors.push(`effort 상한을 검사하려면 명시한 effort 가 필요하다: ${selection.effort}`)
+    if (!EFFORTS.includes(resolvedEffort(selection, policy) ?? '')) {
+      errors.push(`effort 상한을 검사하려면 명시한 effort 나 표의 기본값이 필요하다: ${selection.effort}`)
     }
     const limit = effortExceeded(selection, policy)
     if (limit && !selection.outsideReason) {
