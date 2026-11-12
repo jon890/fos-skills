@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
+import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/launch-worker-run.ts', import.meta.url))
@@ -506,6 +507,17 @@ describe('선택 정책과 영구 이력', () => {
     assert.deepEqual([history()[1].agent, history()[1].model, history()[1].effort], ['codex', 'gpt-6.1-sol', 'medium'])
   })
 
+  for (const noPr of [false, true]) test(`터미널을 다시 쓰는 구현은 이전 리뷰의 제외 표시 대신 이번 요청을 기록한다(no-pr=${noPr})`, () => {
+    select()
+    recordHistory(worktree, prior({ completion: 'none', row: 'review' }))
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, ...(noPr ? ['--no-pr'] : []), '--', '--terminal', 'term_old'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.equal(history()[1].completion, noPr ? 'none' : undefined)
+    const entry = JSON.parse(readFileSync(join(worktree, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
+    assert.equal(entry.completion, noPr ? 'none' : undefined)
+  })
+
   test('같은 Task 재시도는 이력의 워크트리를 쓰고 새 Task 나 배정을 만들지 않는다', () => {
     select()
     recordHistory(tmp, prior({ completion: 'none' }))
@@ -516,7 +528,7 @@ describe('선택 정책과 영구 이력', () => {
     assert.match(call, /--task task_1 --retry-of ctx_old/)
     assert.doesNotMatch(call, /--spec/)
     assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).retry_of, 'ctx_old')
-    assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).completion, 'none')
+    assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).completion, undefined)
     assert.deepEqual(lines('make'), [])
   })
 
@@ -809,6 +821,16 @@ describe('띄우기', () => {
 
   describe('띄운 worker 의 기록', () => {
     const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
+
+    for (const sample of prReadyCases) test(`${sample.name}의 PR 준비 필요 여부를 기록한다`, () => {
+      writeFileSync(spec, readFileSync(spec, 'utf8') + '\n' + sample.text)
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--spec', spec, '--worktree', worktree, '--watch', '0', '--', ...CLAUDE])
+      assert.equal(r.code, 0, both(r))
+      const entry = JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8'))
+      assert.equal(entry.completion, sample.skip ? 'none' : undefined)
+      assert.equal(launchHistory(worktree).at(-1)?.completion, entry.completion)
+    })
 
     test('--no-pr 는 정리 기록과 영구 이력에 PR 없는 작업을 남긴다', () => {
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } } })

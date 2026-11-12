@@ -149,7 +149,7 @@ import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-hist
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
-import { autoStepNumberOf, boardIdOf, branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOf, branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
 import { recordStepLaunch } from '../lib/auto-advance.ts'
 
 const USAGE = [
@@ -849,7 +849,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
-      ...(a.noPr || retryLaunch?.completion === 'none' || inherited?.completion === 'none' ? { completion: 'none' as const } : {}),
+      ...(a.noPr || skipsPrReady(text) ? { completion: 'none' as const } : {}),
       dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch,
       run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,
       spec: resolve(a.spec),
