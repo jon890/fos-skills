@@ -175,6 +175,13 @@ test('Task 조회 실패나 잘못된 형식은 한 줄 알리고 열린 질문�
   }
 })
 
+test('Task 조회는 짧은 응답을 요청하고 id/status 로만 종료를 확인한다', () => {
+  const q = message('q', 'question', { task_id: 't' })
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed', spec: '긴 지시서', result: '긴 결과' }] })
+  assert.deepEqual(snapshot('r').pending, [])
+  assert.deepEqual(calls().filter(args => args[0] === 'task-list'), [['task-list', '--run', 'r', '--brief']])
+})
+
 test('열린 Task 와 상태를 모르는 dispatch 의 질문은 남긴다', () => {
   const q = message('q', 'question', { task_id: 't' })
   for (const tasks of [[], [{ id: 't', status: 'running' }], [{ id: 'other', status: 'completed' }]]) {

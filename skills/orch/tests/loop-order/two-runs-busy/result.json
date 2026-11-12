@@ -69,6 +69,7 @@
         "task-list",
         "--run",
         "r1",
+        "--brief",
         "--json",
         "--full"
       ],
