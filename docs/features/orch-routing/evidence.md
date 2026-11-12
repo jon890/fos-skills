@@ -128,7 +128,7 @@
 
 ## 2026-11-10 Claude Fable 5.2 (실험 전 수치)
 
-사용자 결정(2026-11-10)으로 Fable 5.2 를 바로 후보에 넣지 않고 크고 어려운 일 다섯 건에 실험한다. 이 절은 실험을 시작하기 전에 본 공개 수치를 모은다. 실험 결과는 실측 기록으로 따로 남긴다. 수치는 2026-11-10 에 수집했고, 값이 바뀌면 아래 출처에서 다시 확인한다.
+사용자 결정(2026-11-10)으로 Fable 5.2 를 바로 후보에 넣지 않고 크고 어려운 일 다섯 건에 실험했다. 이 절은 실험을 시작하기 전에 본 공개 수치를 모은다. 실험 결과는 아래 「2026-11-12 Fable 5.2 실험 결과」 절이다. 수치는 2026-11-10 에 수집했고, 값이 바뀌면 아래 출처에서 다시 확인한다.
 
 - 모델 id 는 `claude-fable-5-2` 다(`--model fable` 도 5.2 로 풀린다). 2026-11-10 코디네이터가 `claude -p --model claude-fable-5-2` 로 응답을 확인했다. 공개는 2026-11-09 다.
 - 가격은 입력 8, 출력 40($/1M 토큰)이다. Fable 5.1 은 10 / 50, Opus 5.5 는 4 / 20 이다.
@@ -136,8 +136,26 @@
 - Anthropic 측정(Fable 5.2 / Opus 5.5): FrontierSWE v2 69.9 / 62.3, FrontierCode 2.0 49.1(xhigh) / 45.5, SWE-bench Pro 93.0 / 89.9, Terminal-Bench 4.0 67.6 / 66.4(오차 안).
 - 독립 측정 Vals AI(Fable 5.2 / Opus 5.5): Terminal-Bench 4.0 65.15 / 65.15, ProgramBench 19.0 / 18.5, SWE-bench Multimodal 62.3 / 70.2.
 - Artificial Analysis 지능 지수 v5: Fable 5.2 max 65, high 62(출력 토큰 40% 적음), Opus 5.5 max 59, sol max 55. 코딩 에이전트 지수 v2.0 은 Opus 5.5 61.7, Fable 5.1 57.6, sol 54.1 이고 Fable 5.2 는 아직 없다.
-- 읽기: 몇 시간짜리 큰 작업(FrontierSWE)에서만 뚜렷이 앞선다. 독립 측정의 터미널 작업은 Opus 와 같다. Anthropic 은 일상 작업에 Opus 5.5 를 권한다. 그래서 큰 일 다섯 건만 실험하고, 가격 기준은 그 결과 뒤에 정한다.
+- 읽기: 몇 시간짜리 큰 작업(FrontierSWE)에서만 뚜렷이 앞선다. 독립 측정의 터미널 작업은 Opus 와 같다. Anthropic 은 일상 작업에 Opus 5.5 를 권한다. 그래서 큰 일 다섯 건만 실험했다.
 - 출처: [llm-stats(Anthropic 수치)](https://llm-stats.com/blog/research/claude-fable-5-2-launch), [Vals AI](https://www.vals.ai/models/anthropic_claude-fable-5-2), [Artificial Analysis](https://artificialanalysis.ai/models/claude-fable-5-2), [Artificial Analysis 발표](https://x.com/ArtificialAnlys/status/2119878995386982508), [The Decoder](https://the-decoder.com/claude-fable-5-2-and-mythos-5-2-cement-anthropics-ai-lead-just-before-its-ipo/), [CNBC](https://www.cnbc.com/2026/11/09/anthropic-claude-fable-5-2-mythos-5-2.html), [Fortune](https://fortune.com/2026/11/09/anthropic-debuts-updated-claude-fable-and-mythos-models-undercutting-price-of-openais-gpt-6-astra-by-up-to-80/)
+
+## 2026-11-12 Fable 5.2 실험 결과
+
+사용자 결정(2026-11-12): Fable 5.2 를 큰 구조 정리에만 후보로 둔다. 설계는 지금처럼 Opus·sol 이다. 선택 규칙은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 의 「큰 구조 정리의 Fable」 이 소유한다.
+
+다섯 건을 코디네이터가 보드와 PR 에서 모았다. 모두 `high` 다. 표본이 작아 방향만 본다.
+
+| 실험 | 작업 | 크기 | 띄운 뒤 PR 까지 | 첫 리뷰 차단 |
+| --- | --- | --- | --- | --- |
+| 1/5 | 상주 루프를 lifecycle 과 틱 단계로 나눔 | 61파일 +4196/−2888 | 약 1시간 25분 | 0(권장 0) |
+| 2/5 | 보드 명령 technical-design | 9파일 +942 | 기록 없음 | 2 |
+| 3/5 | 보드 자동 진행 technical-design | 10파일 +1284 | 기록 없음 | 3 |
+| 4/5 | 스킬 문서 히스토리 정리와 호환 제거 | 71파일 +279/−607 | 기록 없음 | 0(권장 0) |
+| 5/5 | 보드 읽기 명령 technical-design | 8파일 +937 | 약 43분 | 2 |
+
+- 구조 정리 두 건(1/5, 4/5)은 크기가 커도 첫 리뷰 차단과 권장이 0 이었다. 설계 세 건(2/5, 3/5, 5/5)은 차단 2·3·2 로 같은 날 Opus `medium` 의 보드 승인 설계(8파일 +781, 차단 2)와 차이가 없었다. 그래서 구조 정리에만 후보로 둔다.
+- 비교: 같은 날 sol `medium` 의 정리·머지 큐 단계 분리(15~22파일)는 차단 0, 권장 3·2 였다. 이 크기는 Fable 건보다 훨씬 작다.
+- 비용은 1/5 에서 Fable 주간 한도의 6% 만 실측했다. 나머지 건은 비용 기록이 없다. 가격은 Opus 의 2배다.
 
 ## 2026-11-10 질문이 남은 설계 작업의 sol 후보
 
@@ -147,12 +165,12 @@
 
 기존 모델 선택 지침에 있던 조사 기록을 보존한다. 현재 선택 규칙은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 가 소유한다.
 
-아래 두 모델은 worker 와 하위 에이전트의 후보에 넣지 않는다. `gpt-6-astra` 는 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 실험이 끝날 때까지 뺀다(사용자 결정 2026-11-10, [Fable 5.2 실험](../../../skills/orch/references/agent-selection.md#fable-52-실험)). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
+`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에 넣지 않는다. 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 2026-11-10 에 기본 후보에서 뺐다가 실험 뒤 큰 구조 정리에만 후보로 올렸다(사용자 결정 2026-11-12, [큰 구조 정리의 Fable](../../../skills/orch/references/agent-selection.md#큰-구조-정리의-fable)). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
 
-| 모델 | 입력 / 출력 ($/1M 토큰) | 뺀 이유 |
+| 모델 | 입력 / 출력 ($/1M 토큰) | 비고 |
 | --- | --- | --- |
-| Claude Fable 5.2 | 8 / 40 | Opus 5.5(4 / 20)의 2배다. 작업 한 건 비용은 2.6배다(Artificial Analysis, 2026-11-10). 실험 다섯 건의 결과를 본 뒤 후보에 넣을지 정한다 |
-| `gpt-6-astra` | 10 / 50 | sol(2 / 10)의 5배다. sol 의 공식 설명이 「astra 에 가까운 성능을 낮은 가격에」 다 |
+| Claude Fable 5.2 | 8 / 40 | Opus 5.5(4 / 20)의 2배다. 작업 한 건 비용은 2.6배다(Artificial Analysis, 2026-11-10). 가격 때문에 큰 구조 정리에만 후보다 |
+| `gpt-6-astra` | 10 / 50 | 뺀 이유: sol(2 / 10)의 5배다. sol 의 공식 설명이 「astra 에 가까운 성능을 낮은 가격에」 다 |
 
 출처는 아래 비교 근거와 같다. Fable 5.2 행은 2026-11-10 공개 자료로 확인했다.
 
