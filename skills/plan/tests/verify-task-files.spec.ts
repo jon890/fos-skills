@@ -651,3 +651,16 @@ test('계획과 staged 에서 새 JS 를 실행 허용 목록과 대조한다', 
   const good = staged(repo, `${rows}\n| \`scripts/runtime-policy.json\` | 수정 |`)
   assert.ok(!has(good.violations, 'runtime-policy 허용 목록'), good.stdout)
 })
+
+
+test('계획에서 정책을 같은 phase 나 앞 phase 에 수정하면 staged 검사에 맡긴다', () => {
+  for (const phases of [
+    [[['src/new.js', '신규'], ['scripts/runtime-policy.json', '수정']]],
+    [[['scripts/runtime-policy.json', '수정']], [['src/new.js', '신규']]],
+  ] as Entry[][][]) {
+    const repo = new Repo()
+    repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: [], legacy: [] }))
+    assert.ok(!has(check(repo, phases).violations, 'runtime-policy 허용 목록'))
+    assert.ok(has(verify(repo, ['plan1-x', '--audit']).violations, 'runtime-policy 허용 목록'))
+  }
+})

@@ -1633,6 +1633,7 @@ export function main(argv: string[]): number {
       const allFiles = new Set<string>()
       const allEntries = new Set<string>()
       if (audit) warnings.push('구현 후 문서 검사: 신규/수정/삭제 파일의 구현 전 존재 조건은 대조하지 않는다')
+      let policyPlanned = false
       for (const path of phases) {
         const text = readTextFile(path)
         for (const marker of REQUIRED_SECTIONS) if (!text.includes(marker)) out.push(`${path} — 필수 섹션 누락: ${marker}`)
@@ -1641,7 +1642,8 @@ export function main(argv: string[]): number {
           allFiles.add(rel)
           allEntries.add(`${rel}\0${action}`)
         }
-        checkNewJsPolicy(path, entries, repo, out)
+        policyPlanned ||= entries.some(([rel, action]) => rel === 'scripts/runtime-policy.json' && (action === '수정' || action === '신규'))
+        if (audit || !policyPlanned) checkNewJsPolicy(path, entries, repo, out)
         if (!audit) checkFileState(path, entries, repo, virtual, out, warnings, legacyManifest(text), created)
         checkBashCwd(path, text, out)
         for (const [n, line] of iterProse(text)) {
