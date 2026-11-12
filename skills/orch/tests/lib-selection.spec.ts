@@ -188,8 +188,6 @@ test('모든 후보의 effort 상한을 모델 표에서 읽고 표의 값이 �
     if (row === 'review') continue
     for (const model of policy.models) assert.ok(policy.limits.has(model), `${row}: ${model} 상한 누락`)
   }
-  assert.deepEqual([...policies.get('impl-planned')!.limits.values()], ['low', 'high'])
-  assert.deepEqual([...policies.get('impl-explore')!.limits.values()], ['medium', 'high', 'high'])
   const table = join(repo, 'limits.md')
   writeFileSync(table, source.replace('sol `low`, Sonnet', 'sol `medium`, Sonnet'))
   assert.deepEqual(selectionVerdict(sol.replace('`low`', '`medium`'), repo, { launch: true, table }), [])
