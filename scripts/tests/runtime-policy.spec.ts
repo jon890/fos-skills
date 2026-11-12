@@ -5,13 +5,14 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { checkDocs, checkMinNode, checkPolicy, classify, parsePolicy, type Policy } from '../runtime-policy.ts'
+import { checkDocs, checkImports, checkMinNode, checkPackages, checkPolicy, classify, isSourceFile, parsePolicy, type Policy } from '../runtime-policy.ts'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 function policy(extra: Partial<Policy> = {}): Policy {
   return {
     pending: [{ area: 'plan', prefix: 'skills/plan/' }],
+    bare_imports: [],
     legacy: [],
     entry_js: [],
     migrated_docs: [],
@@ -146,7 +147,106 @@ describe('checkDocs', () => {
   })
 })
 
+describe('checkPackages', () => {
+  test('루트 밖 package.json 이 type 만 담으면 통과한다', () => {
+    assert.deepEqual(checkPackages([{ path: 'bin/package.json', text: '{"type": "commonjs"}' }]), [])
+  })
+
+  test('루트 밖 package.json 의 dependencies 를 PACKAGE 로 낸다', () => {
+    const lines = checkPackages([{ path: 'skills/x/package.json', text: '{"type":"module","dependencies":{"zod":"4.6.7"}}' }])
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /^PACKAGE skills\/x\/package\.json .*dependencies/)
+  })
+
+  test('루트 package.json 은 dependencies 를 가질 수 있다', () => {
+    assert.deepEqual(checkPackages([{ path: 'package.json', text: '{"type":"module","dependencies":{"zod":"4.6.7"}}' }]), [])
+  })
+
+  test('루트 dependencies 의 범위 기호를 낸다', () => {
+    const lines = checkPackages([{ path: 'package.json', text: '{"dependencies":{"zod":"^4.6.7"}}' }])
+    assert.match(lines[0] ?? '', /^PACKAGE package\.json dependencies\.zod 는 정확한 버전/)
+  })
+
+  test('JSON 이 아니면 PACKAGE 로 낸다', () => {
+    assert.deepEqual(checkPackages([{ path: 'bin/package.json', text: '{' }]), ['PACKAGE bin/package.json JSON 이 아니다'])
+  })
+
+  test('package.json 이 아닌 파일은 보지 않는다', () => {
+    assert.deepEqual(checkPackages([{ path: 'bin/other.json', text: '{"dependencies":{}}' }]), [])
+  })
+})
+
+describe('checkImports', () => {
+  const allowed = [{ path: 'skills/orch/scripts/core/config-schema.ts', name: 'zod' }]
+
+  test('허용 목록 밖의 bare import 를 IMPORT 줄로 낸다', () => {
+    const text = "import fs from 'node:fs'\nimport { z } from 'zod'\n"
+    assert.deepEqual(checkImports([], [{ path: 'a/b.ts', text }]), ['IMPORT a/b.ts:2 zod'])
+  })
+
+  test('허용 목록의 짝은 통과하고 다른 파일의 같은 import 는 낸다', () => {
+    const text = "import * as z from 'zod'\n"
+    const sources = [
+      { path: 'skills/orch/scripts/core/config-schema.ts', text },
+      { path: 'skills/orch/scripts/core/other.ts', text },
+    ]
+    assert.deepEqual(checkImports(allowed, sources), ['IMPORT skills/orch/scripts/core/other.ts:1 zod'])
+  })
+
+  test('glob 의 * 는 / 를 넘지 않는다', () => {
+    const glob = [{ path: 'ext/tests/*.test.ts', name: 'claude-code/testing' }]
+    const text = "import { x } from 'claude-code/testing'\n"
+    assert.deepEqual(checkImports(glob, [{ path: 'ext/tests/a.test.ts', text }]), [])
+    assert.deepEqual(checkImports(glob, [{ path: 'ext/tests/sub/a.test.ts', text }]), ['IMPORT ext/tests/sub/a.test.ts:1 claude-code/testing'])
+  })
+
+  test('여러 줄 import, export from, 부수 효과 import, 동적 import, require 를 읽는다', () => {
+    const text = [
+      'import {',
+      '  a,',
+      "} from 'm1'",
+      "export * from 'm2'",
+      "import 'm3'",
+      `const x = await ${'import'}('m4')`,
+      `const y = ${'require'}('m5')`,
+    ].join('\n')
+    assert.deepEqual(
+      checkImports([], [{ path: 'a.ts', text }]).map((line) => line.split(' ')[2]),
+      ['m1', 'm2', 'm3', 'm4', 'm5'],
+    )
+  })
+
+  test('상대 경로와 node: 는 보지 않는다', () => {
+    const text = "import a from './a.ts'\nimport b from '../b.ts'\nimport c from 'node:path'\nimport d from '/abs'\n"
+    assert.deepEqual(checkImports([], [{ path: 'a.ts', text }]), [])
+  })
+
+  test('문자열 안의 from 이나 require 표본은 걸리지 않는다', () => {
+    const text = ["const s = \"import x from 'zod'\"", "const t = 'require(\"zod\")'", "// import y from 'zod'", ' * import z from "zod"'].join('\n')
+    assert.deepEqual(checkImports([], [{ path: 'a.ts', text }]), [])
+  })
+
+  test('확장자와 entry_js 로 소스 파일을 고른다', () => {
+    assert.equal(isSourceFile('a/b.mts', []), true)
+    assert.equal(isSourceFile('docs/a.md', []), false)
+    assert.equal(isSourceFile('bin/orch', ['bin/orch']), true)
+    assert.equal(isSourceFile('bin/orch', []), false)
+  })
+})
+
 describe('parsePolicy', () => {
+  test('bare_imports 의 이름이 루트 의존에도 claude-code/ 에도 없으면 거부한다', () => {
+    const bad = { ...policy(), bare_imports: [{ path: 'a.ts', name: 'left-pad' }] }
+    assert.throws(() => parsePolicy(JSON.stringify(bad), ['zod']), /left-pad/)
+    assert.doesNotThrow(() => parsePolicy(JSON.stringify({ ...policy(), bare_imports: [{ path: 'a.ts', name: 'zod' }] }), ['zod']))
+    assert.doesNotThrow(() => parsePolicy(JSON.stringify({ ...policy(), bare_imports: [{ path: 'a.ts', name: 'claude-code/testing' }] })))
+  })
+
+  test('bare_imports 가 없으면 거부한다', () => {
+    const { bare_imports: _omit, ...rest } = policy()
+    assert.throws(() => parsePolicy(JSON.stringify(rest)), /bare_imports/)
+  })
+
   test('min_node 가 정수 둘이 아니면 거부한다', () => {
     assert.throws(() => parsePolicy(JSON.stringify({ ...policy(), min_node: [24] })), /min_node/)
   })

@@ -15,6 +15,12 @@
 //   node 는 타입을 지우기만 해서 잘못된 속성 접근이 실행 때까지 드러나지 않는다. 저장소에 package.json 과
 //   node_modules 를 두지 않으므로(docs/code-architecture.md 「저장소 실행 규칙」 의 「의존」) TypeScript 는 저장소 밖
 //   사용자 캐시 폴더에 설치한다. 버전은 TYPESCRIPT, NODE_TYPES 상수가 소유하고, 폴더는 FOS_TSC_DIR 로 바꾼다.
+//   저장소 루트의 의존(zod, 루트 package.json)은 저장소 안 node_modules 에 둔다. tsc 는 moduleResolution 이 bundler 라 그것을 찾는다.
+//
+// 의존 설치 확인:
+//   저장소 루트(지금 폴더)에 package-lock.json 이 있으면 node_modules/.package-lock.json 의 각 패키지 version 이 lock 과 같은지 본다.
+//   워크트리는 주 checkout 아래에 만들어져 설치가 없으면 Node 가 주 checkout 의 node_modules 를 찾으므로, 있는지가 아니라
+//   lock 과 맞는지를 본다. 다르면 아무것도 돌지 않고 2 다. --wait 는 확인하지 않는다.
 //
 // 사용법 (cwd: 저장소 루트)
 //   node scripts/run-tests.ts                              모든 묶음과 tsc 를 전경으로 돌린다
@@ -39,7 +45,7 @@
 //   0  모두 통과했다 (--background 는 띄우는 데 성공했다)
 //   1  실패한 것이 있다
 //   2  실행하지 못했다. 인자 오류, 대상 없음, 인자 없이 git 저장소 밖, 결과 폴더 없음, 실행기가 끝 줄 없이 멈췄다,
-//      SIGINT·SIGTERM 으로 중단됐다
+//      SIGINT·SIGTERM 으로 중단됐다, 의존 설치가 package-lock.json 과 다르다(저장소 루트에서 npm ci)
 //   3  --wait 가 최대 시간까지 끝 줄을 보지 못했다. 같은 명령으로 다시 기다린다
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -477,6 +483,30 @@ function background(argv: string[], opts: Options): number {
   return 0;
 }
 
+type LockPackages = Record<string, { version?: string }>;
+
+function readLockPackages(file: string): LockPackages | null {
+  try {
+    const data = JSON.parse(readFileSync(file, "utf8")) as { packages?: LockPackages };
+    return data.packages && typeof data.packages === "object" ? data.packages : null;
+  } catch {
+    return null;
+  }
+}
+
+// 저장소 루트에 package-lock.json 이 있으면 설치(node_modules/.package-lock.json)가 그것과 같은지 본다.
+// 어긋난 첫 패키지 이름을 낸다. lock 이 없거나 같으면 null 이다.
+export function installMismatch(root: string): string | null {
+  const wanted = readLockPackages(join(root, "package-lock.json"));
+  if (!wanted) return null;
+  const installed = readLockPackages(join(root, "node_modules", ".package-lock.json")) ?? {};
+  for (const [key, entry] of Object.entries(wanted)) {
+    if (!key.startsWith("node_modules/")) continue;
+    if (installed[key]?.version !== entry.version) return key.slice(key.lastIndexOf("node_modules/") + "node_modules/".length);
+  }
+  return null;
+}
+
 async function main(argv: string[]): Promise<number> {
   let opts: Options;
   try {
@@ -486,6 +516,11 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (opts.wait) return wait(opts.wait, opts.maxWait);
+  const mismatch = installMismatch(process.cwd());
+  if (mismatch) {
+    console.error(`run-tests: 의존 설치가 lock 과 다르다(${mismatch}). 저장소 루트에서 npm ci 를 돈다`);
+    return 2;
+  }
   if (opts.background) return background(argv, opts);
   return run(opts, process.cwd());
 }

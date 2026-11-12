@@ -11,3 +11,6 @@ __pycache__/
 
 # 미리보기가 남기는 탭 id — 로컬 상태다
 *.tabid
+
+# 의존 설치 — 커밋하지 않는다(npm ci 로 설치한다)
+/node_modules/

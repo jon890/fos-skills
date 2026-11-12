@@ -1,0 +1,8 @@
+{
+  "name": "fos-skills",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

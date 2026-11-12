@@ -16,6 +16,9 @@
     "skills/orch/scripts/lib/guard/orca"
   ],
   "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/", "skills/presentation/", "skills/browser/", "skills/plan/", "skills/harness-cleanup/", "skills/mac-cleanup/", "skills/spec/", "skills/technical-design/", "skills/implementation/", "skills/docs-audit/", "skills/docs-consolidate/", "skills/review-fix/", "export-only-skills/content-preview/", "export-only-skills/korean-check/"],
+  "bare_imports": [
+    { "path": "extensions/work-board/tests/*.test.ts", "name": "claude-code/testing" }
+  ],
   "kit_sources": ["modules/kit/"],
   "min_node": [24, 0]
 }
