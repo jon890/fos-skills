@@ -253,8 +253,6 @@ function check(T: string): number {
     // 도구
     if (isExecutableFile(join(cache, 'skills/browser/browser-driver/browser_driver.ts'))) ok('도구: skills/browser/browser-driver/browser_driver.ts 가 있고 실행 권한이 있다')
     else fail('도구: skills/browser/browser-driver/browser_driver.ts 가 없거나 실행 권한이 없다')
-    if (isExecutableFile(join(cache, 'tools/browser-driver/browser_driver.py'))) ok('도구: 옛 이름 진입 tools/browser-driver/browser_driver.py 가 있고 실행 권한이 있다')
-    else fail('도구: 옛 이름 진입 tools/browser-driver/browser_driver.py 가 없거나 실행 권한이 없다')
 
     // 스크립트 실행
     r = run([process.execPath, join(cache, 'skills/plan/scripts/verify_task.ts'), '--help'], { env })

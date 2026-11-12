@@ -278,7 +278,6 @@ ln -sfn ~/personal/fos-skills/skills/browser/browser-driver/browser_driver.ts ~/
 | `skills/browser/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview`, `presentation` |
 
 소유자는 `browser` 스킬이에요. 팀 저장소에는 `tools/browser-driver` 로 들어가요.
-`tools/browser-driver/browser_driver.py` 는 옛 링크가 깨지지 않게 남긴 옛 이름 진입이에요. 새 `.ts` 를 불러요. 다음 major 에 지워요.
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
 이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 넣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 

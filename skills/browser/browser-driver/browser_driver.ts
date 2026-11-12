@@ -16,7 +16,7 @@
 //   2 잘못된 호출이나 환경 문제 (백엔드 없음, 설정 오류, 미지원 명령)
 //
 // 심링크로 불려도 실체 옆의 driver 폴더를 찾는다(Node 가 모듈 경로를 실체로 푼다).
-// main 을 내보내고 직접 실행일 때만 스스로 돈다. 옛 이름 진입(tools/browser-driver/browser_driver.py)이 이 main 을 불러 쓴다.
+// main 을 내보내고 직접 실행일 때만 스스로 돈다.
 
 import { readFileSync } from 'node:fs'
 import { cmdDoctor, cmdInstall } from './driver/admin.ts'
