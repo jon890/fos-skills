@@ -42,6 +42,7 @@ import { shQuote } from '../../lib/py.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { backgroundWork, readScreen, screenLines, screenTail, stallHash } from '../../lib/screen.ts'
 import { isStructured, limitedScreen, structuredScreen } from '../../lib/sessions.ts'
+import { recordWorkerLimited } from '../../lib/worker-limited.ts'
 import { LIVE_DISPATCH } from '../../lib/workers.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
@@ -109,8 +110,14 @@ async function watchStalls(
           ? `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
           : `사용 한도 ${dispatch} ${terminal}: 사용자에게 계정 전환을 요청하고, 바꾼 뒤 ${orchWord()} worker resume --dispatch ${shQuote(dispatch)}. resume 이 실패하면 출력의 NEXT 를 먼저 따르고, 바꿀 계정이 없거나 그래도 안 되면 references/agent-selection.md 의 「사용 한도에 걸렸을 때」`
         try {
+          const projection = isObject(row.projection) ? row.projection : {}
+          const provider = isObject(projection.provider) && typeof projection.provider.id === 'string' ? projection.provider.id.trim() : ''
           sendNotice('WORKER-LIMITED', null, text, run)
           limitedNotified = true
+          if (provider) {
+            try { recordWorkerLimited(Date.now(), { run, provider }) }
+            catch (error) { log(`orch-loop: 사용 한도 확인 기록을 쓰지 못했다: ${oneLine(error)}`) }
+          }
           log(text)
         } catch (e) {
           log(`orch-loop: 사용 한도 알림을 쓰지 못했다: ${oneLine(e)}`)

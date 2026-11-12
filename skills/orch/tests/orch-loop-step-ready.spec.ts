@@ -25,7 +25,7 @@ function setup(t: TestContext) {
   writeFileSync(join(bin, 'sweep.ts'), 'process.exitCode = 0\n')
   const common = `const fs=require('node:fs'); const args=process.argv.slice(2); const st=JSON.parse(fs.readFileSync(${JSON.stringify(state)},'utf8')); const flag=n=>args[args.indexOf(n)+1]; `
   writeNodeBin(bin, 'orca', common + `fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n'); const reply=result=>fs.writeSync(1,JSON.stringify({ok:true,result}));
-if(args[1]==='send'){ if(st.sendFail && flag('--subject').startsWith('STEP-READY'))process.exit(1); reply({message:{id:'m'}}) }
+if(args[1]==='send'){ if((st.sendFail && flag('--subject').startsWith('STEP-READY')) || (st.limitFail && flag('--subject').startsWith('LIMIT-CHECK')))process.exit(1); reply({message:{id:'m'}}) }
 else if(args[1]==='worker-list'){ if(st.workerFail)process.exit(1); reply(st.rawWorkers || {workers:st.workers||[],page:{}}) }
 else if(args[0]==='terminal' && args[1]==='read') reply({terminal:{tail:st.screen?st.screen.split('\\n'):[]}})
 else reply({messages:[]});`)
@@ -176,4 +176,52 @@ test('번호 없는 참고 줄 앞에서도 wait 는 깨우지 않고 false 의 
   assert.doesNotMatch(later.stdout, /STAGE-STALLED wait-/)
   assert.doesNotMatch(later.stdout, /STAGE-STALLED .*참고:/)
   assert.equal(c.sent().length, 0)
+})
+
+test('한도 확인은 보드 설정 없이 제공자를 읽어 한 시간 뒤 보내고 새 틱 프로세스에서도 중복하지 않는다', t => {
+  const c = setup(t)
+  c.config({ board: { auto_advance: false } })
+  c.fake({ workers: [worker({ projection: { provider: { id: 'claude' } } })], screen: "You've hit your usage limit" })
+  c.tick()
+  c.fake({})
+  const notices = () => readFileSync(c.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
+    .filter(args => args[1] === 'send' && args[args.indexOf('--subject') + 1].startsWith('LIMIT-CHECK'))
+  c.tick(NOW + 60 * MIN - 1)
+  assert.equal(notices().length, 0)
+  c.tick(NOW + 60 * MIN)
+  assert.equal(notices().length, 1)
+  const args = notices()[0]
+  assert.equal(args[args.indexOf('--to') + 1], 'run:R')
+  assert.match(args[args.indexOf('--body') + 1], /claude:.*새로 띄우는 일부터 모델 표의 후보로 돌아온다/)
+  assert.match(args[args.indexOf('--body') + 1], /24시간.*자동으로 끝난다/)
+  c.tick(NOW + 61 * MIN)
+  assert.equal(notices().length, 1)
+  c.tick(NOW + 120 * MIN)
+  assert.equal(notices().length, 2)
+})
+
+test('한도 확인 전송이 실패해도 같은 틱의 다음 단계 알림을 보내고 확인 알림은 재시도한다', t => {
+  const c = setup(t)
+  c.fake({ workers: [worker({ projection: { provider: { id: 'claude' } } })], screen: "You've hit your usage limit" })
+  c.tick()
+  c.put([c.item()]); c.fake({ limitFail: true })
+  c.tick(NOW + 60 * MIN)
+  assert.equal(c.sent().length, 1)
+  const file = join(c.root, 'machine/worker-limited.json')
+  assert.equal(Object.values(JSON.parse(readFileSync(file, 'utf8')).checks).some((row: any) => row.checkedAt), false)
+  c.fake({}); c.tick(NOW + 61 * MIN)
+  assert.equal(Object.values(JSON.parse(readFileSync(file, 'utf8')).checks).some((row: any) => row.checkedAt), true)
+})
+
+test('머신 기록 쓰기가 실패해도 성공한 사용 한도 알림을 다음 틱에 중복 전송하지 않는다', t => {
+  const c = setup(t)
+  writeFileSync(join(c.root, 'machine'), 'not-a-directory')
+  c.fake({ workers: [worker({ projection: { provider: { id: 'claude' } } })], screen: "You've hit your usage limit" })
+  const first = c.tick()
+  assert.equal(first.result.stalls.d.limitedNotified, true)
+  assert.match(first.stdout, /사용 한도 확인 기록을 쓰지 못했다/)
+  c.tick()
+  const sent = readFileSync(c.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
+    .filter(args => args[1] === 'send' && args[args.indexOf('--subject') + 1].startsWith('WORKER-LIMITED'))
+  assert.equal(sent.length, 1)
 })
