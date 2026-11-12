@@ -96,7 +96,7 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
       }
     }
   }
-  if (options.launch && candidates?.includes(selection.model ?? '') && selection.row !== 'review' && policy?.limits.get(selection.model ?? '') !== null) {
+  if (options.launch && !options.continuation && candidates?.includes(selection.model ?? '') && selection.row !== 'review' && policy?.limits.get(selection.model ?? '') !== null) {
     if (!policy?.limits.has(selection.model ?? '')) errors.push(`행 ${selection.row} 의 ${selection.model} effort 상한을 읽지 못했다`)
     if (!EFFORTS.includes(selection.effort ?? '') && !(selection.effort === '기본' && selection.model?.startsWith('claude-haiku-'))) {
       errors.push(`effort 상한을 검사하려면 명시한 effort 가 필요하다: ${selection.effort}`)

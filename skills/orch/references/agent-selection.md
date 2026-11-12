@@ -40,6 +40,7 @@ Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 `visual` 의 「`low` 에서 시작」 은 상한이 아니므로 effort 상한 검사를 하지 않는다.
 
 - `launch-worker` 는 이 표의 행에 있는 모델과 모델별 effort 상한을 검사한다. 후보 밖 모델이나 상한을 넘는 effort 가 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 실제로 모델이나 effort 가 후보 밖이고 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다. effort 를 넘겼으면 `effort` 와 `effortLimit` 도 남긴다.
+- 같은 지시서와 실행 설정으로 이미 띄운 작업을 이어 가면 effort 상한 검사를 생략한다. 재시도에서 설정이나 지시서를 바꾸면 다시 검사한다. 후속 지시서로 새 Task 를 보내는 경우도 검사한다.
 - `review` 행은 모델 후보와 effort 상한을 검사하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 선택 줄에 `Terra 실험 N/5`(N 은 1~5)가 있고 그 행의 후보에 Sonnet 이 있을 때만 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - `impl-explore` 의 Fable 은 큰 구조 정리에만 고른다. 후보 검사는 모델 이름만 보므로 조건은 고르는 쪽이 지킨다. 아래 「큰 구조 정리의 Fable」 이 조건을 정한다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.

@@ -239,3 +239,10 @@ test('visual 의 시작 effort 는 상한이 아니므로 medium 과 high 도 �
     assert.equal(candidateOverrideOf(`${text} 후보 밖: 이전 선택에서 복사.`), null)
   }
 })
+
+
+test('검증된 이어하기만 상한 검사를 생략하고 재시도 표지만으로는 생략하지 않는다', () => {
+  const text = sol.replace('`low`', '`medium`')
+  assert.deepEqual(selectionVerdict(text, repo, { launch: true, continuation: true }), [])
+  assert.match(selectionVerdict(text, repo, { launch: true, retry: true }).join(), /effort 상한: low/)
+})

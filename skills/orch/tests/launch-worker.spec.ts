@@ -634,6 +634,30 @@ describe('선택 정책과 영구 이력', () => {
     })
   }
 
+  for (const mode of ['task-retry', 'resume-terminal', 'terminal'] as const) {
+    test(`이전 effort 그대로 ${mode} 하면 새 상한으로 기존 작업을 막지 않는다`, () => {
+      select()
+      writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-explore.', '행: impl-planned.'))
+      recordHistory(mode === 'terminal' ? worktree : tmp, prior({ spec }))
+      state({ next_ids: ['ctx_1'], terminals: mode === 'task-retry' ? [] : [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+      const args = mode === 'terminal' ? ['--worktree', worktree, '--', '--terminal', 'term_old']
+        : mode === 'resume-terminal' ? ['--repo', tmp, '--task', 'task_1', '--', '--terminal', 'term_old']
+        : ['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium']
+      const r = launch(args, 'bash', false)
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /LAUNCHED ctx_1/)
+    })
+  }
+
+  test('재시도에서 effort 를 바꾸면 행별 상한을 다시 검사한다', () => {
+    select('codex', 'gpt-6.1-sol', 'high')
+    recordHistory(tmp, prior({ spec }))
+    const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'high'], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /effort 상한: medium/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
   test('옛 지시서라도 모델을 바꿔 재시도하면 행이 필요하다', () => {
     select('claude', 'claude-sonnet-5-5', 'medium')
     writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-explore.', ''))
