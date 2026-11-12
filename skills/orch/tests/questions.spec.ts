@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
+import { after, afterEach, before, beforeEach, describe, mock, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ageSeconds, dismissQuestion, poll, readDismissed, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
 
@@ -39,6 +39,7 @@ else if (sub === 'check' && argv.includes('--all')) {
   }
   reply(st.all === undefined ? { messages: [] } : st.all)
 } else if (sub === 'check') reply(st.peek === undefined ? { messages: [] } : st.peek)
+else if (sub === 'task-list') { if (st.taskFail) { process.stderr.write('tasks offline'); process.exit(1) }; reply({ tasks: st.tasks || [] }) }
 else if (sub === 'inbox') reply({ messages: (st.inbox || {})[argv[argv.indexOf('--terminal') + 1]] || [] })
 `
 
@@ -132,6 +133,83 @@ test('끝난 dispatch 의 질문은 발신 터미널과 dispatch 메일함을 �
   assert.deepEqual(calls().filter((args) => args[0] === 'inbox').map((args) => args[args.indexOf('--terminal') + 1]), ['term_live', 'dispatch:live'])
 })
 
+test('관측 뒤 재조회한 failed dispatch·completed Task·닫힌 질문은 조회하지 않는다', () => {
+  // 2026-11-12 재조회에서 읽은 상태만 보존한다. 식별자는 바꿨고, 반복 알림 당시 상태를 재현한 것은 아니다.
+  const qs = ['a', 'b'].map(id => message(`observed-${id}`, 'escalation', { dispatch_id: id, task_id: `task-${id}`, from_handle: `term_${id}` }))
+  const rows = ['a', 'b'].map(id => ({ dispatchId: id, taskId: `task-${id}`, dispatchStatus: 'failed', workerState: 'abandoned', terminalState: 'retained', resource: { ownershipState: 'owned', releaseState: 'not_requested' } }))
+  fake({ all: { messages: qs }, tasks: ['a', 'b'].map(id => ({ id: `task-${id}`, status: 'completed' })) })
+  for (const q of qs) dismissQuestion(String(q.id), 'dispatch_inactive')
+  assert.deepEqual(snapshot('r', { rows: { ok: true, rows } }).pending, [])
+  assert.ok(!calls().some(args => args[0] === 'inbox' || args[0] === 'task-list'))
+})
+
+test('해제된 dispatch 와 끝난 Task 는 답변 메일함을 읽기 전에 뺀다', () => {
+  const cases = [
+    { dispatchStatus: 'released' },
+    { dispatchStatus: 'dispatch_inactive' },
+    { resource: { ownershipState: 'released' } },
+    { resource: { releaseState: 'released' } },
+    { terminalState: 'released' },
+  ]
+  for (const extra of cases) {
+    fake({ all: { messages: [message()] } })
+    assert.deepEqual(snapshot('r', { rows: { ok: true, rows: [{ dispatchId: 'd', dispatchStatus: 'running', ...extra }] } }).pending, [])
+  }
+  for (const status of ['completed', 'failed', 'cancelled', 'canceled']) {
+    fake({ all: { messages: [message('q', 'escalation', { task_id: 't' })] }, tasks: [{ id: 't', status }] })
+    assert.deepEqual(snapshot('r', { rows: { ok: true, rows: [{ dispatchId: 'd', dispatchStatus: 'running' }] } }).pending, [])
+  }
+  assert.equal(calls().filter((args) => args[0] === 'inbox').length, 0)
+})
+
+test('Task 조회 실패나 잘못된 형식은 한 줄 알리고 열린 질문을 남긴다', () => {
+  const q = message('q', 'question', { task_id: 't' })
+  for (const extra of [{ tasks: 'invalid' }, { taskFail: true }]) {
+    fake({ all: { messages: [q] }, ...extra })
+    const lookup = { tasks: new Map<string, ReadonlyMap<string, string> | null>() }
+    const before = calls().filter(args => args[0] === 'task-list').length
+    const warning = mock.method(process.stderr, 'write', () => true)
+    try {
+      assert.deepEqual(snapshot('r', lookup).pending, [q])
+      assert.deepEqual(snapshot('r', lookup).pending, [q])
+      assert.equal(calls().filter(args => args[0] === 'task-list').length - before, 1)
+      assert.equal(warning.mock.calls.length, 1)
+      assert.match(String(warning.mock.calls[0].arguments[0]), /^Task 종료 상태를 확인하지 못해 질문을 남긴다: [^\n]+\n$/)
+    } finally { warning.mock.restore() }
+  }
+})
+
+test('Task 조회는 짧은 응답을 요청하고 id/status 로만 종료를 확인한다', () => {
+  const q = message('q', 'question', { task_id: 't' })
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed', spec: '긴 지시서', result: '긴 결과' }] })
+  assert.deepEqual(snapshot('r').pending, [])
+  assert.deepEqual(calls().filter(args => args[0] === 'task-list'), [['task-list', '--run', 'r', '--brief']])
+})
+
+test('같은 틱의 Task 결과는 Run 별로 재사용하고 다음 틱에 다시 읽는다', () => {
+  const lookup = { tasks: new Map<string, ReadonlyMap<string, string> | null>() }
+  const q = message('q', 'question', { task_id: 't' })
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'running', spec: '보관하지 않는 본문' }] })
+  assert.deepEqual(snapshot('r', lookup).pending, [q])
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed' }] })
+  assert.deepEqual(snapshot('r', lookup).pending, [q])
+  assert.deepEqual([...lookup.tasks.get('r')!], [['t', 'running']])
+  const other = { ...q, run_id: 'other', to_handle: 'run:other' }
+  fake({ all: { messages: [other] }, tasks: [{ id: 't', status: 'completed' }] })
+  assert.deepEqual(snapshot('other', lookup).pending, [])
+  fake({ all: { messages: [q] }, tasks: [{ id: 't', status: 'completed' }] })
+  assert.deepEqual(snapshot('r', { tasks: new Map() }).pending, [])
+  assert.deepEqual(calls().filter(args => args[0] === 'task-list').map(args => args[2]), ['r', 'other', 'r'])
+})
+
+test('열린 Task 와 상태를 모르는 dispatch 의 질문은 남긴다', () => {
+  const q = message('q', 'question', { task_id: 't' })
+  for (const tasks of [[], [{ id: 't', status: 'running' }], [{ id: 'other', status: 'completed' }]]) {
+    fake({ all: { messages: [q] }, tasks })
+    assert.deepEqual(snapshot('r', { rows: { ok: false, error: 'offline' } }).pending, [q])
+  }
+})
+
 test('worker_done 이 오면 아직 running 인 행의 질문도 조회하지 않고 다른 Run 의 보고는 무시한다', () => {
   const question = message('q', 'question', { dispatch_id: 'd', from_handle: 'term_d' })
   fake({ all: { messages: [question] } })
@@ -186,12 +264,13 @@ describe('snapshot', () => {
   })
 
   test('닫은 질문(send-to-worker 가 답할 수 없다고 적은 것)은 미답변에서 뺀다', () => {
-    const old = message('q_old')
+    const old = message('q_old', 'question', { from_handle: 'dispatch:closed' })
     const open = message('q_open')
     fake({ all: { messages: [old, open] }, peek: { messages: [] } })
     dismissQuestion('q_old', 'dispatch_inactive')
     assert.deepEqual(snapshot('r').pending.map((m) => m.id), ['q_open'])
     assert.deepEqual(readDismissed(), { q_old: 'dispatch_inactive' })
+    assert.ok(!calls().some((args) => args.includes('dispatch:closed')))
   })
 
   test('턴만 끝낸 멈춤 보고는 질문이 아니고, 오류로 멈춘 보고는 질문으로 남는다', () => {

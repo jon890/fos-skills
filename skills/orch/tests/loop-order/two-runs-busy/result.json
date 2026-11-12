@@ -66,6 +66,15 @@
       ],
       [
         "orchestration",
+        "task-list",
+        "--run",
+        "r1",
+        "--brief",
+        "--json",
+        "--full"
+      ],
+      [
+        "orchestration",
         "inbox",
         "--terminal",
         "term_r1",

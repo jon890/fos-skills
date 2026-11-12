@@ -19,6 +19,7 @@ CI 실패, 충돌, 멈춤과 조회 실패는 기존 중복 억제 규칙을 따
 DONE-SUSPECT 는 준비 근거 없는 완료 보고, WORKER-LOST 는 끊긴 worker 를 뜻한다. 완료·끊김 이벤트와 보드 PR 연결도 루프가 맡는다. 첫 루프 틱은 지난 완료 보고를 알리지 않는다. 리뷰 worker 는 PR 을 열지 않아, 리뷰 지시서로 띄웠거나(정리가 띄우기 기록을 지운 뒤에는 영구 이력으로 본다) 첫 status 가 `판정:` 줄이면 정상 완료로 본다.
 DONE-SUSPECT 는 `state/done-seen/<Run>.json` 의 `suspects`(dispatch 목록), WORKER-LOST 는 `state/wait-important-lost.json` 의 `<Run>.<dispatch>` 가 보낸 기록이다. 루프를 다시 띄워도 이 파일이 남아 같은 dispatch 의 알림을 한 번만 보낸다.
 UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음은 다시 보내지 않고 질문이 추가되거나 해결되면 다시 확인한다.
+끝나거나 해제된 dispatch, 끝난 Task, `dispatch_inactive` 로 닫은 질문은 제외한다. Task 상태를 읽지 못하면 경고 한 줄을 남기고 질문을 유지한다.
 
 ### 바로 보내는 알림과 모아 보내는 알림
 

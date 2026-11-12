@@ -4,7 +4,8 @@
 //
 // 이 Run 의 질문(question, escalation)을 읽고, 그다음 질문을 보낸 쪽마다 받은 답을 읽는다. 전역 inbox 는 읽지 않는다.
 // 전역 기록은 수십 MB 까지 커져 조회가 느려지고 출력 한도에 닿는다.
-// 루프가 이번 틱의 worker 행과 worker_done 을 주면 끝난 dispatch 의 질문은 답변 메일함을 읽기 전에 뺀다.
+// 루프가 이번 틱의 worker 행과 worker_done 을 주면 끝나거나 해제된 dispatch 의 질문은 답변 메일함을 읽기 전에 뺀다.
+// Task 가 있는 후보가 남으면 task-list --run 으로 종료 상태를 확인해 끝난 Task 의 질문도 뺀다. 조회 실패는 stderr 에 알리고 질문을 남긴다.
 // PR 이 열려 있어도 끝난 dispatch 에는 답을 전달할 수 없다. 후속 dispatch 의 질문은 별도 id 로 계속 확인한다.
 //
 // 조회 범위: Orca 는 check 의 기록과 --peek 을 100건까지 낸다. 그 한도에 닿으면 stderr 에 조회 범위를 알린다.
@@ -24,6 +25,7 @@
 //
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
+import { objectOr } from '../core/json.ts'
 import { KINDS, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
 import type { Message, Notice } from '../core/questions.ts'
 import { createHash } from 'node:crypto'
@@ -62,8 +64,28 @@ function messages(data: Record<string, unknown>): Message[] {
   return rows as Message[]
 }
 
+// cache 는 호출자가 틱마다 새로 만들고 Run 별 성공·실패 결과를 함께 보관한다. 넘기지 않으면 매 호출이 새로 읽는다.
+// task-list 는 필드 선택 옵션이 없어 --brief 로 spec 과 result 를 줄이고 id/status 만 보관한다.
+export type TaskStates = ReadonlyMap<string, string>
+function readTaskStates(run: string, cache?: Map<string, TaskStates | null>): TaskStates | null {
+  if (cache?.has(run)) return cache.get(run) ?? null
+  try {
+    const tasks = orca(['task-list', '--run', run, '--brief']).tasks
+    if (!Array.isArray(tasks) || tasks.some(task => typeof task !== 'object' || task === null || Array.isArray(task) || typeof task.id !== 'string' || typeof task.status !== 'string')) {
+      throw new Error('Task 종료 상태를 읽지 못했다')
+    }
+    const states: TaskStates = new Map(tasks.map(task => [task.id, task.status]))
+    cache?.set(run, states)
+    return states
+  } catch (e) {
+    cache?.set(run, null)
+    process.stderr.write(`Task 종료 상태를 확인하지 못해 질문을 남긴다: ${String((e as Error)?.message ?? e).replace(/\s+/g, ' ')}\n`)
+    return null
+  }
+}
+
 // run 이 없으면 run-current 의 Run 이다. { run, pending } 을 낸다.
-export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[] }
+export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[]; tasks?: Map<string, TaskStates | null> }
 
 export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { run: string; pending: Message[] } {
   if (!run) {
@@ -78,16 +100,27 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   }
   // 같은 id 는 뒤의 것(읽지 않은 질문)으로 덮되 처음 나온 자리를 지킨다
   const candidates = new Map<unknown, Message>()
+  const dismissed = readDismissed()
   const ended = new Set((lookup.rows?.ok ? lookup.rows.rows : [])
-    .filter((row) => SETTLED.has(String(row.dispatchStatus)))
+    .filter((row) => SETTLED.has(String(row.dispatchStatus)) || row.dispatchStatus === 'released' || row.dispatchStatus === 'dispatch_inactive' ||
+      row.terminalState === 'released' || objectOr(row.resource).ownershipState === 'released' || objectOr(row.resource).releaseState === 'released')
     .map((row) => String(row.dispatchId)))
   for (const message of lookup.done ?? []) {
     if (message.type === 'worker_done' && (message.run_id ?? message.runId) === run && dispatchOf(message)) ended.add(String(dispatchOf(message)))
   }
   for (const m of [...history, ...unread]) {
     // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
-    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m) &&
+    if (m.id && !Object.hasOwn(dismissed, String(m.id)) && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m) &&
       !ended.has(String(dispatchOf(m))) && !sharedClosedReason(run, String(m.id), true)) candidates.set(m.id, m)
+  }
+  // Task 종료가 dispatch 상태보다 먼저 반영될 수 있다. 남은 질문에 Task 가 있을 때만 Run 의 목록을 한 번 읽는다.
+  if ([...candidates.values()].some((m) => context(m)[0])) {
+    const tasks = readTaskStates(run, lookup.tasks)
+    const endedTasks = new Set([...(tasks ?? [])].filter(([, status]) => SETTLED.has(status)).map(([id]) => id))
+    for (const [id, message] of candidates) {
+      const task = context(message)[0]
+      if (task && endedTasks.has(String(task))) candidates.delete(id)
+    }
   }
   // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다
   const handlesOf = (m: Message): string[] => {
@@ -104,7 +137,7 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
     replies.push(...rows.filter((m) => threads.has(threadOf(m))))
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
-  const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
+  const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run), dismissed)
     .filter((m) => !sharedClosedReason(run, String(m.id), true))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {

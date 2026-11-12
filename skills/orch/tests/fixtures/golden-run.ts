@@ -32,6 +32,7 @@ function cases(): Record<string, Input> {
         orca: name === 'offline' ? [{ code: 1, stderr: 'offline\n' }] : [
           { args: ['worker-list'], stdout: envelope({ workers: name === 'unanswered-stopped' ? [worker] : [], page: {}, scope: { source: 'all' } }) },
           { args: ['check', 'question,escalation'], stdout: envelope({ messages: name === 'unanswered-stopped' ? [question] : [] }) },
+          { args: ['task-list'], stdout: envelope({ tasks: [] }) },
           { args: ['check', '--all'], stdout: envelope({ messages: [] }) },
           { args: ['check'], stdout: envelope({ messages: name === 'unanswered-stopped' ? [question] : [] }) },
           { args: ['terminal', 'read'], stdout: envelope({ lines: [] }) },

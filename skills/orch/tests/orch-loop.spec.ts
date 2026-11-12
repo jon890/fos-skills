@@ -51,9 +51,10 @@ if (sub === 'run-current') {
 if (sub === 'check' && st.question_fail && !argv.includes('--all')) { process.stderr.write('questions offline\\n'); process.exit(1) }
 if (sub === 'check' && argv.includes('--all') && argv.includes('status')) reply({ messages: st.statuses || [] })
 else if (sub === 'check' && argv.includes('--all')) reply({ messages: byRun || st.messages || [] })
+else if (sub === 'task-list') reply({ tasks: st.tasks || [] })
 else if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
 else if (sub === 'check') reply({ messages: [] })
-else if (sub === 'inbox') reply({ messages: [] })
+else if (sub === 'inbox') reply({ messages: (st.inbox || {})[argv[argv.indexOf('--terminal') + 1]] || [] })
 else reply({})
 `
 
@@ -672,6 +673,29 @@ describe('마무리 빠짐과 대기 확인', () => {
     assert.equal(missing.length, 1, JSON.stringify(events()))
     assert.equal(missing[0].pr, 7)
     assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 \S+ queue finish 7 --repo .* --run r$/)
+  })
+
+  test('끝난 dispatch·해제된 worker·완료 Task 는 UNANSWERED 에 없고 열린 질문만 남는다', () => {
+    const qs = ['settled', 'released', 'task-ended', 'live'].map(id => ({ ...question(id), dispatch_id: id, from_handle: `dispatch:${id}`, task_id: `task-${id}` }))
+    orca({ messages: qs, workers: [
+      { dispatchId: 'settled', dispatchStatus: 'failed' },
+      { dispatchId: 'released', dispatchStatus: 'running', resource: { ownershipState: 'released' } },
+      { dispatchId: 'task-ended', dispatchStatus: 'running' },
+      { dispatchId: 'live', dispatchStatus: 'running' },
+    ], tasks: [{ id: 'task-task-ended', status: 'completed' }] })
+    once(); once()
+    const notices = events().filter(e => e.kind === 'UNANSWERED')
+    assert.equal(notices.length, 1)
+    assert.equal(notices[0].text, 'live')
+    const inboxes = (jsonl(join(tmp, 'orca-calls.jsonl')) as unknown as string[][]).filter(args => args[1] === 'inbox').map(args => args[args.indexOf('--terminal') + 1])
+    assert.ok(!inboxes.some(handle => ['dispatch:settled', 'dispatch:released', 'dispatch:task-ended'].includes(handle)))
+  })
+
+  test('현재 동작 고정: --reply-to 의 스레드 답변은 미답변 알림에서 빠진다', () => {
+    const q = question()
+    orca({ messages: [q], inbox: { 'dispatch:d': [{ id: 'reply', run_id: 'r', type: 'status', from_handle: 'term_coord', to_handle: 'dispatch:d', thread_id: 'q' }] } })
+    once()
+    assert.deepEqual(events().filter(e => e.kind === 'UNANSWERED'), [])
   })
 
   test('오래 남은 질문 묶음은 한 번만 알리고 묶음이 바뀌면 다시 알린다', () => {
