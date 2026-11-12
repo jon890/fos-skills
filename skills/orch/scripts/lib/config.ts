@@ -14,6 +14,7 @@
 //     adr 절은 ADR_KEYS, contracts 절은 CONTRACTS_KEYS, board 절은 BOARD_KEYS, review 절은 REVIEW_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
 //     자기가 읽는 키만 넘기면 다른 명령의 키(pipeline.enabled 같은 것)를 둔 저장소에서 사용법 오류로 멈춘다
 // 명령은 ConfigError 를 사용법 오류(종료 코드 2)로 바꾼다.
+// readConfigFile 은 검사 없이 읽는다(파일 없음, 깨진 JSON 과 값을 구분해 돌려준다). orch doctor 가 쓴다.
 //
 // REMOVED_CONFIG_KEYS 는 orch 5.2.0 에서 지운 키다. 실행 전에 거부하고 핸들러로 옮기는 명령을 알린다.
 
@@ -53,6 +54,18 @@ export function loadConfig(repo: string, opts: { file?: string } = {}): Config {
     throw new RemovedConfigError(`orch 5.2.0 에서 삭제한 설정: ${names}. ${orchWord()} doctor migrate-hooks --repo ${shQuote(repo)} --apply 로 핸들러에 옮긴다`)
   }
   return parsed as Config
+}
+
+// 검사 없이 읽는다. 파일이 없으면 exists false, JSON 이 깨졌거나 읽지 못했으면 error 에 이유, 아니면 value 다.
+// loadConfig 는 검사하며 읽어 던지지만, 설정 문제를 모두 알리는 곳(orch doctor)은 검사표(core/config-schema.ts)로 따로 본다.
+export function readConfigFile(repo: string): { file: string; exists: boolean; value?: unknown; error?: string } {
+  const file = pathOf('config', repo)
+  if (!isFile(file)) return { file, exists: false }
+  try {
+    return { file, exists: true, value: JSON.parse(readFileSync(file, 'utf8')) }
+  } catch (e) {
+    return { file, exists: true, error: (e as Error).message }
+  }
 }
 
 export { ConfigError, RemovedConfigError, CLEANUP_KEYS, DOCKER_KEYS, HOOK_EVENT_NAMES, HOOKS_KEYS, QUEUE_LOOP_KEYS, QUEUE_KEYS, PIPELINE_KEYS, HEAVY_KEYS, MIGRATIONS_KEYS, ADR_KEYS, CONTRACTS_KEYS, BOARD_KEYS, REVIEW_KEYS, ROUTING_KEYS, INBOX_KEYS, LEGACY_INBOX_FILTER, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'

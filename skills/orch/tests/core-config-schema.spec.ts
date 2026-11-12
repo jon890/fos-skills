@@ -1,6 +1,9 @@
 // 설정 키 검사표(core/config-schema.ts)의 키 목록, 키별 값 판정, 짝 규칙, 구조 문제, 경로 판정을 본다.
 // 읽는 쪽과 어긋나지 않는지는 config-schema-readers.spec.ts 가 본다.
 import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, test } from 'node:test'
 import { ADR_KEYS, BOARD_KEYS, CLEANUP_KEYS, CONTRACTS_KEYS, DOCKER_KEYS, HEAVY_KEYS, HOOKS_KEYS, INBOX_KEYS, MIGRATIONS_KEYS, PIPELINE_KEYS, QUEUE_KEYS, REVIEW_KEYS, ROUTING_KEYS, SECTIONS } from '../scripts/core/config.ts'
 import type { Section } from '../scripts/core/config.ts'
@@ -185,4 +188,20 @@ describe('knownPath', () => {
 
 test('루프를 다시 띄워야 반영되는 키', () => {
   assert.deepEqual([...RESTART_KEYS], ['pipeline.tick_sec', 'finish.run', 'finish.specs_dir'])
+})
+
+test('config-schema.ts 를 가져오는 파일은 doctor 와 config 명령뿐이다(정적 import 와 동적 import 모두)', () => {
+  const scripts = join(dirname(fileURLToPath(import.meta.url)), '../scripts')
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? walk(join(dir, entry.name)) : /\.ts$/.test(entry.name) ? [join(dir, entry.name)] : []))
+  // from '…', import('…'), new URL('…', import.meta.url) 의 경로 문자열에 config-schema 가 든 파일
+  const pattern = /(?:\bfrom\s*|\bimport\s*\(\s*|\bnew\s+URL\s*\(\s*)(['"`])[^'"`\n]*config-schema(?:\.ts)?\1/
+  const importers = walk(scripts)
+    .filter((file) => pattern.test(readFileSync(file, 'utf8')))
+    .map((file) => relative(scripts, file).split(sep).join('/'))
+    .sort()
+  // config/orch-config.ts 는 다음 PR 이 만든다
+  assert.deepEqual(
+    importers.filter((file) => file !== 'config/orch-config.ts'),
+    ['doctor/orch-doctor.ts'],
+  )
 })

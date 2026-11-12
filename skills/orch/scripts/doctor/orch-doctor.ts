@@ -44,11 +44,12 @@
 //
 // 저장소 판정(--repo):
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
-//     <orch 루트>/config.json 에 5.2.0 에서 지운 옛 칸이 있으면 INVALID-CONFIG 와 종료 코드 1 이다.
-//     queue.auto_review.require 에 모르는 조건 이름이 있어도 INVALID-CONFIG 와 종료 코드 1 이다(lib/auto-merge.ts 의 unknownConditionsText).
-//     상주 루프는 이 설정으로 멈추지 않고 PR 만 걸지 않아, 여기서 알리지 않으면 자동 머지가 조용히 서 있다.
-//     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
-//     UNKNOWN-HOOK 과 깨진 JSON 경고는 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
+//     <orch 루트>/config.json 의 문제는 모두 INVALID-CONFIG <경로> <이유> 와 종료 코드 1 이다. 문제는 설정 검사표(core/config-schema.ts)의 problems 가 모은다.
+//     JSON 이 깨졌으면 경로가 config.json 이다. 종류는 모르는 절·키·이름, 틀린 값, 짝 규칙 위반, 5.2.0 에서 지운 옛 칸이다.
+//     모르는 리뷰 조건 이름(queue.auto_review.require)도 여기 든다. 상주 루프는 이 설정으로 멈추지 않고 PR 만 걸지 않아, 여기서 알리지 않으면 자동 머지가 조용히 서 있다.
+//     검사표는 zod 에 기대므로 불러오지 못하면(의존 설치 실패) CLI-DEPS-MISSING <이유> 한 줄을 내고 설정 검사만 건너뛴다. 종료 코드는 바꾸지 않는다.
+//     ORCH_CONFIG_SCHEMA 는 테스트 전용이다. 검사표 모듈 대신 그 경로의 파일을 불러와 불러오기 실패를 흉내 낸다.
+//     UNKNOWN-HOOK 은 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
 // 개선 후보 판정(늘 본다):
 //     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 새 양식의 후보·보류와 아직 옮기지 않은 옛 메모 파일을 센다.
@@ -134,7 +135,8 @@
 //     MISSING <문서>:<줄> <경로>                 문서가 부르는 스크립트가 없다
 //     OK-SCRIPTS <개수>                          문서가 부르는 스크립트가 모두 있다
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
-//     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸, 모르는 리뷰 조건 이름, 모르는 inbox 절 키
+//     INVALID-CONFIG <경로> <이유>                설정 파일의 문제 하나. 깨진 JSON(경로 config.json), 모르는 절·키, 틀린 값, 짝 규칙 위반, 삭제한 옛 설정 칸(이유에 고칠 명령이 든다)
+//     CLI-DEPS-MISSING <이유>                    설정 검사표가 쓰는 의존(zod)을 불러오지 못했다. 설정 검사만 건너뛴다. 플러그인을 다시 설치하거나 플러그인 폴더에서 npm ci 를 돈다. 종료 코드에는 영향이 없다
 //     OLD-INBOX-FILTER <옛 파일> ...              옛 알림 필터(<orch 루트>/config/notification.json)가 있다. config.json 의 inbox 절로 옮기는 법을 알린다. 종료 코드에는 영향이 없다
 //     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
@@ -159,7 +161,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -170,12 +172,12 @@ import { bundleRoot, installLayout, staleBundle, staleLoopBundles } from '../lib
 import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { autoMergeConfig, unknownConditionsText } from '../lib/auto-merge.ts'
+import { isObject } from '../core/json.ts'
 import { COMMANDS, isGroup, LAUNCHER_MARK, legacyNames, orchWord, resolveLegacy, resolveNew, scriptIn, SCRIPTS_DIR } from '../lib/commands.ts'
-import { ConfigError, INBOX_KEYS, LEGACY_INBOX_FILTER, RemovedConfigError, loadConfig, section } from '../lib/config.ts'
+import { LEGACY_INBOX_FILTER, readConfigFile } from '../lib/config.ts'
 import type { Config } from '../lib/config.ts'
 import { fire, unknownHandlers } from '../lib/events.ts'
 import { isFile, real, realPath } from '../lib/fs.ts'
@@ -408,30 +410,36 @@ function checkInstallPaths(configDir: string): string[] {
   return lines
 }
 
-function checkRepo(repo: string): string[] {
+// 설정 검사표(core/config-schema.ts)를 불러온다. zod 를 쓰는 유일한 모듈이라 의존 설치가 실패한 머신에서는 못 불러온다.
+// 그때도 나머지 doctor 검사는 돌아야 하므로 정적으로 import 하지 않고 이유를 돌려준다.
+// ORCH_CONFIG_SCHEMA 는 테스트 전용이다. 검사표 모듈 대신 그 경로의 파일을 불러와 불러오기 실패를 흉내 낸다.
+type Schema = typeof import('../core/config-schema.ts')
+
+async function loadSchema(): Promise<{ schema: Schema | null; problem: string | null }> {
+  const target = process.env.ORCH_CONFIG_SCHEMA ? pathToFileURL(resolve(process.env.ORCH_CONFIG_SCHEMA)).href : new URL('../core/config-schema.ts', import.meta.url).href
+  try {
+    return { schema: (await import(target)) as Schema, problem: null }
+  } catch (e) {
+    const why = String((e as Error)?.message ?? e).split('\n')[0]
+    return { schema: null, problem: `의존을 읽지 못했다(${why}). 플러그인을 다시 설치하거나 플러그인 폴더에서 npm ci 를 돈다` }
+  }
+}
+
+function checkRepo(repo: string, schema: Schema | null): string[] {
   const lines = unknownHandlers(repo).map((file) => `UNKNOWN-HOOK ${file}`)
-  let config: Config
-  try {
-    config = loadConfig(repo)
-  } catch (e) {
-    if (!(e instanceof ConfigError)) throw e
-    if (e instanceof RemovedConfigError) lines.push(`INVALID-CONFIG ${e.message}`)
-    else process.stderr.write(`orch-doctor: 설정 파일의 옛 칸을 보지 못했다: ${e.message}\n`)
-    return lines
+  const read = readConfigFile(repo)
+  if (schema) {
+    // 깨진 JSON, 모르는 절과 키, 틀린 값, 짝 규칙 위반, 옛 칸이 모두 INVALID-CONFIG 다(종료 코드 1). 검사표를 못 불러왔으면 건너뛴다
+    if (read.error !== undefined) lines.push(`INVALID-CONFIG config.json ${read.error}`)
+    else if (read.exists) {
+      const migrate = `${orchWord()} doctor migrate-hooks --repo ${shQuote(repo)} --apply`
+      for (const problem of schema.problems(read.value)) {
+        const reason = problem.kind === 'removed' ? problem.reason.replace('orch doctor migrate-hooks --apply', migrate) : problem.reason
+        lines.push(`INVALID-CONFIG ${problem.path} ${reason.replace(/\s*\n\s*/g, ' ')}`)
+      }
+    }
   }
-  // 모르는 리뷰 조건은 루프가 멈추지 않고 PR 만 걸지 않으므로 여기서 알린다. 다른 자동 머지 설정 오류는 루프가 종료 코드 2 로 알린다
-  try {
-    const review = autoMergeConfig(config).review
-    if (review && review.unknown.length > 0) lines.push(`INVALID-CONFIG ${unknownConditionsText(review.unknown)}`)
-  } catch (e) {
-    if (!(e instanceof ConfigError)) throw e
-  }
-  try {
-    section(config, 'inbox', INBOX_KEYS)
-  } catch (e) {
-    if (!(e instanceof ConfigError)) throw e
-    lines.push(`INVALID-CONFIG ${e.message}`)
-  }
+  const config = (isObject(read.value) ? read.value : {}) as Config
   lines.push(...legacyInboxFilter(repo, config))
   return lines
 }
@@ -754,7 +762,8 @@ async function executeMain(argv: string[]): Promise<number> {
   const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string, configDir)
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
-  const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
+  const { schema, problem: schemaProblem } = await loadSchema()
+  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
   const hookDir = join(pathOf('hooks', repo))
   if (existsSync(hookDir)) {
     for (const name of readdirSync(hookDir)) {
