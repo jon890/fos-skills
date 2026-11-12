@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tempDir } from '../../../modules/testkit/temp.ts'
@@ -84,10 +85,10 @@ test('24시간 뒤에는 Run 등록 여부와 무관하게 정리하고 명시 �
   recordWorkerLimited(100, { run: 'B', provider: 'claude' })
   recordWorkerLimited(100, { run: 'A', provider: 'codex' })
   const command = new URL('../scripts/worker/limit-clear.ts', import.meta.url)
-  const cleared = spawnSync(process.execPath, [command.pathname, 'claude', '--run', 'A'], { env: process.env, encoding: 'utf8' })
+  const cleared = spawnSync(process.execPath, [fileURLToPath(command), 'claude', '--run', 'A'], { env: process.env, encoding: 'utf8' })
   assert.equal(cleared.status, 0, cleared.stderr)
   assert.match(cleared.stdout, /LIMIT-CLEARED claude/)
-  assert.equal(spawnSync(process.execPath, [command.pathname], { env: process.env }).status, 2)
+  assert.equal(spawnSync(process.execPath, [fileURLToPath(command)], { env: process.env }).status, 2)
   clearLimitCheck('A', 'claude')
   const sent: string[] = []
   notifyLimitChecks(['A'], 100 + LIMIT_CHECK_MS, check => sent.push(check.provider))
