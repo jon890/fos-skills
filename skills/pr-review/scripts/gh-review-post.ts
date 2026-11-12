@@ -108,6 +108,18 @@ function parseLine(value: string): number {
   }
 }
 
+type InlineSpec = { path: string; line: number; file: string }
+
+function parseInline(spec: string): InlineSpec {
+  const at = spec.lastIndexOf(':')
+  const file = spec.slice(at + 1)
+  const rest = at < 0 ? spec : spec.slice(0, at)
+  const split = rest.lastIndexOf(':')
+  const line = rest.slice(split + 1)
+  if (!/^[0-9]+$/.test(line)) die(`줄 번호를 읽지 못했습니다: ${spec}`)
+  return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(line), file }
+}
+
 // patch 의 새 파일 쪽 범위에는 추가한 줄과 앞뒤 문맥 줄이 포함된다.
 function validateInlineLocations(host: string, repo: string, pr: string, locations: { path: string; line: number }[]): void {
   const pages: { filename: string; patch?: string }[][] = JSON.parse(
@@ -187,13 +199,11 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
   // 본문 검증 — 옛 payload 가 등록되는 사고를 막는 마지막 관문
   const read = (path: string) => readFileSync(path, 'utf8')
   let body = read(bodyFile)
+  let parsedInlines: InlineSpec[] = []
   if (mode === 'batch') {
     if (inlines.length < 1) die("묶음 모드는 '--' 뒤에 <파일경로>:<줄번호>:<본문.md> 를 하나 이상 받습니다.")
-    for (const spec of inlines) {
-      const inlineFile = spec.slice(spec.lastIndexOf(':') + 1)
-      const rest = spec.includes(':') ? spec.slice(0, spec.lastIndexOf(':')) : spec
-      const inlineLine = rest.slice(rest.lastIndexOf(':') + 1)
-      if (!/^[0-9]+$/.test(inlineLine)) die(`줄 번호를 읽지 못했습니다: ${spec}`)
+    parsedInlines = inlines.map(parseInline)
+    for (const { file: inlineFile } of parsedInlines) {
       if (!nonEmpty(inlineFile)) die(`본문 파일이 비어 있습니다: ${inlineFile}`)
       const text = read(inlineFile)
       if (!GRADE_RE.test(firstLine(text))) die(`${inlineFile} 의 첫 줄이 색 원과 등급(예: 🟠 **P2 높음**)이 아닙니다.`)
@@ -214,11 +224,7 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
   if (mode === 'review' || mode === 'batch') {
     const locations = mode === 'review'
       ? [{ path: filePath, line: parseLine(line) }]
-      : inlines.map((spec) => {
-          const rest = spec.slice(0, spec.lastIndexOf(':'))
-          const split = rest.lastIndexOf(':')
-          return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(rest.slice(split + 1)) }
-        })
+      : parsedInlines
     validateInlineLocations(host, repo, pr, locations)
   }
 
@@ -258,14 +264,12 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
     const withNotice = (text: string, wrap: (notice: string) => string) => (text.includes(AI_NOTICE) ? text : text + wrap(AI_NOTICE))
     const summaryBody = () => withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n---\n\n${n}`)
     if (mode === 'batch') {
-      const comments = inlines.map((spec) => {
-        const at = spec.lastIndexOf(':')
-        const rest = spec.slice(0, at)
-        const text = withNotice(rstrip(pyReadText(spec.slice(at + 1))), (n) => `\n\n<sub>${n}</sub>`)
-        const split = rest.lastIndexOf(':')
-        // rpartition 처럼 콜론이 없으면 경로는 빈 글자다
-        return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(rest.slice(split + 1)), side: 'RIGHT', body: text }
-      })
+      const comments = parsedInlines.map(({ path, line, file }) => ({
+        path,
+        line,
+        side: 'RIGHT',
+        body: withNotice(rstrip(pyReadText(file)), (n) => `\n\n<sub>${n}</sub>`),
+      }))
       const result = send({ event: 'COMMENT', body: summaryBody(), comments })
       write(1, `등록 완료: 리뷰 ${pyStr(result.id)}\n`)
       verifyInline(host, repo, pr, pyStr(result.id), inlines.length)

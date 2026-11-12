@@ -259,6 +259,18 @@ describe('gh-review-post', () => {
     assert.ok(s.calls().every((call) => call.input === null))
   })
 
+  test('이름이 바뀐 파일은 새 경로로 검사하고 줄 수가 생략된 추가 hunk 를 허용한다', (t) => {
+    const s = setup(t)
+    s.setRules([{ match: ['/files?per_page=100'], stdout: JSON.stringify([[
+      { filename: 'new:name.ts', previous_filename: 'old.ts', patch: '@@ -0,0 +1 @@\n+added' },
+    ]]) }])
+    const body = s.write('body.md', REVIEW)
+    assert.equal(post(s, ['--batch', 'o/r', '5', s.write('summary.md', SUMMARY), '낱말S', '--', `new:name.ts:1:${body}`], { DRY_RUN: '1' }).code, 0)
+    const old = post(s, ['o/r', '5', 'old.ts', '1', body, '낱말A'], { DRY_RUN: '1' })
+    assert.equal(old.code, 1)
+    assert.match(old.stderr, /PR 의 변경 파일에 없습니다: old.ts:1/)
+  })
+
   test('diff 조회에 실패하면 gh 의 종료 코드를 유지하고 등록하지 않는다', (t) => {
     const s = setup(t)
     s.setRules([{ match: ['/files?per_page=100'], code: 4 }])
