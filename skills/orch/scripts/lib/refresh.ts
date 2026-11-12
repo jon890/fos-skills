@@ -19,6 +19,10 @@
 // 큐 뒤로 미루기(aheadInQueue): 도는 머지 큐에 아직 머지되지 않은 앞 PR 이 있고 그 PR 의 변경이 이 PR 과 겹치면 미룬다.
 //   그 PR 이 머지되면 이 PR 은 다시 뒤처져 방금 돌린 CI 가 쓸모없어지기 때문이다. 큐에 든 PR 의 「앞」 은 큐 순서에서 앞선 PR 이고,
 //   큐에 없는 PR 의 「앞」 은 큐의 남은 PR 전부다. always 면 겹침을 따지지 않고 앞 PR 이 하나라도 있으면 미룬다.
+//
+// 기록: <orch 루트>/state/refresh.json 의 { "<PR>": RefreshRecord }. PR 마다 마지막으로 건 것 하나다.
+//   base 는 그때의 base SHA, from 은 그때의 PR HEAD, value 는 결과(update 는 updated 나 failed, worker 는 dispatch id 나 orphan)다.
+//   같은 (PR, base SHA) 에는 다시 걸지 않는다. 파일이 없거나 깨졌으면 빈 기록이다. 쓰기는 옆 파일에 쓰고 rename 한다
 
 import { isRecord } from '../core/refresh.ts'
 import type { ForkFiles, RefreshRecord } from '../core/refresh.ts'

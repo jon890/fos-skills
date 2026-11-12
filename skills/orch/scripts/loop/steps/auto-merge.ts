@@ -30,7 +30,7 @@
 //        미해결 스레드는 queue.auto_review.require 의 조합과 상관없이 늘 본다. 조합에서 빼 실수로 스레드를 놓친 채 걸지 않으려는 것이다.
 //        리뷰 판정은 require 에 모르는 조건 이름이 있으면 gh 를 부르지 않고 `queue.auto_review.require 에 모르는 조건이 있다: …` 로 멈춘다.
 //        아니면 gh pr view --json reviews,comments,files 의 리뷰와 댓글 전체를 lib/auto-merge.ts 의 judgeReview 에 넘기고, 막힌 조건의 이유
-//        (`리뷰 대기`, `리뷰 보류`, `재리뷰 대기: …`)로 멈춘다. 조건의 뜻은 lib/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
+//        (`리뷰 대기`, `리뷰 보류`, `재리뷰 대기: …`)로 멈춘다. 조건의 뜻은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
 //        require 를 적지 않으면 verdict-on-head 하나라, 지금 HEAD 의 본문만 센다(reviewScope, scopedNotes). 그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
 //        HEAD 범위와 체인은 git fetch --quiet origin <브랜치> <base> 뒤 git log --first-parent --max-count=50 --format=%H%x09%P%x09%cI <HEAD> 와
 //        git merge-base --is-ancestor <둘째 부모> origin/<base> 로 정한다. 읽지 못하면 빈 체인이라 HEAD 에 달린 리뷰만 세고 댓글은 세지 않으며,
