@@ -238,6 +238,9 @@ describe('지시서 검사', () => {
     assert.match(line, /status 나 ask 를 보내지 않는다/)
     assert.match(line, /수정 시각/)
     assert.match(line, /폴링은 쓰지 않는다/)
+    // 실측은 Claude worker 에서만 했으므로 Codex worker 는 따로 정한다
+    assert.match(line, /Claude worker 는/)
+    assert.match(line, /Codex worker 는 확인하기 전까지/)
     // 이 줄은 하위 에이전트를 요청하는 review-subagents 줄 뒤에 온다
     assert.ok(template.indexOf('orch-rule: review-subagents') < template.indexOf('orch-rule: wait-subagent'))
   })
