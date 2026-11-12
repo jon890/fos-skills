@@ -1,7 +1,7 @@
 // find_test_requirements 의 명령 경계 테스트. 테스트가 요구하는 문자열만 찾는지, 후보 파일 선택과 단계 구분을 본다.
 
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Repo, type Result } from './helpers.ts'
@@ -109,6 +109,18 @@ describe('단계 구분과 후보 파일', () => {
     assert.ok(done.stdout.includes('tests/t.txt:1'))
   })
 
+  test('PATH 에 git 이 없으면 안내하고 디렉터리 순회로 검색을 계속한다', () => {
+    const r = base()
+    r.file('skills/a/tests/reader.spec.ts', `readFileSync('SKILL.md', 'utf8')`)
+    r.file('build/tests/ignored.txt', '## 일곱 단계')
+    const done = r.run('find_test_requirements', [r.root, '## 일곱 단계', '--document', 'skills/a/SKILL.md'], { env: { ...process.env, PATH: '/nonexistent' } })
+    assert.equal(done.code, 0, done.stderr)
+    assert.equal(done.stderr, '경고: git 실행 파일을 찾을 수 없어 디렉터리를 순회해 테스트를 찾는다.\n')
+    assert.ok(done.stdout.includes('테스트가 요구: tests/check.sh:1'), done.stdout)
+    assert.ok(done.stdout.includes('단언 확인: skills/a/tests/reader.spec.ts'), done.stdout)
+    assert.ok(!done.stdout.includes('build/tests/ignored.txt'), done.stdout)
+  })
+
   test('git 저장소는 무시된 파일을 빼고 새 파일은 읽는다', () => {
     const r = new Repo('hc-ftr-', true)
     r.file('.gitignore', 'build/\n')
@@ -184,5 +196,74 @@ describe('단계 구분과 후보 파일', () => {
     r.file('tests/t.txt', `   확인 ${'가'.repeat(100)}   \n`)
     const done = find(r, '확인')
     assert.ok(done.stdout.includes(`  테스트가 요구: tests/t.txt:1  확인 ${'가'.repeat(80 - 3)}\n`), done.stdout)
+  })
+})
+
+describe('대상 문서를 읽는 테스트 후보', () => {
+  test('browser 와 report 의 구절·상수 단언은 문장 검색이 없어도 테스트를 안내한다', () => {
+    const r = new Repo('hc-ftr-doc-')
+    for (const skill of ['browser', 'report']) {
+      const source = join(import.meta.dirname, '..', '..', skill)
+      r.file(`skills/${skill}/SKILL.md`, readFileSync(join(source, 'SKILL.md'), 'utf8'))
+      r.file(`skills/${skill}/tests/skill-doc.spec.ts`, readFileSync(join(source, 'tests', 'skill-doc.spec.ts'), 'utf8'))
+    }
+    const sentence = '명령 목록과 반환값은 `browser-driver help`, 백엔드 함정은 `browser-driver/README.md` 가 소유한다.'
+    const done = find(r, sentence, '--document', 'skills/browser/SKILL.md', '--document', 'skills/report/SKILL.md')
+    assert.equal(done.code, 0, done.stderr)
+    assert.ok(done.stdout.includes(`"${sentence}"\n  없음`), done.stdout)
+    for (const skill of ['browser', 'report']) {
+      assert.ok(done.stdout.includes(`문서를 읽는 테스트 후보: skills/${skill}/SKILL.md\n  단언 확인: skills/${skill}/tests/skill-doc.spec.ts`), done.stdout)
+    }
+    assert.ok(!done.stdout.includes('테스트가 요구:'), done.stdout)
+    const reportSentence = '청중 앞에서 넘기며 말하는 발표는 `presentation`, 외부에 게시할 글은 `content-preview`, 혼자 읽는 설명과 보고서는 `report` 가 맡는다.'
+    const report = find(r, reportSentence, '--document', 'skills/report/SKILL.md')
+    assert.equal(report.code, 0, report.stderr)
+    assert.ok(!report.stdout.includes('테스트가 요구:'), report.stdout)
+    assert.ok(report.stdout.includes('단언 확인: skills/report/tests/skill-doc.spec.ts'), report.stdout)
+  })
+
+  test('같은 스킬의 테스트만 보고 문서를 읽지 않는 파일은 제외한다', () => {
+    const r = base()
+    r.file('skills/a/references/rules.md', '# 규칙\n')
+    r.file('skills/a/tests/reader.spec.ts', `readFileSync(\n  join(SKILL, 'references', 'rules.md'), 'utf8')`)
+    r.file('skills/a/tests/name-only.spec.ts', `const name = 'rules.md'`)
+    r.file('skills/a/tests/other-doc.spec.ts', `readFileSync('SKILL.md', 'utf8')`)
+    r.file('skills/b/tests/reader.spec.ts', `readFileSync('rules.md', 'utf8')`)
+    const done = find(r, '없는 문장', '--document', 'skills/a/references/rules.md')
+    assert.equal(done.code, 0, done.stderr)
+    const candidates = done.stdout.split('단언 확인: ').slice(1).map((part) => part.split('\n')[0])
+    assert.deepEqual(candidates, ['skills/a/tests/reader.spec.ts'])
+  })
+
+  test('후보 없음도 문장 검색 결과와 구분한다', () => {
+    const r = base()
+    const done = find(r, '없는 문장', '--document', 'skills/a/SKILL.md')
+    assert.equal(done.code, 0, done.stderr)
+    assert.ok(done.stdout.includes('문서를 읽는 테스트 후보: skills/a/SKILL.md\n  후보 없음'), done.stdout)
+  })
+
+  test('스킬 밖 문서는 저장소 전체 테스트에서 후보를 찾고 문장 검색도 유지한다', () => {
+    const r = base()
+    r.file('CLAUDE.md', '# 지침\n')
+    r.file('.claude/rules/writing.md', '# 규칙\n')
+    r.file('tests/root.spec.ts', `readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8')`)
+    r.file('src/tests/rules.spec.ts', `readFileSync(join(ROOT, '.claude', 'rules', 'writing.md'), 'utf8')`)
+    const done = find(r, '## 일곱 단계', '--document', 'CLAUDE.md', '--document', '.claude/rules/writing.md')
+    assert.equal(done.code, 0, done.stderr)
+    assert.ok(done.stdout.includes('테스트가 요구: tests/check.sh:1'), done.stdout)
+    assert.ok(done.stdout.includes('문서를 읽는 테스트 후보: CLAUDE.md\n  단언 확인: tests/root.spec.ts'), done.stdout)
+    assert.ok(done.stdout.includes('문서를 읽는 테스트 후보: .claude/rules/writing.md\n  단언 확인: src/tests/rules.spec.ts'), done.stdout)
+    r.file('AGENTS.md', '# 지침\n')
+    const missing = find(r, '없는 문장', '--document', 'AGENTS.md')
+    assert.equal(missing.code, 0, missing.stderr)
+    assert.ok(missing.stdout.includes('문서를 읽는 테스트 후보: AGENTS.md\n  후보 없음'), missing.stdout)
+  })
+
+  test('잘못된 문서 옵션은 종료 코드 2 다', () => {
+    const r = base()
+    for (const args of [
+      ['--document'], ['--document', '--loose'], ['--document', 'missing.md'],
+      ['--document', '../outside.md'], ['--document', 'skills/a'],
+    ]) assert.equal(find(r, '문장', ...args).code, 2, args.join(' '))
   })
 })

@@ -523,3 +523,12 @@ describe('홈 경로', () => {
     assert.ok(done.stdout.includes('[링크] 없다.md') && done.stdout.includes('[홈 경로] ~/nowhere/x.md'))
   })
 })
+
+test('PATH 에 git 이 없으면 한 줄 안내와 종료 코드 2 를 낸다', () => {
+  const c = new Case()
+  c.claude('# 지침\n')
+  const done = c.repo.run('check_references', [c.repo.root], { env: { ...homeEnv(c.home), PATH: '/nonexistent' } })
+  assert.equal(done.code, 2)
+  assert.equal(done.stderr, 'git 실행 파일을 찾을 수 없다. PATH 를 확인한다.\n')
+  assert.equal(done.stdout, '')
+})

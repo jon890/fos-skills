@@ -121,11 +121,14 @@ node "$SKILL_DIR/scripts/run_checks.ts" "$ROOT" --base "$BASE"
 
 **제거, 축소, 이름 변경으로 판정하기 전에 그 제목과 문장을 테스트가 요구하는지 찾는다.**
 무엇을 읽고 어떤 줄을 내는지는 `find_test_requirements.ts` 의 머리 주석이 소유한다.
+`--document` 로 대상 문서를 지정하고, 출력된 테스트 후보의 단언을 읽는다.
+스킬 밖 문서는 저장소 전체 테스트에서 후보를 찾는다.
+문장 전체 검색이 「없음」 이어도 구절이나 상수로 만든 단언이 있을 수 있다.
 찾은 위치는 판정표 근거에 「테스트가 요구」 로 적고, 테스트도 함께 고칠지를 별도 승인 항목으로 낸다.
 
 ```bash
-# cwd: 아무 곳. 지우거나 바꿀 제목과 문장을 인자로 준다
-node "$SKILL_DIR/scripts/find_test_requirements.ts" "$ROOT" "## 언제 쓰나" "## 일곱 단계"
+# cwd: 아무 곳. $DOCUMENT 는 저장소 기준 대상 문서 경로다. 지우거나 바꿀 제목과 문장을 인자로 준다
+node "$SKILL_DIR/scripts/find_test_requirements.ts" "$ROOT" "## 언제 쓰나" "## 일곱 단계" --document "$DOCUMENT"
 ```
 
 ## 4. 판정표와 승인

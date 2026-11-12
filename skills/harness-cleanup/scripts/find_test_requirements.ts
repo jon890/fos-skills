@@ -7,6 +7,7 @@
 // `tests/data/` 같은 fixture 폴더도 읽는다.
 //
 // 후보 파일은 git 저장소면 `git ls-files -co --exclude-standard` 로 정한다. git 이 무시하는 빌드 결과물은 빠진다.
+// git 실행 파일이 없으면 stderr 로 알리고 디렉터리 순회로 계속한다.
 // git 저장소가 아니면 디렉터리를 순회하고 `.git`, `node_modules`, `.venv`, `worktrees`, `__pycache__` 와
 // 빌드 결과물 폴더(`build`, `dist`, `out`, `target`, `coverage`, `.next`)를 건너뛴다.
 //
@@ -19,14 +20,20 @@
 // `확인` 처럼 흔한 낱말은 이 줄이 수백 건이 되어, 펼치면 진짜 근거가 묻힌다.
 // 찾지 못해도 종료 코드는 0 이다. 출력의 「없음」 으로 판정한다.
 //
-// Usage: node find_test_requirements.ts <repo-root> <문자열> [<문자열> ...] [--loose]
+// `--document` 를 주면 대상 문서와 같은 스킬의 tests/test/__tests__ 아래에서
+// readFileSync 를 쓰고 그 문서 파일 이름을 따옴표로 적은 테스트를 후보로 함께 낸다.
+// 스킬 밖 문서는 저장소 전체 테스트에서 후보를 찾는다.
+// 문서 경로는 저장소 기준이며 반복해서 줄 수 있다. 같은 스킬은 가장 가까운 SKILL.md 로 정한다.
+// 후보는 문장을 요구한다는 증거가 아니다. 구절·상수로 만든 단언까지 직접 읽어 확인한다.
+// Usage: node find_test_requirements.ts <repo-root> <문자열> [<문자열> ...] [--loose] [--document <대상 문서>]
 // 종료 코드: 0 (검사를 마침), 2 (인자 오류, 빈 문자열 포함)
 //
 
 import { spawnSync } from 'node:child_process'
+import { resolveScope, ValueError } from './target_files.ts'
 import { isMain, write } from './io.ts'
 import { pyHead, pyReadText, pySplitLines, pyStrCompare, pyStrip } from './kit/py.ts'
-import { isDir, isFile, pathName, pathParts, pathStem, pathSuffix, pjoin, pyPath, pyResolve, pyre, relativeTo, walk } from './pylike.ts'
+import { isDir, isFile, isRelativeTo, pathName, pathParent, pathParts, pathStem, pathSuffix, pjoin, pyPath, pyResolve, pyre, relativeTo, walk } from './pylike.ts'
 
 const USAGE = `지우거나 이름을 바꾸려는 문자열을 저장소의 테스트가 요구하는지 찾는다.
 
@@ -36,6 +43,7 @@ const USAGE = `지우거나 이름을 바꾸려는 문자열을 저장소의 테
 \`tests/data/\` 같은 fixture 폴더도 읽는다.
 
 후보 파일은 git 저장소면 \`git ls-files -co --exclude-standard\` 로 정한다. git 이 무시하는 빌드 결과물은 빠진다.
+git 실행 파일이 없으면 stderr 로 알리고 디렉터리 순회로 계속한다.
 git 저장소가 아니면 디렉터리를 순회하고 \`.git\`, \`node_modules\`, \`.venv\`, \`worktrees\`, \`__pycache__\` 와
 빌드 결과물 폴더(\`build\`, \`dist\`, \`out\`, \`target\`, \`coverage\`, \`.next\`)를 건너뛴다.
 
@@ -48,7 +56,10 @@ git 저장소가 아니면 디렉터리를 순회하고 \`.git\`, \`node_modules
 \`확인\` 처럼 흔한 낱말은 이 줄이 수백 건이 되어, 펼치면 진짜 근거가 묻힌다.
 찾지 못해도 종료 코드는 0 이다. 출력의 「없음」 으로 판정한다.
 
-Usage: node find_test_requirements.ts <repo-root> <문자열> [<문자열> ...] [--loose]
+문서 테스트 후보는 --document 로 대상 문서를 지정한다. 같은 스킬의 테스트에서 readFileSync 와 문서 파일 이름을 찾는다. 스킬 밖이면 저장소 전체 테스트를 본다.
+후보의 단언은 직접 읽는다. 문자열 검색의 「없음」 만으로 문서를 바꿔도 된다고 판단하지 않는다.
+
+Usage: node find_test_requirements.ts <repo-root> <문자열> [<문자열> ...] [--loose] [--document <대상 문서>]
 종료 코드: 0 (검사를 마침), 2 (인자 오류, 빈 문자열 포함)
 `
 
@@ -74,7 +85,11 @@ function isTestFile(path: string, root: string): boolean {
 // git 저장소면 추적 파일과 무시되지 않은 새 파일. 저장소가 아니면 null
 function gitCandidates(root: string): string[] | null {
   const done = spawnSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: root })
-  if (done.error) throw done.error
+  if (done.error) {
+    if ((done.error as NodeJS.ErrnoException).code !== 'ENOENT') throw done.error
+    write(2, '경고: git 실행 파일을 찾을 수 없어 디렉터리를 순회해 테스트를 찾는다.\n')
+    return null
+  }
   if (done.status !== 0) return null
   const names = new TextDecoder('utf-8', { ignoreBOM: true }).decode(done.stdout).split('\0')
   return [...new Set(names)].sort(pyStrCompare).filter((name) => name).map((name) => pjoin(root, name))
@@ -121,7 +136,18 @@ function loosely(needle: string, line: string): boolean {
 
 export function main(args: string[]): number {
   const loose = args.includes('--loose')
-  const argv = args.filter((item) => item !== '--loose')
+  const argv: string[] = []
+  const documents: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--loose') continue
+    if (args[i] === '--document') {
+      if (!args[i + 1] || args[i + 1].startsWith('--')) {
+        write(2, '--document 에 경로가 없다\n')
+        return 2
+      }
+      documents.push(args[++i])
+    } else argv.push(args[i])
+  }
   if (argv.length < 2) {
     write(2, `${USAGE}\n`)
     return 2
@@ -134,6 +160,21 @@ export function main(args: string[]): number {
   }
   if (!isDir(root)) {
     write(2, `대상 저장소를 찾을 수 없다: ${root}\n`)
+    return 2
+  }
+
+  const documentScopes: [string, string | null][] = []
+  try {
+    for (const document of documents) {
+      const target = resolveScope(root, document)!
+      if (!isFile(target)) throw new ValueError(`대상 문서가 파일이 아니다: ${document}`)
+      let skill = pathParent(target)
+      while (!isFile(pjoin(skill, 'SKILL.md')) && skill !== root) skill = pathParent(skill)
+      documentScopes.push([target, isFile(pjoin(skill, 'SKILL.md')) ? skill : null])
+    }
+  } catch (error) {
+    if (!(error instanceof ValueError)) throw error
+    write(2, `${error.message}\n`)
     return 2
   }
 
@@ -166,6 +207,23 @@ export function main(args: string[]): number {
         out += `  낱말만 겹침 ${overlaps.length}건 (--loose 로 목록)\n`
       }
     }
+  }
+  for (const [document, skill] of documentScopes) {
+    out += `\n문서를 읽는 테스트 후보: ${relativeTo(document, root)}\n`
+    const readers = contents.filter(([rel, lines]) => {
+      if (skill !== null) {
+        const path = pjoin(root, rel)
+        if (!isRelativeTo(path, skill)) return false
+        const parts = pathParts(relativeTo(path, skill))
+        if (!TEST_DIRS.has(parts[0])) return false
+      }
+      const text = lines.join('\n')
+      const name = pathName(document)
+      return /\breadFileSync\s*\(/u.test(text) && ['"', "'", '`'].some((quote) => text.includes(`${quote}${name}${quote}`))
+    })
+    for (const [rel] of readers) out += `  단언 확인: ${rel}\n`
+    if (!readers.length) out += '  후보 없음\n'
+    out += '  구절이나 상수로 만든 단언을 읽는다. 후보 검색은 파일 이름과 readFileSync 표기를 기준으로 한다.\n'
   }
   write(1, out)
   return 0
