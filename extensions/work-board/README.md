@@ -111,7 +111,7 @@ worker 줄 끝의 빨간 글은 손이 필요하다는 뜻이에요. 「멈춤 4
 ## 보드에 항목 적기
 
 보드 파일은 저장소 git 루트의 `.omc/board.json` 이에요. orch 가 worker 를 띄우고 PR 을 머지할 때마다 항목과 단계를 자동으로 고쳐요.
-상태와 단계는 `orch board` 로 고쳐요. `board.json` 은 직접 고치지 않아요. 새 항목을 만들거나 제목·PR 같은 칸을 고칠 때는 플러그인의 `extensions/work-board/bin/board.ts` 를 써요.
+보기와 지우기, 상태와 단계는 `orch board` 로 처리해요. `board.json` 은 직접 고치지 않아요. 새 항목을 만들거나 제목·PR 같은 칸을 고칠 때는 플러그인의 `extensions/work-board/bin/board.ts` 를 써요.
 
 ```bash
 BOARD_BIN="<플러그인 경로>/extensions/work-board/bin/board.ts"
@@ -121,7 +121,9 @@ orch board step order-api 1 done        # 1번 단계를 끝내요
 orch board show order-api               # 남은 단계를 봐요
 orch board step order-api 3 ask         # 3번 단계 번호 뒤의 자동 진행 표시를 [ask] 로 바꿔요(auto, ask, wait, plain)
 orch board add-step order-api "배포" --on "877 deploy"
-node --disable-warning=ExperimentalWarning "$BOARD_BIN" list               # 모든 항목과 진행률을 봐요
+orch board list                         # 모든 항목과 진행률을 봐요
+orch board get order-api branch         # 값 하나를 꺼내요
+orch board del --done                   # 끝난 항목을 비워요
 ```
 
 상태는 `goal`(목표), `decide`(결정 필요), `doing`(진행 중), `wait`(대기), `done`(완료) 중 하나예요.

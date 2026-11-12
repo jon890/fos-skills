@@ -59,3 +59,15 @@ test('잠금 실패는 바이트 보존, 읽기는 잠금 없이, 거절은 새 
     assert.ok(!readdirSync(t.dir).some((name) => name.includes('.claim.') || name.endsWith('.lock')))
   } finally { t.cleanup() }
 })
+
+test('삭제를 기다리는 동안 상태가 바뀌면 잠금 뒤 새 상태로 거절한다', async () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'a', status: 'done' }); writeFileSync(`${t.file}.lock`, 'other')
+    const pending = runAsync(t.file, ['del-done', 'a'], { BOARD_LOCK_WAIT_MS: '3000' })
+    await setTimeout(1000)
+    write(t.file, { id: 'a', status: 'doing' }); unlinkSync(`${t.file}.lock`)
+    const result = await pending
+    assert.equal(result.code, 1); assert.match(result.stderr, /지금 doing/); assert.equal(item(t.file, 'a').status, 'doing')
+  } finally { t.cleanup() }
+})

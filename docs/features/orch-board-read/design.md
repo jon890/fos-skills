@@ -14,7 +14,7 @@
 | REQ4 | 값이 비었으면 `board.ts get` 이 `"value": null` 과 종료 코드 4 를 낸다. 없는 항목과 없는 단계는 지금의 거절(종료 코드 1)이다. `board-edit.ts` 는 종료 코드를 그대로 넘긴다 |
 | REQ5 | 새 동작 `board.ts items [<상태>[,<상태>…]]` 가 상태 값을 검사하고 그 상태의 항목만 남겨 항목 객체 배열을 낸다. `board-edit.ts` 가 항목마다 한 줄로 바꾸고, 빈 배열이면 `BOARD-NONE`, `--full` 이면 줄과 `BOARD-UNMATCHED` 를 잇는다 |
 | REQ6 | `del <항목>` 은 새 동작 `board.ts del-done <id>` 를, `del <항목> --force` 는 `board.ts del <id> --exact` 를 부른다. 없는 항목과 `done` 이 아닌 항목의 거절은 `board.ts` 가 잠금 안에서 판정한다 |
-| REQ7 | `del --done` 은 `board.ts del-done`(id 없음)을 부른다. 상태가 `done` 인 항목을 모두 지우고, 지울 것이 없으면 저장하지 않는다 |
+| REQ7 | `del --done` 은 `board.ts del-done --all`을 부른다. 상태가 `done` 인 항목을 모두 지우고, 지울 것이 없으면 저장하지 않는다 |
 | REQ8 | 엄격한 지우기(`del --exact`, `del-done`)가 항목을 하나라도 지우면 잠금 안에서 `<보드 파일>.bak` 를 남긴다. 지금 `set --detail` 이 쓰는 자리와 같은 파일이다. 사본은 저장이 확정된 뒤에만 바꾼다. 지울 것이 없거나, 거절했거나, 잠금을 잃어 저장하지 못한 호출은 기존 `.bak` 를 건드리지 않는다 |
 | REQ9 | 새 동작 `board.ts item <id>` 와 `items` 가 항목 객체를, `get` 이 `{"id", "field", "value"}` 를 JSON 으로 낸다. `--json` 이면 `board-edit.ts` 가 받은 JSON 을 그대로 내고, `show --json` 에만 `unmatched` 를 더한다 |
 | REQ10 | `get`, `item`, `items` 는 `list`, `steps`, `view` 처럼 잠그지 않는다. 지우기는 지금 쓰기와 같은 잠금 안에서 보드를 읽고, 상태를 보고, 지우고, 저장한다 |
@@ -88,7 +88,7 @@ flowchart TD
 | `items [<상태>[,<상태>…]]` | 보드 파일 순서의 항목 객체 배열을 낸다. 상태를 주면 그 상태의 항목만 남긴다 | `[<항목 객체>, …]` 또는 `[]` | 종료 코드 1: 쉼표로 나눈 값 가운데 다섯 상태가 아닌 것(빈 값 포함)이 있다. stderr 는 `set` 과 같은 허용 값 안내다 |
 | `del <id> --exact` | 있는 항목을 상태와 상관없이 지운다 | `{"deleted":["order-api"]}` | 종료 코드 1: 항목 없음 |
 | `del-done <id>` | 그 항목이 `done` 일 때만 지운다 | `{"deleted":["order-api"]}` | 종료 코드 1: 항목 없음, `done` 이 아님 |
-| `del-done` | 상태가 `done` 인 항목을 모두 지운다. id 를 명령줄로 받지 않으므로 숫자 id 항목도 지운다 | `{"deleted":["a",7,"b"]}`(보드 파일 순서, id 는 저장된 값 그대로). 없으면 `{"deleted":[]}` | 없다 |
+| `del-done --all` | 상태가 `done` 인 항목을 모두 지운다. id 를 명령줄로 받지 않으므로 숫자 id 항목도 지운다 | `{"deleted":["a",7,"b"]}`(보드 파일 순서, id 는 저장된 값 그대로). 없으면 `{"deleted":[]}` | 없다 |
 
 - 출력은 `view` 처럼 `JSON.stringify` 한 줄이다(구분자 뒤에 공백이 없다). `--json` 이 이 바이트를 그대로 낸다.
 - `get` 의 종료 코드는 값이 있으면 0, 비었으면 4 다. 4 일 때도 JSON 은 내고 `value` 가 `null` 이다. `get` 밖의 동작은 4 를 내지 않는다.
@@ -105,8 +105,8 @@ flowchart TD
 
 - 빈 값은 칸이 없거나, `null` 이거나, 빈 문자열이거나, 진행률이 없는 경우다. 글도 숫자도 아닌 값(파일을 직접 고친 보드의 객체나 배열)도 빈 값으로 본다.
 - `del-done <id>` 가 `done` 이 아닌 항목을 거절할 때의 stderr 는 `done 이 아닌 항목은 지우지 않는다: <id> (지금 <상태>). 상태와 상관없이 지우려면 orch board del <id> --force 를 쓴다` 다. 상태 칸이 글이 아니면 `<상태>` 자리에 `없음` 을 쓴다. `board.ts` 의 글이 orch 명령을 가리키는 까닭은 아래 DECISION4 다.
-- 엄격한 지우기는 항목을 하나라도 지웠을 때만 `.bak` 를 남기고 저장한다. 지운 것이 없는 `del-done` 은 `{"deleted":[]}` 만 내고 보드 파일, `.bak`, `updatedAt` 을 건드리지 않는다. 보드 파일이 없으면 만들지 않는다(잠금을 두려고 만든 폴더는 지금처럼 다시 지운다).
-- `del-done` 이 `done` 항목을 모두 지우는 것은 id 인자가 아예 없을 때뿐이다(`undefined` 로 판정한다). 빈 문자열 id(`del-done ''`, 셸의 빈 변수에서 온 `orch board del "$id"`)는 다른 동작처럼 `id 가 필요하다` 로 거절한다(종료 코드 1). 빈 값을 「없음」 으로 읽으면 항목 하나를 지우려던 호출이 끝난 항목을 모두 지운다.
+- 엄격한 지우기는 항목을 하나라도 지웠을 때만 `.bak` 를 남기고 저장한다. 지운 것이 없는 `del-done --all` 은 `{"deleted":[]}` 만 내고 보드 파일, `.bak`, `updatedAt` 을 건드리지 않는다. 보드 파일이 없으면 만들지 않는다(잠금을 두려고 만든 폴더는 지금처럼 다시 지운다).
+- `del-done` 이 `done` 항목을 모두 지우려면 `--all` 이 필요하며 인자가 없으면 사용법 오류다. 빈 문자열 id(`del-done ''`, 셸의 빈 변수에서 온 `orch board del "$id"`)는 다른 동작처럼 `id 가 필요하다` 로 거절한다(종료 코드 1). 빈 값을 「없음」 으로 읽으면 항목 하나를 지우려던 호출이 끝난 항목을 모두 지운다.
 - 옵션 없는 `del <id>` 는 지금과 같다. 상태를 보지 않고, 없는 id 여도 종료 코드 0 이고, 아무것도 내지 않고, `.bak` 를 남기지 않는다.
 - 새 동작과 `del --exact` 는 정해진 수보다 많은 위치 인자를 사용법 오류로 거절한다(`del <id> <남는 글> --exact` 포함). `--exact` 는 `set`, `step`, `del` 에만 듣는다.
 - `board.ts` 의 사용법 줄과 `--help` 에 새 동작을 더한다. 사용법 줄의 앞머리(`{set,detail-edit,detail-add,`)는 기존 테스트가 고정하므로 새 이름은 목록 끝에 붙인다.
@@ -128,7 +128,7 @@ flowchart TD
 
 | `apply` 가 돌려주는 값 | `main` 이 하는 일 | 쓰는 동작 |
 | --- | --- | --- |
-| `false` | 저장하지 않고 종료 코드 0 이다. stdout 은 `apply` 가 직접 쓴다(지금 `list`, `steps`, `view` 와 같다) | 읽기 동작, 지운 것이 없는 `del-done` |
+| `false` | 저장하지 않고 종료 코드 0 이다. stdout 은 `apply` 가 직접 쓴다(지금 `list`, `steps`, `view` 와 같다) | 읽기 동작, 지운 것이 없는 `del-done --all` |
 | `'empty'`(새 값) | 저장하지 않고 종료 코드 4 다 | 값이 빈 `get` |
 | `true` | 저장한다. 출력은 없다 | 기존 쓰기 동작 |
 | 객체 | 저장한 뒤 그 객체를 JSON 한 줄로 낸다. `deleted` 가 든 객체면 아래 「저장 순서」 로 `.bak` 를 남긴다 | 지금의 항목 값(`--exact`, `step-edit` 따위)과 새 `{"deleted":[…]}` |
@@ -139,7 +139,7 @@ flowchart TD
 2. 잠금 파일이 자기 표지인지 확인한다. 아니면 저장하지 않고 끝낸다(종료 코드 1). `.bak` 는 건드리지 않았다.
 3. 사본을 남기는 호출이고 보드 파일이 있으면, 지금 보드 파일을 사본용 임시 파일로 복사한다.
 4. 새 보드의 임시 파일을 보드 파일 이름으로 바꾼다. 저장이 확정되는 자리다.
-5. 사본용 임시 파일을 `.bak` 이름으로 바꾼다.
+5. 사본용 임시 파일을 `.bak` 이름으로 바꾼다. 실패하면 보드는 이미 저장됐으므로 stderr 에 경고하고 성공 결과를 낸다.
 6. 어느 단계에서 끝나든 남은 임시 파일을 지운다.
 
 - 2 에서 멈추거나 3, 4 가 실패하면 기존 `.bak` 는 바이트까지 그대로다.
@@ -184,7 +184,7 @@ orch board del --done
 | `show <항목> --json` | `item <항목>` | 받은 항목 객체에 `unmatched`(숫자 배열)를 더한 JSON 한 줄 |
 | `del <항목>` | `del-done <항목>` | `BOARD-DEL <항목>` |
 | `del <항목> --force` | `del <항목> --exact` | `BOARD-DEL <항목>` |
-| `del --done` | `del-done` | 지운 항목마다 `BOARD-DEL <항목>`. `deleted` 가 비었으면 `BOARD-NONE` |
+| `del --done` | `del-done --all` | 지운 항목마다 `BOARD-DEL <항목>`. `deleted` 가 비었으면 `BOARD-NONE` |
 
 - 모든 호출에 `--file <boardPath 의 결과>` 를 붙인다. `--status` 의 값만은 `--file` 뒤, `--` 다음에 둔다. `--status=-x` 처럼 `-` 로 시작하는 값이 `board.ts` 의 옵션으로 읽혀 사용법 오류(종료 코드 2)가 되지 않고 상태 값 거절(종료 코드 1)이 되게 하려는 것이다. `board.ts` 의 stderr 와 종료 코드는 그대로 넘긴다. 종료 코드가 0 도 4 도 아니면 stdout 에 아무것도 쓰지 않는다(스펙 DECISION14).
 - `board-edit.ts` 가 막는 사용법 오류(종료 코드 2, 사용법 출력): 위치 인자가 모자라거나 남는다, `get … step` 뒤의 번호가 숫자가 아니다, `--json` 을 `get`, `list`, `show` 밖에 준다, `--status` 를 `list` 밖에 준다, `--force` 나 `--done` 을 `del` 밖에 준다, `--done` 을 항목 id 나 `--force` 와 함께 준다, `--on` 을 새 동작에 준다, `get` 의 칸 이름이 `GET_FIELDS` 에 없다. 상태 값은 검사하지 않는다.
@@ -233,7 +233,7 @@ orch board del --done
 | --- | --- |
 | REQ2, REQ3, REQ4, REQ9 의 값과 꼴 | `extensions/work-board/tests/` 의 새 테스트 파일이 임시 보드로 `board.ts get`, `item`, `items` 를 실행한다. 칸마다의 값, 빈 값의 종료 코드 4 와 `null`, 없는 항목·없는 단계·같은 번호 둘·숫자 id 의 거절, 목록 밖 칸 이름의 종료 코드 2 를 본다. 거절한 호출의 stdout 이 비었는지 본다 |
 | REQ5 의 상태 필터 | 같은 파일. 상태 하나와 여럿, 다섯 상태 밖의 값, 빈 보드와 없는 보드 파일. `-` 로 시작하는 `--status` 값이 종료 코드 1 인지는 명령 쪽에서 본다 |
-| REQ6, REQ7, REQ8 | 같은 폴더의 새 테스트 파일이 `del --exact`, `del-done` 을 실행한다. 잠금을 잃은 저장은 `saveBoard` 를 `board-lock.spec.ts` 처럼 직접 불러(표지 확인이 거짓인 잠금) 미리 둔 `.bak` 와 보드의 바이트가 그대로인지 본다. 거절 뒤 보드 바이트와 `.bak` 가 그대로인지, 지운 뒤 `.bak` 가 지우기 전 바이트와 같은지, 지울 것 없는 `del-done` 이 보드 파일의 바이트와 수정 시각을 바꾸지 않고 없는 파일을 만들지 않는지, 숫자 id 의 `done` 항목이 지워지는지 본다 |
+| REQ6, REQ7, REQ8 | 같은 폴더의 새 테스트 파일이 `del --exact`, `del-done` 을 실행한다. 잠금을 잃은 저장은 `saveBoard` 를 `board-lock.spec.ts` 처럼 직접 불러(표지 확인이 거짓인 잠금) 미리 둔 `.bak` 와 보드의 바이트가 그대로인지 본다. 거절 뒤 보드 바이트와 `.bak` 가 그대로인지, 지운 뒤 `.bak` 가 지우기 전 바이트와 같은지, 지울 것 없는 `del-done --all` 이 보드 파일의 바이트와 수정 시각을 바꾸지 않고 없는 파일을 만들지 않는지, 숫자 id 의 `done` 항목이 지워지는지 본다 |
 | REQ10 | 잠금 파일을 미리 둔 채 `get`, `item`, `items` 가 바로 끝나는지 본다. 지우기는 `board-lock.spec.ts` 의 방식(잠금 파일을 둔 채 `del-done <id>` 를 띄우고, 그 사이 항목을 `doing` 으로 바꾼 뒤 잠금을 놓는다)으로 거절과 항목 보존을 본다 |
 | REQ12 | 기존 `board*.spec.ts` 가 고치지 않은 채 통과하는지 본다. 옵션 없는 `del <없는 id>` 의 종료 코드 0 과 `list` 출력은 기존 테스트가 이미 고정한다. 새 사례는 새 파일에만 둔다 |
 | REQ1, REQ5, REQ9, REQ11 의 명령 쪽 | `skills/orch/tests/board-edit.spec.ts` 에 사례를 더해 진입점을 거쳐 실행한다(같은 스크립트의 테스트라 준비 코드를 함께 쓴다. 기존 사례는 그대로 둔다). 값 한 줄과 바이트 일치, `--json`, `BOARD-NONE`, `--full` 의 줄과 `BOARD-UNMATCHED`, `BOARD-DEL`, 사용법 오류, 워크트리에서 부른 호출이 주 checkout 의 보드를 읽고 지우는지, `finish.board` 로 정한 보드를 쓰는지 본다. 명령 표 테스트(`lib-commands.spec.ts`)와 `orch board --help` 가 새 동작을 보이는지 본다 |
@@ -257,8 +257,8 @@ orch board del --done
 
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
-| DECISION1 | `board.ts` 에 새 규칙을 여는 방법 | 새 옵션 없이 새 동작(`get`, `item`, `items`, `del-done`)과 지금 옵션 `--exact` 의 `del` 확장으로 연다. 상태 필터 값과 단계 번호는 위치 인자다 | 작성자 | 스펙 DECISION11 이 이름을 설계에 넘겼다. `--force`, `--status`, `--done` 은 지금 듣는 줄임 꼴 `--f`, `--s`, `--d` 를 모호하게 만든다(실측). 옵션 목록을 건드리지 않으면 줄임 꼴을 하나씩 따질 일이 없다. `step-mark` 가 조건을 위치 인자로 받은 앞 사례와 같다 |
-| DECISION2 | 지우기 동작을 나누는 선 | `del-done [<id>]` 는 「`done` 만 지운다」, `del <id> --exact` 는 「있는 항목만 지운다」 다. `--force` 는 뒤의 것으로 간다 | 작성자 | `--exact` 의 지금 뜻(있는 항목에만 듣는다)을 그대로 넓힌다. `del <id> --exact` 는 지금 사용법 오류라 듣던 호출이 바뀌지 않는다. `del` 의 위치 인자에 뜻을 주는 안은 지금 `del <id> <남는 글>` 이 지우고 0 으로 끝나 버렸다(실측) |
+| DECISION1 | `board.ts` 에 새 규칙을 여는 방법 | 새 동작(`get`, `item`, `items`, `del-done`)과 `del --exact` 를 더하고 전체 삭제에는 `--all` 을 명시한다. 상태 필터 값과 단계 번호는 위치 인자다 | 작성자 | 스펙 DECISION11 이 이름을 설계에 넘겼다. `--force`, `--status`, `--done` 은 지금 듣는 줄임 꼴 `--f`, `--s`, `--d` 를 모호하게 만든다(실측). `--all` 은 기존 옵션의 줄임 꼴과 겹치지 않는다. `step-mark` 가 조건을 위치 인자로 받은 앞 사례와 같다 |
+| DECISION2 | 지우기 동작을 나누는 선 | `del-done <id>` 와 `del-done --all` 은 「`done` 만 지운다」, `del <id> --exact` 는 「있는 항목만 지운다」 다. `--force` 는 뒤의 것으로 간다 | 작성자 | `--exact` 의 지금 뜻(있는 항목에만 듣는다)을 그대로 넓힌다. `del <id> --exact` 는 지금 사용법 오류라 듣던 호출이 바뀌지 않는다. `del` 의 위치 인자에 뜻을 주는 안은 지금 `del <id> <남는 글>` 이 지우고 0 으로 끝나 버렸다(실측) |
 | DECISION3 | 감싸기가 결과를 아는 방법 | 읽기와 지우기 모두 `board.ts` 가 낸 JSON 한 줄을 읽는다. `get` 도 값만 내지 않고 JSON 을 낸다 | 작성자 | 보드 고치기 설계 DECISION4 와 같은 꼴이다. 값만 내면 감싸기가 `--json` 의 객체를 다시 만들어야 하고 빈 값과 빈 문자열을 종료 코드로만 가린다. `board.ts` 에 `--json` 옵션을 더하지 않아도 된다 |
 | DECISION4 | `--force` 안내를 내는 자리 | `board.ts del-done` 의 거절 글이 `orch board del <id> --force` 를 적는다 | 작성자 | 스펙 REQ6 이 stderr 에 `--force` 안내를 요구한다. 감싸기가 안내를 붙이려면 종료 코드 1 의 여러 이유(없는 항목, 잠금 실패, 상태) 가운데 상태 거절을 stderr 글로 가려야 해서 글에 묶인 판정이 생긴다. `del-done` 은 `orch board del` 이 부르려고 둔 동작이고, work-board 의 README 와 창의 요청문이 이미 `orch board` 명령을 가리킨다. 감당할 것: `board.ts` 의 글 하나가 orch 의 옵션 이름에 묶인다. orch 가 `--force` 의 이름을 바꾸면 이 글도 고쳐야 하므로 `board.ts` 의 테스트가 글의 `--force` 를 고정하고 `del-done` 의 주석에 이 묶임을 적는다. `board.ts` 에 `--force` 옵션을 두는 안은 DECISION1 의 이유로 버렸다 |
 | DECISION5 | 항목 객체를 내는 동작 | `view` 를 넓히지 않고 `item`, `items` 를 따로 둔다. `show` 의 JSON 없는 출력은 `view` 를 그대로 쓴다 | 작성자 | `view` 의 꼴(`was`, `rev` 포함)은 고치기 결과와 같고 work-board 문서가 계약으로 적었다. 스펙 DECISION10 이 `was`, `rev` 를 뺐다. `show` 의 지금 출력 경로를 바꾸지 않아 기존 테스트가 그대로 통과한다 |

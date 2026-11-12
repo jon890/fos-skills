@@ -55,7 +55,7 @@
 // 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다. 이 명령이 쓰는 칸은 PR 번호 말고는 문자열이다.
 //
 // 쓰기는 <보드 파일>.lock 을 읽기부터 저장까지 잡는다. 기본 5초 대기, 30초 넘은 잠금은 넘겨받는다.
-// list, steps, view 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
+// list, steps, view, get, item, items 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
 import { createHash } from 'node:crypto'
@@ -80,14 +80,15 @@ const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view']
+export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--exact] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '[--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
-쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view 는 잠그지 않는다.
+쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
 
 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 
@@ -100,6 +101,8 @@ const HELP = `${USAGE}
   step-mark 는 번호 뒤 자동 진행 표시만 바꾼다. 조건은 wait 에만 주고 사건 단계는 거절한다.
   step-edit 는 다른 번호와 사건 꼬리표를 지우는 글, step-add 는 중복 번호와 done 항목을 거절한다.
   --event 는 줄 끝 꼬리표를 붙이거나 바꾼다. 사건은 pr, merge, deploy, release 다.
+  board.ts get <id> <칸> | get <id> step <번호> (JSON, 빈 값은 null 과 종료 코드 4)
+  board.ts item <id> | items [<상태>[,<상태>…]] (항목 객체 또는 배열)
   board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, lines)
   set, step --exact 는 엄격 검사 뒤 결과 JSON 을 낸다. step 결과에는 number 도 있다.
   set --if-rev REV 는 읽은 뒤 줄이 바뀌면 저장을 거절한다.
@@ -119,7 +122,7 @@ const HELP = `${USAGE}
     단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다
   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄은 세지 않는다)
     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
-  board.ts del <id>
+  board.ts del <id> [--exact] | del-done <id> | del-done --all (엄격한 지우기는 결과와 사본을 남긴다)
   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 항목의 status, details, next 가 바뀐 쓰기는 그 항목의 stepAt 에 그 시각을 남긴다. 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다
@@ -329,6 +332,7 @@ type Args = {
   text?: string
   undo: boolean
   exact: boolean
+  all: boolean
   ifRev?: string
   event?: string
   condition?: string
@@ -342,6 +346,7 @@ function parse(argv: string[]): Args | 'help' {
   const options = {
     undo: { type: 'boolean' },
     exact: { type: 'boolean' },
+    all: { type: 'boolean' },
     'if-rev': { type: 'string' },
     event: { type: 'string' },
     title: { type: 'string' },
@@ -357,20 +362,26 @@ function parse(argv: string[]): Args | 'help' {
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'help'])
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'help'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
   if (head.includes('-h') || head.includes('--help')) return 'help'
   const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: true })
   if (positionals.length === 0) throw new Error('cmd 가 필요하다')
-  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit'].includes(positionals[0]) ? 4 : 3
+  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit', 'get'].includes(positionals[0]) ? 4 : (['item', 'items', 'del-done'].includes(positionals[0]) || (positionals[0] === 'del' && values.exact)) ? 2 : 3
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
-  if (values.exact !== undefined && !['set', 'step'].includes(cmd)) throw new Error('--exact 는 set, step 에만 쓴다')
+  if (values.all && (cmd !== 'del-done' || id !== undefined)) throw new Error('--all 은 del-done 에만 단독으로 쓴다')
+  if (cmd === 'del-done' && id === undefined && !values.all) throw new Error('del-done 에는 id 또는 --all 이 필요하다')
+  if (values.exact !== undefined && !['set', 'step', 'del'].includes(cmd)) throw new Error('--exact 는 set, step, del 에만 쓴다')
   if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
+  if (cmd === 'get') {
+    if (!GET_FIELDS.includes(status as typeof GET_FIELDS[number])) throw new Error(`get 의 칸은 ${GET_FIELDS.join(', ')} 중 하나다: ${status ?? ''}`)
+    if (status === 'step' ? !/^\d+$/.test(text ?? '') : text !== undefined) throw new Error('get step 에는 단계 번호가 필요하고 다른 칸에는 번호를 주지 않는다')
+  }
   if (cmd === 'step-mark') {
     if (!/^\d+$/.test(status ?? '')) throw new Error('step-mark 에는 단계 번호가 필요하다: board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]')
     if (!MARKS.includes(text)) throw new Error(`step-mark 의 표시는 ${MARKS.join(', ')} 중 하나다: ${text ?? ''}`)
@@ -378,7 +389,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -399,15 +410,30 @@ export function linesRev(item: Record<string, unknown> | undefined): string {
   return createHash('sha1').update(JSON.stringify(lists)).digest('hex').slice(0, 12)
 }
 
-function itemView(item: Item, was: unknown, number?: number) {
+function linesOf(item: Item) {
   const [source] = stepSource(item)
+  return ['details', 'next'].flatMap((key) => ((item[key] ?? []) as Line[])
+    .filter((line) => line.text.trim())
+    .map((line) => ({ number: key === source ? parseStep(line)?.[0] ?? null : null, done: line.done, text: line.text, in: key })))
+}
+function fieldText(value: unknown): string | null {
+  return typeof value === 'string' ? value || null : typeof value === 'number' ? String(value) : null
+}
+export function itemTitle(item: Record<string, unknown>): string | null {
+  return 'title' in item ? fieldText(item.title) : String(item.id)
+}
+function itemObject(item: Item) {
+  const result: Record<string, unknown> = {}
+  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'stages', 'stepAt']) {
+    if (key in item) result[key] = item[key]
+  }
+  return { ...result, progress: progressOf(item), lines: linesOf(item) }
+}
+function itemView(item: Item, was: unknown, number?: number) {
   return {
     id: item.id, status: typeof item.status === 'string' ? item.status : null,
     was: typeof was === 'string' ? was : null, progress: progressOf(item), rev: linesRev(item),
-    ...(number === undefined ? {} : { number }),
-    lines: ['details', 'next'].flatMap((key) => ((item[key] ?? []) as Line[])
-      .filter((line) => line.text.trim())
-      .map((line) => ({ number: key === source ? parseStep(line)?.[0] ?? null : null, done: line.done, text: line.text, in: key }))),
+    ...(number === undefined ? {} : { number }), lines: linesOf(item),
   }
 }
 
@@ -427,7 +453,14 @@ function stageNumbers(item: Item): number[] {
 
 type View = ReturnType<typeof itemView>
 // 읽기는 false, 기존 쓰기는 true, 결과를 내는 쓰기는 잠금 안에서 만든 항목 값이다.
-function apply(a: Args, board: Board): boolean | View {
+function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } | 'empty' {
+  if (a.cmd === 'items') {
+    const statuses = a.id === undefined ? null : a.id.split(',').map((value) => value.trim())
+    const invalid = statuses?.find((value) => !STATUSES.includes(value))
+    if (invalid !== undefined) throw new Refused(`status 는 ${STATUSES.join('|')} 중 하나다: ${invalid}`)
+    process.stdout.write(`${JSON.stringify(board.items.filter((item) => statuses === null || statuses.includes(String(item.status))).map(itemObject))}\n`)
+    return false
+  }
   if (a.cmd === 'list') {
     for (const item of board.items) {
       const status = typeof item.status === 'string' ? item.status : String(item.status ?? '?')
@@ -436,8 +469,26 @@ function apply(a: Args, board: Board): boolean | View {
     }
     return false
   }
+  if (a.cmd === 'del-done' && a.all) {
+    const removed = board.items.filter((item) => item.status === 'done')
+    if (!removed.length) { process.stdout.write('{"deleted":[]}\n'); return false }
+    board.items = board.items.filter((item) => item.status !== 'done')
+    return { deleted: removed.map((item) => item.id) }
+  }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
+  if (a.cmd === 'item' || a.cmd === 'get') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    if (a.cmd === 'item') { process.stdout.write(`${JSON.stringify(itemObject(item))}\n`); return false }
+    const field = a.status as string
+    const progress = progressOf(item)
+    const number = Number(a.text)
+    const step = field === 'step' ? findStep(item, id, number) : null
+    const value = step ? step.lines[step.index].text : field === 'title' ? itemTitle(item) : field === 'progress' ? progress?.join('/') ?? null : fieldText(item[field])
+    process.stdout.write(`${JSON.stringify({ id: item.id, field, ...(step ? { number } : {}), value })}\n`)
+    return value === null ? 'empty' : false
+  }
   if (a.cmd === 'view') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)
@@ -586,6 +637,14 @@ function apply(a: Args, board: Board): boolean | View {
     item.details = details
     return true
   }
+  if (a.cmd === 'del-done' || (a.cmd === 'del' && a.exact)) {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    // orch 의 --force 안내와 함께 쓰는 내부 동작이다.
+    if (a.cmd === 'del-done' && item.status !== 'done') throw new Refused(`done 이 아닌 항목은 지우지 않는다: ${id} (지금 ${typeof item.status === 'string' ? item.status : '없음'}). 상태와 상관없이 지우려면 orch board del ${id} --force 를 쓴다`)
+    board.items = board.items.filter((row) => row !== item)
+    return { deleted: [item.id] }
+  }
   if (a.cmd === 'del') {
     board.items = board.items.filter((item) => item.id !== id)
     return true
@@ -652,12 +711,12 @@ function main(argv: string[]): number {
     for (const item of board.items) normalizeItem(item)
     return board
   }
-  const readonly = ['list', 'steps', 'view'].includes(a.cmd)
+  const readonly = ['list', 'steps', 'view', 'get', 'item', 'items'].includes(a.cmd)
   const dir = dirname(path)
   const made = readonly ? undefined : mkdirSync(dir, { recursive: true })
   let saved = false
   try {
-    if (readonly) { apply(a, read()); return 0 }
+    if (readonly) return apply(a, read()) === 'empty' ? 4 : 0
     const given = process.env.BOARD_LOCK_WAIT_MS
     const waitMs = given !== undefined && /^\d+$/.test(given) && Number.isSafeInteger(Number(given)) ? Number(given) : 5000
     return withFileLock(path, (lock: Lock) => {
@@ -668,9 +727,8 @@ function main(argv: string[]): number {
       const stamp = localIso(new Date())
       board.updatedAt = stamp
       for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
-      // 줄 전체를 바꾸기 전 사본도 잠금 안에서 남긴다.
-      if (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined) && existsSync(path)) copyFileSync(path, `${path}.bak`)
-      saved = saveBoard(path, board, lock)
+      const backup = (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined)) || (typeof result === 'object' && 'deleted' in result)
+      saved = saveBoard(path, board, lock, backup)
       if (!saved) {
         process.stderr.write(`보드 잠금을 다른 프로세스가 넘겨받아 쓰지 않았다: ${lock.file}\n`)
         return 1
@@ -695,15 +753,24 @@ function main(argv: string[]): number {
 }
 
 // 임시 파일에 쓰고 이름을 바꾼다. 쓰기 직전에 잠금의 표지를 확인한다.
-export function saveBoard(path: string, board: unknown, lock: { held(): boolean }): boolean {
+export function saveBoard(path: string, board: unknown, lock: { held(): boolean }, backup = false): boolean {
   const tmp = `${path}.${process.pid}.tmp`
+  const backupTmp = `${path}.bak.${process.pid}.tmp`
   try {
     writeFileSync(tmp, JSON.stringify(board, null, 1))
     if (!lock.held()) return false
+    const hasBackup = backup && existsSync(path)
+    if (hasBackup) copyFileSync(path, backupTmp)
     renameSync(tmp, path)
+    if (hasBackup) {
+      try { renameSync(backupTmp, `${path}.bak`) }
+      catch (error) { process.stderr.write(`보드는 저장했지만 사본을 옮기지 못했다: ${(error as Error).message}\n`) }
+    }
     return true
   } finally {
-    try { unlinkSync(tmp) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    for (const file of [tmp, backupTmp]) {
+      try { unlinkSync(file) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    }
   }
 }
 
