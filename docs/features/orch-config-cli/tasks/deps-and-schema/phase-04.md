@@ -33,7 +33,7 @@
 
 ### 1. `skills/orch/tests/config-schema-readers.spec.ts`(신규)
 
-- phase 03 의 표본 표에서 위 키들의 good 값을 가져와(표를 `core-config-schema.spec.ts` 에서 내보내거나 `skills/orch/tests/fixtures/config-samples.ts` 로 옮겨 두 테스트가 함께 쓴다) 읽는 곳마다 부른다. 설정 오류나 사용법 오류가 나면 실패하고, 메시지에 키와 값과 읽는 곳을 낸다.
+- phase 03 의 표본 표에서 위 키들의 good 값을 가져와(phase 03 이 표를 `skills/orch/tests/fixtures/config-samples.ts` 에 두어 두 테스트가 함께 쓴다) 읽는 곳마다 부른다. 설정 오류나 사용법 오류가 나면 실패하고, 메시지에 키와 값과 읽는 곳을 낸다.
 - 글자 `"30"` 인 `finish.merge_timeout` 으로 마무리 명령이 설정 오류·사용법 오류 없이 지금처럼 도는지 본다(스펙 REQ6 인수 조건).
 
 ### 2. 어긋남 고치기
@@ -54,7 +54,5 @@ node scripts/run-tests.ts --tsc-only
 | 파일 | 변경 |
 |---|---|
 | `skills/orch/tests/config-schema-readers.spec.ts` | 신규 |
-| `skills/orch/tests/fixtures/config-samples.ts` | 신규 |
-| `skills/orch/tests/core-config-schema.spec.ts` | 수정 (표본 표를 fixtures 로 옮김) |
 | `skills/orch/scripts/core/config-schema.ts` | 수정 (어긋난 키만) |
 | `docs/features/orch-config-cli/design.md` | 수정 (어긋난 키의 표 행만) |
