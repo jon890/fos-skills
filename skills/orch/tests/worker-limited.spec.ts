@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { tempDir } from '../../../modules/testkit/temp.ts'
-import { LIMIT_CHECK_MS, notifyLimitChecks, recordWorkerLimited, workerLimitedAt } from '../scripts/lib/worker-limited.ts'
+import { LIMIT_CHECK_MS, LIMIT_CHECK_TTL_MS, clearLimitCheck, notifyLimitChecks, recordWorkerLimited, workerLimitedAt } from '../scripts/lib/worker-limited.ts'
 
 test('머신 한도 시각은 더 늦은 값만 저장하고 여러 프로세스가 함께 써도 되돌아가지 않는다', async t => {
   const saved = process.env.ORCH_MACHINE_DIR
@@ -73,4 +73,28 @@ test('서로 다른 루프 프로세스도 같은 Run·제공자의 확인 알�
     child.once('exit', value => value === 0 ? resolve() : reject(new Error(stderr)))
   })))
   assert.deepEqual(readFileSync(output, 'utf8').trim().split('\n').sort(), ['claude', 'codex'])
+})
+
+test('24시간 뒤에는 Run 등록 여부와 무관하게 정리하고 명시 해제는 지정한 제공자만 끝낸다', t => {
+  const saved = process.env.ORCH_MACHINE_DIR
+  const root = tempDir('limit-check-clear-', t)
+  process.env.ORCH_MACHINE_DIR = join(root, 'machine')
+  t.after(() => { if (saved === undefined) delete process.env.ORCH_MACHINE_DIR; else process.env.ORCH_MACHINE_DIR = saved })
+  recordWorkerLimited(100, { run: 'A', provider: 'claude' })
+  recordWorkerLimited(100, { run: 'B', provider: 'claude' })
+  recordWorkerLimited(100, { run: 'A', provider: 'codex' })
+  const command = new URL('../scripts/worker/limit-clear.ts', import.meta.url)
+  const cleared = spawnSync(process.execPath, [command.pathname, 'claude', '--run', 'A'], { env: process.env, encoding: 'utf8' })
+  assert.equal(cleared.status, 0, cleared.stderr)
+  assert.match(cleared.stdout, /LIMIT-CLEARED claude/)
+  assert.equal(spawnSync(process.execPath, [command.pathname], { env: process.env }).status, 2)
+  clearLimitCheck('A', 'claude')
+  const sent: string[] = []
+  notifyLimitChecks(['A'], 100 + LIMIT_CHECK_MS, check => sent.push(check.provider))
+  assert.deepEqual(sent, ['codex'])
+  assert.equal(workerLimitedAt(), 100)
+  notifyLimitChecks(['A'], 100 + LIMIT_CHECK_TTL_MS, check => sent.push(check.provider))
+  notifyLimitChecks(['A', 'B'], 100 + LIMIT_CHECK_TTL_MS + LIMIT_CHECK_MS, check => sent.push(check.provider))
+  assert.deepEqual(sent, ['codex'])
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'machine/worker-limited.json'), 'utf8')).checks, {})
 })

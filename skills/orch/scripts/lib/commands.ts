@@ -93,6 +93,7 @@ const ROWS: Row[] = [
   },
   { group: 'loop', verb: 'stalled', script: 'loop/stalled-workers.ts', context: ['repo'], legacy: { name: 'stalled-workers', flags: [] }, usage: 'orch loop stalled [--json]' },
   // worker
+  { group: 'worker', verb: 'limit-clear', script: 'worker/limit-clear.ts', context: ['run'], required: ['run'], usage: 'orch worker limit-clear <제공자>' },
   {
     group: 'worker', verb: 'launch', script: 'worker/launch-worker.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'worktree') ? ['repo'] : []),
     legacy: { name: 'launch-worker', flags: [] }, usage: 'orch worker launch --spec <지시서> --name <이름> [-- <worker 인자>]',

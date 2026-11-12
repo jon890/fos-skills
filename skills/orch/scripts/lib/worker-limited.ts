@@ -8,6 +8,7 @@ const fileOf = () => join(machineDir(), 'worker-limited.json')
 type Check = { run: string; provider: string; at: number; checkedAt?: number }
 type Limited = { at: number; checks?: Record<string, Check> }
 export const LIMIT_CHECK_MS = 60 * 60_000
+export const LIMIT_CHECK_TTL_MS = 24 * LIMIT_CHECK_MS
 function readLimited(): Limited | null {
   try {
     const value = JSON.parse(readFileSync(fileOf(), 'utf8'))
@@ -48,6 +49,14 @@ export function notifyLimitChecks(runs: string[], now: number, notify: (check: C
     try { withFileLock(file, lock => {
       const value = readLimited()
       const check = value?.checks?.[key]
+      if (value && check && now - check.at >= LIMIT_CHECK_TTL_MS) {
+        delete value.checks![key]
+        const tmp = `${file}.${process.pid}.tmp`
+        writeFileSync(tmp, JSON.stringify(value) + '\n')
+        if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
+        renameSync(tmp, file)
+        return
+      }
       if (!value || !check || !runs.includes(check.run) || now - (check.checkedAt ?? check.at) < LIMIT_CHECK_MS) return
       notify(check)
       check.checkedAt = now
@@ -58,4 +67,19 @@ export function notifyLimitChecks(runs: string[], now: number, notify: (check: C
     }, { staleMs: 180_000 }) } catch (error) { failures.push(error) }
   }
   return failures
+}
+
+// 해제를 확인한 코디네이터가 자기 Run의 제공자 알림만 끝낸다. at는 기존 자동 진행 기준이라 보존한다.
+export function clearLimitCheck(run: string, provider: string): void {
+  const file = fileOf()
+  withFileLock(file, lock => {
+    const value = readLimited()
+    const key = JSON.stringify([run, provider])
+    if (!value?.checks?.[key]) return
+    delete value.checks[key]
+    const tmp = `${file}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(value) + '\n')
+    if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
+    renameSync(tmp, file)
+  }, { staleMs: 180_000 })
 }
