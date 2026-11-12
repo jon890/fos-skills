@@ -208,8 +208,8 @@ describe('지시서 검사', () => {
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고,
-    // 검토 하위 에이전트 허락, 보드 고치기 금지, 마이그레이션 번호 예약, ADR 번호 예약 규칙에 표지를 단다
-    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'no-board-edit', 'migration', 'adr']) {
+    // 검토 하위 에이전트 허락과 기다리기, 보드 고치기 금지, 마이그레이션 번호 예약, ADR 번호 예약 규칙에 표지를 단다
+    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'wait-subagent', 'no-board-edit', 'migration', 'adr']) {
       assert.match(template, new RegExp(`<!-- orch-rule: ${rule} -->`))
     }
     const a = spec('spec-a', '담당: `src/a/**`')
@@ -226,6 +226,20 @@ describe('지시서 검사', () => {
     }
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
+  })
+
+  test('틀의 wait-subagent 줄은 검토 하위 에이전트를 기다리는 방법을 턴 종료로 정한다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    const line = template.split('\n').find((l) => l.includes('<!-- orch-rule: wait-subagent -->'))
+    assert.ok(line, 'wait-subagent 줄이 있다')
+    // 턴을 끝내고 완료 알림으로 깨어나며, 기다린다는 status 와 우회(수정 시각 살피기, sleep, 폴링)는 막는다
+    assert.match(line, /턴을 끝내고 기다린다/)
+    assert.match(line, /완료 알림/)
+    assert.match(line, /status 나 ask 를 보내지 않는다/)
+    assert.match(line, /수정 시각/)
+    assert.match(line, /폴링은 쓰지 않는다/)
+    // 이 줄은 하위 에이전트를 요청하는 review-subagents 줄 뒤에 온다
+    assert.ok(template.indexOf('orch-rule: review-subagents') < template.indexOf('orch-rule: wait-subagent'))
   })
 
   test('기능 루프 표지만 빠진 공통 지시서도 경고한다', () => {
