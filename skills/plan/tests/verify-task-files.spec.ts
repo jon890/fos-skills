@@ -678,3 +678,20 @@ test('계획과 staged 검사에서 mjs 와 cjs 도 확인한다', () => {
   const rows = entries.map(([rel, action]) => `| \`${rel}\` | ${action} |`).join('\n')
   assert.equal(staged(repo, rows).violations.filter((line) => line.includes('runtime-policy 허용 목록')).length, 2)
 })
+
+
+test('정책이 깨졌거나 형식이 다르면 경고하고 다른 검사는 계속한다', () => {
+  for (const policy of ['{', '{}', '{"entry_js":[1],"legacy":[]}']) {
+    const repo = stagedRepo()
+    repo.file('scripts/runtime-policy.json', policy)
+    commitAll(repo)
+    const result = check(repo, [[['src/new.js', '신규']]])
+    assert.ok(has(result.warnings, 'JS 허용 목록을 읽지 못해'))
+    assert.notEqual(result.code, 2)
+    repo.file('src/new.js', '')
+    repo.git('add', 'src')
+    const checked = staged(repo, '| `src/new.js` | 신규 |')
+    assert.ok(has(checked.warnings, 'JS 허용 목록을 읽지 못해'))
+    assert.equal(checked.code, 0)
+  }
+})
