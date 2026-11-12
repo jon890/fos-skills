@@ -57,7 +57,7 @@ function main(argv: string[]): number {
   if (verb === 'del' && (values.json || values.status !== undefined || values.on !== undefined)) return usage()
   if ((values.json && !['get', 'list', 'show'].includes(verb)) || (values.status !== undefined && verb !== 'list') || (values.on !== undefined && ['get', 'list', 'show'].includes(verb))) return usage()
   if (verb === 'del' && args.length === 2 && !values.done) command = values.force ? ['del', id, '--exact'] : ['del-done', id]
-  else if (verb === 'del' && args.length === 1 && values.done && !values.force) command = ['del-done']
+  else if (verb === 'del' && args.length === 1 && values.done && !values.force) command = ['del-done', '--all']
   else if (verb === 'get' && GET_FIELDS.includes(third as typeof GET_FIELDS[number]) && ((third === 'step' && args.length === 4 && /^\d+$/.test(action)) || (third !== 'step' && args.length === 3))) command = ['get', id, third, ...(third === 'step' ? [action] : [])]
   else if (verb === 'list' && args.length === 1) { command = ['items']; if (values.status !== undefined) trailing = ['--', values.status] }
   else if (verb === 'set' && args.length === 3 && values.on === undefined) command = ['set', id, third, '--exact']

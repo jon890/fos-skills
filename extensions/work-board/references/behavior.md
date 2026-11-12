@@ -88,7 +88,7 @@
 - 낡은 목록 거절: `linesRev` 는 details 와 next 의 줄 글과 끝냄 값으로 지문을 만든다. `view` 로 읽은 `rev` 를 `set … --if-rev <지문>` 에 주면 읽은 뒤 줄이 바뀐 저장을 거절한다. 지문은 파일에 저장하지 않는다. 통째 저장 호출자가 이 옵션을 붙이는 변경은 뒤 PR 이 맡는다.
 - 칸 읽기: `get <id> <칸>`, `get <id> step <번호>` 는 JSON 으로 값을 내고 빈 값은 `null` 과 종료 코드 4 다.
 - 항목 읽기: `item <id>`, `items [<상태>[,<상태>…]]` 는 저장된 칸과 계산한 `progress`, `lines` 를 내며 `view` 와 달리 `was`, `rev` 는 없다.
-- 엄격한 삭제: `del <id> --exact` 는 있는 항목을, `del-done <id>` 는 끝난 항목을 지운다. id 없이 부른 `del-done` 만 끝난 항목을 모두 지운다. 빈 문자열 id 는 거절한다. 지울 것이 없으면 보드와 `.bak` 를 건드리지 않는다. 결과는 지운 id 의 JSON 이고 성공한 삭제는 이전 파일을 `.bak` 에 남긴다. 옵션 없는 `del <id>` 는 상태를 보지 않으며 없는 id 도 성공하고 사본을 남기지 않는다.
+- 엄격한 삭제: `del <id> --exact` 는 있는 항목을, `del-done <id>` 는 끝난 항목을 지운다. `del-done --all` 만 끝난 항목을 모두 지운다. 인자가 없으면 사용법 오류다. 빈 문자열 id 는 거절한다. 지울 것이 없으면 보드와 `.bak` 를 건드리지 않는다. 결과는 지운 id 의 JSON 이고 성공한 삭제는 이전 파일을 `.bak` 에 남긴다. 옵션 없는 `del <id>` 는 상태를 보지 않으며 없는 id 도 성공하고 사본을 남기지 않는다.
 - 줄 끝내기: `board.ts mark <id> <n>` 은 번호 없는 줄도 끝낸다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고, 빈 줄(공백뿐 포함)은 건너뛴다. `done` 값만 바꾼다(`--undo` 는 되돌린다). `board.ts list` 는 항목 줄 아래에 모든 줄을 `    <n> ✓ <text>`(끝냄)나 `    <n>   <text>`(안 끝냄)로 보이고, n 은 `mark` 의 번호와 같다. `step` 의 단계 번호와 `mark` 의 줄 번호는 다르다
 - 갱신: orch 의 띄우기와 루프가 자동 반영한다. 시점과 담당은 [갱신 담당 표](../../../skills/orch/references/board.md#갱신-담당)를 따른다. 수동 보정은 `node --disable-warning=ExperimentalWarning "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 `extensions/work-board/bin/board.ts` 다
 

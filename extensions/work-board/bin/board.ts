@@ -85,7 +85,7 @@ const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', '
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
   '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--exact] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '[--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
@@ -122,7 +122,7 @@ const HELP = `${USAGE}
     단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다
   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄은 세지 않는다)
     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
-  board.ts del <id> [--exact] | del-done [<id>] (엄격한 지우기는 결과와 사본을 남긴다)
+  board.ts del <id> [--exact] | del-done <id> | del-done --all (엄격한 지우기는 결과와 사본을 남긴다)
   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 항목의 status, details, next 가 바뀐 쓰기는 그 항목의 stepAt 에 그 시각을 남긴다. 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다
@@ -332,6 +332,7 @@ type Args = {
   text?: string
   undo: boolean
   exact: boolean
+  all: boolean
   ifRev?: string
   event?: string
   condition?: string
@@ -345,6 +346,7 @@ function parse(argv: string[]): Args | 'help' {
   const options = {
     undo: { type: 'boolean' },
     exact: { type: 'boolean' },
+    all: { type: 'boolean' },
     'if-rev': { type: 'string' },
     event: { type: 'string' },
     title: { type: 'string' },
@@ -360,7 +362,7 @@ function parse(argv: string[]): Args | 'help' {
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'help'])
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'help'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
@@ -371,6 +373,8 @@ function parse(argv: string[]): Args | 'help' {
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
+  if (values.all && (cmd !== 'del-done' || id !== undefined)) throw new Error('--all 은 del-done 에만 단독으로 쓴다')
+  if (cmd === 'del-done' && id === undefined && !values.all) throw new Error('del-done 에는 id 또는 --all 이 필요하다')
   if (values.exact !== undefined && !['set', 'step', 'del'].includes(cmd)) throw new Error('--exact 는 set, step, del 에만 쓴다')
   if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
@@ -385,7 +389,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -465,7 +469,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     }
     return false
   }
-  if (a.cmd === 'del-done' && a.id === undefined) {
+  if (a.cmd === 'del-done' && a.all) {
     const removed = board.items.filter((item) => item.status === 'done')
     if (!removed.length) { process.stdout.write('{"deleted":[]}\n'); return false }
     board.items = board.items.filter((item) => item.status !== 'done')
