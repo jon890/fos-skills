@@ -7,7 +7,7 @@ import { readLaunch } from './launched.ts'
 import { experimentOf, selectionsOf, type Candidate, type Selection } from './spec.ts'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
-type ModelPolicy = { models: string[]; limits: Map<string, string> }
+type ModelPolicy = { models: string[]; limits: Map<string, string | null> }
 
 // 모델 목록과 상한을 같은 행에서 읽는다. 모델 별칭은 id 에서 만들고 상한값은 표에만 둔다.
 export function modelPolicies(table: string): Map<string, ModelPolicy> {
@@ -21,12 +21,12 @@ export function modelPolicies(table: string): Map<string, ModelPolicy> {
       .map(model => model[1] ?? `claude-${model[2].toLowerCase()}-${model[3].replaceAll('.', '-')}`)
     const aliases = models.map(model => model.startsWith('claude-') ? model.split('-')[1] : model.split('-').at(-1)!)
     const named = aliases.some(alias => new RegExp(`\\b${alias}\\b`, 'i').test(m[3]))
-    const limits = new Map<string, string>()
+    const limits = new Map<string, string | null>()
     models.forEach((model, index) => {
       // 쉼표와 마침표로 나눈 모델별 설명에서 첫 effort 가 상한이다. 이름이 없는 칸은 모든 후보에 적용한다.
       const clause = named ? m[3].split(/,|\.\s/).find(part => new RegExp(`\\b${aliases[index]}\\b`, 'i').test(part)) : m[3]
       const effort = /`(low|medium|high|xhigh|max|ultra)`/.exec(clause ?? '')?.[1]
-      if (effort) limits.set(model, effort)
+      if (effort) limits.set(model, /에서 시작/.test(clause ?? '') ? null : effort)
     })
     return [m[1], { models, limits }]
   }))
@@ -96,7 +96,7 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
       }
     }
   }
-  if (options.launch && candidates?.includes(selection.model ?? '') && selection.row !== 'review') {
+  if (options.launch && candidates?.includes(selection.model ?? '') && selection.row !== 'review' && policy?.limits.get(selection.model ?? '') !== null) {
     if (!policy?.limits.has(selection.model ?? '')) errors.push(`행 ${selection.row} 의 ${selection.model} effort 상한을 읽지 못했다`)
     if (!EFFORTS.includes(selection.effort ?? '') && !(selection.effort === '기본' && selection.model?.startsWith('claude-haiku-'))) {
       errors.push(`effort 상한을 검사하려면 명시한 effort 가 필요하다: ${selection.effort}`)

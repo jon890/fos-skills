@@ -230,3 +230,12 @@ test('effort 예외 기록에는 요청값과 상한을 남기고 정상 선택�
   })
   assert.equal(candidateOverrideOf(`${sol.replace('impl-planned', 'review').replace('`low`', '`high`')} ${reason}`), null)
 })
+
+
+test('visual 의 시작 effort 는 상한이 아니므로 medium 과 high 도 허용한다', () => {
+  for (const effort of ['low', 'medium', 'high']) {
+    const text = `worker 선택: \`codex\` \`gpt-6.1-terra\` effort \`${effort}\`. 행: visual. 비교: sol. 이유: 화면 확인.`
+    assert.deepEqual(selectionVerdict(text, repo, { launch: true }), [])
+    assert.equal(candidateOverrideOf(`${text} 후보 밖: 이전 선택에서 복사.`), null)
+  }
+})

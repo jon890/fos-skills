@@ -37,6 +37,7 @@
 | `security-review` | 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
 
 Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
+`visual` 의 「`low` 에서 시작」 은 상한이 아니므로 effort 상한 검사를 하지 않는다.
 
 - `launch-worker` 는 이 표의 행에 있는 모델과 모델별 effort 상한을 검사한다. 후보 밖 모델이나 상한을 넘는 effort 가 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 실제로 모델이나 effort 가 후보 밖이고 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다. effort 를 넘겼으면 `effort` 와 `effortLimit` 도 남긴다.
 - `review` 행은 모델 후보와 effort 상한을 검사하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 선택 줄에 `Terra 실험 N/5`(N 은 1~5)가 있고 그 행의 후보에 Sonnet 이 있을 때만 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
