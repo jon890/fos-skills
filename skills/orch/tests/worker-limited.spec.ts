@@ -45,7 +45,7 @@ test('한 시간 전에는 알리지 않고 성공한 주기는 재시작 뒤에
   })
   notifyLimitChecks(['A'], 100 + 2 * LIMIT_CHECK_MS, notify)
   assert.deepEqual(sent, ['claude', 'claude'])
-  assert.throws(() => notifyLimitChecks(['B'], 101 + LIMIT_CHECK_MS, () => { throw new Error('전송 실패') }), /전송 실패/)
+  assert.equal(notifyLimitChecks(['B'], 101 + LIMIT_CHECK_MS, () => { throw new Error('전송 실패') }).length, 1)
   notifyLimitChecks(['B'], 101 + LIMIT_CHECK_MS, notify)
   assert.deepEqual(sent, ['claude', 'claude', 'codex'])
   recordWorkerLimited(200 + 2 * LIMIT_CHECK_MS, { run: 'A', provider: 'claude' })

@@ -25,7 +25,7 @@ function setup(t: TestContext) {
   writeFileSync(join(bin, 'sweep.ts'), 'process.exitCode = 0\n')
   const common = `const fs=require('node:fs'); const args=process.argv.slice(2); const st=JSON.parse(fs.readFileSync(${JSON.stringify(state)},'utf8')); const flag=n=>args[args.indexOf(n)+1]; `
   writeNodeBin(bin, 'orca', common + `fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n'); const reply=result=>fs.writeSync(1,JSON.stringify({ok:true,result}));
-if(args[1]==='send'){ if(st.sendFail && flag('--subject').startsWith('STEP-READY'))process.exit(1); reply({message:{id:'m'}}) }
+if(args[1]==='send'){ if((st.sendFail && flag('--subject').startsWith('STEP-READY')) || (st.limitFail && flag('--subject').startsWith('LIMIT-CHECK')))process.exit(1); reply({message:{id:'m'}}) }
 else if(args[1]==='worker-list'){ if(st.workerFail)process.exit(1); reply(st.rawWorkers || {workers:st.workers||[],page:{}}) }
 else if(args[0]==='terminal' && args[1]==='read') reply({terminal:{tail:st.screen?st.screen.split('\\n'):[]}})
 else reply({messages:[]});`)
@@ -197,4 +197,17 @@ test('한도 확인은 보드 설정 없이 제공자를 읽어 한 시간 뒤 �
   assert.equal(notices().length, 1)
   c.tick(NOW + 120 * MIN)
   assert.equal(notices().length, 2)
+})
+
+test('한도 확인 전송이 실패해도 같은 틱의 다음 단계 알림을 보내고 확인 알림은 재시도한다', t => {
+  const c = setup(t)
+  c.fake({ workers: [worker({ projection: { provider: { id: 'claude' } } })], screen: "You've hit your usage limit" })
+  c.tick()
+  c.put([c.item()]); c.fake({ limitFail: true })
+  c.tick(NOW + 60 * MIN)
+  assert.equal(c.sent().length, 1)
+  const file = join(c.root, 'machine/worker-limited.json')
+  assert.equal(Object.values(JSON.parse(readFileSync(file, 'utf8')).checks).some((row: any) => row.checkedAt), false)
+  c.fake({}); c.tick(NOW + 61 * MIN)
+  assert.equal(Object.values(JSON.parse(readFileSync(file, 'utf8')).checks).some((row: any) => row.checkedAt), true)
 })

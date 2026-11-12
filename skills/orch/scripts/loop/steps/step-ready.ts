@@ -14,14 +14,15 @@ import { log, oneLine, rowsOf, stallEntries } from './shared.ts'
 
 export async function notifyStepReady(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { report, errors } = reporter(ctx)
+  const failed: string[] = []
   try {
     const now = Date.now()
-    notifyLimitChecks(ctx.runs.flatMap(({ run }) => run ? [run] : []), now, check => {
+    try { failed.push(...notifyLimitChecks(ctx.runs.flatMap(({ run }) => run ? [run] : []), now, check => {
       sendNotice('LIMIT-CHECK', null, `${check.provider}: 아직 사용 한도인지 확인할 때다. 한도가 풀렸으면 새로 띄우는 일부터 모델 표의 후보로 돌아온다. references/agent-selection.md 의 사용 한도 대체 표를 확인한다.`, check.run)
-    })
+    }).map(oneLine)) } catch (error) { failed.push(oneLine(error)) }
     const before = stallEntries(ctx.loaded?.stalls)
     if (Object.entries(state.stalls ?? {}).some(([id, row]) => row.limitedNotified && !before[id]?.limitedNotified)) recordWorkerLimited(now)
-    if (!ctx.autoAdvance || !existsSync(boardPath(ctx.repo))) { report('step-ready', null); return { errors } }
+    if (!ctx.autoAdvance || !existsSync(boardPath(ctx.repo))) { report('step-ready', failed.length ? failed.join('; ') : null); return { errors } }
     const rows: Record<string, unknown>[] = []
     let known = ctx.runs.some(row => row.run !== null)
     for (const { run } of ctx.runs) {
@@ -33,7 +34,6 @@ export async function notifyStepReady(ctx: StepContext, state: StepState): Promi
     const prs = state.prs.ok && state.prs.mine.every(pr => pr.branch.trim()) ? state.prs.mine.map(pr => ({ number: String(pr.number), branch: pr.branch })) : null
     const steps = boardReadySteps(ctx.repo, known ? liveSteps(rows) : null, ctx.lookup.paths, prs)
     const result = readyNotices(readReadyNotices(ctx.repo), steps, now, workerLimitedAt())
-    const failed: string[] = []
     for (const { id, notice } of result.fire) {
       const subject = `STEP-READY ${id} ${notice.mark} ${notice.step}`
       try {

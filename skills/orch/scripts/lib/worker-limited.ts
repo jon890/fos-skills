@@ -40,11 +40,12 @@ export function recordWorkerLimited(at: number, event?: { run: string; provider:
 
 // 한도 해제 시각을 알 수 없으므로 시간마다 확인을 요청한다. Run·제공자별 성공 시각을
 // 머신 잠금 안에서 저장해 다른 저장소의 루프나 재시작도 같은 주기를 다시 보내지 않는다.
-export function notifyLimitChecks(runs: string[], now: number, notify: (check: Check) => void): void {
+export function notifyLimitChecks(runs: string[], now: number, notify: (check: Check) => void): unknown[] {
+  const failures: unknown[] = []
   const file = fileOf()
   for (const key of Object.keys(readLimited()?.checks ?? {})) {
     // Orca 전송은 최대 60초씩 두 번 시도하므로 전송 중 잠금을 넘겨받지 않게 한다.
-    withFileLock(file, lock => {
+    try { withFileLock(file, lock => {
       const value = readLimited()
       const check = value?.checks?.[key]
       if (!value || !check || !runs.includes(check.run) || now - (check.checkedAt ?? check.at) < LIMIT_CHECK_MS) return
@@ -54,6 +55,7 @@ export function notifyLimitChecks(runs: string[], now: number, notify: (check: C
       writeFileSync(tmp, JSON.stringify(value) + '\n')
       if (!lock.held()) throw new Error(`한도 알림 파일 잠금을 잃었다: ${file}`)
       renameSync(tmp, file)
-    }, { staleMs: 180_000 })
+    }, { staleMs: 180_000 }) } catch (error) { failures.push(error) }
   }
+  return failures
 }
