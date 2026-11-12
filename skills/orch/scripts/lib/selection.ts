@@ -59,8 +59,9 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
     if (!candidates.length) errors.push(`행 ${selection.row} 의 후보 목록을 읽지 못했다`)
     else if (outsideCandidate(selection, candidates) && !selection.outsideReason) {
       const line = text.split('\n')[selection.no - 1]
-      const trial = selection.model === 'claude-fable-5-2' ? 'Fable' : selection.model === 'gpt-6.1-terra' && candidates.includes('claude-sonnet-5-5') ? 'Terra' : null
-      if (!trial || !new RegExp(`(?:^|\\s)${trial} 실험 [1-5]/5(?=\\s|[.]|$)`).test(line)) {
+      const terra = selection.model === 'gpt-6.1-terra' && candidates.includes('claude-sonnet-5-5')
+      // 표시 바로 뒤에 괄호나 쉼표가 와도 읽는다. 숫자, 영문자, 슬래시가 이어지면(1/50) 다른 표시다
+      if (!terra || !/(?:^|\s)Terra 실험 [1-5]\/5(?![0-9A-Za-z/])/.test(line)) {
         errors.push(`행 ${selection.row} 의 후보: ${candidates.join(', ')}. 후보 밖이면 \`worker 선택:\` 줄에 \`후보 밖: <이유>\` 를 적는다`)
       }
     }

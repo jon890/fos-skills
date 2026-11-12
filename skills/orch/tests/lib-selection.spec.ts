@@ -48,7 +48,7 @@ test('실제 모델 표의 행별 후보가 승인한 선택 규칙과 같다', 
     'impl-planned': ['gpt-6.1-sol', 'claude-sonnet-5-5'],
     'small-fix': ['claude-sonnet-5-5', 'claude-haiku-5-5', 'gpt-6-luna'],
     'simple-apply': ['claude-haiku-5-5', 'gpt-6-luna'],
-    'impl-explore': ['gpt-6.1-sol', 'claude-sonnet-5-5'],
+    'impl-explore': ['gpt-6.1-sol', 'claude-sonnet-5-5', 'claude-fable-5-2'],
     'hard-design': ['claude-opus-5-5', 'gpt-6.1-sol'],
     visual: ['gpt-6.1-terra'],
     review: [],
@@ -63,14 +63,29 @@ test('후보 밖 이유는 선택 줄에서만 읽고 빈 이유 뒤의 다른 �
   assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6-astra')}\n후보 밖: 사용자 지정`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
 })
 
-test('실험 표시는 대응 모델과 유효한 회차에만 후보 예외를 준다', () => {
-  for (const marker of ['', 'Terra 실험 0/5', 'Terra 실험 6/5', 'Fable 실험 1/5']) {
-    assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6.1-terra')} ${marker}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
+test('Terra 실험 표시는 Sonnet 이 후보인 행과 유효한 회차에만 후보 예외를 준다', () => {
+  const terra = sol.replace('gpt-6.1-sol', 'gpt-6.1-terra')
+  for (const marker of ['', 'Terra 실험 0/5', 'Terra 실험 6/5', 'Terra 실험 1/50', 'Terra 실험 1/5x', 'Fable 실험 1/5']) {
+    assert.match(selectionVerdict(`${terra} ${marker}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
   }
-  const wrongRow = sol.replace('gpt-6.1-sol', 'gpt-6.1-terra').replace('impl-planned', 'simple-apply')
+  for (const marker of ['Terra 실험 1/5', 'Terra 실험 5/5(두 번째 시도)', 'Terra 실험 2/5, 비교)', 'Terra 실험 3/5, 비교 작업.', 'Terra 실험 4/5를 쓴다.']) {
+    assert.deepEqual(selectionVerdict(`${terra} ${marker}`, repo, { launch: true }), [], marker)
+  }
+  const wrongRow = terra.replace('impl-planned', 'simple-apply')
   assert.match(selectionVerdict(`${wrongRow} Terra 실험 1/5`, repo, { launch: true }).join(), /행 simple-apply 의 후보:/)
   const generic = 'experiment: other. 후보: `codex` `gpt-6-astra` effort `medium` / `claude` `claude-sonnet-5-5` effort `medium`.'
   assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6-astra')}\n${generic}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
+})
+
+test('Fable 은 impl-explore 행의 후보이고 실험 표시 없이 통과하며 다른 행에서는 후보 밖이다', () => {
+  const fable = (row: string, marker = '') => `worker 선택: \`claude\` \`claude-fable-5-2\` effort \`high\`. 행: ${row}. 비교: sol. 이유: 큰 구조 정리. ${marker}`
+  assert.deepEqual(selectionVerdict(fable('impl-explore'), repo, { launch: true }), [])
+  // 실험이 끝난 뒤에도 표시가 남은 옛 지시서는 표시와 관계없이 행의 후보로 판정한다
+  assert.deepEqual(selectionVerdict(fable('impl-explore', 'Fable 실험 1/5'), repo, { launch: true }), [])
+  for (const row of ['impl-planned', 'hard-design', 'small-fix']) {
+    for (const marker of ['', 'Fable 실험 2/5']) assert.match(selectionVerdict(fable(row, marker), repo, { launch: true }).join(), new RegExp(`행 ${row} 의 후보:`))
+  }
+  assert.deepEqual(selectionVerdict(fable('hard-design', '후보 밖: 사용자 지정 2026-11-12.'), repo, { launch: true }), [])
 })
 
 test('Opus 높은 effort 는 유효 근거를 요구하고 다른 모델과 medium 은 통과한다', () => {
