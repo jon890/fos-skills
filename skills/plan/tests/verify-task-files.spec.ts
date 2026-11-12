@@ -664,3 +664,17 @@ test('계획에서 정책을 같은 phase 나 앞 phase 에 수정하면 staged 
     assert.ok(has(verify(repo, ['plan1-x', '--audit']).violations, 'runtime-policy 허용 목록'))
   }
 })
+
+
+test('계획과 staged 검사에서 mjs 와 cjs 도 확인한다', () => {
+  const repo = stagedRepo()
+  repo.file('scripts/runtime-policy.json', JSON.stringify({ entry_js: [], legacy: [] }))
+  commitAll(repo)
+  const entries: Entry[] = [['src/a.mjs', '신규'], ['src/b.cjs', '신규']]
+  const planned = check(repo, [entries])
+  assert.equal(planned.violations.filter((line) => line.includes('runtime-policy 허용 목록')).length, 2)
+  for (const [rel] of entries) repo.file(rel, '')
+  repo.git('add', 'src')
+  const rows = entries.map(([rel, action]) => `| \`${rel}\` | ${action} |`).join('\n')
+  assert.equal(staged(repo, rows).violations.filter((line) => line.includes('runtime-policy 허용 목록')).length, 2)
+})

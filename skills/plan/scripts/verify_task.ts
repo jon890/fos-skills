@@ -905,7 +905,7 @@ function checkNewJsPolicy(path: string, entries: Entry[], repo: string, out: str
   if (!Array.isArray(policy.entry_js) || !Array.isArray(policy.legacy)) throw new ValueError(`${policyPath} 의 JS 허용 목록이 잘못됐다`)
   const allowed = new Set([...policy.entry_js, ...policy.legacy])
   for (const [rel, action] of entries) {
-    if (action === '신규' && rel.endsWith('.js') && !isGlob(rel) && !allowed.has(rel)) {
+    if (action === '신규' && /\.(?:js|mjs|cjs)$/.test(rel) && !isGlob(rel) && !allowed.has(rel)) {
       out.push(`${path} — 새 JS 파일을 runtime-policy 허용 목록에 더한다: ${rel}`)
     }
   }
