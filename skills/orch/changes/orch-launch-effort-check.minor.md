@@ -1,2 +1,0 @@
-- worker 를 띄우기 전에 모델 표의 행별 effort 상한도 검사하고, 상한을 넘기려면 후보 밖 이유를 요구한다.
-- effort 상한을 넘겨 띄운 이유도 실행 결과의 candidateOverride 에 남긴다.
