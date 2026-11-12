@@ -17,12 +17,14 @@
 //
 // 핵심 낱말은 하나 이상 필수다. 그 리뷰에만 있는 문구를 넣는다.
 // 등급 접두사만 보면 접두사가 같은 옛 payload 가 그대로 통과한다.
-// DRY_RUN=1 이면 검증만 하고 등록하지 않는다.
+// 단건과 묶음 인라인은 PR head 의 새 파일 쪽 diff 범위에 있는 줄인지 등록 전에 확인한다.
+// DRY_RUN=1 도 같은 검사를 하며 등록하지 않는다. 이때도 GitHub 조회를 위한 네트워크와 gh 인증이 필요하다.
+// gh api --paginate --slurp 를 지원하는 gh 를 쓴다. patch 가 없는 파일은 파일 단위 댓글을 안내하며 거절한다.
 //
 // 호스트는 git remote 에서 자동으로 찾는다. GH_HOST 로 덮어쓸 수 있다.
 // payload 는 매번 새 임시 파일에 쓰고, 등록 직전에 본문을 검증한다.
 //
-// 종료 코드: 0 등록했다(또는 DRY_RUN 검증을 통과했다), 1 인자 오류나 검증 거부나 줄에 붙은 인라인이 모자람,
+// 종료 코드: 0 등록했다(또는 DRY_RUN 검증을 통과했다), 1 인자 오류·본문/줄 위치 검증 거부·등록 뒤 줄에 붙은 인라인이 모자람,
 //   그 밖에는 gh 가 낸 코드
 
 import { spawnSync } from 'node:child_process'
@@ -98,6 +100,50 @@ function need(value: string | undefined, label: string): string {
   return value
 }
 
+function parseLine(value: string): number {
+  try {
+    return pyIntOf(value)
+  } catch (error) {
+    die(`ValueError: ${(error as Error).message}`)
+  }
+}
+
+type InlineSpec = { path: string; line: number; file: string }
+
+function parseInline(spec: string): InlineSpec {
+  const at = spec.lastIndexOf(':')
+  const file = spec.slice(at + 1)
+  const rest = at < 0 ? spec : spec.slice(0, at)
+  const split = rest.lastIndexOf(':')
+  const line = rest.slice(split + 1)
+  if (!/^[0-9]+$/.test(line)) die(`줄 번호를 읽지 못했습니다: ${spec}`)
+  return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(line), file }
+}
+
+// patch 의 새 파일 쪽 범위에는 추가한 줄과 앞뒤 문맥 줄이 포함된다.
+function validateInlineLocations(host: string, repo: string, pr: string, locations: { path: string; line: number }[]): void {
+  const pages: { filename: string; patch?: string }[][] = JSON.parse(
+    gh(host, ['api', '--paginate', '--slurp', `repos/${repo}/pulls/${pr}/files?per_page=100`]),
+  )
+  const files = pages.flat()
+  for (const location of locations) {
+    const file = files.find((entry) => entry.filename === location.path)
+    if (!file) die(`PR 의 변경 파일에 없습니다: ${location.path}:${location.line} — 새 파일 쪽 경로를 확인하세요.`)
+    if (!file.patch) {
+      die(`diff patch 가 없어 인라인 위치를 확인할 수 없습니다: ${location.path}:${location.line} — GitHub 화면에서 파일 단위 댓글로 남기세요.`)
+    }
+    const ranges = [...file.patch.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
+    const inside = ranges.some((match) => {
+      const start = Number(match[1])
+      const count = match[2] === undefined ? 1 : Number(match[2])
+      return location.line >= start && location.line < start + count
+    })
+    if (!Number.isSafeInteger(location.line) || location.line < 1 || !inside) {
+      die(`인라인 위치를 확인할 수 없습니다: ${location.path}:${location.line} — PR head 의 새 파일 쪽 diff 범위에 있는 줄을 지정하세요.`)
+    }
+  }
+}
+
 export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void {
   const args = [...argv]
   let mode: Mode = 'review'
@@ -153,13 +199,11 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
   // 본문 검증 — 옛 payload 가 등록되는 사고를 막는 마지막 관문
   const read = (path: string) => readFileSync(path, 'utf8')
   let body = read(bodyFile)
+  let parsedInlines: InlineSpec[] = []
   if (mode === 'batch') {
     if (inlines.length < 1) die("묶음 모드는 '--' 뒤에 <파일경로>:<줄번호>:<본문.md> 를 하나 이상 받습니다.")
-    for (const spec of inlines) {
-      const inlineFile = spec.slice(spec.lastIndexOf(':') + 1)
-      const rest = spec.includes(':') ? spec.slice(0, spec.lastIndexOf(':')) : spec
-      const inlineLine = rest.slice(rest.lastIndexOf(':') + 1)
-      if (!/^[0-9]+$/.test(inlineLine)) die(`줄 번호를 읽지 못했습니다: ${spec}`)
+    parsedInlines = inlines.map(parseInline)
+    for (const { file: inlineFile } of parsedInlines) {
       if (!nonEmpty(inlineFile)) die(`본문 파일이 비어 있습니다: ${inlineFile}`)
       const text = read(inlineFile)
       if (!GRADE_RE.test(firstLine(text))) die(`${inlineFile} 의 첫 줄이 색 원과 등급(예: 🟠 **P2 높음**)이 아닙니다.`)
@@ -176,6 +220,13 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
     if (!body.includes(kw)) die(`본문에 '${kw}' 가 없습니다. 다른 본문일 수 있습니다.`)
   }
   if (body.split('\n').some((text) => BOT_TOKEN.test(text))) die('본문에 봇 재트리거 토큰이 있습니다. 백틱으로 감싸세요.')
+
+  if (mode === 'review' || mode === 'batch') {
+    const locations = mode === 'review'
+      ? [{ path: filePath, line: parseLine(line) }]
+      : parsedInlines
+    validateInlineLocations(host, repo, pr, locations)
+  }
 
   write(1, `호스트  : ${host}\n`)
   write(1, `대상    : ${repo} PR #${pr}\n`)
@@ -213,14 +264,12 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
     const withNotice = (text: string, wrap: (notice: string) => string) => (text.includes(AI_NOTICE) ? text : text + wrap(AI_NOTICE))
     const summaryBody = () => withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n---\n\n${n}`)
     if (mode === 'batch') {
-      const comments = inlines.map((spec) => {
-        const at = spec.lastIndexOf(':')
-        const rest = spec.slice(0, at)
-        const text = withNotice(rstrip(pyReadText(spec.slice(at + 1))), (n) => `\n\n<sub>${n}</sub>`)
-        const split = rest.lastIndexOf(':')
-        // rpartition 처럼 콜론이 없으면 경로는 빈 글자다
-        return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(rest.slice(split + 1)), side: 'RIGHT', body: text }
-      })
+      const comments = parsedInlines.map(({ path, line, file }) => ({
+        path,
+        line,
+        side: 'RIGHT',
+        body: withNotice(rstrip(pyReadText(file)), (n) => `\n\n<sub>${n}</sub>`),
+      }))
       const result = send({ event: 'COMMENT', body: summaryBody(), comments })
       write(1, `등록 완료: 리뷰 ${pyStr(result.id)}\n`)
       verifyInline(host, repo, pr, pyStr(result.id), inlines.length)
@@ -233,13 +282,7 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
       write(1, `등록 완료: 요약 리뷰 ${pyStr(result.id)} ${pyStr(result.html_url)}\n`)
     } else if (mode === 'review') {
       const text = withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n<sub>${n}</sub>`)
-      let lineNumber: number
-      try {
-        lineNumber = pyIntOf(line)
-      } catch (error) {
-        write(2, `ValueError: ${(error as Error).message}\n`)
-        throw new Exit(1)
-      }
+      const lineNumber = parseLine(line)
       const result = send({ event: 'COMMENT', comments: [{ path: filePath, line: lineNumber, side: 'RIGHT', body: text }] })
       write(1, `등록 완료: 리뷰 ${pyStr(result.id)}\n`)
       verifyInline(host, repo, pr, pyStr(result.id), 1)
