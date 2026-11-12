@@ -45,7 +45,10 @@ function setup(t: { after(fn: () => void): void }, opts: { origin?: string | nul
   const gh = linkBin(bin, 'gh', GH_BODY)
   const rulesPath = `${gh}.cfg.json`
   const logPath = `${gh}.calls.jsonl`
-  const setRules = (rules: Rule[]) => writeFileSync(rulesPath, JSON.stringify(rules))
+  const setRules = (rules: Rule[]) => writeFileSync(rulesPath, JSON.stringify([
+    ...rules,
+    { match: ['/files?per_page=100'], stdout: JSON.stringify([['a/b.ts', 'c.ts', 'a.ts', 'b:c.ts'].map((filename) => ({ filename, patch: '@@ -1,20 +1,20 @@\n context' }))]) },
+  ]))
   setRules([])
   const ssh = fakeBin(bin, 'ssh', [{ stdout: 'hostname github.com\n' }])
   const repo = join(root, 'repo')
@@ -188,7 +191,75 @@ describe('gh-review-post', () => {
     assert.equal(post(s, ['--summary', 'o/r', '5', summary, '낱말S'], dry).stdout, `${top}위치    : 리뷰 요약\n첫 줄   : ## 코드 리뷰\n검증    : 통과\nDRY_RUN=1 이므로 등록하지 않고 종료합니다.\n`)
     const batch = post(s, ['--batch', 'o/r', '5', summary, '낱말S', '--', `a/b.ts:3:${body}`, `c.ts:4:${body}`], dry)
     assert.equal(batch.stdout, `${top}위치    : 리뷰 요약과 인라인 2건\n첫 줄   : ## 코드 리뷰\n검증    : 통과\nDRY_RUN=1 이므로 등록하지 않고 종료합니다.\n`)
-    assert.deepEqual(s.calls(), [])
+    assert.ok(s.calls().every((call) => call.argv.includes('--slurp')))
+  })
+
+  for (const mode of ['review', 'batch']) {
+    for (const dry of [true, false]) {
+      test(`${mode} ${dry ? 'DRY_RUN' : '등록'} 에서 diff 밖 줄은 거절하고 범위 안 줄은 통과한다`, (t) => {
+        const s = setup(t)
+        const body = s.write('body.md', REVIEW)
+        const summary = s.write('summary.md', SUMMARY)
+        s.setRules([
+          { match: ['/files?per_page=100'], stdout: JSON.stringify([
+            [{ filename: 'other.ts', patch: '@@ -1 +1 @@' }],
+            [{ filename: 'a.ts', patch: '@@ -2,3 +2,3 @@\n context\n-old\n+new\n context\n@@ -9 +9 @@\n+last' }],
+          ]) },
+          { match: ['reviews', 'POST'], stdout: JSON.stringify({ id: 77 }) },
+          { match: ['pulls/5/comments'], stdout: '  댓글 11  a.ts:3  첫 줄: x\n' },
+        ])
+        for (const line of [179, 1, 5, 8, 10, 0]) {
+          const args = mode === 'review'
+            ? ['o/r', '5', 'a.ts', String(line), body, '낱말A']
+            : ['--batch', 'o/r', '5', summary, '낱말S', '--', `a.ts:${line}:${body}`]
+          const done = post(s, args, dry ? { DRY_RUN: '1' } : {})
+          assert.equal(done.code, 1, done.stderr)
+          assert.match(done.stderr, new RegExp(`a.ts:${line}`))
+          assert.doesNotMatch(done.stdout, /검증    : 통과/)
+        }
+        assert.ok(s.calls().every((call) => call.input === null), '거절한 위치는 등록 API 를 호출하지 않는다')
+        for (const line of [2, 3, 4, 9]) {
+          const args = mode === 'review'
+            ? ['o/r', '5', 'a.ts', String(line), body, '낱말A']
+            : ['--batch', 'o/r', '5', summary, '낱말S', '--', `a.ts:${line}:${body}`]
+          const done = post(s, args, dry ? { DRY_RUN: '1' } : {})
+          assert.equal(done.code, 0, done.stderr)
+        }
+        assert.ok(s.calls().some((call) => call.argv.includes('--paginate') && call.argv.includes('--slurp')))
+      })
+    }
+  }
+
+  test('파일이 없거나 patch 가 없거나 새 파일 쪽 범위가 비면 등록 전에 거절한다', (t) => {
+    const s = setup(t)
+    const body = s.write('body.md', REVIEW)
+    s.setRules([{ match: ['/files?per_page=100'], stdout: JSON.stringify([[
+      { filename: 'binary.ts' },
+      { filename: 'deleted.ts', patch: '@@ -1,3 +0,0 @@' },
+    ]]) }])
+    for (const file of ['missing.ts', 'binary.ts', 'deleted.ts']) {
+      const done = post(s, ['o/r', '5', file, '1', body, '낱말A'], { DRY_RUN: '1' })
+      assert.equal(done.code, 1)
+      assert.ok(done.stderr.includes(`${file}:1`))
+    }
+    assert.ok(s.calls().every((call) => call.input === null))
+  })
+
+  test('묶음의 뒤쪽 위치가 잘못돼도 리뷰 전체를 등록하지 않는다', (t) => {
+    const s = setup(t)
+    const body = s.write('body.md', REVIEW)
+    const done = post(s, ['--batch', 'o/r', '5', s.write('summary.md', SUMMARY), '낱말S', '--', `a.ts:3:${body}`, `a.ts:179:${body}`])
+    assert.equal(done.code, 1)
+    assert.match(done.stderr, /a.ts:179/)
+    assert.ok(s.calls().every((call) => call.input === null))
+  })
+
+  test('diff 조회에 실패하면 gh 의 종료 코드를 유지하고 등록하지 않는다', (t) => {
+    const s = setup(t)
+    s.setRules([{ match: ['/files?per_page=100'], code: 4 }])
+    const done = post(s, ['o/r', '5', 'a.ts', '3', s.write('body.md', REVIEW), '낱말A'])
+    assert.equal(done.code, 4)
+    assert.ok(s.calls().every((call) => call.input === null))
   })
 
   describe('등록 전 거부는 1 과 stderr 문구', () => {
@@ -248,7 +319,7 @@ describe('gh-review-post', () => {
     const done = post(s, ['o/r', '5', 'a/b.ts', '12', body, '낱말A'])
     assert.equal(done.code, 0, done.stderr)
     assert.equal(done.stdout, `호스트  : github.com\n대상    : o/r PR #5\n위치    : a/b.ts:12\n첫 줄   : 🟠 **P2 높음**\n검증    : 통과\n등록 완료: 리뷰 77\n${verifyLine}`)
-    const [create] = s.calls()
+    const create = s.calls().find((call) => call.input !== null)!
     assert.equal(create.ghHost, 'github.com')
     assert.equal(create.input, `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}]}\n`)
   })
@@ -258,7 +329,7 @@ describe('gh-review-post', () => {
     const body = s.write('body.md', `${REVIEW}\n<sub>${NOTICE}</sub>\n`)
     s.setRules([{ match: ['reviews', 'POST'], stdout: posted() }, { match: ['--jq'], stdout: verifyLine }])
     assert.equal(post(s, ['o/r', '5', 'a/b.ts', '12', body, '낱말A']).code, 0)
-    assert.equal(s.calls()[0].input, `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}]}\n`)
+    assert.equal(s.calls().find((call) => call.input !== null)!.input, `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}]}\n`)
   })
 
   test('줄에 붙은 댓글이 모자라면 1 과 stderr 경고', (t) => {
@@ -276,7 +347,7 @@ describe('gh-review-post', () => {
     const done = post(s, ['--summary', 'o/r', '5', s.write('s.md', SUMMARY), '낱말S'])
     assert.equal(done.code, 0, done.stderr)
     assert.ok(done.stdout.endsWith('등록 완료: 요약 리뷰 77 http://x/77\n'))
-    assert.equal(s.calls()[0].input, `{"event": "COMMENT", "body": "## 코드 리뷰\\n요약 낱말S\\n\\n---\\n\\n${NOTICE}"}\n`)
+    assert.equal(s.calls().find((call) => call.input !== null)!.input, `{"event": "COMMENT", "body": "## 코드 리뷰\\n요약 낱말S\\n\\n---\\n\\n${NOTICE}"}\n`)
   })
 
   test('묶음 등록', (t) => {
@@ -291,7 +362,7 @@ describe('gh-review-post', () => {
     assert.equal(done.code, 0, done.stderr)
     assert.match(done.stdout, /등록 완료: 리뷰 80\n/)
     assert.equal(
-      s.calls()[0].input,
+      s.calls().find((call) => call.input !== null)!.input,
       `{"event": "COMMENT", "body": "## 코드 리뷰\\n요약 낱말S\\n\\n---\\n\\n${NOTICE}", "comments": [{"path": "a.ts", "line": 3, "side": "RIGHT", "body": "🔴 **P1 치명**\\n첫 인라인\\n\\n<sub>${NOTICE}</sub>"}, {"path": "b:c.ts", "line": 4, "side": "RIGHT", "body": "🔵 **P4 낮음**\\n둘째\\n\\n<sub>${NOTICE}</sub>"}]}\n`,
     )
   })
@@ -302,7 +373,7 @@ describe('gh-review-post', () => {
     const done = post(s, ['--edit', 'o/r', '5', '9', s.write('b.md', REVIEW), '낱말A'])
     assert.equal(done.code, 0, done.stderr)
     assert.ok(done.stdout.endsWith('수정 완료: 댓글 9  a.ts  첫 줄: 🟠 **P2 높음**\n'))
-    assert.equal(s.calls()[0].input, `{"body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}\n`)
+    assert.equal(s.calls().find((call) => call.input !== null)!.input, `{"body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}\n`)
   })
 
   test('답글 등록은 본문 파일을 -F 로 보낸다', (t) => {

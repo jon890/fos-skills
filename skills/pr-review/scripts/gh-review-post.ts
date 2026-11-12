@@ -98,6 +98,34 @@ function need(value: string | undefined, label: string): string {
   return value
 }
 
+function parseLine(value: string): number {
+  try {
+    return pyIntOf(value)
+  } catch (error) {
+    die(`ValueError: ${(error as Error).message}`)
+  }
+}
+
+// patch 의 새 파일 쪽 범위에는 추가한 줄과 앞뒤 문맥 줄이 포함된다.
+function validateInlineLocations(host: string, repo: string, pr: string, locations: { path: string; line: number }[]): void {
+  const pages: { filename: string; patch?: string }[][] = JSON.parse(
+    gh(host, ['api', '--paginate', '--slurp', `repos/${repo}/pulls/${pr}/files?per_page=100`]),
+  )
+  const files = pages.flat()
+  for (const location of locations) {
+    const file = files.find((entry) => entry.filename === location.path)
+    const ranges = [...(file?.patch ?? '').matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
+    const inside = ranges.some((match) => {
+      const start = Number(match[1])
+      const count = match[2] === undefined ? 1 : Number(match[2])
+      return location.line >= start && location.line < start + count
+    })
+    if (!Number.isSafeInteger(location.line) || location.line < 1 || !inside) {
+      die(`인라인 위치를 확인할 수 없습니다: ${location.path}:${location.line} — PR head 의 새 파일 쪽 diff 범위에 있는 줄을 지정하세요.`)
+    }
+  }
+}
+
 export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void {
   const args = [...argv]
   let mode: Mode = 'review'
@@ -177,6 +205,17 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
   }
   if (body.split('\n').some((text) => BOT_TOKEN.test(text))) die('본문에 봇 재트리거 토큰이 있습니다. 백틱으로 감싸세요.')
 
+  if (mode === 'review' || mode === 'batch') {
+    const locations = mode === 'review'
+      ? [{ path: filePath, line: parseLine(line) }]
+      : inlines.map((spec) => {
+          const rest = spec.slice(0, spec.lastIndexOf(':'))
+          const split = rest.lastIndexOf(':')
+          return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(rest.slice(split + 1)) }
+        })
+    validateInlineLocations(host, repo, pr, locations)
+  }
+
   write(1, `호스트  : ${host}\n`)
   write(1, `대상    : ${repo} PR #${pr}\n`)
   switch (mode) {
@@ -233,13 +272,7 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
       write(1, `등록 완료: 요약 리뷰 ${pyStr(result.id)} ${pyStr(result.html_url)}\n`)
     } else if (mode === 'review') {
       const text = withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n<sub>${n}</sub>`)
-      let lineNumber: number
-      try {
-        lineNumber = pyIntOf(line)
-      } catch (error) {
-        write(2, `ValueError: ${(error as Error).message}\n`)
-        throw new Exit(1)
-      }
+      const lineNumber = parseLine(line)
       const result = send({ event: 'COMMENT', comments: [{ path: filePath, line: lineNumber, side: 'RIGHT', body: text }] })
       write(1, `등록 완료: 리뷰 ${pyStr(result.id)}\n`)
       verifyInline(host, repo, pr, pyStr(result.id), 1)
