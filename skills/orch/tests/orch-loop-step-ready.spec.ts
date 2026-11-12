@@ -193,6 +193,7 @@ test('한도 확인은 보드 설정 없이 제공자를 읽어 한 시간 뒤 �
   const args = notices()[0]
   assert.equal(args[args.indexOf('--to') + 1], 'run:R')
   assert.match(args[args.indexOf('--body') + 1], /claude:.*새로 띄우는 일부터 모델 표의 후보로 돌아온다/)
+  assert.match(args[args.indexOf('--body') + 1], /24시간.*자동으로 끝난다/)
   c.tick(NOW + 61 * MIN)
   assert.equal(notices().length, 1)
   c.tick(NOW + 120 * MIN)

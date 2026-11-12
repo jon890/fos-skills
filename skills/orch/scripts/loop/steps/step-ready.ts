@@ -18,7 +18,7 @@ export async function notifyStepReady(ctx: StepContext, state: StepState): Promi
   try {
     const now = Date.now()
     try { failed.push(...notifyLimitChecks(ctx.runs.flatMap(({ run }) => run ? [run] : []), now, check => {
-      sendNotice('LIMIT-CHECK', null, `${check.provider}: 아직 사용 한도인지 확인할 때다. 한도가 풀렸으면 새로 띄우는 일부터 모델 표의 후보로 돌아온다. references/agent-selection.md 의 사용 한도 대체 표를 확인한다.`, check.run)
+      sendNotice('LIMIT-CHECK', null, `${check.provider}: 아직 사용 한도인지 확인할 때다. 한도가 풀렸으면 새로 띄우는 일부터 모델 표의 후보로 돌아온다. references/agent-selection.md 의 사용 한도 대체 표를 확인한다. 최초 한도 발생 후 24시간이 지나면 이 확인 알림은 자동으로 끝난다.`, check.run)
     }).map(oneLine)) } catch (error) { failed.push(oneLine(error)) }
     const before = stallEntries(ctx.loaded?.stalls)
     if (Object.entries(state.stalls ?? {}).some(([id, row]) => row.limitedNotified && !before[id]?.limitedNotified)) recordWorkerLimited(now)
