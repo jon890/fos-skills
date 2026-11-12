@@ -55,7 +55,7 @@
 // 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다. 이 명령이 쓰는 칸은 PR 번호 말고는 문자열이다.
 //
 // 쓰기는 <보드 파일>.lock 을 읽기부터 저장까지 잡는다. 기본 5초 대기, 30초 넘은 잠금은 넘겨받는다.
-// list, steps, view 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
+// list, steps, view, get, item, items 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
 import { createHash } from 'node:crypto'
@@ -80,14 +80,15 @@ const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view']
+export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--exact] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
-쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view 는 잠그지 않는다.
+쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
 
 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 
@@ -100,6 +101,8 @@ const HELP = `${USAGE}
   step-mark 는 번호 뒤 자동 진행 표시만 바꾼다. 조건은 wait 에만 주고 사건 단계는 거절한다.
   step-edit 는 다른 번호와 사건 꼬리표를 지우는 글, step-add 는 중복 번호와 done 항목을 거절한다.
   --event 는 줄 끝 꼬리표를 붙이거나 바꾼다. 사건은 pr, merge, deploy, release 다.
+  board.ts get <id> <칸> | get <id> step <번호> (JSON, 빈 값은 null 과 종료 코드 4)
+  board.ts item <id> | items [<상태>[,<상태>…]] (항목 객체 또는 배열)
   board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, lines)
   set, step --exact 는 엄격 검사 뒤 결과 JSON 을 낸다. step 결과에는 number 도 있다.
   set --if-rev REV 는 읽은 뒤 줄이 바뀌면 저장을 거절한다.
@@ -364,13 +367,17 @@ function parse(argv: string[]): Args | 'help' {
   if (head.includes('-h') || head.includes('--help')) return 'help'
   const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: true })
   if (positionals.length === 0) throw new Error('cmd 가 필요하다')
-  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit'].includes(positionals[0]) ? 4 : 3
+  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit', 'get'].includes(positionals[0]) ? 4 : ['item', 'items'].includes(positionals[0]) ? 2 : 3
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
   if (values.exact !== undefined && !['set', 'step'].includes(cmd)) throw new Error('--exact 는 set, step 에만 쓴다')
   if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
+  if (cmd === 'get') {
+    if (!GET_FIELDS.includes(status as typeof GET_FIELDS[number])) throw new Error(`get 의 칸은 ${GET_FIELDS.join(', ')} 중 하나다: ${status ?? ''}`)
+    if (status === 'step' ? !/^\d+$/.test(text ?? '') : text !== undefined) throw new Error('get step 에는 단계 번호가 필요하고 다른 칸에는 번호를 주지 않는다')
+  }
   if (cmd === 'step-mark') {
     if (!/^\d+$/.test(status ?? '')) throw new Error('step-mark 에는 단계 번호가 필요하다: board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]')
     if (!MARKS.includes(text)) throw new Error(`step-mark 의 표시는 ${MARKS.join(', ')} 중 하나다: ${text ?? ''}`)
@@ -399,15 +406,30 @@ export function linesRev(item: Record<string, unknown> | undefined): string {
   return createHash('sha1').update(JSON.stringify(lists)).digest('hex').slice(0, 12)
 }
 
-function itemView(item: Item, was: unknown, number?: number) {
+function linesOf(item: Item) {
   const [source] = stepSource(item)
+  return ['details', 'next'].flatMap((key) => ((item[key] ?? []) as Line[])
+    .filter((line) => line.text.trim())
+    .map((line) => ({ number: key === source ? parseStep(line)?.[0] ?? null : null, done: line.done, text: line.text, in: key })))
+}
+function fieldText(value: unknown): string | null {
+  return typeof value === 'string' ? value || null : typeof value === 'number' ? String(value) : null
+}
+export function itemTitle(item: Record<string, unknown>): string | null {
+  return 'title' in item ? fieldText(item.title) : String(item.id)
+}
+function itemObject(item: Item) {
+  const result: Record<string, unknown> = {}
+  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'stages', 'stepAt']) {
+    if (key in item) result[key] = item[key]
+  }
+  return { ...result, progress: progressOf(item), lines: linesOf(item) }
+}
+function itemView(item: Item, was: unknown, number?: number) {
   return {
     id: item.id, status: typeof item.status === 'string' ? item.status : null,
     was: typeof was === 'string' ? was : null, progress: progressOf(item), rev: linesRev(item),
-    ...(number === undefined ? {} : { number }),
-    lines: ['details', 'next'].flatMap((key) => ((item[key] ?? []) as Line[])
-      .filter((line) => line.text.trim())
-      .map((line) => ({ number: key === source ? parseStep(line)?.[0] ?? null : null, done: line.done, text: line.text, in: key }))),
+    ...(number === undefined ? {} : { number }), lines: linesOf(item),
   }
 }
 
@@ -427,7 +449,14 @@ function stageNumbers(item: Item): number[] {
 
 type View = ReturnType<typeof itemView>
 // 읽기는 false, 기존 쓰기는 true, 결과를 내는 쓰기는 잠금 안에서 만든 항목 값이다.
-function apply(a: Args, board: Board): boolean | View {
+function apply(a: Args, board: Board): boolean | View | 'empty' {
+  if (a.cmd === 'items') {
+    const statuses = a.id === undefined ? null : a.id.split(',').map((value) => value.trim())
+    const invalid = statuses?.find((value) => !STATUSES.includes(value))
+    if (invalid !== undefined) throw new Refused(`status 는 ${STATUSES.join('|')} 중 하나다: ${invalid}`)
+    process.stdout.write(`${JSON.stringify(board.items.filter((item) => statuses === null || statuses.includes(String(item.status))).map(itemObject))}\n`)
+    return false
+  }
   if (a.cmd === 'list') {
     for (const item of board.items) {
       const status = typeof item.status === 'string' ? item.status : String(item.status ?? '?')
@@ -438,6 +467,18 @@ function apply(a: Args, board: Board): boolean | View {
   }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
+  if (a.cmd === 'item' || a.cmd === 'get') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    if (a.cmd === 'item') { process.stdout.write(`${JSON.stringify(itemObject(item))}\n`); return false }
+    const field = a.status as string
+    const progress = progressOf(item)
+    const number = Number(a.text)
+    const step = field === 'step' ? findStep(item, id, number) : null
+    const value = step ? step.lines[step.index].text : field === 'title' ? itemTitle(item) : field === 'progress' ? progress?.join('/') ?? null : fieldText(item[field])
+    process.stdout.write(`${JSON.stringify({ id: item.id, field, ...(step ? { number } : {}), value })}\n`)
+    return value === null ? 'empty' : false
+  }
   if (a.cmd === 'view') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)
@@ -652,12 +693,12 @@ function main(argv: string[]): number {
     for (const item of board.items) normalizeItem(item)
     return board
   }
-  const readonly = ['list', 'steps', 'view'].includes(a.cmd)
+  const readonly = ['list', 'steps', 'view', 'get', 'item', 'items'].includes(a.cmd)
   const dir = dirname(path)
   const made = readonly ? undefined : mkdirSync(dir, { recursive: true })
   let saved = false
   try {
-    if (readonly) { apply(a, read()); return 0 }
+    if (readonly) return apply(a, read()) === 'empty' ? 4 : 0
     const given = process.env.BOARD_LOCK_WAIT_MS
     const waitMs = given !== undefined && /^\d+$/.test(given) && Number.isSafeInteger(Number(given)) ? Number(given) : 5000
     return withFileLock(path, (lock: Lock) => {
