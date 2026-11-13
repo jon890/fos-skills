@@ -221,62 +221,83 @@ describe('checkImports', () => {
     assert.deepEqual(checkImports([], [{ path: 'a.ts', text }]), [])
   })
 
-  test('문자열 안의 from 이나 require 표본은 걸리지 않는다', () => {
-    const text = ["const s = \"import x from 'zod'\"", "const t = 'require(\"zod\")'", "// import y from 'zod'", ' * import z from "zod"'].join('\n')
-    assert.deepEqual(checkImports([], [{ path: 'a.ts', text }]), [])
-  })
-
-  test('문자열과 템플릿, 줄·블록 주석 안의 import 예제는 무시한다', () => {
+  test('정적 문은 줄 머리에서 시작하고 여러 줄 문도 첫 줄부터 읽는다', () => {
     const text = [
-      `const example = "await import('zod')"`,
-      `const single = 'prefix require("zod")'`,
-      'const template = `',
-      "import { z } from 'zod'",
-      "await import('zod')",
-      '`',
-      "// await import('zod')",
-      "const value = 1 /* require('zod')",
-      "import { z } from 'zod'",
-      "*/",
-    ].join('\n')
-    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), [])
-  })
-
-  test('주석 뒤 실제 호출과 템플릿 보간식의 중첩 코드도 검사한다', () => {
-    const text = [
-      "/* example */ await import('m1')",
-      "import { z } from 'm2'",
-      'const template = `${({ value: import("m3") })} text ${`nested ${require("m4")}`}`',
-      "const value = 'escaped \\' quote import(\"ignored\")'; require('m5')",
+      "  import { z } from 'm1'",
+      "export { z } from 'm2'",
+      "import 'm3'",
+      'export {',
+      '  x,',
+      "} from 'm4'",
+      "} from 'ignored'",
+      "const example = \"import x from 'ignored'\"",
     ].join('\n')
     assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), [
-      'IMPORT fixture.ts:1 m1',
-      'IMPORT fixture.ts:2 m2',
-      'IMPORT fixture.ts:3 m3',
-      'IMPORT fixture.ts:3 m4',
-      'IMPORT fixture.ts:4 m5',
+      'IMPORT fixture.ts:1 m1', 'IMPORT fixture.ts:2 m2', 'IMPORT fixture.ts:3 m3', 'IMPORT fixture.ts:4 m4',
     ])
   })
 
-  test('정규식의 따옴표·백틱·문자 클래스 뒤 실제 import를 검사한다', () => {
-    const expressions = ["/'/", '/`/', '/"/', "/[/']/", String.raw`/['\/\]]/gi`, '/prefix import("ignored")/']
-    for (const expression of expressions) {
-      const text = `const re = ${expression};\nawait import('zod');`
-      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], expression)
+  test('문자열 인자 하나인 import와 require는 줄 어디서든 검사한다', () => {
+    const text = [
+      "await import('m1')", // runtime-policy: sample
+      'const value = require( "m2" )', // runtime-policy: sample
+      'import(variable); require(variable)',
+      "import('ignored', options); require('ignored', extra)",
+      'import(`ignored`)',
+    ].join('\n')
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:1 m1', 'IMPORT fixture.ts:2 m2'])
+  })
+
+  test('주석 줄과 표시 줄은 제외하며 표시는 다음 줄에 듣지 않는다', () => {
+    const text = [
+      " // import('ignored')", // runtime-policy: sample
+      " * require('ignored')", // runtime-policy: sample
+      "import('ignored') // runtime-policy: sample",
+      "import { z } from 'ignored' // runtime-policy: sample",
+      '// runtime-policy: sample',
+      "await import('m1')", // runtime-policy: sample
+      "require('m2')", // runtime-policy: sample
+    ].join('\n')
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:6 m1', 'IMPORT fixture.ts:7 m2'])
+  })
+
+  test('여러 줄 정적 문의 어느 줄에 표시가 있어도 그 문만 제외한다', () => {
+    for (const markerRow of [0, 1, 2]) {
+      const rows = ['import {', '  z,', "} from 'ignored'"]
+      rows[markerRow] += ' // runtime-policy: sample'
+      rows.push("import { next } from 'm1'")
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: rows.join('\n') }]), ['IMPORT fixture.ts:4 m1'])
     }
   })
 
-  test('정규식 앞의 연산자·키워드·주석과 나눗셈을 구분한다', () => {
-    const prefixes = ['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '~', '^', '<', '>',
-      'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']
-    for (const prefix of prefixes) {
-      const text = `${prefix} /* comment */ /'/;\nawait import('zod');`
-      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], prefix)
+  test('표시 없는 문자열·템플릿·정규식 안의 호출 표본은 의도적으로 검사한다', () => {
+    const examples = [
+      `const example = "await import('zod')"`, // runtime-policy: sample
+      'const example = `require("zod")`', // runtime-policy: sample
+      'const example = /prefix import("zod")/', // runtime-policy: sample
+    ]
+    for (const example of examples) {
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: example }]), ['IMPORT fixture.ts:1 zod'])
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: example + ' // runtime-policy: sample' }]), [])
     }
-    for (const expression of ['a / b / c', '10 / 2 / 5', 'fn() / count', 'values[0] / count']) {
-      const text = `const quotient = ${expression};\nawait import('zod');`
-      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], expression)
+  })
+
+  test('세 리뷰의 표본을 표시로 제외해도 다음 줄 실제 import는 항상 검사한다', () => {
+    const examples = [
+      `const example = "await import('zod')"`, // runtime-policy: sample
+      "const re = /'/;", 'const re = /`/;',
+      'const quotient = counter++ / divisor;',
+      "if (ok) /'/.test(value);",
+    ]
+    for (const example of examples) {
+      for (const marker of ['', ' // runtime-policy: sample']) {
+        const text = example + marker + "\nimport('zod');"
+        const expected = example.includes('import(') && !marker ? ['IMPORT fixture.ts:1 zod', 'IMPORT fixture.ts:2 zod'] : ['IMPORT fixture.ts:2 zod']
+        assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), expected, example + marker)
+      }
     }
+    const text = ['const example = `', "import { z } from 'zod' // runtime-policy: sample", '`', "import('zod')"].join('\n')
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:4 zod'])
   })
 
   test('확장자와 entry_js 로 소스 파일을 고른다', () => {

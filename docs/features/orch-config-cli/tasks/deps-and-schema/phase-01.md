@@ -44,7 +44,8 @@
 ### 3. `scripts/runtime-policy.ts` 와 `scripts/runtime-policy.json` 의 두 규칙
 
 - `package.json` 자리: 대상 파일 가운데 이름이 `package.json` 인 것은 루트 하나만 `dependencies` 를 가질 수 있다. 루트 밖의 것은 키가 `type` 하나뿐이어야 한다. 어기면 `PACKAGE <경로> <이유>` 줄이다.
-- bare import: `.ts`·`.mts`·`.cts`·`.js`·`.mjs`·`.cjs` 와 `entry_js` 의 확장자 없는 진입에서 import·export from·부수 효과 import·동적 import·`require` 의 specifier 를 읽는다(`scripts/tests/exported-imports.spec.ts` 의 `SPECIFIER_PATTERNS` 꼴). `.` 이나 `/` 나 `node:` 로 시작하지 않는 specifier 는 정책 파일의 새 키 `bare_imports` 에 맞는 짝이 있어야 한다. 없으면 `IMPORT <경로>:<줄> <specifier>` 줄이다. 테스트 안의 문자열 표본이 걸리지 않게, 문자열·템플릿 문자열·줄 주석·블록 주석의 시작과 끝을 추적하고 실제 코드 위치의 줄 머리 import·export 문과 `import(`·`require(` 호출만 본다. 템플릿의 `${...}` 안은 코드로 검사한다.
+- bare import: `.ts`·`.mts`·`.cts`·`.js`·`.mjs`·`.cjs` 와 `entry_js` 의 확장자 없는 진입에서 import·export from·부수 효과 import·동적 import·`require` 의 specifier 를 읽는다(`scripts/tests/exported-imports.spec.ts` 의 `SPECIFIER_PATTERNS` 꼴). `.` 이나 `/` 나 `node:` 로 시작하지 않는 specifier 는 정책 파일의 새 키 `bare_imports` 에 맞는 짝이 있어야 한다. 없으면 `IMPORT <경로>:<줄> <specifier>` 줄이다. 정적 문은 앞 공백만 허용한 줄 머리의 import·export from·부수 효과 import를 본다. 여러 줄 문도 첫 줄이 import·export로 시작해야 한다. 호출은 줄 어디서든 문자열 인자 하나가 오는 `import('x')`·`require("x")` 꼴만 본다. 줄 머리가 `//`나 `*`인 주석 줄은 제외한다. 문자열·템플릿·정규식 표본은 해당 줄에 `// runtime-policy: sample`을 달아 제외한다. 여러 줄 정적 문은 그 문의 어느 줄에 표시가 있어도 제외하며, 표시는 다음 문이나 다음 줄의 호출에 듣지 않는다.
+  - 결정(사용자 2026-11-13): 리뷰 세 번에서 문자열·정규식·나눗셈 구분의 빈틈이 드러났다. 토큰 상태 추적을 없애고 검사 형태와 표본 표시로 범위를 줄인다.
 - `bare_imports` 는 `{ "path": <저장소 상대 경로나 glob>, "name": <specifier> }` 배열이다. 이 phase 는 `{ "path": "extensions/work-board/tests/*.test.ts", "name": "claude-code/testing" }` 하나를 둔다. `name` 이 루트 `package.json` 의 `dependencies` 에도, `claude-code/` 로 시작하는 플러그인 테스트 모듈에도 없으면 형식 오류(종료 코드 2)다.
 - 머리 주석의 「정책 파일의 키」 와 「출력 줄」 에 두 규칙을 더한다.
 

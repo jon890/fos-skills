@@ -47,6 +47,9 @@ PR1 만 머지돼도 doctor 가 틀린 값을 알려 쓸모가 있다. PR2 는 P
 - **메시지:** 거절 이유는 zod 의 한국어 로케일(`z.locales.ko()`)을 파싱 호출마다 넘겨 만든다. 전역 `z.config` 는 부르지 않는다. 같은 프로세스의 다른 코드에 영향을 주지 않기 위해서다.
 - **지키는 검사:**
   - `scripts/runtime-policy.ts` 에 두 규칙을 더한다. 의존을 담은 `package.json` 은 루트 하나만 두고, 그 밖의 `package.json` 은 `type` 하나만 담는다. `node:` 가 아닌 bare import 는 허용 목록의 짝(파일, 이름)에서만 쓴다. 허용 목록은 `skills/orch/scripts/core/config-schema.ts` 의 `zod` 와, 플러그인 테스트(`*.test.ts`)의 `claude-code/testing` 이다. 팀 저장소가 스킬 폴더만 복사해 가는 스킬이 의존을 쓰지 못하게 하려는 것이다.
+  - bare import 검사는 줄 머리의 정적 import·export from·부수 효과 import와, 줄 어디서든 문자열 인자 하나인 `import('x')`·`require("x")` 호출만 본다. 여러 줄 정적 문은 첫 줄이 import·export로 시작해야 한다. 줄 머리가 `//`나 `*`인 주석 줄은 제외한다.
+  - 문자열·템플릿·정규식의 코드 표본은 해당 줄에 `// runtime-policy: sample`을 달아 제외한다. 여러 줄 정적 문은 그 문의 어느 줄에 표시가 있어도 제외한다. 표시는 다음 문이나 다음 줄의 호출에 듣지 않는다.
+  - 결정(사용자 2026-11-13): 리뷰 세 번에서 토큰 상태 추적이 문자열·정규식·나눗셈을 잘못 구분하는 빈틈이 드러났다. 상태 추적을 없애고 위 형태만 검사하며 표본은 표시로 구분한다.
   - core 경계 검사(`skills/orch/tests/core-boundary.spec.ts`)의 허용 의존에 `zod` 를 더한다.
   - 테스트가 `core/config-schema.ts` 를 import 하는 파일이 위 두 명령뿐인지 본다.
 

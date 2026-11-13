@@ -40,7 +40,11 @@
 //   PACKAGE <경로> <이유>           루트 밖 package.json 에 type 말고 다른 키가 있거나, 루트 package.json 의 dependencies 가
 //                                   정확한 버전이 아니다. 의존은 루트 하나만 가진다(docs/adr/030-plugin-npm-dependencies.md)
 //   IMPORT <경로>:<줄> <이름>       bare import 가 bare_imports 의 짝에 없다. .ts·.mts·.cts·.js·.mjs·.cjs 와 entry_js 의 진입에서
-//                                   줄 머리의 import·export 문과 import(·require( 호출만 본다(문자열 안의 표본은 보지 않는다)
+//                                   줄 머리(앞 공백만 허용)의 import·export from·부수 효과 import 문을 본다. 여러 줄 문은 첫 줄이 import·export 여야 한다.
+//                                   import(·require( 호출은 줄 어디서든 문자열 인자 하나와 닫는 괄호가 오는 꼴만 본다. 문자열 아닌 인자는 보지 않는다.
+//                                   문자열·템플릿·정규식을 해석하지 않는다. 표본은 해당 줄에 // runtime-policy: sample 을 달아 뺀다.
+//                                   여러 줄 정적 문은 어느 줄에든 표시가 있으면 그 문만 뺀다. 표시는 다음 줄에 듣지 않는다.
+//                                   줄 머리(앞 공백만 허용)가 // 나 * 인 주석 줄은 보지 않는다.
 //   MIN-NODE <경로>:<줄> <값>       줄 머리의 `[export ]const MIN_NODE[: 타입] = [a, b]` 가 min_node 와 다르다
 //                                   (js-entry 와 tests/ 밖 .ts). 이 꼴로 읽지 못한 MIN_NODE 선언은 값을 `?` 로 낸다
 //   DOC <경로>:<줄> <내용>          migrated_docs 접두 아래 .md 가 `python3 ` 나 `bash "$SKILL_DIR/...sh` 로 부른다
@@ -220,13 +224,13 @@ export function checkPackages(files: FileText[]): string[] {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]);
-// 줄 머리의 import·export 문(여러 줄이면 `} from` 로 시작하는 줄), 부수 효과 import, 문자열 밖의 import(·require( 호출
-const LINE_HEAD_IMPORTS = [
-  /^\s*(?:import|export)\b[^'"`]*?\bfrom\s*(['"])([^'"]+)\1/,
-  /^\s*\}\s*from\s*(['"])([^'"]+)\1/,
-  /^\s*import\s*(['"])([^'"]+)\1/,
+// 정적 문은 줄 머리에서 시작하며 여러 줄에 걸칠 수 있다. 호출은 문자열 인자 하나인 꼴만 본다.
+const STATIC_IMPORTS = [
+  /^[ \t]*(?:import|export)\b[^;'"`]*?\bfrom\s*(['"])([^'"\r\n]+)\1/gm,
+  /^[ \t]*import[ \t]*(['"])([^'"\r\n]+)\1/gm,
 ];
-const CALL_IMPORTS = [/(?<![\w$.'"`])import\s*\(\s*(['"])([^'"]+)\1/g, /(?<![\w$.'"`])require\s*\(\s*(['"])([^'"]+)\1/g];
+const CALL_IMPORTS = [/\bimport\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g, /\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g];
+const SAMPLE_MARKER = "// runtime-policy: sample";
 
 function isBare(specifier: string) {
   return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("node:");
@@ -240,96 +244,33 @@ export function isSourceFile(path: string, entryJs: string[]) {
   return SOURCE_EXTENSIONS.has(extension(path)) || entryJs.includes(path);
 }
 
-// 원래 위치를 유지하면서 문자열·주석 밖의 코드 위치를 기록한다.
-// 템플릿의 ${...} 는 코드로 돌아오며, 그 안의 중괄호와 템플릿도 추적한다.
-function codePositions(text: string): Uint8Array {
-  const code = new Uint8Array(text.length);
-  const regexKeywords = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
-  let regexAllowed = true;
-  const stack: { kind: "code" | "template" | "single" | "double" | "line" | "block"; braces: number }[] = [{ kind: "code", braces: 0 }];
-  for (let i = 0; i < text.length; i++) {
-    const state = stack[stack.length - 1];
-    const ch = text[i];
-    const next = text[i + 1];
-    if (state.kind === "line") {
-      if (ch === "\n") stack.pop();
-      continue;
-    }
-    if (state.kind === "block") {
-      if (ch === "*" && next === "/") { stack.pop(); i++; }
-      continue;
-    }
-    if (state.kind !== "code") {
-      if (ch === "\\") { i++; continue; }
-      if (state.kind === "template" && ch === "$" && next === "{") {
-        stack.push({ kind: "code", braces: 1 });
-        regexAllowed = true;
-        i++;
-      } else if ((state.kind === "template" && ch === "`") || (state.kind === "single" && ch === "'") || (state.kind === "double" && ch === '"')) {
-        stack.pop();
-      }
-      continue;
-    }
-    if (ch === "/" && (next === "/" || next === "*")) {
-      stack.push({ kind: next === "/" ? "line" : "block", braces: 0 });
-      i++;
-    } else if (ch === "/" && regexAllowed) {
-      // 식이 시작할 수 있는 위치의 / 는 정규식이다. 문자 클래스의 / 와 이스케이프는 건너뛴다.
-      let inClass = false;
-      for (i++; i < text.length; i++) {
-        if (text[i] === "\\") { i++; continue; }
-        if (text[i] === "[") inClass = true;
-        else if (text[i] === "]") inClass = false;
-        else if (text[i] === "/" && !inClass) break;
-      }
-      while (/[a-z]/i.test(text[i + 1] ?? "")) i++;
-      regexAllowed = false;
-    } else if (ch === "'" || ch === '"' || ch === "`") {
-      stack.push({ kind: ch === "'" ? "single" : ch === '"' ? "double" : "template", braces: 0 });
-      regexAllowed = false;
-    } else if (ch === "}" && state.braces === 1) {
-      stack.pop();
-      regexAllowed = false;
-    } else if (/[\w$]/.test(ch)) {
-      const start = i;
-      while (/[\w$]/.test(text[i + 1] ?? "")) i++;
-      code.fill(1, start, i + 1);
-      regexAllowed = regexKeywords.has(text.slice(start, i + 1));
-    } else {
-      code[i] = 1;
-      if (!/\s/.test(ch)) regexAllowed = "(,=:[!&|?{};+-*%~^<>/".includes(ch);
-      if (state.braces > 0) {
-        if (ch === "{") state.braces++;
-        if (ch === "}") state.braces--;
-      }
-    }
-  }
-  return code;
-}
-
 export function checkImports(allowed: BareImport[], sources: FileText[]): string[] {
   const lines: string[] = [];
   const matchers = allowed.map((entry) => ({ path: globToRegExp(entry.path), name: entry.name }));
   for (const source of sources) {
-    const code = codePositions(source.text);
-    let offset = 0;
-    source.text.split("\n").forEach((text, index) => {
-      const start = offset;
-      offset += text.length + 1;
-      const found: string[] = [];
-      for (const pattern of LINE_HEAD_IMPORTS) {
-        const match = pattern.exec(text);
-        if (match && code[start + match[0].search(/\S/)]) found.push(match[2]);
-      }
-      for (const pattern of CALL_IMPORTS) for (const match of text.matchAll(pattern)) {
-        if (code[start + match.index]) found.push(match[2]);
-      }
-      for (const specifier of new Set(found)) {
-        if (!isBare(specifier)) continue;
-        if (matchers.some((entry) => entry.name === specifier && entry.path.test(source.path))) continue;
-        lines.push(`IMPORT ${source.path}:${index + 1} ${specifier}`);
-      }
+    const rows = source.text.split("\n");
+    const found = new Map<number, Set<string>>();
+    const add = (row: number, specifier: string) => {
+      if (!isBare(specifier)) return;
+      if (matchers.some((entry) => entry.name === specifier && entry.path.test(source.path))) return;
+      if (!found.has(row)) found.set(row, new Set());
+      found.get(row)!.add(specifier);
+    };
+    // 주석 줄은 공백으로 바꿔 원래 줄 번호와 여러 줄 문의 범위를 유지한다.
+    const text = rows.map((row) => /^[ \t]*(?:\/\/|\*)/.test(row) ? " ".repeat(row.length) : row).join("\n");
+    for (const pattern of STATIC_IMPORTS) for (const match of text.matchAll(pattern)) {
+      const start = text.slice(0, match.index).split("\n").length - 1;
+      const end = start + match[0].split("\n").length - 1;
+      if (rows.slice(start, end + 1).some((row) => row.includes(SAMPLE_MARKER))) continue;
+      add(start, match[2]);
+    }
+    rows.forEach((row, index) => {
+      if (/^[ \t]*(?:\/\/|\*)/.test(row) || row.includes(SAMPLE_MARKER)) return;
+      for (const pattern of CALL_IMPORTS) for (const match of row.matchAll(pattern)) add(index, match[2]);
     });
+    for (const [row, names] of [...found].sort(([a], [b]) => a - b)) {
+      for (const name of names) lines.push(`IMPORT ${source.path}:${row + 1} ${name}`);
+    }
   }
   return lines;
 }
