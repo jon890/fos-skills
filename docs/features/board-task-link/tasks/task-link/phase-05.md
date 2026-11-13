@@ -89,3 +89,7 @@ node scripts/run-tests.ts --tsc-only
 | `docs/data-schema.md` | 수정 (`state/task-links.json` 행) |
 | `skills/orch/references/board.md` | 수정 |
 | `skills/orch/changes/board-task-link.minor.md` | 수정 |
+
+| `skills/orch/tests/orch-loop.spec.ts` | 수정 (실제 틱 프로세스를 두 번 띄워 실패 간격 검증) |
+
+성공한 단계는 앞 틱 오류가 있을 때만 null 로 해제한다. 설정 없는 저장소의 출력 기록을 유지한다.

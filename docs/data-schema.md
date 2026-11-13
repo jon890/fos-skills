@@ -131,6 +131,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `config.json.lock` | 설정 쓰기 잠금. `orch config` 와 `doctor migrate` 가 읽기부터 저장까지 `withFileLock` 규약으로 함께 쓴다([보드 쓰기 잠금](adr/029-board-write-lock.md)) | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
+| `state/task-links.json` | 업무 주소 만들기의 항목별 실패 번호·시각·이유와 설정 오류 | 성공하거나 항목이 끝나면 그 기록을 지운다. 형식은 `lib/task-links.ts` 맨 위 설명이 소유한다 |
 | `state/approvals.json` | 승인 대기. 저장 꼴과 상태는 [승인 설계의 저장 꼴](features/board-approval/design.md#저장-꼴)이 소유한다. 잠금 안에서 옆 파일에 쓰고 이름을 바꾼다 | 쓰기마다 끝난 지 7일이 지난 기록을 지운다. 열린 기록과 마지막 버전 번호는 남긴다 |
 | `state/approvals.json.lock` | 승인 파일 잠금. [보드 쓰기 잠금](adr/029-board-write-lock.md)의 `withFileLock` 규약을 쓴다 | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
 | `state/step-ready.json` | 다음 단계 알림 기록. `notices` 의 항목 id 아래 `step`(사건 꼬리표를 뗀 글), `mark`(auto/ask), `at`(ms), `again`(재알림에 쓴 한도 알림 시각 또는 null)을 둔다 | 틱 자식이 옆 파일에 쓰고 rename 한다. 같은 단계는 worker 가 떠도 유지하며 글 변경·항목 완료 때 지운다 |
