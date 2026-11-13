@@ -195,7 +195,7 @@ implementation 은 이 목록을 verify 에 인계한다. orch 가 기록을 보
 아래는 작성할 때 먼저 지키면 재작성이 줄어드는 규칙이다.
 
 - 검증 절에는 같은 phase 의 테스트를 실행하는 명령을 적는다. lint 나 grep 만으로는 통과하지 않는다.
-- 테스트 파일을 직접 지정하는 명령은 작업 항목에 선언한 테스트를 포함한다.
+- 테스트 파일을 직접 지정하는 명령은 작업 항목에 선언한 테스트를 포함한다. `scripts/test-*` 도구는 테스트 파일로 세지 않는다.
 - 테스트 출력을 `tee` 로 넘기면 `set -o pipefail` 을 함께 적는다.
 - 보조 파일(fixture, helper, `conftest.py`)만 바꾸는 phase 도 그 파일을 쓰는 테스트를 실행하는 명령을 적는다.
 - 저장소의 `scripts/check-*`, `scripts/verify.*`, `scripts/test-*` 를 검증에 쓰면

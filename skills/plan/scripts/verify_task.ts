@@ -127,6 +127,7 @@ export function isTest(rel: string): boolean {
   const dirs = parts.slice(0, -1)
   if (dirs.some((p) => TEST_DIRS.has(p)) || TEST_DIRS.has(parts.at(-1)!)) return true
   const name = parts.at(-1)!
+  if (dirs.includes('scripts') && /^test[_-]/.test(name)) return false
   if (!(CODE_SUFFIXES.has(pathSuffix(name)) || isGlob(name))) return false
   return dirs.some((p) => p === 'spec' || p === 'specs') || TEST_NAME.test(name)
 }

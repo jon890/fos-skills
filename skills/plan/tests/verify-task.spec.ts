@@ -73,7 +73,6 @@ test('모듈 이름이 될 수 없는 하이픈 Python 테스트는 건너뛰는
   for (const [rel, command] of [
     ['tests/test-app.py', 'python3 -m unittest discover -s tests'],
     ['tests/test-app.py', 'pytest tests'],
-    ['scripts/test-app.py', 'python3 -m unittest scripts.test-app'],
   ]) {
     const entries: Entry[] = [['src/app.py', '신규'], [rel, '신규']]
     const r = inspect(`### 1. \`src/app.py\`\n### 2. \`${rel}\`\n정상과 실패 응답을 단언한다.`, command, entries)
@@ -555,4 +554,14 @@ test('스크립트 실행기를 쓰면 테스트 범위를 직접 확인하라�
 test('phase 본문의 필수 절이 없으면 위반이다', () => {
   const r = inspect('### 1. 작업', 'pytest', [], { text: () => '# Phase\n## 목표\n앱\n' })
   for (const section of ['**범위 외**', '## 작업 항목', '## 검증']) assert.ok(has(r.violations, `필수 섹션 누락: ${section}`), section)
+})
+
+test('test- 접두사의 도구 스크립트는 작업 항목의 테스트가 아니다', () => {
+  const entries: Entry[] = [['scripts/test-plugin-install.ts', '수정'], ['tests/app.spec.ts', '수정']]
+  const work = '### 1. `scripts/test-plugin-install.ts` 주석 수정\n### 2. `tests/app.spec.ts` 수정'
+  const files = { 'scripts/run-tests.ts': '' }
+  const ok = inspect(work, 'node scripts/run-tests.ts tests/app.spec.ts', entries, { files })
+  assert.ok(!has(ok.violations, NOT_RUN), ok.violations.join('\n'))
+  const missing = inspect(work, 'node scripts/run-tests.ts tests/other.spec.ts', entries, { files })
+  assert.ok(has(missing.violations, '테스트를 실행하지 않는다: tests/app.spec.ts'), missing.violations.join('\n'))
 })
