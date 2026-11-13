@@ -1,4 +1,4 @@
-import { boardWorkerRows, hasWorkRows, rowsReviewPr } from '../core/board-workers.ts'
+import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // 구현·후속 줄이 있는 항목은 리뷰 항목이 아니다. 리뷰·검증 줄만 있으면 그 줄의 worker_done 으로도 닫는다.
 // 보드(board.json)에서 PR 이 머지된 항목을 done 으로 바꾸고 목표 진행률을 다시 센다.
@@ -74,7 +74,7 @@ import { boardWorkerRows, hasWorkRows, rowsReviewPr } from '../core/board-worker
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
-import { reviewPrOfItem, reviewPrsByItem } from '../lib/review.ts'
+import { reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } from '../lib/review.ts'
 import { loadNotified, saveNotified, staleKey, textRev } from '../lib/board-stale.ts'
 import { prTaskRef } from '../lib/board.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
@@ -302,6 +302,7 @@ function main(argv: string[]): number {
       return 2
     }
   }
+  const reviewOrigins = reviewOriginsByItem(repo, items)
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
   const names = worktreeNames(repo)
   const liveBranches = new Set(branches.values())
@@ -366,10 +367,10 @@ function main(argv: string[]): number {
       }
     }
     reviewItems ??= reviewPrsByItem(repo)
-    const rows = hasWorkRows(item)
-    const target = rows === true ? null : rows === false ? rowsReviewPr(item) ?? reviewPrOfItem(id, reviewItems) : reviewPrOfItem(id, reviewItems)
+    const reviewOnly = isReviewItem(item, reviewOrigins)
+    const target = reviewOnly ? rowsReviewPr(item) ?? reviewPrOfItem(id, reviewItems) : null
     const review = target === null ? null : [id, String(target)]
-    const rowsDone = rows === false && workerRows.length > 0 &&
+    const rowsDone = reviewOnly && workerRows.length > 0 &&
       !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !(names !== null && !names.has(row.worktree)))
     const reviewDone = !SKIP_STATUS.has(String(item.status)) && (rowsDone || (review &&
       (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)) || stateFor(review[1]) === 'MERGED')))

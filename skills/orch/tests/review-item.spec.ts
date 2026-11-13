@@ -7,7 +7,7 @@ import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { boardItemOfDispatch, reviewPrOfItem, reviewPrsByItem } from '../scripts/lib/review.ts'
+import { boardItemOfDispatch, reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } from '../scripts/lib/review.ts'
 
 let tmp: string
 let saved: string | undefined
@@ -49,6 +49,24 @@ test('지시서 판정이 없으면 id 꼴로 읽고 다른 꼴은 리뷰 항목
   assert.equal(reviewPrOfItem('review-pr-486-b', none), 486)
   assert.equal(reviewPrOfItem('verify-pr-486', none), 486)
   assert.equal(reviewPrOfItem('review-pr-12abc', none), null)
+})
+
+test('리뷰 생성 이력과 구현 증거로 항목의 목적을 정한다', () => {
+  const impl = spec('origin-impl.md', '# 구현\n보드 항목 id: build')
+  const review = spec('origin-review.md', '# 리뷰\n보드 항목 id: build\n리뷰 PR: #7')
+  const orphan = spec('origin-orphan.md', '# 리뷰\n리뷰 PR: #7')
+  writeFileSync(join(tmp, 'orch/state/launch-history.jsonl'), [
+    { at: '2026-01-01T00:00:00Z', dispatch: 'impl', worktree: 'build', spec: impl },
+    { at: '2026-01-02T00:00:00Z', dispatch: 'review', worktree: 'r', spec: review },
+    { at: '2026-01-03T00:00:00Z', dispatch: 'orphan', worktree: 'review-only', spec: orphan },
+  ].map((row) => JSON.stringify(row)).join('\n'))
+  const items = [{ id: 'build', workers: [{ role: 'review', worktree: 'r', dispatch: 'review' }] },
+    { id: 'review-only', workers: [{ role: 'review', worktree: 'review-only', dispatch: 'orphan' }] }]
+  const origins = reviewOriginsByItem(tmp, items)
+  assert.equal(isReviewItem(items[0], origins), false)
+  assert.equal(isReviewItem(items[1], origins), true)
+  assert.equal(isReviewItem({ ...items[1], pr: 7 }, origins), false)
+  assert.equal(isReviewItem({ id: 'unknown', stages: 'pr=1,merge=2' }, origins), false)
 })
 
 test('명시한 항목에 붙은 리뷰 이력이 구현 항목을 닫지 않는다', () => {

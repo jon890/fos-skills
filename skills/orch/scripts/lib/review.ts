@@ -28,7 +28,9 @@ import { ghJson } from './gh.ts'
 import { git } from './git.ts'
 import { readLaunch } from './launched.ts'
 import { launchHistory } from './launch-history.ts'
-import { allLiveSpecPaths, boardIdOf, LINE_BREAK } from './spec.ts'
+import { allLiveSpecPaths, boardIdOf, workerRoleOf, LINE_BREAK } from './spec.ts'
+import { boardWorkerRows, hasWorkRows } from '../core/board-workers.ts'
+import { prNumbers } from '../core/board.ts'
 
 const BRANCH = /^(?:pr-(\d+)|review\/pr-(\d+)(?:-[A-Za-z0-9._-]+)?)$/
 const SPEC_NAME = /^spec-review-pr-(\d+)(?:-[^/]*)?\.md$/
@@ -142,6 +144,41 @@ export function reviewPrOfDispatch(repo: string, dispatch: string, history?: Rea
 
 // 보드 항목 id 꼴. 재리뷰(`review-pr-477-r2`), 다시 띄운 리뷰(`review-pr-486-b`), 인수 검증(`verify-pr-486`) 항목도 대상 PR 이 있다
 const ITEM_ID = /^(?:review|verify)-pr-(\d+)(?:-.+)?$/
+
+export type ReviewOrigin = { review: boolean; at: string }
+
+// 현재 붙은 리뷰가 항목의 생성 목적을 덮지 않도록 첫 이력을 읽는다. 구현 이력이 있으면 항상 구현 항목이다.
+export function reviewOriginsByItem(repo: string, items: Record<string, unknown>[], excludeDispatch = ''): Map<string, ReviewOrigin> {
+  const origins = new Map<string, ReviewOrigin>()
+  for (const row of [...launchHistory(repo)].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+    if (!row.spec || row.dispatch === excludeDispatch) continue
+    try {
+      const text = readFileSync(row.spec, 'utf8')
+      const explicit = boardIdOf(text)?.id
+      const ids = explicit ? [explicit] : items.filter((item) => item.id === basename(row.worktree) ||
+        item.worktree === basename(row.worktree) || boardWorkerRows(item).some((worker) => worker.dispatch === row.dispatch)).map((item) => String(item.id))
+      const review = reviewPrOfSpec(text) !== null || workerRoleOf(text) === 'verify'
+      for (const id of ids) {
+        const prior = origins.get(id)
+        if (!prior) origins.set(id, { review, at: row.at })
+        else if (!review) origins.set(id, { ...prior, review: false })
+      }
+    } catch { /* 읽지 못한 이력으로 생성 목적을 추측하지 않는다 */ }
+  }
+  return origins
+}
+
+export function isReviewItem(item: Record<string, unknown>, origins: ReadonlyMap<string, ReviewOrigin>): boolean {
+  if (hasWorkRows(item) === true || prNumbers(item.pr).size || prNumbers(item['merged-pr']).size) return false
+  const origin = origins.get(String(item.id))
+  if (origin) {
+    // 첫 리뷰를 띄우기 전부터 있던 구현 단계는 리뷰 생성 이력이 아니다.
+    if (item.stages && typeof item.stepAt === 'string' && Date.parse(item.stepAt) < Date.parse(origin.at)) return false
+    return origin.review
+  }
+  // 영구 이력 도입 전 리뷰 항목은 기존 id 계약을 유지한다.
+  return ITEM_ID.test(String(item.id))
+}
 
 // 보드 항목 id 가 리뷰·검증 항목이면 대상 PR 번호를 낸다. `byItem` 에 그 id 의 가장 최근 지시서 판정이 있으면 그것이 먼저다
 // (`리뷰 PR:` 줄이 없는 지시서면 null, 곧 리뷰 항목이 아니다). 지시서를 읽지 못해 판정이 없으면 id 꼴로 읽는다

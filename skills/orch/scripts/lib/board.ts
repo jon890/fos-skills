@@ -24,7 +24,7 @@ import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
 import { boardIdOf, boardNewOf, workerRoleOf, interimOf } from './spec.ts'
 import { boardWorkerRows } from '../core/board-workers.ts'
 import type { WorkerRole } from '../core/board-workers.ts'
-import { reviewPrOfSpec, reviewPrOfItem, reviewPrsByItem } from './review.ts'
+import { reviewPrOfSpec, isReviewItem, reviewOriginsByItem } from './review.ts'
 import { launchHistory } from './launch-history.ts'
 import { ghJson } from './gh.ts'
 import { workerRows } from './workers.ts'
@@ -120,7 +120,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     remembered.value ??= { item: id, role: current(item ?? { id })?.role ?? role, attached: Boolean(item && !current(item) && item.worktree !== wt) }
   function keepArgs(item: BoardItem): string[] {
     if ('workers' in item || typeof item.worktree !== 'string' || !item.worktree.trim()) return []
-    const role = reviewPrOfItem(item.id, reviewPrsByItem(repo, dispatch)) !== null ? 'review' : 'impl'
+    const role = isReviewItem(item, reviewOriginsByItem(repo, [item], dispatch)) ? 'review' : 'impl'
     const prior = launchHistory(repo).filter((row) => row.dispatch !== dispatch && basename(row.worktree) === item.worktree).sort((a, b) => a.at.localeCompare(b.at)).at(-1)
     // 이력의 존재는 살아 있다는 증거가 아니다. 워크트리와 해당 Run 의 현재 dispatch 를 함께 확인한다.
     const listed = prior?.run && existsSync(prior.worktree) ? workerRows(prior.run) : null

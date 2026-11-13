@@ -97,7 +97,7 @@ test('옛 대표를 보존하고 현재 리뷰 이력은 옛 역할 판정에서
   launch('보드 항목 id: a')
   assert.equal(items()[0].workers[0].dispatch, 'old-dispatch')
   assert.equal(items()[0].workers[0].status, 'working')
-  board({ ...legacy, id: 'review-pr-480' })
+  board({ ...legacy, id: 'review-pr-480', pr: null })
   launch('보드 항목 id: review-pr-480\n리뷰 PR: #480')
   assert.equal(items()[0].workers[0].role, 'review')
 })

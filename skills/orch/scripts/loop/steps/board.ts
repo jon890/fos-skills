@@ -8,13 +8,13 @@ import { isFile } from '../../lib/fs.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { context, payload } from '../../lib/completion.ts'
-import { boardItemOfDispatch, reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem } from '../../lib/review.ts'
+import { boardItemOfDispatch, reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } from '../../lib/review.ts'
 import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { oneLine, relay, rowsOf, SWEEP_TIMEOUT_MS } from './shared.ts'
-import { hasWorkRows, rowsReviewPr, workingDispatches, workerEnds } from '../../core/board-workers.ts'
+import { rowsReviewPr, workingDispatches, workerEnds } from '../../core/board-workers.ts'
 
 export async function syncBoard(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { prs } = state
@@ -27,7 +27,8 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
       const reviews = new Set<number>()
       const byItem = reviewPrsByItem(ctx.repo)
       const boardItems = readBoard(boardPath(ctx.repo))
-      const openItems = boardItems.filter((item) => item.status !== 'done' && hasWorkRows(item) !== true && (rowsReviewPr(item) ?? reviewPrOfItem(String(item.id), byItem)) !== null).map((item) => String(item.id))
+      const origins = reviewOriginsByItem(ctx.repo, boardItems)
+      const openItems = boardItems.filter((item) => item.status !== 'done' && isReviewItem(item, origins) && (rowsReviewPr(item) ?? reviewPrOfItem(String(item.id), byItem)) !== null).map((item) => String(item.id))
       const watched = workingDispatches(boardItems)
       if (watched.size) {
         const rows = ctx.runs.flatMap((run) => {

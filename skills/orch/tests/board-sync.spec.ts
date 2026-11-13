@@ -70,10 +70,10 @@ function run(args: string[], opts: { env?: Record<string, string> } = {}): Resul
 }
 
 // 보드를 쓰고 동기화한 뒤 종료 코드와 id 별 항목을 낸다
-function sync(items: Json[], extra: string[] = [], opts: { boardBin?: string } = {}): { code: number | null; board: Record<string, Json>; result: Result } {
+function sync(items: Json[], extra: string[] = [], opts: { boardBin?: string; env?: Record<string, string> } = {}): { code: number | null; board: Record<string, Json>; result: Result } {
   writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
   writeFileSync(board, JSON.stringify({ items }))
-  const result = run(['--board', board, '--repo', tmp, ...extra, ...(opts.boardBin ? ['--board-bin', opts.boardBin] : [])])
+  const result = run(['--board', board, '--repo', tmp, ...extra, ...(opts.boardBin ? ['--board-bin', opts.boardBin] : [])], { env: opts.env })
   return { code: result.code, board: load(), result }
 }
 
@@ -85,6 +85,27 @@ function load(): Record<string, Json> {
 const step = (text: string, done: boolean): Json => ({ text, done })
 
 const worker = (role: string, worktree: string, dispatch: string, extra = {}) => ({ role, worktree, dispatch, branch: 'feat/a', pr: null, at: '2026-01-01', status: 'working', endedAt: null, ...extra })
+
+test('대표가 빈 구현 항목의 리뷰가 끝나도 열린 구현 PR 의 항목을 닫지 않는다', () => {
+  states = { '7': 'OPEN' }
+  const orch = join(tmp, 'orch')
+  mkdirSync(join(orch, 'state'), { recursive: true })
+  const impl = join(tmp, 'impl.md'), review = join(tmp, 'review.md')
+  writeFileSync(impl, '# 구현\n보드 항목 id: implementation')
+  writeFileSync(review, '# 리뷰\n보드 항목 id: implementation\n리뷰 PR: #7')
+  writeFileSync(join(orch, 'state/launch-history.jsonl'), [
+    { at: '2026-01-01T00:00:00Z', dispatch: 'd0', worktree: join(tmp, 'old'), spec: impl },
+    { at: '2026-01-02T00:00:00Z', dispatch: 'd1', worktree: join(tmp, 'review'), spec: review },
+  ].map((row) => JSON.stringify(row)).join('\n'))
+  for (const pr of [7, null]) {
+    const r = sync([{ id: 'implementation', status: 'doing', worktree: '', pr, stages: 'pr=1,merge=2',
+      details: ['1. PR', '2. 머지'], workers: [worker('review', 'review', 'd1', { pr: 7 })] }],
+    ['--worker-ends', '{"d1":"done"}', '--completed-items', '["implementation"]'], { env: { ORCH_DIR: orch } })
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.implementation.status, 'doing')
+    assert.equal((r.board.implementation.details as any[])[1].done, false)
+  }
+})
 
 test('루프 끝남은 해당 줄만 끝내고 done 항목의 줄도 끝낸다', () => {
   const r = sync([
@@ -120,11 +141,11 @@ test('사라진 대표 줄을 끝낸 뒤 남은 후속 줄로 대표를 바꾼�
 test('리뷰 줄의 보고는 리뷰만 하는 항목만 닫고 구현 항목을 닫지 않는다', () => {
   states = { '7': 'OPEN' }
   const r = sync([
-    { id: 'rev-a', status: 'doing', details: ['1. 리뷰'], workers: [worker('review', 'r', 'd1', { pr: 7 })] },
+    { id: 'review-pr-7-a', status: 'doing', details: ['1. 리뷰'], workers: [worker('review', 'r', 'd1', { pr: 7 })] },
     { id: 'impl-a', status: 'doing', details: ['1. 구현'], workers: [worker('impl', 'w', 'd0'), worker('review', 'r2', 'd2', { pr: 7 })] },
   ], ['--worker-ends', '{"d1":"done","d2":"done"}'])
   assert.equal(r.code, 0, r.result.stderr)
-  assert.equal(r.board['rev-a'].status, 'done')
+  assert.equal(r.board['review-pr-7-a'].status, 'done')
   assert.equal(r.board['impl-a'].status, 'doing')
 })
 
@@ -141,19 +162,19 @@ test('구현 PR 이 머지되면 작업 중 리뷰 줄이 있어도 항목을 �
 test('리뷰만 있는 항목은 마지막 줄이 끊겨도 닫고 이미 끝난 줄도 복구한다', () => {
   states = { '7': 'OPEN' }
   for (const first of ['done', 'lost']) {
-    const r = sync([{ id: 'rev-a', status: 'doing', details: ['1. 리뷰'], workers: [
+    const r = sync([{ id: 'review-pr-7-a', status: 'doing', details: ['1. 리뷰'], workers: [
       worker('review', 'r1', 'd1', { pr: 7, status: first }),
       worker('review', 'r2', 'd2', { pr: 7 }),
     ] }], ['--worker-ends', '{"d2":"lost"}'])
     assert.equal(r.code, 0, r.result.stderr)
-    assert.equal(r.board['rev-a'].status, 'done')
-    assert.equal((r.board['rev-a'].workers as any[])[1].status, 'lost')
+    assert.equal(r.board['review-pr-7-a'].status, 'done')
+    assert.equal((r.board['review-pr-7-a'].workers as any[])[1].status, 'lost')
   }
-  const r = sync([{ id: 'rev-a', status: 'doing', details: ['1. 리뷰'], workers: [
+  const r = sync([{ id: 'review-pr-7-a', status: 'doing', details: ['1. 리뷰'], workers: [
     worker('review', 'r1', 'd1', { pr: 7, status: 'lost' }),
   ] }])
   assert.equal(r.code, 0, r.result.stderr)
-  assert.equal(r.board['rev-a'].status, 'done')
+  assert.equal(r.board['review-pr-7-a'].status, 'done')
 })
 
 test('시각 wait 는 첫 단계가 아니어도 지난 줄만 끝내며 항목 상태는 유지한다', () => {
