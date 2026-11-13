@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.53.0 (2026-11-13)
+
+- 공통 지시서 틀의 명령 블록에서 실행기 경로를 푸는 한 줄과 설명을 지우고 명령을 `orch …` 만 남긴다. 저장소의 사본은 `orch spec sync-common` 으로 맞춘다
+- `orch worker launch` 가 Claude 가 아닌 worker 를 띄우기 전에 로그인 셸의 PATH 에서 `orch` 와 node 를 찾는지 보고, 못 찾으면 `orch doctor install-cli` 를 안내하며 멈춘다
+- `~/.zshrc` 에만 둔 PATH 는 읽지 않으니 `~/.zshenv` 로 옮긴다. `orch doctor` 의 `CLI-NOT-ON-PATH` 도 같은 판정을 쓴다
+- Claude worker 와 이어 쓰는 터미널(`--terminal`)은 이 확인을 건너뛴다. 원격 환경(`--on` 등)은 원격 머신에 확인 터미널을 열어 같은 것을 보고, 확인하지 못하면 경고만 내고 띄운다
+- `orch worker resume` 이 Codex worker 에서 같은 확인을 하고, 사본이 깔려 있으면 새 터미널 명령 앞에 `export PATH=…` 를 더한다
+
 ## 7.52.0 (2026-11-13)
 
 - 옛 번들의 상주 루프가 새 설치본을 알아채면 이 저장소의 머지·마무리를 최대 60분 기다린 뒤 다시 뜬다. 설정 오류인 틱은 기다리지 않는다.
