@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.50.3 (2026-11-13)
+
+- `make-worktree` 가 원격 브랜치가 이미 있어 거절할 때 이어 받는 `--resume-remote` 를 안내한다
+- `reserve-migration --again` 에 `--rename` 을 더했다. 새 번호에 맞게 워크트리의 옛 마이그레이션 파일 이름과 파일 안 이름을 바꾸고 `RENAMED` 줄로 알린다
+
 ## 7.50.2 (2026-11-13)
 
 - `impl-planned` 행의 후보에 `gpt-6.1-terra` 를 더했다(effort `medium` 까지). 선택 줄에 `Terra 실험 N/5` 를 적지 않아도 된다. 한국어 문서가 주 산출물이면 쓰지 않는다.

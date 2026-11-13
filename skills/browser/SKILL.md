@@ -9,7 +9,7 @@ description: |
   외부에 게시할 본문을 렌더링해 보이는 일은 `content-preview`, HTML 보고서를 띄우는 일은 `report` 가 맡는다.
   `ego-browser` 스킬이 같이 설치돼 있어도 에이전트의 웹 작업은 이 스킬이 먼저다. ego 의 명령 문법만 필요할 때 `ego-browser` 스킬을 읽는다.
 metadata:
-  version: "3.0.0"
+  version: "3.0.1"
 ---
 
 # browser

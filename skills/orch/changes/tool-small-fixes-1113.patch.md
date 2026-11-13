@@ -1,2 +1,0 @@
-- `make-worktree` 가 원격 브랜치가 이미 있어 거절할 때 이어 받는 `--resume-remote` 를 안내한다
-- `reserve-migration --again` 에 `--rename` 을 더했다. 새 번호에 맞게 워크트리의 옛 마이그레이션 파일 이름과 파일 안 이름을 바꾸고 `RENAMED` 줄로 알린다
