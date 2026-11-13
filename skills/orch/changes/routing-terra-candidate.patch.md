@@ -1,1 +1,0 @@
-- `impl-planned` 행의 후보에 `gpt-6.1-terra` 를 더했다(effort `medium` 까지). 선택 줄에 `Terra 실험 N/5` 를 적지 않아도 된다. 한국어 문서가 주 산출물이면 쓰지 않는다.
