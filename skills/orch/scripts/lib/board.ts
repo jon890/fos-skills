@@ -33,7 +33,7 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 띄운 worker 를 보드 항목에 붙인다. 순서대로 하나만 한다.
 // 1. `중간 과정:` 줄이 있으면 done, decide, goal 이 아닌 항목 가운데 pr 칸에 그 PR 이 든 항목을, 없으면 같은 브랜치나 워크트리의 항목을 찾는다.
 //    찾은 항목 하나에 `중간 과정: <지시서 제목>` 줄 하나만 바꿔 두고 status, 제목, pr 은 그대로 둔다. 없거나 둘 이상이면 보드를 쓰지 않고 Error 다
-// 2. `보드 항목 id:` 로 정한 항목이 done 이면 다시 연다. 지난 줄은 완료로 두고(남은 일 줄과 중간 과정 줄은 뺀다) 마일스톤 단계를 다음 번호부터 붙이고
+// 2. `보드 항목 id:` 로 정한 항목이 done 이면, 또는 merged-pr 이 있고 단계가 모두 끝난 doing 항목에 새 브랜치의 worker 를 띄우면(같은 브랜치 재시도는 제외) 다시 연다. 지난 줄은 완료로 두고(남은 일 줄과 중간 과정 줄은 뺀다) 마일스톤 단계를 다음 번호부터 붙이고
 //    stages 칸을 새 번호로 바꾼다. pr 칸의 머지된 PR 은 merged-pr 의 맨 앞으로 옮겨 board-sync 가 다시 연결하지 않게 한다. 제목은 바꾸지 않는다
 // 3. 그 밖에는 지시서의 id, 같은 워크트리나 브랜치의 끝나지 않은 항목, 같은 업무 번호의 끝나지 않은 항목, --name, 워크트리 이름 순으로 항목을 정한다.
 //    업무 번호는 지시서의 업무 연결 줄(taskOf)에서 읽고, 제목에 그 번호가 든 항목을 같은 업무로 본다. done, decide, goal 항목은 보지 않는다.
@@ -110,7 +110,12 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     if (given) return given
     return boardSettings(repo).steps ?? [...DEFAULT_STEPS]
   }
-  if (item && explicit && item.status === 'done') {
+  // 앞 PR 이 머지돼 단계가 모두 끝난 채 doing 으로 남은 항목에 새 브랜치의 worker 를 띄우면 그 PR 의 단계를 잇는다.
+  // 같은 브랜치를 다시 띄우면(--resume-remote, 재시도) 더하지 않는다
+  const nextPr =
+    !!item && item.status !== 'done' && !!branch && item.branch !== branch &&
+    prNumbers(item['merged-pr']).size > 0 && allStagesDone(item)
+  if (item && ((explicit && item.status === 'done') || nextPr)) {
     const old = lines(item.details)
       .map(plain)
       .filter((text) => !text.startsWith(NOTE) && !text.startsWith(INTERIM))
@@ -144,6 +149,12 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)
     if (done.code !== 0) throw new Error(done.stderr || `보드 명령 종료 코드 ${done.code}`)
   }
+}
+
+// 번호 단계가 하나 이상이고 모두 끝났는가. 번호 없는 줄(남은 일, 자동 줄)은 보지 않는다
+function allStagesDone(item: BoardItem): boolean {
+  const steps = (Array.isArray(item.details) ? item.details : []).filter((d) => /^\d+[.)]\s/.test(detailText(d).replace(LEAD_MARK, '')))
+  return steps.length > 0 && steps.every((d) => (typeof d === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(d) : d.done === true))
 }
 
 export type SpecTask = { number: string; title: string | null }

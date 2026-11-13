@@ -129,6 +129,34 @@ test('done 항목 다시 열기도 거절 뒤 새 글과 완료 값을 읽어 �
   assert.equal(items()[0].details[1].text.startsWith('2.'), true)
 })
 
+test('앞 PR 이 머지돼 단계가 모두 끝난 항목에 새 브랜치 worker 를 띄우면 새 PR 단계를 잇고, 같은 브랜치 재시도는 더하지 않는다', () => {
+  const done = (text: string) => ({ text, done: true })
+  board([{ id: 'a', status: 'doing', branch: 'feat/pr1', worktree: 'wt1', 'merged-pr': '7', stages: 'pr=1,merge=2', details: [done('1. PR'), done('2. 머지'), '남은 일: PR2'] }])
+  const spec = join(repo, 'spec.md')
+  writeFileSync(spec, '# PR2\n보드 항목 id: a\n')
+  registerBoard(repo, spec, join(repo, 'wt2'), 'a', 'feat/pr2')
+  const row = items()[0]
+  assert.equal(row.branch, 'feat/pr2')
+  assert.equal(row.stages, 'pr=3,merge=4')
+  assert.deepEqual(row.details.slice(0, 2).map((d: { done: boolean }) => d.done), [true, true])
+  assert.equal(row.details.length, 4)
+  assert.equal(row.details[2].done, false)
+  registerBoard(repo, spec, join(repo, 'wt2'), 'a', 'feat/pr2')
+  assert.equal(items()[0].details.length, 4)
+  assert.equal(items()[0].stages, 'pr=3,merge=4')
+})
+
+test('끝나지 않은 단계가 남았거나 merged-pr 이 없는 항목은 새 브랜치여도 단계를 더하지 않는다', () => {
+  const spec = join(repo, 'spec.md')
+  writeFileSync(spec, '# PR2\n보드 항목 id: a\n')
+  board([{ id: 'a', status: 'doing', branch: 'feat/pr1', 'merged-pr': '7', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }] }])
+  registerBoard(repo, spec, join(repo, 'wt2'), 'a', 'feat/pr2')
+  assert.equal(items()[0].details.length, 2)
+  board([{ id: 'a', status: 'doing', branch: 'feat/pr1', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: true }] }])
+  registerBoard(repo, spec, join(repo, 'wt2'), 'a', 'feat/pr2')
+  assert.equal(items()[0].details.length, 2)
+})
+
 test('sync 는 옛 자동 줄 삭제와 남은 일 줄 변경을 통째 저장 하나로 합친다', () => {
   board([{ id: 'a', status: 'doing', pr: '#7', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지', '자동: 옛 줄', '남은 일: 옛 줄'] }])
   const done = cli('board/board-sync', ['--repo', repo, '--dry-run'])
