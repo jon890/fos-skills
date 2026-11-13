@@ -1567,8 +1567,8 @@ describe('중간 과정과 다시 열기', () => {
     assert.equal(item.status, 'doing')
     assert.equal(item.pr, 7)
     assert.equal(item.worktree, 'wt')
-    // 이 워크트리는 git 저장소가 아니라 브랜치를 읽지 못한다. 기존 branch 칸은 지우지 않는다
-    assert.equal(item.branch, 'feat/x')
+    // 새 대표의 브랜치를 읽지 못하면 앞 worker 의 브랜치를 남기지 않는다
+    assert.equal(item.branch, undefined)
     assert.deepEqual(item.details, [...target.details, { text: '중간 과정: PR #7 CI 고치기', done: false }])
     assert.deepEqual(after[1], other)
   })
@@ -1645,7 +1645,7 @@ describe('중간 과정과 다시 열기', () => {
     // 제목은 마일스톤이라 다시 연 지시서의 머리줄로 바꾸지 않는다
     assert.equal(item.title, '옛 제목')
     assert.equal(item.worktree, 'wt')
-    assert.equal(item.branch, 'feat/a')
+    assert.equal(item.branch, undefined)
     assert.deepEqual(item.details, [
       { text: '1. 구현', done: true },
       { text: '2. 머지', done: true },

@@ -586,6 +586,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       if (work(row)) {
         item.worktree = row.worktree
         if (row.branch !== null) item.branch = row.branch
+        else delete item.branch
       }
     } else {
       const ended = rows.filter((row) => row.status === 'working' && (a.dispatch !== undefined ? row.dispatch === a.dispatch : row.worktree === a.fields.worktree))
@@ -593,7 +594,11 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       for (const row of ended) { row.status = a.status!; row.endedAt = stamp }
       if (ended.some((row) => work(row) && row.worktree === item.worktree)) {
         const remaining = rows.filter((row) => work(row) && row.status === 'working').sort((a, b) => a.at.localeCompare(b.at)).at(-1)
-        if (remaining) { item.worktree = remaining.worktree; item.branch = remaining.branch }
+        if (remaining) {
+          item.worktree = remaining.worktree
+          if (remaining.branch !== null) item.branch = remaining.branch
+          else delete item.branch
+        }
         else if (a.clear) delete item.worktree
       }
     }

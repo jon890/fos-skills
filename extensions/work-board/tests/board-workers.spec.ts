@@ -95,3 +95,17 @@ test('worker 명령의 잘못된 옵션을 거절한다', () => {
     ]) assert.equal(run(b.file, args).code, 2, args.join(' '))
   } finally { b.cleanup() }
 })
+
+test('대표로 바뀐 줄의 브랜치가 없으면 옛 브랜치를 지운다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', branch: 'old' })
+    assert.equal(run(b.file, ['worker-add', 'a', 'impl', '--worktree', 'w1', '--dispatch', 'd1']).code, 0)
+    assert.equal(item(b.file, 'a').branch, undefined)
+    assert.equal(run(b.file, ['worker-add', 'a', 'follow', '--worktree', 'w2', '--branch', 'b2', '--dispatch', 'd2']).code, 0)
+    assert.equal(item(b.file, 'a').branch, 'b2')
+    assert.equal(run(b.file, ['worker-end', 'a', 'done', '--dispatch', 'd2']).code, 0)
+    assert.equal(item(b.file, 'a').worktree, 'w1')
+    assert.equal(item(b.file, 'a').branch, undefined)
+  } finally { b.cleanup() }
+})
