@@ -35,7 +35,7 @@
 `migration` 과 `adr` 은 `spec-lint` 와 같은 설정 조건으로 추가한다.
 이미 있는 조건부 항목은 조건과 무관하게 비교한다.
 
-**실행기 경로는 채우지 않는다.** 틀의 명령은 `orch …` 만 쓴다. 코디네이터가 Codex 같은 Claude 가 아닌 worker 를 띄울 때 worker 셸의 PATH 에 `orch` 실행기와 node 가 있는지 먼저 본다. `orch worker launch`(끝난 worker 에게 맡기는 `worker send --dispatch … --spec` 이 거친다)와 `orch worker resume` 이 보고, `--terminal` 로 이어 쓰는 터미널과 원격 환경 옵션(`--on` 등)은 보지 않는다. 못 찾으면 띄우지 않고 `orch doctor install-cli` 로 `~/.local/bin/orch` 를 깔고 그 폴더를 로그인 셸이 읽는 설정(zsh 는 `~/.zshenv`)의 PATH 에 두라고 안내한다. `~/.zshrc` 에만 둔 PATH 는 읽지 않는다. Claude worker 는 플러그인 `bin/` 이 PATH 에 들어가 보지 않는다. 지시서에 캐시 경로나 저장소 체크아웃 경로를 박지 않는다. 캐시 폴더 이름은 해시라 번들이 갱신되면 사라지고, 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다. 실행기는 부를 때마다 설치 기록에서 번들을 골라 프로필이 달라도 맞는 번들을 쓴다.
+**실행기 경로는 채우지 않는다.** 틀의 명령은 `orch …` 만 쓴다. 코디네이터가 Codex 같은 Claude 가 아닌 worker 를 띄울 때 worker 셸의 PATH 에 `orch` 실행기와 node 가 있는지 먼저 본다. `orch worker launch`(끝난 worker 에게 맡기는 `worker send --dispatch … --spec` 이 거친다)와 `orch worker resume` 이 보고, `--terminal` 로 이어 쓰는 터미널은 보지 않는다. 원격 환경 옵션(`--on` 등)이면 원격 머신에 확인 터미널을 열어 같은 것을 보고, 확인하지 못하면 경고만 내고 띄운다. 못 찾으면 띄우지 않고 `orch doctor install-cli` 로 `~/.local/bin/orch` 를 깔고 그 폴더를 로그인 셸이 읽는 설정(zsh 는 `~/.zshenv`)의 PATH 에 두라고 안내한다. `~/.zshrc` 에만 둔 PATH 는 읽지 않는다. Claude worker 는 플러그인 `bin/` 이 PATH 에 들어가 보지 않는다. 지시서에 캐시 경로나 저장소 체크아웃 경로를 박지 않는다. 캐시 폴더 이름은 해시라 번들이 갱신되면 사라지고, 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다. 실행기는 부를 때마다 설치 기록에서 번들을 골라 프로필이 달라도 맞는 번들을 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `spec`, `technical-design` 으로 만든 요구사항·설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.

@@ -53,6 +53,7 @@ if (is('worktree', 'list')) {
 }
 if (is('repo', 'show')) out({ repo: { externalWorktreeVisibility: state.visibility || 'hide' } })
 if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
+if (is('terminal', 'create')) out(state.create_fails ? { error: 'remote unreachable' } : { terminal: { handle: 'term_probe' } }, state.create_fails ? 1 : 0)
 if (is('terminal', 'read') && state.screen) out({ terminal: { tail: state.screen } })
 if (is('terminal', 'close')) out({}, state.close_fails ? 1 : 0)
 if (is('orchestration', 'worker-start')) {
@@ -1924,16 +1925,70 @@ describe('worker 셸의 orch 판정', () => {
     assert.doesNotMatch(both(r), /워크트리를 만들었다/)
   })
 
-  for (const option of [['--on', 'macbook'], ['--environment', 'macbook'], ['--pairing-code', 'orca://pair?x'], ['--on=macbook']]) {
-    test(`원격 환경(${option.join(' ')})의 worker 는 이 머신의 PATH 로 판정하지 않는다`, () => {
+  // 원격 확인 터미널의 화면. 명령을 친 줄과 결과 줄이 함께 보인다
+  const probeScreen = (orch: string, node: string) => ["% printf '__ORCH_%s__ orch=%s node=%s\\n' PROBE \"$(command -v orch)\" \"$(command -v node)\"", `__ORCH_PROBE__ orch=${orch} node=${node}`]
+
+  for (const option of [['--on', 'macbook'], ['--environment', 'macbook'], ['--on=macbook']]) {
+    test(`원격 환경(${option.join(' ')})은 이 머신의 PATH 가 아니라 원격 터미널에서 orch 와 node 를 찾고 확인 터미널을 닫는다`, () => {
       withoutOrchOnPath(false)
-      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      state({ next_ids: ['ctx_1'], screen: probeScreen('/r/.local/bin/orch', '/r/bin/node'), dispatches: { ctx_1: shown('input_accepted') } })
       const r = launch(['--worktree', worktree, '--', ...CODEX, ...option])
       assert.equal(r.code, 0, both(r))
-      assert.doesNotMatch(both(r), /worker 터미널에서 orch 를 부를 수 없다/)
-      assert.ok(lines('orca orchestration worker-start')[0].includes(option.join(' ')))
+      const create = lines('orca terminal create')[0]
+      assert.ok(create.includes(`--worktree path:${worktree}`) && create.includes('--environment macbook') && create.includes('command -v orch'), create)
+      assert.ok(lines('orca terminal close')[0].includes('--terminal term_probe --environment macbook'))
+      assert.ok(lines('orca terminal create').length === 1 && lines('orca orchestration worker-start').length === 1)
     })
   }
+
+  test('--pairing-code 는 페어링 코드를 그대로 넘겨 확인한다', () => {
+    withoutOrchOnPath(false)
+    state({ next_ids: ['ctx_1'], screen: probeScreen('/r/orch', '/r/node'), dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CODEX, '--pairing-code', 'orca://pair?x'])
+    assert.equal(r.code, 0, both(r))
+    assert.ok(lines('orca terminal create')[0].includes('--pairing-code orca://pair?x'))
+  })
+
+  for (const [name, orch, node, missing] of [['orch', '', '/r/node', 'orch'], ['node', '/r/orch', '', 'node'], ['둘', '', '', 'orch, node']]) {
+    test(`원격 PATH 에 ${name} 가 없으면 원격 install-cli 를 안내하고 worker-start 없이 멈추며 확인 터미널을 닫는다`, () => {
+      withoutOrchOnPath(false)
+      state({ next_ids: ['ctx_1'], screen: probeScreen(orch, node), dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--', ...CODEX, '--on', 'macbook'])
+      assert.equal(r.code, 1, both(r))
+      assert.ok(r.stderr.includes(`거부: 원격 환경(--on macbook)의 worker 터미널 PATH 에서 ${missing} 를 찾지 못했다`), r.stderr)
+      assert.match(r.stderr, /그 머신에서 `orch doctor install-cli` 를 돌리고/)
+      assert.match(r.stderr, new RegExp(`워크트리는 남아 있다: ${worktree}`))
+      assert.equal(lines('orca orchestration worker-start').length, 0)
+      assert.equal(lines('orca terminal close').length, 1)
+    })
+  }
+
+  test('원격 확인 터미널을 열지 못하면 막지 않고 경고 한 줄만 낸다', () => {
+    withoutOrchOnPath(false)
+    state({ next_ids: ['ctx_1'], create_fails: true, dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CODEX, '--on', 'macbook'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /^경고: 원격 PATH 에서 orch 를 찾는지 확인하지 못해 그대로 띄운다\. 확인 터미널을 열지 못했다/m)
+    assert.equal(lines('orca terminal close').length, 0)
+  })
+
+  test('원격 확인 터미널의 결과를 시간 안에 읽지 못하면 경고만 내고 띄우며 터미널을 닫는다', () => {
+    withoutOrchOnPath(false)
+    env.LAUNCH_PROBE_WAIT = '0'
+    state({ next_ids: ['ctx_1'], screen: ['% '], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CODEX, '--on', 'macbook'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /0초 안에 확인 터미널의 결과를 읽지 못했다/)
+    assert.equal(lines('orca terminal close').length, 1)
+  })
+
+  test('원격 환경이어도 claude worker 는 확인하지 않는다', () => {
+    withoutOrchOnPath(false)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE, '--on', 'macbook'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(lines('orca terminal create').length, 0)
+  })
 
   test('--terminal 로 이어 쓰는 터미널은 이미 떠 있어 보지 않는다', () => {
     withoutOrchOnPath(false)
