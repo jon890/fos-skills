@@ -88,3 +88,64 @@ test('사건 꼬리표, stages 와 progress 알림과 저장 형식을 확인한
     assert.equal(run(t.file, ['step-add', 'missing', '글']).code, 1)
   } finally { t.cleanup() }
 })
+test('단계 줄이 progress 의 전체 값보다 많아지면 progress 를 지우고 단계 줄로 센다', () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'a', progress: '0/2', details: ['1. 구현', '2. 머지'] })
+    let result = run(t.file, ['step-add', 'a', '리뷰 반영'])
+    assert.equal(result.code, 0); assert.match(result.stderr, /progress 0\/2 를 지우고 단계 줄로 센다/)
+    assert.equal(item(t.file, 'a').progress, undefined); assert.deepEqual(JSON.parse(result.stdout).progress, [0, 3])
+    // 같은 값이면 지우지 않고 기존 알림만 낸다
+    write(t.file, { id: 'a', progress: '0/3', details: ['1. 구현', '2. 머지'] })
+    result = run(t.file, ['step-add', 'a', '리뷰 반영'])
+    assert.equal(item(t.file, 'a').progress, '0/3'); assert.match(result.stderr, /progress 값을 지우면 단계 수로 센다/)
+    // set 으로 줄을 바꿀 때도 같다. 같은 명령이 --progress 를 주면 그 값을 따른다
+    write(t.file, { id: 'a', status: 'doing', progress: '1/2' })
+    result = run(t.file, ['set', 'a', '--next', '1. 하나', '--next', '2. 둘', '--next', '3. 셋'])
+    assert.equal(result.code, 0); assert.match(result.stderr, /progress 1\/2 를 지우고/)
+    assert.equal(item(t.file, 'a').progress, undefined)
+    write(t.file, { id: 'a', status: 'doing', progress: '1/2' })
+    result = run(t.file, ['set', 'a', '--next', '1. 하나', '--next', '2. 둘', '--next', '3. 셋', '--progress', '1/2'])
+    assert.equal(result.code, 0); assert.equal(result.stderr, ''); assert.equal(item(t.file, 'a').progress, '1/2')
+  } finally { t.cleanup() }
+})
+test('stages 가 가리키는 단계 줄의 글이 바뀌면 경고하고 다른 줄은 경고하지 않는다', () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'a', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지', '3. 확인'] })
+    let result = run(t.file, ['step-edit', 'a', '2', '2. develop 머지'])
+    assert.equal(result.code, 0); assert.match(result.stderr, /2 번 줄은 stages 가 가리키는 사건 단계인데 글이 바뀌었다/)
+    result = run(t.file, ['step-edit', 'a', '3', '3. 확인 완료'])
+    assert.equal(result.code, 0); assert.equal(result.stderr, '')
+    result = run(t.file, ['set', 'a', '--detail', '1. PR', '--detail', '2. 머지 뒤', '--detail', '3. 확인 완료'])
+    assert.equal(result.code, 0); assert.match(result.stderr, /2 번 줄은 stages/); assert.doesNotMatch(result.stderr, /1 번 줄/)
+    result = run(t.file, ['set', 'a', '--detail', '1. PR', '--detail', '2. 머지 뒤', '--detail', '3. 확인 완료'])
+    assert.equal(result.stderr, '')
+    // stages 와 줄을 함께 새로 정하는 set 은 비교하지 않는다
+    write(t.file, { id: 'b', details: ['1. 옛'] })
+    result = run(t.file, ['set', 'b', '--stages', 'pr=1', '--detail', '1. 새'])
+    assert.equal(result.code, 0); assert.equal(result.stderr, '')
+  } finally { t.cleanup() }
+})
+test('글에 #번호 와 머지·배포·릴리스 낱말이 있는데 --event 가 없으면 경고한다', () => {
+  const t = tempBoard()
+  try {
+    for (const text of ['릴리스 #481 확인', '#481 머지 확인', '#481 배포 확인', 'release #481']) {
+      write(t.file, { id: 'a', details: ['1. 구현'] })
+      const result = run(t.file, ['step-add', 'a', text])
+      assert.equal(result.code, 0, result.stderr); assert.match(result.stderr, /#481 와 머지·배포·릴리스 낱말이 있지만 --event 가 없어/)
+      assert.match(result.stderr, /--event "481 merge"/)
+    }
+    for (const [text, args] of [['릴리스 #481 확인', ['--event', '481 release']], ['릴리스 확인', []], ['#481 구현', []], ['확인 (#481 merge)', []], ['확인 (앞 사건: #481 merge)', []]] as [string, string[]][]) {
+      write(t.file, { id: 'a', details: ['1. 구현'] })
+      const result = run(t.file, ['step-add', 'a', text, ...args])
+      assert.equal(result.code, 0, result.stderr); assert.doesNotMatch(result.stderr, /--event 가 없어/, text)
+    }
+    write(t.file, { id: 'a', details: ['1. 구현', '2. 확인'] })
+    const result = run(t.file, ['step-edit', 'a', '2', '2. 머지 #481 확인'])
+    assert.equal(result.code, 0); assert.match(result.stderr, /2 번 단계 글에 #481/)
+    // stages 가 가리키는 단계는 사건이 끝내므로 경고하지 않는다
+    write(t.file, { id: 'a', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'] })
+    assert.doesNotMatch(run(t.file, ['step-edit', 'a', '2', '2. #481 머지']).stderr, /--event 가 없어/)
+  } finally { t.cleanup() }
+})
