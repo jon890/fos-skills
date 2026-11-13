@@ -1,6 +1,6 @@
 // 원인 줄과 연속 실패 알림을 임시 저장소의 실제 부모·틱 프로세스로 확인한다.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -19,6 +19,13 @@ test('틱 원인 줄은 경고를 빼고 stderr 마지막 줄, stdout 오류 줄
   assert.equal(tickCause(['orch-loop: 원인'], ['(node:123) [DEP0180] DeprecationWarning: fs.Stats', 'Node.js v24.22.1']), 'orch-loop: 원인')
   assert.equal(tickCause([], ['x'.repeat(201)]), 'x'.repeat(200))
   assert.equal(causeKey('pid 123 at 10:20'), causeKey('pid 456 at 11:30'))
+})
+
+test('실제 Node 크래시의 스택 뒤에서도 오류 메시지를 원인으로 고른다', () => {
+  const crashed = spawnSync(process.execPath, ['-e', 'throw new Error("tick crash cause")'], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: undefined } })
+  assert.equal(crashed.status, 1)
+  assert.match(crashed.stderr, /^\s+at\s/m)
+  assert.equal(tickCause([], crashed.stderr.split(/\r?\n/)), 'Error: tick crash cause')
 })
 
 test('설정 오류는 세 번째 실패에 한 번 바로 알리고 성공 뒤 다시 센다', { timeout: 120_000 }, async t => {
