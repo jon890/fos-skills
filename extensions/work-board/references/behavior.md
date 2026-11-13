@@ -157,3 +157,5 @@ PR 은 목록 조회에 성공한 시각, 알림은 inbox 가 넘긴 `fetchedAt`
 ## 플러그인에 넣기
 
 `.claude-plugin/plugin.json` 의 `hooks` 배열이 `extensions/work-board/hooks/hooks.json` 을 가리킨다. 훅 모듈은 `hooks/register.js` 하나다.
+
+업무 도구 이름은 `/board` 를 열 때와 보드 저장소가 바뀔 때 읽는다. `board.task` 를 바꾼 뒤에는 `/board` 를 다시 열면 새 이름이 보인다.
