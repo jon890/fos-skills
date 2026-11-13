@@ -1,2 +1,0 @@
-- orch doctor 가 설정 파일의 깨진 JSON, 모르는 절과 키, 틀린 값, 짝 규칙 위반을 `INVALID-CONFIG <경로> <이유>` 와 종료 코드 1 로 알린다
-- 설정 검사에 쓰는 의존(zod)을 불러오지 못하면 `CLI-DEPS-MISSING` 을 내고 설정 검사만 건너뛴다

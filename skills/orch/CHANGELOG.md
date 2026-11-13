@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.49.0 (2026-11-13)
+
+- orch doctor 가 설정 파일의 깨진 JSON, 모르는 절과 키, 틀린 값, 짝 규칙 위반을 `INVALID-CONFIG <경로> <이유>` 와 종료 코드 1 로 알린다
+- 설정 검사에 쓰는 의존(zod)을 불러오지 못하면 `CLI-DEPS-MISSING` 을 내고 설정 검사만 건너뛴다
+
 ## 7.48.2 (2026-11-13)
 
 - 묶이지 않은 터미널에서 `loop --start` 를 부르면 `LOOP-START-UNBOUND <Run>` 과 고칠 명령(`orca orchestration run-use --id <Run>`)을 낸다. 다른 Run 에 묶인 경우의 `LOOP-START-FENCED` 는 그대로다.
