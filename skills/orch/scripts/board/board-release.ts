@@ -229,6 +229,19 @@ function main(argv: string[]): number {
       pr = [...own, ...prNumbers(item['merged-pr'])].find((n) => prs.includes(n))
       if (!pr) continue
     }
+    // pr 칸에 아직 반영하지 않은 다른 PR(열린 후속 PR 등)이 남았으면 릴리스 대상에 든 PR 만으로 항목 전체를 끝내지 않는다.
+    // 남은 PR 도 모두 이번 릴리스에 들었을 때만 끝낸다(core/milestones.ts 의 「PR 묶음」)
+    const reflected = prNumbers(item['merged-pr'])
+    let waiting = false
+    for (const other of own.filter((n) => n !== pr && !reflected.has(n))) {
+      const found = release ? included(other) : prs.includes(other)
+      if (found === null) {
+        err(`board-release: ${id} 의 PR ${other} 를 읽지 못했다`)
+        return 1
+      }
+      if (!found) waiting = true
+    }
+    if (waiting) continue
     const steps = boardSteps(boardBin, id, board)
     if (steps === null) {
       err(`board-release: 단계 목록을 읽지 못했다: ${id}`)

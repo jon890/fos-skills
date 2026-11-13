@@ -178,7 +178,7 @@ PR2 의 규칙이다. 원본은 `core/milestones.ts` 머리 주석이 갖는다.
   - 남은 열린 PR 이 없으면 지금처럼 판정한다. 배포 단계는 이 마지막 PR 의 배포로 끝낸다(스펙 DECISION22).
   - 남은 PR 의 상태를 읽지 못했으면 그 항목은 이번 틱에 고치지 않는다(지금의 「다시 판정」 과 같다).
 - **done 지점.** 마지막 PR 의 묶음에서 done 지점(`board.done_after`)을 정한다. 닫을 때 끝내는 것은 끝나지 않은 수동 단계 가운데 그 번호까지의 것과, 모든 묶음의 사건 단계 가운데 종류가 done 지점의 종류 이하인 것이다. done 지점보다 늦은 종류(배포, 릴리스)의 사건 단계는 번호가 앞서도 남긴다. 그래서 `advanceCommands` 에 항목의 모든 사건 번호와 종류(`eventKinds`)를 넘긴다. 남은 수동 단계가 있으면 done 으로 가지 않는 지금 규칙은 그대로다.
-- **`queue/finish-pr.ts`** 와 **`board/board-release.ts`** 도 같은 `prStages`, `eventKinds`, 「남은 열린 PR」 규칙을 쓴다. 둘 다 `mergedCommands` 를 부른다. `mergedCommands` 의 중간 PR 명령은 `--pr ''` 대신 남은 PR 목록을 쓴다.
+- **`queue/finish-pr.ts`** 와 **`board/board-release.ts`** 도 같은 `prStages`, `eventKinds`, 「남은 열린 PR」 규칙을 쓴다. `finish-pr` 는 줄의 브랜치로 항목을 찾았으면 보드 맞추기가 잇기 전이라도 먼저 그 PR 을 줄과 `pr` 에 잇고 그 줄의 묶음으로 끝낸다. `board-release` 는 `pr` 에 반영하지 않은 다른 PR 이 남았고 그 PR 이 이번 릴리스에 들지 않았으면 그 항목을 끝내지 않는다. 둘 다 `mergedCommands` 를 부른다. `mergedCommands` 의 중간 PR 명령은 `--pr ''` 대신 남은 PR 목록을 쓴다.
 
 ### 창
 

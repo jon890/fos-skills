@@ -535,14 +535,15 @@ function taggedBoardItem(args: Args, repo: string, item: string): boolean {
 }
 
 // 머리 주석의 「보드 항목」 에서 찾은 항목. 없거나 둘 이상이면 null 이고, 둘 이상이면 알린다
-function pickBoardItem(args: Args, repo: string, branch: string, worktree: string | null): { id: string; by: 'pr' | 'branch' } | null {
+function pickBoardItem(args: Args, repo: string, branch: string, worktree: string | null): { id: string; by: 'pr' | 'branch'; row?: string } | null {
   const found = findBoardItems(boardPath(repo, args.board), args.pr, branch, worktree)
   if (found === null) return null
   if (found.ids.length > 1) {
     log(`보드 항목이 둘 이상이라 건너뛴다: PR ${args.pr} -> ${found.ids.join(', ')}`)
     return null
   }
-  return { id: found.ids[0], by: found.by }
+  const row = found.rows?.[found.ids[0]]
+  return { id: found.ids[0], by: found.by, ...(row === undefined ? {} : { row }) }
 }
 
 function board(args: Args, repo: string, argv: string[]): boolean {
@@ -575,6 +576,15 @@ function updateBoardRows<T>(args: Args, repo: string, item: string, make: (row: 
     }
   }
   return false
+}
+
+// worker 줄의 pr 을 채우고 항목 pr 칸에 이 PR 을 더한다. 이미 칸에 들었으면 줄만 채운다
+function linkRowPr(args: Args, repo: string, item: string, worktree: string): boolean {
+  const got = boardRow(args, repo, item)
+  if (!got) return false
+  const list = [...new Set([...prNumbers(got.row.pr), args.pr])].join(', ')
+  return (prNumbers(got.row.pr).has(args.pr) || board(args, repo, ['set', item, '--pr', list])) &&
+    board(args, repo, ['worker-set', item, '--worktree', worktree, '--pr', args.pr])
 }
 
 function setBoardDone(args: Args, repo: string, item: string): boolean {
@@ -722,6 +732,8 @@ async function finish(args: Args, repo: string): Promise<number> {
     }
     log(`보드 ${item.id} 는 사건 꼬리표가 있어 board-sync 에 맡긴다`)
   } else if (item && stages) {
+    // worker 줄의 브랜치로 찾은 항목은 보드 맞추기가 이 PR 을 잇기 전일 수 있다. 먼저 줄과 pr 칸에 이어야 그 줄의 묶음 단계를 끝낸다
+    if (item.row !== undefined && !linkRowPr(args, repo, item.id, item.row)) problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 잇지 못했다`)
     // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
     // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
     const result = setBoardMilestone(args, repo, item.id, stages, deploy, last, last ? null : noteLine(verdict.prs, verdict.specs))

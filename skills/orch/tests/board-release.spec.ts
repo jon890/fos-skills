@@ -119,6 +119,33 @@ describe('board-release', () => {
     assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, true, true, true, true])
   })
 
+  test('열린 후속 PR 이 pr 칸에 남았으면 앞 PR 의 릴리스로 항목 전체를 끝내지 않는다', () => {
+    states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
+    states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
+    states['9'] = { state: 'OPEN', mergeCommit: null }
+    const details = [...four(3), step('5. PR (wb)', true), step('6. 머지 (wb)', false)]
+    const workers = [{ role: 'follow', worktree: 'wb', branch: 'feat/b', dispatch: 'd', pr: 9, stages: 'pr=5,merge=6', status: 'working', at: '2026-01-03', endedAt: null }]
+    const item = { id: 'a', status: 'doing', pr: '7, 9', 'merged-pr': 7, stages: STAGES, details, workers }
+    for (const args of [['--release', '100'], ['--pr', '7']]) {
+      const r = release([item], args)
+      assert.equal(r.code, 0, r.result.stderr)
+      assert.equal(r.board.a.status, 'doing', args.join(' '))
+      assert.deepEqual(r.board.a.details, details, args.join(' '))
+    }
+  })
+
+  test('남은 PR 도 모두 릴리스에 들었으면 항목을 끝낸다', () => {
+    states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
+    states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
+    states['9'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
+    const details = [...four(3), step('5. PR (wb)', true), step('6. 머지 (wb)', false)]
+    const workers = [{ role: 'follow', worktree: 'wb', branch: 'feat/b', dispatch: 'd', pr: 9, stages: 'pr=5,merge=6', status: 'done', at: '2026-01-03', endedAt: '2026-01-04' }]
+    const r = release([{ id: 'a', status: 'doing', pr: '7, 9', stages: STAGES, details, workers }], ['--release', '100'])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, true, true, true, true])
+  })
+
   test('짧은 출력은 BOARD <id> release 와 BOARD-RELEASE 판정 줄이다', () => {
     states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
     states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }

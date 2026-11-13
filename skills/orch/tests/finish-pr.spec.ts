@@ -1120,19 +1120,33 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     has(r.stdout, 'pr 칸에 다른 PR 78 가 남아 마지막 PR 로 보지 않고 PR 77 의 묶음만 끝낸다')
   })
 
-  test('pr 칸이 아직 비었으면 구현 줄의 브랜치가 머지 PR 의 브랜치인 항목을 찾아 그 줄의 묶음이 아닌 항목 묶음을 끝낸다', async (t) => {
+  // 실제 보드 명령으로 돌려 줄 pr 과 단계 반영을 본다. 다른 PR(78)은 열려 있다
+  const realBoard = async (t: TestContext, workers: Json[]) => {
     const c = setup(t)
-    const file = join(c.repo, '.omc', 'board.json')
-    const impl = { role: 'impl', worktree: 'wa', branch: 'feat/x', dispatch: 'd1', pr: null, status: 'done', at: '2026-01-01', endedAt: '2026-01-02' }
-    const bin = board(c, [{ id: 'm', status: 'doing', pr: 78, worktree: 'wb', branch: 'feat/b', stages: 'pr=1,merge=2', workers: [impl, follow({ pr: 78 })] }])
-    const r = await c.finish(['--complete', ...bin], { FAKE_STEPS: four })
+    const file = join(c.tmp, 'board.json')
+    const details = [1, 2, 3, 4].map((n) => ({ text: `${n}. 단계`, done: false }))
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'm', status: 'doing', pr: 78, worktree: 'wb', branch: 'feat/b', stages: 'pr=1,merge=2', details, workers }] }))
+    const r = await c.finish(['--complete', '--board', file])
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(starting(c.calls(), 'board '), [
-      `board steps m --file ${file}`,
-      `board step m 1 --file ${file}`,
-      `board step m 2 --file ${file}`,
-      `board set m --pr 78 --merged-pr 77 --file ${file}`,
-    ])
+    const item = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items[0]
+    return { item, done: (item.details as Json[]).map((d) => d.done), rows: item.workers as Json[] }
+  }
+
+  test('줄의 브랜치로 찾은 후속 줄은 PR 을 줄에 이은 뒤 그 줄의 묶음 단계를 끝낸다', async (t) => {
+    const { item, done, rows } = await realBoard(t, [follow({ pr: null, branch: 'feat/x' })])
+    assert.deepEqual(done, [false, false, true, true])
+    assert.equal(rows[0].pr, 77)
+    assert.equal(item.pr, 78)
+    assert.equal(item['merged-pr'], 77)
+    assert.equal(item.status, 'doing')
+  })
+
+  test('pr 칸이 아직 비었으면 구현 줄의 브랜치가 머지 PR 의 브랜치인 항목을 찾아 항목 묶음 단계를 끝낸다', async (t) => {
+    const impl = { role: 'impl', worktree: 'wa', branch: 'feat/x', dispatch: 'd1', pr: null, status: 'done', at: '2026-01-01', endedAt: '2026-01-02' }
+    const { done, rows } = await realBoard(t, [impl, follow({ pr: 78 })])
+    assert.deepEqual(done, [true, true, false, false])
+    assert.equal(rows[0].pr, 77)
+    assert.equal(rows[1].pr, 78)
   })
 
   test('찾은 항목이 둘 이상이면 건너뛴다', async (t) => {
