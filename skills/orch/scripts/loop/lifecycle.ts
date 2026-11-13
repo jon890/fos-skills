@@ -53,9 +53,10 @@
 import { spawn } from 'node:child_process'
 import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { isObject } from '../core/json.ts'
-import { bundleVersion, ownBundle } from '../lib/bundle.ts'
+import { bundleVersion, currentBundle, ownBundle } from '../lib/bundle.ts'
 import { envMs } from '../lib/env.ts'
 import { reclaim } from '../lib/events.ts'
 import { DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from '../lib/loop.ts'
@@ -69,6 +70,7 @@ import type { RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { sendNotice } from '../lib/run-notice.ts'
 import { waiterPids } from '../lib/waiters.ts'
+import { busyReason, decide, newSelfUpdate, observe } from './self-update.ts'
 import type { Context, TickResult } from './steps/context.ts'
 import { dropStaleErrors } from './steps/errors.ts'
 import { ciEntries, iso, lines, log, oneLine, setLogFile, stallEntries } from './steps/shared.ts'
@@ -492,6 +494,8 @@ function tickResult(done: RunResult, staleLogged = false): { result: TickResult 
 }
 
 export async function foreground(ctx: Context, once: boolean, interval: number, entrypoint: string): Promise<number> {
+  const update = newSelfUpdate()
+  const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
   stopGraceMs = TICK_STOP_GRACE_MS
   const file = join(pathOf('state', ctx.repo), 'loop.log')
   setLogFile(file)
@@ -592,7 +596,11 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       // 신호로 끝내는 중이면 끊긴 틱을 실패로 알리지 않는다
       const signal = stopping()
       if (signal) return signalCode(signal)
-      const { result, reason } = tickResult(done)
+      if (!once) {
+        const changed = observe(update, currentBundle(ownBundle(), configDir), Date.now(), ownBundle())
+        if (changed) log(changed)
+      }
+      const { result, reason } = tickResult(done, update.target !== null)
       if (result) {
         state.last_tick = result.tick_at
         for (const [source, value] of Object.entries(result.errors ?? {})) state.errors[source] = value ?? null
@@ -625,6 +633,11 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       state.alive_at = iso()
       writeLoop(ctx.repo, state)
       if (once) return 0
+      const next = decide({ ...update, now: Date.now(), busy: update.target ? busyReason(ctx.repo) : null, lastCode: done.code })
+      if (next.kind === 'wait' && next.reason !== update.waitReason) {
+        log(`LOOP-STALE-WAIT ${next.reason}`)
+        update.waitReason = next.reason
+      }
       await sleep(ctx.tickSec * 1000)
     }
   } finally {
