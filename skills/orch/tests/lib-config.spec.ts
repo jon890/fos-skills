@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ConfigError, INBOX_KEYS, readConfigFile, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
+import { ConfigError, INBOX_KEYS, readConfigFile, updateConfig, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
@@ -218,5 +218,40 @@ describe('readConfigFile', () => {
     assert.equal(read.exists, true)
     assert.equal(read.value, undefined)
     assert.match(read.error ?? '', /JSON/)
+  })
+})
+
+describe('updateConfig', () => {
+  test('없던 파일은 저장할 때만 만들고 이전 값을 잠금 안에서 읽는다', () => {
+    const dir = join(tmp, 'update-new')
+    mkdirSync(dir)
+    const target = join(dir, '.orch/config.json')
+    updateConfig(dir, (value, exists) => { assert.deepEqual(value, {}); assert.equal(exists, false) })
+    assert.equal(existsSync(target), false)
+    updateConfig(dir, () => ({ routing: { review_author: 'bot' } }))
+    assert.equal(readFileSync(target, 'utf8'), '{\n  "routing": {\n    "review_author": "bot"\n  }\n}\n')
+    updateConfig(dir, value => {
+      assert.equal(existsSync(`${target}.lock`), true)
+      assert.deepEqual(value, { routing: { review_author: 'bot' } })
+      return { ...(value as object), pipeline: { tick_sec: 60 } }
+    })
+    assert.deepEqual(readConfigFile(dir).value, { routing: { review_author: 'bot' }, pipeline: { tick_sec: 60 } })
+    assert.equal(existsSync(`${target}.lock`), false)
+    assert.equal(existsSync(`${target}.${process.pid}.tmp`), false)
+  })
+
+  test('깨진 JSON, 변경 함수의 거절과 잠금 실패는 원본을 그대로 둔다', () => {
+    const dir = join(tmp, 'update-bad')
+    mkdirSync(join(dir, '.orch'), { recursive: true })
+    const target = join(dir, '.orch/config.json')
+    writeFileSync(target, '{')
+    assert.throws(() => updateConfig(dir, () => ({})), /읽지 못했다/)
+    assert.equal(readFileSync(target, 'utf8'), '{')
+    writeFileSync(target, '{ "routing": {} }')
+    assert.throws(() => updateConfig(dir, () => { throw new Error('거절') }), /거절/)
+    assert.equal(readFileSync(target, 'utf8'), '{ "routing": {} }')
+    writeFileSync(`${target}.lock`, 'other')
+    assert.throws(() => updateConfig(dir, () => ({}), { waitMs: 5, pollMs: 1 }), /잠금/)
+    assert.equal(readFileSync(target, 'utf8'), '{ "routing": {} }')
   })
 })
