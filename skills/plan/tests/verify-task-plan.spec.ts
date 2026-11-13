@@ -633,3 +633,27 @@ test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 
   assert.equal(out.length, 1)
   assert.match(out[0], /tests\/missing.test.ts/)
 })
+
+
+test('계획 검사는 phase 와 별도 인수 검증의 경로를 확인하고 옛 계획은 경고한다', () => {
+  const repo = new Repo('plan-test-refs-', true)
+  repo.file('docs/flow.md')
+  repo.file('svc/src/test/FooTest.java')
+  repo.git('add', 'svc/src/test/FooTest.java')
+  const phase = { work: '### 1. 문서', command: 'pytest src/test/FooTest.java tests/missing.test.ts', entries: [['docs/a.md', '수정'], ['tests/new.test.ts', '신규'], ['tests/absent.test.ts', '수정']] as Entry[] }
+  repo.file('docs/a.md', 'hello\n')
+  const dir = writePlan(repo, 'plan1-x', [phase], { index: { created_at: '2026-11-13', verification_plan: 'verification.md' } })
+  repo.file(`${dir}/verification.md`, '## 인수 검증 계획\n| `tests/new.test.ts` | `tests/absent.test.ts` |\n')
+  const result = verify(repo, ['plan1-x', '--audit'])
+  assert.ok(result.violations.some((x) => x.includes('tests/missing.test.ts')), result.stdout)
+  assert.ok(result.violations.some((x) => x.includes('tests/absent.test.ts')), result.stdout)
+  assert.ok(!result.violations.some((x) => x.includes('FooTest.java') || x.includes('tests/new.test.ts')), result.stdout)
+  assert.ok(!result.warnings.some((x) => x.includes('PR 크기 추정')), result.stdout)
+  const old = writePlan(repo, 'plan1-x', [phase], { index: { created_at: '2026-10-24', verification_plan: 'verification.md' } })
+  repo.file(`${old}/verification.md`, '## 인수 검증 계획\n| `tests/absent.test.ts` |\n')
+  const legacy = verify(repo, ['plan1-x', '--audit'])
+  assert.ok(legacy.warnings.some((x) => x.includes('tests/absent.test.ts')), legacy.stdout)
+  assert.ok(!legacy.violations.some((x) => x.includes('검증에 적은 테스트 파일')), legacy.stdout)
+  const before = verify(repo, ['plan1-x'])
+  assert.ok(before.warnings.some((x) => x.includes('PR 크기 추정')), before.stdout)
+})
