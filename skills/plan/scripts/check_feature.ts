@@ -249,7 +249,7 @@ export function checkVerification(text: string, assigned: Set<string>): string[]
     const owner = owned ? cells[5] : ''
     const prerequisite = cells[width - 2]
     const timing = cells[width - 1]
-    for (const id of rid.split(/[,、]/).map((value) => value.trim())) {
+    for (const id of rid.split(/[,、]/).map((value) => value.trim()).filter(Boolean)) {
       if (!ID.test(id)) problems.push(`인수 검증에 이번 PR 범위 밖의 요구사항: ${id}. 한 칸에 ID 를 쉼표로 나눠 적는다`)
       else if (!assigned.has(id)) problems.push(`인수 검증에 이번 PR 범위 밖의 요구사항: ${id}`)
       else covered.add(id)
