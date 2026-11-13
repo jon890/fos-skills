@@ -36,6 +36,10 @@ describe('leak-check', () => {
     '여기에서 문제가 생겼다.',
     '아래 행은 로그 예시다.',
     '코드는 `지금 본문 그대로` 를 찾는다.',
+    '코드는 ``지금 본문 그대로`` 를 찾는다.',
+    '코드는 ``지금 `본문` 그대로`` 를 찾는다.',
+    '기존 내용 그대로 복사하면 비밀값이 유출됩니다.',
+    '아래 항목을 추가한다는 요구사항은 이번 범위에서 제외했습니다.',
   ]) {
     test(`걸리지 않는다: ${line}`, (t) => {
       const done = exec(`${line}\n`, t)
@@ -45,6 +49,16 @@ describe('leak-check', () => {
 
   test('코드 블록 안은 건너뛴다', (t) => {
     assert.equal(exec('```\n지금 본문 그대로\n```\n', t).code, 0)
+  })
+
+  test('백틱 네 개 블록 안의 백틱 세 개로 닫지 않는다', (t) => {
+    assert.equal(exec('````markdown\n```\n지금 본문 그대로\n````\n', t).code, 0)
+  })
+
+  test('블록을 닫은 뒤의 지시 문구는 잡는다', (t) => {
+    const done = exec('~~~~~markdown\n````markdown\n```\n````\n~~~~~\n지금 본문 그대로\n', t)
+    assert.equal(done.code, 1)
+    assert.ok(done.stdout.includes(':6: '), done.stdout)
   })
 
   test('인자가 없으면 2', (t) => {
