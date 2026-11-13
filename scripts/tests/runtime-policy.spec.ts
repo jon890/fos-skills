@@ -258,6 +258,27 @@ describe('checkImports', () => {
     ])
   })
 
+  test('정규식의 따옴표·백틱·문자 클래스 뒤 실제 import를 검사한다', () => {
+    const expressions = ["/'/", '/`/', '/"/', "/[/']/", String.raw`/['\/\]]/gi`, '/prefix import("ignored")/']
+    for (const expression of expressions) {
+      const text = `const re = ${expression};\nawait import('zod');`
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], expression)
+    }
+  })
+
+  test('정규식 앞의 연산자·키워드·주석과 나눗셈을 구분한다', () => {
+    const prefixes = ['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '~', '^', '<', '>',
+      'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']
+    for (const prefix of prefixes) {
+      const text = `${prefix} /* comment */ /'/;\nawait import('zod');`
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], prefix)
+    }
+    for (const expression of ['a / b / c', '10 / 2 / 5', 'fn() / count', 'values[0] / count']) {
+      const text = `const quotient = ${expression};\nawait import('zod');`
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], expression)
+    }
+  })
+
   test('확장자와 entry_js 로 소스 파일을 고른다', () => {
     assert.equal(isSourceFile('a/b.mts', []), true)
     assert.equal(isSourceFile('docs/a.md', []), false)

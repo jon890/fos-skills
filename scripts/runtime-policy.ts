@@ -244,6 +244,8 @@ export function isSourceFile(path: string, entryJs: string[]) {
 // 템플릿의 ${...} 는 코드로 돌아오며, 그 안의 중괄호와 템플릿도 추적한다.
 function codePositions(text: string): Uint8Array {
   const code = new Uint8Array(text.length);
+  const regexKeywords = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
+  let regexAllowed = true;
   const stack: { kind: "code" | "template" | "single" | "double" | "line" | "block"; braces: number }[] = [{ kind: "code", braces: 0 }];
   for (let i = 0; i < text.length; i++) {
     const state = stack[stack.length - 1];
@@ -261,6 +263,7 @@ function codePositions(text: string): Uint8Array {
       if (ch === "\\") { i++; continue; }
       if (state.kind === "template" && ch === "$" && next === "{") {
         stack.push({ kind: "code", braces: 1 });
+        regexAllowed = true;
         i++;
       } else if ((state.kind === "template" && ch === "`") || (state.kind === "single" && ch === "'") || (state.kind === "double" && ch === '"')) {
         stack.pop();
@@ -270,12 +273,31 @@ function codePositions(text: string): Uint8Array {
     if (ch === "/" && (next === "/" || next === "*")) {
       stack.push({ kind: next === "/" ? "line" : "block", braces: 0 });
       i++;
+    } else if (ch === "/" && regexAllowed) {
+      // 식이 시작할 수 있는 위치의 / 는 정규식이다. 문자 클래스의 / 와 이스케이프는 건너뛴다.
+      let inClass = false;
+      for (i++; i < text.length; i++) {
+        if (text[i] === "\\") { i++; continue; }
+        if (text[i] === "[") inClass = true;
+        else if (text[i] === "]") inClass = false;
+        else if (text[i] === "/" && !inClass) break;
+      }
+      while (/[a-z]/i.test(text[i + 1] ?? "")) i++;
+      regexAllowed = false;
     } else if (ch === "'" || ch === '"' || ch === "`") {
       stack.push({ kind: ch === "'" ? "single" : ch === '"' ? "double" : "template", braces: 0 });
+      regexAllowed = false;
     } else if (ch === "}" && state.braces === 1) {
       stack.pop();
+      regexAllowed = false;
+    } else if (/[\w$]/.test(ch)) {
+      const start = i;
+      while (/[\w$]/.test(text[i + 1] ?? "")) i++;
+      code.fill(1, start, i + 1);
+      regexAllowed = regexKeywords.has(text.slice(start, i + 1));
     } else {
       code[i] = 1;
+      if (!/\s/.test(ch)) regexAllowed = "(,=:[!&|?{};+-*%~^<>/".includes(ch);
       if (state.braces > 0) {
         if (ch === "{") state.braces++;
         if (ch === "}") state.braces--;
