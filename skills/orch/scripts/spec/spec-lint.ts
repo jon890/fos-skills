@@ -79,6 +79,7 @@
 //                 `PR1~PR3`, `PR 두 개` 꼴이다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 이 지시서는 PR1 만 맡고 뒤 PR 은
 //                 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다(SKILL.md 원칙). 뒤 PR 목록은 완료 기준이 아닌 참고 절에 둔다.
 //                 경고이고 종료 코드에 넣지 않는다
+//     머지 보류   머지 조건 문장이 있는데 `머지 보류:` 줄이 없다. 완료 담당 문장과 코드 블록은 제외한다. 경고이고 종료 코드에 넣지 않는다
 //     오버레이    (--check-overlay) 오버레이의 백틱 값과 config.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
 //                 명령(`bash scripts/verify.sh --fast`)이면 낱말마다 본다. `/` 가 든 확장자 있는 낱말만 경로로 본다.
 //                 파일 이름만 적은 것(스킬 스크립트일 수 있다), 절대경로, `~`, `$`, glob, `<...>` 가 든 값,
@@ -89,7 +90,7 @@
 //
 // 짧은 출력(진입점의 orch spec lint, lib/output.ts): 막을 발견은 `SPEC-ERROR <줄>`, 경고는 `SPEC-WARN <줄>` 이다. stderr 의 요약은 그대로다.
 // 종료 코드:
-//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료 경고는 있을 수 있다)
+//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료, 머지 보류 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
@@ -98,6 +99,7 @@
 
 import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
 import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
+import { specHold } from '../lib/auto-merge.ts'
 import { taskFirstLine } from '../lib/spec.ts'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -524,6 +526,19 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
       const given = boardIdOfLine(line)
       if (given?.note) warnings.push(`${spec.name}:${index + 1}: 보드: ${BOARD_HINT}(${given.id})`)
     })
+    if (specHold(spec.lines.join('\n')) === null) {
+      for (const [index, line] of outsideFences(spec.lines).entries()) {
+        const no = index + 1
+        const plain = line.replace(/\*\*|`/g, '')
+        // 「머지를 확인한 뒤」는 완료 확인이다. 머지를 주제로 쓴 조건과 명시적인 금지만 본다.
+        // 담당/금지 문장 뒤에 이어지는 후속 작업의 시간 조건은 같은 조건으로 읽지 않는다.
+        const clauses = plain.split(/[,。.!?\n]|(?:하고|않고|말고)(?:\s|$)/)
+        if (clauses.some((clause) => /머지는\s*.*(?:뒤에|이후에|후에|전에는|전까지|때까지)/.test(clause) ||
+            /(?:전에는|전까지|때까지).*머지(?:하지|하지는|를\s*하지|\s*금지)/.test(clause))) {
+          warnings.push(`${spec.name}:${no}: 머지 보류: 머지 조건을 적었지만 머지 보류: 줄이 없다. 자동 머지를 막으려면 보류 이유를 별도 줄에 적는다`)
+        }
+      }
+    }
     const done = doneProblem(spec.lines)
     if (done) warnings.push(`${spec.name}:${done.no}: 완료: ${DONE_HINT}(${done.found})`)
     for (const [glob, no] of spec.owned) {
@@ -623,6 +638,7 @@ export function main(argv: string[]): number {
     const boards = warnings.filter((line) => line.includes(': 보드: ')).length
     const dones = warnings.filter((line) => line.includes(': 완료: ')).length
     const temps = warnings.filter((line) => line.includes(': 임시: ')).length
+    const holds = warnings.filter((line) => line.includes(': 머지 보류: ')).length
     const bodies = warnings.filter((line) => line.includes(': 본문: ')).length
     const tail =
       (overlaps > 0 ? `, 겹침 경고 ${overlaps}건` : '') +
@@ -631,8 +647,9 @@ export function main(argv: string[]): number {
       (boards > 0 ? `, 보드 경고 ${boards}건` : '') +
       (dones > 0 ? `, 완료 경고 ${dones}건` : '') +
       (temps > 0 ? `, 임시 경고 ${temps}건` : '') +
-      (bodies > 0 ? `, 본문 경고 ${bodies}건` : '')
-    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps - bodies
+      (bodies > 0 ? `, 본문 경고 ${bodies}건` : '') +
+      (holds > 0 ? `, 머지 보류 경고 ${holds}건` : '')
+    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps - bodies - holds
     process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${paths}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {

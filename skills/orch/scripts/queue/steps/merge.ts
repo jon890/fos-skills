@@ -17,6 +17,7 @@ import { eventContext, field, prEnv, prInput, turn } from './pr.ts'
 import { chomp, failed, git, log, nap, out, refuseWhenStopping, stop } from './runtime.ts'
 import { bringUpToDate, remoteBase } from './update.ts'
 import { verifyMerged } from './verify.ts'
+import { refuseSpecHold } from './spec-hold.ts'
 
 export async function processPr(stepContext: StepContext, state: StepState, item: string): Promise<void> {
   const o = state.o
@@ -27,6 +28,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   const prCommand = colon >= 0 ? item.slice(colon + 1) : null
   if ((await loadPr(stepContext, state, n)) === 'merged') return
   const p = state.p
+  refuseSpecHold(state)
 
   p.beforeHead = null
   p.judgments = 0
@@ -40,6 +42,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   const kind = o.docsGlob && docsOnly(stepContext, state) ? 'docs' : 'code'
   refuseWhenStopping(n)
   if (state.queueLock && !ownsQueueLock(state.queueLock, state.queueLockToken)) stop(`${n} 머지 큐 잠금을 잃었다`)
+  refuseSpecHold(state)
   turn(stepContext, state, TURN_PHASES.merge)
   const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
   // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다

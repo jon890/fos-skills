@@ -1340,6 +1340,19 @@ const MINE = { number: 7, author: { login: 'me' }, url: 'https://git.example.com
 const THEIRS = { number: 8, author: { login: 'other' }, url: 'https://git.example.com/owner/repo/pull/8' }
 
 describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  test('대기 중 새로 붙은 보류 줄도 실제 머지 전에 확인한다', async (t) => {
+    const c = setup(t)
+    const specs = join(c.tmp, '.orch', 'specs')
+    mkdirSync(specs, { recursive: true })
+    const file = join(specs, 'spec-hold.md')
+    writeFileSync(file, '브랜치: `feat`\n')
+    hook(c, 'before-merge', `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(file)}, ${JSON.stringify('브랜치: `feat`\n머지 보류: 최종 확인 대기\n')})\n`)
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'GATE-HOLD 최종 확인 대기')
+    lacks(c.log(), 'pr merge')
+  })
+
   test('before-merge 가 10 이면 그 PR 은 HOOK-REJECT 로 멈추고 머지하지 않는다', async (t) => {
     const c = setup(t)
     hook(c, 'before-merge', recorder(join(c.tmp, 'in.jsonl'), 10, '백업이 없다'))
