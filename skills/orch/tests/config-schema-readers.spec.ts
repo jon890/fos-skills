@@ -219,3 +219,8 @@ describe('finish-pr 의 시간 키', () => {
 test('임시 저장소의 설정 파일을 읽는 길이 맞다', () => {
   assert.deepEqual(loadConfig(repoWith({ queue: { method: 'squash' } } as Config)), { queue: { method: 'squash' } })
 })
+
+test('board.task 의 good 값을 core 가 받는다', async () => {
+  const { taskAdapterOf } = await import('../scripts/core/task-adapters.ts')
+  for (const value of good('board', 'task')) accepts('taskAdapterOf', 'board.task', value, () => taskAdapterOf({ board: { task: value } }))
+})

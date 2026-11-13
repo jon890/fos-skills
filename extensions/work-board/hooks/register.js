@@ -6,6 +6,7 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 //   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.ts 가 한다.
 //      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[], stepAt? }] }
 //      stepAt 은 board.ts 가 그 항목의 status, details, next 를 마지막으로 바꾼 시각이다. worker 없이 남은 단계의 경과 시간을 이 값으로 잰다.
+//      업무 칩은 표시 다음, 제목 앞에 있다. task-ref 는 글, task 는 링크이며 번호만 있으면 흐리게 보인다. 제목 안 번호는 바꾸지 않는다.
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
@@ -64,11 +65,23 @@ export function prNumbers(value) {
   return String(value || '').match(/\d+/g)?.map(Number) || []
 }
 
-// 제목을 첫 업무 번호(「#342」) 앞, 번호, 뒤로 나눈다. 번호가 없으면 null
-export function splitTaskNumber(title) {
-  const match = /#\d+/.exec(String(title || ''))
-  if (!match) return null
-  return [title.slice(0, match.index), match[0], title.slice(match.index + match[0].length)]
+// 번호와 주소를 제목과 분리한 업무 칩. 도구 이름은 저장소 설정에서 받고 없으면 주소 호스트로 정한다.
+export function taskChip(item, tool) {
+  const ref = typeof item['task-ref'] === 'string' && item['task-ref'] ? item['task-ref'] : ''
+  const url = typeof item.task === 'string' && /^https?:\/\//.test(item.task) ? item.task : ''
+  if (!ref && !url) return null
+  return { tag: tool && tool.name || (url ? taskTag(url) : '업무'), label: ref, href: url }
+}
+let taskTool = { root: '', name: null }
+async function loadTaskTool($, force = false) {
+  const root = await boardRoot($)
+  if (!force && taskTool.root === root) return
+  taskTool = { root, name: null }
+  if (!root) return
+  try {
+    const result = JSON.parse(await run($, ['node', '--disable-warning=ExperimentalWarning', $.plugin.root + '/extensions/work-board/bin/task-tool.ts', '--repo', root]))
+    if (taskTool.root === root) taskTool.name = typeof result.name === 'string' ? result.name : null
+  } catch {}
 }
 const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
@@ -1513,6 +1526,7 @@ export async function updatePlugin($, install = plugin.install) {
 // 못 받으면 상자를 그리지 않는다. force 는 /board 를 열 때 경로를 다시 받는다
 async function loadApprovals($, force = false) {
   const root = await boardRoot($)
+  await loadTaskTool($, force)
   if (root !== approvalsRoot) {
     approvalsRoot = root
     approvals = { open: [], error: '', path: '' }
@@ -1731,19 +1745,17 @@ export function register(on) {
     const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
     // 머리말(「두레이」나 「업무」, 「PR」)과 번호를 대괄호로 감싸 제목과 구분하고, 밑줄 친 링크와 색으로도 가린다. 주소가 없으면 글자만 그린다
     const TAG_COLORS = { PR: 'magenta' }
-    const tagged = (key, tag, href, label) => {
-      const look = { underline: Boolean(href), color: TAG_COLORS[tag] || 'cyan' }
+    const tagged = (key, tag, href, label, done = false) => {
+      const look = { underline: Boolean(href), color: TAG_COLORS[tag] || 'cyan', dimColor: done || (key === 'task' && !href) }
       const text = '[' + tag + (label ? ' ' + label : '') + ']'
       return href
         ? Link({ key, href, children: [Text({ ...look, children: [text] })] })
-        : Text({ key, color: look.color, children: [text] })
+        : Text({ key, ...look, children: [text] })
     }
     const prLink = (n) => tagged('pr-' + n, 'PR', repoUrl ? repoUrl + '/pull/' + n : '', '#' + n)
-    // 제목 안의 업무 번호(「#342」)에만 머리말과 업무 링크를 건다. 항목에 업무 주소(task)가 없으면 제목 그대로다
-    const titleChildren = (item) => {
-      const title = item.title || item.id
-      const parts = typeof item.task === 'string' && /^https?:\/\//.test(item.task) ? splitTaskNumber(title) : null
-      return parts ? [parts[0], tagged('task', taskTag(item.task), item.task, parts[1]), parts[2]] : [title]
+    const chipOf = (item, done) => {
+      const chip = taskChip(item, taskTool)
+      return chip ? tagged('task', chip.tag, chip.href, chip.label, done) : null
     }
     const items = board && Array.isArray(board.items) ? board.items : []
     // 맡은 worker 가 없는 줄. 단계가 idle_min 넘게 worker 없이 남았으면 경과 시간을 붙이고 노란색으로 그린다
@@ -1804,34 +1816,22 @@ export function register(on) {
       return counts ? [indent('steps', 2 + STEP_MARK_WIDTH, dim('counts', counts))] : []
     }
 
-    // 항목 머리 줄. 진행 중·대기 항목은 표시와 제목을 Button 하나로 그려 클릭이나 Enter 로 상태 확인 요청문을 채운다
-    // Button 의 자식은 문자열과 Text 만 받으므로, 제목에 업무 링크가 있으면 링크와 그 뒤 글은 Button 밖에 이어 그린다
-    // 이때 머리 줄은 columnGap 없이 제목 글의 띄어쓰기를 그대로 쓴다
+    // 표시 다음에 업무 칩을 두고, 제목만 버튼으로 그려 상태 확인 요청문을 채운다.
     const headChildren = (item, section, done, worker) => {
-      if (done || !checkable(item)) {
-        return [
-          Text({ key: 'mark', color: section.color, children: [section.mark] }),
-          done
-            ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: titleChildren(item) })
-            : Text({ key: 'title', bold: true, wrap: 'wrap', children: titleChildren(item) }),
-        ]
-      }
-      const [lead, ...rest] = titleChildren(item)
+      const chip = chipOf(item, done)
+      const title = item.title || item.id
       return [
-        Button({ key: 'check-' + item.id, plain: true,
-          onPress: () => {
-            // 넘기기(x) 모드에서는 항목을 눌러도 아무것도 하지 않는다. 그 모드의 누르기는 알림을 넘기는 뜻이다
-            if (dismissMode) return
-            fillPrompt($, itemPrompt(item, worker, live.prs))
-            $.ui.invalidate('ui.render')
-          },
-          children: [
-            Text({ key: 'mark', color: section.color, children: [section.mark + ' '] }),
-            Text({ key: 'title', bold: true, wrap: 'wrap', children: [lead] }),
-          ] }),
-        ...rest.map((part, i) => typeof part === 'string'
-          ? Text({ key: 'title-' + i, bold: true, wrap: 'wrap', children: [part] })
-          : part),
+        Text({ key: 'mark', color: section.color, children: [section.mark] }),
+        ...(chip ? [chip] : []),
+        done || !checkable(item)
+          ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: [title] })
+          : Button({ key: 'check-' + item.id, plain: true,
+            onPress: () => {
+              if (dismissMode) return
+              fillPrompt($, itemPrompt(item, worker, live.prs))
+              $.ui.invalidate('ui.render')
+            },
+            children: [Text({ key: 'title', bold: true, wrap: 'wrap', children: [title] })] }),
       ]
     }
     // 접힌 보기는 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다
@@ -1851,7 +1851,7 @@ export function register(on) {
           Box({
             key: 'head',
             flexDirection: 'row',
-            columnGap: !done && checkable(item) ? 0 : 1,
+            columnGap: 1,
             children: [
               ...headChildren(item, section, done, worker),
             ],

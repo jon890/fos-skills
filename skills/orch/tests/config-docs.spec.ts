@@ -46,3 +46,7 @@ test('개발 의존 설치와 core 의 zod 예외를 안내한다', () => {
   assert.match(read('../../../README.md'), /npm ci --ignore-scripts/)
   assert.match(read('../../../docs/features/orch-lib-layers/design.md'), /core\/config-schema.ts.*zod/)
 })
+
+test('업무 도구 설정은 두 문서 표에 있다', () => {
+  for (const file of ['../references/overlay.md', '../../../docs/data-schema.md']) assert.ok(read(file).includes('| `board` | `task` |'))
+})

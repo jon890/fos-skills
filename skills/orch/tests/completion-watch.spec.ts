@@ -101,3 +101,14 @@ test('이 저장소가 띄우지 않은 dispatch 의 PR 조회가 실패하면 �
   await assert.rejects(watchCompletions(repo, 'R', 'main'), /Could not resolve|gh/)
   assert.ok(!state().ids.includes('mine'))
 })
+
+for (const urlOnly of [false, true]) test(`준비 보고의 PR 제목 번호를 연결하며 주소만 있는 칸은 지킨다: ${urlOnly}`, async () => {
+  const sha = 'a'.repeat(40)
+  rules([done('d')], [{ id: 'ready', type: 'status', run_id: 'R', task_id: 'task', dispatch_id: 'd', from_handle: 'worker', body: `준비됨 #7, head ${sha}`, created_at: '2026-11-10T00:00:30Z' }])
+  const gh = fakeBin(repo, 'gh', [{ stdout: JSON.stringify({ number: 7, headRefName: 'feat/x', headRefOid: sha, title: '[P/458] 제목', url: 'url' }) }]); process.env.GH = gh.path; process.env.ORCH_GH_CACHE = '0'
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json', task_pattern: String.raw`\[([^\]]+)\]` } }))
+  writeFileSync(join(repo, 'chosen.json'), JSON.stringify({ items: [{ id: 'item', status: 'wait', branch: 'feat/x', ...(urlOnly ? { task: 'https://x/1' } : {}) }] }))
+  await watchCompletions(repo, 'R', 'main')
+  const row = JSON.parse(readFileSync(join(repo, 'chosen.json'), 'utf8')).items[0]
+  assert.equal(row.pr, 7); assert.equal(row['task-ref'], urlOnly ? undefined : 'P/458')
+})

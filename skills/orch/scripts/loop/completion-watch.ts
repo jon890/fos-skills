@@ -9,7 +9,7 @@ import { classify, context, payload } from '../lib/completion.ts'
 import { senderOf } from '../core/message-fields.ts'
 import { orcaJson } from '../lib/orca.ts'
 import { ghJson } from '../lib/gh.ts'
-import { linkBoardPr } from '../lib/board.ts'
+import { linkBoardPr, prTaskRef } from '../lib/board.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
 import { runKey } from '../lib/loop.ts'
@@ -85,7 +85,7 @@ export async function watchCompletions(repo: string, run: string, base: string, 
         if (!got.ok) throw new Error(got.error)
         const v = got.data
         pr = { number: v.number, title: v.title, branch: v.headRefName, head: v.headRefOid, author: v.author?.login ?? null, draft: v.isDraft, url: v.url }
-        if (existsSync(boardPath(repo)) && typeof pr.branch === 'string') linkBoardPr(boardPath(repo), String(pr.number), pr.branch)
+        if (existsSync(boardPath(repo)) && typeof pr.branch === 'string') linkBoardPr(boardPath(repo), String(pr.number), pr.branch, prTaskRef(repo, String(pr.title ?? '')))
       }
       if (!seen.events.includes(id)) {
         await fire('worker-done', { worker: { task, dispatch, terminal: senderOf(message) || null, worktree: null, spec: null }, outcome: message.outcome ?? payload(message).outcome ?? null, evidence: verified.status, pr }, { repo, run, base })

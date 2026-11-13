@@ -1308,3 +1308,24 @@ test('다시 시작 알림은 바로 깨우지 않고 DIGEST 로 모을 것에 �
   assert.deepEqual(sentEvents().filter(e=>e.kind==='LOOP-RESTARTED'),[])
   assert.equal(queuedEvents().filter(e=>e.kind==='LOOP-RESTARTED').length,1)
 })
+
+test('보드 맞추기에 넘기는 열린 PR 에 제목도 있다', () => {
+  board(); prs([{ ...MINE, title: '[P/458] 고침', headRefName: 'feat/x', headRefOid: 'a'.repeat(40), statusCheckRollup: [] }])
+  once()
+  const args = argsOf('board')[0]
+  assert.deepEqual(JSON.parse(args[args.indexOf('--open-prs') + 1]), [{ number: 1, headRefName: 'feat/x', title: '[P/458] 고침' }])
+})
+
+test('업무 CLI 실패 간격은 틱 프로세스를 다시 띄워도 이어진다', () => {
+  write(join(repo, '.omc/board.json'), JSON.stringify({ items: [{ id: 'a', status: 'doing', 'task-ref': 'P/1', details: ['1. PR'] }] }))
+  config({ board: { task: { adapter: 'dooray', web_url: 'https://x.dooray.com', project: 'P' } } })
+  const cli = join(tmp, 'dooray')
+  write(cli, '#!/usr/bin/env node\nconsole.error("offline"); process.exit(1)\n'); chmodSync(cli, 0o755)
+  for (const tick of [1, 2]) {
+    const result = once({ DOORAY_BIN: cli })
+    assert.equal(result.code, 0, result.stdout + result.stderr)
+  }
+  const log = readFileSync(orchFile('state/loop.log'), 'utf8')
+  assert.equal((log.match(/TASK-LINK-FAIL a P\/1 dooray post get: offline/g) ?? []).length, 1)
+  assert.equal(JSON.parse(readFileSync(join(repo, '.omc/board.json'), 'utf8')).items[0].task, undefined)
+})
