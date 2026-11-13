@@ -614,8 +614,8 @@ test('PR 크기 추정은 저장소 등급과 미상 신규 파일을 알리고 
   noConfig.file('src/a.ts', 'a\nb\n')
   const estimate: string[] = []
   checkEstimatedSize('plan', new Set(['src/a.ts\0수정']), noConfig.root, estimate)
-  assert.match(estimate[0], /본 코드 1줄/)
-  assert.doesNotMatch(estimate[0], /등급/)
+  assert.match(estimate[0], /전체 1줄/)
+  assert.doesNotMatch(estimate[0], /등급|본 코드/)
 })
 
 test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 없는 파일을 막는다', () => {
