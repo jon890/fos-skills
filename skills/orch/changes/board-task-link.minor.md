@@ -1,0 +1,1 @@
+- 설정 board.task 로 업무 도구 어댑터(dooray, url-template)를 고른다.

@@ -114,3 +114,5 @@ node scripts/run-tests.ts --tsc-only
 | `docs/data-schema.md` | 수정 (`board.task` 행) |
 | `skills/orch/references/overlay.md` | 수정 (`task` 행, 업무 도구 설정) |
 | `skills/orch/changes/board-task-link.minor.md` | 신규 |
+
+| `skills/orch/tests/core-config-schema.spec.ts` | 수정 (재시작 키 기대값) |
