@@ -3,6 +3,8 @@
 //
 // 기본은 미리보기다. 옮길 것, 겹치는 것, 옮긴 뒤 고칠 것, 옛 경로 참조, 막는 조건(stderr)을 보이고 아무것도 바꾸지 않는다.
 // `--apply` 를 주면 옮기고 고친다. 다 끝난 뒤 다시 돌리면 「옮길 것이 없다」 로 끝난다.
+// 설정 파일(config.json)이 깨졌으면 설정 쪽 변경만 건너뛰고 stderr 에 이유를 알린다. 끝에는 「config.json 을 고친 뒤 다시 돌린다」 를 더하고
+// 「옮길 것이 없다」 는 내지 않는다. 종료 코드는 그대로 0 이다(폴더 옮기기는 끝났다).
 //
 // 사용법:
 //     migrate-orch-dir.ts [--repo DIR] [--run RUN] [--move 옛=새 ...] [--apply]
@@ -580,9 +582,10 @@ function emptyDirs(plan: Plan): string[] {
   return [...found].sort(byParts).sort((a, b) => depth(b) - depth(a))
 }
 
-// 옮긴 뒤 고치는 것. 미리보기면 할 일을 보이기만 한다. 한 일(할 일)이 있으면 true
-function finish(plan: Plan, rules: Rule[], apply: boolean): boolean {
+// 옮긴 뒤 고치는 것. 미리보기면 할 일을 보이기만 한다. 한 일(할 일)이 있으면 did, 깨진 설정 때문에 설정 쪽을 건너뛰었으면 skipped
+function finish(plan: Plan, rules: Rule[], apply: boolean): { did: boolean; skipped: boolean } {
   let did = false
+  let skipped = false
   const orch = plan.orch
   const files = isDir(orch) ? walk(orch).filter(isFile).sort(byParts) : []
   const configPath = join(orch, NAMES.config)
@@ -608,7 +611,10 @@ function finish(plan: Plan, rules: Rule[], apply: boolean): boolean {
     configNotes = notes
     return config ?? (count > 0 ? rewritten : undefined)
   }
-  const skipConfig = (reason: string) => err(`설정 변경을 건너뜀: ${reason.replace(/[\r\n]+/g, ' ')}`)
+  const skipConfig = (reason: string) => {
+    skipped = true
+    err(`설정 변경을 건너뜀: ${reason.replace(/[\r\n]+/g, ' ')}`)
+  }
   if (apply && (isFile(configPath) || isDir(join(plan.root, PREVIEWS)))) {
     let read = false
     try {
@@ -645,7 +651,7 @@ function finish(plan: Plan, rules: Rule[], apply: boolean): boolean {
     out(`${apply ? '빈 폴더를 지움' : '지울 빈 폴더'} ${rel(folder, plan.root)}`)
   }
   if (apply) pruneParents(plan)
-  return did
+  return { did, skipped }
 }
 
 // 옮긴 옛 경로의 부모 중 비게 된 폴더를 지운다. .omc, .claude 와 저장소 루트에서 멈춘다
@@ -745,6 +751,9 @@ function configuredRun(root: string): string | null {
   return null
 }
 
+// 깨진 설정 때문에 설정 쪽을 건너뛴 채 끝났을 때의 끝 요약. 이 경우는 「옮길 것이 없다」 로 세지 않는다
+const SKIPPED_NOTICE = '설정 파일을 읽지 못해 설정 쪽은 건너뛰었다. config.json 을 고친 뒤 다시 돌린다'
+
 function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply: boolean): number {
   const root = mainCheckout(repo)
   const orch = orchDir(root)
@@ -762,8 +771,9 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
   const found = plan.moves.length > 0 ? blockers(root, runId ?? configuredRun(root)) : []
   for (const reason of found) err(`막음 ${reason}`)
   if (!apply) {
-    const did = finish(plan, rules, false)
-    if (!pending && !did) out('옮길 것이 없다')
+    const { did, skipped } = finish(plan, rules, false)
+    if (skipped) err(SKIPPED_NOTICE)
+    else if (!pending && !did) out('옮길 것이 없다')
     return plan.conflicts.length > 0 || plan.tracked.length > 0 ? 1 : 0
   }
   if (plan.conflicts.length > 0) {
@@ -775,8 +785,9 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
     return 3
   }
   if (!applyMoves(plan)) return 1
-  const did = finish(plan, rules, true)
-  if (!pending && !did) out('옮길 것이 없다')
+  const { did, skipped } = finish(plan, rules, true)
+  if (skipped) err(SKIPPED_NOTICE)
+  else if (!pending && !did) out('옮길 것이 없다')
   return plan.tracked.length > 0 ? 1 : 0
 }
 
