@@ -126,6 +126,26 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 
 타이머 상한은 `skills/orch/scripts/core/config-schema.ts` 의 `TIMER_MAX_SEC` 가 정한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. 큐·마무리의 짝 조건은 [마무리 설정 파일](../skills/orch/references/overlay.md#마무리-설정-파일)을 따른다.
 
+## 보드 항목의 worker 줄
+
+항목의 `workers`는 worker 줄 목록이다. 필드가 없는 옛 항목은 대표 칸(`worktree`, `branch`)으로 읽는다. 선택 이유는 [ADR-033](adr/033-board-item-worker-rows.md)에 있다.
+
+| 칸 | 값 |
+| --- | --- |
+| `role` | `impl`(구현), `follow`(후속), `review`(리뷰), `verify`(검증) |
+| `dispatch` | dispatch id 또는 `null` |
+| `worktree` | 워크트리 이름. 줄의 열쇠 |
+| `branch` | 브랜치 이름 또는 `null` |
+| `pr` | PR 번호 또는 `null`. 리뷰·검증은 대상 PR |
+| `status` | `working`, `done`, `lost`(보고 없이 끊김) |
+| `at` | 더하거나 다시 띄운 시각 |
+| `endedAt` | 끝난 시각 또는 `null` |
+
+같은 워크트리로 다시 띄우면 기존 줄을 바꾸고 역할은 유지한다. 브랜치는 줄의 값이며 열쇠에 넣지 않는다.
+대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 그런 줄이 없으면 마지막 값을 두고, 리뷰·검증 줄은 대표가 되지 않는다. 대상 항목을 못 찾아 새로 만든 리뷰 항목은 기존처럼 리뷰 worker 를 대표로 둔다.
+
+띄우기는 `board.ts worker-add`로 줄을 쓰고, 보드 맞추기는 루프가 넘긴 `--worker-ends`와 사라진 워크트리를 보고 `worker-end`를 부른다. 줄과 대표 칸은 같은 보드 잠금 안에서 바뀐다. 옛 대표를 처음 옮길 때 dispatch 를 찾지 못하면 끝난 줄로 남긴다. worker 줄만 바꾸면 `stepAt`과 단계 줄 지문은 그대로다.
+
 ## orch 루트에 더하는 파일
 
 | 경로 | 담는 것 | 지우는 때 |

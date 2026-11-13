@@ -204,6 +204,16 @@ describe('collectWorkers', () => {
 })
 
 describe('stalledStages', () => {
+  test('살아 있는 리뷰 줄은 수동 단계와 실행한 자동 단계의 멈춤 알림을 막는다', () => {
+    const live = new Set(['/work/reviewer'])
+    for (const autoAdvance of [false, true]) {
+      const options = { autoAdvance, steps: new Map([['a', { mark: 'auto' as const, step: '1. 구현', launches: [{ dispatch: 'd', branch: null }] }]]), openPrs: [], dispatches: new Set<string>() }
+      for (const status of ['working', 'done']) {
+        const item = { id: 'a', status: 'doing', worktree: 'missing', details: ['1. 구현'], workers: [{ role: 'review', worktree: 'reviewer', branch: null, status }] }
+        assert.equal(stalledStages([item], live, new Map(), () => false, options).length, status === 'working' ? 0 : 1)
+      }
+    }
+  })
   const item = (id: string, extra: Json): Json => ({ id, status: 'doing', details: [{ text: '구현', done: true }, { text: '평가 결과 확인', done: false }], ...extra })
   const none = () => false
 

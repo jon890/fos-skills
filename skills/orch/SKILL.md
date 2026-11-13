@@ -66,6 +66,7 @@ doctor·status 의 `LOOP-STALE` 은 루프가 스스로 다시 뜨기를 기다�
 | 현재 저장소 안의 독립적이고 큰 작업이다(구현, PR, 머지까지 가는 일) | 이 스킬로 worker 를 띄운다 |
 | 결과만 받으면 되는 짧은 조사, 판정, 리뷰 | 하위 에이전트를 쓴다 |
 | 구현한 제공자와 다른 제공자의 리뷰가 필요하다(예: Claude 가 만든 PR 의 Codex 리뷰) | 리뷰 worker 로 띄운다. 하위 에이전트는 코디네이터와 같은 제공자다. 지시서는 [`templates/spec-review.md`](templates/spec-review.md) 로 쓴다 |
+| 인수 조건을 독립 검증한다 | 검증 worker 를 별도 워크트리에 띄운다. 지시서는 [`templates/spec-verify.md`](templates/spec-verify.md) 로 쓴다 |
 | 사용자가 감독 없이 작업을 통째로 넘기라고 했다 | `orca-cli` 로 handoff 한다 |
 
 현재 저장소의 큰 작업도 worker 로 띄운다. 사용자가 Orca 화면에서 어느 worker 가 어느 워크트리에서 무엇을 하는지 보고, 중간에 직접 끼어들 수 있어야 한다.

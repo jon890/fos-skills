@@ -33,6 +33,16 @@ orch board approval cancel "$APPROVAL_ID" --reason chat
 
 끝난 기록도 보려면 `list --full` 을 쓴다.
 
+## 한 항목의 worker 들
+
+worker 를 띄울 때 리뷰·검증은 대상 PR 의 항목(done 포함)에, 후속은 같은 업무 번호나 브랜치의 열린 항목에 worker 줄로 붙는다. 붙이면 `BOARD-ATTACH <항목> <역할>` 줄이 나온다. 역할은 `follow`, `review`, `verify`다. 같은 워크트리 재시도는 줄을 바꾸고 이 출력은 내지 않는다.
+
+리뷰·검증 줄은 상태·단계·대표 칸을 바꾸지 않고, 항목 닫기와 자동 진행을 붙잡지 않는다. 작업 중 줄이 살아 있으면 역할과 상관없이 멈춘 단계 알림을 내지 않는다. 줄은 worker_done, 끝난 dispatch, 사라진 워크트리로 끝난다. 구현·후속 줄이 있는 항목은 리뷰 완료로 닫지 않는다.
+
+별도 항목으로 만들려면 지시서 머리에 `보드 항목: 새로`를 적는다. `보드 항목 id:`와 함께 쓰면 오류다. PR 전 검증은 `worker 역할: 검증`과 `보드 항목 id:`로 붙인다.
+
+현재 창은 대표 worker 하나만 항목 아래 보이고, 붙은 리뷰·검증 worker 는 「안 붙은 worker」 칸에 보인다. worker 줄 필드는 [데이터 스키마](../../../docs/data-schema.md#보드-항목의-worker-줄)가 소유한다.
+
 ## 상태와 단계 고치기
 
 **`board.json` 은 직접 고치지 않는다.** 상태와 단계는 아래 명령으로 고친다. 새 항목을 만들거나 제목·PR·담당 워크트리 같은 칸을 고칠 때는 `board.ts set`, 번호 없는 줄을 끝낼 때는 `board.ts mark`, 항목을 지울 때는 아래 `orch board del` 을 쓴다.

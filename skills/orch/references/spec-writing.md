@@ -121,6 +121,11 @@ orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 
 ## 리뷰 worker 지시서
 
+`리뷰 PR: #N`이 있으면 PR N 의 항목에 리뷰 줄로 붙는다. `보드 항목 id:`를 적지 않아도 된다. 완료 항목도 다시 열지 않는다.
+
+머리의 `보드 항목: 새로`는 자동 붙이기를 끈다. `보드 항목 id:`와 함께 쓰면 spec-lint 오류다.
+`worker 역할: 검증`은 인수 검증 worker 를 뜻한다. [검증 지시서 틀](../templates/spec-verify.md)을 쓰고, PR 뒤에는 `리뷰 PR:`, PR 전에는 `보드 항목 id:` 가운데 하나를 남긴다. 구현 worker 와 다른 워크트리를 쓴다.
+
 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서는 [`../templates/spec-review.md`](../templates/spec-review.md) 를 복사해 쓴다. 틀이 `리뷰 PR:` 줄, 허락 줄, COMMENT 등록, 본문 머리 등급별 건수 표, 결과 status 첫 줄(`판정: 머지 가능|수정 필요, 차단 N건, 권장 N건`)을 정한다. 결과 status 가 `판정:`, `완료:`, `미완료:` 로 시작하지 않으면 `worker_done` 이 `DONE-SUSPECT` 로 분류된다(`lib/completion.ts`).
 틀을 쓰지 않아도 아래 두 줄은 첫 `##` 제목 앞에 둔다.
 
