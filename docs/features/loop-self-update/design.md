@@ -6,7 +6,7 @@
 
 | ID | 해결 방법 |
 | --- | --- |
-| REQ1 | 부모 루프가 틱 자식이 끝난 직후, 틱 출력을 loop.log 로 옮기기 전에 `selfUpdate.check()` 를 부른다. 지금 설치본이 자기 번들과 다르면 처음 한 번 `LOOP-STALE` 줄을 쓰고, 그 뒤로는 틱 출력의 `STALE-BUNDLE` 줄을 옮기지 않는다(「옛 번들 판정」) |
+| REQ1 | 부모 루프가 틱 자식이 끝난 직후, 틱 출력을 loop.log 로 옮기기 전에 `observe` 로 설치본 변경을 확인한다. 지금 설치본이 자기 번들과 다르면 처음 한 번 `LOOP-STALE` 줄을 쓰고, 그 뒤로는 틱 출력의 `STALE-BUNDLE` 줄을 옮기지 않는다(「옛 번들 판정」) |
 | REQ2 | 「다시 뜨는 차례」. 옛 루프가 새 설치본의 `orch-loop.ts` 를 `--foreground` 인자와 넘겨받기 모드로 띄우고 잠금을 넘긴다. 새 루프는 등록을 지우지 않고, 새 루프가 `loop.json` 을 쓴 것을 본 뒤에 옛 루프가 끝난다 |
 | REQ3 | 「다시 뜨는 때」. 이 저장소의 마무리 pid 파일과 이 저장소를 대상으로 도는 머지 큐 프로세스를 본다. 처음 알아챈 때부터 60분이 지났거나 방금 틱이 종료 코드 2 면 기다리지 않는다. 마무리 프로세스에는 신호를 보내지 않는다 |
 | REQ4 | 옛 루프가 새 루프를 확인한 뒤 끝나기 전에, 등록된 Run 마다 `LOOP-UPDATED` 를 바로 보낸다(모아 보내기 kind 가 아니다) |
@@ -28,7 +28,7 @@
   - `handOver(...)`: 「다시 뜨는 차례」 의 옛 루프 쪽 1-6 단계.
   - 알림 문구 `updatedText`, `failedText`.
 - **`loop/lifecycle.ts`**: 부모의 틱 고리와 새 루프 쪽 동작을 고친다.
-  - 틱이 끝날 때 `selfUpdate.check()` 를 부르고, `go` 면 `handOver` 를 부른다. 성공하면 `foreground` 가 0 을 낸다. `--once` 는 부르지 않는다.
+  - 틱이 끝날 때 `observe` 로 변경을 확인하고 `decide` 가 `go` 를 내면 `handOver` 를 부른다. 성공하면 `foreground` 가 0 을 낸다. `--once` 는 부르지 않는다.
   - `tickResult` 가 `STALE-BUNDLE` 줄을 빼고(알아챈 뒤에만) 원인 줄을 낸다(「틱 실패의 원인 줄」).
   - 넘겨받기 모드(`ORCH_LOOP_HANDOVER`)의 `takeLock` 과 시작 처리(「새 루프 쪽」).
   - `status()` 와 `loop.json` 의 `bundle_version`.
