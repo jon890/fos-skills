@@ -1,11 +1,13 @@
 // 보드 상태와 단계 명령. 검사와 저장은 board.ts 에 맡기고 결과 JSON 을 짧게 보인다.
-// 사용법: orch board set <항목> <상태> | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
+// 사용법: orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
 //         orch board add-step <항목> "<글>" | show <항목>
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
 // 진입점의 --full 은 모든 줄도 낸다. 종료 코드: 0 성공, 1 거절, 2 사용법·설정 오류.
 import { unmatchedRecords, unmatchedLine, unmatchedResolved } from '../lib/board-unmatched.ts'
 import { parseArgs } from 'node:util'
+import { taskAdapter } from '../lib/task-adapters.ts'
+import { normalizeRef } from '../core/task-adapters.ts'
 import { expandArgs } from '../lib/args.ts'
 import { BOARD_BIN, GET_FIELDS, itemTitle } from '../lib/board.ts'
 import { boardPath } from '../lib/board-file.ts'
@@ -13,7 +15,7 @@ import { fullAsked } from '../lib/output.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from '../lib/proc.ts'
 
 const USAGE = `사용법:
-  orch board set <항목> <상태>
+  orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
   orch board step <항목> <번호> done|undo
   orch board step <항목> <번호> text "<글>" [--on "<PR> <pr|merge|deploy|release>"]
   orch board step <항목> <번호> auto|ask|plain
@@ -28,6 +30,7 @@ const USAGE = `사용법:
   공통: [--repo <폴더>] [--board <파일>] [--full]
   - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
 const OPTIONS = {
+  task: { type: 'string' }, 'task-ref': { type: 'string' },
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
   json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -53,6 +56,7 @@ function main(argv: string[]): number {
   let command: string[]
   let trailing: string[] = []
   const usage = () => { process.stderr.write(`${USAGE}\n`); return 2 }
+  if ((values.task !== undefined || values['task-ref'] !== undefined) && verb !== 'set') return usage()
   if ((values.done || values.force) && verb !== 'del') return usage()
   if (verb === 'del' && (values.json || values.status !== undefined || values.on !== undefined)) return usage()
   if ((values.json && !['get', 'list', 'show'].includes(verb)) || (values.status !== undefined && verb !== 'list') || (values.on !== undefined && ['get', 'list', 'show'].includes(verb))) return usage()
@@ -60,7 +64,14 @@ function main(argv: string[]): number {
   else if (verb === 'del' && args.length === 1 && values.done && !values.force) command = ['del-done', '--all']
   else if (verb === 'get' && GET_FIELDS.includes(third as typeof GET_FIELDS[number]) && ((third === 'step' && args.length === 4 && /^\d+$/.test(action)) || (third !== 'step' && args.length === 3))) command = ['get', id, third, ...(third === 'step' ? [action] : [])]
   else if (verb === 'list' && args.length === 1) { command = ['items']; if (values.status !== undefined) trailing = ['--', values.status] }
-  else if (verb === 'set' && args.length === 3 && values.on === undefined) command = ['set', id, third, '--exact']
+  else if (verb === 'set' && [2, 3].includes(args.length) && values.on === undefined && (third !== undefined || values.task !== undefined || values['task-ref'] !== undefined)) {
+    command = ['set', id, ...(third === undefined ? [] : [third]), '--exact']
+    if (values.task !== undefined) command.push('--task', values.task)
+    if (values['task-ref'] !== undefined) {
+      try { command.push('--task-ref', values['task-ref'] ? normalizeRef(taskAdapter(values.repo ?? process.cwd()), values['task-ref']) : '') }
+      catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 2 }
+    }
+  }
   else if (verb === 'show' && args.length === 2 && values.on === undefined) command = [values.json ? 'item' : 'view', id]
   else if (verb === 'add-step' && args.length === 3) command = ['step-add', id, third]
   else if (verb === 'step' && /^\d+$/.test(third ?? '')) {

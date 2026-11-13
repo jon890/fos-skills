@@ -1,0 +1,1 @@
+- 보드 항목에 업무 번호 칸(task-ref)과 set 의 --fill, --if-task-ref 를 더한다.

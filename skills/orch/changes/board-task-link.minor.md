@@ -1,1 +1,2 @@
 - 설정 board.task 로 업무 도구 어댑터(dooray, url-template)를 고른다.
+- orch board set 이 상태 없이 --task, --task-ref 로 업무 주소와 번호를 넣고 고치고 지운다.
