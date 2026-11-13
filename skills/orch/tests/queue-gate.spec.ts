@@ -2,7 +2,7 @@
 // 가짜 gh, git 은 merge-queue.spec.ts 와 같은 것을 쓴다(tests/fixtures/merge-queue-fakes.ts).
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -111,6 +111,58 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     const r = await gate(c, { '1': pr() }, 0)
     assert.equal(r.code, 0, both(r))
     assert.equal(r.stdout.trim().split('\n').filter((line) => /^GATE-/.test(line)).join('\n'), 'GATE-OK 1')
+  })
+
+  for (const line of ['머지 보류: real 확인 전', '- **머지 보류:** real 확인 전', '머지 보류:']) {
+    test(`보류 줄이 있으면 gate 와 merge 가 거절한다: ${line}`, async (t) => {
+      const c = setup(t)
+      writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), `브랜치: \`feat\`\n${line}\n`)
+      for (const invoke of [gate, queue]) {
+        const r = await invoke(c, { '1': pr() }, 0)
+        assert.equal(r.code, 1, both(r))
+        assert.match(r.stdout, /GATE-HOLD (real 확인 전|이유 없음)/)
+        assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+      }
+    })
+  }
+
+  test('앞 Run 의 지시서 보류를 gate 와 merge 가 함께 따른다', async (t) => {
+    const c = setup(t)
+    const state = join(c.tmp, '.orch', 'state', 'loop-runs')
+    mkdirSync(state, { recursive: true })
+    for (const [run, hold] of [['first', '먼저 등록한 Run'], ['later', '나중 Run']]) {
+      const dir = join(c.tmp, run)
+      mkdirSync(dir)
+      writeFileSync(join(dir, 'spec-hold.md'), `브랜치: \`feat\`\n머지 보류: ${hold}\n`)
+      writeFileSync(join(state, `${run}.json`), JSON.stringify({ run, specs_dir: dir, registered_at: run === 'first' ? '2026-01-01' : '2026-01-02' }))
+    }
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, 1, both(r))
+      assert.match(r.stdout, /GATE-HOLD 먼저 등록한 Run/)
+    }
+  })
+
+  test('설정한 지시서 폴더도 gate 와 merge 가 확인한다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.tmp, 'custom-specs'))
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ finish: { specs_dir: 'custom-specs' } }))
+    writeFileSync(join(c.tmp, 'custom-specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 백업 대기\n')
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, 1, both(r))
+      assert.match(r.stdout, /GATE-HOLD 백업 대기/)
+    }
+  })
+
+  test('다른 브랜치의 보류 줄은 gate 와 merge 를 막지 않는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-other.md'), '브랜치: `other`\n머지 보류: 다른 작업\n')
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stdout, /GATE-HOLD/)
+    }
   })
 
   test('걸리면 GATE-FAIL 과 이유를 한 줄씩 내고 종료 코드 1 이다. 이유는 모두 모은다', async (t) => {

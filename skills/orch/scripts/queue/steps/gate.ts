@@ -18,8 +18,8 @@ import { fetchPrRefs } from './overlap.ts'
 import { field, prEnv } from './pr.ts'
 import { chomp, log, namesJson, nap, stop } from './runtime.ts'
 
-// ci 는 체크, threads·evidence·migration 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
-export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup' | 'migration'
+// hold 는 지시서의 명시 보류, ci 는 체크, threads·evidence·migration 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
+export type GateKind = 'hold' | 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup' | 'migration'
 export type GateReason = { kind: GateKind; text: string }
 // none 은 체크를 보지 않고, failed 는 실패한 체크만 보고(체크를 기다린 뒤), all 은 진행 중이거나 나타나지 않은 체크도 본다
 export type GateChecks = 'none' | 'failed' | 'all'

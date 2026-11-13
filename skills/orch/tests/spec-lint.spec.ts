@@ -696,3 +696,20 @@ test('중복 표지를 공통 경고로 알리고 표지 이름과 모든 줄 �
   assert.equal(done.status, 0, done.stderr)
   assert.match(done.stdout, /공통: 같은 표지 local 가 둘 이상 있다: 1, 2줄/)
 })
+
+
+test('머지 조건은 보류 줄이 없으면 경고하되 막지 않는다', () => {
+  for (const text of ['머지는 real 확인 뒤에 한다', 'DB 백업 전에는 머지하지 않는다', '머지는 배포 이후에 한다']) {
+    const r = lint([spec('hold', text)])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /:1: 머지 보류:/)
+  }
+})
+
+test('완료 담당 문장과 코드 예시, 보류 줄이 있는 조건은 경고하지 않는다', () => {
+  for (const text of ['머지는 코디네이터가 한다', '머지는 하지 않는다', '머지 뒤에 브랜치를 정리한다', 'PR 을 머지한 뒤에 완료를 보낸다', '머지는 확인 뒤에 한다\n- **머지 보류:** 확인 대기', '```text\n머지는 확인 뒤에 한다\n```']) {
+    const r = lint([spec('no-hold-warning', text)])
+    assert.equal(r.code, 0, r.stdout)
+    assert.doesNotMatch(r.stdout, /: 머지 보류:/)
+  }
+})
