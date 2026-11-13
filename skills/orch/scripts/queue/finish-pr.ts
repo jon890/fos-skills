@@ -128,12 +128,12 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { markFinishStarted } from '../lib/finish-marks.ts'
 import { recordUnmatched } from '../lib/board-unmatched.ts'
-import { prSteps } from '../core/board.ts'
+import { prNumbers, prSteps } from '../core/board.ts'
 import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
 import type { BoardDetail, BoardStep } from '../lib/board.ts'
 import { conflictSpecFiles } from '../lib/conflicts.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
-import { boardSettings, mergedCommands, stagesOf } from '../lib/milestones.ts'
+import { boardSettings, eventKinds, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { StageKind, Stages } from '../lib/milestones.ts'
 import { judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
@@ -617,7 +617,9 @@ function setBoardLegacy(args: Args, repo: string, item: string, last: boolean, n
 }
 
 // 마일스톤 항목(stages 칸이 있다)에 머지와 배포를 반영한다(lib/milestones.ts 의 mergedCommands). 배포가 성공했으면 [deploy] 단계까지 끝낸다.
-// 마지막 PR 이 done 지점에 닿았으면 done 이다. 결과는 done, doing, 실패(false) 셋이다
+// 마지막 PR 이 done 지점에 닿았으면 done 이다. 결과는 done, doing, 실패(false) 셋이다.
+// 항목 pr 칸에 이 PR 밖의 PR 이 남았으면(열려 있거나, 머지됐지만 아직 반영하지 않았거나, 상태를 읽지 못했다) 마지막 PR 이 아니다.
+// 그 PR 을 pr 칸에 남기고 이 PR 의 묶음(prStages)만 끝내며 배포 성공은 보지 않는다(core/milestones.ts 의 「PR 묶음」)
 function setBoardMilestone(args: Args, repo: string, item: string, stages: Stages, deploy: Deploy, last: boolean, note: string | null): 'done' | 'doing' | false {
   let doneAfter: StageKind | null
   try {
@@ -627,9 +629,19 @@ function setBoardMilestone(args: Args, repo: string, item: string, stages: Stage
     return false
   }
   return updateBoardRows(args, repo, item, (row, steps) => {
-    const made = mergedCommands({ ...row, id: item }, steps, stagesOf(row) ?? stages, args.pr, deploy === 'success' ? 'deploy' : 'merge', { last, doneAfter, note })
+    const known = prNumbers(row['merged-pr'])
+    const remaining = [...prNumbers(row.pr)].filter((other) => other !== args.pr && !known.has(other) && prState(repo, other) !== 'CLOSED')
+    const final = last && remaining.length === 0
+    if (last && remaining.length > 0) log(`pr 칸에 다른 PR ${remaining.join(', ')} 가 남아 마지막 PR 로 보지 않고 PR ${args.pr} 의 묶음만 끝낸다`)
+    const made = mergedCommands({ ...row, id: item }, steps, prStages(row, args.pr) ?? stages, args.pr, final && deploy === 'success' ? 'deploy' : 'merge', { last: final, doneAfter, note: final ? null : note, remaining, kinds: eventKinds(row) })
     return { cmds: made.cmds, value: made.done ? 'done' as const : 'doing' as const }
   })
+}
+
+// PR 의 상태(OPEN, MERGED, CLOSED). 읽지 못하면 null 이다
+function prState(repo: string, pr: string): string | null {
+  const done = gh(['pr', 'view', pr, '--json', 'state', '--jq', '.state'], { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+  return done.code === 0 ? done.stdout.trim() : null
 }
 
 async function finish(args: Args, repo: string): Promise<number> {

@@ -80,6 +80,29 @@ describe('findBoardItems', () => {
     assert.deepEqual(findBoardItems(file, '77', 'feat/x', null), { by: 'branch', ids: ['open'] })
   })
 
+  test('pr 칸이 차 있어도 구현·후속 줄의 브랜치나 워크트리가 같고 그 줄의 pr 이 비었으면 줄로 찾는다', () => {
+    const row = (role: string, worktree: string, branch: string, pr: number | null) => ({ role, worktree, branch, pr, status: 'working', at: '2026-01-01', dispatch: null, endedAt: null })
+    const file = board([
+      { id: 'rows', status: 'doing', pr: 9, branch: 'feat/b', workers: [row('impl', 'wa', 'feat/a', null), row('follow', 'wb', 'feat/b', 9)] },
+      { id: 'filled', status: 'doing', pr: 9, workers: [row('impl', 'wc', 'feat/a', 5)] },
+      { id: 'review', status: 'doing', pr: 9, workers: [row('review', 'wd', 'feat/a', null)] },
+      { id: 'handled', status: 'doing', pr: 9, 'merged-pr': '77', workers: [row('impl', 'we', 'feat/a', null)] },
+    ])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/a', null), { by: 'branch', ids: ['rows'], rows: { rows: 'wa' } })
+    assert.deepEqual(findBoardItems(file, '77', 'other', 'wa'), { by: 'branch', ids: ['rows'], rows: { rows: 'wa' } })
+    assert.equal(findBoardItems(file, '77', 'feat/z', null), null)
+  })
+
+  test('줄로 찾은 항목은 linkBoardPr 이 pr 칸에 더하고 그 줄의 pr 을 채운다', () => {
+    const file = board([{ id: 'rows', status: 'doing', pr: 9, branch: 'feat/b', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'],
+      workers: [{ role: 'impl', worktree: 'wa', branch: 'feat/a', pr: null, status: 'done', at: '2026-01-01', dispatch: null, endedAt: '2026-01-02' }] }])
+    assert.equal(linkBoardPr(file, '77', 'feat/a'), 'rows')
+    const row = (JSON.parse(readFileSync(file, 'utf8')) as { items: Array<Record<string, any>> }).items[0]
+    assert.equal(row.pr, '9, 77')
+    assert.equal(row.workers[0].pr, 77)
+    assert.equal(row.workers[0].status, 'done')
+  })
+
   test('빈 브랜치 이름은 branch 칸이 없는 항목과 맞지 않는다', () => {
     const file = board([{ id: 'blank' }])
     assert.equal(findBoardItems(file, '77', '', null), null)

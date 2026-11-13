@@ -315,11 +315,14 @@ export function specTitle(text: string, opts: { items: BoardItem[]; explicit?: s
   return title
 }
 
-export type BoardMatch = { by: 'pr' | 'branch'; ids: string[] }
+// rows 는 브랜치로 찾은 항목 가운데 worker 줄로 찾은 것의 항목 id → 그 줄의 워크트리다. 줄로 찾은 항목이 없으면 이 칸이 없다
+export type BoardMatch = { by: 'pr' | 'branch'; ids: string[]; rows?: Record<string, string> }
 
-// 머지한 PR 의 보드 항목. pr 칸에 그 PR 이 든 항목을 먼저 찾고, 없으면 pr 칸이 빈 항목 가운데 branch 가 PR 브랜치이거나
-// worktree 가 그 워크트리 이름인 항목을 찾는다. 브랜치로 찾을 때 done 항목과 merged-pr 에 이미 그 PR 이 든 항목은 뺀다.
-// 이미 처리한 머지 PR 을 다시 연결하지 않기 위해서다. 어느 쪽도 없거나 보드를 읽지 못하면 null 이다. 둘 이상이면 ids 에 모두 담는다
+// 머지한 PR 의 보드 항목. pr 칸에 그 PR 이 든 항목을 먼저 찾고, 없으면 아래 항목을 찾는다. 둘 다 done 항목과 merged-pr 에 이미 그 PR 이 든 항목은 뺀다.
+// 이미 처리한 머지 PR 을 다시 연결하지 않기 위해서다.
+//   - pr 칸이 비고 branch 가 PR 브랜치이거나 worktree 가 그 워크트리 이름인 항목
+//   - worker 줄(구현·후속)의 브랜치나 워크트리가 같고 그 줄의 pr 이 빈 항목. 대표가 후속 줄로 바뀌어도 앞 줄의 PR 을 찾는다(PR 묶음, core/milestones.ts)
+// 어느 쪽도 없거나 보드를 읽지 못하면 null 이다. 둘 이상이면 ids 에 모두 담는다
 export function findBoardItems(file: string, pr: string, branch: string, worktree: string | null): BoardMatch | null {
   let items: BoardItem[]
   try {
@@ -330,14 +333,23 @@ export function findBoardItems(file: string, pr: string, branch: string, worktre
   const id = (i: BoardItem) => (typeof i.id === 'string' ? i.id : JSON.stringify(i.id))
   const byPr = items.filter((i) => prNumbers(i.pr).has(pr))
   if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
+  const open = (i: BoardItem) => i.status !== 'done' && !prNumbers(i['merged-pr']).has(pr)
   const byBranch = items.filter(
     (i) =>
       prNumbers(i.pr).size === 0 &&
-      i.status !== 'done' &&
-      !prNumbers(i['merged-pr']).has(pr) &&
+      open(i) &&
       ((branch && i.branch === branch) || (worktree && i.worktree === worktree)),
   )
-  return byBranch.length > 0 ? { by: 'branch', ids: byBranch.map(id) } : null
+  const rows: Record<string, string> = {}
+  const byRow = items.filter((i) => {
+    if (!open(i) || byBranch.includes(i)) return false
+    const row = boardWorkerRows(i).find((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).size === 0 &&
+      ((branch && one.branch === branch) || (worktree && one.worktree === worktree)))
+    if (row) rows[id(i)] = row.worktree
+    return row !== undefined
+  })
+  const ids = [...byBranch, ...byRow].map(id)
+  return ids.length > 0 ? { by: 'branch', ids, ...(Object.keys(rows).length > 0 ? { rows } : {}) } : null
 }
 
 // 보드 명령(board.ts steps)이 판정한 단계 목록. 읽지 못하면 null 이다
@@ -371,9 +383,17 @@ export function linkBoardPr(file: string, number: string, branch: string, ref?: 
   const found = findBoardItems(file, number, branch, null)
   if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
   const bin = process.env.BOARD_BIN || BOARD_BIN
-  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  const id = found.ids[0]
+  const worktree = found.rows?.[id]
+  // worker 줄로 찾았으면 항목 pr 칸에 PR 을 더하고 그 줄의 pr 도 채운다. 칸에 다른 PR 이 이미 있을 수 있다
+  const list = worktree === undefined ? number : [...prNumbers(readBoard(file).find((row) => row.id === id)?.pr), number].join(', ')
+  const done = run(scriptCommand(bin, ['set', id, '--pr', list, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
   if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
-  return found.ids[0]
+  if (worktree !== undefined) {
+    const row = run(scriptCommand(bin, ['worker-set', id, '--worktree', worktree, '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    if (row.code !== 0) throw new Error(row.stderr.trim() || `보드 명령 종료 코드 ${row.code}`)
+  }
+  return id
 }
 
 // 진행률을 세는 쪽은 board.ts steps 가 정한다. 꼬리표 후보가 없는 항목은 CLI 를 부르지 않는다.

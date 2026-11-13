@@ -36,7 +36,7 @@ import { taggedBoardSteps, boardSteps, prNumbers, BOARD_BIN, guardedCommands, li
 import { ConfigError } from '../lib/config.ts'
 import { git } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
-import { boardSettings, mergedCommands, stagesOf } from '../lib/milestones.ts'
+import { boardSettings, eventKinds, mergedCommands, stagesOf } from '../lib/milestones.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
@@ -235,7 +235,8 @@ function main(argv: string[]): number {
       return 1
     }
     if (steps.some((step) => step.number === stages.release && step.done)) continue
-    const made = mergedCommands(item, steps, stages, pr, 'release', { last: true, doneAfter, note: null })
+    // 릴리스 단계는 항목에 하나라 묶음은 항목 stages 그대로다. kinds 로 후속 묶음의 사건 단계를 수동 단계로 세지 않는다
+    const made = mergedCommands(item, steps, stages, pr, 'release', { last: true, doneAfter, note: null, kinds: eventKinds(item) })
     made.cmds = guardedCommands(made.cmds, linesRev(item))
     if (dryRun) {
       changed.push(id)

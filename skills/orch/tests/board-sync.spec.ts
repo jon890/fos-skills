@@ -891,3 +891,140 @@ test('하이픈으로 시작하는 PR 업무 번호를 옵션과 구분한다', 
   assert.equal(got.code, 0, got.result.stderr)
   assert.equal(got.board.dash['task-ref'], '-x'); assert.equal(String(got.board.dash.pr), '99')
 })
+
+describe('board-sync 동시에 열린 PR', () => {
+  const four = [step('1. PR', false), step('2. 머지', false), step('3. PR (wb)', false), step('4. 머지 (wb)', false)]
+  const rows = (extra = {}) => [
+    worker('impl', 'wa', 'd1', { pr: 7, status: 'done', endedAt: '2026-01-02' }),
+    worker('follow', 'wb', 'd2', { branch: 'feat/b', pr: 9, stages: 'pr=3,merge=4', at: '2026-01-03', ...extra }),
+  ]
+  const item = (extra: Json = {}): Json => ({ id: 'a', status: 'doing', stages: 'pr=1,merge=2', pr: '7, 9', worktree: 'wb', branch: 'feat/b', details: four, workers: rows(), ...extra })
+  const done = (...numbers: number[]) => four.map((d, i) => (numbers.includes(i + 1) ? { ...d, done: true } : d))
+  const config = (body: unknown) => {
+    mkdirSync(join(tmp, '.orch'), { recursive: true })
+    writeFileSync(join(tmp, '.orch', 'config.json'), JSON.stringify(body))
+  }
+
+  test('열린 PR 마다 자기 묶음의 [pr] 단계를 끝내고 pr 칸에 두 번호를 둔다', () => {
+    states = { '7': 'OPEN', '9': 'OPEN' }
+    const r = sync([item()])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.pr, '7, 9')
+    assert.deepEqual(r.board.a.details, done(1, 3))
+  })
+
+  test('뒤 PR 만 머지되면 뒤 묶음만 끝내고 판정 함수를 부르지 않으며 pr 칸에는 앞 PR 이 남는다', () => {
+    // task_pattern 이 있고 info:9 가 없으면 판정 함수를 부를 때 조회 실패로 다시 판정하게 된다. 부르지 않으면 반영된다
+    config({ finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]' } })
+    states = { '7': 'OPEN', '9': 'MERGED' }
+    const r = sync([item()])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, 7)
+    assert.equal(r.board.a['merged-pr'], 9)
+    assert.deepEqual(r.board.a.details, done(1, 3, 4))
+  })
+
+  test('앞 PR 이 머지되면 마지막 PR 이라 done 이 되고 뒤 묶음도 끝난 채 남는다', () => {
+    states = { '7': 'MERGED' }
+    const r = sync([item({ pr: 7, 'merged-pr': 9, details: done(3, 4) })])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual(r.board.a.details, done(1, 2, 3, 4))
+    assert.equal(r.board.a['merged-pr'], '9, 7')
+  })
+
+  test('두 PR 이 같은 틱에 머지되면 번호가 작은 PR 만 반영하고 마지막 PR 로 보지 않는다', () => {
+    states = { '7': 'MERGED', '9': 'MERGED' }
+    const r = sync([item()])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, 9)
+    assert.equal(r.board.a['merged-pr'], 7)
+    assert.deepEqual(r.board.a.details, done(1, 2))
+    const next = run(['--board', board, '--repo', tmp])
+    assert.equal(next.code, 0, next.stderr)
+    assert.equal(load().a.status, 'done')
+    assert.deepEqual(load().a.details, done(1, 2, 3, 4))
+  })
+
+  test('남은 PR 의 상태를 읽지 못하면 항목을 고치지 않는다', () => {
+    states = { '9': 'MERGED' }
+    const r = sync([item()])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.deepEqual(r.board.a.details, four)
+    assert.equal(r.board.a.pr, '7, 9')
+    assert.equal('merged-pr' in r.board.a, false)
+  })
+
+  test('done_after 가 deploy 면 마지막으로 머지된 PR 의 배포 성공 뒤에 done 이다', () => {
+    const git = (...args: string[]) => {
+      const done = spawnSync('git', ['-C', tmp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' })
+      assert.equal(done.status, 0, done.stderr)
+      return done.stdout.trim()
+    }
+    git('init', '-q', '-b', 'main')
+    git('commit', '-q', '--allow-empty', '-m', 'merge')
+    const sha = git('rev-parse', 'HEAD')
+    config({ board: { done_after: 'deploy' }, finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
+    const five = [step('1. PR', false), step('2. 머지', false), step('3. 배포', false), step('4. PR (wb)', false), step('5. 머지 (wb)', false)]
+    const base = (extra: Json = {}): Json => item({ stages: 'pr=1,merge=2,deploy=3', details: five, workers: rows({ stages: 'pr=4,merge=5' }), ...extra })
+    // 뒤 PR 이 먼저 머지됐다. 앞 PR 이 열려 있으니 배포를 보지 않는다
+    states = { '7': 'OPEN', '9': 'MERGED', 'merge:9': sha, runs: [{ headSha: sha, status: 'completed', conclusion: 'success' }] }
+    let r = sync([base()])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, false, false, true, true])
+    // 앞 PR 이 마지막으로 머지됐다. 배포가 끝나지 않았으면 done 이 아니다
+    states = { '7': 'MERGED', 'merge:7': sha, runs: [{ headSha: sha, status: 'in_progress', conclusion: null }] }
+    r = sync([{ ...(r.board.a as Json) }])
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, false, true, true])
+    assert.equal(r.board.a['merged-pr'], '9, 7')
+    // 배포가 성공하면 done 이다
+    states = { '7': 'MERGED', 'merge:7': sha, runs: [{ headSha: sha, status: 'completed', conclusion: 'success' }] }
+    r = sync([{ ...(r.board.a as Json) }])
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, true, true, true])
+  })
+
+  test('done_after 기본(merge)이면 마지막 PR 머지 때 done 이고 배포 단계는 남는다', () => {
+    const five = [step('1. PR', true), step('2. 머지', false), step('3. 배포', false), step('4. PR (wb)', true), step('5. 머지 (wb)', true)]
+    states = { '7': 'MERGED' }
+    const r = sync([item({ stages: 'pr=1,merge=2,deploy=3', pr: 7, 'merged-pr': 9, details: five, workers: rows({ stages: 'pr=4,merge=5' }) })])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, false, true, true])
+  })
+
+  test('후속 줄은 자기 브랜치의 열린 PR 을 pr 칸과 줄에 잇고 앞 줄의 브랜치도 잇는다', () => {
+    const open = JSON.stringify([{ number: 7, headRefName: 'feat/a', title: 'a' }, { number: 9, headRefName: 'feat/b', title: 'b' }])
+    const r = sync([item({ pr: undefined, workers: [worker('impl', 'wa', 'd1', { status: 'done', endedAt: '2026-01-02' }), worker('follow', 'wb', 'd2', { branch: 'feat/b', stages: 'pr=3,merge=4', at: '2026-01-03' })] })], ['--open-prs', open])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.pr, '9, 7')
+    const linked = r.board.a.workers as Json[]
+    assert.equal(linked[0].pr, 7)
+    assert.equal(linked[1].pr, 9)
+    assert.equal(r.board.a.branch, 'feat/b')
+    assert.deepEqual(r.board.a.details, done(1, 3))
+  })
+
+  test('대표가 후속 줄로 바뀐 항목은 앞 구현 줄의 브랜치에 열린 PR 을 더한다', () => {
+    const open = JSON.stringify([{ number: 7, headRefName: 'feat/a', title: 'a' }, { number: 9, headRefName: 'feat/b', title: 'b' }])
+    states = { '9': 'OPEN' }
+    const r = sync([item({ pr: 9, workers: [worker('impl', 'wa', 'd1', { status: 'done', endedAt: '2026-01-02' }), worker('follow', 'wb', 'd2', { branch: 'feat/b', pr: 9, stages: 'pr=3,merge=4', at: '2026-01-03' })] })], ['--open-prs', open])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.pr, '9, 7')
+    assert.equal((r.board.a.workers as Json[])[0].pr, 7)
+    assert.equal(r.board.a.branch, 'feat/b')
+    assert.deepEqual(r.board.a.details, done(1, 3))
+  })
+
+  test('후속 묶음 단계에 머지된 PR 번호가 적혀 있어도 갱신 필요 알림이 나오지 않는다', () => {
+    states = { '7': 'OPEN', '9': 'MERGED' }
+    const noted = [step('1. PR', false), step('2. 머지', false), step('3. PR (wb) #9', false), step('4. 머지 (wb) #9', false)]
+    const r = sync([item({ pr: 7, 'merged-pr': 9, details: noted })])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.doesNotMatch(r.result.stdout, /갱신 필요/)
+  })
+})

@@ -171,13 +171,23 @@ function rowStages(row: { stages?: unknown }): { pr: number; merge: number } | n
   return stages && stages.pr !== undefined && stages.merge !== undefined ? { pr: stages.pr, merge: stages.merge } : null
 }
 
+// 그 PR 을 pr 로 가진 줄 가운데 stages 가 있는 가장 최근(at) 줄. 없으면 undefined 다
+function groupRow(item: BoardItem | Record<string, unknown>, pr: string) {
+  return boardWorkerRows(item as Record<string, unknown>)
+    .filter((one) => prNumbers(one.pr).has(pr) && rowStages(one) !== null)
+    .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+}
+
+// 그 PR 이 후속 줄의 단계 묶음을 갖는가. 항목 stages 의 묶음이면 false 다
+export function hasPrGroup(item: BoardItem | Record<string, unknown>, pr: string): boolean {
+  return groupRow(item, pr) !== undefined
+}
+
 // PR 하나의 단계 묶음. 머리 주석의 「PR 묶음」 이다. 그 PR 을 pr 로 가진 줄에 stages 가 있으면 줄의 pr·merge 에 항목의 deploy·release 를 더한다.
 // 없으면 항목 stages 다. 항목에 stages 가 없고 묶음 줄도 없으면 null 이다
 export function prStages(item: BoardItem | Record<string, unknown>, pr: string): Stages | null {
   const base = stagesOf(item)
-  const row = boardWorkerRows(item as Record<string, unknown>)
-    .filter((one) => prNumbers(one.pr).has(pr) && rowStages(one) !== null)
-    .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+  const row = groupRow(item, pr)
   const own = row ? rowStages(row) : null
   if (!own) return base
   return { ...(base?.deploy !== undefined ? { deploy: base.deploy } : {}), ...(base?.release !== undefined ? { release: base.release } : {}), pr: own.pr, merge: own.merge }

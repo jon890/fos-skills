@@ -1102,6 +1102,39 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.deepEqual(starting(c.calls(), 'board set'), [`board set m --pr  --merged-pr 70, 77 --file ${file}`])
   })
 
+  const follow = (extra: Json = {}): Json => ({ role: 'follow', worktree: 'wb', branch: 'feat/b', dispatch: 'd2', pr: 77, stages: 'pr=3,merge=4', status: 'working', at: '2026-01-03', endedAt: null, ...extra })
+  const four = JSON.stringify([1, 2, 3, 4].map((number) => ({ number, done: false, text: `${number}. 단계` })))
+
+  test('마일스톤 항목에 다른 열린 PR 이 pr 칸에 있으면 자기 묶음만 끝내고 done 으로 바꾸지 않는다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'm', status: 'doing', pr: '77, 78', stages: 'pr=1,merge=2', workers: [follow()] }])
+    const r = await c.finish(['--complete', ...bin], { FAKE_STEPS: four })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps m --file ${file}`,
+      `board step m 3 --file ${file}`,
+      `board step m 4 --file ${file}`,
+      `board set m --pr 78 --merged-pr 77 --file ${file}`,
+    ])
+    has(r.stdout, 'pr 칸에 다른 PR 78 가 남아 마지막 PR 로 보지 않고 PR 77 의 묶음만 끝낸다')
+  })
+
+  test('pr 칸이 아직 비었으면 구현 줄의 브랜치가 머지 PR 의 브랜치인 항목을 찾아 그 줄의 묶음이 아닌 항목 묶음을 끝낸다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const impl = { role: 'impl', worktree: 'wa', branch: 'feat/x', dispatch: 'd1', pr: null, status: 'done', at: '2026-01-01', endedAt: '2026-01-02' }
+    const bin = board(c, [{ id: 'm', status: 'doing', pr: 78, worktree: 'wb', branch: 'feat/b', stages: 'pr=1,merge=2', workers: [impl, follow({ pr: 78 })] }])
+    const r = await c.finish(['--complete', ...bin], { FAKE_STEPS: four })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps m --file ${file}`,
+      `board step m 1 --file ${file}`,
+      `board step m 2 --file ${file}`,
+      `board set m --pr 78 --merged-pr 77 --file ${file}`,
+    ])
+  })
+
   test('찾은 항목이 둘 이상이면 건너뛴다', async (t) => {
     const c = setup(t)
     const bin = board(c, [{ id: 'a', pr: '#77' }, { id: 'b', pr: '77' }])

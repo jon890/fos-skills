@@ -108,6 +108,17 @@ describe('board-release', () => {
     assert.match(r.result.stdout, /board-release: in$/m)
   })
 
+  test('끝나지 않은 후속 묶음 단계가 있어도 수동 단계로 세지 않고 릴리스 반영이 done 으로 바꾼다', () => {
+    states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
+    states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
+    const details = [...four(3), step('5. PR (wb)', false), step('6. 머지 (wb)', false)]
+    const workers = [{ role: 'follow', worktree: 'wb', branch: 'feat/b', dispatch: 'd', pr: 9, stages: 'pr=5,merge=6', status: 'working', at: '2026-01-03', endedAt: null }]
+    const r = release([{ id: 'a', status: 'doing', pr: 7, 'merged-pr': '9, 7', stages: STAGES, details, workers }], ['--release', '100'])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, true, true, true, true])
+  })
+
   test('짧은 출력은 BOARD <id> release 와 BOARD-RELEASE 판정 줄이다', () => {
     states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
     states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
