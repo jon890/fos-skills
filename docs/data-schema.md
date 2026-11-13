@@ -76,26 +76,26 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 ## config.json 에 더하는 절
 
 `.orch/config.json` 의 지금 절(`finish`, `cleanup`, `queue`)은 그대로 읽는다. 모르는 키에 사용법 오류로 멈추는 규칙도 그대로다. 모르는 최상위 절도 같은 사용법 오류다.
-아래 절을 더한다.
+아래 절을 더한다. 값은 `orch config set`, 삭제는 `orch config unset` 으로 바꾼다([설정 바꾸기](../skills/orch/references/overlay.md#설정-바꾸기)). `finish`·`cleanup` 과 나머지 `queue` 키의 타입은 [마무리 설정 파일](../skills/orch/references/overlay.md#마무리-설정-파일)이 소유한다. 설정 명령과 doctor 의 값 검사는 `skills/orch/scripts/core/config-schema.ts` 가 맡고, 기존 명령이 읽을 때의 검사는 그대로다.
 
 | 절 | 키 | 타입 | 기본값 | 담는 것 |
 | --- | --- | --- | --- | --- |
-| `routing` | `review_author` | GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
-| `routing` | `review_pattern` | 정규식 문자열. P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
-| `routing` | `size_pattern` | 정규식 문자열. 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
-| `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 adapter 이름 아래 값 목록(두레이는 `projects`·`channels`, Slack 은 `channels`) | 절이 없으면 필터 없이 모두 보인다 | inbox 스킬의 저장소별 알림 필터. `enabled: false` 면 그 저장소의 보드가 알림을 보지 않는다. 옛 자리 `config/notification.json` 은 inbox 스킬이 한 major 동안 함께 읽고, `inbox` 절이 있으면 무시한다 |
-| `hooks` | `timeouts` | 이벤트 이름에서 초로. 모르는 이벤트 이름이나 양수가 아닌 값은 사용법 오류다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
+| `routing` | `review_author` | 비지 않은 GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
+| `routing` | `review_pattern` | JS 정규식 문자열(`m`). P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
+| `routing` | `size_pattern` | JS 정규식 문자열(`m`). 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
+| `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 이름이 자유로운 객체. 값은 문자열이나 유한한 수의 목록(빈 목록 허용) | 절이 없으면 필터 없이 모두 보인다 | inbox 스킬의 저장소별 알림 필터. `enabled: false` 면 그 저장소의 보드가 알림을 보지 않는다. 옛 자리 `config/notification.json` 은 inbox 스킬이 한 major 동안 함께 읽고, `inbox` 절이 있으면 무시한다 |
+| `hooks` | `timeouts` | 이벤트 이름에서 양수이며 타이머 상한 이하의 초로 가는 객체. 모르는 이벤트 이름은 받지 않는다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
-| `pipeline` | `tick_sec` | number | 300 | 틱 간격 |
-| `pipeline` | `digest_sec` | number | 1800 | 안내성 루프 알림(WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED)을 DIGEST 하나로 모아 보내는 주기(초) |
-| `pipeline` | `ready_slots` | number | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |
+| `pipeline` | `tick_sec` | 양수, 타이머 상한 이하 | 300 | 틱 간격 |
+| `pipeline` | `digest_sec` | 양수, 타이머 상한 이하 | 1800 | 안내성 루프 알림(WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED)을 DIGEST 하나로 모아 보내는 주기(초) |
+| `pipeline` | `ready_slots` | 1 이상의 정수 | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |
 | `pipeline` | `docs_merge` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 문서 PR 바로 머지는 하지 않는다 |
-| `pipeline` | `after_queue_interval_sec` | number | 0 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `after-queue` 는 묶이지 않는다 |
-| `pipeline` | `ci_missing_after_sec` | number | 600 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `ci-missing` 을 내는 코드도 아직 없다 |
+| `pipeline` | `after_queue_interval_sec` | 0 이상의 유한한 수 | 0 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `after-queue` 는 묶이지 않는다 |
+| `pipeline` | `ci_missing_after_sec` | 0 이상의 유한한 수 | 600 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `ci-missing` 을 내는 코드도 아직 없다 |
 | `pipeline` | `update_behind_drafts` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. draft PR 에 base 를 합치지 않는다 |
 | `pipeline` | `refresh_slots` | 0 이상의 정수. 아니면 설정 오류다 | 0 | 상주 루프가 머지 차례 전에 뒤처진 ready PR 에 base 를 미리 합치는 최신화를 켠다. 값은 루프가 건 최신화 가운데 CI 가 아직 도는 것의 상한이다. 0 이면 끈다. CI runner 수보다 작게 둔다. 대상과 순서는 `loop/steps/refresh.ts` 머리 주석의 「최신화」 가, 근거는 [ADR-020](adr/020-orch-loop-refresh.md) 가 소유한다 |
 | `pipeline` | `refresh_worker_paths` | 정규식 문자열이나 그 목록(Python 정규식. 목록은 `\|` 로 잇는다) | 없음 | 최신화할 PR 과 base 가 모두 바꾼 파일이 이 정규식에 맞으면 update-branch 대신 그 PR 의 살아 있는 worker 에게 합치기를 보낸다. 계약 버전 파일처럼 글자 충돌이 없어도 worker 가 판단해야 하는 파일을 적는다. `refresh_slots` 가 0 이면 읽지 않는다 |
-| `pipeline` | `authors` | 문자열 목록 | gh 의 현재 사용자 | 「내 PR」 로 볼 작성자. 루프, 원격 브랜치 정리, 충돌 알림이 이 PR 만 본다 |
+| `pipeline` | `authors` | 비지 않은 문자열 목록(빈 목록 허용) | gh 의 현재 사용자 | 「내 PR」 로 볼 작성자. 루프, 원격 브랜치 정리, 충돌 알림이 이 PR 만 본다 |
 | `pipeline` | `stall_ticks` | `{"error": 정수, "idle": 정수}`. 모르는 키나 0 미만, 정수가 아닌 값은 사용법 오류다 | `{"error": 2, "idle": 0}` | 상주 루프가 같은 멈춤 화면을 몇 틱 보면 `worker-stalled` 를 낼지. 0 이면 그 상태를 보지 않는다. 판정은 `loop/steps/stalls.ts` 머리 주석의 「멈춤 확인」 이 소유한다 |
 | `pipeline` | `idle_min` | 0 이상의 수(분). 아니면 설정 오류다 | `30` | 열린 dispatch 의 워크트리 파일, 브랜치 커밋, 화면이 이 분 넘게 그대로면 멈춘 worker 로 본다. worker 없이 남은 보드 단계도 이 분이 지나면 알린다. 0 이면 둘 다 보지 않는다. 보드 창의 worker 줄 표시(멈춤, worker 없음 경과 시간)도 같은 값을 쓴다. 판정은 `lib/movement.ts` 머리 주석이 소유한다 |
 | `pipeline` | `idle_exited` | true 나 false. 아니면 설정 오류다 | `true` | Orca 가 프로세스가 끝났다고 본(liveness `exited`) 열린 dispatch 를 멈춘 worker 로 볼지. 보드 창의 「멈춤 · 터미널 종료」 도 같은 값을 쓴다 |
@@ -105,8 +105,8 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `board` | `task_line` | 정규식 문자열. 이름 붙은 묶음 `number` 가 있어야 하고 `title` 은 선택이다. `m`, `u` 플래그로 읽는다 | `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안을 제목으로 읽는 꼴(`lib/milestones.ts` 의 `DEFAULT_TASK_LINE`) | 띄울 때 지시서에서 업무 번호와 제목을 읽는다. 번호는 보드 항목 제목 앞에 붙고, 같은 번호의 끝나지 않은 항목을 이어 쓰는 기준이 된다 |
 | `board` | `auto_advance` | `true` 나 `false`. 아니면 설정 오류다 | `true` | `false` 면 `STEP-READY` 를 끄고 `orch board auto-check` 가 거절한다. `[auto]`·`[ask]` 는 기존 멈춤 알림으로 보고, `[wait]` 는 깨우지 않으며 시각 wait 는 그대로 끝낸다 |
 | `board` | `done_after` | `merge`, `deploy`, `release` 중 하나 | `merge` | 마지막 PR 이 이 사건 단계에 닿으면 보드 항목을 done 으로 바꾼다. 항목에 그 단계가 없으면 가장 늦은 사건 단계에서 바꾼다 |
-| `heavy` | `exclusive`, `normal`, `light` | 정규식 목록 | 빈 목록 | 무거운 검사 분류. 앞의 목록부터 맞춰 본다. 어디에도 맞지 않으면 `normal` 이다 |
-| `heavy` | `wait_idle` | 정규식 목록 | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
+| `heavy` | `exclusive`, `normal`, `light` | 비지 않은 JS 정규식 문자열 목록(빈 목록 허용) | 빈 목록 | 무거운 검사 분류. 앞의 목록부터 맞춰 본다. 어디에도 맞지 않으면 `normal` 이다 |
+| `heavy` | `wait_idle` | 비지 않은 JS 정규식 문자열 목록(빈 목록 허용) | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
 | `review` | `prepare` | bash 명령 문자열. 문자열이 아니면 사용법 오류다 | 없음(준비하지 않는다) | `launch-worker` 가 지시서에 `리뷰 PR: #<N>` 줄이 있는 리뷰 worker 의 워크트리를 PR head 에 둔 뒤 그 워크트리에서 한 번 돌리는 생성물 준비 명령. 실패해도 worker 는 뜬다. 차례와 환경 변수는 `launch-worker.ts` 머리 주석의 2-1 이 소유한다 |
 | `queue` | `auto_merge` | bool | false | 상주 루프가 머지할 수 있는 PR 을 스스로 `merge-with-finish.ts` 에 건다. 대상과 순서는 `loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」 가, 근거는 [ADR-016](adr/016-orch-auto-merge.md) 가 소유한다. `pipeline.enabled` 와 무관하다 |
 | `queue` | `auto_review` | `{"pass": 정규식, "block": 정규식, "require": [조건 이름], "feature_head": 참·거짓, "fixed_after_block": 참·거짓}`. `pass`, `block` 은 비지 않은 문자열이고 `require` 는 없거나 비지 않은 문자열의 비지 않은 목록이다. `feature_head` 와 `fixed_after_block` 은 없거나 `true`, `false` 다 | 없음(리뷰 판정을 보지 않는다). `require` 가 없으면 `["verdict-on-head"]`, `feature_head` 가 없으면 `true`, `fixed_after_block` 이 없으면 `false` | 자동 리뷰의 판정 문구와 판정 조건의 조합. `pass` 나 `block` 에 맞는 리뷰나 댓글이 「판정」 이고 둘 다 맞으면 `block` 이다. Python 정규식이고 본문 어디든 맞으면 된다. `require` 의 조건을 모두 만족해야 자동 머지 대상이다. 조건은 `verdict-on-head`(지금 HEAD 범위의 마지막 판정이 `pass`), `verdict-seen`(PR 에 판정이 하나 이상), `last-verdict-pass`(PR 전체의 마지막 판정이 `pass`. HEAD 가 달라도 된다), `rereview-after-block`(마지막 `block` 뒤에 같은 커밋이나 그 뒤 커밋의 `pass` 가 있다. `block` 이 없으면 통과)이다. 조건의 정확한 뜻은 `core/auto-merge.ts` 머리 주석의 「judgeReview」, HEAD 범위는 「reviewScope」 가 소유한다. `feature_head` 가 `true`(기본)면 기능 PR 에는 `require` 와 상관없이 `verdict-on-head` 를 더한다. `false` 면 기능 PR 도 `require` 만 본다. 반영 push 마다 재리뷰를 받지 않으려는 저장소가 쓴다. `fixed_after_block` 이 `true` 면 `last-verdict-pass` 와 `rereview-after-block` 이 `block` 을 재리뷰 없이 풀어 주는 경우가 생긴다. `block` 이 본 커밋 뒤에 반영 커밋(기준 브랜치만 합친 merge 는 제외)이 있고 미해결 스레드가 0 일 때다. 재리뷰가 돌지 않는 저장소를 위한 설정이다. 미해결 스레드 0 은 조합에 넣지 않고 늘 본다. 모르는 조건 이름은 사용법 오류가 아니다. 상주 루프는 PR 을 걸지 않고 이유를 로그에 남기며, `orch-doctor` 가 `INVALID-CONFIG` 로 알린다. 판정 문구가 든 본문이 없어 멈추면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조합 예시는 `skills/orch/references/overlay.md` 의 「자동 머지 리뷰 조건」 에 있다 |
@@ -123,10 +123,13 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 알린다. worker와 머지 큐가 끝난 뒤 `orch doctor migrate-hooks --apply` 로 이벤트
 핸들러로 옮긴다. `queue.verify_merged_when`과 `finish.task_pattern`은 계속 쓴다.
 
+타이머 상한은 `skills/orch/scripts/core/config-schema.ts` 의 `TIMER_MAX_SEC` 가 정한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. 큐·마무리의 짝 조건은 [마무리 설정 파일](../skills/orch/references/overlay.md#마무리-설정-파일)을 따른다.
+
 ## orch 루트에 더하는 파일
 
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
+| `config.json.lock` | 설정 쓰기 잠금. `orch config` 와 `doctor migrate` 가 읽기부터 저장까지 `withFileLock` 규약으로 함께 쓴다([보드 쓰기 잠금](adr/029-board-write-lock.md)) | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
 | `state/approvals.json` | 승인 대기. 저장 꼴과 상태는 [승인 설계의 저장 꼴](features/board-approval/design.md#저장-꼴)이 소유한다. 잠금 안에서 옆 파일에 쓰고 이름을 바꾼다 | 쓰기마다 끝난 지 7일이 지난 기록을 지운다. 열린 기록과 마지막 버전 번호는 남긴다 |
 | `state/approvals.json.lock` | 승인 파일 잠금. [보드 쓰기 잠금](adr/029-board-write-lock.md)의 `withFileLock` 규약을 쓴다 | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
 | `state/step-ready.json` | 다음 단계 알림 기록. `notices` 의 항목 id 아래 `step`(사건 꼬리표를 뗀 글), `mark`(auto/ask), `at`(ms), `again`(재알림에 쓴 한도 알림 시각 또는 null)을 둔다 | 틱 자식이 옆 파일에 쓰고 rename 한다. 같은 단계는 worker 가 떠도 유지하며 글 변경·항목 완료 때 지운다 |

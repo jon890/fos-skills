@@ -1,7 +1,7 @@
 # 진행 보드
 
 work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 환경에서만 쓴다. 보드가 없으면 이 절차를 건너뛴다.
-보드 파일은 work-board 소유다. 기본 위치는 [`extensions/work-board/README.md`](../../../extensions/work-board/README.md) 가 정하고, 다른 곳이면 `.orch/config.json` 의 `finish.board` 로 준다.
+보드 파일은 work-board 소유다. 기본 위치는 [`extensions/work-board/README.md`](../../../extensions/work-board/README.md) 가 정하고, 다른 곳이면 코디네이터가 `orch config set finish.board .omc/board.json` 으로 보드 파일을 정한다. 경로는 저장소에 맞게 바꾼다.
 
 orch 는 명령줄의 보드 파일, `finish.board`, 기본 위치 순서로 고른다. 설정의 상대경로는 주 checkout 기준이고, `finish.board` 가 빈 문자열이면 기본 위치를 쓴다. 설정이 깨졌거나 보드 값이 문자열이 아니면 한 줄 설명과 종료 코드 2 를 내고 기본 보드로 바꾸지 않는다. 루프에서는 `WATCH-ERROR` 로 알리고 뒤 단계와 다음 틱을 계속 실행한다.
 기존 `orch board sync`, `release`, `goal` 의 `--board` 상대경로는 명령을 부른 폴더 기준이다. `goal` 은 설정이 없으면 현재 작업 트리의 기본 보드를 쓰고, 정리 명령은 `cleanup.board` 를 먼저 쓴다.

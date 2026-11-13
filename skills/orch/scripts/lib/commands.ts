@@ -171,6 +171,12 @@ const ROWS: Row[] = [
   { group: 'board', verb: 'release', script: 'board/board-release.ts', context: ['repo'], legacy: { name: 'board-release', flags: [] }, usage: 'orch board release --pr <N>' },
   { group: 'board', verb: 'auto-check', script: 'board/auto-check.ts', context: ['repo', 'run'], usage: 'orch board auto-check <항목>' },
   { group: 'board', verb: 'goal', script: 'board/goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
+  // config. 인자는 명령이 직접 풀어 -1 같은 값도 위치 인자로 받는다.
+  ...[
+    ['show', '[<절>]'], ['get', '<경로>'], ['set', '<경로> <값> [<경로> <값>...] [--json]'], ['unset', '<경로>...'],
+  ].map(([verb, args]): Row => ({
+    group: 'config', verb, script: 'config/orch-config.ts', prepend: [verb], context: ['repo'], usage: `orch config ${verb} ${args}`,
+  })),
   // routing
   { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--json | --full]' },
   // feedback

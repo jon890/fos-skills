@@ -303,6 +303,8 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 
 ## 기여
 
+체크아웃과 worker 워크트리에서는 먼저 `npm ci --ignore-scripts` 로 루트 의존을 설치해요. 플러그인 설치본은 Claude Code 가 의존을 설치해요([ADR-030](docs/adr/030-plugin-npm-dependencies.md)).
+
 PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.

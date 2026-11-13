@@ -10,15 +10,10 @@ orch slot heavy --exclusive -- ./bin/ci.sh
 
 어떤 명령이 혼자 실행할지(`exclusive`), 자리 하나를 쓸지(`normal`), 대기열을 거치지 않을지(`light`)는 저장소의 `.orch/config.json` 의 `heavy` 절이 정한다.
 설정이 없으면 모든 명령이 자리 하나를 쓴다(`normal`). 가벼운 명령도 자리를 기다리지만, 잘못 분류해 전체 검사를 동시에 돌리는 것보다 안전하다.
-예시 설정이다. 명령 이름은 저장소에 맞게 바꾼다.
+코디네이터가 다음처럼 설정한다. 정규식은 저장소 명령에 맞게 바꾼다.
 
-```json
-{
-  "heavy": {
-    "exclusive": ["local-ci", "playwright", "browser"],
-    "light": ["^(pnpm( -s)?( exec)? )?(tsc|oxlint)\\b", "^pnpm( -s)? (type-check|lint)\\b", "^(echo|cd|git|ls|cat|true|test)(\\s|$)"]
-  }
-}
+```bash
+orch config set heavy.exclusive '["local-ci", "playwright", "browser"]' heavy.light '["^(git|ls|cat|true|test)(\\s|$)"]' --json
 ```
 
 `heavy.wait_idle` 은 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 끝날 때까지 자리를 잡지 않고 기다리게 한다.

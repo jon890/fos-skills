@@ -22,12 +22,13 @@ import { isObject } from '../core/json.ts'
 import { SECTIONS } from '../core/config.ts'
 import { ConfigError, RemovedConfigError, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'
 import type { Config } from '../core/config.ts'
-import { readFileSync } from 'node:fs'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { orchWord } from './commands.ts'
 import { isFile } from './fs.ts'
-import { pathOf } from './paths.ts'
+import { ensure, pathOf } from './paths.ts'
 import { shQuote } from './py.ts'
+import { withFileLock, type LockOptions } from '../../../../extensions/work-board/bin/file-lock.ts'
 
 // opts.file 이 없으면 <orch 루트>/config.json 이다. 상대경로 file 은 작업 디렉터리 기준이다.
 
@@ -66,6 +67,27 @@ export function readConfigFile(repo: string): { file: string; exists: boolean; v
   } catch (e) {
     return { file, exists: true, error: (e as Error).message }
   }
+}
+
+// change 는 잠금 안에서 다시 읽은 값만 받는다. undefined 반환은 쓰지 않는다는 뜻이다.
+// 검사표를 import 하지 않아 기존 설정 읽기는 npm 의존 없이 계속 돈다.
+export function updateConfig(repo: string, change: (value: unknown, exists: boolean) => unknown, opts: LockOptions = {}): void {
+  const file = pathOf('config', repo)
+  withFileLock(file, lock => {
+    const read = readConfigFile(repo)
+    if (read.error) throw new ConfigError(`설정 파일을 읽지 못했다: ${file}: ${read.error}`)
+    const next = change(read.exists ? read.value : {}, read.exists)
+    if (next === undefined) return
+    ensure('config', repo)
+    const temp = `${file}.${process.pid}.tmp`
+    try {
+      writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+      if (!lock.held()) throw new ConfigError(`설정 파일 잠금을 잃었다: ${file}. 다시 실행한다`)
+      renameSync(temp, file)
+    } finally {
+      rmSync(temp, { force: true })
+    }
+  }, opts)
 }
 
 export { ConfigError, RemovedConfigError, CLEANUP_KEYS, DOCKER_KEYS, HOOK_EVENT_NAMES, HOOKS_KEYS, QUEUE_LOOP_KEYS, QUEUE_KEYS, PIPELINE_KEYS, HEAVY_KEYS, MIGRATIONS_KEYS, ADR_KEYS, CONTRACTS_KEYS, BOARD_KEYS, REVIEW_KEYS, ROUTING_KEYS, INBOX_KEYS, LEGACY_INBOX_FILTER, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'

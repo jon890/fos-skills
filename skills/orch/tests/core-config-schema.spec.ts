@@ -170,6 +170,8 @@ describe('knownPath', () => {
     ['queue.auto_review.prass', 'unknown'],
     ['hooks.timeouts.after-queue', 'known'],
     ['hooks.timeouts.foo', 'unknown'],
+    ['hooks.timeouts.__proto__', 'unknown'],
+    ['queue.required.0', 'unknown'],
     ['migrations.dirs.anything', 'known'],
     ['queue.before', 'removed'],
     ['queu.x', 'unknown'],
