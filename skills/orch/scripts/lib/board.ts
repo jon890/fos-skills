@@ -123,9 +123,9 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const role = isReviewItem(item, reviewOriginsByItem(repo, [item], dispatch)) ? 'review' : 'impl'
     const prior = launchHistory(repo).filter((row) => row.dispatch !== dispatch && basename(row.worktree) === item.worktree).sort((a, b) => a.at.localeCompare(b.at)).at(-1)
     // 이력의 존재는 살아 있다는 증거가 아니다. 워크트리와 해당 Run 의 현재 dispatch 를 함께 확인한다.
-    const listed = prior?.run && existsSync(prior.worktree) ? workerRows(prior.run) : null
+    const listed = prior?.run && existsSync(prior.worktree) ? workerRows(prior.run, undefined, { strict: true, requireShape: true }) : null
     const row = listed?.ok ? listed.rows.find((row) => row.dispatchId === prior!.dispatch) : undefined
-    const working = row && isLive(row) && !workerEnds([row], new Set(), new Set([prior!.dispatch]))[prior!.dispatch]
+    const working = (listed && !listed.ok) || (row && isLive(row) && !workerEnds([row], new Set(), new Set([prior!.dispatch]))[prior!.dispatch])
     return ['--keep-current', role, ...(working ? ['--keep-dispatch', prior!.dispatch] : [])]
   }
   function add(item: BoardItem | undefined, id: string, role: WorkerRole): boolean {

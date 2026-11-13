@@ -28,6 +28,7 @@ afterEach(() => {
   rmSync(repo, { recursive: true, force: true })
 })
 const row = (role = 'impl', worktree = 'old') => ({ role, worktree, branch: 'feat/a', dispatch: 'd0', pr: null, status: 'working', at: '2026-01-01', endedAt: null })
+const orcaShape = { taskId: 'task', agentTerminalHandle: 'term', resource: { worktreeId: 'repo::old', ownershipState: 'agent_owned' } }
 const base = (extra = {}) => ({ id: 'a', status: 'doing', pr: 7, worktree: 'old', branch: 'feat/a', details: [{ text: '1. 구현', done: false }], workers: [row()], ...extra })
 function board(...items: object[]) { writeFileSync(file, JSON.stringify({ items })) }
 function items(): any[] { return JSON.parse(readFileSync(file, 'utf8')).items }
@@ -92,7 +93,7 @@ test('옛 대표를 보존하고 현재 리뷰 이력은 옛 역할 판정에서
   assert.equal(items()[0].workers[0].status, 'done')
   board(legacy)
   mkdirSync(join(repo, 'old'))
-  process.env.ORCA = fakeBin(repo, 'orca', [{ stdout: JSON.stringify({ ok: true, result: { workers: [{ dispatchId: 'old-dispatch', dispatchStatus: 'running', workerState: 'working' }] } }) }]).path
+  process.env.ORCA = fakeBin(repo, 'orca', [{ stdout: JSON.stringify({ ok: true, result: { workers: [{ ...orcaShape, dispatchId: 'old-dispatch', dispatchStatus: 'running', workerState: 'working' }] } }) }]).path
   recordHistory(repo, { at: '2026-01-02', dispatch: 'old-dispatch', worktree: join(repo, 'old'), run: 'run-old' } as any)
   launch('보드 항목 id: a')
   assert.equal(items()[0].workers[0].dispatch, 'old-dispatch')
@@ -112,11 +113,27 @@ test('끝난 Orca dispatch 나 사라진 워크트리의 옛 대표를 되살리
   process.env.ORCA = orca.path
   for (const outcome of ['succeeded', 'failed', null]) {
     board(legacy)
-    orca.setRules([{ stdout: JSON.stringify({ ok: true, result: { workers: [{ dispatchId: 'old-dispatch', dispatchStatus: outcome ? 'completed' : 'running', workerState: outcome ? 'stopped' : 'working', projection: { outcome } }] } }) }])
+    orca.setRules([{ stdout: JSON.stringify({ ok: true, result: { workers: [{ ...orcaShape, dispatchId: 'old-dispatch', dispatchStatus: outcome ? 'completed' : 'running', workerState: outcome ? 'stopped' : 'working', projection: { outcome } }] } }) }])
     if (!outcome) rmSync(old, { recursive: true })
     launch('보드 항목 id: a')
     assert.equal(items()[0].workers[0].status, 'done', String(outcome))
     assert.equal(items()[0].workers[0].dispatch, null)
+  }
+})
+
+test('Orca 조회 실패와 형식 오류는 옛 대표를 작업 중으로 남겨 다시 확인한다', () => {
+  const legacy: any = base()
+  delete legacy.workers
+  mkdirSync(join(repo, 'old'))
+  recordHistory(repo, { at: '2026-01-02', dispatch: 'old-dispatch', worktree: join(repo, 'old'), run: 'run-old' } as any)
+  const orca = fakeBin(repo, 'orca', [])
+  process.env.ORCA = orca.path
+  for (const rule of [{ code: 1, stderr: '조회 실패' }, { stdout: JSON.stringify({ ok: true, result: {} }) }]) {
+    board(legacy)
+    orca.setRules([rule])
+    launch('보드 항목 id: a')
+    assert.equal(items()[0].workers[0].status, 'working')
+    assert.equal(items()[0].workers[0].dispatch, 'old-dispatch')
   }
 })
 
