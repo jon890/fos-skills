@@ -717,3 +717,31 @@ describe('갱신 필요 알림', () => {
     assert.match(r.result.stdout, /a 갱신 필요: 1 번 단계가 머지된 PR #31/)
   })
 })
+
+describe('갱신 필요 알림의 반복', () => {
+  const shortRun = () => run(['--board', board, '--repo', tmp], { env: { ORCH_OUTPUT: 'short' } })
+  const prepare = (details: string[]) => {
+    writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', 'merged-pr': '481', details }] }))
+  }
+
+  test('같은 항목·단계·PR·글은 한 번만 알리고 dry-run 은 기록하지 않는다', () => {
+    prepare(['1. 릴리스 #481 반영'])
+    const dry = run(['--board', board, '--repo', tmp, '--dry-run'], { env: { ORCH_OUTPUT: 'short' } })
+    assert.match(dry.stdout, /update-needed 1 PR #481/)
+    assert.match(shortRun().stdout, /BOARD a update-needed 1 PR #481/)
+    assert.deepEqual(shortRun().stdout.trim().split('\n'), ['BOARD-SYNC 0'])
+    assert.deepEqual(shortRun().stdout.trim().split('\n'), ['BOARD-SYNC 0'])
+  })
+
+  test('단계 글이 바뀌거나 해결됐다가 다시 생기면 다시 알린다', () => {
+    prepare(['1. 릴리스 #481 반영'])
+    assert.match(shortRun().stdout, /update-needed 1 PR #481/)
+    prepare(['1. 릴리스 #481 반영 다시'])
+    assert.match(shortRun().stdout, /update-needed 1 PR #481/)
+    prepare(['1. 릴리스 반영'])
+    assert.doesNotMatch(shortRun().stdout, /update-needed/)
+    prepare(['1. 릴리스 #481 반영 다시'])
+    assert.match(shortRun().stdout, /update-needed 1 PR #481/)
+  })
+})

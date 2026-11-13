@@ -41,7 +41,8 @@
 //
 // 갱신 필요: 끝나지 않은 단계의 글에 이미 머지된 PR 번호(#N)가 있고 이 틱이 그 단계를 끝내지 않으면, 항목 id, 단계 번호, PR 번호를 알린다.
 //     자동으로 끝내지 않는다. 일이 끝났는지는 사람이 정한다. stages 가 가리키는 단계, 사건 꼬리표나 자동 진행 표시가 있는 단계,
-//     머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)과 done 항목은 알리지 않는다. 짧은 출력은 `BOARD <id> update-needed <단계> PR #<번호>` 다
+//     머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)과 done 항목은 알리지 않는다. 짧은 출력은 `BOARD <id> update-needed <단계> PR #<번호>` 다.
+//     같은 항목·단계·PR·글은 한 번만 알린다(lib/board-stale.ts 의 기록). 해결돼 목록에서 빠졌다가 다시 생기거나 단계 글이 바뀌면 다시 알린다
 //
 // 모든 항목(done, goal 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
 // 창이 「worker 없음」 을 보이지 않게 한다. 워크트리 목록을 읽지 못하면 비우지 않는다
@@ -68,6 +69,7 @@
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
+import { loadNotified, saveNotified, staleKey, textRev } from '../lib/board-stale.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
 import { readBoard } from '../lib/board.ts'
 import type { BoardStep } from '../core/board.ts'
@@ -196,20 +198,20 @@ function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerd
 function staleSteps(
   item: Record<string, unknown>, id: string, commands: string[][], boardBin: string, board: string,
   stateFor: (pr: unknown) => string | null,
-): { number: number; pr: string }[] | null {
+): { number: number; pr: string; text: string }[] | null {
   if (!/#\d/.test(JSON.stringify([item.details, item.next]))) return []
   const steps = boardSteps(boardBin, id, board)
   if (steps === null) return null
   const scheduled = new Set(commands.filter((cmd) => cmd[0] === 'step' && cmd[1] === id).map((cmd) => Number(cmd[2])))
   const events = Object.values(stagesOf(item) ?? {})
   const known = prNumbers(item['merged-pr'])
-  const found: { number: number; pr: string }[] = []
+  const found: { number: number; pr: string; text: string }[] = []
   for (const step of steps) {
     if (step.done || scheduled.has(step.number) || events.includes(step.number)) continue
     if (stageTag(step.text) !== null || parseEventTag(step.text) || parseStepMark(step.text)?.mark) continue
     const pr = [...new Set([...withoutEvidence(step.text).matchAll(/#([1-9]\d*)(?!\d)/g)].map((m) => m[1]))]
       .find((num) => known.has(num) || stateFor(num) === 'MERGED')
-    if (pr) found.push({ number: step.number, pr })
+    if (pr) found.push({ number: step.number, pr, text: step.text })
   }
   return found
 }
@@ -292,6 +294,8 @@ function main(argv: string[]): number {
     return tagStates.get(num) ?? null
   }
   const changed: string[] = []
+  const notified = loadNotified(repo)
+  let notifiedChanged = false
   const now = Date.now()
   itemsLoop:
   for (const item of items) {
@@ -480,9 +484,20 @@ function main(argv: string[]): number {
         err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
         return 1
       }
-      for (const { number, pr } of stale) {
+      // 같은 항목·단계·PR·글은 한 번만 알린다. 해결돼 목록에서 빠지면 기록도 지워 다시 생기면 알린다
+      const seen = notified[id] ?? {}
+      const next: Record<string, string> = {}
+      for (const { number, pr, text } of stale) {
+        const key = staleKey(number, pr)
+        next[key] = textRev(text)
+        if (seen[key] === next[key]) continue
         out(`board-sync: ${id} 갱신 필요: ${number} 번 단계가 머지된 PR #${pr} 를 가리키지만 끝나지 않았다. 자동으로 끝내지 않는다. 일이 끝났으면 orch board step ${id} ${number} done 으로 끝내고, 앞으로 자동으로 끝내려면 orch board step ${id} ${number} text "<줄 전체>" --on "${pr} merge" 로 사건을 붙인다`)
         brief(`BOARD ${id} update-needed ${number} PR #${pr}`)
+      }
+      if (JSON.stringify(seen) !== JSON.stringify(next)) {
+        if (Object.keys(next).length > 0) notified[id] = next
+        else delete notified[id]
+        notifiedChanged = true
       }
     }
     const rewrite = details.length !== old.length || details.some((d, i) => d !== old[i])
@@ -516,6 +531,13 @@ function main(argv: string[]): number {
     }
     changed.push(id)
     brief(`BOARD ${id} ${finish ? 'done' : 'updated'}`)
+  }
+  // 알린 기록은 dry-run 이 아닐 때만 남긴다. 보드에서 사라진 항목의 기록은 지운다
+  if (!dryRun) {
+    for (const id of Object.keys(notified)) {
+      if (!items.some((row) => String(row.id) === id)) { delete notified[id]; notifiedChanged = true }
+    }
+    if (notifiedChanged) saveNotified(repo, notified)
   }
   if (!dryRun) {
     const records = unmatchedRecords(repo)
