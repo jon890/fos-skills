@@ -1,5 +1,0 @@
-- 옛 번들의 상주 루프가 새 설치본을 알아채면 이 저장소의 머지·마무리를 최대 60분 기다린 뒤 다시 뜬다. 설정 오류인 틱은 기다리지 않는다.
-- 다시 뜨면 등록된 Run 마다 `LOOP-UPDATED` 를 바로 보낸다. 실패하면 `LOOP-UPDATE-FAIL` 을 보내고 옛 루프가 계속 돈다.
-- 같은 원인의 틱 실패와 단계 오류는 연속 세 번째 틱에 원인 줄을 담아 바로 한 번 알린다.
-- `orch loop status` 와 `orch status` 의 `LOOP-ALIVE` 줄 끝에 `bundle=` 버전을 보인다.
-- 이 버전 전에 띄운 루프는 한 번 `orch loop stop` 뒤 `orch loop start` 로 다시 띄운다.
