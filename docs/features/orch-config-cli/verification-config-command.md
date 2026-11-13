@@ -3,7 +3,7 @@
 완료: PR 전 인수 검증과 문서 대조. 독립 코드 리뷰 대기. 독립 코드 리뷰는 PR 생성 뒤 코디네이터가 별도 Claude worker에게 맡긴다.
 
 - 기준: [기능 스펙](spec.md), [기술 설계](design.md).
-- 구현 검증 커밋: `4f28c2891ece6753e37992e01bc0c513dd91876d`. 이후 변경은 이 기록과 완료한 계획 정리뿐이다.
+- 최초 구현 검증 커밋: `4f28c2891ece6753e37992e01bc0c513dd91876d`. 같은 구현의 `fe836ae020d2fe2551ba06b244798a80f0241dc7`에서 PR Tests가 통과했다. 이후 리뷰 반영은 아래에 따로 기록한다.
 - 환경: macOS, Node 24.22.1. 임시 git 저장소·워크트리·설정 파일과 가짜 외부 명령을 사용했다. 실제 공유 설정은 바꾸지 않았다.
 - 실행 방식: 구현은 주 에이전트가 차례로 수행했다. 계획 critic과 문서 검토는 별도 native 하위 에이전트가 수행했다. Claude Teams는 사용하지 않았다.
 
@@ -28,7 +28,7 @@
 
 추가 확인: 옛 위치가 남으면 네 명령이 기존 migrate 안내와 종료 코드 2로 거절한다. 검사표 의존이 없는 격리 번들에서 설정 명령은 설치 안내와 1을 내고, 루프 상태 명령은 zod 없이 실행된다. 프로토타입 속성을 경로로 읽지 않고 자유 이름의 자기 속성은 안전하게 저장한다.
 
-## 전체 검증
+## 최초 구현 전체 검증
 
 - `claude plugin test .`: 97개 통과, 실패 없음.
 - `orch slot heavy --exclusive -- node scripts/run-tests.ts`: 287개 통과(테스트 파일 실행과 tsc), 실패 없음. 812.6초.
@@ -39,7 +39,7 @@
 
 - 계획 critic: APPROVE. worker 제한을 승인된 REQ13의 호출 금지로 보완한 뒤 재검토했다.
 - 독립 문서 검토: PASS, 발견 없음. 검토 커밋은 위 구현 검증 커밋과 같다.
-- 독립 코드 리뷰: 코디네이터가 PR 생성 뒤 별도 Claude worker에게 맡긴다. 아직 통과로 보지 않는다.
+- 최초 구현의 독립 코드 리뷰: [Claude 리뷰](https://github.com/jon890/fos-skills/pull/474#pullrequestreview-5887211914)는 머지 가능, 차단 없음으로 나왔다. 코디네이터가 지정한 권장 사항을 반영했으며 바뀐 코드의 재검토를 기다린다.
 
 ## 문서 대조와 공통 후보
 
@@ -48,7 +48,7 @@
 | 기능 spec/design | 명령·값 검사·기존 오류 처리·잠금·이전·재시작 조건 | 정합 |
 | data-schema와 overlay | 같은 pipeline 타입, 빠진 finish/cleanup 키, config.json.lock | 정합 |
 | orch 안내와 공통 지시서 틀 | 설정 변경 명령과 worker 호출 금지 | 정합 |
-| ADR-030과 orch-lib-layers design | config-schema.ts만 zod를 가져오는 예외 | PR1이 남긴 후보를 이번 PR에서 반영 |
+| [ADR-030](../../adr/030-plugin-npm-dependencies.md)과 orch-lib-layers design | config-schema.ts만 zod를 가져오는 예외 | PR1이 남긴 후보를 이번 PR에서 반영 |
 | README와 설치 테스트 설명 | 개발 의존 설치와 npm 레지스트리 사용 가능성 | 문구 수정 |
 
 공통화 후보 없음: 설정 편집은 이 기능의 core/lib 경계 안에 있고, 잠금은 기존 work-board의 withFileLock을 재사용한다. 새 공유 계약을 추출할 반복 규칙은 없다. 도메인 규칙 변경이나 새로운 ADR 결정은 없다.
@@ -60,3 +60,19 @@ PR1의 deferred에서 설정 명령·잠금과 이전·재시작 알림·문서 
 머지·배포 뒤 검증 없음: 저장소 파일을 읽고 바꾸는 CLI 기능이며 별도 서비스 배포나 원격 환경을 전제로 하지 않는다. 독립 코드 리뷰와 PR의 Tests 통과는 머지 전 조건이다.
 
 스킬 개선 후보 없음. 공부 후보 없음.
+
+## 리뷰 반영과 추가 검증
+
+코디네이터가 지정한 권장 사항을 지적별 커밋으로 반영했다.
+
+| 지적 | 반영 커밋 | 바뀐 동작과 확인 |
+| --- | --- | --- |
+| P3 설정 이전의 읽기 오류 | `b4e3b71e` | 미리보기와 --apply 모두 깨진 설정의 이유를 한 줄 알리고 설정 변경만 건너뛴다. 다른 파일 이전과 깨진 원본 보존을 테스트했다 |
+| P4 -- 구분자 안내 | `1a0ee8ec` | 인자 풀이를 유지하고 사용법·파일 맨 위 설명·안내 문서에 구분자와 --json 위치를 적었다. 문자열과 JSON 호출을 테스트했다 |
+| P5 임시 파일 정리 | `ee23f5da` | 저장 중 오류가 나면 임시 파일을 정리한다. 잠금을 잃는 경우를 만들어 오류·원본·다른 소유자의 잠금 보존과 임시 파일 부재를 테스트했다 |
+
+- 추가 구현 검증 커밋: `ee23f5da0e616230f220cf2861a3c6016a946fb8`.
+- `node --test skills/orch/tests/migrate-orch-dir.spec.ts skills/orch/tests/lib-config.spec.ts skills/orch/tests/orch-config.spec.ts skills/orch/tests/config-docs.spec.ts`: 통과.
+- `node scripts/runtime-policy.ts`, `node scripts/run-tests.ts --tsc-only`: 통과.
+- 회귀 테스트는 수정 전 실패하고 수정 후 통과하는 것을 확인했다.
+- 리뷰 반영 뒤 전체 테스트는 코디네이터의 지시에 따라 같은 head의 PR Tests로 확인한다. 새 코드의 독립 재검토와 CI 결과는 PR에 남긴다.
