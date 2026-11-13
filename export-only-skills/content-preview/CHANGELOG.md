@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.1.0 (2026-11-13)
+
+- 3단계에 고침 지시 문구 검사(`scripts/leak-check.ts`)를 더했다. 「지금 본문 그대로」, 「표를 아래로 바꾼다」 처럼 바뀐 곳만 적은 초안의 표시가 본문에 남으면 등록 전에 걸린 줄을 보인다.
+
 ## 4.0.3 (2026-11-09)
 
 - 함께 받은 브라우저 드라이버를 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`)에서도 찾는다
