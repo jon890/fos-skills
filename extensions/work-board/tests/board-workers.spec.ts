@@ -109,3 +109,16 @@ test('대표로 바뀐 줄의 브랜치가 없으면 옛 브랜치를 지운다'
     assert.equal(item(b.file, 'a').branch, undefined)
   } finally { b.cleanup() }
 })
+
+test('같은 대표 워크트리의 재시도에서 브랜치를 못 읽으면 기존 값을 둔다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', worktree: 'w1', branch: 'feat/kept', workers: [
+      { role: 'impl', worktree: 'w1', branch: null, dispatch: 'old', status: 'working', at: '2026-01-01' },
+    ] })
+    const r = run(b.file, ['worker-add', 'a', 'impl', '--worktree', 'w1', '--dispatch', 'retry'])
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(item(b.file, 'a').branch, 'feat/kept')
+    assert.equal((item(b.file, 'a').workers as any[])[0].dispatch, 'retry')
+  } finally { b.cleanup() }
+})
