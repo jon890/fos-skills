@@ -19,6 +19,12 @@
 //                        rereview-after-block  PR 전체의 마지막 block 보다 늦은 pass 가 있고, 그 pass 가 HEAD 의 첫 부모 체인에서 block 과 같은 커밋이나
 //                                              그 뒤 커밋을 가리킨다(chainIndex). block 이 없으면 통과다. 아니면 `재리뷰 대기: …`.
 //                                              block 을 받은 PR 이 고친 코드의 리뷰 없이 옛 커밋의 늦은 pass 로 걸리지 않게 하려는 것이다
+//                      queue.auto_review.fixed_after_block 이 true 면 last-verdict-pass 와 rereview-after-block 의 block 이 아래 「반영 완료」 로 풀린다.
+//                      재리뷰가 돌지 않는 저장소(자동 리뷰가 PR 을 열 때만 돌고 재리뷰를 금지한다)에서 block 을 반영한 PR 이 영영 걸리지 않는 것을 막으려는 것이다.
+//                      반영 완료는 셋을 모두 만족할 때다: (a) block 이 가리키는 커밋(chainIndex)이 체인에 있고 HEAD 가 아니다, (b) 그 커밋 뒤에
+//                      base 를 합친 merge 만 있지 않다(reviewScope 의 heads 에 들지 않는다), (c) 입력의 미해결 스레드 수 threads 가 0 이다.
+//                      threads 를 모르면(null, 적지 않음) 풀지 않는다. verdict-on-head 는 풀지 않는다. 그 조건은 HEAD 의 새 판정을 요구한다.
+//                      풀리면 근거에 `반영 완료(REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>)` 를 남기고 judgement.fixed 에 그 줄을 둔다
 //                      `리뷰 대기` 로 멈추면 missing 이다. 모르는 조건 이름이 있으면 어느 조건도 보지 않고 그 이름을 담은 이유로 멈춘다.
 //                      통과하면 조건마다 `<조건> <판정>(커밋 <앞 8자리> 또는 댓글, <시각>)` 꼴의 근거를 낸다
 //   - chainIndex       본문이 가리키는 커밋의 체인 자리. 리뷰는 달린 커밋, 댓글은 쓴 시각 이전의 가장 새 커밋(커밋 시각 기준)이다
@@ -54,7 +60,8 @@ export type ReviewCondition = (typeof REVIEW_CONDITIONS)[number]
 export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-head']
 // require 는 적은 순서대로 볼 조건, unknown 은 모르는 이름이다. unknown 이 있으면 루프가 어느 PR 도 걸지 않는다
 // featureHead 가 거짓이면 기능 PR 에도 verdict-on-head 를 덧붙이지 않는다. 적지 않은 값(undefined)은 참이다
-export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean }
+// fixedAfterBlock 이 참일 때만 block 을 반영한 PR 이 재리뷰 없이 풀린다. 적지 않은 값(undefined)은 거짓이다
+export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewConfig | null
@@ -68,7 +75,7 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
-export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head']
+export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block']
 
 // 값이 모두 비지 않은 문자열인 객체. 아니면 ConfigError
 function stringMap(value: unknown, name: string): Record<string, string> {
@@ -115,7 +122,8 @@ function reviewRule(value: unknown): ReviewConfig {
     }
   }
   if (value.feature_head !== undefined && typeof value.feature_head !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.feature_head 는 true 나 false 여야 한다`)
-  return { ...(rule as ReviewRule), ...reviewRequire(value.require), featureHead: value.feature_head !== false }
+  if (value.fixed_after_block !== undefined && typeof value.fixed_after_block !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.fixed_after_block 는 true 나 false 여야 한다`)
+  return { ...(rule as ReviewRule), ...reviewRequire(value.require), featureHead: value.feature_head !== false, fixedAfterBlock: value.fixed_after_block === true }
 }
 
 // 모르는 이름은 ConfigError 로 막지 않고 unknown 에 둔다. 루프가 멈추면 CI 감시와 정리까지 함께 멈추기 때문이다
@@ -196,7 +204,8 @@ export function boardHold(item: BoardItem): string | null {
 }
 
 // commit 은 리뷰가 달린 커밋(gh 의 reviews[].commit.oid)이다. 댓글처럼 커밋이 없으면 null 이다
-export type ReviewNote = { body: string; at: string; commit?: string | null }
+// id 는 gh 가 준 리뷰나 댓글의 id 다. 없으면 로그에 시각으로 대신한다
+export type ReviewNote = { body: string; at: string; commit?: string | null; id?: string }
 
 // 판정에 세는 리뷰의 범위. heads 는 리뷰를 그대로 인정하는 커밋, since 는 커밋이 없는 본문(댓글)을 세기 시작하는 시각이다
 export type ReviewScope = { heads: string[]; since: string | null }
@@ -271,15 +280,29 @@ export function chainIndex(note: ReviewNote, chain: ChainCommit[]): number | nul
   return i < 0 ? null : i
 }
 
-export type ReviewInput = { notes: ReviewNote[]; scope: ReviewScope; chain: ChainCommit[] }
+// threads 는 미해결 리뷰 스레드 수다. 모르면 null 이나 적지 않는다. 반영 완료(머리 주석의 「judgeReview」)가 쓴다
+export type ReviewInput = { notes: ReviewNote[]; scope: ReviewScope; chain: ChainCommit[]; threads?: number | null }
 // missing 은 판정 문구가 든 본문이 없어 멈췄다는 뜻이다. 루프가 AUTO-MERGE-NO-REVIEW 로 알린다
+// fixed 는 block 을 반영 완료로 풀었을 때의 `REVIEW-FIXED …` 줄이다. 풀지 않았으면 없다
 export type ReviewJudgement =
-  | { ok: true; basis: string[] }
+  | { ok: true; basis: string[]; fixed?: string[] }
   | { ok: false; condition: ReviewCondition | null; wait: string; missing: boolean }
 
 // 리뷰 판정 대기 이유. missing 인 것은 이 이유로 낸다
 export const REVIEW_WAIT = '리뷰 대기'
 export const REVIEW_HOLD = '리뷰 보류'
+
+// block 을 받은 뒤 반영한 PR 인지(머리 주석의 「judgeReview」 의 반영 완료). 맞으면 `REVIEW-FIXED` 줄, 아니면 null 이다
+function fixedAfterBlock(block: Verdict, input: ReviewInput): string | null {
+  if (input.threads !== 0) return null
+  const i = chainIndex(block.note, input.chain)
+  if (i === null || i === 0) return null
+  const reviewed = input.chain[i].oid
+  // 그 커밋 뒤에 base 를 합친 merge 만 있으면 고친 코드가 없다
+  if (input.scope.heads.includes(reviewed)) return null
+  const id = block.note.id || block.note.at || '시각 없음'
+  return `REVIEW-FIXED ${id} ${reviewed.slice(0, 8)}..${input.chain[0].oid.slice(0, 8)}`
+}
 
 // require 의 조건을 적은 순서대로 보고 처음 막힌 조건으로 멈춘다. 모두 통과하면 조건마다의 근거를 낸다.
 // 미해결 스레드, CI, 보류 표시는 조합과 상관없이 루프가 따로 본다(loop/steps/auto-merge.ts 머리 주석의 「자동 머지」 3)
@@ -287,12 +310,19 @@ export function judgeReview(input: ReviewInput, config: ReviewConfig): ReviewJud
   if (config.unknown.length > 0) return { ok: false, condition: null, wait: unknownConditionsText(config.unknown), missing: false }
   const all = verdicts(input.notes, config)
   const basis: string[] = []
+  const fixed: string[] = []
   const stop = (condition: ReviewCondition, wait: string, missing = false): ReviewJudgement => ({ ok: false, condition, wait, missing })
   for (const condition of config.require) {
     if (condition === 'verdict-on-head' || condition === 'last-verdict-pass') {
       const [last] = condition === 'verdict-on-head' ? verdicts(scopedNotes(input.notes, input.scope), config) : all
       if (!last) return stop(condition, REVIEW_WAIT, true)
-      if (last.verdict === 'block') return stop(condition, REVIEW_HOLD)
+      if (last.verdict === 'block') {
+        const line = condition === 'last-verdict-pass' && config.fixedAfterBlock ? fixedAfterBlock(last, input) : null
+        if (!line) return stop(condition, REVIEW_HOLD)
+        fixed.push(line)
+        basis.push(`${condition} ${verdictText(last)} 반영 완료, 재리뷰 없음(${line})`)
+        continue
+      }
       basis.push(`${condition} ${verdictText(last)}`)
     } else if (condition === 'verdict-seen') {
       if (all.length === 0) return stop(condition, REVIEW_WAIT, true)
@@ -310,11 +340,17 @@ export function judgeReview(input: ReviewInput, config: ReviewConfig): ReviewJud
         const i = chainIndex(v.note, input.chain)
         return i !== null && (at === null || i <= at)
       })
-      if (!pass) return stop(condition, `재리뷰 대기: ${verdictText(block)} 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다`)
+      if (!pass) {
+        const line = config.fixedAfterBlock ? fixedAfterBlock(block, input) : null
+        if (!line) return stop(condition, `재리뷰 대기: ${verdictText(block)} 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다`)
+        fixed.push(line)
+        basis.push(`${condition} ${verdictText(block)} 반영 완료, 재리뷰 없음(${line})`)
+        continue
+      }
       basis.push(`${condition} ${verdictText(block)} 뒤 ${verdictText(pass)}`)
     }
   }
-  return { ok: true, basis }
+  return fixed.length > 0 ? { ok: true, basis, fixed: [...new Set(fixed)] } : { ok: true, basis }
 }
 
 export type Migration = { module: string; version: number[]; label: string; path: string }

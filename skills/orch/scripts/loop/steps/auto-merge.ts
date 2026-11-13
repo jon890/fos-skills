@@ -31,6 +31,7 @@
 //        리뷰 판정은 require 에 모르는 조건 이름이 있으면 gh 를 부르지 않고 `queue.auto_review.require 에 모르는 조건이 있다: …` 로 멈춘다.
 //        아니면 gh pr view --json reviews,comments,files 의 리뷰와 댓글 전체를 lib/auto-merge.ts 의 judgeReview 에 넘기고, 막힌 조건의 이유
 //        (`리뷰 대기`, `리뷰 보류`, `재리뷰 대기: …`)로 멈춘다. 조건의 뜻은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
+//        미해결 스레드 수(위 THREADS_CMD 의 0)를 judgeReview 에 함께 넘긴다. queue.auto_review.fixed_after_block 이 true 면 block 을 반영한 PR 이 재리뷰 없이 통과한다.
 //        require 를 적지 않으면 verdict-on-head 하나라, 지금 HEAD 의 본문만 센다(reviewScope, scopedNotes). 그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
 //        HEAD 범위와 체인은 git fetch --quiet origin <브랜치> <base> 뒤 git log --first-parent --max-count=50 --format=%H%x09%P%x09%cI <HEAD> 와
 //        git merge-base --is-ancestor <둘째 부모> origin/<base> 로 정한다. 읽지 못하면 빈 체인이라 HEAD 에 달린 리뷰만 세고 댓글은 세지 않으며,
@@ -309,7 +310,7 @@ function judgeTarget(
   }
   let basis = noReview
   if (review) {
-    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base }, data, review, feature)
+    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base }, data, review, feature, Number(count))
     if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
     basis = judged.basis.join('; ')
   }

@@ -102,12 +102,16 @@ export async function loadPr(stepContext: StepContext, state: StepState, n: stri
 
 // 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
 // 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
-export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string }> {
+export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; fixed: string[] }> {
   const o = state.o
   const p = state.p
   const n = p.n
   const reasons: GateReason[] = []
   const facts: string[] = []
+  // 리뷰 판정이 block 을 반영 완료로 푼 `REVIEW-FIXED …` 줄. orch queue gate 가 GATE-OK 뒤에 낸다
+  const fixed: string[] = []
+  // 미해결 스레드 수. 조회하지 못했으면 null 이라 block 을 반영 완료로 풀지 않는다
+  let unresolved: number | null = null
 
   if (checks !== 'none') {
     const f = await field(stepContext, state, n, 'statusCheckRollup', state.q.failed)
@@ -131,6 +135,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   } else {
     const t = chomp(threads.stdout)
     facts.push(`threads=${t}`)
+    if (/^\d+$/.test(t)) unresolved = Number(t)
     if (t !== '0') reasons.push({ kind: 'threads', text: `미해결 리뷰 스레드 ${t} 개` })
   }
 
@@ -153,8 +158,9 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
       throw new HeadChanged(`${n} 리뷰 조회 중 HEAD 가 바뀌었다`)
     } else {
       const feature = Boolean(featureBranch(o.repo, p.branch)) || (typeof got.data.body === 'string' && got.data.body.includes('fos-feature-evidence'))
-      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base }, got.data, review, feature)
+      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base }, got.data, review, feature, unresolved)
       if (!judged.ok) reasons.push({ kind: 'review', text: judged.missing && judged.condition === 'verdict-on-head' ? `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다` : judged.wait })
+      else fixed.push(...(judged.fixed ?? []))
     }
   }
 
@@ -170,7 +176,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
     if (problem) reasons.push({ kind: 'evidence', text: problem })
   }
   reasons.push(...migrationReasons(state))
-  return { reasons, summary: facts.join(' ') }
+  return { reasons, summary: facts.join(' '), fixed }
 }
 
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.

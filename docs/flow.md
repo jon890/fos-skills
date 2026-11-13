@@ -255,7 +255,7 @@ flowchart TD
 | worker 가 `worker_done` 을 보냈는데 PR 이 아직 열려 있다 | 그 worker 터미널을 남긴다. 충돌이나 리뷰 반영을 같은 worker 가 이어 받는다. PR 이 머지되거나 닫히면 정리가 바로 닫는다 |
 | 상주 루프가 죽었거나 틱이 멈췄다 | doctor 와 status 가 pid·alive_at 기준으로 LOOP-DEAD 를 보인다. 코디네이터가 루프를 다시 시작하고 다음 틱이 상태를 다시 확인한다. 생존 기준은 `lib/loop.ts` 가 소유한다 |
 | `notify-conflicts` 와 상주 루프의 충돌 처리가 겹쳐 돈다 | 같은 (PR, PR HEAD, 충돌 파일) 을 두 번 보낼 수 있다. `state/notify-conflicts.json` 에 잠금이 없다. 차례로 돌면 한 번이다 |
-| 같은 저장소에 루프를 둘 띄운다 | 둘째 프로세스는 `state/loop.lock` 이나 `state/loop.json` 의 살아 있는 루프 프로세스(명령줄에 `orch-loop` 가 든 pid)를 보고 띄우지 않는다. `--run` 을 줬고 그 Run 이 아직 등록되지 않았으면 등록하고 `LOOP-JOINED` 와 0 으로 끝난다. 이미 등록됐거나 `--run` 이 없으면 `LOOP-RUNNING` 과 4 다. 등록을 모르는 옛 루프면 등록하지 못하고 4 와 안내 줄을 낸다. 부른 터미널이나 도는 루프가 다른 Run 에 묶였거나 루프의 명의를 모르면(`loop.json` 에 `bound_run` 이 없다) 그 Run 의 질문을 읽지 못하므로 띄우지도 합류하지도 않고 `LOOP-START-FENCED <Run> <묶인 Run>` 과 5 다. 두 세션이 거의 동시에 `--start` 해 둘 다 루프를 띄우면 잠금을 먼저 쥔 쪽이 돌고, 진 쪽은 그 루프에 합류해 `LOOP-JOINED` 와 0 으로 끝난다. 새로 뜬 루프는 앞 루프의 `alive_at` 뒤에 쓴 등록을 지우지 않으므로 두 Run 이 함께 등록된다 |
+| 같은 저장소에 루프를 둘 띄운다 | 둘째 프로세스는 `state/loop.lock` 이나 `state/loop.json` 의 살아 있는 루프 프로세스(명령줄에 `orch-loop` 가 든 pid)를 보고 띄우지 않는다. `--run` 을 줬고 그 Run 이 아직 등록되지 않았으면 등록하고 `LOOP-JOINED` 와 0 으로 끝난다. 이미 등록됐거나 `--run` 이 없으면 `LOOP-RUNNING` 과 4 다. 등록을 모르는 옛 루프면 등록하지 못하고 4 와 안내 줄을 낸다. 부른 터미널이나 도는 루프가 다른 Run 에 묶였거나 루프의 명의를 모르면(`loop.json` 에 `bound_run` 이 없다) 그 Run 의 질문을 읽지 못하므로 띄우지도 합류하지도 않고 `LOOP-START-FENCED <Run> <묶인 Run>` 과 5 다. 부른 터미널이 어떤 Run 에도 묶이지 않았으면 `LOOP-START-UNBOUND <Run>` 과 `orca orchestration run-use --id <Run>` 안내 한 줄, 5 다. 두 세션이 거의 동시에 `--start` 해 둘 다 루프를 띄우면 잠금을 먼저 쥔 쪽이 돌고, 진 쪽은 그 루프에 합류해 `LOOP-JOINED` 와 0 으로 끝난다. 새로 뜬 루프는 앞 루프의 `alive_at` 뒤에 쓴 등록을 지우지 않으므로 두 Run 이 함께 등록된다 |
 | Run 이 등록된 루프를 `--run` 없이 멈춘다 | 등록이 하나여도 다른 세션의 Run 일 수 있다. `finish.run` 도 없으면 다른 세션의 루프를 끊지 않게 신호를 보내지 않고 `LOOP-STOP-SHARED` 와 1 이다. 자기 Run 만 빼려면 `--stop --run`, 모두 멈추려면 `--stop --all` 이다. 마지막 Run 이 빠지면 루프가 끝난다 |
 | Run 이 살아 있는 루프에 등록되지 않았다 | doctor 와 status 의 미등록 안내를 따라 `orch loop start` 로 등록한다 |
 
@@ -319,7 +319,7 @@ flowchart TD
 | 다른 Run 의 낮은 번호 PR 이 이번 큐에서 빠진다 | 그 PR 을 기다리는 같은 모듈의 높은 번호 PR 도 이번 큐에서 뺀다. 남는 집합이 더 바뀌지 않을 때까지 다시 본다 |
 | 보드 파일을 읽지 못했다 | 보류 표시를 볼 수 없어 그 틱에는 걸지 않는다 |
 | 리뷰 뒤에 커밋이 더해졌거나 리뷰 봇이 결과 없이 실패했다 | `queue.auto_review.require` 를 적지 않은 저장소(`verdict-on-head`)는 옛 HEAD 의 `pass` 로 걸지 않는다. 더한 커밋이 기준 브랜치를 합친 merge 커밋뿐이면 앞 리뷰를 인정한다. 지금 HEAD 의 판정이 없으면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 코디네이터가 받은 독립 리뷰 결과를 이 HEAD 에 `pass` 문구로 남기면 다음 틱이 건다 |
-| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 조합 예시는 [orch 오버레이](../skills/orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
+| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 재리뷰가 돌지 않는 저장소는 `fixed_after_block` 을 켜면 `block` 뒤 반영 커밋이 있고 미해결 스레드가 0 일 때 재리뷰 없이 건다. 조합 예시는 [orch 오버레이](../skills/orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
 | 루프가 건 큐가 도는 동안 루프가 멈췄다 | 큐는 분리 실행이라 이어 돈다. 다시 뜬 루프는 기록의 pid 로 끝을 보고 `AUTO-MERGE-END` 를 쓴다 |
 | 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
 | PR 의 리뷰, 스레드, 파일을 읽지 못했다 | 그 PR 만 넘어가고 다른 PR 은 건다. 열린 PR 의 마이그레이션 목록이나 마이그레이션 예약 파일을 읽지 못하면 마이그레이션이 든 PR 만 뺀다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |

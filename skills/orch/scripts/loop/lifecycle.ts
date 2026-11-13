@@ -240,6 +240,7 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
 const FENCED = 'consumer_fenced'
 
 const UNKNOWN_BOUND = 'unknown'
+const UNBOUND = 'unbound'
 
 // --start 가 자식 루프에 넘기는 명의. {"run": <Run id 또는 null>} 이고, 읽지 못했으면 {} 다
 const BOUND_ENV = 'ORCH_LOOP_BOUND'
@@ -266,7 +267,8 @@ function inheritedBound(): string | null | undefined {
 }
 
 // 이 프로세스가 run 을 조회하지 못하면(consumer_fenced) 묶인 Run 을, 조회하면 null 을 낸다.
-// 다른 이유로 실패하면 명의 문제로 보지 않고 null 이다. 그 실패는 루프의 질문 확인이 WATCH-ERROR 로 알린다
+// 다른 이유로 실패하면 명의 문제로 보지 않고 null 이다. 그 실패는 루프의 질문 확인이 WATCH-ERROR 로 알린다.
+// 터미널에 묶인 Run 이 없는 오류(run-current 가 비거나 오류가 대상 Run 을 가리킨다)는 UNBOUND 다
 function callerFenced(run: string): string | null {
   const got = orcaJson<unknown>(['orchestration', 'check', '--run', run, '--peek', '--types', 'question'], { timeoutMs: PROBE_MS })
   if (got.ok) return null
@@ -275,7 +277,9 @@ function callerFenced(run: string): string | null {
     return null
   }
   const named = /bound to Run ([^\s,.'"\\]+)/.exec(got.error)?.[1]
+  if (named === run) return UNBOUND
   const bound = named ?? boundRun()
+  if (bound === null || bound === run) return UNBOUND
   return typeof bound === 'string' && bound ? bound : UNKNOWN_BOUND
 }
 
@@ -297,6 +301,11 @@ export async function start(ctx: Context, entrypoint: string): Promise<number> {
   if (ctx.run) {
     // 띄운 루프는 이 프로세스의 명의를 물려받는다. 이 Run 을 읽지 못하면 띄우지도 합류하지도 않는다(머리 주석의 「명의」)
     const bound = callerFenced(ctx.run)
+    if (bound === UNBOUND) {
+      log(`LOOP-START-UNBOUND ${ctx.run}`)
+      log(`안내: 이 터미널은 어떤 Run 에도 묶이지 않아 Run ${ctx.run} 의 질문을 읽지 못한다. 먼저 묶고 다시 --start 한다: orca orchestration run-use --id ${ctx.run}`)
+      return 5
+    }
     if (bound !== null) {
       log(`LOOP-START-FENCED ${ctx.run} ${bound}`)
       log(`안내: 이 터미널은 Run ${bound} 에 묶여 Run ${ctx.run} 의 질문을 읽지 못한다. Run ${ctx.run} 의 코디네이터 세션에서 --start 한다`)

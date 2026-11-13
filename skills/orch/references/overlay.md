@@ -294,4 +294,14 @@ orch doctor migrate --repo "$REPO" --apply
 
 기능 PR 은 `require` 와 상관없이 `verdict-on-head` 도 요구한다. 그래서 위 조합이어도 반영 push 마다 HEAD 에 새 판정이 있어야 건다. 반영 뒤 재리뷰를 받지 않으려면 `auto_review` 에 `"feature_head": false` 를 더한다. 기능 PR 도 `require` 만 보고, 마지막 판정이 `block` 이면 여전히 걸지 않고 기다린다.
 
+자동 리뷰가 PR 을 열 때만 돌고 저장소 규칙이 재리뷰를 금지하면, `block` 을 받은 PR 은 반영을 마쳐도 `last-verdict-pass` 와 `rereview-after-block` 을 통과할 길이 없다. 그런 저장소는 `auto_review` 에 `"fixed_after_block": true` 를 더한다. 기본은 `false` 라 더하지 않으면 지금과 같다.
+이 설정이 켜지면 `block` 이 아래 셋을 모두 만족할 때 두 조건이 `block` 을 재리뷰 없이 풀어 준다.
+
+- `block` 이 가리키는 커밋이 PR 체인에 있고 지금 HEAD 가 아니다. 댓글이면 쓴 시각 이전의 가장 새 커밋이다.
+- 그 커밋 뒤에 기준 브랜치를 합친 merge 만 있지 않다. 고친 코드가 있어야 한다.
+- 미해결 리뷰 스레드가 0 이다. 스레드 수를 읽지 못했으면 풀지 않는다.
+
+`verdict-on-head` 는 HEAD 의 새 판정을 요구하는 조건이라 풀지 않는다. 기능 PR 은 `feature_head` 가 `true`(기본)면 `verdict-on-head` 를 더하므로, 재리뷰 없는 흐름이면 `"feature_head": false` 도 함께 둔다.
+풀리면 `AUTO-MERGE-BASIS` 줄과 `orch queue gate` 의 `GATE-OK` 다음 줄에 `REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>` 가 남는다.
+
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.

@@ -568,3 +568,83 @@ describe('기능 PR 의 HEAD 리뷰 요구(queue.auto_review.feature_head)', () 
     assert.throws(() => parse({ pass: '^통과', block: '^보류', feature_head: 'no' }), ConfigError)
   })
 })
+
+describe('block 을 반영한 PR 의 재리뷰 면제(queue.auto_review.fixed_after_block)', () => {
+  const at = (h: number) => `2026-11-03T${String(h).padStart(2, '0')}:00:00Z`
+  // c3 이 HEAD. c1 이 리뷰를 받은 커밋이다
+  const chain: ChainCommit[] = [
+    { oid: 'c3', parents: ['c2'], at: at(3) },
+    { oid: 'c2', parents: ['c1'], at: at(2) },
+    { oid: 'c1', parents: [], at: at(1) },
+  ]
+  const headScope = { heads: ['c3'], since: at(3) }
+  const block = (commit: string, h: number): ReviewNote => ({ body: '보류', at: at(h), commit, id: `PRR_${commit}` })
+  const config = (fixed: boolean, ...require: ReviewConfig['require']): ReviewConfig => ({ pass: /^통과/, block: /^보류/, require, unknown: [], fixedAfterBlock: fixed })
+  const combo = (fixed: boolean) => config(fixed, 'verdict-seen', 'last-verdict-pass', 'rereview-after-block')
+  const judge = (notes: ReviewNote[], cfg: ReviewConfig, threads: number | null = 0, scope = headScope, commits = chain) => judgeReview({ notes, scope, chain: commits, threads }, cfg)
+
+  test('block 뒤 새 커밋이 있고 미해결 스레드가 0 이면 통과하고 REVIEW-FIXED 줄을 낸다', () => {
+    const got = judge([block('c1', 1)], combo(true))
+    assert.equal(got.ok, true)
+    assert.deepEqual(got.ok && got.fixed, ['REVIEW-FIXED PRR_c1 c1..c3'])
+    assert.ok(got.ok && got.basis.some((line) => line.startsWith('last-verdict-pass') && line.includes('REVIEW-FIXED PRR_c1 c1..c3')))
+    assert.ok(got.ok && got.basis.some((line) => line.startsWith('rereview-after-block') && line.includes('반영 완료')))
+  })
+
+  test('block 이 HEAD 에 달렸으면(뒤 커밋이 없으면) 지금처럼 리뷰 보류다', () => {
+    assert.deepEqual(judge([block('c3', 3)], combo(true)), { ok: false, condition: 'last-verdict-pass', wait: '리뷰 보류', missing: false })
+  })
+
+  test('미해결 스레드가 남았거나 수를 모르면 지금처럼 리뷰 보류다', () => {
+    for (const threads of [2, null]) {
+      assert.deepEqual(judge([block('c1', 1)], combo(true), threads), { ok: false, condition: 'last-verdict-pass', wait: '리뷰 보류', missing: false })
+    }
+    const only = config(true, 'rereview-after-block')
+    for (const threads of [2, null]) {
+      const got = judge([block('c1', 1)], only, threads)
+      assert.equal(got.ok === false && got.condition, 'rereview-after-block')
+    }
+  })
+
+  test('설정을 켜지 않으면(기본) block 을 풀지 않는다', () => {
+    assert.deepEqual(judge([block('c1', 1)], combo(false)), { ok: false, condition: 'last-verdict-pass', wait: '리뷰 보류', missing: false })
+    assert.deepEqual(judge([block('c1', 1)], { ...combo(false), fixedAfterBlock: undefined }).ok, false)
+  })
+
+  test('block 뒤 커밋이 base 를 합친 merge 뿐이면 반영하지 않은 것으로 본다', () => {
+    const merged: ChainCommit[] = [
+      { oid: 'm', parents: ['c1', 'b1'], at: at(3) },
+      { oid: 'c1', parents: [], at: at(1) },
+    ]
+    const scope = { heads: ['m', 'c1'], since: at(1) }
+    const got = judge([block('c1', 1)], combo(true), 0, scope, merged)
+    assert.equal(got.ok, false)
+  })
+
+  test('block 이 가리키는 커밋이 체인에 없으면(강제 push 등) 풀지 않는다', () => {
+    assert.equal(judge([block('gone', 1)], combo(true)).ok, false)
+    assert.equal(judge([block('c1', 1)], combo(true), 0, headScope, []).ok, false)
+  })
+
+  test('block 이 댓글이면 쓴 시각 이전의 가장 새 커밋을 기준으로 뒤 커밋을 본다', () => {
+    const fixedBefore = { body: '보류', at: '2026-11-03T01:30:00Z', commit: null }
+    const got = judge([fixedBefore], combo(true))
+    assert.deepEqual(got.ok && got.fixed, ['REVIEW-FIXED 2026-11-03T01:30:00Z c1..c3'])
+    assert.equal(judge([{ body: '보류', at: at(4), commit: null }], combo(true)).ok, false)
+  })
+
+  test('verdict-on-head 는 풀지 않는다', () => {
+    assert.deepEqual(judge([block('c1', 1)], config(true, 'verdict-on-head')), { ok: false, condition: 'verdict-on-head', wait: '리뷰 대기', missing: true })
+  })
+
+  test('block 반영 뒤 새 block 이 HEAD 에 달리면 다시 막힌다', () => {
+    assert.equal(judge([block('c1', 1), block('c3', 3)], combo(true)).ok, false)
+  })
+
+  test('설정은 불리언만 받고 기본은 거짓이다', () => {
+    const parse = (extra: Record<string, unknown>) => autoMergeConfig({ queue: { auto_merge: true, auto_review: { pass: '^통과', block: '^보류', ...extra } } } as unknown as Config).review
+    assert.equal(parse({})?.fixedAfterBlock, false)
+    assert.equal(parse({ fixed_after_block: true })?.fixedAfterBlock, true)
+    assert.throws(() => parse({ fixed_after_block: 'yes' }), ConfigError)
+  })
+})
