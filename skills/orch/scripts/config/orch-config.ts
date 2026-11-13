@@ -1,5 +1,6 @@
 // orch config show/get/set/unset. 값 검사는 이 명령과 doctor 만 검사표를 동적으로 읽어 쓴다.
 // 짧은 출력도 JSON 과 CONFIG-SET/UNSET 을 그대로 낸다. 경고·거절·재시작 안내는 stderr 다.
+// -- 로 시작하는 값은 -- 뒤에 둔다. 그때 --json 은 -- 앞에 둔다.
 import { resolve } from 'node:path'
 import { ConfigError, REMOVED_CONFIG_KEYS, SECTIONS } from '../core/config.ts'
 import { distinctPaths, getAt, parsePath, rejectedProblems, setAt, touched, unsetAt, within } from '../core/config-edit.ts'
@@ -8,7 +9,7 @@ import { readConfigFile, updateConfig } from '../lib/config.ts'
 import { loopStatus } from '../lib/loop.ts'
 import { requireMigrated } from '../lib/paths.ts'
 
-const USAGE = '사용법: orch config show [<절>] | get <절.키> | set <절.키> <값> [<절.키> <값>...] [--json] | unset <경로>... [--repo <폴더>]'
+const USAGE = '사용법: orch config show [<절>] | get <절.키> | set <절.키> <값> [<절.키> <값>...] [--json] | unset <경로>... [--repo <폴더>]\n-- 로 시작하는 값은 -- 뒤에 둔다. 그때 --json 은 -- 앞에 둔다.'
 const warn = (text: string) => process.stderr.write(`orch config: ${text}\n`)
 class UsageError extends Error {}
 

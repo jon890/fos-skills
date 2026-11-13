@@ -53,6 +53,7 @@ orch config unset contracts.merge_command contracts.paths
 ```
 
 - `set` 은 기본으로 문자열을 저장한다. 숫자, 참거짓, 목록, 객체는 `--json` 을 붙인다. 이 옵션은 함께 준 모든 값에 적용된다.
+- `--` 로 시작하는 값은 `--` 뒤에 둔다. 그때 `--json` 은 `--` 앞에 둔다. 예: `orch config set routing.review_author -- --literal`, `orch config set --json routing.review_author -- '"--literal"'`.
 - 여러 경로는 한 호출에서 함께 바꾸고 검사한다. 짝으로 두어야 하는 값도 함께 바꾼다. 하나라도 거절되면 파일을 바꾸지 않는다.
 - `show` 는 파일에 적힌 JSON 을, `get` 은 적힌 값 하나만 보여 준다. 기본값은 보이지 않는다. 기존 설정 문제는 stderr 로 알리며 읽기는 허용한다. 깨진 JSON 은 먼저 고쳐야 한다.
 - `unset` 은 오타 키와 모르는 절도 지우고 빈 객체를 정리한다. 옛 명령 칸은 지우지 않고 `orch doctor migrate-hooks --apply` 로 옮긴다.

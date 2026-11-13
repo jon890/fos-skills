@@ -48,6 +48,9 @@ function child(args: string[]) {
 test('도움말과 사용법 오류, 옵션과 겹치는 경로', () => {
   assert.match(ok(['--help']).stdout, /show.*\n.*get.*\n.*set.*\n.*unset/s)
   for (const args of [['get'], ['set', 'pipeline.tick_sec'], ['unset'], ['show', 'queue', 'finish'], ['get', 'queue'], ['set', 'queue', '{}'], ['set', 'queue.required', '[]', '--typo'], ['get', 'queue.required', '--json'], ['get', '.queue.required'], ['unset', 'queue', 'queue.method'], ['set', 'queue.method', 'merge', 'queue.method', 'squash']]) refused(args, /사용법/, 2)
+  const literal = refused(['set', 'routing.review_author', '--literal'], /사용법/, 2)
+  assert.match(literal.stderr, /-- 로 시작하는 값은 -- 뒤에 둔다/)
+  assert.match(literal.stderr, /--json 은 -- 앞에 둔다/)
 })
 
 test('show 는 읽기만 하고 잘못된 파일도 문제와 함께 보여 준다', () => {
@@ -89,6 +92,8 @@ test('set 은 문자와 JSON 을 구분하고 배치 변경과 이전 값을 낸
   assert.equal(get().finish.deploy_branch, 'main')
   assert.equal(ok(['set', 'routing.review_author', '--', '--literal']).status, 0)
   assert.equal(get().routing.review_author, '--literal')
+  ok(['set', '--json', 'routing.review_author', '--', '"--json-literal"'])
+  assert.equal(get().routing.review_author, '--json-literal')
   assert.ok(readFileSync(file, 'utf8').endsWith('\n'))
   assert.deepEqual(Object.keys(get()), ['routing', 'pipeline', 'queue', 'hooks', 'finish'])
 })
