@@ -9,7 +9,7 @@ PR 은 하나다(스펙 DECISION9). 계획은 [tasks/task-link/](tasks/task-link
 | ID | 해결 방법 |
 | --- | --- |
 | REQ1 | 보드 명령 `extensions/work-board/bin/board.ts` 의 칸 목록(`FIELDS`)에 `task-ref` 를 더한다. `set` 에 「빈 칸만 채우기」(`--fill`)와 「번호가 같을 때만」(`--if-task-ref`)을 더한다. `orch board set`(`skills/orch/scripts/board/board-edit.ts`)은 상태 인자를 선택으로 바꾸고 `--task`, `--task-ref` 를 받아 `board.ts set --exact` 에 넘긴다. 번호는 넘기기 전에 어댑터로 맞춘다(「번호 맞추기」) |
-| REQ2 | 창(`extensions/work-board/hooks/register.js`)의 `titleChildren` 과 `splitTaskNumber` 를 없애고, 순수 함수 `taskChip(item, tool)` 이 칩의 글과 주소를 정한다. 머리 줄은 「표시 → 칩 → 제목」 순서로 그리고, 제목 버튼에는 제목만 넣는다. 도구 이름은 새 명령 `extensions/work-board/bin/task-tool.ts` 가 낸다 |
+| REQ2 | 창(`extensions/work-board/hooks/register.js`)의 `titleChildren` 과 `splitTaskNumber` 를 없애고, 순수 함수 `taskChip(item, tool)` 이 칩의 글과 주소를 정한다. 머리 줄은 칩이 있으면 첫 줄에 「표시 → 칩」, 다음 줄에 들여 쓴 제목을 그리고(칩이 없으면 「표시 제목」 한 줄), 제목 버튼에는 제목만 넣는다. 도구 이름은 새 명령 `extensions/work-board/bin/task-tool.ts` 가 낸다 |
 | REQ3 | 설정 `board.task` 객체에 어댑터를 둔다. 값 판정은 새 core 모듈 `skills/orch/scripts/core/task-adapters.ts` 의 `taskAdapterOf` 하나가 소유하고, 설정 검사표(`core/config-schema.ts`)가 같은 함수를 부른다 |
 | REQ4 | `skills/orch/scripts/lib/board.ts` 의 `taskOf` 가 업무 연결 줄 전체(`line`)도 돌려준다. `registerBoard` 가 그 줄에서 번호와, 어댑터 주소 호스트와 같은 첫 주소를 골라 네 길 모두의 `board.ts set` 에 `--fill` 로 붙인다. 업무 도구는 부르지 않는다 |
 | REQ5 | `lib/board.ts` 의 새 `prTaskRef(repo, title)` 가 `finish.task_pattern` 으로 PR 제목에서 번호를 뽑고 맞춘다. 보드 맞추기(`board/board-sync.ts`)가 PR 을 찾아 `--pr` 을 쓰는 명령과 `linkBoardPr`(worker 완료 확인)가 그 번호를 `--fill --task-ref` 로 함께 쓴다 |
@@ -184,7 +184,7 @@ orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
 
 - `bin/task-tool.ts --repo <저장소>` 는 `{"name": "두레이"|"Jira"|…|null, "error": null|"<이유>"}` 한 줄을 낸다. 어댑터가 없으면 `name` 은 `null` 이다. 창은 보드 저장소가 바뀔 때와 `/board` 를 열 때 한 번 부른다.
 - `taskChip(item, tool)`: 번호(`task-ref`)와 주소(`task`, `http`·`https` 만)로 칩을 정한다. 둘 다 없으면 `null` 이다. 글은 `[<이름> <번호>]`, 번호가 없으면 `[<이름>]` 다. 이름은 `tool.name`, 없으면 지금 `taskTag(url)`(두레이 주소면 「두레이」, 그 밖은 「업무」), 주소도 없으면 「업무」 다(스펙 DECISION15). 주소가 있으면 링크, 없으면 흐린 글자다(스펙 DECISION2).
-- 머리 줄: 표시(`section.mark`) → 칩 → 제목. 진행 중·대기 항목은 제목만 `Button` 에 넣는다. 지금은 표시도 버튼 안에 있다. 칩을 버튼 앞에 두려면 표시가 버튼 밖으로 나와야 한다(스펙 DECISION23). 칩이 없는 항목도 같은 꼴로 그려 줄마다 누르는 자리가 달라지지 않게 한다.
+- 머리 줄: 칩이 있으면 첫 줄에 표시(`section.mark`)와 칩(줄어들지 않는 상자 안), 다음 줄에 왼쪽 여백 2칸으로 들여 쓴 제목을 둔다. 좁은 창에서 제목이 폭을 차지해 칩이 눌리지 않게 한다(사용자 2026-11-13). 진행 중·대기 항목은 제목만 `Button` 에 넣는다. 지금은 표시도 버튼 안에 있다. 칩을 버튼 앞에 두려면 표시가 버튼 밖으로 나와야 한다(스펙 DECISION23). 칩이 없는 항목은 「표시 제목」 가로 한 줄이고, 제목만 누르는 자리는 칩 유무와 관계없이 같다.
 - 완료·목표·결정 항목의 머리 줄도 같은 `taskChip` 을 쓴다(스펙 DECISION22). `itemView` 하나가 모든 항목을 그리므로 한 곳만 고친다. 완료 줄의 칩은 취소선 없이 흐리게 그린다. 링크 색과 밑줄은 그대로다.
 - 도구 이름은 `/board` 를 열 때와 저장소가 바뀔 때만 다시 받는다. 창을 연 채 설정을 바꾸면 다시 열 때 새 이름이 보인다.
 
