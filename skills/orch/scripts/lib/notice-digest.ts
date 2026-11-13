@@ -1,7 +1,7 @@
 // 루프 알림을 바로 보낼 것과 모아 보낼 것으로 가른다. 코디네이터 채팅에 깨움이 너무 자주 끼어들어서 할 일만 바로 깨운다(사용자 결정 2026-11-10).
 //
 // 바로 보내는 kind(코디네이터가 무언가 해야 한다): CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE,
-//   DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING. 이 파일에 없는 kind 도 바로 보낸다. 새 kind 를 놓치지 않으려는 것이다.
+//   DONE-SUSPECT, LOOP-DEAD 류, LOOP-UPDATED, LOOP-UPDATE-FAIL, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING. 이 파일에 없는 kind 도 바로 보낸다. 새 kind 를 놓치지 않으려는 것이다.
 // 모아 보내는 kind(DIGEST_KINDS): WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED. 안내이거나 다음 틱에 풀리는 일이다.
 //   loop.log 에는 그 틱에 남고(호출자가 쓴다), Run 메시지는 state/notice-digest/<runKey>.json 에 쌓았다가 주기(pipeline.digest_sec, 기본 1800초)마다 DIGEST 하나로 보낸다.
 //   모을 것이 없으면 보내지 않는다. 마지막으로 보낸 시각(sent_at)은 처음 쌓은 시각으로 시작한다.
