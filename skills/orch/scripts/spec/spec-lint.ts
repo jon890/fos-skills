@@ -530,8 +530,11 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
       for (const [index, line] of outsideFences(spec.lines).entries()) {
         const no = index + 1
         const plain = line.replace(/\*\*|`/g, '')
-        if (/머지(?:는|를)\s*[^。.!?\n]*(?:뒤에|이후에|후에|전에는|전까지|때까지)/.test(plain) ||
-            /(?:전에는|전까지|때까지)[^。.!?\n]*머지(?:하지|하지는|를\s*하지|\s*금지)/.test(plain)) {
+        // 「머지를 확인한 뒤」는 완료 확인이다. 머지를 주제로 쓴 조건과 명시적인 금지만 본다.
+        // 담당/금지 문장 뒤에 이어지는 후속 작업의 시간 조건은 같은 조건으로 읽지 않는다.
+        const clauses = plain.split(/[,。.!?\n]|(?:하고|않고|말고)(?:\s|$)/)
+        if (clauses.some((clause) => /머지는\s*.*(?:뒤에|이후에|후에|전에는|전까지|때까지)/.test(clause) ||
+            /(?:전에는|전까지|때까지).*머지(?:하지|하지는|를\s*하지|\s*금지)/.test(clause))) {
           warnings.push(`${spec.name}:${no}: 머지 보류: 머지 조건을 적었지만 머지 보류: 줄이 없다. 자동 머지를 막으려면 보류 이유를 별도 줄에 적는다`)
         }
       }
