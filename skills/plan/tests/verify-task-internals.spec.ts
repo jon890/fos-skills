@@ -21,6 +21,7 @@ import {
   runnableTest,
   section,
   shellCommands,
+  slotInner,
   unwrap,
   vagueScope,
 } from '../scripts/verify_task.ts'
@@ -125,6 +126,16 @@ test('unwrap 은 실행기 접두어와 그 옵션을 벗긴다', () => {
   assert.deepEqual(unwrap(['pnpm', 'exec', 'npx', 'jest']), ['jest'])
   assert.deepEqual(unwrap(['pnpm', 'test']), ['pnpm', 'test'])
   assert.deepEqual(unwrap(['uv']), ['uv'])
+})
+
+test('slotInner 는 orch slot 감싸기의 안쪽 명령을 낸다', () => {
+  assert.deepEqual(slotInner(['orch', 'slot', 'heavy', '--', './gradlew', 'test']), ['./gradlew', 'test'])
+  assert.deepEqual(slotInner(['orch', 'slot', 'heavy', '--exclusive', '--', 'npx', 'jest']), ['npx', 'jest'])
+  assert.deepEqual(slotInner(['orch', 'slot', 'mem', '--', 'pytest']), ['pytest'])
+  assert.deepEqual(slotInner(['heavy-slot', '--', 'pytest']), ['pytest'])
+  assert.equal(slotInner(['orch', 'slot', 'heavy']), null)
+  assert.equal(slotInner(['orch', 'slot', 'heavy', '--']), null)
+  assert.equal(slotInner(['pytest']), null)
 })
 
 test('git grep 의 포함·제외 pathspec 을 읽는다', () => {
