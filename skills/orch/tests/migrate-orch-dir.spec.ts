@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -20,6 +20,8 @@ import type { Done } from './fixtures/merge-queue-fakes.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/doctor/migrate-orch-dir.ts', import.meta.url))
 const ORCH_PATHS = fileURLToPath(new URL('../scripts/paths/orch_paths.ts', import.meta.url))
+const CONFIG_ENTRY = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
+const OWN_SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 
 const FAKE_ORCA = `const fs = require('node:fs')
 if (process.env.FAKE_ORCA_FAILS === '1') process.exit(1)
@@ -28,6 +30,7 @@ if (process.argv.includes('task-list')) say({ ok: true, result: { tasks: JSON.pa
 else say({ ok: true, result: { workers: JSON.parse(process.env.FAKE_WORKERS || '[]'), scope: { source: 'all' } } })
 `
 const FAKE_PGREP = `const fs = require('node:fs')
+if (process.env.FAKE_PGREP_SIGNAL) fs.writeFileSync(process.env.FAKE_PGREP_SIGNAL, 'ready')
 if (process.env.FAKE_PGREP_FAILS === '1') process.exit(3)
 const pattern = new RegExp(process.argv[process.argv.length - 1])
 const lines = (process.env.FAKE_PS || '').split('\\n').filter((line) => line && pattern.test(line))
@@ -43,6 +46,37 @@ before(() => {
   bin = realpathSync(mkdtempSync(join(tmpdir(), 'migrate-orch-dir-bin-')))
   writeNodeBin(bin, 'orca', FAKE_ORCA)
   writeNodeBin(bin, 'pgrep', FAKE_PGREP)
+})
+
+for (const hooks of [false, true]) test(`설정 잠금 대기 뒤 최신 값을 보존한다: ${hooks ? 'migrate-hooks' : 'migrate'}`, async t => {
+  const c = setup(t)
+  const old = hooks ? { queue: { before: 'echo old' } } : { finish: { specs_dir: '.omc/handoffs/specs' }, cleanup: { handoffs: 'old' } }
+  const config = c.write('.orch/config.json', JSON.stringify(old))
+  if (!hooks) c.write('.omc/handoffs/specs/a.md', 'old spec')
+  const lock = `${config}.lock`
+  writeFileSync(lock, 'parent')
+  const signal = join(c.tmp, 'reached')
+  let settled = false
+  const pending = c.migrate([...(hooks ? ['--hooks'] : []), '--apply'], { env: { FAKE_PGREP_SIGNAL: signal } }).finally(() => { settled = true })
+  const deadline = Date.now() + 10000
+  while (!existsSync(signal) && !settled && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(existsSync(signal), true, '설정을 읽은 뒤 이전 시작 지점에 도달해야 한다')
+  await new Promise(resolve => setTimeout(resolve, 250))
+  // 잠금이 없는 옛 쓰기는 여기서 먼저 끝나거나 원본을 바꾼다.
+  assert.equal(settled, false, '부모가 쥔 잠금을 기다려야 한다')
+  assert.deepEqual(readJson(config), old)
+  writeFileSync(config, JSON.stringify({ ...old, routing: { review_author: 'new' } }))
+  const setter = spawnDone([process.execPath, CONFIG_ENTRY, 'config', 'set', 'pipeline.tick_sec', '60', '--json', '--repo', c.repo], {
+    env: { ...c.env, ORCH_SCRIPTS_DIR: OWN_SCRIPTS }, cwd: c.repo,
+  })
+  unlinkSync(lock)
+  const [, done] = await Promise.all([pending, setter])
+  assert.equal(done.code, 0, done.stderr)
+  const fresh = readJson(config)
+  assert.deepEqual(fresh.routing, { review_author: 'new' })
+  assert.deepEqual(fresh.pipeline, { tick_sec: 60 })
+  if (hooks) assert.equal(fresh.queue.before, undefined)
+  else { assert.equal(fresh.finish.specs_dir, '.orch/specs'); assert.equal(fresh.cleanup, undefined) }
 })
 after(() => {
   if (savedOrchDir !== undefined) process.env.ORCH_DIR = savedOrchDir

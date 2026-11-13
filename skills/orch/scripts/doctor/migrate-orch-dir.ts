@@ -78,6 +78,7 @@
 //
 // GIT, ORCA, PGREP 환경 변수로 실행 파일을 바꾼다.
 
+import { readConfigFile, updateConfig } from '../lib/config.ts'
 import { workerRows } from '../lib/workers.ts'
 import { gitBin } from '../lib/git.ts'
 import { isObject } from '../core/json.ts'
@@ -266,13 +267,6 @@ function splitLines(text: string): string[] {
   const lines = text.split(LINE_BREAK)
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
   return lines
-}
-
-// 덮어쓰다 멈춰도 설정 파일이 반쯤 쓰인 채 남지 않게 옆에 쓴 뒤 바꾼다
-function writeJson(target: string, value: unknown): void {
-  const temp = `${target}.tmp-${process.pid}`
-  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-  renameSync(temp, target)
 }
 
 // ---- 계획 -----------------------------------------------------------------------------------------------
@@ -552,16 +546,7 @@ function move(src: string, dst: string, root: string, movingRoot = src): void {
 }
 
 // [새 설정, 설명 목록]. 바꿀 것이 없으면 [null, []]
-function configChanges(configPath: string, root: string): [Record<string, unknown> | null, string[]] {
-  const found = isFile(configPath)
-  let config: unknown = {}
-  if (found) {
-    try {
-      config = JSON.parse(readFileSync(configPath, 'utf8'))
-    } catch {
-      return [null, []]
-    }
-  }
+function configChanges(config: unknown, root: string, found: boolean): [Record<string, unknown> | null, string[]] {
   if (!isObject(config) || (config.cleanup !== undefined && !isObject(config.cleanup))) return [null, []]
   const cleanup: Record<string, unknown> = { ...((config.cleanup as Record<string, unknown> | undefined) ?? {}) }
   const notes: string[] = []
@@ -600,8 +585,9 @@ function finish(plan: Plan, rules: Rule[], apply: boolean): boolean {
   let did = false
   const orch = plan.orch
   const files = isDir(orch) ? walk(orch).filter(isFile).sort(byParts) : []
+  const configPath = join(orch, NAMES.config)
   for (const target of files) {
-    if (!willRewrite(target, orch)) continue
+    if (target === configPath || !willRewrite(target, orch)) continue
     const text = readText(target)
     if (text === null) continue
     const [fresh, count] = rewrite(text, rules)
@@ -611,15 +597,29 @@ function finish(plan: Plan, rules: Rule[], apply: boolean): boolean {
       out(`${apply ? '옛 경로를 바꿈' : '바꿀 옛 경로'} ${rel(target, plan.root)} ${count}곳`)
     }
   }
-  const configPath = join(orch, NAMES.config)
-  const [config, notes] = configChanges(configPath, plan.root)
-  if (notes.length > 0) {
+  // config.json 의 경로 치환과 cleanup 이전도 같은 잠금 안에서 최신 값에 적용한다.
+  let configCount = 0
+  let configNotes: string[] = []
+  const change = (raw: unknown, found: boolean) => {
+    const [text, count] = rewrite(JSON.stringify(raw), rules)
+    configCount = count
+    const rewritten: unknown = JSON.parse(text)
+    const [config, notes] = configChanges(rewritten, plan.root, found)
+    configNotes = notes
+    return config ?? (count > 0 ? rewritten : undefined)
+  }
+  if (apply && (isFile(configPath) || isDir(join(plan.root, PREVIEWS)))) updateConfig(plan.root, change)
+  else {
+    const read = readConfigFile(plan.root)
+    if (!read.error) change(read.exists ? read.value : {}, read.exists)
+  }
+  if (configCount > 0) {
     did = true
-    if (apply) {
-      mkdirSync(dirname(configPath), { recursive: true })
-      writeJson(configPath, config)
-    }
-    for (const note of notes) out(`설정 ${note}`)
+    out(`${apply ? '옛 경로를 바꿈' : '바꿀 옛 경로'} ${rel(configPath, plan.root)} ${configCount}곳`)
+  }
+  if (configNotes.length > 0) {
+    did = true
+    for (const note of configNotes) out(`설정 ${note}`)
   }
   if (apply && exists(orch)) {
     const line = ensureIgnored(plan.root)
@@ -1060,17 +1060,17 @@ function migrateHooks(repo: string, apply: boolean): number {
   }
   if (written.length > 0) {
     ensureIgnored(root)
-    // 쓴 키만 지운다. 절과 다른 키의 순서는 그대로다
-    const fresh: Record<string, unknown> = { ...config }
-    for (const w of written) {
-      for (const [s, k] of w.keys) {
-        const body = { ...(fresh[s] as Record<string, unknown>) }
-        delete body[k]
-        fresh[s] = body
-        out(`설정에서 지움 ${s}.${k}`)
+    // 잠금 밖의 config 를 쓰지 않고, 실제로 옮긴 키만 최신 객체에서 지운다.
+    updateConfig(root, raw => {
+      if (!isObject(raw)) throw new Usage('설정 파일의 최상위는 객체여야 한다')
+      const fresh = structuredClone(raw)
+      for (const w of written) for (const [s, k] of w.keys) {
+        if (!isObject(fresh[s])) throw new Usage(`설정 파일의 ${s} 절은 객체여야 한다`)
+        delete fresh[s][k]
       }
-    }
-    writeJson(configPath, fresh)
+      return fresh
+    })
+    for (const w of written) for (const [s, k] of w.keys) out(`설정에서 지움 ${s}.${k}`)
     const hooksDir = join(orch, NAMES.hooks)
     const trackedConfig = trackedUnder(root, configPath)
     if (trackedConfig || trackedUnder(root, hooksDir)) {
