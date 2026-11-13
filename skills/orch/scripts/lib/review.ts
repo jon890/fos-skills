@@ -153,11 +153,11 @@ export function reviewPrOfItem(id: string, byItem: Map<string, number | null>): 
 
 // 띄우기 이력의 지시서에서 보드 항목 id → 리뷰 PR 번호를 모은다. 항목 id 마다 가장 최근 띄우기 하나만 본다(id 를 다시 쓴 옛 이력은 보지 않는다).
 // 그 지시서에 `리뷰 PR:` 줄이 없으면 null 이다. 지시서를 읽지 못한 이력과 `보드 항목 id:` 줄이 없는 지시서는 건너뛴다
-export function reviewPrsByItem(repo: string): Map<string, number | null> {
+export function reviewPrsByItem(repo: string, excludeDispatch = ''): Map<string, number | null> {
   const byItem = new Map<string, number | null>()
   const rows = [...launchHistory(repo)].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
   for (const row of rows) {
-    if (!row.spec) continue
+    if (!row.spec || row.dispatch === excludeDispatch) continue
     try {
       const text = readFileSync(row.spec, 'utf8')
       const item = boardIdOf(text)?.id

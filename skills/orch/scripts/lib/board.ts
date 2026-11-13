@@ -21,7 +21,12 @@ import { rulesFrom } from './last-pr.ts'
 import { loadConfig } from './config.ts'
 import { boardPath } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
-import { boardIdOf, interimOf } from './spec.ts'
+import { boardIdOf, boardNewOf, workerRoleOf, interimOf } from './spec.ts'
+import { boardWorkerRows } from '../core/board-workers.ts'
+import type { WorkerRole } from '../core/board-workers.ts'
+import { reviewPrOfSpec, reviewPrOfItem, reviewPrsByItem } from './review.ts'
+import { launchHistory } from './launch-history.ts'
+import { ghJson } from './gh.ts'
 
 export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../extensions/work-board/bin/board.ts')
 export function readBoard(file: string): BoardItem[] {
@@ -36,38 +41,53 @@ export { interimOf }
 // board.ts 가 하위 항목 앞에 붙이는 완료 표시. hooks/register.js 의 STEP 과 같은 표시다
 const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 
-// 띄운 worker 를 보드 항목에 붙인다. 순서대로 하나만 한다.
-// 1. `중간 과정:` 줄이 있으면 done, decide, goal 이 아닌 항목 가운데 pr 칸에 그 PR 이 든 항목을, 없으면 같은 브랜치나 워크트리의 항목을 찾는다.
-//    찾은 항목 하나에 `중간 과정: <지시서 제목>` 줄 하나만 바꿔 두고 status, 제목, pr 은 그대로 둔다. 없거나 둘 이상이면 보드를 쓰지 않고 Error 다
-// 2. `보드 항목 id:` 로 정한 항목이 done 이면, 또는 merged-pr 이 있고 단계가 모두 끝난 doing 항목에 새 브랜치의 worker 를 띄우면(같은 브랜치 재시도는 제외) 다시 연다. 지난 줄은 완료로 두고(남은 일 줄과 중간 과정 줄은 뺀다) 마일스톤 단계를 다음 번호부터 붙이고
-//    stages 칸을 새 번호로 바꾼다. pr 칸의 머지된 PR 은 merged-pr 의 맨 앞으로 옮겨 board-sync 가 다시 연결하지 않게 한다. 제목은 바꾸지 않는다
-// 3. 그 밖에는 지시서의 id, 같은 워크트리나 브랜치의 끝나지 않은 항목, 같은 업무 번호의 끝나지 않은 항목, --name, 워크트리 이름 순으로 항목을 정한다.
-//    업무 번호는 지시서의 업무 연결 줄(taskOf)에서 읽고, 번호 칸을 먼저 보고, 번호 칸이 빈 옛 항목만 제목으로 찾는다. done, decide, goal 항목은 보지 않는다.
-//    항목이 이미 있으면 제목과 단계는 그대로 두고 워크트리와 브랜치만 바꿔 doing 으로 둔다. 새 항목만 specTitle 의 제목과 마일스톤 단계로 만든다
-// 마일스톤 단계는 지시서의 `## 보드 단계` 절, config.json 의 board.steps, 기본값 순으로 처음 있는 것이다.
-// 설정이 틀리면 ConfigError 다. 지시서의 「할 일」 줄은 보드에 올리지 않는다. 구현 세부라 머지와 배포로 끝낼 수 없다
-// 보드 파일이 없으면 넘어간다. 단 설정이 보드를 가리키면 Error 로 알린다
-export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string): void {
+// 띄운 worker 의 역할을 정하고 같은 항목에 줄로 붙인다. 설계의 「역할 정하기」와 「대표 칸」이 원본이다.
+// 리뷰·검증은 같은 워크트리, 명시한 id, 대상 PR, head 브랜치 순으로 찾고 상태·단계를 바꾸지 않는다.
+// 구현·후속은 중간 과정, id, 같은 워크트리·브랜치, 업무 번호 순이다. 새로 요청은 자동 찾기를 끈다.
+// 기존 항목의 대표 칸은 worker-add 가 잠금 안에서 쓰고, 실패할 때만 set 으로 돌아간다.
+export type BoardAttach = { item: string; role: WorkerRole; attached: boolean }
+export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string, dispatch = ''): BoardAttach | null {
+  const remembered: { value?: BoardAttach } = {}
   for (let attempt = 0; ; attempt++) {
-    try { return registerBoardOnce(repo, spec, worktree, name, branch) }
+    try { return registerBoardOnce(repo, spec, worktree, name, branch, dispatch, remembered) }
     catch (e) { if (!(e instanceof StaleBoardWrite) || attempt > 0) throw e }
   }
 }
 
 class StaleBoardWrite extends Error {}
 
+function targetItem(items: BoardItem[], opts: { repo: string; worktree: string; branch: string; explicit?: string; freshOnly: boolean; reviewPr: number | null; verify: boolean; ref: string | null }): BoardItem | undefined {
+  const latest = (rows: BoardItem[]) => rows.map((row, index) => ({ row, index })).sort((a, b) => String(a.row.stepAt ?? '').localeCompare(String(b.row.stepAt ?? '')) || a.index - b.index).at(-1)?.row
+  const same = latest(items.filter((item) => boardWorkerRows(item).some((row) => row.worktree === opts.worktree)))
+  if (same || opts.freshOnly) return same
+  const explicit = items.find((item) => item.id === opts.explicit)
+  if (explicit) return explicit
+  const eligible = items.filter((item) => !['decide', 'goal'].includes(String(item.status)))
+  const open = eligible.filter((item) => item.status !== 'done')
+  const byBranch = (branch: string) => branch ? latest(open.filter((item) => item.branch === branch || boardWorkerRows(item).some((row) => row.branch === branch))) : undefined
+  if (opts.reviewPr) {
+    const pr = String(opts.reviewPr)
+    const linked = latest(eligible.filter((item) => prNumbers(item.pr).has(pr))) ?? latest(eligible.filter((item) => prNumbers(item['merged-pr']).has(pr)))
+    if (linked) return linked
+    const head = ghJson<{ headRefName?: string }>(['pr', 'view', pr, '--json', 'headRefName'], { cwd: opts.repo })
+    return head.ok ? byBranch(head.data.headRefName ?? '') : undefined
+  }
+  if (opts.verify) return byBranch(opts.branch) ?? (opts.ref ? latest(open.filter((item) => item['task-ref'] === opts.ref)) : undefined)
+  return undefined
+}
+
 export function staleBoardWrite(command: string[], result: { code: number; stderr: string }): boolean {
   return command.includes('--if-rev') && result.code === 1 &&
     result.stderr.split('\n').some((line) => line.endsWith(`읽은 뒤 ${command[1]} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`))
 }
 
-function registerBoardOnce(repo: string, spec: string, worktree: string, name: string, branch: string): void {
+function registerBoardOnce(repo: string, spec: string, worktree: string, name: string, branch: string, dispatch: string, remembered: { value?: BoardAttach }): BoardAttach | null {
   const file = boardPath(repo)
   if (!existsSync(file)) {
     const config = loadConfig(repo)
     const named = [config.finish?.board && 'finish.board', config.cleanup?.board && 'cleanup.board', config.board && 'board 절'].filter(Boolean)
     if (named.length > 0) throw new Error(`설정 파일에 ${named.join(', ')} 이 있지만 보드 파일이 없다: ${file}. {"items":[]} 로 만들면 다음부터 항목을 만든다`)
-    return
+    return null
   }
   const text = readFileSync(spec, 'utf8')
   const items = readBoard(file)
@@ -88,8 +108,39 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const plain = (d: BoardDetail) => detailText(d).replace(LEAD_MARK, '')
   // 중간 과정과 다시 열기는 기존 항목을 고쳐, 브랜치를 읽지 못했으면 항목의 branch 칸을 지우지 않게 넘기지 않는다
   const branchArgs = branch ? ['--branch', branch] : []
+  const freshOnly = boardNewOf(text)
+  const reviewPr = reviewPrOfSpec(text)
+  const reviewRole = workerRoleOf(text) ?? (reviewPr ? 'review' : null)
+  const wt = basename(worktree)
+  const current = (item: BoardItem) => boardWorkerRows(item).find((row) => row.worktree === wt)
+  const result = (item: BoardItem | undefined, id: string, role: WorkerRole): BoardAttach =>
+    remembered.value ??= { item: id, role: current(item ?? { id })?.role ?? role, attached: Boolean(item && !current(item) && item.worktree !== wt) }
+  function keepArgs(item: BoardItem): string[] {
+    if ('workers' in item) return []
+    const role = reviewPrOfItem(item.id, reviewPrsByItem(repo, dispatch)) !== null ? 'review' : 'impl'
+    const prior = launchHistory(repo).filter((row) => row.dispatch !== dispatch && basename(row.worktree) === item.worktree).sort((a, b) => a.at.localeCompare(b.at)).at(-1)?.dispatch
+    return ['--keep-current', role, ...(prior ? ['--keep-dispatch', prior] : [])]
+  }
+  function add(item: BoardItem | undefined, id: string, role: WorkerRole): boolean {
+    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(item ? keepArgs(item) : [])]
+    const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    if (done.code === 0) return true
+    process.stderr.write(`보드: worker 줄을 쓰지 못했다: ${done.stderr.trim() || done.code}\n`)
+    if (remembered.value) remembered.value.attached = false
+    return false
+  }
+  if (reviewRole) {
+    const target = targetItem(items, { repo, worktree: wt, branch, explicit: boardIdOf(text)?.id, freshOnly, reviewPr, verify: reviewRole === 'verify', ref })
+    if (target) {
+      const r = result(target, target.id, reviewRole)
+      // 리뷰·검증은 대표 칸이 같은 옛 항목에서도 줄 추가 여부로 출력한다.
+      if (!current(target) && !remembered.value?.attached && target.worktree !== wt) r.attached = true
+      if (!add(target, target.id, r.role)) r.attached = false
+      return r
+    }
+  }
   const interim = interimOf(text)
-  if (interim) {
+  if (interim && !reviewRole) {
     // 결정 항목과 목표 항목은 업무 항목이 아니라 중간 과정을 붙이지 않는다
     const open = items.filter((row) => !['done', 'decide', 'goal'].includes(String(row.status)) && typeof row.id === 'string')
     let found = interim.pr ? open.filter((row) => prNumbers(row.pr).has(interim.pr as string)) : []
@@ -100,10 +151,13 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
       throw new Error(`중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다: ${why}`)
     }
     const kept = lines(found[0].details).filter((d) => !plain(d).startsWith(INTERIM))
-    return write(['set', found[0].id, '--worktree', basename(worktree), ...branchArgs, ...detailArgs([...kept, INTERIM + (heading || basename(spec))]), ...taskArgs, '--if-rev', linesRev(found[0])])
+    const r = result(found[0], found[0].id, 'follow')
+    const added = add(found[0], found[0].id, r.role)
+    write(['set', found[0].id, ...(added ? [] : ['--worktree', wt, ...branchArgs]), ...detailArgs([...kept, INTERIM + (heading || basename(spec))]), ...taskArgs, '--if-rev', linesRev(found[0])])
+    return r
   }
   const given = boardIdOf(text)
-  const explicit = given?.id
+  const explicit = freshOnly ? undefined : given?.id
   // id 줄에 설명이 붙었는데 그 id 가 보드에 없으면 설명을 id 로 잘못 쓴 줄일 수 있어 새 항목을 만들지 않는다
   if (given?.note && !items.some((row) => row.id === given.id)) {
     throw new Error(`지시서의 \`보드 항목 id: ${given.id}\` 가 보드에 없고 뒤에 설명이 붙어 있어 항목을 만들지 않는다. id 만 적거나 설명을 다른 줄로 옮긴다`)
@@ -111,14 +165,19 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   // 지시서가 id 를 정하지 않았으면 같은 워크트리나 브랜치의 끝나지 않은 항목을 이어 쓴다.
   // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않게 한다
   // 그다음은 같은 업무 번호의 항목이다. 한 업무의 다음 PR 이나 확인 작업을 다른 워크트리에서 띄워도 진행률이 한 항목에 모인다
-  const open = items.filter((row) => row.status !== 'done' && typeof row.id === 'string')
+  const open = items.filter((row) => !['done', 'decide', 'goal'].includes(String(row.status)) && typeof row.id === 'string')
+  const latest = (rows: BoardItem[]) => rows.map((row, index) => ({ row, index })).sort((a, b) => String(a.row.stepAt ?? '').localeCompare(String(b.row.stepAt ?? '')) || a.index - b.index).at(-1)?.row
   const same = explicit
     ? undefined
-    : (open.find((row) => row.worktree === basename(worktree) || (branch && row.branch === branch)) ??
-      (task ? (open.find((row) => !['decide', 'goal'].includes(String(row.status)) && row['task-ref'] === ref) ?? open.find((row) => !['decide', 'goal'].includes(String(row.status)) && !row['task-ref'] && hasTask(row.title, task.number))) : undefined))
+    : reviewRole ? undefined : (freshOnly ? latest(open.filter((row) => row.worktree === wt)) :
+      latest(open.filter((row) => current(row))) ?? latest(open.filter((row) => row.worktree === wt || (branch && row.branch === branch))) ??
+      (task ? latest(open.filter((row) => row['task-ref'] === ref)) ?? latest(open.filter((row) => !row['task-ref'] && hasTask(row.title, task.number))) : undefined))
   const id = explicit || (same?.id as string | undefined) || name || basename(worktree)
   const title = specTitle(text, { items, explicit, task, id })
   const item = items.find((row) => row.id === id)
+  const r = result(item, id, reviewRole ?? (item ? 'follow' : 'impl'))
+  const added = item && !reviewRole ? add(item, id, r.role) : false
+  const representative = added ? [] : ['--worktree', wt, ...branchArgs]
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
   const milestones = () => {
     const given = specSteps(text)
@@ -140,10 +199,11 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const added = milestoneLines(milestones(), Math.max(0, ...numbers) + 1)
     // progress 칸에 옛 값(3/3)이 남아 있으면 단계 수보다 앞서 진행률이 100% 로 남아 지운다.
     // 제목은 사용자가 정한 마일스톤이라 이어 띄운 지시서의 머리줄로 바꾸지 않는다
-    const args = ['set', id, 'doing', '--worktree', basename(worktree), ...branchArgs, '--progress', 'auto', '--stages', stagesText(added.stages)]
+    const args = ['set', id, 'doing', ...representative, '--progress', 'auto', '--stages', stagesText(added.stages)]
     const merged = [...prNumbers(item.pr)]
     if (merged.length) args.push('--pr', '', '--merged-pr', [...new Set([...merged, ...prNumbers(item['merged-pr'])])].join(', '))
-    return write([...args, ...detailArgs([...old, ...added.details]), ...taskArgs, '--if-rev', linesRev(item)])
+    write([...args, ...detailArgs([...old, ...added.details]), ...taskArgs, '--if-rev', linesRev(item)])
+    return r
   }
   // 이미 있는 끝나지 않은 항목은 제목과 단계를 그대로 두고 worker 의 워크트리와 브랜치만 바꾼다.
   // 이어 띄운 지시서(충돌 풀기, CI 고침)의 머리줄과 할 일이 마일스톤 제목과 단계를 덮지 않게 한다.
@@ -152,13 +212,16 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const known = run(scriptCommand(bin, ['steps', id, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (known.code !== 0) throw new Error(known.stderr || '단계 목록을 읽지 못했다')
     const ready = JSON.parse(known.stdout).length > 0 || /^\s*\d+\s*\/\s*\d+\s*$/.test(String(item.progress ?? ''))
-    return write(['set', id, ...(ready ? ['doing'] : []), '--worktree', basename(worktree), ...branchArgs, ...taskArgs])
+    write(['set', id, ...(ready ? ['doing'] : []), ...representative, ...taskArgs])
+    return r
   }
   const fresh = milestoneLines(milestones())
   const stages = stagesText(fresh.stages)
   const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
   for (const step of fresh.details) args.push('--detail', step)
   write([...args, ...taskArgs])
+  add(undefined, id, r.role)
+  return r
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)

@@ -1731,6 +1731,7 @@ describe('보드 항목 제목과 같은 업무', () => {
     const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+    return r
   }
 
   test('제목 줄이 없으면 목표 절의 첫 문장을 제목으로 쓴다', () => {
@@ -1768,8 +1769,10 @@ describe('보드 항목 제목과 같은 업무', () => {
     const other = { id: 'other', title: 'EXAMPLE-PROJECT/2821 다른 일', status: 'doing', worktree: 'x', details: [{ text: '1. PR', done: false }] }
     writeFileSync(file, JSON.stringify({ items: [other, first] }))
     writeFileSync(spec, '# 두 번째 PR\n허락: push\n두레이 업무: EXAMPLE-PROJECT/282\n')
-    run()
+    const attached = run()
+    assert.match(attached.stdout, /BOARD-ATTACH attention follow/)
     const after = items()
+    assert.equal(after[1].workers.length, 2)
     assert.deepEqual(after.map((i) => i.id), ['other', 'attention'])
     assert.equal(after[1].worktree, 'wt')
     assert.equal(after[1].title, first.title)

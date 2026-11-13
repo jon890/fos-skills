@@ -180,7 +180,8 @@ for (const mode of ['once', 'always', 'error'] as const) {
       assert.equal(items()[0].details[1].text, '중간 과정: CI 고침')
     } else assert.throws(run, mode === 'always' ? /줄이 바뀌어/ : /일반 쓰기 실패/)
     const calls = readFileSync(bin + '.log', 'utf8').trim().split('\n').map((line) => JSON.parse(line))
-    assert.equal(calls.length, mode === 'error' ? 1 : 2)
+    assert.equal(calls.filter((args) => args[0] === 'set').length, mode === 'error' ? 1 : 2)
+    assert.ok(calls.some((args) => args[0] === 'worker-add'))
   })
 }
 
