@@ -1724,14 +1724,15 @@ export function main(argv: string[]): number {
         checkPhasePrompt(path, text, out, entries, repo, warnings)
         phaseEntries.push([path, section(text, '작업 항목'), entries])
       }
+      const testSink = isRecord(index) && typeof index.created_at === 'string' && pyStrCompare(index.created_at, PR_SCOPE_FROM) >= 0 ? out : warnings
       const testEntries = phaseEntries.flatMap(([, , entries]) => entries)
       for (const phase of phases) {
         const text = readTextFile(phase)
-        checkTestReferences(phase, section(text, '검증') + '\n' + section(text, '인수 검증 계획'), testEntries, repo, out)
+        checkTestReferences(phase, section(text, '검증') + '\n' + section(text, '인수 검증 계획'), testEntries, repo, testSink)
       }
       if (isRecord(index) && typeof index.verification_plan === 'string') {
         const verification = pjoin(planDir, index.verification_plan)
-        if (isFile(verification) && !phases.includes(verification)) checkTestReferences(verification, section(readTextFile(verification), '인수 검증 계획'), testEntries, repo, out)
+        if (isFile(verification) && !phases.includes(verification)) checkTestReferences(verification, section(readTextFile(verification), '인수 검증 계획'), testEntries, repo, testSink)
       }
       if (!audit) checkEstimatedSize(`${planDir}/index.json`, allEntries, repo, warnings)
       const planRel = `${tasksDir.replace(/\/+$/, '')}/${plan}`
