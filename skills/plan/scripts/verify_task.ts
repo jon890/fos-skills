@@ -1064,9 +1064,8 @@ export function checkChangedFileCount(path: string, entries: Set<string>, warnin
 // 기존 수정·삭제 파일의 전체 줄을 변경량의 근사치로 센다. 신규 파일은 아직 줄 수를 알 수 없다.
 export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[]): void {
   const configPath = pjoin(repo, '.github/pr-size.json')
-  if (!isFile(configPath)) return
   try {
-    const config = JSON.parse(readTextFile(configPath)) as { grades: Record<string, Record<string, number>>; core?: string[]; generated?: string[]; tests?: string[]; docs?: string[] }
+    const config = (isFile(configPath) ? JSON.parse(readTextFile(configPath)) : {}) as { grades?: Record<string, Record<string, number>>; core?: string[]; generated?: string[]; tests?: string[]; docs?: string[] }
     const match = (rel: string, patterns: string[] = []) => patterns.some((pattern) => fnmatchcase(rel, pattern))
     const files = new Map<string, string>()
     for (const entry of entries) {
@@ -1085,9 +1084,9 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
       if (match(rel, config.core) || (!match(rel, config.tests) && !match(rel, config.docs))) core += lines
     }
     const metrics: Record<string, number> = { core_lines: core, total_lines: total, files: count }
-    const exceeds = (grade: string) => Object.entries(config.grades[grade]).some(([key, limit]) => metrics[key] > limit)
-    const grade = exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A'
-    warnings.push(`${path} — PR 크기 추정 ${grade}등급: 본 코드 ${core}줄, 전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개).${grade === 'D' ? ' PR 나눔 검토' : ''}`)
+    const exceeds = (grade: string) => Object.entries(config.grades![grade]).some(([key, limit]) => metrics[key] > limit)
+    const grade = config.grades ? (exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A') : null
+    warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: 본 코드 ${core}줄, 전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개).${grade === 'D' ? ' PR 나눔 검토' : ''}`)
   } catch {
     warnings.push(`${configPath} — PR 크기 설정을 읽지 못해 줄 수를 추정하지 못했다`)
   }
