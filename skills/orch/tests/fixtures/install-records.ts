@@ -1,5 +1,5 @@
 // 번들 고르기 사례 표(install-records.json)를 읽고 사례 하나를 임시 폴더로 펼친다.
-// lib-install-record.spec.ts, orch-launcher.spec.ts, template-script-path.spec.ts 가 같은 표로 세 구현을 대조한다.
+// lib-install-record.spec.ts, orch-launcher.spec.ts 가 같은 표로 두 구현을 대조한다.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

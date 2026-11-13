@@ -1,5 +1,5 @@
 // 번들 고르기 규칙의 원본(lib/install-record.ts)이 사례 표(fixtures/install-records.json)대로 고르는지 본다.
-// 같은 표를 실행기(orch-launcher.spec.ts)와 공통 지시서 틀(template-script-path.spec.ts)도 쓴다.
+// 같은 표를 실행기(orch-launcher.spec.ts)도 쓴다.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'

@@ -30,12 +30,11 @@
 - 머지를 기다린다는 알림은 따로 보내지 않는다. 「끝내기」 의 `준비됨` status 가 그 알림이다. escalation 은 코디네이터가 움직여야 이 worker 가 계속할 수 있을 때(권한 거부, 막힌 검증, 범위 밖 변경)만 쓴다. 머지 대기를 escalation 으로 보내면 막힌 worker 와 구분되지 않는다. <!-- orch-rule: status-not-escalation -->
 - 권한 확인 창이나 거부로 막히면 우회하지 말고 ask 로 알린다. 터미널에만 적고 기다리지 않는다.
 - 비밀값이 든 파일을 읽지 않고 비밀값을 출력하지 않는다. 공유 DB 에 마이그레이션을 적용하지 않는다.
-- Flyway 마이그레이션 파일 이름은 직접 정하지 않는다. 지시서에 「잡아 준 번호」 블록(`orch-reserved`)이 있으면 그 경로로 만들고 스스로 고르지 않는다. 코디네이터가 띄울 때 병렬 worker 와 겹치지 않게 잡아 둔 번호다. 블록이 없으면 만들기 전에 자기 워크트리에서 아래 블록으로 번호를 예약하고 `RESERVED` 줄의 경로로 만든다. 다른 워크트리의 파일과 번호가 겹치지 않게 하려는 것이다. `orch` 가 PATH 에 없으면 블록의 첫 줄이 아래 `worker-ask` 와 같이 설치본의 실행기를 푼다. <!-- orch-rule: migration -->
+- Flyway 마이그레이션 파일 이름은 직접 정하지 않는다. 지시서에 「잡아 준 번호」 블록(`orch-reserved`)이 있으면 그 경로로 만들고 스스로 고르지 않는다. 코디네이터가 띄울 때 병렬 worker 와 겹치지 않게 잡아 둔 번호다. 블록이 없으면 만들기 전에 자기 워크트리에서 아래 블록으로 번호를 예약하고 `RESERVED` 줄의 경로로 만든다. 다른 워크트리의 파일과 번호가 겹치지 않게 하려는 것이다. <!-- orch-rule: migration -->
 
   ```bash
   MODULE=""
   NAME=""
-  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
   orch queue reserve --repo "$(git rev-parse --show-toplevel)" --module "$MODULE" --name "$NAME"
   ```
 
@@ -45,7 +44,6 @@
   ```bash
   MODULE=""
   NAME=""
-  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
   orch queue reserve --repo "$(git rev-parse --show-toplevel)" --kind adr --module "$MODULE" --name "$NAME"
   ```
 
@@ -60,12 +58,11 @@
 - **기술 판단은 묻지 않고 권장안으로 진행한다.** 파일 위치, 테스트 방식, 마이그레이션 방식, 리뷰 하위 등급 지적의 반영 여부와 이유, 지시서 범위 안의 리팩터링 방식이 여기 해당한다. 고른 안과 이유를 status 메시지 한 줄과 PR 본문 「결정」 절에 남긴다.
 - **지시서와 스펙이 이미 정한 결정은 실행 전에 다시 확인하지 않고 진행한다.** 「이대로 진행할까요」, 「이 값이 맞나요」 처럼 답이 지시서에 있는 질문을 ask 로 보내지 않는다. 지시서와 실제 코드가 어긋나 정한 결정을 지킬 수 없을 때만 묻는다. 확인 질문 하나가 코디네이터와 사용자를 기다리게 해 worker 가 멈춘다. <!-- orch-rule: no-reconfirm -->
 - **아래만 ask 로 묻는다.** 화면이나 외부 API 계약 변경, 기록된 팀 결정을 뒤집는 것, 외부에 보이는 글, 공유 서버나 DB 에 쓰기, 비용이 드는 작업, 지시서 범위를 넘는 변경, 데이터 삭제.
-- **ask 는 설치된 스킬의 `worker-ask`(`orch worker ask`)로 보낸다.** `orch` 가 PATH 에 없으면(Codex worker, 실행기를 깔지 않은 셸) 블록의 첫 줄이 이 세션의 `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)에 설치된 `fos-skills@fos-skills` 의 실행기를 풀어 셸 함수로 둔다. 코디네이터와 worker 의 프로필이 다를 수 있고 번들은 갱신되므로 경로를 지시서에 박지 않는다. Bash 호출마다 셸이 새로 뜨니 같은 호출 안에서 푼다. <!-- orch-rule: worker-ask -->
+- **ask 는 설치된 스킬의 `worker-ask`(`orch worker ask`)로 보낸다.** <!-- orch-rule: worker-ask -->
 
   ```bash
   FROM=""
   QUESTION=""
-  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
   orch worker ask --from "$FROM" --question "$QUESTION"
   ```
 
@@ -146,11 +143,10 @@
   SIGNIFICANCE=""
   NONTRIVIAL=""
   STRUCTURAL=""
-  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
   orch feedback add --slug "$SLUG" --title "$TITLE" --skill "$SKILL" --file "$FILE" --situation "$SITUATION" --problem "$PROBLEM" --want "$WANT" --evidence "$EVIDENCE" --significance "$SIGNIFICANCE" --nontrivial "$NONTRIVIAL" --structural "$STRUCTURAL"
   ```
 
-  PATH 에 `orch` 가 없으면 위 함수가 설치 기록에서 실행기를 찾는다. 워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.
+  워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.
 - `worker_done` 본문 끝에 「스킬 개선 후보 N건: <이름 목록>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
 - 스킬 파일은 직접 고치지 않는다. 코디네이터가 사용자와 정한 뒤 고친다.
 
@@ -165,7 +161,7 @@
   - 공식 문서나 널리 알려진 글로 더 공부할 거리가 있다.
   - 한두 문장 정의로 설명이 끝나지 않는다.
 - 회사 이름, 서비스 이름, 내부 식별자는 적지 않는다. 적는 자리에서 일반 개념과 질문으로 바꾼다.
-- `MEMO` 에는 네 기준을 어떻게 채웠는지 한 줄로 적는다. 같은 후보가 이미 있어 종료 코드 1 로 끝나면 새로 적지 않는다.
+- `MEMO` 에는 네 기준을 어떻게 채웠는지 한 줄로 적는다. 같은 후보가 이미 있어 종료 코드 1 로 끝나면 새로 적지 않는다. <!-- orch-rule: study-add -->
 
   ```bash
   SLUG=""
@@ -174,7 +170,6 @@
   ORIGIN=""
   REF=""
   MEMO=""
-  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
   orch study add --slug "$SLUG" --topic "$TOPIC" --question "$QUESTION" --origin "$ORIGIN" --ref "$REF" --memo "$MEMO"
   ```
 
