@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
-import { busyReason, decide, heirEntry, newSelfUpdate, observe, STALE_WAIT_MAX_MS } from '../scripts/loop/self-update.ts'
+import { busyReason, decide, heirEntry, newSelfUpdate, observe, STALE_WAIT_MAX_MS, updatedText, failedText } from '../scripts/loop/self-update.ts'
 
 test('다시 뜰 때의 판정은 실패 기억, 설정 오류, 기다림 상한, 바쁜 이유 순서다', () => {
   const base = { target: '/new', failed: null, since: 1000, now: 2000, busy: null, lastCode: 0 }
@@ -59,4 +59,11 @@ test('이 저장소의 살아 있는 마무리와 큐만 기다리고 ps 오류�
   assert.equal(busyReason(root), '머지 큐 pid 123')
   ps.setRules([{ code: 1 }])
   assert.equal(busyReason(root), '프로세스 목록을 읽지 못했다')
+})
+
+test('다시 뜬 알림은 저장소와 버전을, 버전이 같거나 없으면 경로도 보인다', () => {
+  assert.equal(updatedText('repo', '1', '2', '/old', '/new'), 'repo 루프: 1 → 2 으로 다시 떴다')
+  assert.equal(updatedText('repo', '1', '1', '/old', '/new'), 'repo 루프: 1(/old) → 1(/new) 으로 다시 떴다')
+  assert.match(updatedText('repo', '-', '2', '/old', '/new'), /-\(\/old\) → 2\(\/new\)/)
+  assert.match(failedText('repo', '1', '2', '진입점이 없다', '/new/entry'), /repo 루프: 2 .* 1 .*진입점이 없다.*새 진입점: \/new\/entry/)
 })

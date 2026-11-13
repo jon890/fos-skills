@@ -6,6 +6,7 @@
 //     아니면 죽은 잠금으로 보고 회수한다. 죽은 루프의 pid 를 다른 프로세스가 다시 받았을 수 있다.
 //     pid 가 살아 있는데 ps 로 판정할 수 없으면(isLoopProcess 가 null) 루프가 쥔 것으로 보고 회수하지 않는다. 잘못 회수하면 루프가 둘이 된다.
 //     살아 있는 루프가 쥐고 있으면 LOOP-RUNNING 과 4 다.
+//     넘겨받기 모드의 새 루프는 옛 pid 가 자기 pid 로 바뀔 때까지 기다리고 자기 pid 면 잠금을 얻는다(ADR-032).
 //     --start 는 loopStatus 와 이 잠금을 함께 본다.
 //
 // 명의: Orca 는 orchestration 호출의 호출자를 그 프로세스가 나온 터미널로 정한다. 환경 변수를 빼도 바뀌지 않는다(실측).
@@ -44,6 +45,12 @@
 //
 //     실패 이유에는 출력의 원인 줄을 더하고, 숫자 묶음을 제외한 같은 원인이 연속 세 번째 틱이면 바로 한 번 알린다.
 //
+// 스스로 다시 뜨기: 틱 출력 전에 설치본을 보고 처음 바뀌었을 때 LOOP-STALE 을 쓴다.
+//     그 뒤 STALE-BUNDLE 줄은 옮기지 않고, 이 저장소의 마무리·머지 큐를 최대 60분 기다린다. 설정 오류는 기다리지 않는다.
+//     생존 타이머를 멈추고 새 루프를 넘겨받기 모드로 띄운 뒤 잠금을 넘긴다. 새 loop.json 확인 뒤 옛 루프가 끝난다.
+//     넘겨받는 루프는 Run 등록을 지우거나 다시 만들지 않는다. 실패하면 잠금을 되찾고 옛 루프가 계속 돈다.
+//     등록된 Run 마다 LOOP-UPDATED 또는 LOOP-UPDATE-FAIL 을 바로 한 번 보낸다. 전송 실패는 로그에만 남긴다.
+//
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
@@ -70,7 +77,7 @@ import type { RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { sendNotice } from '../lib/run-notice.ts'
 import { waiterPids } from '../lib/waiters.ts'
-import { busyReason, decide, newSelfUpdate, observe } from './self-update.ts'
+import { busyReason, decide, HANDOVER_ENV, handOver, heirEntry, newSelfUpdate, observe, pendingHeir } from './self-update.ts'
 import type { Context, TickResult } from './steps/context.ts'
 import { dropStaleErrors } from './steps/errors.ts'
 import { ciEntries, iso, lines, log, oneLine, setLogFile, stallEntries } from './steps/shared.ts'
@@ -153,7 +160,7 @@ function freshEmpty(lock: string): boolean {
 }
 
 // 잠금을 얻으면 null, 살아 있는 다른 루프가 쥐고 있으면 그 pid 다.
-async function takeLock(lock: string, repo: string): Promise<number | null> {
+async function takeLock(lock: string, repo: string, from: number | null = null): Promise<number | null> {
   makeParent(lock, repo)
   const deadline = Date.now() + startWaitMs()
   while (Date.now() < deadline) {
@@ -161,6 +168,11 @@ async function takeLock(lock: string, repo: string): Promise<number | null> {
     const seen = readText(lock)
     if (seen === null) continue
     const text = seen.trim()
+    if (text === String(process.pid)) return null
+    if (from !== null && text === String(from) && isLoopProcess(from) !== false) {
+      await sleep(POLL_MS)
+      continue
+    }
     // 루프 프로세스가 아닌 pid 는 죽은 잠금이다. 아래 reclaim 으로 회수한다. 판정할 수 없으면(null) 회수하지 않는다
     if (/^\d+$/.test(text) && isLoopProcess(Number(text)) !== false) return Number(text)
     if (text === '' && freshEmpty(lock)) {
@@ -494,6 +506,12 @@ function tickResult(done: RunResult, staleLogged = false): { result: TickResult 
 }
 
 export async function foreground(ctx: Context, once: boolean, interval: number, entrypoint: string): Promise<number> {
+  let handover: { from: number; had_runs: boolean } | null = null
+  try {
+    const parsed = JSON.parse(process.env[HANDOVER_ENV] ?? 'null')
+    if (parsed && Number.isInteger(parsed.from) && parsed.from > 0 && typeof parsed.had_runs === 'boolean') handover = parsed
+  } catch { /* 읽지 못한 환경 값은 보통 시작으로 처리한다 */ }
+  delete process.env[HANDOVER_ENV]
   const update = newSelfUpdate()
   const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
   stopGraceMs = TICK_STOP_GRACE_MS
@@ -505,7 +523,7 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
     if (found.ok) for (const pid of found.pids) log(`WAITER-LEFT ${pid}: 옛 대기를 직접 종료한다: kill ${pid}`)
   }
   const lock = lockFile(ctx.repo)
-  const holder = await takeLock(lock, ctx.repo)
+  const holder = await takeLock(lock, ctx.repo, handover?.from ?? null)
   if (holder !== null) {
     log(`LOOP-RUNNING ${holder} run=${runOf(readLoop(ctx.repo), holder)}`)
     return 4
@@ -524,17 +542,17 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       restartNotices[entry.run] ??= before!.alive_at
     }
   }
-  for (const entry of registeredRuns(ctx.repo)) {
+  if (!handover) for (const entry of registeredRuns(ctx.repo)) {
     if (entry.run === ctx.run || !Number.isFinite(cutoff)) continue
     const at = Date.parse(entry.registered_at)
     if (Number.isFinite(at) && at > cutoff) continue
     unregisterRun(ctx.repo, entry.run)
     log(`앞 루프의 Run ${entry.run} 등록을 지웠다. 그 세션이 살아 있으면 LOOP-RESTARTED 메시지나 doctor 안내를 따라 다시 등록한다`)
   }
-  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir)
+  if (!handover && ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir)
   let runs = registeredRuns(ctx.repo).map((entry) => entry.run)
   // 등록된 Run 이 있던 루프는 마지막 Run 이 빠지면 끝난다. 처음부터 Run 이 없던 루프는 --stop 까지 돈다(머리 주석의 「Run」)
-  let hadRuns = runs.length > 0
+  let hadRuns = handover?.had_runs || runs.length > 0
   const previous = readLoop(ctx.repo)
   const errors = previous && typeof previous.errors === 'object' && previous.errors !== null && !Array.isArray(previous.errors) ? previous.errors : {}
   const ci = ciEntries(previous?.ci)
@@ -561,14 +579,17 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
   }
   writeLoop(ctx.repo, state)
   if (runs.length === 0 && !ctx.run) log('경고: Run id 가 없어 질문 확인을 건너뛴다. --run 이나 finish.run 으로 준다')
-  const timer = setInterval(() => {
-    state.alive_at = iso()
-    try {
-      writeLoop(ctx.repo, state)
-    } catch (e) {
-      log(`orch-loop: loop.json 에 alive_at 을 쓰지 못했다: ${oneLine(e)}`)
-    }
-  }, interval * 1000)
+  let timer: ReturnType<typeof setInterval> | null = null
+  const stopTimer = () => { if (timer !== null) clearInterval(timer); timer = null }
+  const startTimer = () => {
+    stopTimer()
+    timer = setInterval(() => {
+      state.alive_at = iso()
+      try { writeLoop(ctx.repo, state) }
+      catch (e) { log(`orch-loop: loop.json 에 alive_at 을 쓰지 못했다: ${oneLine(e)}`) }
+    }, interval * 1000)
+  }
+  startTimer()
   try {
     for (let n = 1; ; n++) {
       runs = registeredRuns(ctx.repo).map((entry) => entry.run)
@@ -638,10 +659,18 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
         log(`LOOP-STALE-WAIT ${next.reason}`)
         update.waitReason = next.reason
       }
+      if (next.kind === 'go' && update.target) {
+        const outcome = await handOver({ ctx, state, lock, entry: heirEntry(update.target), hadRuns, stopTimer, startTimer,
+          oldVersion: state.bundle_version || '-', newVersion: bundleVersion(update.target) || '-',
+          oldBundle: ownBundle(), newBundle: update.target, lockPid, createLock, args: passArgs(ctx), waitMs: startWaitMs(),
+        })
+        if (outcome !== 'failed') return 0
+        update.failed = heirEntry(update.target)
+      }
       await sleep(ctx.tickSec * 1000)
     }
   } finally {
-    clearInterval(timer)
+    stopTimer()
   }
 }
 
@@ -653,6 +682,8 @@ let stopGraceMs = STOP_GRACE_MS
 function onSignal(signal: NodeJS.Signals): void {
   if (exiting) return
   exiting = true
+  const pending = pendingHeir()
+  if (pending !== null) { try { process.kill(pending, 'SIGTERM') } catch { /* 이미 끝났다 */ } }
   // 진행 중인 자식(틱 자식 그룹, 정리 명령, 핸들러 그룹)을 끊은 뒤에 끝낸다. 그냥 끝내면 자식이 남는다
   void stopChildren(signal, stopGraceMs).finally(() => process.exit(signalCode(signal)))
 }
