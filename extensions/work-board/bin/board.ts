@@ -567,7 +567,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     const rows = (Array.isArray(item.workers) ? item.workers : []) as Worker[]
     const work = (row: Worker) => ['impl', 'follow'].includes(row.role)
     if (a.cmd === 'worker-add') {
-      if (!('workers' in item) && a.keepCurrent) {
+      if (!('workers' in item) && a.keepCurrent && typeof item.worktree === 'string' && item.worktree.trim()) {
         const working = Boolean(item.worktree && a.keepDispatch)
         rows.push({ role: a.keepCurrent, dispatch: a.keepDispatch ?? null, worktree: String(item.worktree ?? ''), branch: typeof item.branch === 'string' ? item.branch : null, pr: item.pr ?? null, status: working ? 'working' : 'done', at: stamp, endedAt: working ? null : stamp })
       }

@@ -6,6 +6,7 @@ import { beforeEach, afterEach, test } from 'node:test'
 import { registerBoard } from '../scripts/lib/board.ts'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import { recordHistory } from '../scripts/lib/launch-history.ts'
+import { fakeBin } from './fixtures/fake-bin.ts'
 
 let repo: string, file: string, spec: string, saved: NodeJS.ProcessEnv
 beforeEach(() => {
@@ -90,13 +91,33 @@ test('옛 대표를 보존하고 현재 리뷰 이력은 옛 역할 판정에서
   assert.equal(items()[0].workers[0].role, 'impl')
   assert.equal(items()[0].workers[0].status, 'done')
   board(legacy)
-  recordHistory(repo, { at: '2026-01-02', dispatch: 'old-dispatch', worktree: join(repo, 'old') } as any)
+  mkdirSync(join(repo, 'old'))
+  process.env.ORCA = fakeBin(repo, 'orca', [{ stdout: JSON.stringify({ ok: true, result: { workers: [{ dispatchId: 'old-dispatch', dispatchStatus: 'running', workerState: 'working' }] } }) }]).path
+  recordHistory(repo, { at: '2026-01-02', dispatch: 'old-dispatch', worktree: join(repo, 'old'), run: 'run-old' } as any)
   launch('보드 항목 id: a')
   assert.equal(items()[0].workers[0].dispatch, 'old-dispatch')
   assert.equal(items()[0].workers[0].status, 'working')
   board({ ...legacy, id: 'review-pr-480' })
   launch('보드 항목 id: review-pr-480\n리뷰 PR: #480')
   assert.equal(items()[0].workers[0].role, 'review')
+})
+
+test('끝난 Orca dispatch 나 사라진 워크트리의 옛 대표를 되살리지 않는다', () => {
+  const legacy: any = base()
+  delete legacy.workers
+  const old = join(repo, 'old')
+  mkdirSync(old)
+  recordHistory(repo, { at: '2026-01-02', dispatch: 'old-dispatch', worktree: old, run: 'run-old' } as any)
+  const orca = fakeBin(repo, 'orca', [])
+  process.env.ORCA = orca.path
+  for (const outcome of ['succeeded', 'failed', null]) {
+    board(legacy)
+    orca.setRules([{ stdout: JSON.stringify({ ok: true, result: { workers: [{ dispatchId: 'old-dispatch', dispatchStatus: outcome ? 'completed' : 'running', workerState: outcome ? 'stopped' : 'working', projection: { outcome } }] } }) }])
+    if (!outcome) rmSync(old, { recursive: true })
+    launch('보드 항목 id: a')
+    assert.equal(items()[0].workers[0].status, 'done', String(outcome))
+    assert.equal(items()[0].workers[0].dispatch, null)
+  }
 })
 
 test('worker-add 실패면 기존 대표 칸 쓰기로 돌아간다', () => {

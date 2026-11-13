@@ -27,6 +27,9 @@ import type { WorkerRole } from '../core/board-workers.ts'
 import { reviewPrOfSpec, reviewPrOfItem, reviewPrsByItem } from './review.ts'
 import { launchHistory } from './launch-history.ts'
 import { ghJson } from './gh.ts'
+import { workerRows } from './workers.ts'
+import { isLive } from './worker-state.ts'
+import { workerEnds } from '../core/board-workers.ts'
 
 export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../extensions/work-board/bin/board.ts')
 export function readBoard(file: string): BoardItem[] {
@@ -116,10 +119,14 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const result = (item: BoardItem | undefined, id: string, role: WorkerRole): BoardAttach =>
     remembered.value ??= { item: id, role: current(item ?? { id })?.role ?? role, attached: Boolean(item && !current(item) && item.worktree !== wt) }
   function keepArgs(item: BoardItem): string[] {
-    if ('workers' in item) return []
+    if ('workers' in item || typeof item.worktree !== 'string' || !item.worktree.trim()) return []
     const role = reviewPrOfItem(item.id, reviewPrsByItem(repo, dispatch)) !== null ? 'review' : 'impl'
-    const prior = launchHistory(repo).filter((row) => row.dispatch !== dispatch && basename(row.worktree) === item.worktree).sort((a, b) => a.at.localeCompare(b.at)).at(-1)?.dispatch
-    return ['--keep-current', role, ...(prior ? ['--keep-dispatch', prior] : [])]
+    const prior = launchHistory(repo).filter((row) => row.dispatch !== dispatch && basename(row.worktree) === item.worktree).sort((a, b) => a.at.localeCompare(b.at)).at(-1)
+    // 이력의 존재는 살아 있다는 증거가 아니다. 워크트리와 해당 Run 의 현재 dispatch 를 함께 확인한다.
+    const listed = prior?.run && existsSync(prior.worktree) ? workerRows(prior.run) : null
+    const row = listed?.ok ? listed.rows.find((row) => row.dispatchId === prior!.dispatch) : undefined
+    const working = row && isLive(row) && !workerEnds([row], new Set(), new Set([prior!.dispatch]))[prior!.dispatch]
+    return ['--keep-current', role, ...(working ? ['--keep-dispatch', prior!.dispatch] : [])]
   }
   function add(item: BoardItem | undefined, id: string, role: WorkerRole): boolean {
     const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(item ? keepArgs(item) : [])]

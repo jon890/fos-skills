@@ -40,7 +40,7 @@ test('옛 대표를 옮기고 역할과 dispatch 를 보존한다', () => {
   const b = tempBoard()
   try {
     for (const [role, dispatch, worktree, expected] of [
-      ['impl', 'd0', 'old', 'working'], ['impl', '', 'old', 'done'], ['review', 'd0', '', 'done'],
+      ['impl', 'd0', 'old', 'working'], ['impl', '', 'old', 'done'], ['review', 'd0', 'old', 'working'],
     ]) {
       write(b.file, { id: 'a', status: 'done', worktree, branch: 'feat/old' })
       const r = run(b.file, ['worker-add', 'a', 'follow', '--worktree', 'new', '--keep-current', role, ...(dispatch ? ['--keep-dispatch', dispatch] : [])])
@@ -54,6 +54,32 @@ test('옛 대표를 옮기고 역할과 dispatch 를 보존한다', () => {
     write(b.file, { id: 'a', worktree: 'old' })
     assert.equal(run(b.file, ['worker-add', 'a', 'follow', '--worktree', 'old', '--keep-current', 'impl']).code, 0)
     assert.equal((item(b.file, 'a').workers as unknown[]).length, 1)
+  } finally { b.cleanup() }
+})
+
+test('대표가 빈 옛 항목에는 빈 구현 줄을 만들지 않는다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'done', worktree: '', branch: 'old' })
+    const r = run(b.file, ['worker-add', 'a', 'review', '--worktree', 'review', '--keep-current', 'impl', '--keep-dispatch', 'old'])
+    assert.equal(r.code, 0, r.stderr)
+    const rows = item(b.file, 'a').workers as Record<string, unknown>[]
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].role, 'review')
+    assert.equal(rows[0].worktree, 'review')
+  } finally { b.cleanup() }
+})
+
+test('끝난 옛 대표는 dispatch 를 이어받지 않으면 끝난 줄로 남는다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', worktree: 'old', details: ['1. 구현'] })
+    const r = run(b.file, ['worker-add', 'a', 'review', '--worktree', 'review', '--keep-current', 'impl'])
+    assert.equal(r.code, 0, r.stderr)
+    const rows = item(b.file, 'a').workers as Record<string, unknown>[]
+    assert.equal(rows[0].status, 'done')
+    assert.equal(rows[0].dispatch, null)
+    assert.equal(typeof rows[0].endedAt, 'string')
   } finally { b.cleanup() }
 })
 
