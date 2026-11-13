@@ -39,7 +39,7 @@
 
 - 계획 critic: APPROVE. worker 제한을 승인된 REQ13의 호출 금지로 보완한 뒤 재검토했다.
 - 독립 문서 검토: PASS, 발견 없음. 검토 커밋은 위 구현 검증 커밋과 같다.
-- 최초 구현의 독립 코드 리뷰: [Claude 리뷰](https://github.com/jon890/fos-skills/pull/474#pullrequestreview-5887211914)는 머지 가능, 차단 없음으로 나왔다. 코디네이터가 지정한 권장 사항을 반영했으며 바뀐 코드의 재검토를 기다린다.
+- 최초 구현의 독립 코드 리뷰: [Claude 리뷰](https://github.com/jon890/fos-skills/pull/474#pullrequestreview-5887211914)는 머지 가능, 차단 없음으로 나왔다. 코디네이터가 지정한 권장 사항을 반영했고, 반영한 head 의 PR #474 Tests 통과 뒤 머지됐다.
 
 ## 문서 대조와 공통 후보
 
@@ -75,4 +75,4 @@ PR1의 deferred에서 설정 명령·잠금과 이전·재시작 알림·문서 
 - `node --test skills/orch/tests/migrate-orch-dir.spec.ts skills/orch/tests/lib-config.spec.ts skills/orch/tests/orch-config.spec.ts skills/orch/tests/config-docs.spec.ts`: 통과.
 - `node scripts/runtime-policy.ts`, `node scripts/run-tests.ts --tsc-only`: 통과.
 - 회귀 테스트는 수정 전 실패하고 수정 후 통과하는 것을 확인했다.
-- 리뷰 반영 뒤 전체 테스트는 코디네이터의 지시에 따라 같은 head의 PR Tests로 확인한다. 새 코드의 독립 재검토와 CI 결과는 PR에 남긴다.
+- 리뷰 반영 뒤 전체 테스트는 코디네이터의 지시에 따라 같은 head의 PR Tests로 확인했고, 그 결과는 PR #474 에 남아 있다.
