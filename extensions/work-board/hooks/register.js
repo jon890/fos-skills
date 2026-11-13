@@ -8,6 +8,11 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 //      stepAt 은 board.ts 가 그 항목의 status, details, next 를 마지막으로 바꾼 시각이다. worker 없이 남은 단계의 경과 시간을 이 값으로 잰다.
 //      업무 칩은 표시 다음, 제목 앞에 있다. task-ref 는 글, task 는 링크이며 번호만 있으면 흐리게 보인다. 제목 안 번호는 바꾸지 않는다.
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
+//      workers 는 항목 아래 worker 줄 목록이다(docs/data-schema.md 「보드 항목의 worker 줄」). 창은 저장된 status 를 읽기만 하고 판정하지 않는다.
+//        작업 중(working) 줄은 한 줄씩 「⚙ 역할 워크트리  PR #N CI …  Orca 상태」 로 그린다(리뷰·검증 줄의 PR 은 줄의 pr, 곧 대상 PR).
+//        끊김(lost) 줄은 접힌 보기에서도 한 줄씩 빨간 「⚠ 끊김 역할 워크트리」 로, 끝남(done) 줄은 접힌 보기에서 「✓ 끝난 worker N」 한 줄로 묶는다.
+//        펼친 보기(d)는 모든 줄을 at 순으로 그린다. 완료 항목은 두 보기 모두 작업 중 줄만 그린다. 작업 중 줄이 있으면 「worker 없음」 을 그리지 않는다.
+//        workers 칸이 없는 옛 항목은 worktree 칸의 worker 하나를 붙인다(workerRowsFor).
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
 //      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
@@ -517,11 +522,54 @@ export function workerFor(item, workers) {
   return workers.find((worker) => worker.worktree === item.worktree) || null
 }
 
-// 어느 항목(완료 제외)에도 붙지 않은 worker 만 고른다.
+// 어느 항목에도 붙지 않은 worker 만 고른다. 붙은 것은 done 이 아닌 항목의 worktree 와, 모든 항목(done 포함)의 작업 중 줄의 dispatch·worktree 다.
 export function unmappedWorkers(items, workers) {
   if (!Array.isArray(workers)) return workers
   const claimed = new Set(items.filter((item) => item.status !== 'done' && item.worktree).map((item) => item.worktree))
-  return workers.filter((worker) => !claimed.has(worker.worktree))
+  const dispatches = new Set()
+  for (const item of items) {
+    if (!Array.isArray(item.workers)) continue
+    for (const row of item.workers) {
+      if (!row || typeof row !== 'object' || row.status !== 'working') continue
+      if (row.worktree) claimed.add(row.worktree)
+      if (row.dispatch) dispatches.add(row.dispatch)
+    }
+  }
+  return workers.filter((worker) => !claimed.has(worker.worktree) && !dispatches.has(worker.id))
+}
+
+const ROLE_LABELS = { impl: '구현', follow: '후속', review: '리뷰', verify: '검증' }
+
+// 항목 아래에 그릴 worker 줄들(at 순). workers 칸이 있으면 줄마다 Orca 의 살아 있는 worker 를 dispatch, 없으면 워크트리로 맞춰 live 에 붙인다(없으면 null).
+// 칸이 없는 옛 항목은 worktree 칸의 worker 가 살아 있을 때만 줄 하나(legacy)를 만든다. 그래서 worker 가 없으면 지금처럼 idleView 를 그린다
+export function workerRowsFor(item, workers) {
+  if (!item) return []
+  const list = Array.isArray(workers) ? workers : []
+  if (Array.isArray(item.workers)) {
+    return item.workers
+      .filter((row) => row && typeof row === 'object' && typeof row.worktree === 'string')
+      .map((row, index) => ({ row, index }))
+      .sort((a, b) => String(a.row.at || '').localeCompare(String(b.row.at || '')) || a.index - b.index)
+      .map(({ row }) => ({
+        ...row,
+        live: (row.dispatch && list.find((worker) => worker.id === row.dispatch)) || list.find((worker) => worker.worktree === row.worktree) || null,
+      }))
+  }
+  const live = workerFor(item, workers)
+  return live ? [{ role: 'impl', worktree: item.worktree, status: 'working', live, legacy: true }] : []
+}
+
+// worker 줄 한 줄의 글: 「<역할> <워크트리>」 뒤에 PR 과 CI, ready 가 아닌 Orca 상태.
+// PR 은 줄의 pr(리뷰·검증은 대상 PR)이 있으면 그 번호를 열린 PR 목록에서 찾고, 없으면 워크트리 이름으로 찾는다. 옛 줄(legacy)은 workerLine 과 같은 글이다
+export function workerRowLine(row, prs) {
+  if (row.legacy) return workerLine(row.live, prs)
+  const number = row.pr === null || row.pr === undefined ? NaN : Number(String(row.pr).replace(/\D/g, ''))
+  const own = Number.isInteger(number) && number > 0 ? number : null
+  const found = own !== null && Array.isArray(prs) ? prs.find((pr) => pr.number === own) || null : null
+  const pr = own !== null ? found : prFor({ worktree: row.worktree }, prs)
+  const prText = own !== null ? '  PR #' + own + (found ? ' ' + checkSummary(found) : '') : pr ? '  PR #' + pr.number + ' ' + checkSummary(pr) : ''
+  const state = row.live && row.live.state && row.live.state !== 'ready' ? '  ' + row.live.state : ''
+  return (ROLE_LABELS[row.role] || row.role || 'worker') + ' ' + row.worktree + prText + state
 }
 
 // worker 한 줄: 워크트리, 붙은 PR 과 CI, ready 가 아닌 상태.
@@ -1852,7 +1900,32 @@ export function register(on) {
       const done = section.status === 'done'
       const bar = progressBar(itemProgress(item), 10)
       const rows = done ? [] : stepRows(item)
-      const worker = workerFor(item, live.workers)
+      // worker 줄. 머리 주석의 workers 설명이 규칙이다. 완료 항목은 작업 중 줄만 그린다(옛 항목의 줄 하나는 그리지 않는다)
+      const allRows = workerRowsFor(item, live.workers)
+      const working = allRows.filter((row) => row.status === 'working' && !(done && row.legacy))
+      // 제목 버튼의 요청문에는 대표 줄(작업 중 구현·후속 줄 가운데 worktree 칸과 같은 것)의 worker 하나를 넘긴다
+      const lead = working.find((row) => (row.role === 'impl' || row.role === 'follow') && row.worktree === item.worktree)
+      const worker = (lead && lead.live) || workerFor(item, live.workers)
+      const rowView = (name, row) => {
+        // 옛 항목의 줄 하나는 지금처럼 키 w 로 그린다
+        const key = row.legacy ? 'w' : name
+        if (row.status === 'working') {
+          return indent(key, 2, Text({ key, color: 'yellow', wrap: 'wrap',
+            children: [(row.legacy ? '⚙ worker ' : '⚙ ') + workerRowLine(row, live.prs), ...(row.live ? noteTexts(row.live) : [])] }))
+        }
+        if (row.status === 'lost') return indent(key, 2, Text({ key, color: 'red', wrap: 'wrap', children: ['⚠ 끊김 ' + (ROLE_LABELS[row.role] || row.role) + ' ' + row.worktree] }))
+        return indent(key, 2, Text({ key, dimColor: true, wrap: 'wrap', children: ['✓ ' + workerRowLine({ ...row, live: null }, live.prs)] }))
+      }
+      const workerViews = done
+        ? working.map((row, i) => rowView('w-' + i, row))
+        : expanded
+          ? allRows.map((row, i) => rowView('w-' + i, row))
+          : [
+            ...working.map((row, i) => rowView('w-' + i, row)),
+            ...allRows.filter((row) => row.status === 'lost').map((row, i) => rowView('wl-' + i, row)),
+            ...(allRows.some((row) => row.status === 'done')
+              ? [indent('wd', 2, Text({ key: 'wd', dimColor: true, children: ['✓ 끝난 worker ' + allRows.filter((row) => row.status === 'done').length] }))] : []),
+          ]
       return Box({
         key: 'item-' + item.id,
         flexDirection: 'column',
@@ -1866,9 +1939,8 @@ export function register(on) {
             ...prNumbers(item.pr).flatMap((n, i) => [...(item.owner || i > 0 ? ['  ·  '] : []), prLink(n)]),
           ] }))] : []),
           ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
-          ...(!done && item.worktree ? [indent('w', 2, worker
-            ? Text({ color: 'yellow', wrap: 'wrap', children: ['⚙ worker ' + workerLine(worker, live.prs), ...noteTexts(worker)] })
-            : idleView(item, rows))] : []),
+          ...workerViews,
+          ...(!done && working.length === 0 && item.worktree ? [indent('w', 2, idleView(item, rows))] : []),
         ],
       })
     }
