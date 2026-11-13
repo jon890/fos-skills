@@ -35,8 +35,7 @@
 `migration` 과 `adr` 은 `spec-lint` 와 같은 설정 조건으로 추가한다.
 이미 있는 조건부 항목은 조건과 무관하게 비교한다.
 
-**실행기 경로는 채우지 않는다.** `orch` 가 PATH 에 없으면 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `bin/orch` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
-같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
+**실행기 경로는 채우지 않는다.** 틀의 명령은 `orch …` 만 쓴다. 코디네이터가 worker 를 띄울 때(`orch worker launch`, 끝난 worker 를 다시 띄우는 `orch worker send --dispatch … --spec`) worker 터미널의 셸이 PATH 로 `orch` 실행기를 찾는지 먼저 본다. 못 찾으면 띄우지 않고 `orch doctor install-cli` 로 `~/.local/bin/orch` 를 깔고 그 폴더를 비대화형 셸도 읽는 설정(zsh 는 `~/.zshenv`)의 PATH 에 두라고 안내한다. 지시서에 캐시 경로나 저장소 체크아웃 경로를 박지 않는다. 캐시 폴더 이름은 해시라 번들이 갱신되면 사라지고, 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다. 실행기는 부를 때마다 설치 기록에서 번들을 골라 프로필이 달라도 맞는 번들을 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `spec`, `technical-design` 으로 만든 요구사항·설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.

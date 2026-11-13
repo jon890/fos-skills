@@ -11,7 +11,7 @@
 | REQ3 | `skills/orch/scripts/lib/context.ts` 가 명령 표의 `context` 칸에 적힌 인자만 채운다. 채운 값과 출처를 stderr 한 줄로 낸다 | PR1 |
 | REQ4 | `NEXT_WAIT` 는 PR1 에서 새 꼴로 바꾼다. `--lost-state` 의 기본값은 바꾸지 않고 절대경로로 남긴다. 명령마다의 짧은 출력은 PR2 에서 `lib/output.ts` 와 스크립트별 규칙표로 낸다(아래 「짧은 출력 (PR2)」). doctor 의 `WAIT-READER` 가 대기 출력을 읽는 저장소 파일을 알린다 | PR1, PR2 |
 | REQ5 | 진입점이 옛 이름을 명령 표의 `legacy` 칸으로 찾아 같은 스크립트를 같은 인자로 부르고 stderr 에 새 꼴을 안내한다. PR2 부터 옛 꼴도 짧은 출력이다 | PR1, PR2 |
-| REQ6 | 번들 고르기의 원본 `lib/install-record.ts` 의 `selectBundle()` 이 user 범위 항목이 있으면 그 항목만 본다. 진입점과 `lib/bundle.ts` 가 이것을 쓰고, 실행기와 틀의 JS 사본은 같은 사례 표 테스트로 묶는다 | PR1 |
+| REQ6 | 번들 고르기의 원본 `lib/install-record.ts` 의 `selectBundle()` 이 user 범위 항목이 있으면 그 항목만 본다. 진입점과 `lib/bundle.ts` 가 이것을 쓰고, 실행기의 JS 사본은 같은 사례 표 테스트로 묶는다 | PR1 |
 | REQ7 | doctor 에 `CLI-MISSING`, `CLI-NOT-ON-PATH`, `CLI-STALE`, `OLD-CALL`, `DIRECT-PATH`, `WAIT-STALE` 판정을 더한다. 검사 범위와 꼴은 아래 「옛 꼴과 직접 경로 판정」 이다. `CLI-CONFLICT` 는 doctor 가 아니라 `install-cli` 의 출력이다 | PR1 |
 | REQ8 | 문서의 `"$SKILL_DIR/bin/orch.ts" <이름>` 과 `python3 "$SKILL_DIR/scripts/orch-doctor.py"` 를 새 꼴로 바꾸고, doctor 의 문서 스크립트 판정이 새 꼴을 명령 표로 확인한다. work-board 의 요청문(`extensions/work-board/hooks/register.js` 의 `send-to-worker.ts` 직접 경로)도 `orch worker send` 로 바꾼다 | PR1 |
 | REQ9 | 진입 스크립트를 `scripts/<묶음>/` 으로 옮긴다. 스크립트끼리 부르는 경로(`join(HERE, '<이름>.ts')` 20여 곳, `../bin/orch.ts` 같은 상대경로, doctor 의 `LOOP-STALE` 경로 꼴, work-board 프롬프트 테스트)는 명령 표의 `scriptPath(이름)` 으로 바꾼다. 이벤트 핸들러 환경의 `ORCH_SCRIPTS` 는 아래 「핸들러 환경」 을 따른다 | PR3 |
@@ -129,7 +129,7 @@ type Command = {
 
 Codex 는 플러그인 `bin/` 을 PATH 에 넣지 않는다. `install-cli` 전에는 `orch` 가 없으므로 `orch doctor` 도 `orch doctor install-cli` 도 돌지 않는다.
 `skills/orch/SKILL.md` 의 첫 점검 한 곳에 `command -v orch >/dev/null || orch() { node "$SKILL_DIR/../../bin/orch" "$@"; }` 를 두고(실행기를 불러 낮은 node 에서도 `NODE-TOO-OLD` 가 나온다), 그다음 줄에서 `orch doctor` 를 부른다. 셸 함수는 그 Bash 호출 안에서만 산다. 다른 문서는 이 자리를 가리키고 같은 줄을 되풀이하지 않는다.
-worker 가 읽는 공통 지시서 틀은 `$SKILL_DIR` 이 없으므로 설치 기록에서 진입점을 푸는 한 줄로 같은 셸 함수를 둔다(DECISION10).
+worker 가 읽는 공통 지시서 틀은 `$SKILL_DIR` 이 없고 `orch …` 만 쓴다. 그래서 `orch worker launch` 와 `orch worker resume` 이 새 worker 터미널의 셸이 PATH 로 실행기를 찾는지 먼저 본다(`lib/worker-path.ts`, DECISION10). Orca 의 worker-start 는 터미널 환경 변수를 받지 않아 PATH 를 넣어 줄 수 없다. 사용자 셸(zsh 는 `-c`, 다른 셸은 `-lc`)을 PATH 없이 띄워 읽은 `$PATH` 의 첫 `orch` 가 표지 있는 실행기여야 한다. 못 찾으면 띄우지 않고 1 로 끝나며 `orch doctor install-cli` 와 PATH 설정을 안내한다. `orch worker resume` 은 터미널 명령을 직접 쓰므로 못 찾을 때 `export PATH=<~/.local/bin>:"$PATH";` 를 앞에 더하고, 깔린 사본이 없으면 멈춘다. `--terminal` 로 이어 쓰는 터미널은 이미 떠 있어 보지 않는다.
 
 ### 옛 꼴과 직접 경로 판정
 
@@ -219,7 +219,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 
 ## 실패와 일관성
 
-- 번들 고르기(원본 `lib/install-record.ts` 의 `selectBundle`, 사본은 실행기와 틀): `ORCH_SCRIPTS_DIR` 이 있으면 그 폴더의 번들. 아니면 설치 기록에 user 범위 항목이 있으면 그 항목만 보고, 그 번들에 `skills/orch/scripts` 가 없으면 다른 범위로 넘어가지 않고 3 이다(REQ6). 3.x 배치(`orch/scripts`)만 있는 user 번들도 3 이고 이유에 플러그인 갱신을 적는다. user 항목이 없으면 지금처럼 다른 범위를 기록 순서대로 보고, 그래도 없으면 실행기·진입점이 든 번들(`claude --plugin-dir` 개발 설치)을 쓴다. `~/.local/bin` 사본은 든 번들이 없어 이유와 `claude plugin install fos-skills@fos-skills` 을 내고 3 이다. user 항목이 있으면 `--plugin-dir` 로 실은 체크아웃의 실행기도 설치본으로 넘긴다(지금 진입점과 같다). 체크아웃을 확인할 때는 지금처럼 `ORCH_SCRIPTS_DIR` 을 준다.
+- 번들 고르기(원본 `lib/install-record.ts` 의 `selectBundle`, 사본은 실행기): `ORCH_SCRIPTS_DIR` 이 있으면 그 폴더의 번들. 아니면 설치 기록에 user 범위 항목이 있으면 그 항목만 보고, 그 번들에 `skills/orch/scripts` 가 없으면 다른 범위로 넘어가지 않고 3 이다(REQ6). 3.x 배치(`orch/scripts`)만 있는 user 번들도 3 이고 이유에 플러그인 갱신을 적는다. user 항목이 없으면 지금처럼 다른 범위를 기록 순서대로 보고, 그래도 없으면 실행기·진입점이 든 번들(`claude --plugin-dir` 개발 설치)을 쓴다. `~/.local/bin` 사본은 든 번들이 없어 이유와 `claude plugin install fos-skills@fos-skills` 을 내고 3 이다. user 항목이 있으면 `--plugin-dir` 로 실은 체크아웃의 실행기도 설치본으로 넘긴다(지금 진입점과 같다). 체크아웃을 확인할 때는 지금처럼 `ORCH_SCRIPTS_DIR` 을 준다.
 - STALE-BUNDLE 판정의 예외(설치 캐시 `plugins/cache` 밖의 체크아웃은 판정하지 않는다)는 경고에만 쓴다. 진입점의 넘기기에는 쓰지 않는다. `selectBundle` 이 오류면 STALE-BUNDLE 은 판정하지 않는다(설치 기록 문제는 doctor 의 `PLUGIN-PATH-MISSING` 과 진입점의 3 이 알린다).
 - 진입점이 넘길 대상 번들에 진입점이나 `skills/orch/scripts/lib/commands.ts` 가 없으면(이 기능 이전 번들) 실행기와 같이 넘기지 않고 이유와 플러그인 갱신 명령을 내고 3 으로 끝난다.
 - 루트 `bin/` 을 막는 `scripts/tests/test_plugin_manifest.py` 의 검사는 「루트 `bin/` 에는 `orch` 하나만 있고 실행 비트가 있다」 로 바꾼다. `bin/orch` 는 git 모드 100755 로 커밋하고 `install-cli` 는 복사한 뒤 0755 로 둔다.
@@ -235,7 +235,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 ## 검증 전략
 
 - REQ11 의 「같은 분류」 는 같은 시점의 상태에서다. 원문을 나중에 `orch wait triage` 로 다시 읽으면 완료 판정(`lib/completion.ts`)을 그때의 orca 상태로 다시 하므로 의심 표시가 풀릴 수 있다. PR2 에서 `triage-messages.ts` 의 분류 함수를 export 하고, 리뷰 판정 저장소는 대기의 첫 `--loop-repo` 를 넘긴다.
-- REQ1, REQ6: 임시 설정 폴더와 가짜 번들로 실행기와 진입점을 돌리는 node 테스트(`skills/orch/tests/orch-entry.spec.ts` 를 넓히고 `orch-launcher.spec.ts` 를 더한다). user 범위 번들에 스크립트가 없는 기록, user 항목이 없는 기록, `~/.local/bin` 사본(HOME 을 임시 폴더로), 이 기능 이전 번들로 넘길 때를 본다. 같은 설치 기록 사례 표를 `selectBundle`, 실행기, 틀의 한 줄 풀이에 돌려 셋의 답이 같은지 본다. 실행기와 진입점이 받은 SIGTERM 을 자식에게 전하고 128+15 로 끝나는지 본다.
+- REQ1, REQ6: 임시 설정 폴더와 가짜 번들로 실행기와 진입점을 돌리는 node 테스트(`skills/orch/tests/orch-entry.spec.ts` 를 넓히고 `orch-launcher.spec.ts` 를 더한다). user 범위 번들에 스크립트가 없는 기록, user 항목이 없는 기록, `~/.local/bin` 사본(HOME 을 임시 폴더로), 이 기능 이전 번들로 넘길 때를 본다. 같은 설치 기록 사례 표를 `selectBundle` 과 실행기에 돌려 둘의 답이 같은지 본다. 실행기와 진입점이 받은 SIGTERM 을 자식에게 전하고 128+15 로 끝나는지 본다.
 - 고아 대기: 가짜 ps 로 `init → zsh → node bin/orch → node orch.ts → wait-important` 사슬을 보이면 `--kill-stale` 이 그 대기를 고아로 찾는다(`wait-important.spec.ts`).
 - 신호 누수: 진입점으로 부른 스크립트가 다시 띄운 자식의 환경에 `ORCH_ENTRY_HOP`, `ORCH_CONTEXT` 가 없다.
 - REQ2, REQ5: 명령 표의 행마다 새 꼴과 옛 꼴이 같은 스크립트와 인자로 풀리는지 표 기반 테스트(문맥을 끈 해석). 문맥이 더해진 뒤의 「같은 판정과 종료 코드」 는 가짜 번들의 스크립트로 새 꼴과 같은 값을 명시한 옛 꼴을 돌려 stdout 과 종료 코드를 비교한다. 금지 플래그(줄여 쓴 꼴 포함)와 줄인 문맥 인자의 사용법 오류.
@@ -259,12 +259,12 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | DECISION6 | 명령 표의 자리 | `skills/orch/scripts/lib/commands.ts` | 작성자 | 진입점, doctor, 훅이 같은 표를 읽는다. 훅은 이미 `../scripts/lib` 를 가져온다 |
 | DECISION7 | 진입점이 현재 번들이 아닐 때 | 현재 번들의 진입점에 넘긴다 | 작성자 | 명령 표가 늘 현재 번들의 것이어야 폴더 이동 뒤에도 옛 경로의 진입점이 돈다 |
 | DECISION9 | 진입점 신호(`ORCH_CONTEXT` 는 PR1, `ORCH_OUTPUT` 은 PR2)를 지우는 자리 | `lib/bundle.ts`(모든 진입 스크립트가 `lib/args.ts`, `lib/proc.ts` 로 먼저 import 한다). 출력을 그대로 넘기는 `merge_queue` 에만 부모가 짧은 출력 신호를 명시해 넘긴다 | 작성자 | 신호를 읽는 모듈만 지우면 출력을 바꾸지 않는 스크립트(heavy-slot)의 자식에 새고, `merge-with-finish` 는 자식 출력을 거를 수 없다 |
-| DECISION10 | 템플릿의 `orch` 부르기 | `templates/spec-common.md` 는 `orch worker ask …` 로 쓰고, `command -v orch` 가 없을 때 쓸 한 줄(설치 기록에서 진입점을 풀어 `orch` 셸 함수로 두기)을 함께 둔다 | 작성자 | `install-cli` 를 하지 않은 머신의 Codex worker 셸에도 `orch` 가 없을 수 있다 |
+| DECISION10 | 템플릿의 `orch` 부르기 | `templates/spec-common.md` 는 `orch worker ask …` 처럼 `orch …` 만 쓴다. 지시서마다 실행기 경로를 푸는 한 줄을 되풀이하지 않고, 띄우는 쪽(`launch`, `resume`)이 worker 셸의 PATH 에 실행기가 있는지 보장한다 | 사용자 2026-11-13 | 한 줄이 명령 블록마다 600자씩 되풀이돼 worker 가 매번 읽고 사용자가 같은 지시가 반복된다고 했다. 원인은 실행기 위치가 아니라 PATH 설정이 대화형 셸에만 있던 것이다 |
 | DECISION11 | 핸들러가 orch 를 부르는 통로 | `ORCH_BIN`(진입점 절대경로)을 더하고 문서 예시를 새 꼴로 바꾼다. `ORCH_SCRIPTS` 는 유지한다 | 작성자 | 핸들러 환경의 PATH 앞에는 가드 폴더가 있고 `orch` 가 PATH 에 있다고 볼 수 없다. 진입점 경로를 넘기면 폴더 이동과 상관없이 돈다 |
 | DECISION8 | ADR | [ADR-004](../../adr/004-no-plugin-bin.md) 를 고쳐 루트 `bin/` 에 `orch` 하나만 허용한다. 새 ADR 은 만들지 않는다 | 사용자 2026-11-04 | 스펙 DECISION4 |
 | DECISION12 | 스크립트의 안내 줄 | 다른 orch 스크립트를 부르라고 안내하는 줄은 PR1 에서 새 꼴로 바꾼다. 스펙 DECISION16 의 예외다. `사용법:` 줄과 판정 줄은 바꾸지 않는다 | 작성자 | 이 줄은 사람과 에이전트가 붙여 넣는 안내라 읽는 코드가 없다. 옛 꼴로 남으면 옛 이름을 지우는 PR 뒤 안내가 사용법 오류를 부른다 |
 | DECISION13 | `--lost-state` 기본값 | 바꾸지 않는다. 시작 폴더와 루프 저장소가 같은 저장소면 `NEXT_WAIT` 에서 빼고, 아니면 절대경로로 남긴다 | 작성자 | 기본값을 루프 저장소 기준으로 바꾸면 `wait ack-lost` 와 상태 파일이 갈라지고 같은 입력의 판정이 바뀐다(스펙 「범위 밖」). 독립 검토(2026-11-04)의 지적이다 |
-| DECISION14 | 번들 고르기 규칙의 원본 | `lib/install-record.ts` 의 `selectBundle`. 실행기와 틀의 JS 사본은 같은 사례 표 테스트로 묶는다 | 작성자 | 이 기능의 발단(3.x 진입점이 user 4.0.1 을 건너뜀)이 사본마다 규칙이 달라서 난 일이다. CommonJS 실행기와 셸 한 줄은 TS 를 import 할 수 없어 사본을 없앨 수는 없다 |
+| DECISION14 | 번들 고르기 규칙의 원본 | `lib/install-record.ts` 의 `selectBundle`. 실행기의 JS 사본은 같은 사례 표 테스트로 묶는다 | 작성자 | 이 기능의 발단(3.x 진입점이 user 4.0.1 을 건너뜀)이 사본마다 규칙이 달라서 난 일이다. CommonJS 실행기는 TS 를 import 할 수 없어 사본을 없앨 수는 없다 |
 | DECISION15 | 프로세스 사슬이 늘어난 것 | 고아 대기 판정이 실행기와 진입점을 셸처럼 통과하는 노드로 본다. 진입점을 `exec` 처럼 대체하지 않는다 | 작성자 | node 는 프로세스를 바꿔치기할 수 없다. 대기 찾기(`lib/waiters.ts`)는 자식 `wait-important` 의 명령줄로 그대로 찾는다 |
 | DECISION16 | PR1 의 크기 | 스펙 DECISION14 대로 PR 하나로 두고 plan 의 phase 마다 테스트를 통과한 커밋 하나로 나눈다. 변경 파일 40개 초과는 문서 일괄 교체 몫이다 | 사용자 2026-11-04 | 스펙 DECISION14 다. 독립 검토가 PR 을 둘로 나누자고 했으나 사용자 결정을 바꿀 새 근거는 아니다. 문서 교체는 명령 표가 생긴 뒤에야 검사할 수 있어 같은 PR 이 맞다 |
 | DECISION17 | 필수 문맥과 doctor 의 Run | 스크립트가 지금 반드시 받는 인자만 `required` 로 두고 진입점이 알린다. `doctor` 는 Run 을 문맥으로 채우지 않는다 | 작성자 | 스펙 REQ3 의 실패 인수 조건을 스크립트를 고치지 않고 채운다. doctor 에 Run 을 채우면 스킬 첫 점검마다 Run 별 점검과 `session-resume` 핸들러가 돌아 지금 동작이 바뀐다. 계획 critic(2026-11-04)의 지적이다 |
