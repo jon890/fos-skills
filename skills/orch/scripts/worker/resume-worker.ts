@@ -5,7 +5,7 @@
 // 차례:
 //     1. 잠금을 잡고 대상을 판정한다. limited 면 옛 화면 끝 20줄을 RESUME-SCREEN 으로 남긴다
 //     2. request.json 을 쓰고 같은 워크트리에 새 터미널을 연다. 그 셸이 `node resume-exec.ts <폴더> && . <폴더>/launch.sh` 를 돈다.
-//        새 터미널의 셸이 PATH 로 orch 를 못 찾으면(lib/worker-path.ts) 그 줄 앞에 `export PATH=~/.local/bin:"$PATH";` 를 더한다. 깔린 사본도 없으면 find 단계로 멈춘다
+//        Codex 면 새 터미널의 셸이 PATH 로 orch 를 못 찾으면(lib/worker-path.ts) 그 줄 앞에 `export PATH=~/.local/bin:"$PATH";` 를 더한다. 깔린 사본도 없으면 find 단계로 멈춘다
 //     3. 새 터미널의 실행기가 자기 계정 환경에서 찾은 세션(found.json)을 기다린다(시한의 3할)
 //     4. limited 면 옛 dispatch 를 abandon 하고 옛 터미널을 닫는다
 //     5. 이번 실행의 nonce 를 담은 go 를 쓴다. 이때부터 셸이 exec 로 에이전트가 되어 세션에 붙는다. 옛 터미널을 닫은 뒤라 한 세션에 두 프로세스가 붙지 않는다
@@ -316,7 +316,8 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   writeRequest(dir, { dispatch: dispatchId, worktree: target.worktree, agent: target.agent, model: target.model, effort: target.effort, pluginDir, goDeadline: deadline + GO_GRACE_MS, nonce })
   const execPath = join(dirname(import.meta.filename), 'resume-exec.ts')
   // 새 터미널의 셸이 PATH 로 orch 를 못 찾으면, 이 명령줄이 PATH 앞에 ~/.local/bin 을 더한다(launch.sh 를 셸에 source 하므로 에이전트가 이어받는다)
-  const onPath = checkWorkerOrch()
+  // Claude worker 는 --plugin-dir 로 플러그인 bin/ 이 PATH 에 들어가 더하지 않는다
+  const onPath = target.agent === 'claude' ? { ok: true as const } : checkWorkerOrch()
   let pathPrefix = ''
   if (!onPath.ok) {
     const dir = installedLauncherDir()

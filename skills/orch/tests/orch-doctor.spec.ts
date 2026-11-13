@@ -106,6 +106,9 @@ beforeEach(() => {
     // 사용자 PATH 를 물려받지 않고, HOME 에는 최신 ~/.local/bin/orch 를 깔아 둔 PATH 를 준다
     PATH: [dirname(process.execPath), join(tmp, 'home', '.local', 'bin'), '/usr/bin', '/bin'].join(delimiter),
     HOME: join(tmp, 'home'),
+    ORCH_WORKER_SHELL: '/bin/zsh',
+    // CLI 판정이 보는 worker 셸의 PATH 도 같은 값으로 고정한다(이 기계의 셸 설정에 기대지 않는다)
+    ORCH_WORKER_PATH: [dirname(process.execPath), join(tmp, 'home', '.local', 'bin'), '/usr/bin', '/bin'].join(delimiter),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(binDir, 'orca'),
@@ -367,9 +370,9 @@ describe('orch 명령 판정', () => {
     const stale = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.match(stale.stdout, new RegExp(`^CLI-STALE ${copy}$`, 'm'))
     copyFileSync(LAUNCHER, copy)
-    const offPath = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter) } })
+    const offPath = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter), ORCH_WORKER_PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter) } })
     assert.equal(offPath.code, 0)
-    assert.match(offPath.stdout, new RegExp(`^CLI-NOT-ON-PATH ${dirname(copy)}\n  셸 설정`, 'm'))
+    assert.match(offPath.stdout, new RegExp(`^CLI-NOT-ON-PATH ${dirname(copy)}\n  ~/\\.zshenv에 export PATH=`, 'm'))
   })
 
   test('저장소 파일의 옛 꼴과 스크립트 직접 경로를 고칠 새 꼴과 함께 알린다', () => {

@@ -139,30 +139,45 @@ function withoutOrchOnPath(copy: boolean): Record<string, string> {
   return { ORCH_WORKER_PATH: '/usr/bin:/bin', HOME: home }
 }
 
-test('worker 셸의 PATH 에 orch 가 있으면 터미널 명령에 PATH 를 더하지 않는다', () => {
+// Codex 로 끊긴 worker. Claude 는 --plugin-dir 로 플러그인 bin/ 이 PATH 에 들어가 이 확인을 받지 않는다
+function codexTarget(): void {
+  setState((s) => {
+    s.worker.startOptions.launch.effective = { agent: 'codex', model: 'gpt-6-luna', effort: 'medium' }
+    s.terminals[0].agentIdentity = 'codex'; s.newIdentity = 'codex'; s.newScreen = ['› ']
+  })
   recordLaunch(repo, { completion: 'none', dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
+}
+const createCommand = () => { const args = calls('terminal', 'create')[0].args; return args[args.indexOf('--command') + 1] }
+
+test('worker 셸의 PATH 에 orch 가 있으면 터미널 명령에 PATH 를 더하지 않는다', () => {
+  codexTarget()
   const r = run()
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  const command = calls('terminal', 'create')[0].args
-  assert.doesNotMatch(command[command.indexOf('--command') + 1], /PATH/)
+  assert.doesNotMatch(createCommand(), /PATH/)
 })
 
-test('worker 셸의 PATH 에 orch 가 없고 ~/.local/bin 사본이 있으면 터미널 명령 앞에서 PATH 에 더한다', () => {
-  recordLaunch(repo, { completion: 'none', dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
+test('Codex: worker 셸의 PATH 에 orch 가 없고 ~/.local/bin 사본이 있으면 터미널 명령 앞에서 PATH 에 더한다', () => {
+  codexTarget()
   const r = run(['--dispatch', 'ctx_old'], withoutOrchOnPath(true))
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  const command = calls('terminal', 'create')[0].args
   // shQuote 는 안전한 경로를 따옴표로 감싸지 않는다
-  assert.match(command[command.indexOf('--command') + 1], new RegExp(`^export PATH='?${join(root, 'home', '.local', 'bin')}'?:"\\$PATH"; `))
+  assert.match(createCommand(), new RegExp(`^export PATH='?${join(root, 'home', '.local', 'bin')}'?:"\\$PATH"; `))
 })
 
-test('worker 셸의 PATH 에 orch 가 없고 사본도 없으면 터미널을 열지 않고 find 단계로 멈춘다', () => {
-  recordLaunch(repo, { completion: 'none', dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
+test('Codex: worker 셸의 PATH 에 orch 가 없고 사본도 없으면 터미널을 열지 않고 find 단계로 멈춘다', () => {
+  codexTarget()
   const r = run(['--dispatch', 'ctx_old'], withoutOrchOnPath(false))
   assert.equal(r.status, 3, r.stdout + r.stderr)
   assert.match(r.stdout, /^RESUME-FAIL find 새 터미널에서 orch 를 부를 수 없다/m)
   assert.match(r.stdout, /doctor install-cli/)
   assert.equal(calls('terminal', 'create').length, 0)
+})
+
+test('Claude: worker 셸의 PATH 에 orch 가 없어도 확인하지 않고 PATH 도 더하지 않는다', () => {
+  recordLaunch(repo, { completion: 'none', dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
+  const r = run(['--dispatch', 'ctx_old'], withoutOrchOnPath(false))
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.doesNotMatch(createCommand(), /PATH/)
 })
 
 test('limited Claude: 새 터미널, abandon, 옛 터미널 닫기, 잇기 순서이고 정리는 go 전에 한다', () => {

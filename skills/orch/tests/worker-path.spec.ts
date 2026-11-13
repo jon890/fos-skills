@@ -15,13 +15,13 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-// 받은 인자와 PATH 환경 변수를 기록하고 정한 PATH 를 내는 가짜 셸. 이름이 셸 종류를 정한다
+// 받은 인자와 PATH 환경 변수를 기록하고, 설정 파일이 낸 출력 뒤에 표지와 정한 PATH 를 내는 가짜 셸. 이름이 셸 종류를 정한다
 function fakeShell(name: string, printed: string, exit = 0): { shell: string; record: string } {
   const dir = join(tmp, `sh-${name}`)
   mkdirSync(dir, { recursive: true })
   const shell = join(dir, name)
   const record = join(tmp, `record-${name}`)
-  writeFileSync(shell, `#!/bin/sh\nprintf '%s|%s' "$*" "\${PATH-unset}" > '${record}'\n[ ${exit} -eq 0 ] && printf %s '${printed}'\nexit ${exit}\n`)
+  writeFileSync(shell, `#!/bin/sh\nprintf '%s|%s' "$*" "\${PATH-unset}" > '${record}'\n[ ${exit} -eq 0 ] && printf '%s\\n__ORCH_PATH__%s' 'rc 가 낸 출력 /fake/bin' '${printed}'\nexit ${exit}\n`)
   chmodSync(shell, 0o755)
   return { shell, record }
 }
@@ -38,14 +38,13 @@ describe('workerShellPath', () => {
     assert.equal(workerShellPath({ ORCH_WORKER_PATH: '/a:/b', ORCH_WORKER_SHELL: join(tmp, 'none') }), '/a:/b')
   })
 
-  test('zsh 는 -c 로, 다른 셸은 -lc 로 PATH 없이 띄워 출력한 PATH 를 읽는다', () => {
-    const zsh = fakeShell('zsh', '/z/bin:/usr/bin')
-    assert.equal(workerShellPath({ ORCH_WORKER_SHELL: zsh.shell, PATH: '/coordinator/only' }), '/z/bin:/usr/bin')
-    // 셸이 PATH 가 없을 때 스스로 정하는 기본값은 막지 못한다. 코디네이터의 PATH 가 새지 않았는지만 본다
-    assert.match(readFileSync(zsh.record, 'utf8'), /^-c printf %s "\$PATH"\|(?!.*coordinator)/)
-    const bash = fakeShell('bash', '/b/bin')
-    assert.equal(workerShellPath({ ORCH_WORKER_SHELL: bash.shell }), '/b/bin')
-    assert.match(readFileSync(bash.record, 'utf8'), /^-lc /)
+  test('셸 종류와 무관하게 -lc 로 PATH 없이 띄우고 표지 뒤의 PATH 만 읽는다', () => {
+    for (const name of ['zsh', 'bash']) {
+      const fake = fakeShell(name, '/z/bin:/usr/bin')
+      assert.equal(workerShellPath({ ORCH_WORKER_SHELL: fake.shell, PATH: '/coordinator/only' }), '/z/bin:/usr/bin')
+      // 셸이 PATH 가 없을 때 스스로 정하는 기본값은 막지 못한다. 코디네이터의 PATH 가 새지 않았는지만 본다
+      assert.match(readFileSync(fake.record, 'utf8'), /^-lc .*\|(?!.*coordinator)/)
+    }
   })
 
   test('셸이 실패하거나 없으면 null 이다', () => {
@@ -76,13 +75,24 @@ describe('checkWorkerOrch', () => {
     assert.match(r.reason, /PATH=\/usr\/bin:\/bin/)
     assert.equal(r.fix[0], 'orch doctor install-cli')
     assert.match(r.fix[1], new RegExp(`~/\\.zshenv에 export PATH="${join(h, '.local', 'bin')}:\\$PATH"`))
+    assert.match(r.fix[2], /~\/\.zshrc 에만 있는 PATH 설정은 읽지 않는다/)
+  })
+
+  test('실행기는 찾았지만 같은 PATH 에 node 가 없으면 막는다', () => {
+    const bin = join(tmp, 'only-orch')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'orch'), `#!/usr/bin/env node\n// ${LAUNCHER_MARK}\n`)
+    const r = checkWorkerOrch({ ORCH_WORKER_PATH: `${bin}:/nonexistent` }, home(false))
+    assert.equal(r.ok, false)
+    if (r.ok) return
+    assert.match(r.reason, /node 를 찾지 못했다/)
   })
 
   test('사본은 깔렸는데 PATH 에 없으면 PATH 설정만 안내한다', () => {
     const r = checkWorkerOrch({ ORCH_WORKER_PATH: '/usr/bin:/bin' }, home(true))
     assert.equal(r.ok, false)
     if (r.ok) return
-    assert.equal(r.fix.length, 1)
+    assert.ok(r.fix.every((line) => !line.includes('install-cli')))
     assert.match(r.fix[0], /export PATH=/)
   })
 

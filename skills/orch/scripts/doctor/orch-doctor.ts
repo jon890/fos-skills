@@ -74,7 +74,8 @@
 //     Claude 세션의 Bash 는 플러그인 bin/ 이 PATH 에 있어 사람 셸(Codex 포함)의 PATH 를 볼 수 없다. 그래서 ~/.local/bin/orch 사본을 본다.
 //     스킬 번들의 플러그인 루트에 실행기 bin/orch 가 없으면(이 기능 이전 배치) 판정하지 않는다.
 //     사본이 없거나 표지(fos-skills orch launcher)가 없으면 CLI-MISSING, 내용이 지금 실행기와 다르면 CLI-STALE 이고 다음 줄에 고칠 명령이 온다.
-//     PATH 에서 플러그인 bin/ 폴더를 뺀 나머지에 ~/.local/bin 이 없으면 CLI-NOT-ON-PATH 와 셸 설정 안내다. 경고라 종료 코드를 바꾸지 않는다.
+//     사용자 셸을 로그인 셸로 PATH 없이 열어 얻은 PATH(`orch worker launch` 가 보는 것과 같다. lib/worker-path.ts)에서 첫 orch 가 실행기가 아니거나 node 가 없으면
+//     CLI-NOT-ON-PATH 와 셸 설정 안내다. ~/.zshrc 에만 둔 PATH 는 읽지 않는다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // 옛 꼴과 직접 경로 판정(늘 본다):
 //     --repo 의 <orch 루트>/overlay.md, config.json, specs/spec-common.md, bin/*, hooks/* 와 저장소의 .claude/skills/** 를 줄마다 본다.
@@ -189,6 +190,7 @@ import { isOpen, scan as scanStudy } from '../lib/study.ts'
 import { run, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
 import { shQuote } from '../lib/py.ts'
+import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { ageSeconds, closedReason, snapshot } from '../lib/questions.ts'
 import { waiterPids as findWaiters } from '../lib/waiters.ts'
 import { missingRowKeys, workerRows } from '../lib/workers.ts'
@@ -563,11 +565,9 @@ function checkCli(skillDir: string): string[] {
   if (!body.slice(0, 400).includes(LAUNCHER_MARK)) return [`CLI-MISSING ${file}`, fix]
   const lines: string[] = []
   if (body !== readFileSync(launcher, 'utf8')) lines.push(`CLI-STALE ${file}`, fix)
-  const pluginBin = real(dirname(launcher))
-  const dirs = (process.env.PATH ?? '').split(delimiter).filter((dir) => dir && real(dir) !== pluginBin)
-  if (!dirs.some((dir) => real(dir) === real(dirname(file)))) {
-    lines.push(`CLI-NOT-ON-PATH ${dirname(file)}`, `  셸 설정(비대화형 셸도 읽는 ~/.zshenv 같은 것)에 export PATH="${dirname(file)}:$PATH" 를 더한다`)
-  }
+  // launch 가 worker 를 띄우기 전에 보는 것과 같은 판정이다(lib/worker-path.ts). 프로세스의 PATH 는 플러그인 bin/ 이 들어 있어 보지 않는다
+  const worker = checkWorkerOrch()
+  if (!worker.ok) lines.push(`CLI-NOT-ON-PATH ${dirname(file)}`, ...worker.fix.map((line) => `  ${line}`))
   return lines
 }
 
