@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "PR 로 나눠줘", "스펙 구현 계획", "리팩토링 계획", "plan" 요청에 쓴다.
   "이 기능 설계해 보자" 처럼 요구사항은 spec, 구조와 경계 설계는 technical-design 이 맡는다. 구현은 implementation 가 맡는다.
 metadata:
-  version: "8.0.2"
+  version: "8.0.3"
 ---
 # plan
 
