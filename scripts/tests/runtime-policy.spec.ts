@@ -237,6 +237,24 @@ describe('checkImports', () => {
     ])
   })
 
+  test('정적 문은 재수출만 export에서 시작하고 다음 import·export를 넘지 않는다', () => {
+    const prefixes = [
+      'export const count = 1', 'export let count = 1', 'export var count = 1',
+      'export function run() {}', 'export class Item {}', 'export default value',
+      'export async function run() {}', 'export enum Kind {}', 'export interface Item {}',
+      'export type Item = string', '// runtime-policy: sample', 'import {', 'export {',
+    ]
+    for (const prefix of prefixes) {
+      const text = prefix + " // runtime-policy: sample\nimport { z } from 'zod'"
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:2 zod'], prefix)
+      const reexport = prefix + " // runtime-policy: sample\nexport { z } from 'zod'"
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: reexport }]), ['IMPORT fixture.ts:2 zod'], prefix)
+    }
+    for (const statement of ["export * from 'zod'", "export * as x from 'zod'", "export { z } from 'zod'", "export type { Z } from 'zod'"]) {
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: statement }]), ['IMPORT fixture.ts:1 zod'], statement)
+    }
+  })
+
   test('문자열 인자 하나인 import와 require는 줄 어디서든 검사한다', () => {
     const text = [
       "await import('m1')", // runtime-policy: sample
