@@ -7,7 +7,7 @@ import { isFile } from '../../lib/fs.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { context, payload } from '../../lib/completion.ts'
-import { reviewPrOfDispatch } from '../../lib/review.ts'
+import { reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem } from '../../lib/review.ts'
 import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
@@ -23,9 +23,10 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
       const sync = process.env.BOARD_SYNC || scriptPath('board-sync')
       const args = ['--repo', ctx.repo]
       const reviews = new Set<number>()
+      const byItem = reviewPrsByItem(ctx.repo)
       const pending = new Set(readBoard(boardPath(ctx.repo)).flatMap((item) => {
-        const number = /^review-pr-(\d+)$/.exec(String(item.id))?.[1]
-        return number && item.status !== 'done' ? [Number(number)] : []
+        const number = reviewPrOfItem(String(item.id), byItem)
+        return number !== null && item.status !== 'done' ? [number] : []
       }))
       const messages = [...ctx.completions.values()].flat().filter((message) => (message.outcome ?? payload(message).outcome) === 'succeeded')
       if (pending.size && messages.length) {

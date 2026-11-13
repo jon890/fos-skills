@@ -50,7 +50,7 @@
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
 //     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName). 없으면 직접 조회한다
 //     --completed-reviews 루프 내부용. worker_done 을 받은 리뷰 PR 번호 JSON 목록.
-//                   review-pr-N 항목은 이 목록에 있거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
+//                   리뷰·검증 항목(지시서의 `리뷰 PR: #N`, 없으면 id 가 review-pr-N, verify-pr-N 꼴, 뒤에 -r2 같은 꼬리가 붙어도 된다)은 이 목록에 있거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
 //     --goal, --goal-items
 //                   --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다.
 //                   --goal-items 가 없으면 목표 항목의 단계 줄을 센다
@@ -64,6 +64,7 @@
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
+import { reviewPrOfItem, reviewPrsByItem } from '../lib/review.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
 import { readBoard } from '../lib/board.ts'
 import type { BoardStep } from '../core/board.ts'
@@ -249,6 +250,7 @@ function main(argv: string[]): number {
   const names = worktreeNames(repo)
   const liveBranches = new Set(branches.values())
   let rules: LastPrRules | null | undefined
+  let reviewItems: Map<string, number> | undefined
   let settings: BoardSettings | null | undefined
   const runs: { runs: RunRow[] | null } = { runs: null }
   const deployments = new Map<string, DeployVerdict>()
@@ -293,9 +295,11 @@ function main(argv: string[]): number {
         if (at !== null && at <= now) after.push(['step', id, String(step.number)])
       }
     }
-    const review = /^review-pr-(\d+)$/.exec(id)
+    reviewItems ??= reviewPrsByItem(repo)
+    const target = reviewPrOfItem(id, reviewItems)
+    const review = target === null ? null : [id, String(target)]
     const reviewDone = review && !SKIP_STATUS.has(String(item.status)) &&
-      (completedReviews.includes(Number(review[1])) || stateFor(review[1]) === 'MERGED')
+      (completedReviews.includes(target!) || stateFor(review[1]) === 'MERGED')
     if (reviewDone) {
       const steps = boardSteps(boardBin, id, board)
       if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }
