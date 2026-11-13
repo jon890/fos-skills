@@ -146,6 +146,12 @@ if (args[0] === 'ls-tree') {
   if (state._tree_paths?.length) fs.writeSync(1, state._tree_paths.join('\\n') + '\\n')
   process.exit(0)
 }
+// 리뷰 범위 체인(lib/review-judgement.ts 의 git log --first-parent). state._log_rows 의 줄을 그대로 낸다
+if ((args[0] === '-C' ? args[2] : args[0]) === 'log') {
+  const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
+  if (state._log_rows?.length) fs.writeSync(1, state._log_rows.join('\\n') + '\\n')
+  process.exit(0)
+}
 if (args[0] === 'diff' && args[1] === '--name-only') {
   const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
   const index = state._diff_index ?? 0

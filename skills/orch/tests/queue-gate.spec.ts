@@ -165,6 +165,47 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     }
   })
 
+  describe('block 을 반영한 PR(fixed_after_block)', () => {
+    const REVIEWED = 'b'.repeat(40)
+    const rows = [`${HEAD}\t${REVIEWED}\t2026-01-02T00:00:00Z`, `${REVIEWED}\t\t2026-01-01T00:00:00Z`]
+    const review = (commit: string) => ({ id: 'PRR_1', body: 'BLOCK', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: commit } })
+    const config = (c: Ctx, over: Json = {}) =>
+      writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'], feature_head: false, ...over } } }))
+
+    test('block 뒤 새 커밋이 있고 스레드가 0 이면 통과하고 REVIEW-FIXED 줄을 낸다', async (t) => {
+      const c = setup(t)
+      config(c, { fixed_after_block: true })
+      const r = await gate(c, { '1': pr({ reviews: [review(REVIEWED)], comments: [] }), _log_rows: rows }, 0)
+      assert.equal(r.code, 0, both(r))
+      assert.deepEqual(r.stdout.trim().split('\n').filter((line) => /^(GATE-|REVIEW-FIXED)/.test(line)), ['GATE-OK 1', `REVIEW-FIXED PRR_1 ${REVIEWED.slice(0, 8)}..${HEAD.slice(0, 8)}`])
+    })
+
+    test('미해결 스레드가 남으면 막고 REVIEW-FIXED 줄을 내지 않는다', async (t) => {
+      const c = setup(t)
+      config(c, { fixed_after_block: true })
+      const r = await gate(c, { '1': pr({ reviews: [review(REVIEWED)], comments: [] }), _log_rows: rows }, 2)
+      assert.equal(r.code, 1, both(r))
+      assert.match(gateReason(r), /미해결 리뷰 스레드 2 개/)
+      assert.doesNotMatch(r.stdout, /REVIEW-FIXED/)
+    })
+
+    test('block 뒤 커밋이 없으면 리뷰 보류로 막는다', async (t) => {
+      const c = setup(t)
+      config(c, { fixed_after_block: true })
+      const r = await gate(c, { '1': pr({ reviews: [review(HEAD)], comments: [] }), _log_rows: [`${HEAD}\t\t2026-01-02T00:00:00Z`] }, 0)
+      assert.equal(r.code, 1, both(r))
+      assert.match(gateReason(r), /리뷰 보류/)
+    })
+
+    test('설정을 켜지 않으면 지금처럼 막는다', async (t) => {
+      const c = setup(t)
+      config(c)
+      const r = await gate(c, { '1': pr({ reviews: [review(REVIEWED)], comments: [] }), _log_rows: rows }, 0)
+      assert.equal(r.code, 1, both(r))
+      assert.match(gateReason(r), /리뷰 보류/)
+    })
+  })
+
   test('모르는 리뷰 조건은 gate 를 막는다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['unknown'] } } }))
