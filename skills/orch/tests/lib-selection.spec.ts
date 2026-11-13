@@ -45,7 +45,7 @@ test('후보 목록은 모델 칸에서만 읽고 괄호 조건과 effort 칸을
 test('실제 모델 표의 행별 후보가 승인한 선택 규칙과 같다', () => {
   const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
   assert.deepEqual(Object.fromEntries(modelRows(source)), {
-    'impl-planned': ['gpt-6.1-sol', 'claude-sonnet-5-5'],
+    'impl-planned': ['gpt-6.1-sol', 'gpt-6.1-terra', 'claude-sonnet-5-5'],
     'small-fix': ['claude-sonnet-5-5', 'claude-haiku-5-5', 'gpt-6-luna'],
     'simple-apply': ['claude-haiku-5-5', 'gpt-6-luna'],
     'impl-explore': ['gpt-6.1-sol', 'claude-sonnet-5-5', 'claude-fable-5-2'],
@@ -63,16 +63,15 @@ test('후보 밖 이유는 선택 줄에서만 읽고 빈 이유 뒤의 다른 �
   assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6-astra')}\n후보 밖: 사용자 지정`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
 })
 
-test('Terra 실험 표시는 Sonnet 이 후보인 행과 유효한 회차에만 후보 예외를 준다', () => {
+test('Terra 는 impl-planned 와 visual 에서만 표시 없이 통과하고 다른 행과 옛 실험 표시로는 후보 밖이다', () => {
   const terra = sol.replace('gpt-6.1-sol', 'gpt-6.1-terra')
-  for (const marker of ['', 'Terra 실험 0/5', 'Terra 실험 6/5', 'Terra 실험 1/50', 'Terra 실험 1/5x', 'Fable 실험 1/5']) {
-    assert.match(selectionVerdict(`${terra} ${marker}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
-  }
-  for (const marker of ['Terra 실험 1/5', 'Terra 실험 5/5(두 번째 시도)', 'Terra 실험 2/5, 비교)', 'Terra 실험 3/5, 비교 작업.', 'Terra 실험 4/5를 쓴다.']) {
+  for (const marker of ['', 'Terra 실험 1/5', 'Terra 실험 0/5']) {
     assert.deepEqual(selectionVerdict(`${terra} ${marker}`, repo, { launch: true }), [], marker)
   }
-  const wrongRow = terra.replace('impl-planned', 'simple-apply')
-  assert.match(selectionVerdict(`${wrongRow} Terra 실험 1/5`, repo, { launch: true }).join(), /행 simple-apply 의 후보:/)
+  assert.match(selectionVerdict(terra.replace('`low`', '`high`'), repo, { launch: true }).join(), /gpt-6.1-terra effort 상한: medium/)
+  for (const row of ['simple-apply', 'impl-explore', 'hard-design']) {
+    assert.match(selectionVerdict(`${terra.replace('impl-planned', row)} Terra 실험 1/5`, repo, { launch: true }).join(), new RegExp(`행 ${row} 의 후보:`), row)
+  }
   const generic = 'experiment: other. 후보: `codex` `gpt-6-astra` effort `medium` / `claude` `claude-sonnet-5-5` effort `medium`.'
   assert.match(selectionVerdict(`${sol.replace('gpt-6.1-sol', 'gpt-6-astra')}\n${generic}`, repo, { launch: true }).join(), /행 impl-planned 의 후보:/)
 })
@@ -189,9 +188,9 @@ test('모든 후보의 effort 상한을 모델 표에서 읽고 표의 값이 �
     for (const model of policy.models) assert.ok(policy.limits.has(model), `${row}: ${model} 상한 누락`)
   }
   const table = join(repo, 'limits.md')
-  writeFileSync(table, source.replace('sol `low`, Sonnet', 'sol `medium`, Sonnet'))
+  writeFileSync(table, source.replace('sol `low`, Terra', 'sol `medium`, Terra'))
   assert.deepEqual(selectionVerdict(sol.replace('`low`', '`medium`'), repo, { launch: true, table }), [])
-  writeFileSync(table, source.replace('sol `low`, Sonnet', 'sol 지정 없음, Sonnet'))
+  writeFileSync(table, source.replace('sol `low`, Terra', 'sol 지정 없음, Terra'))
   assert.match(selectionVerdict(sol, repo, { launch: true, table }).join(), /effort 상한을 읽지 못했다/)
 })
 
