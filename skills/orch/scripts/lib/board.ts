@@ -15,6 +15,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesText } from './milestones.ts'
+import { section } from '../core/config.ts'
+import { FINISH_KEYS } from '../core/finish-options.ts'
+import { rulesFrom } from './last-pr.ts'
 import { loadConfig } from './config.ts'
 import { boardPath } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
@@ -258,11 +261,19 @@ export function boardSteps(bin: string, id: string, file: string): BoardStep[] |
 
 // pr 칸이 빈 항목을 브랜치로 찾아 그 PR 번호로 채운다. 채운 항목 id 를 내고, 찾지 못했거나 pr 칸에 이미 든 항목이거나
 // 둘 이상이면 null 이다. 보드 명령이 실패하면 Error 다
-export function linkBoardPr(file: string, number: string, branch: string): string | null {
+export function prTaskRef(repo: string, title: string): string | null {
+  try {
+    const finish = section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS)
+    const ref = rulesFrom(finish, repo).taskPattern?.exec(title)?.[1]
+    return ref && /^[\p{L}\p{N}._/-]+$/u.test(ref) ? normalizeRef(taskAdapter(repo), ref) : null
+  } catch { return null }
+}
+
+export function linkBoardPr(file: string, number: string, branch: string, ref?: string | null): string | null {
   const found = findBoardItems(file, number, branch, null)
   if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
   const bin = process.env.BOARD_BIN || BOARD_BIN
-  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, ...(ref ? ['--fill', '--task-ref', ref] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
   if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
   return found.ids[0]
 }

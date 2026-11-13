@@ -1308,3 +1308,10 @@ test('다시 시작 알림은 바로 깨우지 않고 DIGEST 로 모을 것에 �
   assert.deepEqual(sentEvents().filter(e=>e.kind==='LOOP-RESTARTED'),[])
   assert.equal(queuedEvents().filter(e=>e.kind==='LOOP-RESTARTED').length,1)
 })
+
+test('보드 맞추기에 넘기는 열린 PR 에 제목도 있다', () => {
+  board(); prs([{ ...MINE, title: '[P/458] 고침', headRefName: 'feat/x', headRefOid: 'a'.repeat(40), statusCheckRollup: [] }])
+  once()
+  const args = argsOf('board')[0]
+  assert.deepEqual(JSON.parse(args[args.indexOf('--open-prs') + 1]), [{ number: 1, headRefName: 'feat/x', title: '[P/458] 고침' }])
+})
