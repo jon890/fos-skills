@@ -369,7 +369,7 @@ function main(argv: string[]): number {
     const rows = hasWorkRows(item)
     const target = rows === true ? null : rows === false ? rowsReviewPr(item) ?? reviewPrOfItem(id, reviewItems) : reviewPrOfItem(id, reviewItems)
     const review = target === null ? null : [id, String(target)]
-    const rowsDone = rows === false && workerRows.some((row) => row.status === 'working' && row.dispatch && workerEnds[row.dispatch] === 'done') &&
+    const rowsDone = rows === false && workerRows.length > 0 &&
       !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !(names !== null && !names.has(row.worktree)))
     const reviewDone = !SKIP_STATUS.has(String(item.status)) && (rowsDone || (review &&
       (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)) || stateFor(review[1]) === 'MERGED')))

@@ -142,7 +142,7 @@ board.ts worker-set <id> --worktree W [--pr N]        # PR2
 core 의 `hasWorkRows(item): boolean | null` 은 줄만으로 판정한다. 구현·후속 줄이 있으면 `true`, 줄이 있고 모두 리뷰·검증이면 `false`, 필드가 없으면 `null` 이다. 띄우기 이력과 합치는 일은 lib 호출자(`board-sync.ts`, `loop/steps/board.ts`)가 맡는다([ADR-028](../../adr/028-orch-core-layer.md)).
 
 - `true`: 리뷰 항목이 아니다. 리뷰 지시서가 `보드 항목 id:` 로 붙었어도 그 리뷰의 worker_done 이나 대상 PR 머지로 닫지 않는다(스펙 DECISION15).
-- `false`: 리뷰만 하는 항목이다. 대상 PR 은 가장 최근 줄의 `pr` 이다. 지금 조건(id 꼴, 띄우기 이력의 `리뷰 PR:`, `--completed-items`, `--completed-reviews`, 대상 PR MERGED)에 더해, 이번 틱의 `--worker-ends` 가 그 항목의 줄을 `done` 으로 끝내고 남은 작업 중 줄이 없으면 닫는다. 이 항목은 id 가 `review-pr-N` 꼴이 아니어도 닫힌다.
+- `false`: 리뷰만 하는 항목이다. 대상 PR 은 가장 최근 줄의 `pr` 이다. 지금 조건(id 꼴, 띄우기 이력의 `리뷰 PR:`, `--completed-items`, `--completed-reviews`, 대상 PR MERGED)에 더해, 완료든 끊김이든 남은 작업 중 줄이 없으면 닫는다. 앞 틱에서 줄만 끝나고 항목 닫기를 놓친 경우도 다음 틱에 닫는다. 이 항목은 id 가 `review-pr-N` 꼴이 아니어도 닫힌다.
 - `null`: 지금 판정 그대로다.
 
 ### 대표 칸을 읽는 곳

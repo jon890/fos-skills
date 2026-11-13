@@ -138,6 +138,24 @@ test('구현 PR 이 머지되면 작업 중 리뷰 줄이 있어도 항목을 �
   assert.equal((r.board.a.workers as any[])[1].status, 'working')
 })
 
+test('리뷰만 있는 항목은 마지막 줄이 끊겨도 닫고 이미 끝난 줄도 복구한다', () => {
+  states = { '7': 'OPEN' }
+  for (const first of ['done', 'lost']) {
+    const r = sync([{ id: 'rev-a', status: 'doing', details: ['1. 리뷰'], workers: [
+      worker('review', 'r1', 'd1', { pr: 7, status: first }),
+      worker('review', 'r2', 'd2', { pr: 7 }),
+    ] }], ['--worker-ends', '{"d2":"lost"}'])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board['rev-a'].status, 'done')
+    assert.equal((r.board['rev-a'].workers as any[])[1].status, 'lost')
+  }
+  const r = sync([{ id: 'rev-a', status: 'doing', details: ['1. 리뷰'], workers: [
+    worker('review', 'r1', 'd1', { pr: 7, status: 'lost' }),
+  ] }])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board['rev-a'].status, 'done')
+})
+
 test('시각 wait 는 첫 단계가 아니어도 지난 줄만 끝내며 항목 상태는 유지한다', () => {
   const details = ['참고: 설명', '1. 아직 앞 단계', '2. [wait: 2020-01-01 00:00] 지난 시각',
     '3. [wait: 2099-01-01 00:00] 미래', '4. [wait: 2026-02-30 00:00] 잘못된 날짜', '5. [wait: 내일 아침] 글', '6. [wait] 조건']
