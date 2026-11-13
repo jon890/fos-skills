@@ -197,8 +197,8 @@ function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[
   ])
 }
 
-function loop(extra: NodeJS.ProcessEnv = {}): { status: number | null; output: string } {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', extra.NODE_OPTIONS ? SCRIPT : FUNCTION_SCRIPT, '--repo', repo, '--foreground', '--once'], {
+function loop(extra: NodeJS.ProcessEnv = {}, targetRepo = repo): { status: number | null; output: string } {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', extra.NODE_OPTIONS ? SCRIPT : FUNCTION_SCRIPT, '--repo', targetRepo, '--foreground', '--once'], {
     env: { ...env, ...extra },
     cwd: tmp,
     encoding: 'utf8',
@@ -509,6 +509,25 @@ describe('보류 표시', () => {
     const output = once()
     assert.match(output, /AUTO-MERGE-WAIT #1 지시서 보류: 배포 뒤/)
     assert.deepEqual(events('AUTO-MERGE'), [])
+  })
+
+  test('워크트리에서 부른 루프도 상대경로 지시서는 주 checkout 에서 읽는다', async () => {
+    config({ finish: { specs_dir: 'custom-specs' } })
+    spec('custom-specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: 주 checkout 의 배포 확인 대기'])
+    const worktree = join(tmp, 'worker')
+    git(['worktree', 'add', '--detach', worktree, 'HEAD'])
+    // 같은 상대경로에 보류 없는 지시서가 있어도 주 checkout 의 지시서가 기준이다.
+    write(join(worktree, 'custom-specs', 'spec-a.md'), '- 브랜치: `feat-1`\n')
+    github([pr(1)])
+    const held = loop({}, worktree)
+    assert.equal(held.status, 0, held.output)
+    assert.match(held.output, /AUTO-MERGE-WAIT #1 지시서 보류: 주 checkout 의 배포 확인 대기/)
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+    spec('custom-specs', 'spec-a.md', ['feat-1'])
+    const released = loop({}, worktree)
+    assert.equal(released.status, 0, released.output)
+    assert.deepEqual(await queued(), queueArgs('1'))
   })
 
   test('pr 칸에 그 번호가 든 보드 항목에 끝나지 않은 머지 보류 줄이 있으면 걸지 않는다', () => {

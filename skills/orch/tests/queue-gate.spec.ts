@@ -2,7 +2,8 @@
 // 가짜 gh, git 은 merge-queue.spec.ts 와 같은 것을 쓴다(tests/fixtures/merge-queue-fakes.ts).
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -111,6 +112,95 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     const r = await gate(c, { '1': pr() }, 0)
     assert.equal(r.code, 0, both(r))
     assert.equal(r.stdout.trim().split('\n').filter((line) => /^GATE-/.test(line)).join('\n'), 'GATE-OK 1')
+  })
+
+  for (const line of ['머지 보류: real 확인 전', '- **머지 보류:** real 확인 전', '머지 보류:']) {
+    test(`보류 줄이 있으면 gate 는 안내하고 merge 는 거절한다: ${line}`, async (t) => {
+      const c = setup(t)
+      writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), `브랜치: \`feat\`\n${line}\n`)
+      for (const invoke of [gate, queue]) {
+        const r = await invoke(c, { '1': pr() }, 0)
+        assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+        assert.match(r.stdout, invoke === gate ? /^HOLD (real 확인 전|이유 없음)$/m : /GATE-HOLD (real 확인 전|이유 없음)/)
+        if (invoke === gate) assert.match(r.stdout, /^GATE-OK 1$/m)
+        assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+      }
+    })
+  }
+
+  test('앞 Run 의 지시서 보류를 gate 와 merge 가 함께 따른다', async (t) => {
+    const c = setup(t)
+    const state = join(c.tmp, '.orch', 'state', 'loop-runs')
+    mkdirSync(state, { recursive: true })
+    for (const [run, hold] of [['first', '먼저 등록한 Run'], ['later', '나중 Run']]) {
+      const dir = join(c.tmp, run)
+      mkdirSync(dir)
+      writeFileSync(join(dir, 'spec-hold.md'), `브랜치: \`feat\`\n머지 보류: ${hold}\n`)
+      writeFileSync(join(state, `${run}.json`), JSON.stringify({ run, specs_dir: dir, registered_at: run === 'first' ? '2026-01-01' : '2026-01-02' }))
+    }
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+      assert.match(r.stdout, invoke === gate ? /^HOLD 먼저 등록한 Run$/m : /GATE-HOLD 먼저 등록한 Run/)
+    }
+  })
+
+  test('설정한 지시서 폴더도 gate 와 merge 가 확인한다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.tmp, 'custom-specs'))
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ finish: { specs_dir: 'custom-specs' } }))
+    writeFileSync(join(c.tmp, 'custom-specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 백업 대기\n')
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+      assert.match(r.stdout, invoke === gate ? /^HOLD 백업 대기$/m : /GATE-HOLD 백업 대기/)
+    }
+  })
+
+  test('워크트리에서도 주 checkout 의 상대경로 지시서를 찾는다', async (t) => {
+    const c = setup(t)
+    const root = c.tmp
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+    }
+    git('init', '-q', '--initial-branch=main')
+    git('-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'init')
+    const worktree = join(root, 'linked-worktree')
+    git('worktree', 'add', '--detach', worktree, 'HEAD')
+    mkdirSync(join(root, 'custom-specs'))
+    writeFileSync(join(root, '.orch', 'config.json'), JSON.stringify({ finish: { specs_dir: 'custom-specs' } }))
+    writeFileSync(join(root, 'custom-specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 주 checkout 의 확인 대기\n')
+    // gh 는 함수 가짜로 두고 git 은 실제 임시 저장소를 읽게 한다.
+    c.env.PATH = process.env.PATH
+    c.env.MERGE_QUEUE_FAKE_GIT = '0'
+    c.tmp = worktree
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+      assert.match(r.stdout, invoke === gate ? /^HOLD 주 checkout 의 확인 대기$/m : /GATE-HOLD 주 checkout 의 확인 대기/)
+    }
+  })
+
+  test('보류 중에도 CI 와 미해결 스레드 이유를 모두 내고 실패한다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 배포 대기\n')
+    const r = await gate(c, { '1': pr({ statusCheckRollup: FAILED }) }, 2)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^GATE-FAIL 1$/m)
+    assert.match(r.stdout, /실패한 체크 1 개/)
+    assert.match(r.stdout, /미해결 리뷰 스레드 2 개/)
+    assert.match(r.stdout, /^HOLD 배포 대기$/m)
+  })
+
+  test('다른 브랜치의 보류 줄은 gate 와 merge 를 막지 않는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-other.md'), '브랜치: `other`\n머지 보류: 다른 작업\n')
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stdout, /GATE-HOLD/)
+    }
   })
 
   test('걸리면 GATE-FAIL 과 이유를 한 줄씩 내고 종료 코드 1 이다. 이유는 모두 모은다', async (t) => {

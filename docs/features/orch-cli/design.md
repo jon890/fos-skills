@@ -198,7 +198,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `spec lint` | `<지시서>: <발견>` | `SPEC-ERROR <지시서>: <발견>`, `SPEC-WARN <지시서>: <발견>` | `references/spec-writing.md` |
 | `doctor` | `  안내: …` | 판정 줄과 들여 쓴 고칠 줄 | `SKILL.md` |
 | `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |
-| `queue reserve`, `queue gate`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다(`queue gate` 는 `GATE-OK <PR>` 나 `GATE-FAIL <PR>` 과 이유 줄) | |
+| `queue reserve`, `queue gate`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다(`queue gate` 는 `GATE-OK <PR>` 나 `GATE-FAIL <PR>` 과 이유 줄. 지시서에 머지 보류 줄이 있으면 `HOLD <이유>` 줄도 따로 붙고, 보류 자체는 종료 코드에 넣지 않는다) | |
 | `paths`, `worker worktree`, `spec line`, `slot heavy`, `slot mem` | 없음 | 결과 그대로(스펙 DECISION20) | |
 | `status` | (새로) | 저장소의 `LOOP-ALIVE …` 나 `LOOP-DEAD …`, 살아 있지만 지금 세션의 user 설치본과 다른 번들이면 `LOOP-STALE <repo> <pid> <번들>` 도 함께, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE`(`loop stalled` 와 같은 줄). 조회 실패는 `SKIP-WORKERS`, `SKIP-BOARD`, `SKIP-STAGES` | `SKILL.md` |
 

@@ -170,7 +170,7 @@ describe('예약', () => {
   })
 
   test('base 최고와 다른 브랜치의 열린 PR 을 넘는 번호를 작업 디렉터리의 브랜치로 예약한다', () => {
-    git(['checkout', '-q', 'feat-a'])
+    git(['checkout', '-q', '-B', 'feat-a'])
     const out = ok(reserve(['--module', 'api', '--name', 'Add index'], { cwd: repo }))
     assert.equal(out, 'RESERVED api V4 db/api/V4__add_index.sql\n')
     const [saved, ...rest] = reservations()
@@ -608,5 +608,46 @@ describe('ADR 예약', () => {
     assert.equal(none.status, 2, none.stdout + none.stderr)
     assert.match(none.stderr, /adr\.dirs 가 비었다/)
     assert.equal(existsSync(stateFile('adr-reservations.json')), false)
+  })
+
+  test('--again --rename 은 이 브랜치가 만든 옛 예약 파일만 새 번호 이름으로 바꾼다', () => {
+    github()
+    git(['checkout', '-q', '-B', 'feat-a'])
+    const args = ['--module', 'api', '--name', 'add_index', '--branch', 'feat-a']
+    assert.equal(ok(reserve(args, { cwd: repo })), 'RESERVED api V3 db/api/V3__add_index.sql\n')
+    write(join(repo, 'db', 'api', 'V3__add_index.sql'), 'create index i on t(c);\n')
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'other', '--branch', 'feat-c'], { cwd: repo })), 'RESERVED api V4 db/api/V4__other.sql\n')
+    const done = reserve([...args, '--again', '--rename'], { cwd: repo })
+    assert.equal(ok(done), 'RESERVED api V5 db/api/V5__add_index.sql\nRENAMED db/api/V3__add_index.sql db/api/V5__add_index.sql\n')
+    assert.equal(existsSync(join(repo, 'db', 'api', 'V3__add_index.sql')), false)
+    assert.equal(readFileSync(join(repo, 'db', 'api', 'V5__add_index.sql'), 'utf8'), 'create index i on t(c);\n')
+    // 같은 번호를 다시 받으면 바꿀 것이 없다
+    assert.match(ok(reserve([...args, '--again', '--rename'], { cwd: repo })), /^RESERVED api V5 db\/api\/V5__add_index\.sql\nRENAME-NONE /)
+    const bad = reserve([...args, '--rename'], { cwd: repo })
+    assert.equal(bad.status, 2)
+    assert.match(bad.stderr, /--rename 은 --again 과 함께/)
+  })
+
+  test('--rename 은 기준 브랜치에 있는 파일, 다른 브랜치, 다른 저장소의 파일을 바꾸지 않는다', () => {
+    github()
+    git(['checkout', '-q', '-B', 'feat-b'])
+    // 기준 브랜치(origin/main)에 이미 있는 V2__a.sql 을 이 브랜치의 옛 예약으로 심는다
+    seed([{ module: 'api', version: [2], label: 'V2', branch: 'feat-b', name: 'a', path: 'db/api/V2__a.sql', at: LATER }])
+    const args = ['--module', 'api', '--name', 'a', '--branch', 'feat-b', '--again', '--rename']
+    const merged = ok(reserve(args, { cwd: repo }))
+    assert.match(merged, /RENAME-NONE db\/api\/V2__a\.sql 는 origin\/main 에 이미 있어/)
+    assert.equal(existsSync(join(repo, 'db', 'api', 'V2__a.sql')), true)
+    // 부른 브랜치가 예약 브랜치와 다르다
+    git(['checkout', '-q', 'main'])
+    write(join(repo, 'db', 'api', 'V9__a.sql'), 'select 9;\n')
+    seed([{ module: 'api', version: [9], label: 'V9', branch: 'feat-b', name: 'a', path: 'db/api/V9__a.sql', at: LATER }])
+    assert.match(ok(reserve(args, { cwd: repo })), /RENAME-NONE 부른 디렉터리의 브랜치\(main\)/)
+    assert.equal(existsSync(join(repo, 'db', 'api', 'V9__a.sql')), true)
+    // --repo 와 다른 저장소에서 부른다
+    const other = join(tmp, 'other')
+    write(join(other, 'db', 'api', 'V9__a.sql'), 'select 9;\n')
+    git(['init', '-q', '-b', 'feat-b'], other)
+    assert.match(ok(reserve(args, { cwd: other })), /RENAME-NONE 부른 디렉터리가 --repo 와 다른 저장소다/)
+    assert.equal(existsSync(join(other, 'db', 'api', 'V9__a.sql')), true)
   })
 })

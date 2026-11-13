@@ -249,3 +249,19 @@ test('단계가 progress 의 전체 값보다 많아지면 add-step 이 progress
   assert.match(result.err, /progress 1\/2 를 지우고 단계 줄로 센다/)
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].progress, undefined)
 })
+
+test('상태 없이 업무 칸을 넣고 고치고 지운다', () => {
+  save([item({ status: 'wait' })])
+  mkdirSync(join(repo, '.orch'), { recursive: true })
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ board: { task: { adapter: 'dooray', web_url: 'https://x.dooray.com', project: 'P' } } }))
+  const row = () => JSON.parse(readFileSync(file, 'utf8')).items[0]
+  ok(['set', 'x', '--task-ref', '458'], 'BOARD-SET x wait'); assert.equal(row()['task-ref'], 'P/458')
+  ok(['set', 'x', '--task', 'https://x/1'], 'BOARD-SET x wait'); assert.equal(row().task, 'https://x/1')
+  ok(['set', 'x', '--task', ''], 'BOARD-SET x wait'); assert.equal(row().task, undefined); assert.equal(row()['task-ref'], 'P/458')
+  ok(['set', 'x', 'done', '--task', 'https://x/2', '--task-ref', 'X/2'], 'BOARD-SET x done')
+  refused(['set', 'missing', '--task', 'https://x/1'], /항목이 없다/)
+  refused(['set', 'x', '--task', 'ftp://x'], /http/)
+  refused(['show', 'x', '--task-ref', '1'], /사용법/, 2)
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ board: { task: {} } }))
+  refused(['set', 'x', '--task-ref', '1'], /board.task/, 2)
+})

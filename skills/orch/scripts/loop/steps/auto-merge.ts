@@ -79,10 +79,10 @@
 
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
-import { beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, specHold, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
+import { beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
 import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
@@ -94,7 +94,7 @@ import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
 import { judgePrReview } from '../../lib/review-judgement.ts'
-import { specFiles } from '../../lib/last-pr.ts'
+import { specTargets } from '../../queue/steps/spec-hold.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
@@ -102,7 +102,6 @@ import { turnLine } from '../../lib/queue-turn.ts'
 import { isQueueCommand } from '../../lib/queue-process.ts'
 import { addedPaths, readReservations } from '../../lib/reservations.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
-import { branchesOf } from '../../lib/spec.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { processes, queueTurns } from './queue-turns.ts'
@@ -460,14 +459,7 @@ async function autoMergeStep(
   }
 
   // 3. 대상과 판정. 같은 브랜치는 앞 Run 의 지시서가 정한다
-  const targets = new Map<string, { run: string; hold: string | null; feature: boolean }>()
-  for (const { run, specsDir } of runs) {
-    if (!run || !specsDir) continue
-    for (const spec of specFiles(isAbsolute(specsDir) ? specsDir : join(ctx.repo, specsDir))) {
-      const hold = specHold(spec.text)
-      for (const branch of branchesOf(spec.text)) if (!targets.has(branch)) targets.set(branch, { run, hold, feature: featureLoopRequested(spec.text) })
-    }
-  }
+  const targets = specTargets(ctx.repo, runs)
   let board: { file: string; items: BoardItem[] } | null = null
   const boardFile = boardPath(ctx.repo)
   if (isFile(boardFile)) {
@@ -482,7 +474,7 @@ async function autoMergeStep(
   for (const pr of mine) {
     const target = targets.get(pr.branch)
     if (!target) continue
-    const judged = judgeTarget(ctx, pr, target.hold, target.feature, ci, stale, state, board)
+    const judged = judgeTarget(ctx, pr, target.hold, featureLoopRequested(target.text), ci, stale, state, board)
     if ('error' in judged) {
       errors.add(judged.error)
       continue

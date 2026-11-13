@@ -20,7 +20,7 @@
 
 import { readFileSync } from 'node:fs'
 import { cmdDoctor, cmdInstall } from './driver/admin.ts'
-import { parseJsArgs, parsePointerArgs, parseResetArgs } from './driver/args.ts'
+import { parseJsArgs, parsePointerArgs, parseResetArgs, parseShotArgs } from './driver/args.ts'
 import type { Backend } from './driver/backends/base.ts'
 import { backendByName, loadBackend, resolveBackendName, unknownBackendMessage } from './driver/backends/index.ts'
 import { COMMAND_MAP, COMMANDS, META_COMMANDS, renderHelp, required, usage } from './driver/commands.ts'
@@ -50,6 +50,11 @@ function normalizeArgs(cmd: string, args: string[], backend: Backend): any[] {
     return parsed
   }
   if (cmd === 'reset') return parseResetArgs(args)
+  if (cmd === 'shot') {
+    const parsed = parseShotArgs(args)
+    if (parsed[2] !== undefined && !backend.shotSize) throw new UsageError(`${backend.name} 백엔드는 shot 의 --size 를 지원하지 않는다.`)
+    return parsed
+  }
   if (cmd in POINTER_SHAPES) {
     const [points, allowButton] = POINTER_SHAPES[cmd]
     return parsePointerArgs(cmd, args, points, allowButton)

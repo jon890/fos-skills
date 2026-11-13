@@ -11,6 +11,8 @@ export abstract class Backend {
   readonly verified: boolean = true
   // js 의 --timeout 을 실제로 지키는지. 거짓이면 옵션을 받아 놓고 무시하지 않고 거절한다
   readonly jsTimeout: boolean = false
+  // shot 의 --size 로 뷰포트를 정해 찍을 수 있는지. 거짓이면 옵션을 받아 놓고 무시하지 않고 거절한다
+  readonly shotSize: boolean = false
 
   available(): boolean {
     return which(this.binary) !== null

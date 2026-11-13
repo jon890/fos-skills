@@ -5,6 +5,18 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 18.9.0 (2026-11-13)
+
+- orch 7.51.0, work-board 1.24.0 (#486)
+
+## 18.8.0 (2026-11-13)
+
+- orch 7.50.4 (#485)
+
+## 18.7.0 (2026-11-13)
+
+- browser 3.0.1, orch 7.50.3 (#483)
+
 ## 18.6.0 (2026-11-13)
 
 - content-preview 4.1.0 (#481)
