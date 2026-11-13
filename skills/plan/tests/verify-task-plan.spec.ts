@@ -657,3 +657,25 @@ test('계획 검사는 phase 와 별도 인수 검증의 경로를 확인하고 
   const before = verify(repo, ['plan1-x'])
   assert.ok(before.warnings.some((x) => x.includes('PR 크기 추정')), before.stdout)
 })
+
+
+test('검사 명령은 새 계획의 없는 테스트를 막고 날짜 없는 계획은 경고한다', () => {
+  const repo = new Repo('plan-entry-', true)
+  repo.file('docs/flow.md')
+  repo.file('docs/a.md', '문서\n')
+  repo.file('tests/fixtures/data.json', '{}')
+  repo.git('add', 'tests/fixtures/data.json')
+  const phase: Phase = { work: '### 1. 문서', command: 'pytest tests/missing.test.ts tests/fixtures/data.json', entries: [['docs/a.md', '수정']] }
+  const dir = writePlan(repo, 'plan1-x', [phase], { index: { created_at: '2026-11-13', pr_scope: '문서를 고친다', deferred: [], verification_plan: 'verification.md' } })
+  repo.file(`${dir}/verification.md`, '## 인수 검증 계획\n| `tests/other.test.ts` |\n')
+  const current = verify(repo, ['plan1-x', '--audit'])
+  assert.equal(current.code, 1, current.stdout)
+  assert.equal(current.violations.filter((line) => line.includes('검증에 적은 테스트 파일')).length, 2, current.stdout)
+  assert.ok(!current.stdout.includes('data.js'), current.stdout)
+  writePlan(repo, 'plan1-x', [phase], { index: { pr_scope: '문서를 고친다', deferred: [], verification_plan: 'verification.md' } })
+  const old = verify(repo, ['plan1-x', '--audit'])
+  assert.equal(old.code, 0, old.stdout)
+  assert.equal(old.warnings.filter((line) => line.includes('검증에 적은 테스트 파일')).length, 2, old.stdout)
+  assert.ok(!old.warnings.some((line) => line.includes('PR 크기 추정')), old.stdout)
+  assert.ok(verify(repo, ['plan1-x']).warnings.some((line) => line.includes('PR 크기 추정')))
+})
