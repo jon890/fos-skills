@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -222,6 +222,24 @@ describe('readConfigFile', () => {
 })
 
 describe('updateConfig', () => {
+  test('임시 파일을 쓴 뒤 잠금을 잃으면 임시 파일을 지우고 원본을 보존한다', () => {
+    const dir = join(tmp, 'update-lost')
+    mkdirSync(join(dir, '.orch'), { recursive: true })
+    const target = join(dir, '.orch/config.json')
+    const original = '{ "routing": { "review_author": "old" } }'
+    writeFileSync(target, original)
+    assert.throws(() => updateConfig(dir, () => ({
+      toJSON() {
+        // 직렬화와 저장 사이 다른 소유자가 잠금을 가져간 경우를 만든다.
+        writeFileSync(`${target}.lock`, 'other-owner')
+        return { routing: { review_author: 'new' } }
+      },
+    })), /잠금을 잃었다/)
+    assert.equal(readFileSync(target, 'utf8'), original)
+    assert.deepEqual(readdirSync(join(dir, '.orch')).filter(name => /^config\.json\..*\.tmp$/.test(name)), [])
+    assert.equal(readFileSync(`${target}.lock`, 'utf8'), 'other-owner')
+  })
+
   test('없던 파일은 저장할 때만 만들고 이전 값을 잠금 안에서 읽는다', () => {
     const dir = join(tmp, 'update-new')
     mkdirSync(dir)

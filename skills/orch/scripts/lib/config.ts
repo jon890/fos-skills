@@ -22,7 +22,7 @@ import { isObject } from '../core/json.ts'
 import { SECTIONS } from '../core/config.ts'
 import { ConfigError, RemovedConfigError, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'
 import type { Config } from '../core/config.ts'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { orchWord } from './commands.ts'
 import { isFile } from './fs.ts'
@@ -80,9 +80,13 @@ export function updateConfig(repo: string, change: (value: unknown, exists: bool
     if (next === undefined) return
     ensure('config', repo)
     const temp = `${file}.${process.pid}.tmp`
-    writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
-    if (!lock.held()) throw new ConfigError(`설정 파일 잠금을 잃었다: ${file}. 다시 실행한다`)
-    renameSync(temp, file)
+    try {
+      writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+      if (!lock.held()) throw new ConfigError(`설정 파일 잠금을 잃었다: ${file}. 다시 실행한다`)
+      renameSync(temp, file)
+    } finally {
+      rmSync(temp, { force: true })
+    }
   }, opts)
 }
 
