@@ -431,6 +431,27 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.ok(stdout.includes('설정 파일을 새로 만든다'), stdout)
   })
 
+  test('깨진 설정은 한 줄로 알리고 설정 변경만 건너뛴다', async t => {
+    const c = setup(t)
+    const config = c.write('.orch/config.json', '{bad')
+    c.write('.omc/handoffs/specs/spec-a.md', 'old spec\n')
+    c.write('.omc/previews/a.html', '<html>')
+    const preview = await c.migrate([])
+    assert.match(preview.stderr, /설정 변경을 건너뜀.*읽지 못했다/)
+    assert.equal(preview.stderr.trim().split('\n').length, 1)
+    assert.equal(readFileSync(config, 'utf8'), '{bad')
+    assert.ok(existsSync(join(c.repo, '.omc/handoffs/specs/spec-a.md')))
+    const applied = await c.migrate(['--apply'], { env: { ORCH_OUTPUT: 'short' } })
+    assert.match(applied.stderr, /설정 변경을 건너뜀.*읽지 못했다/)
+    assert.equal(applied.stderr.trim().split('\n').length, 1)
+    assert.doesNotMatch(applied.stderr, /at .*\.ts:|ConfigError/)
+    assert.equal(readFileSync(config, 'utf8'), '{bad')
+    assert.ok(existsSync(join(c.repo, '.orch/specs/spec-a.md')))
+    assert.ok(!existsSync(join(c.repo, '.omc/handoffs/specs')))
+    assert.ok(existsSync(join(c.repo, '.omc/previews/a.html')))
+    assert.ok(!existsSync(`${config}.lock`))
+  })
+
   test('옮기다 실패하면 멈추고 다시 돌리면 남은 것을 옮긴다', { skip: process.getuid?.() === 0 && 'root 는 권한 검사를 받지 않는다' }, async (t) => {
     const c = setup(t)
     c.write('.omc/handoffs/specs/spec-a.md', '`.omc/handoffs/queue/q.out` 를 본다\n')

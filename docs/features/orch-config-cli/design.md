@@ -117,6 +117,8 @@ flowchart TD
 
 - **쓰기는 lib 한 곳이다.** 설정 파일을 쓰는 길은 `updateConfig` 하나로 모은다. `doctor migrate` 에는 지금 두 길이 있다. `migrateHooks` 의 옮긴 키 지우기(`migrate-orch-dir.ts` 1014-1073행)와, orch 루트의 `.json` 안 옛 경로를 바꾸는 `finish()` 의 다시 쓰기(399-401, 609행 근처)다. 둘 다 바꾸는 함수를 `updateConfig` 에 넘겨 잠금 안에서 다시 읽은 값에 적용한다. `migrateHooks` 는 잠금 밖에서 만든 `fresh` 를 쓰지 않고, 옮긴 키만 지운다.
 
+`doctor migrate` 의 경로 치환·cleanup 이전은 설정 파일을 읽지 못하면 이유를 한 줄 알리고 설정 변경만 건너뛴다. 미리보기와 `--apply` 모두 다른 파일 이전은 계속한다. 변경 함수·저장·잠금 실패까지 읽기 실패로 처리하지는 않는다. `migrate-hooks` 와 설정 변경 명령은 깨진 설정 파일을 거절한다.
+
 ## 인터페이스와 데이터
 
 ### 명령

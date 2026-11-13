@@ -78,7 +78,7 @@
 //
 // GIT, ORCA, PGREP 환경 변수로 실행 파일을 바꾼다.
 
-import { readConfigFile, updateConfig } from '../lib/config.ts'
+import { ConfigError, readConfigFile, updateConfig } from '../lib/config.ts'
 import { workerRows } from '../lib/workers.ts'
 import { gitBin } from '../lib/git.ts'
 import { isObject } from '../core/json.ts'
@@ -608,10 +608,21 @@ function finish(plan: Plan, rules: Rule[], apply: boolean): boolean {
     configNotes = notes
     return config ?? (count > 0 ? rewritten : undefined)
   }
-  if (apply && (isFile(configPath) || isDir(join(plan.root, PREVIEWS)))) updateConfig(plan.root, change)
+  const skipConfig = (reason: string) => err(`설정 변경을 건너뜀: ${reason.replace(/[\r\n]+/g, ' ')}`)
+  if (apply && (isFile(configPath) || isDir(join(plan.root, PREVIEWS)))) {
+    let read = false
+    try {
+      updateConfig(plan.root, (raw, found) => { read = true; return change(raw, found) })
+    } catch (error) {
+      // 읽기 실패만 건너뛴다. 변경 함수나 저장·잠금 실패는 그대로 실패한다.
+      if (read || !(error instanceof ConfigError)) throw error
+      skipConfig(error.message)
+    }
+  }
   else {
     const read = readConfigFile(plan.root)
-    if (!read.error) change(read.exists ? read.value : {}, read.exists)
+    if (read.error) skipConfig(`설정 파일을 읽지 못했다: ${read.file}: ${read.error}`)
+    else change(read.exists ? read.value : {}, read.exists)
   }
   if (configCount > 0) {
     did = true
