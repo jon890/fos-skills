@@ -117,9 +117,16 @@ async function scene(t: TestContext) {
 
 test('넘기기는 Run 전부와 명의를 보존하고 새 상태를 쓴 뒤 옛 루프를 끝낸다', { timeout: 90_000 }, async t => {
   const s = await scene(t)
+  const file = entry(s.bundles[1])
+  writeFileSync(file, "await new Promise(resolve => setTimeout(resolve, 2000))\n" + readFileSync(file, 'utf8'))
   const old = await s.start()
   const live: boolean[] = []
-  const monitor = setInterval(() => live.push(loopStatus(s.repo, Date.now()).alive), 20)
+  const during: boolean[] = []
+  const monitor = setInterval(() => {
+    const value = loopStatus(s.repo, Date.now()).alive
+    live.push(value)
+    if (s.lock() > 0 && s.lock() !== old.pid && s.state()?.pid === old.pid) during.push(value)
+  }, 20)
   t.after(() => clearInterval(monitor))
   s.install(s.bundles[1])
   await s.wait(() => s.log().includes('LOOP-HANDOVER') && !alive(old.pid!))
@@ -130,6 +137,9 @@ test('넘기기는 Run 전부와 명의를 보존하고 새 상태를 쓴 뒤 �
   assert.equal(s.foregrounds().length, 1)
   assert.ok(live.length > 0)
   assert.ok(live.every(Boolean), '넘기는 동안 죽은 루프로 보였다')
+  assert.ok(during.length >= 2, '새 루프의 시작을 기다리는 동안 생존을 반복 확인해야 한다')
+  assert.ok(during.every(Boolean))
+  assert.equal(s.notices('LOOP-DEAD').length, 0, '넘기는 동안 LOOP-DEAD 를 보내지 않는다')
   clearInterval(monitor)
   const status = s.cli(['--status'])
   assert.equal(status.status, 0, status.stderr)
