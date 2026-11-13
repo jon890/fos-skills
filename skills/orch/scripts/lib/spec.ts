@@ -154,6 +154,16 @@ export function boardIdOf(text: string): { id: string; note: string } | null {
 }
 
 // 자동 단계를 맡는 실행만 명시한다. 본문에 든 예시는 실행 의도로 읽지 않는다.
+// 머리의 새 항목 요청. 본문 예시는 읽지 않는다(references/spec-writing.md).
+export function boardNewOf(text: string): boolean {
+  return /^\s*(?:[-*]\s*)?보드 항목\s*:\s*새로\s*$/m.test(text.split(/^##\s/m)[0])
+}
+
+// 머리의 검증 worker 역할. 나머지 역할은 띄우기가 정한다(references/spec-writing.md).
+export function workerRoleOf(text: string): 'verify' | null {
+  return /^\s*(?:[-*]\s*)?worker 역할\s*:\s*검증\s*$/m.test(text.split(/^##\s/m)[0]) ? 'verify' : null
+}
+
 export function autoStepNumberOf(text: string): number | null {
   const head = text.split(/^##\s/m)[0]
   const matches = [...head.matchAll(/^\s*(?:[-*]\s*)?자동 진행 단계\s*:\s*(.*?)\s*$/gm)]

@@ -75,6 +75,7 @@
 //                 보드에 업무 목적이 보이지 않을 수 있다(lib/board.ts 의 specTitle). 경고이고 종료 코드에 넣지 않는다
 //     보드        `보드 항목 id:` 줄에 id 뒤 설명이 붙었다. id 는 백틱 안의 글이나 공백 앞 첫 토큰으로만 읽는다(lib/spec.ts 의 boardIdOf).
 //                 설명이 붙은 id 가 보드에 없으면 launch-worker 가 항목을 만들지 않는다. 설명은 다른 줄에 둔다. 경고이고 종료 코드에 넣지 않는다
+//                 `보드 항목: 새로` 와 `보드 항목 id:` 를 함께 쓰면 새로 만들지 붙일지가 갈려 오류다.
 //     완료        `## 완료 기준` 절(또는 `완료 기준:` 줄)에 PR 이 둘 이상 든다. `PR1`, `PR #12` 처럼 번호가 다른 PR 이 둘 이상이거나
 //                 `PR1~PR3`, `PR 두 개` 꼴이다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 이 지시서는 PR1 만 맡고 뒤 PR 은
 //                 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다(SKILL.md 원칙). 뒤 PR 목록은 완료 기준이 아닌 참고 절에 둔다.
@@ -111,7 +112,7 @@ import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { autoStepNumberOf, boardIdOfLine, interimOf, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOf, boardNewOf, boardIdOfLine, interimOf, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
@@ -516,6 +517,10 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
   }
 
   for (const spec of parsed) {
+    if (boardNewOf(spec.lines.join('\n')) && boardIdOf(spec.lines.join('\n'))) {
+      const no = spec.lines.findIndex((line) => /^\s*(?:[-*]\s*)?보드 항목\s*:\s*새로\s*$/.test(line)) + 1
+      errors.push(`${spec.name}:${no}: 보드: \`보드 항목: 새로\` 와 \`보드 항목 id:\` 를 함께 쓰지 않는다. 하나만 남긴다`)
+    }
     try { autoStepNumberOf(spec.lines.join('\n')) }
     catch (e) { errors.push(`${spec.name}:1: 보드 자동 단계: ${(e as Error).message}`) }
     if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source))

@@ -734,3 +734,12 @@ test('완료 담당 문장과 코드 예시, 보류 줄이 있는 조건은 경�
     assert.doesNotMatch(r.stdout, /: 머지 보류:/)
   }
 })
+
+test('새 항목 요청과 항목 id 를 함께 쓰면 보드 오류다', () => {
+  const bad = lint([spec('both', '보드 항목: 새로\n보드 항목 id: a')])
+  assert.equal(bad.code, 1)
+  assert.match(bad.stdout, /보드:/)
+  const good = lint([spec('new', '보드 항목: 새로')])
+  assert.equal(good.code, 0)
+  assert.doesNotMatch(good.stdout, /보드:/)
+})
