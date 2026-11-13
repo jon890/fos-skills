@@ -438,18 +438,48 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     c.write('.omc/previews/a.html', '<html>')
     const preview = await c.migrate([])
     assert.match(preview.stderr, /설정 변경을 건너뜀.*읽지 못했다/)
-    assert.equal(preview.stderr.trim().split('\n').length, 1)
+    assert.equal(preview.stderr.trim().split('\n').length, 2, '이유 한 줄과 다시 돌리라는 안내 한 줄')
     assert.equal(readFileSync(config, 'utf8'), '{bad')
     assert.ok(existsSync(join(c.repo, '.omc/handoffs/specs/spec-a.md')))
     const applied = await c.migrate(['--apply'], { env: { ORCH_OUTPUT: 'short' } })
     assert.match(applied.stderr, /설정 변경을 건너뜀.*읽지 못했다/)
-    assert.equal(applied.stderr.trim().split('\n').length, 1)
+    assert.equal(applied.stderr.trim().split('\n').length, 2, '이유 한 줄과 다시 돌리라는 안내 한 줄')
     assert.doesNotMatch(applied.stderr, /at .*\.ts:|ConfigError/)
     assert.equal(readFileSync(config, 'utf8'), '{bad')
     assert.ok(existsSync(join(c.repo, '.orch/specs/spec-a.md')))
     assert.ok(!existsSync(join(c.repo, '.omc/handoffs/specs')))
     assert.ok(existsSync(join(c.repo, '.omc/previews/a.html')))
     assert.ok(!existsSync(`${config}.lock`))
+    assert.match(applied.stderr, /설정 파일을 읽지 못해 설정 쪽은 건너뛰었다\. config\.json 을 고친 뒤 다시 돌린다/)
+    assert.match(preview.stderr, /config\.json 을 고친 뒤 다시 돌린다/)
+  })
+
+  test('깨진 설정 말고 옮길 것이 없으면 「옮길 것이 없다」 대신 다시 돌리라고 알린다', async t => {
+    const c = setup(t)
+    const config = c.write('.orch/config.json', '{bad')
+    for (const args of [[], ['--apply']]) {
+      const done = await c.migrate(args)
+      assert.doesNotMatch(done.stdout, /옮길 것이 없다/)
+      assert.match(done.stderr, /config\.json 을 고친 뒤 다시 돌린다/)
+    }
+    assert.equal(readFileSync(config, 'utf8'), '{bad')
+    writeFileSync(config, '{}')
+    const fixed = await c.migrate(['--apply'])
+    assert.match(fixed.stdout, /옮길 것이 없다/)
+    assert.doesNotMatch(fixed.stderr, /다시 돌린다/)
+  })
+
+  test('설정 잠금을 시간 안에 잡지 못하면 건너뛰지 않고 실패한다', async t => {
+    const c = setup(t)
+    const config = c.write('.orch/config.json', '{"finish":{"specs_dir":".omc/handoffs/specs"}}')
+    c.write('.omc/handoffs/specs/spec-a.md', 'old spec\n')
+    // 다른 쓰기가 쥔 것처럼 갓 만든 잠금을 남긴다. 낡은 잠금(30초)이 아니라 넘겨받지 못하고 기본 5초 뒤 포기한다.
+    writeFileSync(`${config}.lock`, 'other')
+    const done = await c.migrate(['--apply'], { code: 1 })
+    assert.match(done.stderr, /파일 잠금을 .*초 안에 잡지 못했다/)
+    assert.doesNotMatch(done.stderr, /설정 변경을 건너뜀|다시 돌린다\n?$/)
+    assert.equal(readFileSync(config, 'utf8'), '{"finish":{"specs_dir":".omc/handoffs/specs"}}')
+    assert.equal(readFileSync(`${config}.lock`, 'utf8'), 'other')
   })
 
   test('옮기다 실패하면 멈추고 다시 돌리면 남은 것을 옮긴다', { skip: process.getuid?.() === 0 && 'root 는 권한 검사를 받지 않는다' }, async (t) => {
