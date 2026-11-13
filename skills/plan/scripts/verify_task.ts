@@ -1061,6 +1061,59 @@ export function checkChangedFileCount(path: string, entries: Set<string>, warnin
   }
 }
 
+// 수정은 현재 줄의 20%, 삭제는 전체 줄을 센다. 신규 파일은 아직 줄 수를 알 수 없다.
+export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[]): void {
+  const configPath = pjoin(repo, '.github/pr-size.json')
+  try {
+    const config = (isFile(configPath) ? JSON.parse(readTextFile(configPath)) : {}) as { grades?: Record<string, Record<string, number>>; core?: string[]; generated?: string[]; tests?: string[]; docs?: string[] }
+    const match = (rel: string, patterns: string[] = []) => patterns.some((pattern) => fnmatchcase(rel, pattern))
+    const files = new Map<string, string>()
+    for (const entry of entries) {
+      const [rel, action] = entry.split('\0')
+      if (!isGlob(rel) && !omitted(rel)) files.set(rel, `${files.get(rel) ?? ''} ${action}`)
+    }
+    let core = 0, total = 0, count = 0, unknown = 0
+    for (const [rel, action] of files) {
+      if (!match(rel, config.core) && match(rel, config.generated)) continue
+      count++
+      let lines = 0
+      if (action.includes('수정') || action.includes('삭제')) {
+        try {
+          const current = pySplitLines(normalizeNewlines(readFileSync(pjoin(repo, rel), 'utf8'))).length
+          lines = action.includes('삭제') ? current : Math.ceil(current * 0.2)
+        } catch { unknown++ }
+      } else unknown++
+      total += lines
+      if (match(rel, config.core) || (!match(rel, config.tests) && !match(rel, config.docs))) core += lines
+    }
+    const metrics: Record<string, number> = { core_lines: core, total_lines: total, files: count }
+    if (config.grades && !['A', 'B', 'D'].every((name) => config.grades![name] && Object.entries(config.grades![name]).every(([key, value]) => key in metrics && typeof value === 'number' && Number.isFinite(value) && value >= 0))) {
+      warnings.push(`${configPath} — PR 크기 등급 설정은 A, B, D 기준과 유효한 수치가 필요하다`)
+      return
+    }
+    const exceeds = (grade: string) => Object.entries(config.grades![grade]).some(([key, limit]) => metrics[key] > limit)
+    const grade = config.grades ? (exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A') : null
+    warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: ${config.grades ? `본 코드 ${core}줄, ` : ''}전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개${unknown ? ", 미상을 제외한 추정" : ""}).${grade === 'D' && unknown === 0 ? ' PR 나눔 검토' : ''}`)
+  } catch {
+    warnings.push(`${configPath} — PR 크기 설정을 읽지 못해 줄 수를 추정하지 못했다`)
+  }
+}
+
+// 인수 검증 표와 검증 명령에 적은 구체적인 테스트 파일을 추적 파일 및 신규 계획과 대조한다.
+export function checkTestReferences(path: string, text: string, entries: Entry[], repo: string, out: string[]): void {
+  const refs = (text.match(/[A-Za-z0-9_.@/-]+\.(?:tsx?|jsx?|py|java|kt|mjs|sh|rb)(?![A-Za-z0-9_])/g) ?? []).filter(isTest)
+  if (!refs.length) return
+  const listed = capture(['git', '-C', repo, 'ls-files', '-z'])
+  if (listed.code !== 0) return
+  const tracked = new Set(listed.stdout.split('\0'))
+  const planned = entries.filter(([, action]) => action === '신규').map(([rel]) => rel)
+  for (const ref of new Set(refs)) {
+    const rel = ref.replace(/^\.\//, '')
+    if (!isTest(rel) || isGlob(rel) || [...tracked].some((p) => p === rel || p.endsWith(`/${rel}`)) || planned.some((p) => isGlob(p) ? matches(rel, p) : p === rel || p.endsWith(`/${rel}`))) continue
+    out.push(`${path} — 검증에 적은 테스트 파일이 git 추적 파일이나 신규 계획에 없다: ${rel}`)
+  }
+}
+
 // 파일 길이 상한을 적용할 파일이다. `/` 없는 패턴은 파일 이름에 맞춘다. globs 가 없으면 코드 파일 전부다
 function lengthTarget(rel: string, globs: string[]): boolean {
   if (globs.length === 0) return CODE_SUFFIXES.has(pathSuffix(rel))
@@ -1675,6 +1728,17 @@ export function main(argv: string[]): number {
         checkPhasePrompt(path, text, out, entries, repo, warnings)
         phaseEntries.push([path, section(text, '작업 항목'), entries])
       }
+      const testSink = isRecord(index) && typeof index.created_at === 'string' && pyStrCompare(index.created_at, PR_SCOPE_FROM) >= 0 ? out : warnings
+      const testEntries = phaseEntries.flatMap(([, , entries]) => entries)
+      for (const phase of phases) {
+        const text = readTextFile(phase)
+        checkTestReferences(phase, section(text, '검증') + '\n' + section(text, '인수 검증 계획'), testEntries, repo, testSink)
+      }
+      if (isRecord(index) && typeof index.verification_plan === 'string') {
+        const verification = pjoin(planDir, index.verification_plan)
+        if (isFile(verification) && !phases.includes(verification)) checkTestReferences(verification, section(readTextFile(verification), '인수 검증 계획'), testEntries, repo, testSink)
+      }
+      if (!audit) checkEstimatedSize(`${planDir}/index.json`, allEntries, repo, warnings)
       const planRel = `${tasksDir.replace(/\/+$/, '')}/${plan}`
       const [fileLimit, lengthLimit] = repoLimits(repo, planRel, warnings)
       checkChangedFileCount(`${planDir}/index.json`, allFiles, warnings, fileLimit, phaseEntries.map(([phase, , rels]) => [phase, new Set(rels.map(([rel]) => rel))] as [string, Set<string>]), planRel)

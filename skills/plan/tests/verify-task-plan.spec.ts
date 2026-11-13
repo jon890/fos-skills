@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { checkEstimatedSize, checkTestReferences } from '../scripts/verify_task.ts'
 import { DESIGN, type Entry, indexJson, type Phase, Repo, SKILL_DIR, VALID, VALID_REQ, verify, writePlan } from './helpers.ts'
 
 const has = (lines: string[], needle: string) => lines.some((line) => line.includes(needle))
@@ -591,4 +592,90 @@ test('기능 폴더 아래 계획은 스펙과 설계를 함께 검사한다', (
   const failed = verify(repo, args)
   assert.equal(failed.code, 1, failed.stdout)
   assert.ok(failed.stdout.includes('기술 설계'))
+})
+
+
+test('PR 크기 추정은 저장소 등급과 미상 신규 파일을 알리고 큰 경우 경고한다', () => {
+  const repo = new Repo()
+  repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 }, D: { core_lines: 6 } }, core: [], generated: [], tests: [], docs: [] }))
+  repo.file('src/a.ts', 'a\n'.repeat(35))
+  const warnings: string[] = []
+  checkEstimatedSize('plan', new Set(['src/a.ts\0수정', 'src/new.ts\0신규']), repo.root, warnings)
+  assert.match(warnings[0], /D등급.*본 코드 7줄.*미상 1개/)
+  assert.doesNotMatch(warnings[0], /PR 나눔 검토/)
+  const complete: string[] = []
+  checkEstimatedSize('plan', new Set(['src/a.ts\0수정']), repo.root, complete)
+  assert.match(complete[0], /D등급.*PR 나눔 검토/)
+  const small: string[] = []
+  checkEstimatedSize('plan', new Set(['src/new.ts\0신규']), repo.root, small)
+  assert.match(small[0], /A등급/)
+  assert.doesNotMatch(small[0], /PR 나눔 검토/)
+  repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 } } }))
+  const invalid: string[] = []
+  checkEstimatedSize('plan', new Set(), repo.root, invalid)
+  assert.match(invalid[0], /A, B, D 기준/)
+  const noConfig = new Repo()
+  noConfig.file('src/a.ts', 'a\nb\n')
+  const estimate: string[] = []
+  checkEstimatedSize('plan', new Set(['src/a.ts\0수정']), noConfig.root, estimate)
+  assert.match(estimate[0], /전체 1줄/)
+  assert.doesNotMatch(estimate[0], /등급|본 코드/)
+})
+
+test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 없는 파일을 막는다', () => {
+  const repo = new Repo('test-ref-', true)
+  repo.file('svc/src/test/FooTest.java', '')
+  repo.git('add', 'svc/src/test/FooTest.java')
+  repo.file('tests/existing.test.ts', '')
+  repo.git('add', 'tests/existing.test.ts')
+  const out: string[] = []
+  checkTestReferences('phase', '`tests/existing.test.ts` `src/test/FooTest.java` `tests/new.test.ts` `tests/missing.test.ts` tests/fixtures/data.json tests/other.pyc tests/a.shx tests/a.javascript', [['tests/new.test.ts', '신규']], repo.root, out)
+  assert.equal(out.length, 1)
+  assert.match(out[0], /tests\/missing.test.ts/)
+})
+
+
+test('계획 검사는 phase 와 별도 인수 검증의 경로를 확인하고 옛 계획은 경고한다', () => {
+  const repo = new Repo('plan-test-refs-', true)
+  repo.file('docs/flow.md')
+  repo.file('svc/src/test/FooTest.java')
+  repo.git('add', 'svc/src/test/FooTest.java')
+  const phase = { work: '### 1. 문서', command: 'pytest src/test/FooTest.java tests/missing.test.ts', entries: [['docs/a.md', '수정'], ['tests/new.test.ts', '신규'], ['tests/absent.test.ts', '수정']] as Entry[] }
+  repo.file('docs/a.md', 'hello\n')
+  const dir = writePlan(repo, 'plan1-x', [phase], { index: { created_at: '2026-11-13', verification_plan: 'verification.md' } })
+  repo.file(`${dir}/verification.md`, '## 인수 검증 계획\n| `tests/new.test.ts` | `tests/absent.test.ts` |\n')
+  const result = verify(repo, ['plan1-x', '--audit'])
+  assert.ok(result.violations.some((x) => x.includes('tests/missing.test.ts')), result.stdout)
+  assert.ok(result.violations.some((x) => x.includes('tests/absent.test.ts')), result.stdout)
+  assert.ok(!result.violations.some((x) => x.includes('FooTest.java') || x.includes('tests/new.test.ts')), result.stdout)
+  assert.ok(!result.warnings.some((x) => x.includes('PR 크기 추정')), result.stdout)
+  const old = writePlan(repo, 'plan1-x', [phase], { index: { created_at: '2026-10-24', verification_plan: 'verification.md' } })
+  repo.file(`${old}/verification.md`, '## 인수 검증 계획\n| `tests/absent.test.ts` |\n')
+  const legacy = verify(repo, ['plan1-x', '--audit'])
+  assert.ok(legacy.warnings.some((x) => x.includes('tests/absent.test.ts')), legacy.stdout)
+  assert.ok(!legacy.violations.some((x) => x.includes('검증에 적은 테스트 파일')), legacy.stdout)
+  const before = verify(repo, ['plan1-x'])
+  assert.ok(before.warnings.some((x) => x.includes('PR 크기 추정')), before.stdout)
+})
+
+
+test('검사 명령은 새 계획의 없는 테스트를 막고 날짜 없는 계획은 경고한다', () => {
+  const repo = new Repo('plan-entry-', true)
+  repo.file('docs/flow.md')
+  repo.file('docs/a.md', '문서\n')
+  repo.file('tests/fixtures/data.json', '{}')
+  repo.git('add', 'tests/fixtures/data.json')
+  const phase: Phase = { work: '### 1. 문서', command: 'pytest tests/missing.test.ts tests/fixtures/data.json', entries: [['docs/a.md', '수정']] }
+  const dir = writePlan(repo, 'plan1-x', [phase], { index: { created_at: '2026-11-13', pr_scope: '문서를 고친다', deferred: [], verification_plan: 'verification.md' } })
+  repo.file(`${dir}/verification.md`, '## 인수 검증 계획\n| `tests/other.test.ts` |\n')
+  const current = verify(repo, ['plan1-x', '--audit'])
+  assert.equal(current.code, 1, current.stdout)
+  assert.equal(current.violations.filter((line) => line.includes('검증에 적은 테스트 파일')).length, 2, current.stdout)
+  assert.ok(!current.stdout.includes('data.js'), current.stdout)
+  writePlan(repo, 'plan1-x', [phase], { index: { pr_scope: '문서를 고친다', deferred: [], verification_plan: 'verification.md' } })
+  const old = verify(repo, ['plan1-x', '--audit'])
+  assert.equal(old.code, 0, old.stdout)
+  assert.equal(old.warnings.filter((line) => line.includes('검증에 적은 테스트 파일')).length, 2, old.stdout)
+  assert.ok(!old.warnings.some((line) => line.includes('PR 크기 추정')), old.stdout)
+  assert.ok(verify(repo, ['plan1-x']).warnings.some((line) => line.includes('PR 크기 추정')))
 })
