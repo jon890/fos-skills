@@ -305,7 +305,6 @@ describe('지시서 검사', () => {
       ['adr', '  orch queue reserve --repo "$(git rev-parse --show-toplevel)" --kind adr'],
       ['worker-ask', '  orch worker ask'],
       ['feedback-add', '  orch feedback add'],
-      ['study-add', '  orch study add'],
     ]) {
       const at = template.indexOf(call, template.indexOf(`<!-- orch-rule: ${rule} -->`))
       assert.ok(at > 0, rule)

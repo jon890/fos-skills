@@ -75,7 +75,7 @@ describe('spec-common.md 의 스크립트 경로', () => {
     assert.match(item('adr'), /\n {2}orch queue reserve --repo "\$\(git rev-parse --show-toplevel\)" --kind adr --module "\$MODULE" --name "\$NAME"\n/)
     assert.match(item('worker-ask'), /\n {2}orch worker ask --from "\$FROM" --question "\$QUESTION"\n/)
     assert.match(item('feedback-add'), /\n {2}orch feedback add --slug /)
-    assert.match(item('study-add'), /\n {2}orch study add --slug /)
+    assert.match(template(), /\n {2}orch study add --slug /)
   })
 
   test('orch 를 부르는 블록은 변수 지정 뒤 바로 orch 명령 한 줄이다', () => {

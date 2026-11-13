@@ -8,6 +8,8 @@ import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { atomicWrite, syncCommon } from '../scripts/spec/sync-common.ts'
 
+const TEMPLATE = fileURLToPath(new URL('../templates/spec-common.md', import.meta.url))
+
 let repo: string
 const rule = (name: string, body: string, keep = false) => `- ${body} <!-- orch-rule: ${name}${keep ? ' keep' : ''} -->\n`
 beforeEach(() => {
@@ -177,4 +179,20 @@ test('코드 블록 안의 표지와 절 제목을 규칙이나 삽입 위치로
 test('파일 첫 줄 앞 삽입은 diff 의 기존 범위를 0줄로 표시한다', () => {
   const result = syncCommon(rule('b', '유지'), rule('a', '추가') + rule('b', '유지'), repo)
   assert.match(result.output.join('\n'), /@@ -0,0 \+1,/)
+})
+
+test('옛 틀(명령 블록마다 경로 풀기 한 줄)을 현재 틀로 맞춰도 공부 후보 명령이 한 번만 남고 재실행은 같다', () => {
+  const template = readFileSync(TEMPLATE, 'utf8')
+  const old = '  command -v orch >/dev/null || orch() { _o="$(node -e \'x\')" || return 3; node "$_o" "$@"; }\n'
+  // 현재 틀의 명령 블록마다 옛 한 줄을 되돌린 사본을 옛 공통 지시서로 쓴다
+  const copy = template.replace(/^( {2}orch (?:queue|worker|feedback|study) .*\n)/gm, old + '$1')
+  assert.equal(copy.split('command -v orch').length - 1, 5)
+  const result = syncCommon(copy, template, repo)
+  assert.equal(result.text.split('orch study add').length - 1, 1)
+  assert.equal(result.text.split('orch worker ask').length - 1, template.split('orch worker ask').length - 1)
+  // 표지 항목의 옛 한 줄은 지워진다. 표지가 없는 공부 후보 블록의 한 줄은 저장소 항목으로 보존한다
+  assert.equal(result.text.split('command -v orch').length - 1, 1)
+  assert.equal(result.manual, false)
+  assert.equal(syncCommon(result.text, template, repo).text, result.text)
+  assert.deepEqual(syncCommon(result.text, template, repo).output, [])
 })
