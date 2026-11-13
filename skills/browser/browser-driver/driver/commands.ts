@@ -21,7 +21,7 @@ export const COMMANDS: Command[] = [
   { name: "ready", args: ["<handle>", "[timeout_ms]"], summary: "document.readyState 가 complete 가 될 때까지 기다린다" },
   { name: "url", args: ["<handle>"], summary: "지금 보고 있는 주소를 낸다", returns: "지금 보고 있는 주소", note: "조회 결과가 비면 먼저 이것으로 로그인 화면으로 튕겼는지 본다" },
   { name: "snap", args: ["<handle>"], summary: "화면의 접근성 트리를 낸다", returns: "화면의 접근성 트리" },
-  { name: "shot", args: ["<handle>", "[path]"], summary: "화면을 이미지 파일로 저장한다", returns: "저장한 경로" },
+  { name: "shot", args: ["<handle>", "[path]", "[--size WxH]"], summary: "화면을 이미지 파일로 저장한다", returns: "저장한 경로", note: "--size 1280x800 처럼 주면 찍기 전에 뷰포트(CSS 픽셀)를 그 크기로 바꾼다. orca 백엔드만 지원하고\n나머지는 종료 코드 2 로 거절한다. 바꾼 크기는 그 탭에 남아 뒤 촬영도 같은 크기다" },
   { name: "console", args: ["<handle>"], summary: "콘솔 로그를 낸다", returns: "콘솔 로그 JSON" },
   { name: "errors", args: ["<handle>"], summary: "페이지 오류를 낸다", returns: "페이지 오류 JSON" },
   { name: "worktree", args: ["<handle>"], summary: "탭이 붙어 있는 워크트리 경로를 낸다", returns: "탭이 붙어 있는 워크트리 경로", note: "orca 백엔드 전용. 사람이 볼 화면은 ORCA_WORKTREE 로 워크트리를 고정하고\n갱신하기 전에 이것으로 기대한 곳의 탭인지 확인한다" },
