@@ -43,6 +43,7 @@ test('vagueScope 는 명사 수식어를 빼고 지시를 잡는다', () => {
 
 test('하이픈 테스트 이름과 모듈 이름 판정', () => {
   assert.equal(isTest('scripts/test-app.py'), false)
+  for (const rel of ['scripts/test_app.py', 'src/scripts/test_x.py', 'scripts/foo/test_x.py']) assert.equal(isTest(rel), true, rel)
   assert.equal(runnableTest('tests/test-app.py'), true)
   assert.equal(pythonModuleNameProblem('tests/test-app.py'), true)
   assert.equal(pythonModuleNameProblem('tests/test_app.py'), false)
