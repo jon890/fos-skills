@@ -32,6 +32,11 @@
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
+//     0-3. 새 터미널이고(--terminal 이 없고) claude 가 아닌 에이전트면 worker 의 셸이 PATH 로 orch 실행기를 찾는지 본다(lib/worker-path.ts). 못 찾으면 고칠 명령을 내고 1 이다.
+//        공통 지시서가 `orch …` 로만 부르고 Orca 의 worker-start 가 터미널 환경을 받지 않아서, 띄우는 쪽이 PATH 를 넣을 수 없다. 워크트리를 만들기 전에 멈춘다.
+//        원격 환경 옵션(--on, --environment, --pairing-code)이 있으면 이 머신의 PATH 를 보지 않는다. 워크트리가 정해진 뒤 before-launch 이전에 같은 워크트리의 원격 터미널을
+//        `orca terminal create --environment … --command` 로 열어 `command -v orch`, `command -v node` 를 찍고 `terminal read` 로 읽은 뒤 닫는다.
+//        둘 중 없는 것이 있으면 원격에서 install-cli 를 하라고 안내하며 1 로 멈추고(워크트리는 남는다), 확인하지 못하면(터미널을 못 열었거나 LAUNCH_PROBE_WAIT 초=20 안에 못 읽음) 경고만 내고 띄운다
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
 //     1-1. spec-lint 로 이 지시서를 검사한다. 함께 넘기는 활성 지시서는 살아 있는 dispatch(pending, dispatched, running)가 쓰는 지시서
 //        가운데 이 지시서와 같은 폴더에 있는 것이다(lib/spec.ts 의 liveSpecPaths. 이 지시서 자신과 spec-common.md 는 뺀다).
@@ -113,7 +118,7 @@
 //            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
 //
-// 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. ORCA_CLAUDE_PROFILES 로 0-2 의 프로필 폴더를 바꾼다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
+// 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. ORCA_CLAUDE_PROFILES 로 0-2 의 프로필 폴더를 바꾼다. ORCH_WORKER_PATH 는 0-3 이 보는 worker 셸의 PATH 를 정하고, ORCH_WORKER_SHELL 은 그 셸을 정한다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2 가 기본값이다. 소수도 받는다.
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
@@ -133,7 +138,7 @@ import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
-import { orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
+import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
 import { runAsync, scriptCommand, withRun } from '../lib/proc.ts'
@@ -144,6 +149,7 @@ import { shQuote } from '../lib/py.ts'
 import { emit, oneLine, short } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
+import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
@@ -438,6 +444,66 @@ type Args = {
   passthru: string[]
 }
 
+// 원격 환경 옵션을 orca terminal 명령의 환경 인자로 바꾼다. --on 과 --environment 는 저장된 환경 이름이고 --pairing-code 는 페어링 코드다.
+// 원격 옵션이 없으면 null. `--on=host` 꼴도 받는다
+function remoteSelectorOf(passthru: string[]): { option: string; args: string[] } | null {
+  for (const name of ['--on', '--environment', '--pairing-code']) {
+    const at = passthru.findIndex((arg) => arg === name || arg.startsWith(`${name}=`))
+    if (at < 0) continue
+    const value = passthru[at].startsWith(`${name}=`) ? passthru[at].slice(name.length + 1) : passthru[at + 1] ?? ''
+    return { option: name, args: [name === '--pairing-code' ? '--pairing-code' : '--environment', value] }
+  }
+  return null
+}
+
+const PROBE_READ_MIN_MS = 1000
+const PROBE_LINE = /^__ORCH_PROBE__ orch=(\S*) node=(\S*)\s*$/
+
+// 머리 주석의 「0-3」. 원격 머신에 짧은 터미널을 열어 orch 와 node 가 PATH 에 있는지 읽고 닫는다.
+// found 는 둘 다 있다, missing 은 없는 것의 이름, unknown 은 확인하지 못한 이유다(연결 문제 같은 것이라 부르는 쪽이 막지 않는다)
+async function remoteOrchProbe(
+  selector: { option: string; args: string[] },
+  worktree: string,
+  call: (args: string[], timeoutMs?: number) => Promise<RunResult>,
+): Promise<{ kind: 'found' } | { kind: 'missing'; names: string[] } | { kind: 'unknown'; reason: string }> {
+  const command = `printf '__ORCH_%s__ orch=%s node=%s\\n' PROBE "$(command -v orch)" "$(command -v node)"`
+  const created = await call(['terminal', 'create', '--worktree', `path:${worktree}`, '--title', 'orch-probe', '--command', command, '--json', ...selector.args], 60_000)
+  let handle = ''
+  try {
+    const result = ((JSON.parse(created.stdout) as { result?: Record<string, any> }).result ?? {}) as Record<string, any>
+    handle = String(result.terminal?.handle ?? result.handle ?? '')
+  } catch {
+    handle = ''
+  }
+  if (created.code !== 0 || !handle) return { kind: 'unknown', reason: `확인 터미널을 열지 못했다: ${(created.stdout + created.stderr).trim().split('\n')[0] || `종료 코드 ${created.code}`}` }
+  try {
+    const wait = seconds('LAUNCH_PROBE_WAIT', '20')
+    const interval = seconds('LAUNCH_PROBE_POLL', '1')
+    const deadline = Date.now() + wait * 1000
+    for (;;) {
+      // 읽기 한 번도 남은 시간 안에 끝내 원격이 멎어도 전체가 대기 한도를 크게 넘지 않는다. 한 번은 읽어 보도록 1초는 남긴다
+      const read = await call(['terminal', 'read', '--terminal', handle, '--screen', '--json', ...selector.args], Math.max(PROBE_READ_MIN_MS, deadline - Date.now()))
+      let result: Record<string, unknown> = {}
+      try {
+        result = ((JSON.parse(read.stdout) as { result?: Record<string, unknown> }).result ?? {}) as Record<string, unknown>
+      } catch {
+        result = {}
+      }
+      for (const line of screenLines(result)) {
+        const m = PROBE_LINE.exec(line.trim())
+        if (!m) continue
+        const names = [...(m[1] ? [] : ['orch']), ...(m[2] ? [] : ['node'])]
+        return names.length ? { kind: 'missing', names } : { kind: 'found' }
+      }
+      const left = deadline - Date.now()
+      if (left <= 0) return { kind: 'unknown', reason: `${wait}초 안에 확인 터미널의 결과를 읽지 못했다` }
+      await sleep(Math.min(Math.max(interval, 0.001) * 1000, left))
+    }
+  } finally {
+    closeTerminal(handle, { extraArgs: selector.args })
+  }
+}
+
 function parse(argv: string[]): Args | 'help' {
   const split = argv.includes('--') ? argv.indexOf('--') : argv.length
   const passthru = argv.slice(split + 1)
@@ -642,6 +708,20 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (rejected.length) throw new Stop(rejected.join('; '), 1)
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
+  // 새 터미널이면 worker 의 셸이 PATH 로 orch 를 찾아야 한다(지시서가 `orch …` 만 쓴다). 이어 쓰는 터미널은 이미 떠 있어 보지 않는다.
+  // 원격 환경(--on, --environment, --pairing-code)의 worker 는 그 서버의 셸에서 뜨므로 이 머신의 PATH 로 판정하지 못한다.
+  // 워크트리가 정해진 뒤 원격에서 짧은 확인 터미널을 열어 본다(아래 remoteOrchProbe).
+  // Claude worker 는 플러그인 bin/ 이 PATH 에 들어가 보지 않는다(0-2 가 프로필의 plugins 링크를 본다)
+  const remoteSelector = remoteSelectorOf(passthru)
+  const checkPath = !passthru.includes('--terminal') && passValue(passthru, '--agent') !== 'claude'
+  if (checkPath && !remoteSelector) {
+    const orchOnPath = checkWorkerOrch()
+    if (!orchOnPath.ok) {
+      err(`거부: worker 터미널에서 orch 를 부를 수 없다. ${orchOnPath.reason}. 지시서가 \`orch …\` 로만 부르므로 worker 가 첫 명령에서 막힌다. 아래대로 고친 뒤 다시 띄운다`)
+      for (const line of orchOnPath.fix) err(line)
+      return 1
+    }
+  }
   const poll = seconds('LAUNCH_POLL', '5')
   const wtWait = seconds('LAUNCH_WT_WAIT', '30')
   const wtPoll = seconds('LAUNCH_WT_POLL', '2')
@@ -734,6 +814,18 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   }
   const worker = { worktree: resolve(worktree), spec: resolve(a.spec) }
 
+  // 원격 환경이면 이 머신의 PATH 가 아니라 원격 머신에서 orch 와 node 를 찾는지 본다. 확인하지 못하면(연결 문제) 막지 않고 경고만 낸다
+  if (checkPath && remoteSelector) {
+    const callRemote = (args: string[], timeoutMs?: number): Promise<RunResult> => execute([orcaBin(), ...args], { timeoutMs })
+    const probed = await remoteOrchProbe(remoteSelector, worktree, callRemote)
+    if (probed.kind === 'missing') {
+      err(`거부: 원격 환경(${remoteSelector.option} ${remoteSelector.args[1]})의 worker 터미널 PATH 에서 ${probed.names.join(', ')} 를 찾지 못했다. 지시서가 \`orch …\` 로만 부르므로 worker 가 첫 명령에서 막힌다`)
+      err('그 머신에서 `orch doctor install-cli` 를 돌리고 ~/.local/bin 을 로그인 셸이 읽는 설정(zsh 는 ~/.zshenv)의 PATH 에 둔다. node 가 없으면 그 머신에 설치한다')
+      err(`워크트리는 남아 있다: ${worktree}`)
+      return 1
+    }
+    if (probed.kind === 'unknown') err(`경고: 원격 PATH 에서 orch 를 찾는지 확인하지 못해 그대로 띄운다. ${probed.reason}`)
+  }
   let started = false
   try {
     const before = await fire(

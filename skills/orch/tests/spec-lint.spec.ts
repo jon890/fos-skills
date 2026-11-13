@@ -292,6 +292,27 @@ describe('지시서 검사', () => {
     assert.match(withTemplate().stdout, /공통: 표지 `verify` 가 붙은 규칙이 틀과 다르다/)
   })
 
+  test('명령 블록에 실행기 경로 풀기 한 줄이 남은 옛 사본은 표지마다 틀과 다르다고 경고한다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    const old = '  command -v orch >/dev/null || orch() { _o="$(node -e \'x\')" || return 3; node "$_o" "$@"; }\n'
+    const a = spec('spec-a', '담당: `src/a/**`')
+    const check = () => spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a], { env: { ...ENV, SPEC_TEMPLATE: TEMPLATE }, encoding: 'utf8' })
+    write(join(specs, 'spec-common.md'), template)
+    assert.equal(check().stdout, '')
+    // 명령 블록이 있는 항목마다 옛 한 줄을 되돌린 사본을 본다
+    for (const [rule, call] of [
+      ['migration', '  orch queue reserve --repo'],
+      ['adr', '  orch queue reserve --repo "$(git rev-parse --show-toplevel)" --kind adr'],
+      ['worker-ask', '  orch worker ask'],
+      ['feedback-add', '  orch feedback add'],
+    ]) {
+      const at = template.indexOf(call, template.indexOf(`<!-- orch-rule: ${rule} -->`))
+      assert.ok(at > 0, rule)
+      write(join(specs, 'spec-common.md'), template.slice(0, at) + old + template.slice(at))
+      assert.match(check().stdout, new RegExp(`표지 \`${rule}\` 가 붙은 규칙이 틀과 다르다`), rule)
+    }
+  })
+
   test('공통 규칙의 머리 목록 기호만 무시하고 본문 변경은 경고한다', () => {
     const template = write(join(tmp, 'template.md'), '5. PR 준비를 알린다. <!-- orch-rule: ready-status -->\n  이어지는 설명은 그대로 둔다.\n')
     const a = spec('spec-a', '담당: `src/a/**`')
