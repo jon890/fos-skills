@@ -27,7 +27,7 @@
 
 | id | Task 성격 | 모델 | effort |
 | --- | --- | --- | --- |
-| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본) |
+| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현. 한국어 문서가 주 산출물이면 Terra 는 쓰지 않는다 | `gpt-6.1-sol`, `gpt-6.1-terra`, Claude Sonnet 5.5 | sol `low`, Terra `medium`, Sonnet `high`(기본) |
 | `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high` |
 | `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
 | `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5, Claude Fable 5.2(큰 구조 정리만) | sol `medium`(넘기지 않는다), Sonnet `high`(기본), Fable `high`(기본). 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
@@ -42,7 +42,7 @@ Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다.
 - `launch-worker` 는 이 표의 행에 있는 모델과 모델별 effort 상한을 검사한다. 후보 밖 모델이나 상한을 넘는 effort 가 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 실제로 모델이나 effort 가 후보 밖이고 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다. effort 를 넘겼으면 `effort` 와 `effortLimit` 도 남긴다.
 - effort `기본` 은 표에 적힌 모델 기본값으로 검사한다. 표에 기본값이 없으면 effort 를 명시한다.
 - 같은 지시서와 실행 설정으로 이미 띄운 작업을 이어 가면 effort 상한 검사를 생략한다. 재시도에서 설정이나 지시서를 바꾸면 다시 검사한다. 후속 지시서로 새 Task 를 보내는 경우도 검사한다.
-- `review` 행은 모델 후보와 effort 상한을 검사하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 선택 줄에 `Terra 실험 N/5`(N 은 1~5)가 있고 그 행의 후보에 Sonnet 이 있을 때만 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
+- `review` 행은 모델 후보와 effort 상한을 검사하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Terra 는 표에서 후보로 적은 행(`impl-planned`, `visual`)에서만 표시 없이 허용한다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - `impl-explore` 의 Fable 은 큰 구조 정리에만 고른다. 후보 검사는 모델 이름만 보므로 조건은 고르는 쪽이 지킨다. 아래 「큰 구조 정리의 Fable」 이 조건을 정한다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
 
@@ -95,7 +95,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | Claude Opus 5.5 | `gpt-6.1-sol` `high`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | `gpt-6.1-sol` `high` | Claude Opus 5.5 | `gpt-6.1-sol` `medium` |
 | `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
-| Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra`(Terra 실험 표시가 있을 때) | Claude Haiku 5.5 |
+| Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra`(`impl-planned` 에서 한국어 문서가 주 산출물이 아닐 때) | Claude Haiku 5.5 |
 | `gpt-6.1-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
 | Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
@@ -117,9 +117,19 @@ Claude Fable 5.2 는 `impl-explore` 가운데 큰 구조 정리에만 후보다.
 - **고르는 쪽.** 지시서 `worker 선택:` 줄의 비교 칸에 Opus 나 sol 을 적고, 이유에 큰 구조 정리인 까닭과 가격(Opus 의 2배)을 감수하는 까닭을 적는다. 한국어 문서가 주 산출물이어도 Claude 라 hook 이 걸린다.
 - **근거.** 구조 정리 두 건의 첫 리뷰 차단이 0 이었다([evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-12 절).
 
-### Terra 실험
+### Terra 후보 결정
 
-Sonnet 이 후보인 구현 작업에서 `gpt-6.1-terra` 를 다섯 건까지 실험한다. 한국어 문서가 주 산출물인 Task 에는 쓰지 않는다. 선택 줄에 `Terra 실험 N/5` 를 적고, 작업별 시간·비용·첫 리뷰 결과는 아래 「실측 기록」 에 모은다. 다섯 건을 마치면 결과를 사용자에게 보여 Sonnet 의 구현 자리를 Terra 로 옮길지 정한다.
+`impl-planned` 행의 후보에 `gpt-6.1-terra` 를 더했다(사용자 결정 2026-11-13). 한국어 문서가 주 산출물인 Task 에는 쓰지 않는다. 한국어 표기 검사 hook 이 Codex 에 없기 때문이다. 선택 줄에 실험 표시는 필요 없고, Sonnet 의 구현 자리는 그대로 둔다.
+
+Sonnet 이 후보인 구현 작업 다섯 건에서 Terra 를 써 봤다. 결과는 실패 1건, 성공 4건이다. 성공한 세 건의 첫 리뷰는 다음과 같다.
+
+| 건 | 차단 | 권장 |
+| --- | --- | --- |
+| 3/5 #460 보드 읽기 구현 | 0 | 4 |
+| 4/5 #462 새 JS 허용 목록 검사 | 1 | 3 |
+| 5/5 #475 계획 검사기 오탐 수정 | 0 | 3(테스트를 놓치는 회귀 1건 포함) |
+
+Sonnet 을 대신하기에는 실패 1건과 차단 1건이 있어 근거가 적다. 코드 중심 작업에는 쓸 만하다고 보고 후보로만 더했다. 작업별 시간·비용은 아래 「실측 기록」 으로 계속 모은다.
 
 ### 실측 기록
 

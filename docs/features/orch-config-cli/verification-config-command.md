@@ -1,6 +1,6 @@
 # 설정 조회와 변경 명령 검증 기록
 
-완료: PR 전 인수 검증과 문서 대조. 독립 코드 리뷰 대기. 독립 코드 리뷰는 PR 생성 뒤 코디네이터가 별도 Claude worker에게 맡긴다.
+완료: 인수 검증과 문서 대조. 구현은 PR #470(검사표), #474(`orch config` 명령), #476(migrate 재실행 안내)로 main 에 머지됐다. 독립 코드 리뷰는 PR #474 에서 받았고 아래 「리뷰 반영과 추가 검증」 에 반영 내용이 있다.
 
 - 기준: [기능 스펙](spec.md), [기술 설계](design.md).
 - 최초 구현 검증 커밋: `4f28c2891ece6753e37992e01bc0c513dd91876d`. 같은 구현의 `fe836ae020d2fe2551ba06b244798a80f0241dc7`에서 PR Tests가 통과했다. 이후 리뷰 반영은 아래에 따로 기록한다.
@@ -39,7 +39,7 @@
 
 - 계획 critic: APPROVE. worker 제한을 승인된 REQ13의 호출 금지로 보완한 뒤 재검토했다.
 - 독립 문서 검토: PASS, 발견 없음. 검토 커밋은 위 구현 검증 커밋과 같다.
-- 최초 구현의 독립 코드 리뷰: [Claude 리뷰](https://github.com/jon890/fos-skills/pull/474#pullrequestreview-5887211914)는 머지 가능, 차단 없음으로 나왔다. 코디네이터가 지정한 권장 사항을 반영했으며 바뀐 코드의 재검토를 기다린다.
+- 최초 구현의 독립 코드 리뷰: [Claude 리뷰](https://github.com/jon890/fos-skills/pull/474#pullrequestreview-5887211914)는 머지 가능, 차단 없음으로 나왔다. 코디네이터가 지정한 권장 사항을 반영했고, 반영한 head 의 PR #474 Tests 통과 뒤 머지됐다.
 
 ## 문서 대조와 공통 후보
 
@@ -55,7 +55,7 @@
 
 ## 계획 인수와 후속 검증
 
-PR1의 deferred에서 설정 명령·잠금과 이전·재시작 알림·문서 안내·worker 금지, REQ6의 타입 문서, README 의존 설치와 설치 테스트 설명을 모두 인수했다. 이번 PR의 계획은 위 절차와 실제 결과를 이 문서에 옮긴 뒤 제거했다. 다른 PR의 계획은 계획 수명 규칙의 삭제 범위에 따라 그대로 둔다.
+PR1의 deferred에서 설정 명령·잠금과 이전·재시작 알림·문서 안내·worker 금지, REQ6의 타입 문서, README 의존 설치와 설치 테스트 설명을 모두 인수했다. 이 PR의 계획은 위 절차와 실제 결과를 이 문서에 옮긴 뒤 제거했다. PR1(#470)의 계획 폴더는 검증 증거가 #470 본문에 있고 deferred 를 모두 인수했으므로 기능 문서 정리에서 제거했다.
 
 머지·배포 뒤 검증 없음: 저장소 파일을 읽고 바꾸는 CLI 기능이며 별도 서비스 배포나 원격 환경을 전제로 하지 않는다. 독립 코드 리뷰와 PR의 Tests 통과는 머지 전 조건이다.
 
@@ -75,4 +75,4 @@ PR1의 deferred에서 설정 명령·잠금과 이전·재시작 알림·문서 
 - `node --test skills/orch/tests/migrate-orch-dir.spec.ts skills/orch/tests/lib-config.spec.ts skills/orch/tests/orch-config.spec.ts skills/orch/tests/config-docs.spec.ts`: 통과.
 - `node scripts/runtime-policy.ts`, `node scripts/run-tests.ts --tsc-only`: 통과.
 - 회귀 테스트는 수정 전 실패하고 수정 후 통과하는 것을 확인했다.
-- 리뷰 반영 뒤 전체 테스트는 코디네이터의 지시에 따라 같은 head의 PR Tests로 확인한다. 새 코드의 독립 재검토와 CI 결과는 PR에 남긴다.
+- 리뷰 반영 뒤 전체 테스트는 코디네이터의 지시에 따라 같은 head의 PR Tests로 확인했고, 그 결과는 PR #474 에 남아 있다.
