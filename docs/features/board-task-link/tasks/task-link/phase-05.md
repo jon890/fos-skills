@@ -60,7 +60,7 @@
 - 주소를 만든 뒤 쓰기 전에 번호가 바뀐 경우(가짜 주소 만들기 안에서 `board.ts set <id> --task-ref Z/9` 를 부른다)는 주소가 쓰이지 않고 실패 로그도 없다(REQ7).
 - 예산을 넘긴 뒤에는 호출하지 않는다. 바꿔 넣은 주소 만들기가 `now` 를 예산보다 크게 밀면 대상 셋 가운데 첫 하나만 부른다.
 - 실패 기록이 있는 항목에 `board.ts set <id> --task <주소>` 를 넣고 다시 부르면 기록이 지워진다.
-- 틱 전체 사례: `board.task` 가 `dooray` 인 임시 저장소, `DOORAY_BIN` 이 종료 코드 1 로 끝나는 가짜, 번호만 있는 doing 항목 하나. `orch-loop.ts --repo <저장소> --tick --tick-number 1` 을 돌린 뒤 같은 상태 폴더로 `--tick-number 2` 를 다시 돈다(그 사이 루프를 다시 띄운 것과 같다). 루프 로그(`loop.log`)에 `TASK-LINK-FAIL <id> <번호> dooray post get: …` 이 한 줄뿐이다. 틱 실행의 가짜 orca·gh 준비는 `skills/orch/tests/orch-loop.spec.ts` 의 꼴을 따른다.
+- 틱 전체 사례: `board.task` 가 `dooray` 인 임시 저장소, `DOORAY_BIN` 이 종료 코드 1 로 끝나는 가짜, 번호만 있는 doing 항목 하나. `orch loop run --repo <저장소> --once` 을 돌린 뒤 같은 상태 폴더로 `orch loop run --repo <저장소> --once` 를 다시 돈다(그 사이 루프를 다시 띄운 것과 같다). 루프 로그(`loop.log`)에 `TASK-LINK-FAIL <id> <번호> dooray post get: …` 이 한 줄뿐이다. 틱 실행의 가짜 orca·gh 준비는 `skills/orch/tests/orch-loop.spec.ts` 의 꼴을 따른다.
 - 틀린 `board.task` 는 `TASK-LINK-CONFIG` 한 줄이고, 같은 이유로 다시 부르면 줄이 없다.
 
 ### 5. 문서와 조각

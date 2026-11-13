@@ -216,7 +216,7 @@ orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
 | REQ3 | `taskAdapterOf` 단위 테스트, 설정 검사표 테스트, `orch config set` 명령 테스트 | 두 어댑터 통과, 모르는 이름·빠진 값·남의 키 거절 |
 | REQ4 | `launch-worker.spec.ts` 의 가짜 orca 와 임시 보드 | 네 길에서 번호·주소가 빈 칸에만 들어가고 위키 주소가 안 들어가며 업무 도구 호출이 없는지 |
 | REQ5 | `board-sync.spec.ts`(가짜 gh), `completion-watch.spec.ts` | 두 길에서 빈 번호 칸이 채워지고 찬 PR 칸·찬 번호 칸은 그대로인지 |
-| REQ6 | 루프 단계 단위 테스트(바꿔 넣은 주소 만들기와 고정 시각), 가짜 `dooray` 로 `orch-loop.ts --tick` 을 두 번 돌리는 사례 | 주소 채우기, 첫 실패 한 줄, 30분 간격, 상태 파일로 이어지기, 설정 없음, done 제외, 시간 예산 |
+| REQ6 | 루프 단계 단위 테스트(바꿔 넣은 주소 만들기와 고정 시각), 가짜 `dooray` 로 `orch loop run --once` 을 두 번 돌리는 사례 | 주소 채우기, 첫 실패 한 줄, 30분 간격, 상태 파일로 이어지기, 설정 없음, done 제외, 시간 예산 |
 | REQ7 | REQ4·5·6 의 테스트에 이미 값이 든 항목을 둔다 | 번호 A 항목에 번호 B 가 오지 않고 A 로 주소를 만드는지 |
 | REQ8 | 설정 문서 검사(`config-docs.spec.ts` 에 `board.task` 단언을 더한다)와 diff 검토 | 문서 표에 `board.task` 와 `state/task-links.json` 이 있는지 |
 | REQ9 | `launch-worker.spec.ts` | 새 제목에 번호 없음, 번호 칸으로 찾기, 번호 칸이 빈 옛 항목의 제목 찾기 |
