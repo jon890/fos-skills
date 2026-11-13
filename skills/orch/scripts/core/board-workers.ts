@@ -2,7 +2,7 @@ import { lostWorkers, LOST_WORKER_STATES, type Json } from './lost-workers.ts'
 export type WorkerRole = 'impl' | 'follow' | 'review' | 'verify'
 export type WorkerRow = {
   role: WorkerRole; dispatch: string | null; worktree: string; branch: string | null
-  pr: number | null; status: 'working' | 'done' | 'lost'; at: string; endedAt: string | null
+  pr: number | null; stages?: string; status: 'working' | 'done' | 'lost'; at: string; endedAt: string | null
 }
 
 export function boardWorkerRows(item: Record<string, unknown>): WorkerRow[] {

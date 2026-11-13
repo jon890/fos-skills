@@ -73,6 +73,7 @@ node scripts/run-tests.ts --tsc-only
 | `extensions/work-board/bin/board.ts` | 수정 (worker-add --stages, worker-set, stageNumbers 의 줄 묶음) |
 | `extensions/work-board/tests/board-workers.spec.ts` | 수정 |
 | `skills/orch/scripts/core/milestones.ts` | 수정 (prStages, eventKinds, eventNumbers, kinds·remaining 인자) |
+| `skills/orch/scripts/core/board-workers.ts` | 수정 (줄 꼴 `WorkerRow` 에 선택 칸 `stages` 를 더한다) |
 | `skills/orch/scripts/core/auto-advance.ts` | 수정 (eventDone 의 묶음) |
 | `skills/orch/scripts/lib/auto-advance.ts` | 수정 (BoardView 의 groups, firstPendingStep 의 사건 단계) |
 | `skills/orch/tests/board-auto-check.spec.ts` | 수정 |

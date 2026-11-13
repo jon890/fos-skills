@@ -122,3 +122,64 @@ test('같은 대표 워크트리의 재시도에서 브랜치를 못 읽으면 �
     assert.equal((item(b.file, 'a').workers as any[])[0].dispatch, 'retry')
   } finally { b.cleanup() }
 })
+
+test('worker-add --stages 를 저장하고 다시 쓸 때 주지 않으면 그대로 둔다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'] })
+    assert.equal(run(b.file, ['worker-add', 'a', 'follow', '--worktree', 'w2', '--branch', 'b2', '--stages', 'pr=3,merge=4']).code, 0)
+    const rows = () => item(b.file, 'a').workers as Record<string, unknown>[]
+    assert.equal(rows()[0].stages, 'pr=3,merge=4')
+    assert.equal(run(b.file, ['worker-add', 'a', 'follow', '--worktree', 'w2', '--dispatch', 'again']).code, 0)
+    assert.equal(rows()[0].stages, 'pr=3,merge=4')
+    assert.equal(rows()[0].dispatch, 'again')
+  } finally { b.cleanup() }
+})
+
+test('worker-add 의 잘못된 --stages 와 worker-set 의 잘못된 인자는 종료 코드 2 다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a' })
+    for (const args of [
+      ['worker-add', 'a', 'follow', '--worktree', 'w', '--stages', 'pr=3'],
+      ['worker-add', 'a', 'follow', '--worktree', 'w', '--stages', 'pr=3,merge=4,deploy=5'],
+      ['worker-add', 'a', 'follow', '--worktree', 'w', '--stages', 'x'],
+      ['worker-set', 'a'], ['worker-set', 'a', '--pr', '7'],
+    ]) assert.equal(run(b.file, args).code, 2, args.join(' '))
+  } finally { b.cleanup() }
+})
+
+test('worker-set 은 줄의 pr 만 바꾸고 끝난 줄의 status 와 대표 칸을 건드리지 않는다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', worktree: 'w2', branch: 'b2', stepAt: 'old', details: ['1. 구현'], workers: [
+      { role: 'impl', worktree: 'w1', branch: 'b1', dispatch: 'd1', status: 'done', pr: null, at: '2026-01-01', endedAt: '2026-01-02' },
+      { role: 'follow', worktree: 'w2', branch: 'b2', dispatch: 'd2', status: 'working', pr: null, at: '2026-01-03', endedAt: null },
+    ] })
+    assert.equal(run(b.file, ['worker-set', 'a', '--worktree', 'w1', '--pr', '#7']).code, 0)
+    const rows = item(b.file, 'a').workers as Record<string, unknown>[]
+    assert.equal(rows[0].pr, 7)
+    assert.equal(rows[0].status, 'done')
+    assert.equal(rows[1].pr, null)
+    assert.equal(item(b.file, 'a').worktree, 'w2')
+    assert.equal(item(b.file, 'a').stepAt, 'old')
+    const before = readFileSync(b.file, 'utf8')
+    const none = run(b.file, ['worker-set', 'a', '--worktree', 'missing', '--pr', '9'])
+    assert.equal(none.code, 0, none.stderr)
+    assert.equal(readFileSync(b.file, 'utf8'), before)
+  } finally { b.cleanup() }
+})
+
+test('후속 묶음 단계는 사건 단계라 step-mark 가 거절한다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지', '3. PR (wb)', '4. 머지 (wb)', '5. 확인'], workers: [
+      { role: 'follow', worktree: 'wb', branch: 'b', dispatch: 'd', status: 'working', pr: null, stages: 'pr=3,merge=4', at: '2026-01-03', endedAt: null },
+    ] })
+    assert.equal(run(b.file, ['step-mark', 'a', '3', 'auto']).code, 1)
+    assert.equal(run(b.file, ['step-mark', 'a', '4', 'ask']).code, 1)
+    assert.equal(run(b.file, ['step-mark', 'a', '5', 'ask']).code, 0)
+    const edit = run(b.file, ['step-edit', 'a', '3', '3. PR 바뀜'])
+    assert.match(edit.stderr, /3 번 줄은 stages 가 가리키는 사건 단계/)
+  } finally { b.cleanup() }
+})
