@@ -138,7 +138,7 @@ import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
-import { orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
+import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
 import { runAsync, scriptCommand, withRun } from '../lib/proc.ts'
@@ -498,7 +498,7 @@ async function remoteOrchProbe(
       spent += interval || 1
     }
   } finally {
-    await call(['terminal', 'close', '--terminal', handle, '--json', ...selector.args])
+    closeTerminal(handle, { extraArgs: selector.args })
   }
 }
 
