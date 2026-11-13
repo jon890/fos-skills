@@ -54,7 +54,7 @@ phase 03 의 판정이 `go` 를 내면 옛 루프가 새 설치본의 루프를 
 
 ### 3. `skills/orch/tests/orch-loop-self-update.spec.ts`(신규, 프로세스)
 
-준비: 임시 폴더에 설정 폴더 `cfg/` 를 만들고, 저장소의 `skills/orch` 와 `.claude-plugin` 을 `cfg/plugins/cache/fos-skills/fos-skills/1.0.0/` 과 `.../2.0.0/` 에 복사한다. 각 사본의 `plugin.json` 버전을 폴더 이름으로 바꾸고 `node_modules` 링크를 둔다. `installed_plugins.json` 의 user 항목은 처음에 1.0.0 을 가리킨다. 임시 저장소와 `ORCH_DIR`, 가짜 `ORCA`(받은 인자를 파일에 적는다, `orch-loop.spec.ts` 의 `FAKE_ORCA` 꼴), `tick_sec: 0.3`, `ORCH_LOOP_ALIVE_SEC=1` 을 쓴다. 부모는 1.0.0 사본의 `orch-loop.ts --repo <저장소> --run r1 --foreground` 로 띄우고 `r2` 를 등록 파일로 더한다.
+준비: 임시 폴더에 설정 폴더 `cfg/` 를 만들고, 저장소의 `skills/orch` 와 `.claude-plugin` 을 `cfg/plugins/cache/fos-skills/fos-skills/1.0.0/` 과 `.../2.0.0/` 에 복사한다. 각 사본의 `plugin.json` 버전을 폴더 이름으로 바꾸고 `node_modules` 링크를 둔다. `installed_plugins.json` 의 user 항목은 처음에 1.0.0 을 가리킨다. 임시 저장소와 `ORCH_DIR`, 가짜 `ORCA`(받은 인자를 파일에 적는다, `orch-loop.spec.ts` 의 `FAKE_ORCA` 꼴), `tick_sec: 0.3`, `ORCH_LOOP_ALIVE_SEC=1` 을 쓴다. 부모는 1.0.0 사본의 `orch-loop.ts` 에 `--repo <저장소> --run r1 --foreground` 인자를 줘서 띄우고 `r2` 를 등록 파일로 더한다.
 
 사례:
 
