@@ -1,0 +1,1 @@
+- 재리뷰·다시 띄운 리뷰·인수 검증 보드 항목(`review-pr-477-r2`, `verify-pr-486`)도 worker_done 이나 대상 PR 머지 뒤 done 이 된다

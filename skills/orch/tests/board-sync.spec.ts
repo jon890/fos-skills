@@ -119,6 +119,30 @@ describe('board-sync', () => {
     assert.equal(result.board['review-pr-8'].status, 'doing')
   })
 
+  test('재리뷰, 다시 띄운 리뷰, 인수 검증 항목도 worker_done 이나 대상 PR 머지 뒤 끝낸다', () => {
+    states['477'] = 'OPEN'
+    states['486'] = 'MERGED'
+    states['9'] = 'OPEN'
+    const result = sync([
+      { id: 'review-pr-477-r2', status: 'doing', details: ['1. 리뷰'] },
+      { id: 'review-pr-486-b', status: 'doing', details: ['1. 리뷰'] },
+      { id: 'verify-pr-486', status: 'doing', details: ['1. 검증'] },
+      { id: 'review-pr-9-r2', status: 'doing', details: ['1. 리뷰'] },
+    ], ['--completed-items', '["review-pr-477-r2"]', '--completed-reviews', '[9]'])
+    assert.equal(result.code, 0, result.result.stderr)
+    assert.equal(result.board['review-pr-477-r2'].status, 'done')
+    assert.equal(result.board['review-pr-486-b'].status, 'done')
+    assert.equal(result.board['verify-pr-486'].status, 'done')
+    assert.equal(result.board['review-pr-9-r2'].status, 'doing')
+  })
+
+  test('review-pr-12abc 같은 다른 꼴의 id 는 리뷰 항목으로 보지 않는다', () => {
+    states['12'] = 'MERGED'
+    const result = sync([{ id: 'review-pr-12abc', status: 'doing', details: ['1. 리뷰'] }], ['--completed-reviews', '[12]'])
+    assert.equal(result.code, 0, result.result.stderr)
+    assert.equal(result.board['review-pr-12abc'].status, 'doing')
+  })
+
   test('BOARD_BIN 이 없으면 저장소의 extensions/work-board/bin/board.ts 가 보드 항목을 done 으로 바꾼다', () => {
     states['7'] = 'MERGED'
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }])
