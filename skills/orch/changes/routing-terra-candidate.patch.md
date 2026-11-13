@@ -1,1 +1,1 @@
-- `impl-planned` 행의 후보에 `gpt-6.1-terra` 를 더했다(effort `medium` 까지). Terra 를 쓰려고 선택 줄에 `Terra 실험 N/5` 를 적지 않아도 된다. 한국어 문서가 주 산출물인 Task 에는 쓰지 않는다. 「Terra 실험」 절은 다섯 건의 결과와 사용자 결정을 적은 「Terra 후보 결정」 으로 바꿨다.
+- `impl-planned` 행의 후보에 `gpt-6.1-terra` 를 더했다(effort `medium` 까지). 선택 줄에 `Terra 실험 N/5` 를 적지 않아도 된다. 한국어 문서가 주 산출물이면 쓰지 않는다.
