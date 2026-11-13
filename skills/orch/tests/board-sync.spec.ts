@@ -699,6 +699,76 @@ test('못 맞춘 머지는 기록하고 다른 PR 은 따로 남기며 꼬리표
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(file, 'utf8')).items.a), ['8'])
 })
 
+describe('갱신 필요 알림', () => {
+  test('머지된 PR 번호가 든 끝나지 않은 단계를 항목 id, 단계 번호, PR 번호로 알리고 끝내지 않는다', () => {
+    states['481'] = 'MERGED'
+    states['9'] = 'MERGED'
+    const r = sync([{ id: 'm', status: 'doing', pr: '9', 'merged-pr': '9', stages: 'pr=1,merge=2', details: [step('1. PR', true), step('2. 머지', true), '3. 릴리스 #481 반영 확인', '4. 배포 뒤 확인'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.match(r.result.stdout, /m 갱신 필요: 3 번 단계가 머지된 PR #481 를 가리키지만 끝나지 않았다/)
+    assert.notEqual((r.board.m.details as Json[])[2].done, true)
+    assert.doesNotMatch(r.result.stdout, /4 번 단계/)
+  })
+
+  test('짧은 출력은 update-needed 한 줄이고 바뀐 항목 수에 세지 않는다', () => {
+    states['481'] = 'MERGED'
+    writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', details: ['1. 릴리스 #481 반영'] }] }))
+    const r = run(['--board', board, '--repo', tmp], { env: { ORCH_OUTPUT: 'short' } })
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(r.stdout.trim().split('\n'), ['BOARD a update-needed 1 PR #481', 'BOARD-SYNC 0'])
+  })
+
+  test('열린 PR 이나 사건 꼬리표, 자동 진행 표시, 이 틱이 끝내는 단계, done 항목은 알리지 않는다', () => {
+    states['481'] = 'OPEN'
+    states['7'] = 'MERGED'
+    states['8'] = 'MERGED'
+    const r = sync([
+      { id: 'open', status: 'doing', details: ['1. 릴리스 #481 반영'] },
+      { id: 'tag', status: 'doing', details: ['1. 릴리스 #8 반영 (#8 release)'] },
+      { id: 'auto', status: 'doing', details: ['1. [auto] 릴리스 #8 반영'] },
+      { id: 'legacy', status: 'doing', pr: '7', details: ['1. 구현 #7', '2. 남은 일'] },
+      { id: 'closed', status: 'done', details: ['1. 릴리스 #8 반영'] },
+      { id: 'evidence', status: 'doing', details: ['1. 다음 (앞 사건: #8 merge)'] },
+    ])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.doesNotMatch(r.result.stdout, /갱신 필요/)
+  })
+
+  test('merged-pr 에 든 PR 은 조회하지 않고 머지된 것으로 본다', () => {
+    const r = sync([{ id: 'a', status: 'doing', 'merged-pr': '31', details: ['1. 릴리스 #31 반영'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.match(r.result.stdout, /a 갱신 필요: 1 번 단계가 머지된 PR #31/)
+  })
+})
+
+describe('갱신 필요 알림의 반복', () => {
+  const shortRun = () => run(['--board', board, '--repo', tmp], { env: { ORCH_OUTPUT: 'short' } })
+  const prepare = (details: string[]) => {
+    writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', 'merged-pr': '481', details }] }))
+  }
+
+  test('같은 항목·단계·PR·글은 한 번만 알리고 dry-run 은 기록하지 않는다', () => {
+    prepare(['1. 릴리스 #481 반영'])
+    const dry = run(['--board', board, '--repo', tmp, '--dry-run'], { env: { ORCH_OUTPUT: 'short' } })
+    assert.match(dry.stdout, /update-needed 1 PR #481/)
+    assert.match(shortRun().stdout, /BOARD a update-needed 1 PR #481/)
+    assert.deepEqual(shortRun().stdout.trim().split('\n'), ['BOARD-SYNC 0'])
+    assert.deepEqual(shortRun().stdout.trim().split('\n'), ['BOARD-SYNC 0'])
+  })
+
+  test('단계 글이 바뀌거나 해결됐다가 다시 생기면 다시 알린다', () => {
+    prepare(['1. 릴리스 #481 반영'])
+    assert.match(shortRun().stdout, /update-needed 1 PR #481/)
+    prepare(['1. 릴리스 #481 반영 다시'])
+    assert.match(shortRun().stdout, /update-needed 1 PR #481/)
+    prepare(['1. 릴리스 반영'])
+    assert.doesNotMatch(shortRun().stdout, /update-needed/)
+    prepare(['1. 릴리스 #481 반영 다시'])
+    assert.match(shortRun().stdout, /update-needed 1 PR #481/)
+  })
+})
 test('PR 제목의 번호는 PR 을 새로 연결할 때 빈 업무 칸에만 저장한다', () => {
   mkdirSync(join(tmp, '.orch'), { recursive: true })
   writeFileSync(join(tmp, '.orch/config.json'), JSON.stringify({ finish: { task_pattern: String.raw`\[([^\]]+)\]` } }))

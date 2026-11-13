@@ -34,6 +34,9 @@
 //   board.ts step-add <id> <글> [--event "PR 사건"] (번호가 없으면 가장 큰 번호 다음으로 더한다)
 //   step-edit 는 다른 번호나 사건 꼬리표를 지우는 글을 거절한다.
 //   step-add 는 이미 있는 번호와 done 항목을 거절한다. 두 동작은 결과 JSON 에 number 를 넣는다.
+//   step-add, set --detail, set --next 로 단계 줄이 progress 의 전체 값(N/M 의 M)보다 많아지면 progress 를 지우고 단계 줄로 센다(같은 set 이 --progress 를 주면 그 값을 따르고, goal 항목은 하위 항목 집계값일 수 있어 지우지 않는다).
+//   step-edit, set 으로 stages 가 가리키는 단계 줄의 글이 바뀌면 stderr 로 경고한다.
+//   step-edit, step-add 의 글에 「#번호」 와 머지·배포·릴리스 낱말이 있는데 --event 도 꼬리표도 없으면 stderr 로 경고한다(자동으로 끝나지 않는다).
 //   board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>] (번호 뒤의 자동 진행 표시만 바꾼다. plain 은 지운다)
 //   step-mark 는 사건 단계(줄 앞 [merge] 따위, stages 칸이 가리키는 줄)를 거절한다. 줄 끝 꼬리표와 끝냄 상태는 그대로 둔다.
 //   표시의 꼴은 hooks/step-marks.js 가 소유한다. 조건은 wait 에만 줄 수 있다.
@@ -101,6 +104,7 @@ const HELP = `${USAGE}
   board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>]
   step-mark 는 번호 뒤 자동 진행 표시만 바꾼다. 조건은 wait 에만 주고 사건 단계는 거절한다.
   step-edit 는 다른 번호와 사건 꼬리표를 지우는 글, step-add 는 중복 번호와 done 항목을 거절한다.
+  단계 줄이 progress 의 전체 값보다 많아지면 progress 를 지운다. stages 단계의 글이 바뀌거나, 글에 #번호 와 머지·배포·릴리스 낱말이 있는데 --event 가 없으면 stderr 로 경고한다.
   --event 는 줄 끝 꼬리표를 붙이거나 바꾼다. 사건은 pr, merge, deploy, release 다.
   board.ts get <id> <칸> | get <id> step <번호> (JSON, 빈 값은 null 과 종료 코드 4)
   board.ts item <id> | items [<상태>[,<상태>…]] (항목 객체 또는 배열)
@@ -460,6 +464,54 @@ function stageNumbers(item: Item): number[] {
   return typeof item.stages === 'string' && STAGES.test(item.stages) ? (item.stages.match(/=(\d+)/g) ?? []).map((part) => Number(part.slice(1))) : []
 }
 
+// 진행률을 세는 쪽의 단계 줄 수
+function stepCount(item: Item): number {
+  return stepSource(item)[1].filter((line) => parseStep(line) !== null).length
+}
+
+// progress 의 전체 값(N/M 의 M)보다 단계 줄이 많으면 progress 를 지워 단계 줄로 세게 한다. 지웠으면 true
+function dropStaleProgress(item: Item, id: string): boolean {
+  // 목표(goal)의 progress 는 하위 항목을 집계한 값(goal-progress.ts)일 수 있어 단계 줄 수와 비교하지 않는다
+  if (item.status === 'goal') return false
+  const m = PROGRESS.exec(String(item.progress || ''))
+  const count = stepCount(item)
+  if (!m || Number(m[2]) <= 0 || count <= Number(m[2])) return false
+  process.stderr.write(`${id} 의 단계 줄이 ${count}개로 progress 의 전체 값 ${m[2]} 보다 많아 progress ${m[0].trim()} 를 지우고 단계 줄로 센다\n`)
+  delete item.progress
+  return true
+}
+
+// stages 가 가리키는 단계 번호 → 줄 글. 글이 바뀌었는지 비교하려고 쓴다
+function stageTexts(item: Item): Map<number, string> {
+  const wanted = new Set(stageNumbers(item))
+  const found = new Map<number, string>()
+  for (const line of stepSource(item)[1]) {
+    const step = parseStep(line)
+    if (step && wanted.has(step[0]) && !found.has(step[0])) found.set(step[0], line.text)
+  }
+  return found
+}
+
+function warnStageTextChanged(item: Item, id: string, before: Map<number, string>): void {
+  const after = stageTexts(item)
+  for (const [number, text] of before) {
+    if (after.get(number) !== text) {
+      process.stderr.write(`${id} 의 ${number} 번 줄은 stages 가 가리키는 사건 단계인데 글이 바뀌었다. orch 는 이 번호로 단계를 끝내므로 글을 바꿔도 stages 의 번호가 맞는지 확인한다\n`)
+    }
+  }
+}
+
+// 글에 PR 번호(#N)와 머지·배포·릴리스 낱말이 있는데 사건을 정하지 않았으면 자동으로 끝나지 않는다고 알린다
+// 「나머지」 처럼 다른 낱말의 일부는 빼고, 「재배포」 와 조사·활용형은 받는다
+const MERGE_WORDS = /(?<![가-힣])(?:재)?(?:머지|배포|릴리[스즈])|(?<![A-Za-z])(?:merge|deploy|release)/i
+function warnMissingEvent(item: Item, id: string, number: number, text: string): void {
+  if (parseEventTag(text) || stageTag(text) || stageNumbers(item).includes(number)) return
+  const body = text.replace(/\((?:스펙|계획|앞 사건)\s*:[^()]*\)/g, '')
+  const pr = /#([1-9]\d*)(?!\d)/.exec(body)
+  if (!pr || !MERGE_WORDS.test(body)) return
+  process.stderr.write(`${id} 의 ${number} 번 단계 글에 #${pr[1]} 와 머지·배포·릴리스 낱말이 있지만 --event 가 없어 PR 이 머지돼도 자동으로 끝나지 않는다. 자동으로 끝내려면 --event "${pr[1]} merge" 처럼 사건을 준다(사건은 pr, merge, deploy, release)\n`)
+}
+
 type View = ReturnType<typeof itemView>
 // 읽기는 false, 기존 쓰기는 true, 결과를 내는 쓰기는 잠금 안에서 만든 항목 값이다.
 function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } | 'empty' {
@@ -567,9 +619,11 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       if ((stageTag(old.text) && !stageTag(fresh.text)) || (parseEventTag(old.text) && !parseEventTag(fresh.text))) {
         throw new Refused(`${number} 번 줄의 사건 꼬리표를 지우는 글이다. 꼬리표를 지우려면 detail-edit 를 쓴다`)
       }
+      const stagesBefore = stageTexts(item)
       lines[index] = { text: fresh.text, done: LEAD_MARK.test(a.text) ? fresh.done : old.done }
       item[source] = lines
       text = fresh.text
+      warnStageTextChanged(item, id, stagesBefore)
     } else {
       if (!a.status?.trim()) throw new Refused('step-add 에는 더할 글이 필요하다: board.ts step-add <id> <글>')
       if (item.status === 'done') throw new Refused(`done 항목에는 단계를 더하지 않는다: ${id}. 다시 열려면 먼저 set ${id} doing 을 부른다`)
@@ -583,8 +637,9 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       text = explicit === undefined ? `${number}. ${fresh.text}` : fresh.text
       if (event) text = withEventTag(text, event[1], event[2])
       item[key] = [...((item[key] ?? []) as Line[]), { text, done: false }]
-      if (PROGRESS.test(String(item.progress || ''))) process.stderr.write(`${id} 의 progress 값이 단계 수보다 앞서 새 줄이 진행률에 안 보인다. progress 값을 지우면 단계 수로 센다\n`)
+      if (!dropStaleProgress(item, id) && PROGRESS.test(String(item.progress || ''))) process.stderr.write(`${id} 의 progress 값이 단계 수보다 앞서 새 줄이 진행률에 안 보인다. progress 값을 지우면 단계 수로 센다\n`)
     }
+    if (a.event === undefined) warnMissingEvent(item, id, number, text)
     if (typeof item.stages === 'string' && item.stages.trim() && parseEventTag(text)) {
       process.stderr.write(`${id} 는 stages 가 있는 항목이다. 줄 끝 꼬리표가 생기면 꼬리표 줄만 사건으로 끝나고 stages 의 단계는 저절로 끝나지 않는다\n`)
     }
@@ -667,6 +722,8 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     item = { id, title: a.fields.title || id }
     board.items.push(item)
   }
+  // stages 와 줄이 같은 명령에서 바뀌는 경우는 비교하지 않도록 쓰기 전 값으로 잰다
+  const stagesBefore = stageTexts(item)
   if (a.status || (a.exact && a.status !== undefined)) {
     if (!STATUSES.includes(a.status)) throw new Refused(`status 는 ${STATUSES.join('|')} 중 하나다`)
     item.status = a.status
@@ -690,6 +747,11 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     const lines = values.flatMap((value) => value.split('\n')).filter((line) => line)
     if (lines.length > 0) item[key] = inheritLines(lines, item[key] as Line[] | undefined)
     else delete item[key]
+  }
+  if (a.detail !== undefined || a.next !== undefined) {
+    warnStageTextChanged(item, id, stagesBefore)
+    // 같은 명령이 progress 를 직접 줬으면 그 값을 따른다
+    if (a.fields.progress === undefined) dropStaleProgress(item, id)
   }
   if (item.status === 'doing' && progressOf(item) === null) throw new Refused(MISSING_PROGRESS(id))
   return a.exact ? itemView(item, was) : true

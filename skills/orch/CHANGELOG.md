@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.51.1 (2026-11-13)
+
+- `orch board sync` 가 머지된 PR 번호를 가리키는데 끝나지 않은 단계를 「갱신 필요」 로 알린다. 자동으로 끝내지는 않는다.
+- `add-step`, `step … text` 가 `#번호` 와 머지 낱말이 있는데 `--on` 이 없으면 경고한다.
+
 ## 7.51.0 (2026-11-13)
 
 - 설정 board.task 로 업무 도구 어댑터(dooray, url-template)를 고른다.
