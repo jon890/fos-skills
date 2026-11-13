@@ -41,7 +41,7 @@ worker_done, Orca 의 끝난 dispatch, 사라진 워크트리로 worker 줄을 �
 - 항목 고리 맨 앞, 모든 항목(done, goal 포함)의 `working` 줄마다: `dispatch` 가 목록에 있으면 `['worker-end', id, <값>, '--dispatch', <dispatch>]`, 아니고 `names !== null` 이고 줄의 `worktree` 가 `names` 에 없으면 `['worker-end', id, 'lost', '--worktree', <worktree>, '--clear']` 를 `cmds` 맨 앞에 넣는다. 같은 워크트리는 한 번만 넣는다.
 - 325행의 워크트리 비우기는 대표 `worktree` 와 같은 워크트리의 `working` 줄이 있으면 내지 않는다(위 `worker-end --clear` 가 대표 칸을 다른 작업 중 줄로 바꾸거나 비운다). 그런 줄이 없으면 지금처럼 비운다.
 - 리뷰 항목 판정(346행): `const rows = hasWorkRows(item)` 로 `rows === true` 면 `target = null`, `rows === false` 면 `target = rowsReviewPr(item) ?? reviewPrOfItem(id, reviewItems)`, `rows === null` 이면 지금처럼 `reviewPrOfItem(id, reviewItems)` 다.
-- 닫기 조건(348-349행)에 「`rows === false` 이고 이번 틱의 `worker-ends` 가 이 항목의 줄을 `done` 으로 끝내며, 끝낸 뒤 남는 `working` 줄이 없다」 를 더한다.
+- 닫기 조건(348-349행)에 「`rows === false` 이고 줄이 하나 이상이고 완료·끊김을 반영한 뒤 남는 `working` 줄이 없다」 를 더한다.
 - 머리 주석의 `--completed-items`·`--completed-reviews` 설명에 「구현·후속 줄이 있는 항목은 리뷰 항목이 아니다. 줄이 모두 리뷰·검증인 항목은 그 줄의 worker_done 으로도 닫힌다」 를 더한다.
 - dry-run 출력과 짧은 출력(`BOARD <id> updated`)은 지금 꼴 그대로다. `worker-end` 만 부른 항목도 바뀐 항목으로 센다.
 

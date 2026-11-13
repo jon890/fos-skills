@@ -35,8 +35,8 @@ board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [
 - 역할(위치 인자와 `--keep-current` 값)이 넷 밖이거나 `--worktree` 가 없거나 비었으면 사용법 오류다. 없는 항목은 `Refused`.
 - 줄 객체: `{ role, dispatch: D ?? null, worktree: W, branch: B ?? null, pr: N ?? null, status: 'working', at: <ISO>, endedAt: null }`. 시각은 이 파일이 `stepAt` 에 쓰는 것과 같은 꼴을 쓴다.
 - 열쇠는 `worktree` 하나다. 같은 워크트리의 줄이 있으면 그 줄의 `dispatch`·`branch`·`pr`(준 경우), `at` 을 바꾸고 `status` 를 `working`, `endedAt` 을 `null` 로 둔다. `role` 은 바꾸지 않는다. 없으면 목록 끝에 더한다.
-- `--keep-current <role>`: 항목에 `workers` 필드가 없을 때만 먼저 지금 대표 칸으로 그 역할의 줄 하나를 만든다. `dispatch` 는 `--keep-dispatch` 값(없으면 `null`)이다. `worktree` 가 비었거나 `dispatch` 가 `null` 이면 `status: 'done'`, `endedAt` 은 지금 시각이다. 대표 칸이 모두 비어도 줄을 만든다(설계 DECISION5). 옮겨 적은 줄의 워크트리가 더할 줄과 같으면 하나만 남긴다(더할 줄 값으로 바꾼다).
-- 역할이 `impl`·`follow` 면 항목의 `worktree`·`branch` 를 그 줄 값으로 바꾼다(`branch` 가 없으면 칸을 그대로 둔다). `review`·`verify` 는 대표 칸, `status`, 줄(`details`, `next`)을 건드리지 않는다. done 항목에도 더한다.
+- `--keep-current <role>`: 항목에 `workers` 필드가 없을 때만 먼저 지금 대표 칸으로 그 역할의 줄 하나를 만든다. `dispatch` 는 `--keep-dispatch` 값(없으면 `null`)이다. `worktree` 가 비었거나 `dispatch` 가 `null` 이면 `status: 'done'`, `endedAt` 은 지금 시각이다. 대표 워크트리가 비었으면 옮길 줄은 만들지 않는다(리뷰 반영 결정 2026-11-13). 옮겨 적은 줄의 워크트리가 더할 줄과 같으면 하나만 남긴다(더할 줄 값으로 바꾼다).
+- 역할이 `impl`·`follow` 면 항목의 `worktree`·`branch` 를 그 줄 값으로 바꾼다(`branch` 가 없으면 대표 branch 칸을 지운다). `review`·`verify` 는 대표 칸, `status`, 줄(`details`, `next`)을 건드리지 않는다. done 항목에도 더한다.
 
 ### 2. 같은 파일의 `worker-end`
 
@@ -62,7 +62,7 @@ board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
 - 같은 항목에 `follow --worktree w2 --branch b2 --dispatch d2` 를 더하면 두 줄이고 대표가 `w2` 다. `review --worktree r1 --branch review/pr-5 --pr 5` 를 더하면 세 줄이고 대표와 `status` 가 그대로다. done 항목에 `review` 를 더해도 `status` 가 `done` 이다.
 - 같은 `w2` 로 `--dispatch d3 --branch b9` 를 다시 주면 줄 수가 그대로이고 `dispatch` 가 `d3`, `branch` 가 `b9`, `status` 가 `working` 이다.
 - `worker-end a done --dispatch d3` 뒤 대표가 `w1` 로 돌아간다. `worker-end a lost --dispatch d1` 뒤 작업 중 구현·후속 줄이 없어 대표 칸이 `w1` 그대로다. 새로 준비한 보드(작업 중 `impl` 줄 `w1` 하나)에서 `worker-end a lost --worktree w1 --clear` 는 대표 `worktree` 를 비운다. 작업 중 후속 줄이 남아 있으면 `--clear` 를 줘도 그 줄로 바뀐다. 없는 dispatch 는 종료 코드 0 이고 파일이 그대로다.
-- `workers` 필드가 없는 항목(`worktree: 'old'`, `branch: 'feat/old'`)에 `--keep-current impl --keep-dispatch d0` 로 `follow` 를 더하면 첫 줄이 `impl`·`old`·`dispatch: 'd0'`·`working` 이다. `--keep-dispatch` 없이 주면 옮긴 줄이 `done` 이다. `--keep-current review` 면 옮긴 줄의 역할이 `review` 다. `worktree` 가 빈 항목은 옮긴 줄이 `done` 이다.
+- `workers` 필드가 없는 항목(`worktree: 'old'`, `branch: 'feat/old'`)에 `--keep-current impl --keep-dispatch d0` 로 `follow` 를 더하면 첫 줄이 `impl`·`old`·`dispatch: 'd0'`·`working` 이다. `--keep-dispatch` 없이 주면 옮긴 줄이 `done` 이다. `--keep-current review` 면 옮긴 줄의 역할이 `review` 다. `worktree` 가 빈 항목은 옮긴 줄을 만들지 않는다.
 - 사용법 오류: 모르는 역할, 모르는 `--keep-current` 값, `--worktree` 없음, `worker-end` 에 열쇠 둘 다, `set` 에 `--dispatch`, `worker-add` 에 `--clear`. 모두 종료 코드 2.
 - `workers` 가 있는 항목에 `set a doing --title T` 와 `step a 1` 을 불러도 `workers` 가 남는다.
 
