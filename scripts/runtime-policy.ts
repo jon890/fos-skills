@@ -240,19 +240,68 @@ export function isSourceFile(path: string, entryJs: string[]) {
   return SOURCE_EXTENSIONS.has(extension(path)) || entryJs.includes(path);
 }
 
+// 원래 위치를 유지하면서 문자열·주석 밖의 코드 위치를 기록한다.
+// 템플릿의 ${...} 는 코드로 돌아오며, 그 안의 중괄호와 템플릿도 추적한다.
+function codePositions(text: string): Uint8Array {
+  const code = new Uint8Array(text.length);
+  const stack: { kind: "code" | "template" | "single" | "double" | "line" | "block"; braces: number }[] = [{ kind: "code", braces: 0 }];
+  for (let i = 0; i < text.length; i++) {
+    const state = stack[stack.length - 1];
+    const ch = text[i];
+    const next = text[i + 1];
+    if (state.kind === "line") {
+      if (ch === "\n") stack.pop();
+      continue;
+    }
+    if (state.kind === "block") {
+      if (ch === "*" && next === "/") { stack.pop(); i++; }
+      continue;
+    }
+    if (state.kind !== "code") {
+      if (ch === "\\") { i++; continue; }
+      if (state.kind === "template" && ch === "$" && next === "{") {
+        stack.push({ kind: "code", braces: 1 });
+        i++;
+      } else if ((state.kind === "template" && ch === "`") || (state.kind === "single" && ch === "'") || (state.kind === "double" && ch === '"')) {
+        stack.pop();
+      }
+      continue;
+    }
+    if (ch === "/" && (next === "/" || next === "*")) {
+      stack.push({ kind: next === "/" ? "line" : "block", braces: 0 });
+      i++;
+    } else if (ch === "'" || ch === '"' || ch === "`") {
+      stack.push({ kind: ch === "'" ? "single" : ch === '"' ? "double" : "template", braces: 0 });
+    } else if (ch === "}" && state.braces === 1) {
+      stack.pop();
+    } else {
+      code[i] = 1;
+      if (state.braces > 0) {
+        if (ch === "{") state.braces++;
+        if (ch === "}") state.braces--;
+      }
+    }
+  }
+  return code;
+}
+
 export function checkImports(allowed: BareImport[], sources: FileText[]): string[] {
   const lines: string[] = [];
   const matchers = allowed.map((entry) => ({ path: globToRegExp(entry.path), name: entry.name }));
   for (const source of sources) {
+    const code = codePositions(source.text);
+    let offset = 0;
     source.text.split("\n").forEach((text, index) => {
-      const trimmed = text.trimStart();
-      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
+      const start = offset;
+      offset += text.length + 1;
       const found: string[] = [];
       for (const pattern of LINE_HEAD_IMPORTS) {
         const match = pattern.exec(text);
-        if (match) found.push(match[2]);
+        if (match && code[start + match[0].search(/\S/)]) found.push(match[2]);
       }
-      for (const pattern of CALL_IMPORTS) for (const match of text.matchAll(pattern)) found.push(match[2]);
+      for (const pattern of CALL_IMPORTS) for (const match of text.matchAll(pattern)) {
+        if (code[start + match.index]) found.push(match[2]);
+      }
       for (const specifier of new Set(found)) {
         if (!isBare(specifier)) continue;
         if (matchers.some((entry) => entry.name === specifier && entry.path.test(source.path))) continue;

@@ -226,6 +226,38 @@ describe('checkImports', () => {
     assert.deepEqual(checkImports([], [{ path: 'a.ts', text }]), [])
   })
 
+  test('문자열과 템플릿, 줄·블록 주석 안의 import 예제는 무시한다', () => {
+    const text = [
+      `const example = "await import('zod')"`,
+      `const single = 'prefix require("zod")'`,
+      'const template = `',
+      "import { z } from 'zod'",
+      "await import('zod')",
+      '`',
+      "// await import('zod')",
+      "const value = 1 /* require('zod')",
+      "import { z } from 'zod'",
+      "*/",
+    ].join('\n')
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), [])
+  })
+
+  test('주석 뒤 실제 호출과 템플릿 보간식의 중첩 코드도 검사한다', () => {
+    const text = [
+      "/* example */ await import('m1')",
+      "import { z } from 'm2'",
+      'const template = `${({ value: import("m3") })} text ${`nested ${require("m4")}`}`',
+      "const value = 'escaped \\' quote import(\"ignored\")'; require('m5')",
+    ].join('\n')
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), [
+      'IMPORT fixture.ts:1 m1',
+      'IMPORT fixture.ts:2 m2',
+      'IMPORT fixture.ts:3 m3',
+      'IMPORT fixture.ts:3 m4',
+      'IMPORT fixture.ts:4 m5',
+    ])
+  })
+
   test('확장자와 entry_js 로 소스 파일을 고른다', () => {
     assert.equal(isSourceFile('a/b.mts', []), true)
     assert.equal(isSourceFile('docs/a.md', []), false)
