@@ -57,7 +57,7 @@ test('설정 오류는 세 번째 실패에 한 번 바로 알리고 성공 뒤 
       await sleep(50)
     }
   }
-  const notices = () => orca.calls().filter(c => c.argv.includes('send') && c.argv[c.argv.indexOf('--body') + 1]?.startsWith('tick: 종료 코드 2: orch-loop:'))
+  const notices = () => orca.calls().filter(c => c.argv.includes('send') && c.argv[c.argv.indexOf('--body') + 1]?.startsWith('repo 루프: tick: 종료 코드 2: orch-loop:'))
   await wait(() => state()?.ticks >= 1)
   writeFileSync(config, JSON.stringify({ ...good, unknown_section: {} }))
   await wait(() => notices().length === 1)

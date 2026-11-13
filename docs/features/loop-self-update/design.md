@@ -131,7 +131,7 @@ sequenceDiagram
 - 원인 줄(스펙 DECISION12): stderr 줄에서 `STALE-BUNDLE ` 줄을 뺀 마지막 빈칸 아닌 줄. 없으면 결과 줄을 뺀 stdout 의 마지막 오류 줄이다. 오류 줄은 `orch-loop:` 로 시작하거나 `오류`, `실패`, `Error` 가 든 줄이다. 둘 다 없으면 원인 줄이 없다. 200자에서 자른다.
 - `reason`: 종료 코드가 0 이 아니면 `종료 코드 <n>`, 원인 줄이 있으면 뒤에 `: <원인 줄>` 을 붙인다. 결과 줄이 없으면 지금처럼 `결과 줄 없음` 에 같은 꼴로 원인 줄을 붙인다.
 - 비교 키: `reason` 의 숫자 묶음(`\d+`)을 `#` 로 바꾼 값이다. `state.errors[tickKey]` 에는 지금처럼 `reason` 을 그대로 두고, 「이유가 바뀌었는가」 는 두 값의 비교 키로 본다. 원인 줄의 시각과 pid 가 틱마다 달라도 이유가 바뀐 것으로 보지 않는다. 원인 줄이 없으면 `reason` 이 지금과 같은 `종료 코드 <n>` 이라 `orch-loop.spec.ts` 「틱 자식의 실패」 의 기대값이 그대로다.
-- 연속: `watchStreak(repo, tickKey, 비교 키 또는 null)` 이 참이면 `sendNotice('WATCH-ERROR', null, 'tick: <reason>', state.run, repo, true)` 로 바로 보내고 `markStreakSent` 한다. 단계 출처(`steps/errors.ts`)와 같은 꼴이다. 이유가 바뀔 때 모아 보내는 지금 알림은 그대로 둔다.
+- 연속: `watchStreak(repo, tickKey, 비교 키 또는 null)` 이 참이면 `sendNotice('WATCH-ERROR', null, '<저장소 이름> 루프: tick: <reason>', state.run, repo, true)` 로 바로 보내고 `markStreakSent` 한다. 단계 출처(`steps/errors.ts`)와 같은 꼴이다. 이유가 바뀔 때 모아 보내는 지금 알림은 그대로 둔다.
 
 ### 상태 출력
 

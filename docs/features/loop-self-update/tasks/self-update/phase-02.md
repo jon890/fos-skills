@@ -36,7 +36,7 @@
 - `export function tickCause(stdout: string[], stderr: string[]): string | null` — 설계 「틱 실패의 원인 줄」 의 규칙. stderr 에서 `STALE-BUNDLE ` 로 시작하는 줄을 뺀 마지막 빈칸 아닌 줄, 없으면 stdout(결과 줄을 뺀 것)에서 `orch-loop:` 로 시작하거나 `오류`, `실패`, `Error` 가 든 마지막 줄. 200자에서 자른다.
 - `export function causeKey(reason: string): string` — `reason.replace(/\d+/g, '#')`.
 - `tickResult(done, staleLogged = false)`: 로그로 옮길 때 `staleLogged` 면 `STALE-BUNDLE ` 줄을 뺀다. 이유는 `종료 코드 <n>` 또는 `결과 줄 없음` 뒤에 원인 줄이 있으면 `: <원인 줄>` 을 붙인다.
-- `foreground` 588-601행: 「이유가 바뀌었는가」 를 `causeKey(state.errors[tickKey] ?? '') !== causeKey(reason)` 로 본다. 그다음 `state.run` 이 있으면 `watchStreak(ctx.repo, tickKey, reason === null ? null : causeKey(reason))` 를 부르고, 참이면 `sendNotice('WATCH-ERROR', null, \`tick: ${reason}\`, state.run, ctx.repo, true)` 뒤 `markStreakSent(ctx.repo, tickKey)`. 전송이 실패하면 지금처럼 로그만 남긴다(다음 틱이 다시 참을 낸다).
+- `foreground` 588-601행: 「이유가 바뀌었는가」 를 `causeKey(state.errors[tickKey] ?? '') !== causeKey(reason)` 로 본다. 그다음 `state.run` 이 있으면 `watchStreak(ctx.repo, tickKey, reason === null ? null : causeKey(reason))` 를 부르고, 참이면 `sendNotice('WATCH-ERROR', null, \`<저장소 이름> 루프: tick: ${reason}\`, state.run, ctx.repo, true)` 뒤 `markStreakSent(ctx.repo, tickKey)`. 전송이 실패하면 지금처럼 로그만 남긴다(다음 틱이 다시 참을 낸다).
 - 파일 맨 위 설명 「틱 자식」 의 이유 문장에 원인 줄과 연속 알림을 더한다.
 
 ### 3. `skills/orch/scripts/loop/steps/errors.ts` 와 `orch-loop.ts`

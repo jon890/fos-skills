@@ -59,7 +59,7 @@
 
 import { spawn } from 'node:child_process'
 import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { isObject } from '../core/json.ts'
@@ -647,7 +647,7 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       if (reason === null || causeKey(state.errors[tickKey] ?? '') === causeKey(reason)) state.errors[tickKey] = reason
       if (state.run && watchStreak(ctx.repo, tickKey, reason === null ? null : causeKey(reason))) {
         try {
-          sendNotice('WATCH-ERROR', null, `tick: ${reason}`, state.run, ctx.repo, true)
+          sendNotice('WATCH-ERROR', null, `${basename(ctx.repo)} 루프: tick: ${reason}`, state.run, ctx.repo, true)
           markStreakSent(ctx.repo, tickKey)
         } catch (e) { log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`) }
       }
