@@ -151,7 +151,8 @@ test('orch slot 으로 감싼 검증 명령은 안쪽 명령으로 판정한다'
   const title = '### 1. `AppTest` 에 실패 입력 추가'
   assert.deepEqual(inspect(title, 'HEAVY_SLOTS=2 orch slot heavy -- ./gradlew test --tests X', entries).violations, [])
   assert.deepEqual(inspect(title, 'orch slot heavy --exclusive -- ./gradlew test', entries).violations, [])
-  assert.ok(has(inspect(title, 'orch slot heavy --exclusive -- echo ./gradlew test', entries).violations, NO_TEST))
+  assert.ok(has(inspect(title, 'orch slot heavy --exclusive -- echo ./gradlew test', entries).violations, '검증 절에 테스트 실행 명령이 없다'))
+  assert.ok(has(inspect(title, 'orch slot heavy -- ./gradlew build -x test', entries).violations, '검증 절에 테스트 실행 명령이 없다'))
 })
 
 test('테스트 선언 앞의 코드 블록은 무시한다', () => {
