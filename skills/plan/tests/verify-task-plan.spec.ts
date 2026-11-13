@@ -629,7 +629,7 @@ test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 
   repo.file('tests/existing.test.ts', '')
   repo.git('add', 'tests/existing.test.ts')
   const out: string[] = []
-  checkTestReferences('phase', '`tests/existing.test.ts` `src/test/FooTest.java` `tests/new.test.ts` `tests/missing.test.ts`', [['tests/new.test.ts', '신규']], repo.root, out)
+  checkTestReferences('phase', '`tests/existing.test.ts` `src/test/FooTest.java` `tests/new.test.ts` `tests/missing.test.ts` tests/fixtures/data.json tests/other.pyc tests/a.shx tests/a.javascript', [['tests/new.test.ts', '신규']], repo.root, out)
   assert.equal(out.length, 1)
   assert.match(out[0], /tests\/missing.test.ts/)
 })

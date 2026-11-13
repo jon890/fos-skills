@@ -1101,7 +1101,7 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
 
 // 인수 검증 표와 검증 명령에 적은 구체적인 테스트 파일을 추적 파일 및 신규 계획과 대조한다.
 export function checkTestReferences(path: string, text: string, entries: Entry[], repo: string, out: string[]): void {
-  const refs = (text.match(/[A-Za-z0-9_.@/-]+\.(?:tsx?|jsx?|py|java|kt|mjs|sh|rb)/g) ?? []).filter(isTest)
+  const refs = (text.match(/[A-Za-z0-9_.@/-]+\.(?:tsx?|jsx?|py|java|kt|mjs|sh|rb)(?![A-Za-z0-9_])/g) ?? []).filter(isTest)
   if (!refs.length) return
   const listed = capture(['git', '-C', repo, 'ls-files', '-z'])
   if (listed.code !== 0) return
