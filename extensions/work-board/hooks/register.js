@@ -132,9 +132,6 @@ let inboxSeen = false
 // x: 켜져 있으면 숫자 단축키가 답변 요청문 대신 그 알림을 넘긴다. 넘기거나 다시 x 를 누르면 꺼진다
 let dismissMode = false
 let dismissBusy = false
-// c: 켜져 있으면 진행 중·대기 항목 앞에 숫자 단축키가 붙어 그 항목의 상태 확인 요청문을 채운다. 채우거나 다시 c, Esc 를 누르면 꺼진다.
-// 숫자 단축키를 알림과 함께 쓰므로 x 와 동시에 켜지지 않는다
-let checkMode = false
 // z 로 되돌릴 알림 id. 이 세션에서 창이 넘긴 것만 쌓는다
 const dismissUndo = []
 // 넘김과 되돌리기마다 올린다. 그 전에 시작한 알림 읽기의 결과는 넘긴 항목을 되살리므로 버린다
@@ -898,14 +895,7 @@ export const INBOX_PROMPT = [
 
 // ---- 항목 상태 확인 ----
 
-// c 다음 번호가 붙는 항목. 창이 그리는 순서(진행 중, 대기, 각각 파일 순서)의 앞 9개다
-export const CHECK_ROWS = 9
-export function checkTargets(items) {
-  const rows = Array.isArray(items) ? items : []
-  return [...rows.filter((item) => item.status === 'doing'), ...rows.filter((item) => item.status === 'wait')].slice(0, CHECK_ROWS)
-}
-
-// 제목 줄을 눌러 상태 확인 요청문을 채울 수 있는 항목. 진행 중과 대기만이고, 9개 제한 없이 모두다
+// 제목 줄을 눌러 상태 확인 요청문을 채울 수 있는 항목. 진행 중과 대기 모두다
 export function checkable(item) {
   return Boolean(item) && (item.status === 'doing' || item.status === 'wait')
 }
@@ -917,7 +907,7 @@ export const CHECK_PROMPT = [
   '3. 확인한 상태, 진행한 것, 내가 정할 것만 짧게 보고해 줘.',
 ].join('\n')
 
-// 항목 하나의 상태 확인 요청문. c 다음 숫자 단축키가 입력란에 채운다
+// 항목 하나의 상태 확인 요청문. 진행 중 항목의 제목 줄을 누르면 입력란에 채운다
 export function checkPrompt(item, worker, prs) {
   const steps = stepRows(item).filter((row) => row.step && (row.state === 'now' || row.state === 'todo')).map((row) => stepBody(row.text))
   const numbers = prNumbers(item.pr)
@@ -963,7 +953,7 @@ export function resumePrompt(item, worker, prs) {
   ].join('\n')
 }
 
-// 제목 줄 클릭과 c 다음 번호가 채우는 요청문. 대기 항목은 재개 요청문, 진행 중 항목은 상태 확인 요청문이다
+// 제목 줄 클릭이 채우는 요청문. 대기 항목은 재개 요청문, 진행 중 항목은 상태 확인 요청문이다
 export function itemPrompt(item, worker, prs) {
   return item.status === 'wait' ? resumePrompt(item, worker, prs) : checkPrompt(item, worker, prs)
 }
@@ -1247,8 +1237,6 @@ async function loadFile($) {
       board = { items: [], error: String(failure && failure.message ? failure.message : failure) }
     }
   }
-  // 고를 항목이 없어지면(보드 갱신으로 끝남, 파일이 없어짐) 확인 모드를 끈다. 그리기에서는 상태를 바꾸지 않는다
-  if (checkTargets(board && Array.isArray(board.items) ? board.items : []).length === 0) checkMode = false
   refreshStatus($)
 }
 
@@ -1672,27 +1660,6 @@ export const DECIDE_PROMPT = [
   '8. 처리한 막힘은 이어갈 일이 있는 worker 면 4번 규칙대로 원래 질문의 스레드에 답해 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
 ].join('\n')
 
-// 창 닫기(ui.close)가 확인 모드만 끄고 창을 남길지. 사람이 닫을 때(Esc, 닫기 표시)만이고 엔진의 unload 는 닫는다
-export function closeCancelsCheck(e, checking) {
-  return Boolean(checking && e && e.id === PANE && !(e.origin && e.origin.kind === 'unload'))
-}
-
-// ui.close 훅. 확인 모드에서 사람이 닫으면 창을 남기고 번호만 지운다.
-// void 결과의 이벤트도 next 없이 답할 때는 { value: undefined } 꼴이어야 한다. undefined 를 돌려주면 엔진이 훅을 건너뛰고 창을 닫는다(2.1.316 실측)
-export async function onPaneClose($, e, next) {
-  if (!closeCancelsCheck(e, checkMode)) return next(e)
-  checkMode = false
-  $.ui.invalidate('ui.render')
-  return { value: undefined }
-}
-
-// 확인 모드를 켜고 끈다. c 버튼이 부른다. 켜면 x 넘기기를 끈다
-export function toggleCheckMode() {
-  checkMode = !checkMode
-  if (checkMode) dismissMode = false
-  return checkMode
-}
-
 function fillPrompt($, text) {
   void $.prompt.fill({ text })
   $.ui.toast('입력란에 요청문을 채웠어요. Enter 를 누르면 보내요')
@@ -1741,7 +1708,6 @@ export function register(on) {
 
   on('command.run', { command: 'board' }, async ($) => {
     dismissMode = false
-    checkMode = false
     await loadFile($)
     await loadApprovals($, true)
     networkPoll.input(await $.clock.now())
@@ -1750,9 +1716,6 @@ export function register(on) {
     await $.ui.open({ id: PANE, title: '작업 현황', closeOnEscape: true })
     return {}
   })
-
-  // 확인 모드에서 Esc(사람이 닫기)는 창을 닫지 않고 번호만 지운다. 엔진이 내리는 unload 는 그대로 닫는다
-  on('ui.close', onPaneClose)
 
   // plugin 의 prompt.fill 과 정기 render 는 무조작 기한을 늘리지 않는다.
   on('prompt.change', onPromptChange)
@@ -1783,10 +1746,6 @@ export function register(on) {
       return parts ? [parts[0], tagged('task', taskTag(item.task), item.task, parts[1]), parts[2]] : [title]
     }
     const items = board && Array.isArray(board.items) ? board.items : []
-    // c 다음 번호가 붙는 항목. 모드를 끄는 일은 loadFile 이 하고, 그리기는 읽기만 한다
-    const targets = checkTargets(items)
-    const checking = checkMode && targets.length > 0
-    const checkIndex = new Map(targets.map((item, i) => [item.id, i]))
     // 맡은 worker 가 없는 줄. 단계가 idle_min 넘게 worker 없이 남았으면 경과 시간을 붙이고 노란색으로 그린다
     // 판정 명령을 읽지 못했으면 orch 기본값(30분)으로 잰다
     const idleView = (item, rows) => {
@@ -1846,7 +1805,6 @@ export function register(on) {
     }
 
     // 항목 머리 줄. 진행 중·대기 항목은 표시와 제목을 Button 하나로 그려 클릭이나 Enter 로 상태 확인 요청문을 채운다
-    // 숫자 단축키는 확인 모드(c)에서 앞 9개에만 붙인다. 평소에 붙이면 알림의 숫자 단축키와 겹친다
     // Button 의 자식은 문자열과 Text 만 받으므로, 제목에 업무 링크가 있으면 링크와 그 뒤 글은 Button 밖에 이어 그린다
     // 이때 머리 줄은 columnGap 없이 제목 글의 띄어쓰기를 그대로 쓴다
     const headChildren = (item, section, done, worker) => {
@@ -1858,19 +1816,17 @@ export function register(on) {
             : Text({ key: 'title', bold: true, wrap: 'wrap', children: titleChildren(item) }),
         ]
       }
-      const numbered = checking && checkIndex.has(item.id)
       const [lead, ...rest] = titleChildren(item)
       return [
-        Button({ key: 'check-' + item.id, hotkey: numbered ? String(checkIndex.get(item.id) + 1) : undefined, plain: true,
+        Button({ key: 'check-' + item.id, plain: true,
           onPress: () => {
             // 넘기기(x) 모드에서는 항목을 눌러도 아무것도 하지 않는다. 그 모드의 누르기는 알림을 넘기는 뜻이다
             if (dismissMode) return
-            checkMode = false
             fillPrompt($, itemPrompt(item, worker, live.prs))
             $.ui.invalidate('ui.render')
           },
           children: [
-            Text({ key: 'mark', color: numbered ? 'red' : section.color, children: [section.mark + ' '] }),
+            Text({ key: 'mark', color: section.color, children: [section.mark + ' '] }),
             Text({ key: 'title', bold: true, wrap: 'wrap', children: [lead] }),
           ] }),
         ...rest.map((part, i) => typeof part === 'string'
@@ -2063,14 +2019,11 @@ export function register(on) {
             columnGap: 1,
             flexWrap: 'wrap',
             children: [
-              // 확인 모드(c) 동안은 숫자 단축키를 항목이 쓴다. 같은 hotkey 가 둘이면 뒤에 그린 것이 이기므로 hotkey 를 떼고 번호 글자만 그대로 그린다
               index < INBOX_ROWS
-                ? Button({ key: 'inbox-reply-' + item.id, hotkey: checking ? undefined : String(index + 1), plain: true, dimColor: answered || checking,
-                  // 확인 모드 동안은 클릭이나 Enter 로도 알림 요청문을 채우지 않는다
-                  onPress: () => { if (checking) return; if (dismissMode) void dismissInbox($, item.id); else fillPrompt($, replyPrompt(item)) },
+                ? Button({ key: 'inbox-reply-' + item.id, hotkey: String(index + 1), plain: true, dimColor: answered,
+                  onPress: () => { if (dismissMode) void dismissInbox($, item.id); else fillPrompt($, replyPrompt(item)) },
                   children: [
-                    ...(checking ? [Text({ key: 'n', dimColor: true, children: [String(index + 1) + ': '] })] : []),
-                    Text({ key: 'label', bold: !answered, dimColor: answered || checking, color: dismissMode ? 'red' : undefined, children: [label] }),
+                    Text({ key: 'label', bold: !answered, dimColor: answered, color: dismissMode ? 'red' : undefined, children: [label] }),
                   ] })
                 : Text({ bold: !answered, dimColor: answered, children: ['   ' + label] }),
               tagged('tag', inboxTag(item), item.url || '', ''),
@@ -2242,7 +2195,6 @@ export function register(on) {
                 plain: true,
                 onPress: () => {
                   dismissMode = !dismissMode
-                  if (dismissMode) checkMode = false
                   $.ui.invalidate('ui.render')
                 },
               })] : []),
@@ -2252,16 +2204,6 @@ export function register(on) {
                 hotkey: 'z',
                 plain: true,
                 onPress: () => { void undoDismiss($) },
-              })] : []),
-              ...(targets.length > 0 ? [Button({
-                key: 'item-check',
-                label: checking ? '확인 그만' : '항목 상태 확인',
-                hotkey: 'c',
-                plain: true,
-                onPress: () => {
-                  toggleCheckMode()
-                  $.ui.invalidate('ui.render')
-                },
               })] : []),
               Button({
                 key: 'pr-author',
@@ -2291,8 +2233,6 @@ export function register(on) {
                 onPress: () => { void updatePlugin($) },
               })] : []),
             ] }),
-            ...(checking ? [Text({ key: 'check-guide', color: 'red', wrap: 'wrap',
-              children: ['상태를 확인할 항목의 번호를 누르세요. 진행 중과 대기 항목 앞의 번호예요. 그만두려면 c 나 Esc'] })] : []),
           ],
         }),
         ...(board && board.error ? [Text({ color: 'red', wrap: 'wrap', children: ['board.json 을 읽지 못했어요: ' + board.error] })] : []),

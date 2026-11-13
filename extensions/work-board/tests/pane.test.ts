@@ -497,99 +497,21 @@ test('알림함이 켜진 적 없이 inbox 명령이 실패하면 알림 상자�
   await ui.unmount()
 })
 
-// c 를 누르면 진행 중·대기 항목 앞에 번호가 붙고, 번호는 그 항목의 상태 확인 요청문을 채운다 (docs/features/board-item-check)
-test('c 다음 번호는 그 항목의 상태 확인 요청문을 채우고 모드를 끈다 (REQ1, REQ2)', async ($, on) => {
-  const filled = []
-  on('prompt.fill', (_, e) => {
-    filled.push(e.text)
-    return { isFilled: true }
-  })
-  on('ui.toast', () => ({ value: undefined }))
+// 항목 상태 확인 단축키(c 다음 번호)는 없앴다. 진행 중·대기 항목이 있어도 단축키 상자에 c 가 없고 제목 줄에 번호 단축키가 붙지 않는다
+test('진행 중·대기 항목이 있어도 단축키 상자에 c 가 없다', async ($, on) => {
   await start($, on)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Button', key: 'item-check' })).props.hotkey).toBe('c')
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
-
-  await ui.press({ key: 'item-check' })
-  expect(await ui.find({ type: 'Text', text: /상태를 확인할 항목의 번호를 누르세요/ })).toBeTruthy()
-  // 화면 순서: 진행 중 a, b 다음 대기 c
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
-  expect((await ui.find({ type: 'Button', key: 'check-b' })).props.hotkey).toBe('2')
-  expect((await ui.find({ type: 'Button', key: 'check-c' })).props.hotkey).toBe('3')
-
-  await ui.press({ key: 'check-a' })
-  expect(filled).toHaveLength(1)
-  expect(filled[0]).toContain('보드 항목 a ')
-  expect(filled[0]).toContain('(단계 항목)')
-  expect(filled[0]).toContain('끝나지 않은 단계: 2. 리뷰 / 3. 머지')
-  expect(filled[0]).toContain('worker: 없음 (워크트리 wt-a)')
-  expect(filled[0]).toContain('PR: #9')
-  expect(filled[0]).toContain('멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘')
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /상태를 확인할 항목의 번호를 누르세요/ })).toBeFalsy()
-  await ui.unmount()
-})
-
-// Esc 는 ui.close 로 온다. 테스트 키트의 $ 는 ui.close 를 부르지 못해, 훅은 check.spec.ts 가 onPaneClose 로 직접 부른다
-test('c 를 다시 누르면 번호가 사라진다 (REQ1)', async ($, on) => {
-  await start($, on)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'item-check' })
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
-  expect((await ui.find({ type: 'Button', key: 'item-check' })).props.label).toBe('확인 그만')
-  await ui.press({ key: 'item-check' })
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /상태를 확인할 항목의 번호를 누르세요/ })).toBeFalsy()
-  await ui.unmount()
-})
-
-test('진행 중·대기 항목이 없으면 c 가 없다 (REQ4)', async ($, on) => {
-  await start($, on, undefined, JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
-    { id: 'd', title: '끝난 항목', status: 'done' },
-    { id: 'q', title: '결정', status: 'decide' },
-  ] }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Button', key: 'item-check' })).toBeFalsy()
-  await ui.unmount()
-})
-
-test('확인 모드에서 알림 번호는 그대로 보이고 숫자 단축키는 항목만 쓴다. x 와 c 는 함께 켜지지 않는다', async ($, on) => {
-  const filled = []
-  on('prompt.fill', (_, e) => {
-    filled.push(e.text)
-    return { isFilled: true }
-  })
-  on('ui.toast', () => ({ value: undefined }))
-  await start($, on, inboxOutput({ enabled: true, fetchedAt: null, newCount: 2, unclassified: 0, isDefault: true, errors: {}, items: INBOX_ITEMS }))
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const reply = 'inbox-reply-dooray:task:comment:c1'
-  expect((await ui.find({ type: 'Button', key: reply })).props.hotkey).toBe('1')
-
-  await ui.press({ key: 'item-check' })
-  const inboxButton = await ui.find({ type: 'Button', key: reply })
-  expect(inboxButton.props.hotkey).toBeUndefined()
-  expect(textOf(inboxButton)).toMatch(/^1: ● 어드민개발\/81/)
   const hotkeys = (await ui.findAll({ type: 'Button' })).map((button) => button.props.hotkey).filter(Boolean)
-  expect(hotkeys.filter((key) => key === '1')).toHaveLength(1)
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
-  // 확인 모드 동안 알림 버튼은 클릭이나 Enter 로도 요청문을 채우지 않는다
-  await ui.press({ key: reply })
-  expect(filled).toEqual([])
-
-  // x 를 켜면 c 가 꺼지고 알림 번호가 돌아온다
-  await ui.press({ key: 'inbox-dismiss' })
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
-  expect((await ui.find({ type: 'Button', key: reply })).props.hotkey).toBe('1')
-  expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeTruthy()
-  // c 를 켜면 x 가 꺼진다
-  await ui.press({ key: 'item-check' })
-  expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeFalsy()
-  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
+  expect(hotkeys).not.toContain('c')
+  for (const key of ['check-a', 'check-b', 'check-c']) {
+    expect((await ui.find({ type: 'Button', key })).props.hotkey).toBeUndefined()
+  }
   await ui.unmount()
 })
 
 // 알림처럼 진행 중·대기 항목의 제목 줄도 클릭이나 Enter 로 누를 수 있다 (REQ5)
-test('c 없이 진행 중·대기 항목의 제목 줄을 누르면 상태 확인 요청문을 채운다 (REQ5)', async ($, on) => {
+test('진행 중·대기 항목의 제목 줄을 누르면 상태 확인 요청문을 채운다 (REQ5)', async ($, on) => {
   const filled = []
   on('prompt.fill', (_, e) => {
     filled.push(e.text)
@@ -641,10 +563,6 @@ test('대기 항목의 제목 줄은 9개를 넘어도 눌리고 재개 요청�
   const head = await ui.find({ type: 'Button', key: 'check-w' })
   expect(textOf(head)).toBe('◇ 기획 답을 기다리는 항목')
 
-  // 확인 모드에서 대기 항목은 진행 중 9개 뒤라 번호가 없지만 클릭은 된다
-  await ui.press({ key: 'item-check' })
-  expect((await ui.find({ type: 'Button', key: 'check-d8' })).props.hotkey).toBe('9')
-  expect((await ui.find({ type: 'Button', key: 'check-w' })).props.hotkey).toBeUndefined()
   await ui.press({ key: 'check-w' })
   expect(filled).toHaveLength(1)
   expect(filled[0]).toContain('보드 항목 w 의 대기 사유를 다시 확인하고 조사를 재개해 줘. (기획 답을 기다리는 항목)')
