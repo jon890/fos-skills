@@ -56,7 +56,7 @@
 | | `orch queue run <PR>...` | `merge_queue` | 없음(마무리 없는 머지 큐. 직접 부를 일은 드물다) |
 | | `orch queue finish <PR>` | `finish-pr` | 없음 |
 | | `orch queue ready <PR>...` | `ci-ready` | 없음 |
-| | `orch queue gate <PR>` | (새로) | 머지 전 조건을 머지 없이 돌려 본다. worker 가 「준비됨」 을 보내기 전에 쓴다 |
+| | `orch queue gate <PR>` | (새로) | 머지 전 조건을 머지 없이 돌려 본다. 지시서의 머지 보류는 `HOLD <이유>` 줄로 따로 알린다. worker 가 「준비됨」 을 보내기 전에 쓴다 |
 | | `orch queue conflicts` | `notify-conflicts` | 없음 |
 | | `orch queue overlap` | `overlap_units` | 없음 |
 | | `orch queue reserve`, `orch queue reserve prune` | `reserve-migration`, `--prune` | `--prune` 이 동작으로 |
