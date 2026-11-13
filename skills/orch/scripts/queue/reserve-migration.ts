@@ -2,7 +2,7 @@
 // 파일은 만들지 않는다. 경로만 돌려주고 worker 가 그 이름으로 만든다. 명령이 만들면 다른 worktree 의 경로와 섞인다.
 //
 // 사용법:
-//     reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java|adr] [--dir DIR] [--branch B] [--base B] [--again]
+//     reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java|adr] [--dir DIR] [--branch B] [--base B] [--again [--rename]]
 //     reserve-migration.ts --repo DIR --prune
 //
 //     --repo    대상 저장소. 주 checkout 으로 바꿔 쓴다. 예약 파일과 잠금은 그 주 checkout 의 <orch 루트>/state/ 에 있다.
@@ -20,6 +20,9 @@
 //     --branch  예약할 브랜치. 기본은 작업 디렉터리의 `git branch --show-current` 다. worker 는 자기 worktree 에서 부른다. 비면 사용법 오류다
 //     --base    기준 브랜치. 기본은 origin/HEAD(lib/git.ts 의 defaultBase), 그것도 없으면 main 이다. 앞의 `origin/` 은 뗀다(--base origin/develop 도 develop)
 //     --again   같은 브랜치, 모듈, 설명의 예약을 버리고 새 번호를 받는다
+//     --rename  --again 과 함께만 준다. 새 번호를 받은 뒤 부른 디렉터리가 속한 워크트리의 같은 폴더에서, 같은 설명으로 만든 옛 번호의 파일을
+//               새 이름으로 바꾼다. 같은 설명의 파일이 정확히 하나일 때만 바꾼다. 파일 안의 옛 이름도 새 이름으로 고친다
+//               (Java 는 클래스 이름 `V<버전>__<이름>`, ADR 은 `ADR-<번호>`. SQL 은 파일 안에 버전이 없어 이름만 바꾼다)
 //     --prune   번호를 받지 않고 정리만 한다. 형식이 틀린 예약도 파일에서 뺀다. --repo 밖의 옵션과 함께 주면 사용법 오류다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
@@ -66,6 +69,8 @@
 //     유예가 지난 뒤에도 브랜치가 없으면 지운다. at 을 읽지 못하면 유예 없이 판정한다
 //
 // 출력(stdout):
+//     RENAMED <옛 경로> <새 경로>           --rename 이 파일 이름을 바꿨다. RESERVED 줄 바로 뒤에 낸다. 경로는 저장소 루트 기준이다
+//     RENAME-NONE <사유>                    --rename 이 바꿀 파일을 정하지 못했다(옛 파일이 없음, 여럿, 새 이름이 이미 있음). 아무것도 바꾸지 않았다. 종료 코드는 0 이다
 //     PRUNED <module> <label> <branch>      정리로 지운 항목마다. 아래 끝 줄보다 앞에 낸다. ADR 예약이면 label 이 `ADR-<번호>` 다
 //     RESERVED <module> <label> <path>      예약했다. path 는 저장소 루트 기준이다. 다시 준 예약이면 끝에 ` reused`,
 //                                           번호가 무효가 되어 새로 정했으면 ` renewed` 를 붙인다. --again 은 붙이지 않는다
@@ -91,7 +96,8 @@
 //     ORCH_DIR              orch 루트(lib/paths.ts). 기본은 주 checkout 의 .orch
 
 import { isObject } from '../core/json.ts'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { autoMergeConfig, compareVersion, migrationOf, watchedDirs } from '../lib/auto-merge.ts'
@@ -123,6 +129,7 @@ type Target = {
   branch: string
   base: string
   again: boolean
+  rename: boolean
   dir: string
   // base 에서 읽을 폴더와, 경로를 그 모듈의 번호로 바꾸는 판정. 마이그레이션은 모든 감시 폴더를 읽고, ADR 은 그 폴더 하나만 읽는다
   listed: string[]
@@ -239,6 +246,44 @@ function lookupNumbers(
   return { ok: true, baseMax, open }
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// --rename. 새 번호의 파일 이름이 되도록 같은 설명의 옛 번호 파일을 바꾼다. 부른 디렉터리의 워크트리를 보고 예약 파일은 건드리지 않는다.
+// 옛 파일은 새 경로와 이름이 다르고 설명 꼬리가 같은 파일이 정확히 하나일 때만 정한다. 여럿이면 어느 것인지 몰라 바꾸지 않는다
+function renameForReservation(target: Target, reservation: Reservation): string[] {
+  const top = git(process.cwd(), ['rev-parse', '--show-toplevel'])
+  if (top.code !== 0) return ['RENAME-NONE 부른 디렉터리가 git 작업 트리가 아니다']
+  const root = top.stdout.trim()
+  const dir = join(root, target.dir)
+  const adr = target.kind === 'adr'
+  const tail = adr ? `-${reservation.name}.md` : `__${reservation.name}${target.kind === 'java' ? '.java' : '.sql'}`
+  const head = adr ? /^\d+$/ : /^V\d[\d._]*$/
+  const newName = reservation.path.slice(reservation.path.lastIndexOf('/') + 1)
+  const found = existsSync(dir)
+    ? readdirSync(dir).filter((f) => f !== newName && f.endsWith(tail) && head.test(f.slice(0, f.length - tail.length)))
+    : []
+  if (found.length === 0) return [`RENAME-NONE ${target.dir} 에 이름을 바꿀 옛 파일이 없다`]
+  if (found.length > 1) return [`RENAME-NONE ${target.dir} 에 같은 설명의 파일이 여럿이라 고르지 못했다: ${found.join(', ')}`]
+  const from = join(dir, found[0])
+  const to = join(dir, newName)
+  if (existsSync(to)) return [`RENAME-NONE 새 이름의 파일이 이미 있다: ${relative(root, to)}`]
+  renameSync(from, to)
+  // 파일 안의 옛 이름을 새 이름으로 고친다. SQL 은 파일 안에 버전이 없다
+  const oldPart = found[0].slice(0, found[0].length - tail.length)
+  const newPart = newName.slice(0, newName.length - tail.length)
+  if (target.kind !== 'sql') {
+    const [oldText, newText] = adr
+      ? [new RegExp(`\\bADR-${escapeRegExp(oldPart)}\\b`, 'g'), reservation.label]
+      : [new RegExp(`\\b${escapeRegExp(oldPart)}__${escapeRegExp(reservation.name)}\\b`, 'g'), `${newPart}__${reservation.name}`]
+    const body = readFileSync(to, 'utf8')
+    const fixed = body.replace(oldText, newText)
+    if (fixed !== body) writeFileSync(to, fixed, 'utf8')
+  }
+  return [`RENAMED ${relative(root, from)} ${relative(root, to)}`]
+}
+
 function parse(argv: string[]): { repo: string; prune: boolean; values: Record<string, string | boolean | undefined> } {
   const options = {
     repo: { type: 'string' },
@@ -249,6 +294,7 @@ function parse(argv: string[]): { repo: string; prune: boolean; values: Record<s
     branch: { type: 'string' },
     base: { type: 'string' },
     again: { type: 'boolean', default: false },
+    rename: { type: 'boolean', default: false },
     prune: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },
   } as const
@@ -264,10 +310,11 @@ function parse(argv: string[]): { repo: string; prune: boolean; values: Record<s
   if (repoProblem) throw new Usage(repoProblem)
   if (values.prune) {
     const extra = (['module', 'name', 'kind', 'dir', 'branch', 'base'] as const).filter((key) => values[key] !== undefined)
-    if (extra.length > 0 || values.again) throw new Usage('--prune 은 --repo 와만 준다')
+    if (extra.length > 0 || values.again || values.rename) throw new Usage('--prune 은 --repo 와만 준다')
   } else {
     if (!values.module) throw new Usage('--module 이 필요하다')
     if (!values.name) throw new Usage('--name 이 필요하다')
+    if (values.rename && !values.again) throw new Usage('--rename 은 --again 과 함께 준다')
     if (values.kind !== undefined && values.kind !== 'sql' && values.kind !== 'java' && values.kind !== 'adr') {
       throw new Usage(`--kind 는 sql, java, adr 중 하나다: ${values.kind}`)
     }
@@ -350,7 +397,7 @@ async function main(argv: string[]): Promise<number> {
       if (!branch) throw new Usage('--branch 가 없고 작업 디렉터리의 현재 브랜치도 읽지 못했다')
       // origin 에서 받으므로 `origin/develop` 처럼 원격 접두를 붙여 줘도 브랜치 이름만 쓴다. 붙인 채로 fetch 하면 실패한다
       const base = ((values.base as string | undefined) || defaultBase(repo) || 'main').replace(/^origin\//, '')
-      target = { module, name, kind, branch, base, again: values.again === true, ...dirs }
+      target = { module, name, kind, branch, base, again: values.again === true, rename: values.rename === true, ...dirs }
     } catch (e) {
       if (e instanceof ConfigError) {
         process.stderr.write(`reserve-migration: ${e.message}\n`)
@@ -453,6 +500,7 @@ async function main(argv: string[]): Promise<number> {
     const { reservation } = chosen
     const suffix = chosen.reused ? ' reused' : chosen.renewed ? ' renewed' : ''
     say(`RESERVED ${reservation.module} ${reservation.label} ${reservation.path}${suffix}`)
+    if (target?.rename) for (const line of renameForReservation(target, reservation)) say(line)
     return 0
   } finally {
     // 5. 예외가 나도 내 잠금은 푼다

@@ -609,4 +609,23 @@ describe('ADR 예약', () => {
     assert.match(none.stderr, /adr\.dirs 가 비었다/)
     assert.equal(existsSync(stateFile('adr-reservations.json')), false)
   })
+
+  test('--again --rename 은 부른 워크트리의 옛 번호 파일을 새 번호 이름으로 바꾼다', () => {
+    github()
+    const args = ['--module', 'api', '--name', 'add_index', '--branch', 'feat-a']
+    assert.equal(ok(reserve(args, { cwd: repo })), 'RESERVED api V3 db/api/V3__add_index.sql\n')
+    write(join(repo, 'db', 'api', 'V3__add_index.sql'), 'create index i on t(c);\n')
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'other', '--branch', 'feat-c'], { cwd: repo })), 'RESERVED api V4 db/api/V4__other.sql\n')
+    const done = reserve([...args, '--again', '--rename'], { cwd: repo })
+    assert.equal(ok(done), 'RESERVED api V5 db/api/V5__add_index.sql\nRENAMED db/api/V3__add_index.sql db/api/V5__add_index.sql\n')
+    assert.equal(existsSync(join(repo, 'db', 'api', 'V3__add_index.sql')), false)
+    assert.equal(readFileSync(join(repo, 'db', 'api', 'V5__add_index.sql'), 'utf8'), 'create index i on t(c);\n')
+    // 같은 번호를 다시 받으면 바꿀 옛 파일이 없다. 아무것도 바꾸지 않고 알린다. --again 없이는 사용법 오류다
+    const none = ok(reserve([...args, '--again', '--rename'], { cwd: repo }))
+    assert.match(none, /^RESERVED api V5 db\/api\/V5__add_index\.sql\nRENAME-NONE /)
+    assert.equal(existsSync(join(repo, 'db', 'api', 'V5__add_index.sql')), true)
+    const bad = reserve([...args, '--rename'], { cwd: repo })
+    assert.equal(bad.status, 2)
+    assert.match(bad.stderr, /--rename 은 --again 과 함께/)
+  })
 })

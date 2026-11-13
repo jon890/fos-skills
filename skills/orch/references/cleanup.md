@@ -103,7 +103,7 @@ orch queue conflicts --base "$BASE"
 
 **앞 PR 이 먼저 들어가야 하는 PR 들은 `--chain 101,102` 로 묶는다.** 묶음 안 앞 PR 이 머지되지 않고 빠지면 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 로 머지하지 않는다. 묶음 밖의 PR 은 이어 머지한다.
 `migrations.dirs` 또는 `migrations.watch` 에 해당하는 파일을 더한 PR 은 번호 순서로 자동 정렬하고 묶는다. 순서가 바뀌면 `QUEUE-ORDER <번호...>: <이유>` 한 줄을 낸다. 수동 `--chain` 과 자동 묶음을 함께 지키며, 서로 모순되면 머지 전에 종료 코드 2 로 거절한다. 마이그레이션 설정이 없으면 입력 순서와 수동 묶음을 그대로 쓴다.
-준비 상태 검사와 머지 직전에 `origin/<base>` 를 새로 받아 최고 번호를 다시 본다. 그보다 크지 않은 번호는 보류하고, `orch queue reserve ... --again` 으로 새 번호를 받으라는 안내를 worker 에게 보낸다.
+준비 상태 검사와 머지 직전에 `origin/<base>` 를 새로 받아 최고 번호를 다시 본다. 그보다 크지 않은 번호는 보류하고, `orch queue reserve ... --again` 으로 새 번호를 받으라는 안내를 worker 에게 보낸다. 파일 이름까지 새 번호로 바꾸려면 `--again --rename` 을 준다.
 
 ```bash
 orch queue merge --chain 101,102 101 102 103
