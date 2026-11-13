@@ -1,0 +1,76 @@
+{
+  "name": "attach-workers",
+  "description": "보드 항목의 worker 줄 목록, 띄울 때 리뷰·검증·후속 worker 자동 붙이기, 보드 항목: 새로, 줄 끝내기와 리뷰가 항목을 붙잡지 않는 판정",
+  "pr_scope": "보드 항목에 worker 줄 목록을 두고, 띄울 때 리뷰·검증·후속 worker 를 기존 항목에 줄로 붙이며, 상주 루프가 끝난 worker 줄을 끝내고 리뷰·검증 줄이 항목 닫기와 멈춤 알림을 바꾸지 않게 한다.",
+  "deferred": [
+    {
+      "what": "동시에 열린 PR 의 단계 묶음과 창의 worker 줄 그리기(REQ4, REQ6, REQ7 의 창 부분, REQ8 의 나머지). 계획은 docs/features/board-item-workers/tasks/multi-pr-window/",
+      "why": "스펙 DECISION20 이 PR 을 둘로 나눴다. 이 PR 은 보드 데이터와 판정만 맡는다",
+      "after": "이 PR 의 worker 줄 목록(workers 필드)과 worker-add·worker-end 명령이 main 에 머지된 뒤"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-13",
+  "spec": "docs/features/board-item-workers/spec.md",
+  "design": "docs/features/board-item-workers/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ5",
+    "REQ7",
+    "REQ8"
+  ],
+  "total_phases": 5,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ8"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ5",
+        "REQ8"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ5"
+      ]
+    },
+    {
+      "number": 4,
+      "file": "phase-04.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ2",
+        "REQ7"
+      ]
+    },
+    {
+      "number": 5,
+      "file": "phase-05.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ7",
+        "REQ8"
+      ]
+    }
+  ]
+}
