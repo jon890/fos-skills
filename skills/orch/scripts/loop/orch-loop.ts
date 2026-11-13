@@ -66,6 +66,7 @@
 //     1. 질문 확인. steps/questions.ts
 //     2. 열린 PR 조회. steps/prs.ts
 //     3. 보드 동기화(워크트리 정리 전). steps/board.ts. 이어서 사용자 결정 알림. steps/decisions.ts
+//     3-1. 업무 주소 채우기. steps/task-links.ts
 //     4. 정리. steps/cleanup.ts
 //     5. CI 감시. steps/ci.ts
 //     5-1. 머지 알림. steps/merged.ts
@@ -122,6 +123,7 @@ import { sweepRuns } from './steps/cleanup.ts'
 import { settleConflicts } from './steps/conflicts.ts'
 import { context, initialState, stepContext } from './steps/context.ts'
 import type { Context, StepResult, StepState, TickResult } from './steps/context.ts'
+import { fillTaskLinks } from './steps/task-links.ts'
 import { notifyPendingDecisions } from './steps/decisions.ts'
 import { checkHeavySlot } from './steps/heavy-slot.ts'
 import { notifyMerged } from './steps/merged.ts'
@@ -156,6 +158,7 @@ async function tick(config: Context, n: number): Promise<number> {
   collect(state, await readOpenPrs(ctx, state))
   collect(state, await syncBoard(ctx, state))
   collect(state, await notifyPendingDecisions(ctx, state))
+  collect(state, await fillTaskLinks(ctx, state))
   collect(state, await sweepRuns(ctx, state))
   collect(state, await checkCi(ctx, state))
   collect(state, await notifyMerged(ctx, state))

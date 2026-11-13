@@ -68,6 +68,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     paths: { good: ['a/.*\\.yaml', ['a/.*', 'b/.*']], bad: ['', ['('], 1, []] },
   },
   board: {
+    task: { good: [{ adapter: 'dooray', web_url: 'https://x.dooray.com', project: 'P' }, { adapter: 'url-template', url: 'https://x/browse/{number}', name: 'Jira' }], bad: [{}, { adapter: 'jira' }, { adapter: 'dooray', web_url: 'https://x.dooray.com' }, { adapter: 'url-template', url: 'https://x/browse' }, 'dooray'] },
     steps: { good: [['[pr] PR', '[merge] 머지'], ['설계']], bad: [[], ['[x] a'], 'x', ['[pr] a', '[pr] b']] },
     done_after: { good: ['merge', 'deploy', 'release'], bad: ['pr', '', 1] },
     task_line: { good: ['(?<number>\\d+)'], bad: ['', 'abc', '(?<number>(', 1] },

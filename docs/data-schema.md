@@ -101,8 +101,9 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `pipeline` | `idle_exited` | true 나 false. 아니면 설정 오류다 | `true` | Orca 가 프로세스가 끝났다고 본(liveness `exited`) 열린 dispatch 를 멈춘 worker 로 볼지. 보드 창의 「멈춤 · 터미널 종료」 도 같은 값을 쓴다 |
 | `contracts` | `merge_command` | bash 명령 문자열. `paths` 와 함께 둔다 | 없음 | 계약 머리만 충돌한 PR 을 합치다 멈춘 임시 워크트리에서 돌릴 명령. 0 으로 끝나고 풀리지 않은 파일이 없어야 orch 가 커밋해 push 한다. 절차는 `skills/orch/scripts/lib/contract-merge.ts` 머리 주석이 소유한다 |
 | `contracts` | `paths` | 정규식 문자열이나 그 목록(Python 정규식. 목록은 `\|` 로 잇는다) | 없음 | 계약 파일. 충돌 파일이 모두 여기 맞을 때만 자동 합치기를 한다. 기능 완료 근거도 이 파일만 푼 base 합치기 커밋을 받아들인다 |
+| `board` | `task` | `dooray`: adapter, web_url(http·https 주소), project(기본 프로젝트). `url-template`: adapter, url({number} 포함), name(선택) | 없음(주소를 만들지 않는다) | 보드 항목의 업무 번호를 맞추고 주소를 만드는 어댑터. 칩의 도구 이름도 정한다 |
 | `board` | `steps` | 비지 않은 문자열 목록. 줄 앞 꼬리표는 `[pr]`, `[merge]`, `[deploy]`, `[release]` 중 하나이고 한 번씩만 쓴다. 다른 꼬리표는 사용법 오류다 | `["[pr] PR", "[merge] 머지"]` | 띄울 때 만드는 보드 마일스톤 단계. 지시서의 `## 보드 단계` 절이 앞선다. 근거는 [ADR-018](adr/018-board-milestone-steps.md) 가 소유한다 |
-| `board` | `task_line` | 정규식 문자열. 이름 붙은 묶음 `number` 가 있어야 하고 `title` 은 선택이다. `m`, `u` 플래그로 읽는다 | `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안을 제목으로 읽는 꼴(`lib/milestones.ts` 의 `DEFAULT_TASK_LINE`) | 띄울 때 지시서에서 업무 번호와 제목을 읽는다. 번호는 보드 항목 제목 앞에 붙고, 같은 번호의 끝나지 않은 항목을 이어 쓰는 기준이 된다 |
+| `board` | `task_line` | 정규식 문자열. 이름 붙은 묶음 `number` 가 있어야 하고 `title` 은 선택이다. `m`, `u` 플래그로 읽는다 | `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안을 제목으로 읽는 꼴(`lib/milestones.ts` 의 `DEFAULT_TASK_LINE`) | 띄울 때 지시서에서 업무 번호와 제목을 읽는다. 번호는 보드 항목의 업무 번호 칸(`task-ref`)에 들어가고, 같은 번호의 끝나지 않은 항목을 이어 쓰는 기준이 된다 |
 | `board` | `auto_advance` | `true` 나 `false`. 아니면 설정 오류다 | `true` | `false` 면 `STEP-READY` 를 끄고 `orch board auto-check` 가 거절한다. `[auto]`·`[ask]` 는 기존 멈춤 알림으로 보고, `[wait]` 는 깨우지 않으며 시각 wait 는 그대로 끝낸다 |
 | `board` | `done_after` | `merge`, `deploy`, `release` 중 하나 | `merge` | 마지막 PR 이 이 사건 단계에 닿으면 보드 항목을 done 으로 바꾼다. 항목에 그 단계가 없으면 가장 늦은 사건 단계에서 바꾼다 |
 | `heavy` | `exclusive`, `normal`, `light` | 비지 않은 JS 정규식 문자열 목록(빈 목록 허용) | 빈 목록 | 무거운 검사 분류. 앞의 목록부터 맞춰 본다. 어디에도 맞지 않으면 `normal` 이다 |
@@ -130,6 +131,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `config.json.lock` | 설정 쓰기 잠금. `orch config` 와 `doctor migrate` 가 읽기부터 저장까지 `withFileLock` 규약으로 함께 쓴다([보드 쓰기 잠금](adr/029-board-write-lock.md)) | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
+| `state/task-links.json` | 업무 주소 만들기의 항목별 실패 번호·시각·이유와 설정 오류 | 성공하거나 항목이 끝나면 그 기록을 지운다. 형식은 `lib/task-links.ts` 맨 위 설명이 소유한다 |
 | `state/approvals.json` | 승인 대기. 저장 꼴과 상태는 [승인 설계의 저장 꼴](features/board-approval/design.md#저장-꼴)이 소유한다. 잠금 안에서 옆 파일에 쓰고 이름을 바꾼다 | 쓰기마다 끝난 지 7일이 지난 기록을 지운다. 열린 기록과 마지막 버전 번호는 남긴다 |
 | `state/approvals.json.lock` | 승인 파일 잠금. [보드 쓰기 잠금](adr/029-board-write-lock.md)의 `withFileLock` 규약을 쓴다 | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
 | `state/step-ready.json` | 다음 단계 알림 기록. `notices` 의 항목 id 아래 `step`(사건 꼬리표를 뗀 글), `mark`(auto/ask), `at`(ms), `again`(재알림에 쓴 한도 알림 시각 또는 null)을 둔다 | 틱 자식이 옆 파일에 쓰고 rename 한다. 같은 단계는 worker 가 떠도 유지하며 글 변경·항목 완료 때 지운다 |

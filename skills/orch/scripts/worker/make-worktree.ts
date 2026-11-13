@@ -99,7 +99,7 @@ function create(opts: { repo: string; name: string; base: string; resumeRemote: 
   else if (exists(`refs/heads/${branch}`)) reason = `로컬 브랜치 ${branch} 가 이미 있다. 이어서 하는 일이면 그 워크트리에 띄운다`
   const remoteExists = exists(`refs/remotes/origin/${branch}`)
   if (!reason && remoteExists !== resumeRemote) {
-    reason = remoteExists ? `원격 브랜치 origin/${branch} 가 이미 있다` : `이어 받을 원격 브랜치 origin/${branch} 가 없다`
+    reason = remoteExists ? `원격 브랜치 origin/${branch} 가 이미 있다. 그 브랜치를 이어 받으려면 --resume-remote 를 준다` : `이어 받을 원격 브랜치 origin/${branch} 가 없다`
   }
   if (reason) {
     err(`거부: ${reason}`)

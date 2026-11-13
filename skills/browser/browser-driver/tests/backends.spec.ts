@@ -145,6 +145,21 @@ describe('orca', () => {
     assert.ok(argvs)
   })
 
+  test('shot --size 는 찍기 전에 뷰포트를 바꾸고 다른 백엔드는 거절한다', (t) => {
+    const { box, argvs } = backend(t, 'orca', [{ stdout: ok({ data: '' }) }])
+    const out = join(box.root, 's.png')
+    const done = box.run(['shot', 'P', out, '--size', '1280x800'])
+    assert.deepEqual([done.code, done.stdout], [0, `${out}\n`])
+    assert.deepEqual(argvs(), [['viewport', '--width', '1280', '--height', '800', '--page', 'P', '--json'], ['screenshot', '--format', 'png', '--page', 'P', '--json']])
+    assert.equal(box.run(['shot', 'P', out, '--size', '0x5']).code, 2)
+    // 경로를 생략해도 기본 경로로 찍는다
+    const bare = box.run(['shot', 'P', '--size', '800x600'])
+    assert.deepEqual([bare.code, bare.stdout], [0, '/tmp/orca-shot.png\n'])
+    const other = backend(t, 'cmux', [{ stdout: 'OK\n' }])
+    const refused = other.box.run(['shot', 'S', '/tmp/x.png', '--size', '1280x800'])
+    assert.deepEqual([refused.code, other.argvs()], [2, []])
+  })
+
   test('shot 의 형식은 확장자로 고른다', (t) => {
     const { box, argvs } = backend(t, 'orca', [{ stdout: ok({ data: '' }) }])
     for (const [name, format] of [['a.png', 'png'], ['a.jpg', 'jpeg'], ['a.JPEG', 'jpeg'], ['a', 'png'], ['a.jpeg.txt', 'png']] as const) {

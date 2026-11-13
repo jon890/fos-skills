@@ -34,6 +34,7 @@
 | [ADR-028](028-orch-core-layer.md) | 값 판정과 외부 실행을 폴더로 나눈다 | accepted | - |
 | [ADR-029](029-board-write-lock.md) | 보드 쓰기는 `board.ts` 의 파일 잠금을 지나고, 통째 저장은 읽을 때의 줄 지문으로 거절한다 | accepted | - |
 | [ADR-030](030-plugin-npm-dependencies.md) | 플러그인 루트의 package.json 으로 npm 의존을 두고 설치는 Claude Code 에 맡긴다 | accepted | - |
+| [ADR-031](031-board-task-adapter.md) | 업무 도구 어댑터는 orch 가 갖고, 보드는 업무 번호와 주소만 저장한다 | accepted | - |
 | [ADR-032](032-loop-bundle-handover.md) | 옛 번들의 상주 루프는 잠금 파일을 새 루프의 pid 로 바꿔 넘기고, 새 루프가 상태를 쓴 뒤에 끝난다 | accepted | - |
 
 ## 대체됨

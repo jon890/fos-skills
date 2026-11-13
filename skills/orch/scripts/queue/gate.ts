@@ -18,6 +18,7 @@
 //   REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>
 //                 GATE-OK 뒤에 줄이 더 붙을 수 있다. 리뷰 설정에 fixed_after_block 이 true 이고 block 을 받은 PR 이 재리뷰 없이 풀렸을 때만 낸다.
 //                 조건은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다. GATE-FAIL 일 때는 내지 않는다
+//   HOLD <이유>     지시서의 머지 보류 이유. 평소 조건을 모두 본 뒤 별도 줄로 낸다. gate 종료 코드에는 넣지 않는다
 //   GATE-FAIL <PR>
 //     <이유>        걸린 이유를 한 줄씩. PR 을 읽지 못하거나 이미 MERGED 이거나 OPEN 이 아니어도 GATE-FAIL 이다
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
@@ -39,6 +40,7 @@ import type { StepContext } from './steps/model.ts'
 import { Stop, StepState, Usage } from './steps/model.ts'
 import { parseArgs, usageText } from './steps/options.ts'
 import { readQueueEnv } from './steps/setup.ts'
+import { mergeHold } from './steps/spec-hold.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const stepContext: StepContext = { script: SCRIPT, here: dirname(SCRIPT), sleepScale: 1 }
@@ -48,8 +50,9 @@ function print(lines: string[]): void {
 }
 
 // 판정 줄과 이유 줄. 이유가 없으면 통과다. 통과일 때 fixed 의 `REVIEW-FIXED …` 줄이 판정 줄 뒤에 붙는다
-export function gateLines(n: string, reasons: GateReason[], fixed: string[] = []): string[] {
-  return reasons.length === 0 ? [`GATE-OK ${n}`, ...fixed] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]
+export function gateLines(n: string, reasons: GateReason[], fixed: string[] = [], hold: string | null = null): string[] {
+  const lines = reasons.length === 0 ? [`GATE-OK ${n}`, ...fixed] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]
+  return hold === null ? lines : [...lines, `HOLD ${hold}`]
 }
 
 async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[]; fixed: string[] }> {
@@ -105,7 +108,7 @@ async function mainImpl(argv: string[]): Promise<number> {
   }
   try {
     const { reasons, fixed } = await gate(state, n)
-    print(gateLines(n, reasons, fixed))
+    print(gateLines(n, reasons, fixed, state.pr?.branch ? mergeHold(state) : null))
     return reasons.length === 0 ? 0 : 1
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e

@@ -48,7 +48,8 @@
 //     --board       board.json. 기본은 work-board 의 board.ts 가 정한 위치
 //     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 extensions/work-board/bin/board.ts
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
-//     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName). 없으면 직접 조회한다
+//     PR 을 처음 연결할 때 finish.task_pattern 으로 읽은 업무 번호도 빈 task-ref 에 넣는다.
+//     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName, title). 없으면 직접 조회한다
 //     --completed-reviews 루프 내부용. worker_done 을 받은 리뷰 PR 번호 JSON 목록.
 //                   review-pr-N 항목은 이 목록에 있거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
 //     --goal, --goal-items
@@ -64,6 +65,7 @@
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
+import { prTaskRef } from '../lib/board.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
 import { readBoard } from '../lib/board.ts'
 import type { BoardStep } from '../core/board.ts'
@@ -234,7 +236,7 @@ function main(argv: string[]): number {
     return 1
   }
 
-  type Pr = { number: number; headRefName: string; state?: string }
+  type Pr = { title?: string; number: number; headRefName: string; state?: string }
   let open: Pr[] | null = null
   if (values['open-prs']) {
     try {
@@ -328,19 +330,20 @@ function main(argv: string[]): number {
       const branch = branches.get(String(item.worktree)) || String(item.branch || '')
       if (!item.pr && branch) {
         if (open === null) {
-          const got = ghJson<Pr[]>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName'], { cwd: repo })
+          const got = ghJson<Pr[]>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName,title'], { cwd: repo })
           open = got.ok && Array.isArray(got.data) ? got.data : []
         }
         discovered = open.find((pr) => pr.headRefName === branch)
         if (!discovered) {
-          const got = ghJson<Pr[]>(['pr', 'list', '--state', 'merged', '--head', branch, '--limit', '100', '--json', 'number,headRefName,state'], { cwd: repo })
+          const got = ghJson<Pr[]>(['pr', 'list', '--state', 'merged', '--head', branch, '--limit', '100', '--json', 'number,headRefName,state,title'], { cwd: repo })
           if (got.ok && Array.isArray(got.data)) discovered = got.data.find((pr) => pr.headRefName === branch && pr.state === 'MERGED')
           // 그 브랜치의 가장 최근 머지가 merged-pr 에 들었으면 이미 반영한 머지라 다시 연결하지 않는다. 더 옛 머지도 보지 않는다
           if (discovered && prNumbers(item['merged-pr']).has(String(discovered.number))) discovered = undefined
         }
         if (discovered) {
           item.pr = String(discovered.number)
-          cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch])
+          const ref = prTaskRef(repo, discovered.title ?? '')
+          cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch, ...(ref ? ['--fill', `--task-ref=${ref}`] : [])])
         }
       }
       const state = discovered ? (discovered.state ?? 'OPEN') : stateFor(item.pr)

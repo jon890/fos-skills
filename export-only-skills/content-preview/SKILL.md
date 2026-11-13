@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "4.0.3"
+  version: "4.1.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -31,7 +31,7 @@ description: |
 | --- | --- | --- | --- |
 | 1 | 수신자와 문체 | 누가 읽는지 정했고, 개인 문체 참조가 있으면 본문을 쓰기 전에 읽었다 | `references/persona.md` |
 | 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | `references/render-traps.md` |
-| 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.ts` |
+| 3 | 표기 검사 | 표기 검사기와 고침 지시 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.ts`, `scripts/leak-check.ts` |
 | 4 | 검토 | 의미 점검의 통과 조건을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$PREVIEW_DIR/preview.html` 을 생성했다 | `scripts/show-preview.ts` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
@@ -94,6 +94,12 @@ node "$SKILL_DIR/scripts/style-check.ts" "$PREVIEW_DIR/body.md"
 편집 훅이 어떤 파일을 놓치는지는
 [`../korean-check/references/markdown-readability.md`](../korean-check/references/markdown-readability.md) 의
 「훅이 잡지 못하는 것」 이 소유한다.
+
+**고침 지시 문구도 이 자리에서 검사한다.** 「지금 본문 그대로」, 「표를 아래로 바꾼다」 처럼 바뀐 곳만 적은 초안의 표시가 남아 있으면 종료 코드 1 로 걸린 줄을 보인다. 걸리면 등록하지 않고 본문 전체로 다시 쓴다.
+
+```bash
+node "$SKILL_DIR/scripts/leak-check.ts" "$PREVIEW_DIR/body.md"
+```
 
 제목도 함께 검사한다.
 

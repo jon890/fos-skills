@@ -130,6 +130,12 @@ describe('워크트리 만들기', () => {
     assert.equal(git('-C', repo, 'status', '--porcelain'), '')
   })
 
+  test('원격 브랜치가 이미 있어 거부할 때 --resume-remote 를 안내한다', () => {
+    git('-C', repo, 'push', '-q', 'origin', 'HEAD:feature/x')
+    assert.match(make([], 1), /이미 있다\. 그 브랜치를 이어 받으려면 --resume-remote/)
+    assert.equal(existsSync(wt()), false)
+  })
+
   test('--resume-remote 는 원격 브랜치가 없으면 거부한다', () => {
     assert.match(make(['--resume-remote'], 1), /이어 받을 원격 브랜치/)
     assert.equal(existsSync(wt()), false)

@@ -5,12 +5,13 @@
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
 // 사용:
-//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--progress N/M] [--stages S] [--detail D ...]
+//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D ...]
 //   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
 //   --stages 는 orch 가 사건과 단계 번호의 짝(「pr=1,merge=2,deploy=3,release=4」)을 기억하는 칸이다. 사건은 pr, merge, deploy, release 다
 //   --pr 과 --merged-pr 은 「#555」 와 「555」 를 같게 숫자 555 로 저장한다. 여럿(「#492, #495」)은 「492, 495」 문자열이다
 //   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
-//   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목의 「#342」 같은 업무 번호를 이 주소의 링크로 그린다)
+//   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목 앞 업무 칩의 링크로 쓴다)
+//   (--task-ref 는 업무 번호이며 칩의 글이다. --fill 은 업무 칸이 모두 빌 때만 채운다. --if-task-ref 는 번호가 같을 때만 쓰고 --fill 과 함께 쓰면 빈 주소만 채운다)
 //   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
 //   (--detail 로 바꿀 때 앞 표시가 없고 글이 옛 줄과 같은 줄은 옛 줄의 끝냄 표시를 이어받는다. 줄 하나만 고치려면 detail-edit 를 쓴다)
 //   (--detail 이나 --next 로 줄을 바꾸는 set 은 쓰기 전 파일을 <보드 파일>.bak 에 한 세대 남긴다)
@@ -73,7 +74,7 @@ const STATUSES = ['goal', 'decide', 'doing', 'wait', 'done']
 const DONE_MARKS = ['✓', '[x]', '[X]']
 const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
-const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'task', 'progress', 'stages'] as const
+const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'task', 'task-ref', 'progress', 'stages'] as const
 // stages 칸의 값. 사건과 단계 번호의 짝을 쉼표로 잇는다
 const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|release)=\d+)*\s*$/
 // PR 번호를 담는 칸. 「#555」 와 「555」 를 같은 값으로 저장한다(prValue)
@@ -85,7 +86,7 @@ const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', '
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
   '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '[--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
@@ -106,10 +107,11 @@ const HELP = `${USAGE}
   board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, lines)
   set, step --exact 는 엄격 검사 뒤 결과 JSON 을 낸다. step 결과에는 number 도 있다.
   set --if-rev REV 는 읽은 뒤 줄이 바뀌면 저장을 거절한다.
-  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--progress N/M] [--stages S] [--detail D ...]
+  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D ...]
   (--stages 는 사건과 단계 번호의 짝이다. 「pr=1,merge=2,deploy=3,release=4」. orch 가 쓴다)
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
-  (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목의 「#342」 같은 업무 번호를 이 주소의 링크로 그린다)
+  (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목 앞 업무 칩의 링크로 쓴다)
+  (--task-ref 는 업무 번호이며 칩의 글이다. --fill 은 업무 칸이 모두 빌 때만 채운다. --if-task-ref 는 번호가 같을 때만 쓰고 --fill 과 함께 쓰면 빈 주소만 채운다)
   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
   (--detail 로 바꿀 때 앞 표시가 없고 글이 옛 줄과 같은 줄은 옛 줄의 끝냄 표시를 이어받는다)
   (--detail 이나 --next 로 줄을 바꾸는 set 은 쓰기 전 파일을 <보드 파일>.bak 에 한 세대 남긴다)
@@ -333,6 +335,8 @@ type Args = {
   undo: boolean
   exact: boolean
   all: boolean
+  fill?: boolean
+  ifTaskRef?: string
   ifRev?: string
   event?: string
   condition?: string
@@ -356,13 +360,16 @@ function parse(argv: string[]): Args | 'help' {
     branch: { type: 'string' },
     'merged-pr': { type: 'string' },
     task: { type: 'string' },
+    'task-ref': { type: 'string' },
+    fill: { type: 'boolean' },
+    'if-task-ref': { type: 'string' },
     progress: { type: 'string' },
     stages: { type: 'string' },
     detail: { type: 'string', multiple: true },
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'help'])
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
@@ -373,6 +380,8 @@ function parse(argv: string[]): Args | 'help' {
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
+  if ((values.fill !== undefined || values['if-task-ref'] !== undefined) && cmd !== 'set') throw new Error('--fill, --if-task-ref 는 set 에만 쓴다')
+  if (values.fill && (values.task === '' || values['task-ref'] === '')) throw new Error('--fill 과 빈 업무 값은 함께 쓰지 않는다')
   if (values.all && (cmd !== 'del-done' || id !== undefined)) throw new Error('--all 은 del-done 에만 단독으로 쓴다')
   if (cmd === 'del-done' && id === undefined && !values.all) throw new Error('del-done 에는 id 또는 --all 이 필요하다')
   if (values.exact !== undefined && !['set', 'step', 'del'].includes(cmd)) throw new Error('--exact 는 set, step, del 에만 쓴다')
@@ -389,7 +398,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -424,7 +433,7 @@ export function itemTitle(item: Record<string, unknown>): string | null {
 }
 function itemObject(item: Item) {
   const result: Record<string, unknown> = {}
-  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'stages', 'stepAt']) {
+  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'task-ref', 'stages', 'stepAt']) {
     if (key in item) result[key] = item[key]
   }
   return { ...result, progress: progressOf(item), lines: linesOf(item) }
@@ -662,9 +671,13 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     if (!STATUSES.includes(a.status)) throw new Refused(`status 는 ${STATUSES.join('|')} 중 하나다`)
     item.status = a.status
   }
+  if (a.ifTaskRef !== undefined && item['task-ref'] !== a.ifTaskRef) throw new Refused(`업무 번호가 바뀌어 저장하지 않았다: ${id} (지금 ${item['task-ref'] || '없음'})`)
+  if (/\s/.test(a.fields['task-ref'] ?? '')) throw new Refused(`--task-ref 에는 공백을 쓰지 않는다: ${a.fields['task-ref']}`)
   const task = a.fields.task
   if (task && !/^https?:\/\//.test(task)) throw new Refused(`--task 는 http 나 https 로 시작하는 주소다: ${task}`)
+  const skipTask = a.fill && (a.ifTaskRef === undefined ? Boolean(item.task || item['task-ref']) : Boolean(item.task))
   for (const key of FIELDS) {
+    if (a.fill && (key === 'task' || key === 'task-ref') && (skipTask || (a.ifTaskRef !== undefined && key === 'task-ref'))) continue
     const value = a.fields[key]
     if (value === '' || (key === 'progress' && value === 'auto')) delete item[key]
     else if (value !== undefined) item[key] = PR_FIELDS.has(key) ? prValue(value) : value

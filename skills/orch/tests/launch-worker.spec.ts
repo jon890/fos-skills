@@ -1722,6 +1722,7 @@ describe('보드 항목 제목과 같은 업무', () => {
   })
   const items = (): Item[] => JSON.parse(readFileSync(file, 'utf8')).items
   const run = () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
@@ -1733,10 +1734,11 @@ describe('보드 항목 제목과 같은 업무', () => {
     assert.equal(items()[0].title, '보드가 업무 목적을 보인다.')
   })
 
-  test('업무 연결 줄만 있으면 그 줄의 제목 앞에 업무 번호를 붙인다', () => {
+  test('업무 연결 줄의 제목을 쓰고 번호는 번호 칸에 둔다', () => {
     writeFileSync(spec, '공통 지시서를 먼저 읽는다.\n허락: push\n두레이 업무: EXAMPLE-PROJECT/271 「일별 집계 끝내기」\n')
     run()
-    assert.equal(items()[0].title, 'EXAMPLE-PROJECT/271 일별 집계 끝내기')
+    assert.equal(items()[0].title, '일별 집계 끝내기')
+    assert.equal(items()[0]['task-ref'], 'EXAMPLE-PROJECT/271')
   })
 
   test('board.task_line 정규식이 업무 연결 줄의 꼴을 바꾼다', () => {
@@ -1744,7 +1746,8 @@ describe('보드 항목 제목과 같은 업무', () => {
     writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ board: { task_line: '^이슈: (?<number>#\\d+) (?<title>.+)$' } }))
     writeFileSync(spec, '# 이슈 고치기\n허락: push\n이슈: #12 로그인 실패\n')
     run()
-    assert.equal(items()[0].title, '#12 이슈 고치기')
+    assert.equal(items()[0].title, '이슈 고치기')
+    assert.equal(items()[0]['task-ref'], '#12')
   })
 
   test('같은 업무 번호의 끝나지 않은 항목은 다른 워크트리여도 이어 쓰고 단계는 그대로 둔다', () => {
@@ -1767,6 +1770,45 @@ describe('보드 항목 제목과 같은 업무', () => {
     assert.equal(after[1].title, first.title)
     assert.deepEqual(after[1].details, first.details)
     assert.equal(after[0].worktree, 'x')
+  })
+
+  test('업무 연결 줄의 주소만 네 등록 길의 빈 칸에 넣고 도구를 부르지 않는다', () => {
+    mkdirSync(join(worktree, '.orch'), { recursive: true })
+    writeFileSync(join(worktree, '.orch/config.json'), JSON.stringify({ board: { task: { adapter: 'dooray', web_url: 'https://x.dooray.com', project: 'P' } } }))
+    const called = join(tmp, 'dooray-called')
+    env.DOORAY_BIN = join(tmp, 'fake-dooray')
+    writeFileSync(env.DOORAY_BIN, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(called)}, 'called')`); chmodSync(env.DOORAY_BIN, 0o755)
+    const line = '두레이 업무: P/458 https://x.dooray.com/project/tasks/9 「제목」'
+    for (const variant of ['fresh', 'existing', 'reopen', 'interim', 'list']) {
+      const old = variant === 'fresh' || variant === 'list' ? [] : [{ id: 'a', title: '기존 제목', status: variant === 'reopen' ? 'done' : 'doing', worktree: 'wt', pr: 77, details: ['1. PR'] }]
+      writeFileSync(file, JSON.stringify({ items: old }))
+      writeFileSync(spec, '# 제목\n허락: push\n\n' + (variant === 'list' ? '- ' : '') + line + '\nhttps://x.dooray.com/wiki/1\n' + (variant === 'reopen' ? '보드 항목 id: a\n' : variant === 'interim' ? '중간 과정: PR #77\n' : ''))
+      run()
+      assert.equal(items()[0]['task-ref'], 'P/458', variant)
+      assert.equal(items()[0].task, 'https://x.dooray.com/project/tasks/9', variant)
+    }
+    assert.equal(existsSync(called), false)
+    delete env.DOORAY_BIN
+  })
+
+  test('번호 칸을 먼저 찾고 이미 있는 업무 칸과 제목을 지킨다', () => {
+    const rows = [{ id: 'wrong', title: 'P/458 옛 제목', 'task-ref': 'P/1', status: 'wait' }, { id: 'right', title: '번호 없는 제목', 'task-ref': 'P/458', task: 'https://x/old', status: 'wait' }]
+    writeFileSync(file, JSON.stringify({ items: rows }))
+    writeFileSync(spec, '# 다음 작업\n허락: push\n두레이 업무: P/458\n')
+    run()
+    assert.equal(items().length, 2); assert.equal(items()[1].worktree, 'wt'); assert.equal(items()[1].title, rows[1].title); assert.equal(items()[1].task, 'https://x/old')
+    writeFileSync(file, JSON.stringify({ items: [{ ...rows[0], worktree: 'wt', task: 'https://x/1' }] }))
+    run(); assert.equal(items()[0]['task-ref'], 'P/1'); assert.equal(items()[0].task, 'https://x/1')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'url-only', title: '주소만', status: 'wait', worktree: 'wt', task: 'https://x/1' }] }))
+    run(); assert.equal(items()[0]['task-ref'], undefined)
+  })
+
+  test('틀린 어댑터여도 번호를 그대로 저장한다', () => {
+    mkdirSync(join(worktree, '.orch'), { recursive: true })
+    writeFileSync(join(worktree, '.orch/config.json'), JSON.stringify({ board: { task: { adapter: 'unknown' } } }))
+    writeFileSync(spec, '# 제목\n허락: push\n두레이 업무: P/458\n')
+    const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
+    assert.equal(r.code, 0, both(r)); assert.match(r.stderr, /설정 board.task/); assert.equal(items()[0]['task-ref'], 'P/458')
   })
 
   test('업무 번호도 제목 줄도 목표 절도 없으면 id 를 제목으로 쓰고 번호가 든 항목에 붙지 않는다', () => {

@@ -189,7 +189,7 @@ describe('knownPath', () => {
 })
 
 test('루프를 다시 띄워야 반영되는 키', () => {
-  assert.deepEqual([...RESTART_KEYS], ['pipeline.tick_sec', 'finish.run', 'finish.specs_dir'])
+  assert.deepEqual([...RESTART_KEYS], ['board.task', 'pipeline.tick_sec', 'finish.run', 'finish.specs_dir'])
 })
 
 test('config-schema.ts 를 가져오는 파일은 doctor 와 config 명령뿐이다(정적 import 와 동적 import 모두)', () => {
