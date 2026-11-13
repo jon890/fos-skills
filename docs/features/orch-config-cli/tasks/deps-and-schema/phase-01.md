@@ -15,7 +15,7 @@
 **근거 문서**: `docs/features/orch-config-cli/design.md` 「zod 와 의존 설치」, `docs/adr/030-plugin-npm-dependencies.md`, `docs/code-architecture.md` 「저장소 실행 규칙」
 
 - Claude Code 는 플러그인을 캐시에 복사할 때 루트의 `package.json` 과 `package-lock.json` 으로 의존을 설치한다(`--ignore-scripts`, 정확한 버전만, 60초 제한). `pnpm-lock.yaml` 은 건너뛰므로 npm 을 쓴다.
-- 루트 `package.json` 의 `"type": "module"` 은 CommonJS 로 쓴 세 진입을 ES 모듈로 읽게 해 깨뜨린다. `bin/orch`(`require`, `__dirname`), `skills/orch/scripts/lib/guard/gh`, `skills/orch/scripts/lib/guard/orca` 다. `bin/` 에는 `orch` 하나뿐이라 `{"type": "commonjs"}` 만 담은 `bin/package.json` 을 둔다. `skills/orch/scripts/lib/guard/` 에는 ES 모듈 `guard.ts` 가 함께 있어 폴더 단위 `type` 을 쓰면 `guard.ts` 가 깨진다. 그래서 shim `gh`·`orca` 를 `githooks/commit-msg` 처럼 `type` 과 상관없이 도는 꼴로 고친다. `extensions/work-board/hooks/*.js` 넷은 이미 ES 모듈이다.
+- 루트 `package.json` 의 `"type": "module"` 은 CommonJS 로 쓴 세 진입을 ES 모듈로 읽게 해 깨뜨린다. `bin/orch`(`require`, `__dirname`), `skills/orch/scripts/lib/guard/gh`, `skills/orch/scripts/lib/guard/orca` 다. `bin/` 에는 `orch` 하나뿐이라 `{"type": "commonjs"}` 만 담은 `bin/package.json` 을 둔다. `skills/orch/scripts/lib/guard/` 에는 ES 모듈 `guard.ts` 가 함께 있어 폴더 단위 `type` 을 쓰면 `guard.ts` 가 깨진다. 그래서 shim `gh`·`orca` 를 `githooks/commit-msg` 처럼 `type` 과 상관없이 도는 꼴로 고친다. `extensions/work-board/hooks/*.js` 넷은 이미 ES 모듈이다. korean-check 의 옛 이름 진입 둘(`korean-style-check.py`, `check-readability.py`)은 확장자 `.py` 라 `type: module` 범위의 ESM 로더가 실행하지 못하고(`ERR_UNKNOWN_FILE_EXTENSION`), 같은 폴더의 `.ts` 때문에 폴더 단위 `type` 도 줄 수 없다. 그래서 작업 항목 9 로 지운다(사용자 2026-11-13).
 - `scripts/runtime-policy.ts` 는 저장소 실행 규칙을 지키는 검사기다. 머리 주석이 판정과 출력 줄을 소유한다. 대상 파일은 git 이 추적하거나 무시하지 않는 파일이라 `.gitignore` 의 `/node_modules/` 는 저절로 빠진다.
 - 지금 저장소의 bare import(상대 경로도 `node:` 도 아닌 import)는 `extensions/work-board/tests/*.test.ts` 넷의 `claude-code/testing` 뿐이다.
 - `scripts/run-tests.ts` 머리 주석 14-17행은 「package.json 과 node_modules 를 두지 않는다」 를 근거로 TypeScript 를 저장소 밖에 설치한다. tsc 는 그대로 저장소 밖에서 받되, 주석의 근거를 고친다. tsc 는 `moduleResolution: bundler` 라 루트 `node_modules/zod` 를 찾는다.
@@ -73,6 +73,13 @@
 
 「Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다」 를 다음 뜻으로 바꾼다. 의존은 루트 `package.json` 에 정확한 버전으로 두고 `package-lock.json` 을 커밋한다. `node_modules` 는 커밋하지 않는다. 사용자 머신은 Claude Code 가 설치하고 체크아웃·워크트리·CI 는 `npm ci` 로 설치한다. bare import 는 `scripts/runtime-policy.json` 의 `bare_imports` 짝에서만 쓴다. 근거는 ADR-030 링크로 단다. 「import 범위」 행은 「스킬과 도구는 자기 폴더, Node 내장 모듈, `bare_imports` 에 적은 의존만 import 한다」 로 고친다.
 
+### 9. korean-check 옛 이름 진입 삭제(구현 중 드러난 충돌, 사용자 결정 2026-11-13)
+
+- `export-only-skills/korean-check/scripts/korean-style-check.py` 와 `check-readability.py` 를 지운다(node-runtime 스펙 DECISION17). `scripts/runtime-policy.json` 의 `legacy` 를 비운다.
+- 두 `.ts` 의 옛 진입 안내(`hookNotice`, `notice`)를 지우고, `tests/legacy-entry.spec.ts` 는 옛 이름이 없는지 보는 테스트로 바꾼다. 링크로 부르기 테스트는 `.ts` 링크로 바꾼다.
+- korean-check 를 `scripts/bump-skill-major.ts` 로 3.0.0 으로 올린다(변경 이력 조각을 따로 더하지 않는다). README·`docs/code-architecture.md`·node-runtime 스펙 DECISION17 의 옛 이름 안내를 고친다.
+- `scripts/tests/plugin-manifest.spec.ts` 의 bin/ 목록 테스트가 `bin/package.json` 을 허용한다.
+
 ## 검증
 
 ```bash
@@ -102,4 +109,18 @@ node scripts/run-tests.ts --tsc-only
 | `scripts/tests/run-tests.spec.ts` | 수정 |
 | `.github/workflows/ci.yml` | 수정 (`npm ci` 단계) |
 | `scripts/tests/ci-workflow.spec.ts` | 수정 |
-| `docs/code-architecture.md` | 수정 (「의존」, 「import 범위」 행) |
+| `docs/code-architecture.md` | 수정 (「의존」, 「import 범위」 행, 옛 이름 링크 행) |
+| `export-only-skills/korean-check/scripts/korean-style-check.py` | 삭제 |
+| `export-only-skills/korean-check/scripts/check-readability.py` | 삭제 |
+| `export-only-skills/korean-check/scripts/korean-style-check.ts` | 수정 (옛 진입 안내 제거) |
+| `export-only-skills/korean-check/scripts/check-readability.ts` | 수정 (옛 진입 안내 제거) |
+| `export-only-skills/korean-check/tests/legacy-entry.spec.ts` | 수정 (옛 이름이 없는지 본다) |
+| `export-only-skills/korean-check/tests/korean-style-check.spec.ts` | 수정 (`.ts` 링크) |
+| `export-only-skills/korean-check/tests/check-readability.spec.ts` | 수정 (`.ts` 링크) |
+| `export-only-skills/korean-check/README.md` | 수정 (옛 이름 안내) |
+| `export-only-skills/korean-check/SKILL.md` | 수정 (버전 3.0.0) |
+| `export-only-skills/korean-check/CHANGELOG.md` | 수정 (3.0.0 절) |
+| `scripts/tests/plugin-manifest.spec.ts` | 수정 (`bin/package.json` 허용) |
+| `docs/features/node-runtime/spec.md` | 수정 (DECISION17 행) |
+| `docs/features/orch-config-cli/design.md` | 수정 (CommonJS 진입 항목) |
+| `docs/adr/030-plugin-npm-dependencies.md` | 수정 (결과) |

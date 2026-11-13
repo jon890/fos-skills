@@ -29,7 +29,7 @@
 // 하네스 설정의 PostToolUse 훅에 `node <이 파일 경로> --hook` 을 걸면 .md 를 쓸 때마다 검사한다.
 // Claude Code 의 예시는 README.md 의 「훅 설정」이 소유한다.
 //
-// 옛 이름 진입 korean-style-check.py(node shebang JS)가 이 파일의 main 을 불러 쓴다. 이 파일은 명령으로 실행될 때만 스스로 돈다.
+// 이 파일은 명령으로 실행될 때만 스스로 돈다.
 
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -110,7 +110,6 @@ const USAGE = `사용법:
 `
 
 export type Matcher = [string, (line: string) => RegExpExecArray | null]
-export type MainOptions = { hookNotice?: string }
 
 // ` + ` 양옆이 모두 코드 스팬이나 대문자 상수면 항목 이어 붙이기가 아니다.
 function joinsItems(match: RegExpMatchArray): boolean {
@@ -397,8 +396,7 @@ const record = (value: unknown): Record<string, unknown> | null => (typeof value
 
 // PostToolUse 훅 모드의 판단. stdin 의 tool 입력 JSON 에서 편집된 파일 하나를 뽑아 검사하고,
 // 위반이 있을 때만 모델 컨텍스트로 되돌릴 JSON 을 돌려준다. 없으면 null 이다. 작업을 막지 않는다.
-// notice 가 있으면 additionalContext 맨 앞에 한 줄로 붙인다(옛 이름 진입의 안내).
-export function runHook(input: string, rules: string, matchers: Matcher[], notice?: string): object | null {
+export function runHook(input: string, rules: string, matchers: Matcher[]): object | null {
   let payload: unknown
   try {
     payload = JSON.parse(input)
@@ -416,11 +414,11 @@ export function runHook(input: string, rules: string, matchers: Matcher[], notic
   if (!found.length && !warnings.length) return null
 
   const context = '한국어 표기 정책 점검 — 방금 편집한 파일에서 발견했다. 금지어는 지금 고치고, 경고는 문맥을 보고 판단한다.\n' + [...found, ...warnings].join('\n')
-  return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: notice ? `${notice}\n${context}` : context } }
+  return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: context } }
 }
 
 // 명령 본체. stdout 과 stderr 에 직접 쓰고 종료 코드를 돌려준다. argv 는 명령 이름 뒤의 인자다.
-export async function main(argv: string[], options: MainOptions = {}): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const rules = rulesPath()
   if (!isFile(rules)) {
     write(2, `korean-style-check: 매핑 표를 찾지 못했다: ${rules}\n`)
@@ -438,7 +436,7 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<n
     } catch {
       return 0
     }
-    const output = runHook(input, rules, buildMatchers(terms), options.hookNotice)
+    const output = runHook(input, rules, buildMatchers(terms))
     if (output) write(1, `${pyJson(output)}\n`)
     return 0
   }

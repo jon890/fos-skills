@@ -114,7 +114,7 @@
 
 | 저장소 밖의 것 | 가리키는 곳 | 플러그인으로 옮긴 뒤 |
 | --- | --- | --- |
-| `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | 체크아웃의 `export-only-skills/korean-check/scripts/` 의 같은 이름 진입(node shebang JS). 새 `.ts` 를 불러 같은 결과를 낸다. 새로 거는 링크는 `.ts` 이름이다 | 그대로 둔다. 진입은 다음 major 에서 지운다 |
+| `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | korean-check 3.0.0 에서 옛 이름 진입을 지웠다. 루트 `package.json` 의 `"type": "module"` 아래에서 확장자 `.py` 는 실행되지 않는다. 새 링크는 `.ts` 이름이다(`export-only-skills/korean-check/scripts/*.ts`) | 링크와 훅 설정을 `.ts` 이름으로 바꾼다 |
 | `~/.claude/scripts/browser-driver` 링크 | 새로 거는 링크는 체크아웃의 `skills/browser/browser-driver/browser_driver.ts` 이다. 옛 `tools/browser-driver/browser_driver.py` 진입은 browser 3.0.0 에서 지웠다 | 옛 링크는 `install` 로 다시 건다 |
 | `~/.claude/rules/korean-style.md` 링크 | 체크아웃의 `export-only-skills/korean-check/references/korean-style.md` | 그대로 둔다 |
 | `~/.claude/settings.json` 의 `PostToolUse` 훅 | `~/.claude/scripts/` 의 링크 | 그대로 둔다 |
