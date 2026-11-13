@@ -424,7 +424,7 @@ describe('worker 선택 줄 대조', () => {
       state({ next_ids: ['ctx_1'] })
       const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6-astra', '--effort', 'low'], 'bash', false)
       assert.equal(r.code, 1, both(r))
-      assert.match(r.stderr, /후보: gpt-6\.1-sol, claude-sonnet-5-5/)
+      assert.match(r.stderr, /후보: gpt-6\.1-sol, gpt-6\.1-terra, claude-sonnet-5-5/)
       assert.match(r.stderr, /후보 밖: <이유>/)
       assert.deepEqual(lines('orca orchestration worker-start'), [])
     })
@@ -442,16 +442,16 @@ describe('worker 선택 줄 대조', () => {
     })
   }
 
-  for (const [model, row, marker] of [
-    ['gpt-6-astra', 'review', ''],
-    ['gpt-6.1-terra', 'impl-planned', 'Terra 실험 1/5'],
-    ['claude-fable-5-2', 'impl-explore', ''],
+  for (const [model, row, marker, effort] of [
+    ['gpt-6-astra', 'review', '', 'high'],
+    ['gpt-6.1-terra', 'impl-planned', '', 'medium'],
+    ['claude-fable-5-2', 'impl-explore', '', 'high'],
   ]) {
-    test(`리뷰, 실험 표시, 후보 모델을 띄운다: ${model}`, () => {
+    test(`리뷰와 후보 모델을 띄운다: ${model}`, () => {
       const agent = model.startsWith('claude-') ? 'claude' : 'codex'
-      writeFileSync(spec, `# 일\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`high\`. 행: ${row}. 비교: 다른 제공자. 이유: 실험. ${marker}\n`)
+      writeFileSync(spec, `# 일\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${row}. 비교: 다른 제공자. 이유: 실험. ${marker}\n`)
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--', '--agent', agent, '--model', model, '--effort', 'high'], 'bash', false)
+      const r = launch(['--worktree', worktree, '--', '--agent', agent, '--model', model, '--effort', effort], 'bash', false)
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
     })
