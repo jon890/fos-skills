@@ -1102,7 +1102,7 @@ export function checkTestReferences(path: string, text: string, entries: Entry[]
   const planned = entries.filter(([, action]) => action === '신규').map(([rel]) => rel)
   for (const ref of new Set(refs)) {
     const rel = ref.replace(/^\.\//, '')
-    if (!isTest(rel) || isGlob(rel) || tracked.has(rel) || planned.some((p) => isGlob(p) ? matches(rel, p) : p === rel)) continue
+    if (!isTest(rel) || isGlob(rel) || [...tracked].some((p) => p === rel || p.endsWith(`/${rel}`)) || planned.some((p) => isGlob(p) ? matches(rel, p) : p === rel || p.endsWith(`/${rel}`))) continue
     out.push(`${path} — 검증에 적은 테스트 파일이 git 추적 파일이나 신규 계획에 없다: ${rel}`)
   }
 }

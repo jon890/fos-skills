@@ -616,10 +616,12 @@ test('PR 크기 추정은 저장소 등급과 미상 신규 파일을 알리고 
 
 test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 없는 파일을 막는다', () => {
   const repo = new Repo('test-ref-', true)
+  repo.file('svc/src/test/FooTest.java', '')
+  repo.git('add', 'svc/src/test/FooTest.java')
   repo.file('tests/existing.test.ts', '')
   repo.git('add', 'tests/existing.test.ts')
   const out: string[] = []
-  checkTestReferences('phase', '`tests/existing.test.ts` `tests/new.test.ts` `tests/missing.test.ts`', [['tests/new.test.ts', '신규']], repo.root, out)
+  checkTestReferences('phase', '`tests/existing.test.ts` `src/test/FooTest.java` `tests/new.test.ts` `tests/missing.test.ts`', [['tests/new.test.ts', '신규']], repo.root, out)
   assert.equal(out.length, 1)
   assert.match(out[0], /tests\/missing.test.ts/)
 })
