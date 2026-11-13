@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { checkEstimatedSize, checkTestReferences } from '../scripts/verify_task.ts'
 import { DESIGN, type Entry, indexJson, type Phase, Repo, SKILL_DIR, VALID, VALID_REQ, verify, writePlan } from './helpers.ts'
 
 const has = (lines: string[], needle: string) => lines.some((line) => line.includes(needle))
@@ -591,4 +592,28 @@ test('기능 폴더 아래 계획은 스펙과 설계를 함께 검사한다', (
   const failed = verify(repo, args)
   assert.equal(failed.code, 1, failed.stdout)
   assert.ok(failed.stdout.includes('기술 설계'))
+})
+
+
+test('PR 크기 추정은 저장소 등급과 미상 신규 파일을 알리고 큰 경우 경고한다', () => {
+  const repo = new Repo()
+  repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 }, D: { core_lines: 6 } }, core: [], generated: [], tests: [], docs: [] }))
+  repo.file('src/a.ts', 'a\nb\nc\nd\ne\nf\ng\n')
+  const warnings: string[] = []
+  checkEstimatedSize('plan', new Set(['src/a.ts\0수정', 'src/new.ts\0신규']), repo.root, warnings)
+  assert.match(warnings[0], /D등급.*본 코드 7줄.*미상 1개.*PR 나눔 검토/)
+  const small: string[] = []
+  checkEstimatedSize('plan', new Set(['src/new.ts\0신규']), repo.root, small)
+  assert.match(small[0], /A등급/)
+  assert.doesNotMatch(small[0], /PR 나눔 검토/)
+})
+
+test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 없는 파일을 막는다', () => {
+  const repo = new Repo('test-ref-', true)
+  repo.file('tests/existing.test.ts', '')
+  repo.git('add', 'tests/existing.test.ts')
+  const out: string[] = []
+  checkTestReferences('phase', '`tests/existing.test.ts` `tests/new.test.ts` `tests/missing.test.ts`', [['tests/new.test.ts', '신규']], repo.root, out)
+  assert.equal(out.length, 1)
+  assert.match(out[0], /tests\/missing.test.ts/)
 })
