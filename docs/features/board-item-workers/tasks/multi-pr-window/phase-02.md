@@ -22,6 +22,7 @@
 
 - 「새 브랜치」 는 대표 `branch` 와 항목의 어느 구현·후속 줄의 `branch` 와도 다른 브랜치다. 대표 칸을 함께 보아야 줄 없는 옛 항목의 원격 이어받기가 단계를 더하지 않는다. 같은 브랜치의 재시도와 원격 이어받기는 단계를 더하지 않는다(스펙 DECISION18).
 - `중간 과정:` 후속과 리뷰·검증은 단계를 더하지 않는다.
+- `stages` 칸이 없는 옛 단계 항목은 단계를 더하지 않는다. 그 항목은 단계 글의 PR 번호로 단계를 끝내는 옛 규칙을 쓰고, 사건 단계를 만들면 두 규칙이 섞인다.
 
 ## 작업 항목
 
@@ -53,3 +54,4 @@ node scripts/run-tests.ts --tsc-only
 |---|---|
 | `skills/orch/scripts/lib/board.ts` | 수정 (후속 묶음 단계 더하기) |
 | `skills/orch/tests/board-attach.spec.ts` | 수정 |
+| `docs/features/board-item-workers/design.md` | 수정 (단계 더하기 조건에 `stages` 칸이 있는 항목) |

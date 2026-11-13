@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { beforeEach, afterEach, test } from 'node:test'
 import { registerBoard } from '../scripts/lib/board.ts'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
@@ -144,4 +145,84 @@ test('worker-add 실패면 기존 대표 칸 쓰기로 돌아간다', () => {
   process.env.BOARD_BIN = join(repo, 'board-wrapper.ts')
   assert.equal(launch('보드 항목 id: a')?.attached, false)
   assert.equal(items()[0].worktree, 'new')
+})
+
+const milestone = (extra = {}) => base({
+  stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }], workers: [row()], ...extra,
+})
+const texts = (item: any) => item.details.map((d: any) => d.text)
+
+test('앞 PR 이 열린 항목에 새 브랜치 후속을 붙이면 PR·머지 두 단계를 더하고 줄에 번호를 적는다', () => {
+  board(milestone({ 'task-ref': 'P/123' }))
+  assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
+  const [item] = items()
+  assert.deepEqual(texts(item), ['1. PR', '2. 머지', '3. PR (wb)', '4. 머지 (wb)'])
+  assert.equal(item.stages, 'pr=1,merge=2')
+  assert.equal(item.workers[1].role, 'follow')
+  assert.equal(item.workers[1].stages, 'pr=3,merge=4')
+  assert.equal(item.worktree, 'wb')
+  assert.equal(item.pr, 7)
+})
+
+test('같은 워크트리나 같은 브랜치로 다시 띄우거나 리뷰를 붙이면 단계를 더하지 않는다', () => {
+  board(milestone({ 'task-ref': 'P/123' }))
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b', 'd2')
+  assert.equal(items()[0].details.length, 4)
+  assert.equal(items()[0].workers.length, 2)
+  // 대표 브랜치와 같은 브랜치(줄 없는 옛 항목의 원격 이어받기)
+  board(milestone({ 'task-ref': 'P/123', workers: undefined }))
+  launch('두레이 업무: P/123 「테스트」', 'wc', 'feat/a')
+  assert.equal(items()[0].details.length, 2)
+  assert.equal(items()[0].workers.find((one: any) => one.worktree === 'wc').stages, undefined)
+  // 리뷰는 단계를 더하지 않는다
+  board(milestone())
+  assert.equal(launch('리뷰 PR: #7', 'review', 'feat/a')?.role, 'review')
+  assert.equal(items()[0].details.length, 2)
+})
+
+test('앞 PR 이 없거나 머지된 항목은 단계를 더하지 않고 다시 열기는 지금처럼 마일스톤 전체를 붙인다', () => {
+  board(milestone({ pr: undefined, 'task-ref': 'P/123' }))
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
+  assert.equal(items()[0].details.length, 2)
+  assert.equal(items()[0].workers.find((one: any) => one.worktree === 'wb').stages, undefined)
+  // 앞 PR 이 머지됐지만 단계가 남은 항목
+  board(milestone({ pr: undefined, 'merged-pr': 7, 'task-ref': 'P/123' }))
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
+  assert.equal(items()[0].details.length, 2)
+  // 단계를 모두 끝낸 doing 항목: 마일스톤 전체
+  board(milestone({ pr: undefined, 'merged-pr': 7, 'task-ref': 'P/123', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: true }] }))
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
+  assert.deepEqual(texts(items()[0]), ['1. PR', '2. 머지', '3. PR', '4. 머지'])
+  assert.equal(items()[0].stages, 'pr=3,merge=4')
+  assert.equal(items()[0].workers.find((one: any) => one.worktree === 'wb').stages, undefined)
+})
+
+test('단계 항목이 아닌 옛 항목은 열린 PR 이 있어도 단계를 더하지 않는다', () => {
+  board(base({ 'task-ref': 'P/123' }))
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
+  assert.equal(items()[0].details.length, 1)
+})
+
+test('보드 단계 설정의 pr·merge 글을 쓰고 지시서 절이 있으면 그 글을 쓴다', () => {
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ board: { steps: ['[pr] 리뷰 요청', '[merge] 반영', '[deploy] 배포'] } }))
+  board(milestone({ 'task-ref': 'P/123', stages: 'pr=1,merge=2,deploy=3', details: [{ text: '1. 리뷰 요청', done: true }, { text: '2. 반영', done: false }, { text: '3. 배포', done: false }] }))
+  launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
+  assert.deepEqual(texts(items()[0]).slice(3), ['4. 리뷰 요청 (wb)', '5. 반영 (wb)'])
+  assert.equal(items()[0].workers[1].stages, 'pr=4,merge=5')
+  board(milestone({ 'task-ref': 'P/123' }))
+  launch('두레이 업무: P/123 「테스트」\n\n## 보드 단계\n1. [pr] 올림\n2. [merge] 합침', 'wb', 'feat/b')
+  assert.deepEqual(texts(items()[0]).slice(2), ['3. 올림 (wb)', '4. 합침 (wb)'])
+})
+
+test('단계를 더하지 못하면 줄은 stages 없이 붙고 항목 단계는 그대로다', () => {
+  const real = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
+  const wrapper = join(repo, 'board-wrapper.ts')
+  writeFileSync(wrapper, `import {spawnSync} from 'node:child_process'; const args=process.argv.slice(2); if(args[0]==='step-add'){process.stderr.write('거절\\n');process.exit(1)} const r=spawnSync(process.execPath,[${JSON.stringify(real)},...args],{stdio:'inherit'}); process.exitCode=r.status`)
+  process.env.BOARD_BIN = wrapper
+  board(milestone({ 'task-ref': 'P/123' }))
+  assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
+  assert.equal(items()[0].details.length, 2)
+  assert.equal(items()[0].workers[1].worktree, 'wb')
+  assert.equal(items()[0].workers[1].stages, undefined)
 })
