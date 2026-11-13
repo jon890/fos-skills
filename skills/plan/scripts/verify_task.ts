@@ -335,6 +335,16 @@ function checkFileState(path: string, entries: Entry[], repo: string, virtual: M
   for (const [rel, action] of entries) if (!omitted(rel) && !isGlob(rel)) virtual.set(rel, action !== '삭제')
 }
 
+// orch 의 무거운 검사 감싸기다. `orch slot heavy|mem [--exclusive] -- <명령>` 과 옛 꼴 `heavy-slot|mem-gate [옵션] -- <명령>` 이다
+// 대기열만 거칠 뿐 안쪽 명령을 그대로 실행하므로 `--` 뒤를 안쪽 명령으로 읽는다. 명령을 읽는 단계에서 벗겨 뒤의 모든 검사가 안쪽 명령을 본다
+export function slotInner(command: Command): Command | null {
+  const head = pathName(command[0])
+  const legacy = head === 'heavy-slot' || head === 'mem-gate'
+  if (!legacy && !(head === 'orch' && command[1] === 'slot' && (command[2] === 'heavy' || command[2] === 'mem'))) return null
+  const dash = command.indexOf('--')
+  return dash < 0 || dash === command.length - 1 ? null : command.slice(dash + 1)
+}
+
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z_0-9]*=/
 
 // 프로그램 위치를 읽는다. 논리 줄 번호도 낸다. echo/grep 에 적힌 테스트 이름은 실행이 아니다
@@ -359,7 +369,7 @@ export function shellCommands(text: string): { line: number; command: Command }[
               command.shift()
               while (command.length && ASSIGNMENT.test(command[0])) command.shift()
             }
-            if (command.length) out.push({ line: start + offset, command })
+            if (command.length) out.push({ line: start + offset, command: slotInner(command) ?? command })
           }
           command = []
         } else command.push(token)
