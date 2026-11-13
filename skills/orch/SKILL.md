@@ -22,7 +22,7 @@ metadata:
 스크립트는 `orch <묶음> <동작> [인자]` 로 부른다. 묶음과 동작은 `orch --help` 가 보이고, 원본은 명령 표 `scripts/lib/commands.ts` 다.
 저장소(`--repo`), Run(`--run`), 지시서 폴더(`--specs-dir`), 대기의 루프 저장소(`--loop-repo`)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽는다. 다른 저장소나 다른 Run 이면 그 값을 준다.
 기본 출력은 판정 줄(대문자 낱말로 시작하는 줄)과 결과 데이터다. 설명과 진행 줄은 `--full` 로 본다. 명령마다의 줄은 각 스크립트 머리 주석의 「짧은 출력」 이 소유한다. 루프, worker, 보드는 `orch status` 로 한 번에 본다.
-`orch` 는 부를 때마다 설치 기록의 지금 설치된 번들을 골라 실행하므로, 갱신이나 프로필 전환 뒤에도 옛 번들을 부르지 않는다. PATH 에 없는 셸(Codex, 사람 셸)은 아래 첫 점검의 셸 함수를 쓰고, `orch doctor install-cli` 를 한 번 돌리면 `~/.local/bin/orch` 가 생긴다. worker 의 공통 지시서는 `orch …` 만 쓰므로 `orch worker launch` 와 `orch worker resume` 이 worker 터미널의 셸이 PATH 로 실행기를 찾는지 먼저 보고, 못 찾으면 띄우지 않고 고칠 명령을 낸다.
+`orch` 는 부를 때마다 설치 기록의 지금 설치된 번들을 골라 실행하므로, 갱신이나 프로필 전환 뒤에도 옛 번들을 부르지 않는다. PATH 에 없는 셸(Codex, 사람 셸)은 아래 첫 점검의 셸 함수를 쓰고, `orch doctor install-cli` 를 한 번 돌리면 `~/.local/bin/orch` 가 생긴다. worker 의 공통 지시서는 `orch …` 만 쓰므로 Claude 가 아닌 worker 를 띄울 때 `orch worker launch` 와 `orch worker resume` 이 worker 셸(로그인 셸)의 PATH 에 실행기와 node 가 있는지 먼저 보고, 못 찾으면 띄우지 않고 고칠 명령을 낸다.
 <!-- orch-compat -->
 옛 꼴 `"$SKILL_DIR/bin/orch.ts" <스크립트 이름> [인자]` 도 같은 스크립트를 같은 인자로 부르고 stderr 에 새 꼴을 안내한다. 옛 이름을 지우는 PR 까지 받는다. 저장소 스크립트가 orch 를 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
 캐시의 스크립트를 직접 불러 현재 설치 기록과 다르면 stderr 에 `STALE-BUNDLE` 경고와 현재 진입점 경로가 나온다.
