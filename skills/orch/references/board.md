@@ -69,7 +69,7 @@ orch board del --done
 
 `add-step` 은 단계를 세는 쪽(details, 없으면 next)에 더한다. 번호가 없으면 가장 큰 번호 다음을 붙이고, 직접 쓴 번호가 겹치거나 항목이 `done` 이면 거절한다. `progress` 값이 있으면 새 단계가 진행률에 안 보일 수 있어 stderr 로 알린다.
 `-` 로 시작하는 글은 옵션으로 읽혀 사용법 오류가 난다. `orch board add-step <항목> "10. - 하위 항목"` 처럼 쓰려는 단계 번호를 앞에 붙인다.
-명시한 진행률을 지워 단계 수로 세려면 칸 수정 도구인 `board.ts set` 에 `--progress auto` 를 준다. `orch board set` 은 상태만 고치므로 이 옵션을 받지 않는다.
+명시한 진행률을 지워 단계 수로 세려면 칸 수정 도구인 `board.ts set` 에 `--progress auto` 를 준다. `orch board set` 은 상태와 업무 칸만 고치므로 이 옵션을 받지 않는다.
 
 `--on "1455 merge"` 는 줄 끝에 `(#1455 merge)` 를 붙이고 기존 꼬리표는 바꾼다. 사건은 `pr`, `merge`, `deploy`, `release` 다. `stages` 가 있는 항목에 붙이면 기존 사건 단계의 자동 완료가 멈출 수 있어 경고한다. 자동 진행 표시만 바꿀 때는 줄 전체를 다시 쓰지 않고 위 `auto`, `ask`, `wait`, `plain` 동작을 쓴다.
 
@@ -173,9 +173,10 @@ orch board release --release "$RELEASE_PR"
 
 | 시점 | 담당 | 갱신하는 것 |
 | --- | --- | --- |
-| worker 를 띄운 뒤 | `launch-worker.ts` | 지시서의 보드 항목 id 로 항목을 찾거나 만들어 doing 으로 두고 위 「마일스톤 단계」 로 `stages` 필드를 둔다. 항목 찾기 순서, 제목 정하기, 같은 업무의 다음 PR 을 이어 쓰는 규칙, `중간 과정: PR #N` 줄, done 항목 다시 열기는 `launch-worker.ts` 와 `scripts/lib/board.ts` 의 `registerBoard`·`specTitle` 주석이 소유한다. 항목이 이미 있으면 제목과 단계는 사용자가 정한 마일스톤이라 그대로 둔다. 업무 연결 줄의 꼴은 `board.task_line` 이 정한다 |
-| 준비됨 `worker_done` | `orch-loop.ts` | 그 PR 의 브랜치로 `pr` 필드가 빈 항목을 찾아 `pr` 필드를 채운다 |
-| 틱마다 | `orch-loop.ts` → `board-sync.ts` | 항목의 `pr` 필드를 연결하고, 마일스톤 항목의 PR 이 열려 있으면 `[pr]` 단계를 끝내고, 없어진 워크트리 이름을 비우고, 결정 항목이 바뀌면 REMINDER 를 한 번 기록한다. 판정은 `board-sync.ts` 머리 주석이 소유한다 |
+| worker 를 띄운 뒤 | `launch-worker.ts` | 지시서의 보드 항목 id 로 항목을 찾거나 만들어 doing 으로 두고 위 「마일스톤 단계」 로 `stages` 필드를 둔다. 항목 찾기 순서, 제목 정하기, 같은 업무의 다음 PR 을 이어 쓰는 규칙, `중간 과정: PR #N` 줄, done 항목 다시 열기는 `launch-worker.ts` 와 `scripts/lib/board.ts` 의 `registerBoard`·`specTitle` 주석이 소유한다. 항목이 이미 있으면 제목과 단계는 사용자가 정한 마일스톤이라 그대로 둔다. 업무 연결 줄의 꼴은 `board.task_line` 이 정한다. 번호는 `task-ref`, 같은 줄의 어댑터 호스트 주소는 `task` 에 빈 칸일 때만 넣는다. 새 제목에는 번호를 붙이지 않고 같은 업무는 번호 칸으로 먼저 찾는다 |
+| 준비됨 `worker_done` | `orch-loop.ts` | 그 PR 의 브랜치로 `pr` 필드가 빈 항목을 찾아 `pr` 필드를 채우고 PR 제목의 번호(`finish.task_pattern`)를 업무 칸(`task`, `task-ref`)이 둘 다 빌 때만 넣는다 |
+| 틱마다 | `orch-loop.ts` → `lib/task-links.ts` | 번호만 있는 열린 항목의 업무 주소를 어댑터로 만들어 채운다. 실패는 항목·번호마다 한 번 `TASK-LINK-FAIL` 로 남기고 30분마다 다시 해 본다 |
+| 틱마다 | `orch-loop.ts` → `board-sync.ts` | 항목의 `pr` 필드를 연결할 때 PR 제목의 번호(`finish.task_pattern`)를 업무 칸(`task`, `task-ref`)이 둘 다 빌 때만 넣고, 마일스톤 항목의 PR 이 열려 있으면 `[pr]` 단계를 끝내고, 없어진 워크트리 이름을 비우고, 결정 항목이 바뀌면 REMINDER 를 한 번 기록한다. 판정은 `board-sync.ts` 머리 주석이 소유한다 |
 | PR 머지 뒤 | `board-sync.ts` | 그 PR 의 마무리(`finish-pr.ts`)가 돌고 있으면 그 항목은 마무리에 맡긴다. 아니면 마지막 PR 인지 판정한다([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」). gh 조회 실패로 판정하지 못하면 다음 틱에 다시 판정한다. 마일스톤 항목은 `[merge]` 단계까지(배포가 이미 성공했으면 `[deploy]` 까지) 끝내고, 마지막 PR 이 done 지점에 닿았고 그 뒤에 끝나지 않은 수동 단계가 없으면 done 으로 바꾼다. 중간 PR 은 `pr` 필드를 비워 `merged-pr` 에 쌓고 `남은 일:` 줄을 둔다. 그 밖에 판정하지 못하면 마지막 PR 로 본다. 옛 항목의 규칙은 `board-sync.ts` 머리 주석이 소유한다 |
 | 배포 성공 뒤 | `board-sync.ts`, `finish-pr.ts` | 마일스톤 항목의 `[deploy]` 단계를 끝내고, 마지막 PR 이 done 지점에 닿았으면 done 으로 바꾼다. `finish-pr.ts` 는 마지막 PR 인지 판정하지 못하면 중간 PR 로 본다. `merged-pr` 의 PR 은 다시 판정하지 않는다 |
 | 릴리스 뒤 | `board-release.ts` | 저장소가 부른다. 릴리스에 든 PR 의 항목에서 `[release]` 단계까지 끝내고, done 지점에 닿았으면 done 으로 바꾼다 |
@@ -207,3 +208,12 @@ orch board goal "$GOAL_ID"
 머지를 가리키는 줄이 하나도 없고 끝나지 않은 단계가 남으면 `BOARD-UNMATCHED <항목> PR #<번호>` 를 기록한다. 이미 끝난 줄도 참조로 세므로 마일스톤 항목의 둘째 PR 에는 잘못 알리지 않는다. `orch board show` 는 풀리지 않은 기록을 함께 보인다. 기록은 보드 형식을 바꾸지 않고 orch 루트의 `state/board-unmatched.json` 에 둔다.
 
 사건 표시 없는 옛 단계 정의로 띄운 항목도 PR 번호가 없으면 같은 알림을 받는다. 반복해서 만드는 단계 정의에는 `[merge]` 를 붙이면 머지 사건과 연결된다. 현재 항목의 알림을 푸는 방법은 [기다리기의 알림 처리](waiting.md#못-맞춘-머지-알림)를 따른다.
+
+### 업무 번호와 주소
+
+`orch board set <항목> --task-ref <번호>` 와 `--task <주소>` 로 넣거나 고친다. 빈 값은 그 칸만 지운다. 번호만 넣으면 상주 루프가 주소를 만든다. `dooray` 어댑터는 `/` 없는 번호에 기본 프로젝트를 붙인다.
+
+
+이미 PR 이 있는 항목은 자동으로 업무 번호를 채우지 않는다.
+
+주소만 있는 항목은 주소와 PR 이 다른 업무일 수 있어 번호를 자동으로 채우지 않는다. 코디네이터가 `orch board set <항목> --task-ref <번호>` 로 넣는다.

@@ -209,3 +209,8 @@ test('검사표 의존 누락은 설치 안내로 거절한다', () => {
   assert.doesNotMatch(loop.stderr, /ERR_MODULE_NOT_FOUND|zod/)
   assert.notEqual(loop.status, null)
 })
+
+test('board.task 는 짝 키를 함께 받고 모르는 어댑터를 저장하지 않는다', () => {
+  assert.match(ok(['set', 'board.task.adapter', 'dooray', 'board.task.web_url', 'https://x.dooray.com', 'board.task.project', 'P']).stdout, /CONFIG-SET/)
+  refused(['set', 'board.task.adapter', 'jira'], /board.task/)
+})

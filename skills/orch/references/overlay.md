@@ -112,6 +112,7 @@ orch config unset contracts.merge_command contracts.paths
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 | `adr` | `dirs` | 이름에서 ADR 폴더로 가는 객체. `orch queue reserve --kind adr` 가 이 폴더에 번호를 예약한다. 폴더마다 번호가 따로이고 자동 머지는 읽지 않는다 |
 | `contracts` | `merge_command`, `paths` | 계약 머리만 충돌한 PR 을 로컬에서 합쳐 push 하는 명령과 계약 파일 정규식. 아래 「계약 머리 자동 합치기」 |
+| `board` | `task` | 업무 도구 어댑터 객체. 아래 「업무 도구 설정」 을 따른다 |
 | `board` | `task_line` | 이름 붙은 캡처 `number` 가 있는 JS 정규식 문자열(`m`, `u`). `title` 캡처는 선택이다 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
 | `board` | `auto_advance` | 자동 진행 여부. 기본은 `true` 이고 `false` 면 `STEP-READY` 와 자동 띄우기를 끈다. `[wait]` 는 깨우지 않고 시각 wait 는 그대로 끝낸다. `orch board auto-check` 가 거절하며 루프도 같은 값을 읽는다. boolean 이 아니면 설정 오류다 |
@@ -300,6 +301,18 @@ orch doctor migrate --repo "$REPO" --apply
 ```
 
 `review_pattern` 의 기본 꼴과 `size_grade` 규칙은 데이터 스키마가 소유한다.
+
+### 업무 도구 설정
+
+새 번들을 설치하고 상주 루프를 다시 띄운 뒤에만 넣는다. 옛 번들은 `board` 절 전체를 설정 오류로 읽는다.
+
+```bash
+orch config set board.task.adapter dooray board.task.web_url https://x.dooray.com board.task.project P
+orch config set board.task --json '{"adapter":"url-template","url":"https://jira.example.com/browse/{number}","name":"Jira"}'
+```
+
+`dooray` 는 사내 주소와 기본 프로젝트가 필수다. `url-template` 은 `{number}` 가 든 주소가 필수이고 이름은 생략하면 「업무」 다.
+짝 키는 한 호출에 함께 준다. 어댑터를 바꿀 때는 위 두 번째 명령처럼 객체 전체를 바꾼다.
 
 ### 알림 필터 설정
 

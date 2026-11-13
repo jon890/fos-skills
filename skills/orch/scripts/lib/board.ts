@@ -4,6 +4,9 @@
 // id 는 백틱 안의 글이나 공백 앞 첫 토큰이다(lib/spec.ts 의 boardIdOf). 설명이 붙었는데 보드에 없는 id 면 항목을 만들지 않는다
 // 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
 
+import { normalizeRef, urlFromLine } from '../core/task-adapters.ts'
+import type { TaskAdapter } from '../core/task-adapters.ts'
+import { taskAdapter } from './task-adapters.ts'
 import { INTERIM, prNumbers, NOTE, detailText, detailArgs } from '../core/board.ts'
 import { linesRev } from '../../../../extensions/work-board/bin/board.ts'
 import type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'
@@ -12,6 +15,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesText } from './milestones.ts'
+import { section } from '../core/config.ts'
+import { FINISH_KEYS } from '../core/finish-options.ts'
+import { rulesFrom } from './last-pr.ts'
 import { loadConfig } from './config.ts'
 import { boardPath } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
@@ -36,7 +42,7 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 2. `보드 항목 id:` 로 정한 항목이 done 이면, 또는 merged-pr 이 있고 단계가 모두 끝난 doing 항목에 새 브랜치의 worker 를 띄우면(같은 브랜치 재시도는 제외) 다시 연다. 지난 줄은 완료로 두고(남은 일 줄과 중간 과정 줄은 뺀다) 마일스톤 단계를 다음 번호부터 붙이고
 //    stages 칸을 새 번호로 바꾼다. pr 칸의 머지된 PR 은 merged-pr 의 맨 앞으로 옮겨 board-sync 가 다시 연결하지 않게 한다. 제목은 바꾸지 않는다
 // 3. 그 밖에는 지시서의 id, 같은 워크트리나 브랜치의 끝나지 않은 항목, 같은 업무 번호의 끝나지 않은 항목, --name, 워크트리 이름 순으로 항목을 정한다.
-//    업무 번호는 지시서의 업무 연결 줄(taskOf)에서 읽고, 제목에 그 번호가 든 항목을 같은 업무로 본다. done, decide, goal 항목은 보지 않는다.
+//    업무 번호는 지시서의 업무 연결 줄(taskOf)에서 읽고, 번호 칸을 먼저 보고, 번호 칸이 빈 옛 항목만 제목으로 찾는다. done, decide, goal 항목은 보지 않는다.
 //    항목이 이미 있으면 제목과 단계는 그대로 두고 워크트리와 브랜치만 바꿔 doing 으로 둔다. 새 항목만 specTitle 의 제목과 마일스톤 단계로 만든다
 // 마일스톤 단계는 지시서의 `## 보드 단계` 절, config.json 의 board.steps, 기본값 순으로 처음 있는 것이다.
 // 설정이 틀리면 ConfigError 다. 지시서의 「할 일」 줄은 보드에 올리지 않는다. 구현 세부라 머지와 배포로 끝낼 수 없다
@@ -66,6 +72,15 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const text = readFileSync(spec, 'utf8')
   const items = readBoard(file)
   const task = taskOf(text, boardSettings(repo).taskLine)
+  let adapter: TaskAdapter | null = null
+  if (task) {
+    try { adapter = taskAdapter(repo) }
+    catch (e) { process.stderr.write(`보드: 설정 board.task 를 읽지 못해 업무 번호를 맞추지 않는다: ${(e as Error).message}\n`) }
+  }
+  const ref = task ? normalizeRef(adapter, task.number) : null
+  const url = task ? urlFromLine(adapter, task.line) : null
+  let taskArgs = ref ? ['--fill', '--task-ref', ref, ...(url ? ['--task', url] : [])] : []
+  if (ref && /\s/.test(ref)) { taskArgs = []; process.stderr.write('보드: 업무 번호에 공백이 있어 업무 칸을 채우지 않는다\n') }
   const bin = process.env.BOARD_BIN || BOARD_BIN
   const heading = text.match(/^#\s+(.+)$/m)?.[1].trim()
   const lines = (value: unknown): BoardDetail[] => (Array.isArray(value) ? value : value ? String(value).split('\n') : [])
@@ -85,7 +100,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
       throw new Error(`중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다: ${why}`)
     }
     const kept = lines(found[0].details).filter((d) => !plain(d).startsWith(INTERIM))
-    return write(['set', found[0].id, '--worktree', basename(worktree), ...branchArgs, ...detailArgs([...kept, INTERIM + (heading || basename(spec))]), '--if-rev', linesRev(found[0])])
+    return write(['set', found[0].id, '--worktree', basename(worktree), ...branchArgs, ...detailArgs([...kept, INTERIM + (heading || basename(spec))]), ...taskArgs, '--if-rev', linesRev(found[0])])
   }
   const given = boardIdOf(text)
   const explicit = given?.id
@@ -100,7 +115,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const same = explicit
     ? undefined
     : (open.find((row) => row.worktree === basename(worktree) || (branch && row.branch === branch)) ??
-      (task ? open.find((row) => !['decide', 'goal'].includes(String(row.status)) && hasTask(row.title, task.number)) : undefined))
+      (task ? (open.find((row) => !['decide', 'goal'].includes(String(row.status)) && row['task-ref'] === ref) ?? open.find((row) => !['decide', 'goal'].includes(String(row.status)) && !row['task-ref'] && hasTask(row.title, task.number))) : undefined))
   const id = explicit || (same?.id as string | undefined) || name || basename(worktree)
   const title = specTitle(text, { items, explicit, task, id })
   const item = items.find((row) => row.id === id)
@@ -128,7 +143,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const args = ['set', id, 'doing', '--worktree', basename(worktree), ...branchArgs, '--progress', 'auto', '--stages', stagesText(added.stages)]
     const merged = [...prNumbers(item.pr)]
     if (merged.length) args.push('--pr', '', '--merged-pr', [...new Set([...merged, ...prNumbers(item['merged-pr'])])].join(', '))
-    return write([...args, ...detailArgs([...old, ...added.details]), '--if-rev', linesRev(item)])
+    return write([...args, ...detailArgs([...old, ...added.details]), ...taskArgs, '--if-rev', linesRev(item)])
   }
   // 이미 있는 끝나지 않은 항목은 제목과 단계를 그대로 두고 worker 의 워크트리와 브랜치만 바꾼다.
   // 이어 띄운 지시서(충돌 풀기, CI 고침)의 머리줄과 할 일이 마일스톤 제목과 단계를 덮지 않게 한다.
@@ -137,13 +152,13 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const known = run(scriptCommand(bin, ['steps', id, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (known.code !== 0) throw new Error(known.stderr || '단계 목록을 읽지 못했다')
     const ready = JSON.parse(known.stdout).length > 0 || /^\s*\d+\s*\/\s*\d+\s*$/.test(String(item.progress ?? ''))
-    return write(['set', id, ...(ready ? ['doing'] : []), '--worktree', basename(worktree), ...branchArgs])
+    return write(['set', id, ...(ready ? ['doing'] : []), '--worktree', basename(worktree), ...branchArgs, ...taskArgs])
   }
   const fresh = milestoneLines(milestones())
   const stages = stagesText(fresh.stages)
   const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
   for (const step of fresh.details) args.push('--detail', step)
-  write(args)
+  write([...args, ...taskArgs])
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)
@@ -157,16 +172,22 @@ function allStagesDone(item: BoardItem): boolean {
   return steps.length > 0 && steps.every((d) => (typeof d === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(d) : d.done === true))
 }
 
-export type SpecTask = { number: string; title: string | null }
+export type SpecTask = { number: string; title: string | null; line: string }
 
 // 지시서의 업무 연결 줄(`두레이 업무: EXAMPLE-PROJECT/282 「제목」`)에서 읽은 업무 번호와 제목. 줄이 없으면 null 이다.
 // pattern 은 board.task_line(lib/milestones.ts 의 boardSettings)이고 없으면 DEFAULT_TASK_LINE 이다.
 // 이름 붙은 묶음 number 가 번호, title 이 제목이다. 제목 묶음이 없거나 비었으면 title 은 null 이다
 export function taskOf(text: string, pattern: RegExp | null = null): SpecTask | null {
-  const groups = (pattern ?? DEFAULT_TASK_LINE).exec(text)?.groups
+  const p = pattern ?? DEFAULT_TASK_LINE
+  const match = new RegExp(p.source, p.flags.includes('d') ? p.flags : p.flags + 'd').exec(text)
+  const groups = match?.groups
   const number = groups?.number?.trim()
   if (!number) return null
-  return { number, title: groups?.title?.trim() || null }
+  // ^\s* 가 앞 빈 줄을 먹어도 number 묶음이 든 실제 줄을 고른다.
+  const at = match?.indices?.groups?.number?.[0] ?? 0
+  const start = text.lastIndexOf('\n', at - 1) + 1
+  const end = text.indexOf('\n', at)
+  return { number, title: groups?.title?.trim() || null, line: text.slice(start, end < 0 ? undefined : end) }
 }
 
 // 제목에 업무 번호가 든 항목인지. 번호 뒤에 숫자가 이어지면(`/282` 와 `/2821`) 다른 업무다
@@ -193,13 +214,12 @@ export function goalSentence(text: string): string | null {
 //   3. 업무 연결 줄의 제목
 //   4. `## 목표` 절의 첫 문장
 //   5. 항목 id
-// 업무 번호가 있고 제목에 아직 없으면 앞에 붙인다
 export function specTitle(text: string, opts: { items: BoardItem[]; explicit?: string; task: SpecTask | null; id: string }): string {
   const heading = text.match(/^#\s+(.+)$/m)?.[1].trim()
   const existing = opts.explicit ? opts.items.find((row) => row.id === opts.explicit)?.title : undefined
   if (!heading && typeof existing === 'string' && existing.trim()) return existing.trim()
   const title = heading || opts.task?.title || goalSentence(text) || opts.id
-  return opts.task && !hasTask(title, opts.task.number) ? `${opts.task.number} ${title}` : title
+  return title
 }
 
 export type BoardMatch = { by: 'pr' | 'branch'; ids: string[] }
@@ -239,13 +259,26 @@ export function boardSteps(bin: string, id: string, file: string): BoardStep[] |
   }
 }
 
+// PR 제목의 업무 번호를 설정 규칙으로 읽고 어댑터의 번호 꼴로 맞춘다. 규칙이나 설정을 읽지 못하면 null 이다.
+// extractTaskNumber 는 마지막 PR 판정의 기존 영문 번호 계약을 유지한다.
+// 보드 번호는 한글 프로젝트도 받아야 하므로 별도로 검사한다(ADR-031, 설계 DECISION5).
+// 보드 연결 기능 때문에 마지막 PR 판정의 허용 문자를 넓히지 않는다.
+export function prTaskRef(repo: string, title: string): string | null {
+  try {
+    const finish = section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS)
+    const ref = rulesFrom(finish, repo).taskPattern?.exec(title)?.[1]
+    return ref && /^[\p{L}\p{N}._/-]+$/u.test(ref) ? normalizeRef(taskAdapter(repo), ref) : null
+  } catch { return null }
+}
+
 // pr 칸이 빈 항목을 브랜치로 찾아 그 PR 번호로 채운다. 채운 항목 id 를 내고, 찾지 못했거나 pr 칸에 이미 든 항목이거나
 // 둘 이상이면 null 이다. 보드 명령이 실패하면 Error 다
-export function linkBoardPr(file: string, number: string, branch: string): string | null {
+// ref 를 주면 업무 번호도 빈 칸일 때만 함께 채운다.
+export function linkBoardPr(file: string, number: string, branch: string, ref?: string | null): string | null {
   const found = findBoardItems(file, number, branch, null)
   if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
   const bin = process.env.BOARD_BIN || BOARD_BIN
-  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
   if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
   return found.ids[0]
 }

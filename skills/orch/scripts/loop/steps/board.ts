@@ -42,7 +42,7 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
         }
       }
       if (reviews.size) args.push('--completed-reviews', JSON.stringify([...reviews]))
-      if (prs.ok) args.push('--open-prs', JSON.stringify(prs.mine.map((pr) => ({ number: pr.number, headRefName: pr.branch }))))
+      if (prs.ok) args.push('--open-prs', JSON.stringify(prs.mine.map((pr) => ({ number: pr.number, headRefName: pr.branch, title: pr.title }))))
       const done = await runAsync(scriptCommand(sync, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
       relay(done)
       if (done.code === 0) notifyUnmatched(ctx.repo, ctx.primary)

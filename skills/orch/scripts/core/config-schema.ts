@@ -23,6 +23,7 @@
 // core 경계: core 안의 상대 모듈, node:path, node:crypto 와 이 파일의 zod 만 import 한다(skills/orch/tests/core-boundary.spec.ts).
 
 import * as z from 'zod'
+import { taskAdapterOf } from './task-adapters.ts'
 import { autoMergeConfig, REVIEW_CONFIG_KEYS, unknownConditionsText } from './auto-merge.ts'
 import { autoAdvanceOf } from './auto-advance.ts'
 import {
@@ -58,7 +59,7 @@ export type Pair = { keys: readonly string[]; check: (body: Record<string, unkno
 export const TIMER_MAX_SEC = 2147483
 
 // 바꾸면 상주 루프를 다시 띄워야 반영되는 키
-export const RESTART_KEYS: readonly string[] = ['pipeline.tick_sec', 'finish.run', 'finish.specs_dir']
+export const RESTART_KEYS: readonly string[] = ['board.task', 'pipeline.tick_sec', 'finish.run', 'finish.specs_dir']
 
 const KO = { error: z.locales.ko().localeError }
 
@@ -265,6 +266,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     paths: viaConfig('contracts', 'paths', contractSettings, undefined, { merge_command: 'x' }),
   },
   board: {
+    task: viaConfig('board', 'task', taskAdapterOf, ['adapter', 'web_url', 'project', 'url', 'name']),
     steps: viaConfig('board', 'steps', boardSettingsFromConfig),
     done_after: viaConfig('board', 'done_after', boardSettingsFromConfig),
     task_line: viaConfig('board', 'task_line', boardSettingsFromConfig),

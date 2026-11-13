@@ -177,7 +177,7 @@ test('열린 PR 에 작성자를 붙이고, a 로 한 작성자의 PR 만 거른
 test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를 읽었으면 PR 번호에 밑줄 친 링크를 건다', async ($, on) => {
   const task = 'https://example.dooray.com/project/tasks/1234567890123456789'
   const board = JSON.stringify({ items: [
-    { id: 't', title: '#342 감지상황 잇기', status: 'wait', pr: 877, task },
+    { id: 't', title: '#342 감지상황 잇기', status: 'wait', pr: 877, task, 'task-ref': 'P/342' },
     { id: 'n', title: '#343 주소 없는 업무', status: 'wait' },
   ] })
   const repo = (argv) => String(argv[2]).endsWith('/github.ts') && argv[3] === 'url'
@@ -190,14 +190,14 @@ test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를
   let prLink
   for (let i = 0; i < 50 && !prLink; i++) prLink = await ui.find({ type: 'Link', text: '[PR #877]' })
   expect(prLink?.props.href).toBe('https://github.com/o/r/pull/877')
-  const taskLink = await ui.find({ type: 'Link', text: '[두레이 #342]' })
+  const taskLink = await ui.find({ type: 'Link', text: '[두레이 P/342]' })
   expect(taskLink?.props.href).toBe(task)
   expect(((taskLink as Drawn).children[0] as Drawn).props).toMatchObject({ underline: true, color: 'cyan' })
   expect(((prLink as Drawn).children[0] as Drawn).props).toMatchObject({ underline: true, color: 'magenta' })
   expect(await ui.find({ type: 'Link', text: /#343/ })).toBeFalsy()
   // 업무와 PR 을 머리말로 가린다
   const title = textOf(await ui.find({ type: 'Box', key: 'item-t' }) as Drawn)
-  expect(title).toContain('[두레이 #342] 감지상황 잇기')
+  expect(title).toContain('[두레이 P/342]#342 감지상황 잇기')
   expect(title).toContain('[PR #877]')
   await ui.unmount()
 })
@@ -527,7 +527,7 @@ test('진행 중·대기 항목의 제목 줄을 누르면 상태 확인 요청�
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const head = await ui.find({ type: 'Button', key: 'check-a' })
   expect(head.props.hotkey).toBeUndefined()
-  expect(textOf(head)).toBe('▶ 단계 항목')
+  expect(textOf(head)).toBe('단계 항목')
   // 완료와 결정 항목은 누를 대상이 아니다
   expect(await ui.find({ type: 'Button', key: 'check-d' })).toBeFalsy()
   expect(await ui.find({ type: 'Button', key: 'check-q' })).toBeFalsy()
@@ -561,7 +561,7 @@ test('대기 항목의 제목 줄은 9개를 넘어도 눌리고 재개 요청�
   ] }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const head = await ui.find({ type: 'Button', key: 'check-w' })
-  expect(textOf(head)).toBe('◇ 기획 답을 기다리는 항목')
+  expect(textOf(head)).toBe('기획 답을 기다리는 항목')
 
   await ui.press({ key: 'check-w' })
   expect(filled).toHaveLength(1)
@@ -597,18 +597,37 @@ test('넘기기(x) 모드에서는 항목 제목 줄을 눌러도 요청문을 �
   await ui.unmount()
 })
 
-test('제목에 업무 링크가 있으면 링크는 Button 밖에 그리고 제목 글은 이어진다 (REQ5)', async ($, on) => {
-  await start($, on, undefined, JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
-    { id: 't', title: '배포 #342 정리', status: 'doing', task: 'https://example.dooray.com/task/342' },
+test('칩은 버튼 밖에서 표시와 제목 사이에 있고 버튼에는 제목만 있다', async ($, on) => {
+  await start($, on, undefined, JSON.stringify({ items: [
+    { id: 't', title: '배포 #342 정리', status: 'doing', task: 'https://example.dooray.com/task/342', 'task-ref': 'P/342' },
   ] }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const head = await ui.find({ type: 'Box', key: 'head' })
-  const [button, link, tail] = head.children as Drawn[]
-  expect(button.type).toBe('Button')
-  expect(textOf(button)).toBe('▶ 배포 ')
-  expect(link.type).toBe('Link')
-  expect(textOf(link)).toBe('[두레이 #342]')
-  expect(textOf(tail)).toBe(' 정리')
+  const [mark, link, button] = head.children as Drawn[]
+  expect(mark.type).toBe('Text'); expect(textOf(mark)).toBe('▶')
+  expect(link.type).toBe('Link'); expect(textOf(link)).toBe('[두레이 P/342]')
+  expect(button.type).toBe('Button'); expect(textOf(button)).toBe('배포 #342 정리')
+  await ui.unmount()
+})
+
+test('번호만 있는 흐린 칩, 주소만 있는 링크와 결정·완료 줄도 설정 이름을 쓴다', async ($, on) => {
+  const board = JSON.stringify({ items: [
+    { id: 'ref', title: '번호만', status: 'wait', 'task-ref': 'PROJ-1' },
+    { id: 'url', title: '주소만', status: 'wait', task: 'https://example.dooray.com/task/1' },
+    { id: 'none', title: '둘 다 없음', status: 'wait' },
+    { id: 'decide', title: '결정', status: 'decide', 'task-ref': 'PROJ-2' },
+    { id: 'done', title: '끝', status: 'done', 'task-ref': 'PROJ-3', task: 'https://x/3' },
+  ] })
+  await start($, on, argv => String(argv[2]).endsWith('/task-tool.ts') ? { exitCode: 0, stdout: '{"name":"Jira","error":null}', stderr: '' } : { exitCode: 1, stdout: '', stderr: '' }, board)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'toggle-done' })
+  const chip = await ui.find({ type: 'Text', text: '[Jira PROJ-1]' })
+  expect(chip?.props.dimColor).toBe(true)
+  expect((await ui.find({ type: 'Link', text: '[Jira]' }))?.props.href).toBe('https://example.dooray.com/task/1')
+  expect(await ui.find({ type: 'Text', text: '[Jira PROJ-2]' })).toBeTruthy()
+  const done = await ui.find({ type: 'Link', text: '[Jira PROJ-3]' })
+  expect((done.children[0] as Drawn).props.dimColor).toBe(true)
+  expect((done.children[0] as Drawn).props.strikethrough).toBeFalsy()
   await ui.unmount()
 })
 
