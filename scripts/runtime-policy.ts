@@ -227,7 +227,7 @@ const SOURCE_EXTENSIONS = new Set([".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]
 // 정적 문은 줄 머리에서 시작하며 여러 줄에 걸칠 수 있다. 호출은 문자열 인자 하나인 꼴만 본다.
 const STATIC_IMPORTS = [
   /^[ \t]*(?:import\b|export[ \t]*(?:type[ \t]+)?(?=[{*]))(?:(?!^[ \t]*(?:import|export)\b)[^;'"`])*?\bfrom\s*(['"])([^'"\r\n]+)\1/gm,
-  /^[ \t]*import[ \t]*(['"])([^'"\r\n]+)\1/gm,
+  /^[ \t]*import\s*(['"])([^'"\r\n]+)\1/gm,
 ];
 const CALL_IMPORTS = [/\bimport\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g, /\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g];
 const SAMPLE_MARKER = "// runtime-policy: sample";

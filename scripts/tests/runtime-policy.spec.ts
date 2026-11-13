@@ -255,6 +255,17 @@ describe('checkImports', () => {
     }
   })
 
+  test('부수 효과 import는 줄바꿈을 포함한 공백을 허용한다', () => {
+    const text = "import\n'zod'"
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:1 zod'])
+    for (const markerRow of [0, 1]) {
+      const rows = ['import', "'ignored'"]
+      rows[markerRow] += ' // runtime-policy: sample'
+      rows.push("import 'zod'")
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: rows.join('\n') }]), ['IMPORT fixture.ts:3 zod'])
+    }
+  })
+
   test('문자열 인자 하나인 import와 require는 줄 어디서든 검사한다', () => {
     const text = [
       "await import('m1')", // runtime-policy: sample
