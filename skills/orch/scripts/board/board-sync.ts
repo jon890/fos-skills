@@ -1,6 +1,6 @@
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
-// 구현·후속 줄이 있는 항목은 리뷰 항목이 아니다. 리뷰·검증 줄만 있으면 그 줄의 worker_done 으로도 닫는다.
+// 리뷰 항목은 최초 띄우기 이력으로 정한다. 구현 이력·줄·PR 이 있는 항목은 리뷰 종료로 닫지 않는다.
 // 보드(board.json)에서 PR 이 머지된 항목을 done 으로 바꾸고 목표 진행률을 다시 센다.
 //
 // 하위 줄은 코디네이터가 쓰는 번호 붙은 단계만 둔다. 이 스크립트는 상태 줄을 쓰지 않는다.

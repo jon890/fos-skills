@@ -80,7 +80,7 @@ flowchart TD
 
 ### 대표 칸
 
-- 대표로 바뀐 줄의 브랜치가 없으면 대표 브랜치 값을 지운다.
+- 대표 워크트리가 바뀌고 새 줄의 브랜치가 없으면 대표 브랜치 값을 지운다. 같은 워크트리 재시도에서는 기존 값을 둔다.
 - 대표 칸(`worktree`·`branch`)은 가장 최근(`at`)의 작업 중 구현·후속 줄 값이다. 작업 중 구현·후속 줄이 없으면 마지막 값을 그대로 둔다(스펙 DECISION8).
 - **리뷰만 하는 항목**(줄이 있고 모두 리뷰·검증 줄)은 예외다. 대상 항목을 못 찾아 리뷰 지시서로 새로 만든 항목은 지금처럼 리뷰 worker 를 대표 칸에 둔다(스펙 REQ2 「못 찾으면 지금처럼 새 항목을 만든다」). PR1 의 창이 지금처럼 그 worker 를 항목 아래 그리고, PR #487 의 닫기가 그대로 돈다.
 - 대표 칸을 비우는 지금의 자리는 그대로 둔다. done 으로 바꿀 때의 `--worktree ''`(`core/milestones.ts` 의 `advanceCommands`, `board-sync.ts` 의 닫기 갈래들)와, 대표 워크트리가 사라지고 그 워크트리의 작업 중 줄이 없을 때의 비우기(`board-sync.ts` 325행)다. 「마지막 값을 둔다」 는 worker 줄이 끝날 때의 규칙이고, 항목이 끝나거나 워크트리가 사라진 뒤의 비우기를 막지 않는다.
@@ -95,7 +95,7 @@ board.ts worker-set <id> --worktree W [--pr N]        # PR2
 ```
 
 - `worker-add` 는 워크트리 열쇠로 줄을 더하거나 바꾼다. 역할이 `impl`·`follow` 면 대표 칸을 그 줄 값으로 바꾼다. `review`·`verify` 는 대표 칸, `status`, 단계를 건드리지 않는다. done 항목에도 더한다(스펙 DECISION17).
-- `--keep-current <role>` 은 `workers` 필드가 없는 옛 항목에 붙을 때 쓴다. 지금 대표 칸(`worktree`, `branch`)을 먼저 그 역할의 줄로 옮겨 적는다. `registerBoard` 가 역할을 정한다. 옛 판정(`lib/review.ts` 의 `reviewPrOfItem`)이 리뷰 항목이라고 하면 `review`, 아니면 `impl` 이다. 그래서 옛 리뷰 항목에 재리뷰가 붙어도 리뷰 항목으로 남아 PR #487 대로 닫힌다. `--keep-dispatch` 는 `registerBoard` 가 띄우기 이력(`lib/launch-history.ts`)에서 그 워크트리의 가장 최근 dispatch 를 찾아 넘긴 값이다. 찾지 못했으면 `null` 이다. 워크트리가 있고 현재 살아 있는 dispatch 를 확인하지 못했으면 `status` 를 `done` 으로 적는다. dispatch 없는 작업 중 줄은 워크트리를 지울 때까지 끝나지 않아 「worker 없음」 을 영영 가린다. 대표 워크트리가 비었으면 옛 대표 줄은 만들지 않는다. 옛 대표를 작업 중으로 옮기려면 이력의 워크트리가 남아 있고 해당 Run 의 Orca dispatch 가 현재 살아 있어야 한다. 끝난 상태거나 확인하지 못하면 dispatch 를 넘기지 않아 끝난 줄로 남긴다.
+- `--keep-current <role>` 은 `workers` 필드가 없는 옛 항목에 붙을 때 쓴다. 지금 대표 칸(`worktree`, `branch`)을 먼저 그 역할의 줄로 옮겨 적는다. `registerBoard` 가 역할을 정한다. 옛 판정(`lib/review.ts` 의 `reviewPrOfItem`)이 리뷰 항목이라고 하면 `review`, 아니면 `impl` 이다. 그래서 옛 리뷰 항목에 재리뷰가 붙어도 리뷰 항목으로 남아 PR #487 대로 닫힌다. `--keep-dispatch` 는 `registerBoard` 가 띄우기 이력(`lib/launch-history.ts`)에서 그 워크트리의 가장 최근 dispatch 를 찾아 넘긴 값이다. 찾지 못했으면 `null` 이다. dispatch 이력이 없거나 현재 조회 결과 끝났으면 `status` 를 `done` 으로 적는다. dispatch 없는 작업 중 줄은 워크트리를 지울 때까지 끝나지 않아 「worker 없음」 을 영영 가린다. 대표 워크트리가 비었으면 옛 대표 줄은 만들지 않는다. 옛 대표를 작업 중으로 옮기려면 이력의 워크트리가 남아 있고 해당 Run 의 Orca dispatch 가 현재 살아 있어야 한다. 끝난 상태이면 dispatch 를 넘기지 않아 끝난 줄로 남긴다. Orca 조회가 실패하거나 응답 형식을 읽지 못하면 이력의 dispatch 를 작업 중으로 옮겨 다음 동기화에서 다시 확인한다.
 - `worker-end` 는 맞는 `working` 줄을 끝낸다. 끝난 줄이 대표였고 다른 `working` 구현·후속 줄이 있으면 그중 `at` 이 가장 늦은 줄로 대표 칸을 바꾼다. 없으면 대표 칸을 그대로 두고, `--clear` 를 줬으면 비운다. 보드 맞추기는 워크트리가 사라져 끝낼 때만 `--clear` 를 준다. 맞는 줄이 없으면 종료 코드 0 으로 아무것도 하지 않는다. 보드 맞추기가 같은 끝남을 다음 틱에 다시 보내도 된다.
 - `worker-set` 은 PR2 에서 보드 맞추기가 구현·후속 줄의 `pr` 을 채울 때 쓴다. `status` 를 바꾸지 않아 끝난 줄을 되살리지 않는다.
 - `item`, `items` 출력에 `workers` 를 넣는다. 사용법 오류는 종료 코드 2, 없는 항목은 1 이다.
@@ -140,11 +140,13 @@ board.ts worker-set <id> --worktree W [--pr N]        # PR2
 
 ### 리뷰 항목 판정
 
-core 의 `hasWorkRows(item): boolean | null` 은 줄만으로 판정한다. 구현·후속 줄이 있으면 `true`, 줄이 있고 모두 리뷰·검증이면 `false`, 필드가 없으면 `null` 이다. 띄우기 이력과 합치는 일은 lib 호출자(`board-sync.ts`, `loop/steps/board.ts`)가 맡는다([ADR-028](../../adr/028-orch-core-layer.md)).
+core 의 `hasWorkRows`는 구현·후속 줄의 존재만 알려 준다. 항목의 생성 목적은 lib/review.ts 의 `reviewOriginsByItem`과 `isReviewItem`이 정하고 보드 동기화와 루프가 함께 쓴다([ADR-028](../../adr/028-orch-core-layer.md)).
 
-- `true`: 리뷰 항목이 아니다. 리뷰 지시서가 `보드 항목 id:` 로 붙었어도 그 리뷰의 worker_done 이나 대상 PR 머지로 닫지 않는다(스펙 DECISION15).
-- `false`: 리뷰만 하는 항목이다. 대상 PR 은 가장 최근 줄의 `pr` 이다. 지금 조건(id 꼴, 띄우기 이력의 `리뷰 PR:`, `--completed-items`, `--completed-reviews`, 대상 PR MERGED)에 더해, 완료든 끊김이든 남은 작업 중 줄이 없으면 닫는다. 앞 틱에서 줄만 끝나고 항목 닫기를 놓친 경우도 다음 틱에 닫는다. 이 항목은 id 가 `review-pr-N` 꼴이 아니어도 닫힌다.
-- `null`: 지금 판정 그대로다.
+- 항목 id 의 첫 띄우기 이력이 리뷰·검증 지시서인지를 본다. 구현 이력이나 구현·후속 줄, 구현 PR 칸이 있으면 리뷰 항목이 아니다. 첫 리뷰 전에 이미 있던 구현 단계도 보호한다.
+- 최초 이력을 확인하지 못하면 줄의 역할만으로 리뷰 항목으로 보지 않는다. 영구 이력 도입 전의 리뷰 id 형식만 기존처럼 읽는다.
+- 리뷰 전용 항목은 이번 동기화에서 마지막 작업 중 줄을 끝냈을 때 닫는다. 완료와 끊김을 모두 끝남으로 본다.
+- 앞 틱에서 줄만 끝나고 항목 닫기를 놓쳤으면, 줄의 endedAt 이 항목의 마지막 상태·단계 변경(stepAt)보다 뒤인 경우에만 복구한다. 다시 열거나 단계를 바꾼 항목은 지난 끝남으로 닫지 않는다.
+- worker 줄이 있는 항목은 지난 `--completed-items`나 `--completed-reviews`만으로 닫지 않는다. 루프가 현재 작업 중 줄의 dispatch 를 `--worker-ends`로 넘긴 결과를 쓴다.
 
 ### 대표 칸을 읽는 곳
 
