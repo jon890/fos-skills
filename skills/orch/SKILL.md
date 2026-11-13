@@ -21,6 +21,7 @@ metadata:
 `$SKILL_DIR` 은 이 스킬 번들 경로다.
 스크립트는 `orch <묶음> <동작> [인자]` 로 부른다. 묶음과 동작은 `orch --help` 가 보이고, 원본은 명령 표 `scripts/lib/commands.ts` 다.
 저장소(`--repo`), Run(`--run`), 지시서 폴더(`--specs-dir`), 대기의 루프 저장소(`--loop-repo`)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽는다. 다른 저장소나 다른 Run 이면 그 값을 준다.
+설정을 보고 바꾸는 명령은 `orch config show/get/set/unset` 이다. 코디네이터가 [`references/overlay.md`](references/overlay.md) 의 「설정 바꾸기」 를 따른다.
 기본 출력은 판정 줄(대문자 낱말로 시작하는 줄)과 결과 데이터다. 설명과 진행 줄은 `--full` 로 본다. 명령마다의 줄은 각 스크립트 머리 주석의 「짧은 출력」 이 소유한다. 루프, worker, 보드는 `orch status` 로 한 번에 본다.
 `orch` 는 부를 때마다 설치 기록의 지금 설치된 번들을 골라 실행하므로, 갱신이나 프로필 전환 뒤에도 옛 번들을 부르지 않는다. PATH 에 없는 셸(Codex, 사람 셸)은 아래 첫 점검의 셸 함수를 쓰고, `orch doctor install-cli` 를 한 번 돌리면 `~/.local/bin/orch` 가 생긴다.
 <!-- orch-compat -->

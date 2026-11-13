@@ -196,7 +196,7 @@ orch board auto-check "$ITEM"
 
 자동으로 띄운 worker 가 일을 끝내지 못하면(`worker_done` 의 failed, 끝난 터미널, 사용자가 멈춤) 다시 띄우지 않고 그 단계를 `[ask]` 로 바꿔 묻는다. CI 실패와 리뷰 지적은 실패로 보지 않고 같은 worker 에게 고치라고 지시한다.
 
-사용자가 단계 하나를 멈추라고 하면 그 worker 를 기존 절차로 중지하고 그 단계를 `[ask]` 로 바꾼다. 저장소 전체는 `.orch/config.json` 의 `board.auto_advance` 를 `false` 로 둔다. 이 규칙은 저장소 오버레이에 옮겨 적지 않는다.
+사용자가 단계 하나를 멈추라고 하면 그 worker 를 기존 절차로 중지하고 그 단계를 `[ask]` 로 바꾼다. 저장소 전체를 멈추려면 코디네이터가 `orch config set board.auto_advance false --json` 을 부른다. 이 규칙은 저장소 오버레이에 옮겨 적지 않는다.
 
 ## 충돌과 리뷰 반영은 만든 worker 가 이어 받는다
 

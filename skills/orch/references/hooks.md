@@ -120,7 +120,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 - **지시는 `orch worker send` 로 보낸다.** Orca 가 worker 를 깨운다. `orch worker nudge` 를 쓰는 저장소 핸들러는 doctor 의 NUDGE-HANDLER 경고를 따라 바꾼다.
   <!-- orch-compat -->
   `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 스크립트는 그 아래 묶음 폴더(`worker/nudge-worker.ts` 꼴)로 옮겼다. `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')` 꼴은 파일이 없어 깨진다. 핸들러는 `node "$ORCH_BIN" <묶음> <동작>` 으로 부른다. doctor 가 `DIRECT-PATH` 로 알린다.
-- 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `config.json` 의 `pipeline.stall_ticks.idle` 을 켠다.
+- 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `orch config set pipeline.stall_ticks.idle 2 --json` 으로 연속 확인할 틱 수를 정한다.
 
 ## 실패 줄 읽기
 
@@ -130,10 +130,10 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 | --- | --- | --- |
 | `HOOK-REJECT <이벤트> <이유>` | 핸들러가 10 으로 거부했다 | 이유를 읽고 조건을 고친 뒤 같은 명령을 다시 부른다 |
 | `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
-| `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
+| `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `orch config set hooks.timeouts.before-merge 1800 --json` 으로 시간 제한(초)을 늘린다. 이벤트 이름과 초는 상황에 맞춘다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
 | `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
-| `INVALID-CONFIG <경로> <이유>` (그 밖) | `config.json` 의 그 경로에 문제가 있다. 문제 종류는 깨진 JSON(경로 `config.json`), 모르는 절·키·이름, 틀린 값, 짝 규칙 위반이다. 자동 머지 리뷰 조건(`queue.auto_review.require`)이면 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | 줄의 경로를 이유대로 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」, `inbox` 절). 문제마다 한 줄이다 |
+| `INVALID-CONFIG <경로> <이유>` (그 밖) | `config.json` 의 그 경로에 문제가 있다. 문제 종류는 깨진 JSON(경로 `config.json`), 모르는 절·키·이름, 틀린 값, 짝 규칙 위반이다. 자동 머지 리뷰 조건(`queue.auto_review.require`)이면 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | `orch config set` 으로 그 경로를 고치거나 `orch config unset` 으로 오타 키를 지운다. 깨진 JSON 은 파일을 복구한다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」, `inbox` 절). 문제마다 한 줄이다 |
 | `CLI-DEPS-MISSING <이유>` | 설정 검사표가 쓰는 의존(zod)을 불러오지 못했다. `orch doctor` 가 설정 검사만 건너뛰고 나머지는 돈다. 종료 코드에는 영향이 없다 | 플러그인을 다시 설치하거나(`claude plugin update fos-skills@fos-skills`) 플러그인 폴더에서 `npm ci --ignore-scripts` 를 돈다 |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.

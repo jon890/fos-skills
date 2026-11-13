@@ -51,7 +51,7 @@
 
 - **바깥 호출층 `lib/`**: 바깥 프로그램 호출(orca, gh, git, ps), 파일 읽기와 쓰기, 환경 변수와 시계 읽기를 맡는다. 지금 자리 그대로다. 실행 도우미(`args.ts`, `py.ts`, `output.ts`)도 여기 남는다. 판정 코드가 아니고 work-board 와 `modules/kit` 이 그 경로를 사본 대조에 쓴다.
 - **결과를 정하는 층 `core/`(PR4 신규)**: 판정 함수만 둔다. 지금 바깥을 부르지 않는 판정 파일(`completion.ts`, `auto-merge.ts`, `screen.ts`, `overlap.ts`, `milestones.ts`, `stop-reports.ts`, `deploy.ts`, `finish-options.ts`, `queue-options.ts`)을 옮기고, 섞인 파일(`questions.ts`, `decisions.ts`, `movement.ts`, `loop.ts`, `conflicts.ts`, `refresh.ts` 등)은 판정 함수만 떼어 옮긴다. 어느 함수를 떼는지는 PR4 의 plan 이 코드를 읽어 정한다.
-- **의존 방향**: `core/` 는 `core/` 안과 허용한 내장 모듈만 import 한다. `lib/` 와 단계 파일은 `core/` 를 부를 수 있다. 거꾸로는 안 된다.
+- **의존 방향**: `core/` 는 `core/` 안과 허용한 내장 모듈만 import 한다. 예외로 `core/config-schema.ts` 만 `zod` 를 가져와 설정 값을 검사한다([ADR-030](../../adr/030-plugin-npm-dependencies.md)). `lib/` 와 단계 파일은 `core/` 를 부를 수 있다. 거꾸로는 안 된다.
 - **바깥 importer**: work-board(`extensions/work-board/bin/worker-marks.ts`)가 `lib/movement.ts` 의 `judgeWorker` 를 가져간다. 판정을 `core/movement.ts` 로 옮겨도 `lib/movement.ts` 가 그 이름을 다시 내보낸다(export 한 줄). work-board 는 범위 밖이라 import 줄을 고치지 않는다.
 - **루프 알림의 주인**: 알릴지 정하는 것(같은 이유 다시 보내지 않기, dispatch 마다 한 번)은 지금처럼 각 단계가 상태 파일(`loop.json` 의 errors·ci·stalls, `state/finish-missing.json` 등)로 한다. 보내기만 `lib/run-notice.ts` 가 맡는다.
 - **worker 에게 보내기의 주인**: `send-to-worker` 하나다. 루프, 마무리, 충돌 알림은 지금처럼 이것을 부른다(`lib/tell-worker.ts`).

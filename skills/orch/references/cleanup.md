@@ -85,7 +85,7 @@ orch queue merge 101 102 103!
 
 출력 줄(`FINISH-STARTED`, `MERGED`, `STOP`, `CONFLICT`, 끝 줄 `QUEUE-DONE`/`QUEUE-HELD`)은 `merge_queue.ts` 와 `merge-with-finish.ts` 머리 주석이 소유한다. 진행 줄은 `--full` 이다.
 
-저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
+저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 코디네이터가 `orch config set` 으로 `finish` 절에 둔다. 예를 들어 `orch config set finish.deploy_workflow deploy.yml finish.deploy_branch main` 으로 배포 설정을 함께 바꾼다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
 **머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.ts` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.ts` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
