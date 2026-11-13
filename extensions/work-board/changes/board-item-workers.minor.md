@@ -1,1 +1,0 @@
-- 보드 항목에 worker 줄 목록(workers)과 worker-add, worker-end 명령을 더한다.
