@@ -381,3 +381,21 @@ test('확인 줄의 공백은 Python 의 공백 집합으로 본다', () => {
   assert.equal(check(feature(withGap('\u001F')), SPEC).code, 0)
   assert.equal(check(feature(withGap(' ')), SPEC).code, 0)
 })
+
+test('요구사항 칸의 쉼표로 나눈 ID 를 각각 검사한다', () => {
+  for (const separator of [', ', '、', ' , ']) {
+    const text = VERIFICATION.replace('| R1 |', `| R1${separator}R2 |`).replace(/\n\| R2 \|[^\n]*/, '')
+    const ok = checkVerification(verificationRepo(text), withVerification())
+    assert.equal(ok.code, 0, ok.stdout)
+    const bad = checkVerification(verificationRepo(text.replace(`R1${separator}R2`, `R1${separator}R3`)), withVerification())
+    assert.ok(lines(bad).some((line) => line.includes('범위 밖의 요구사항: R3')), bad.stdout)
+    assert.ok(!lines(bad).some((line) => line.includes('범위 밖의 요구사항: R1')), bad.stdout)
+  }
+  for (const cell of ['R1,', 'R1,,R2']) {
+    const text = VERIFICATION.replace('| R1 |', `| ${cell} |`)
+    const result = checkVerification(verificationRepo(text), withVerification())
+    assert.equal(result.code, 0, result.stdout)
+  }
+  const invalid = checkVerification(verificationRepo(VERIFICATION.replace('| R1 |', '| R1 R2 |')), withVerification())
+  assert.ok(lines(invalid).some((line) => line.includes('한 칸에 ID 를 쉼표로 나눠 적는다')), invalid.stdout)
+})
