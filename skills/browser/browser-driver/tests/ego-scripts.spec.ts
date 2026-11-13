@@ -66,4 +66,11 @@ describe('ego 스크립트', () => {
       golden('ego-scripts.json', key, script(t, args, env, config))
     })
   }
+
+  test('shot --size 는 같은 스크립트 안에서 크기를 건 뒤 찍는다', (t) => {
+    const text = script(t, ['shot', '3:p2', '/tmp/bd-shot.png', '--size', '1038x556'])
+    const set = 'await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1038, height: 556, deviceScaleFactor: 1, mobile: false });'
+    assert.ok(text.includes(set), text)
+    assert.ok(text.indexOf(set) < text.indexOf('page.screenshot'), text)
+  })
 })
