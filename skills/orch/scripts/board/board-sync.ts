@@ -1,3 +1,6 @@
+import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
+// --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
+// 리뷰 항목은 최초 띄우기 이력으로 정한다. 구현 이력·줄·PR 이 있는 항목은 리뷰 종료로 닫지 않는다.
 // 보드(board.json)에서 PR 이 머지된 항목을 done 으로 바꾸고 목표 진행률을 다시 센다.
 //
 // 하위 줄은 코디네이터가 쓰는 번호 붙은 단계만 둔다. 이 스크립트는 상태 줄을 쓰지 않는다.
@@ -71,7 +74,7 @@
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
-import { reviewPrOfItem, reviewPrsByItem } from '../lib/review.ts'
+import { reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } from '../lib/review.ts'
 import { loadNotified, saveNotified, staleKey, textRev } from '../lib/board-stale.ts'
 import { prTaskRef } from '../lib/board.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
@@ -113,6 +116,7 @@ const LEGACY_AUTO = '자동: '
 const SKIP_STATUS = new Set(['done', 'goal'])
 
 const OPTIONS = {
+  'worker-ends': { type: 'string' },
   board: { type: 'string' },
   'board-bin': { type: 'string' },
   repo: { type: 'string' },
@@ -249,6 +253,15 @@ function main(argv: string[]): number {
   }
   const repo = resolve(values.repo ?? '.')
   const dryRun = values['dry-run'] === true
+  let workerEnds: Record<string, 'done' | 'lost'>
+  try {
+    const parsed: unknown = JSON.parse(values['worker-ends'] ?? '{}')
+    if (!isRecord(parsed) || !Object.values(parsed).every((value) => value === 'done' || value === 'lost')) throw new Error('dispatch 와 done|lost 객체가 아니다')
+    workerEnds = parsed as Record<string, 'done' | 'lost'>
+  } catch (e) {
+    err(`board-sync: --worker-ends: ${(e as Error).message}`)
+    return 2
+  }
   let completedReviews: number[] = []
   try {
     const parsed: unknown = JSON.parse(values['completed-reviews'] ?? '[]')
@@ -289,6 +302,7 @@ function main(argv: string[]): number {
       return 2
     }
   }
+  const reviewOrigins = reviewOriginsByItem(repo, items)
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
   const names = worktreeNames(repo)
   const liveBranches = new Set(branches.values())
@@ -322,7 +336,17 @@ function main(argv: string[]): number {
     let hold = false
     let reflected: { pr: string; steps: BoardStep[] } | null = null
     // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 과 goal 항목도 본다
-    if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree)) cmds.push(['set', id, '--worktree', ''])
+    const workerRows = boardWorkerRows(item)
+    const missing = new Set<string>()
+    for (const row of workerRows.filter((row) => row.status === 'working')) {
+      const end = row.dispatch && Object.hasOwn(workerEnds, row.dispatch) ? workerEnds[row.dispatch] : null
+      if (end) cmds.push(['worker-end', id, end, '--dispatch', row.dispatch!])
+      else if (names !== null && !names.has(row.worktree) && !missing.has(row.worktree)) {
+        missing.add(row.worktree)
+        cmds.push(['worker-end', id, 'lost', '--worktree', row.worktree, '--clear'])
+      }
+    }
+    if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree) && !workerRows.some((row) => row.status === 'working' && row.worktree === item.worktree)) cmds.push(['set', id, '--worktree', ''])
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
     let details = old
     const tagged = item.status === 'done' ? [] : taggedBoardSteps(boardBin, id, board, item)
@@ -343,10 +367,16 @@ function main(argv: string[]): number {
       }
     }
     reviewItems ??= reviewPrsByItem(repo)
-    const target = reviewPrOfItem(id, reviewItems)
+    const reviewOnly = isReviewItem(item, reviewOrigins)
+    const target = reviewOnly ? rowsReviewPr(item) ?? reviewPrOfItem(id, reviewItems) : null
     const review = target === null ? null : [id, String(target)]
-    const reviewDone = review && !SKIP_STATUS.has(String(item.status)) &&
-      (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)) || stateFor(review[1]) === 'MERGED')
+    const endedNow = cmds.some((cmd) => cmd[0] === 'worker-end')
+    const endedAfterChange = typeof item.stepAt === 'string' && workerRows.some((row) =>
+      typeof row.endedAt === 'string' && Date.parse(row.endedAt) > Date.parse(String(item.stepAt)))
+    const rowsDone = reviewOnly && workerRows.length > 0 && (endedNow || endedAfterChange) &&
+      !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !(names !== null && !names.has(row.worktree)))
+    const reviewDone = !SKIP_STATUS.has(String(item.status)) && (rowsDone || (review &&
+      ((!Array.isArray(item.workers) && (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)))) || stateFor(review[1]) === 'MERGED')))
     if (reviewDone) {
       const steps = boardSteps(boardBin, id, board)
       if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }

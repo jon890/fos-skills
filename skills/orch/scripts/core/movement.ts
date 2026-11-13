@@ -1,4 +1,5 @@
 import { itemBusy } from './auto-advance.ts'
+import { boardWorkerRows } from './board-workers.ts'
 import { prNumbers } from './board.ts'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
@@ -130,6 +131,7 @@ export function stalledStages(items: Json[], live: ReadonlySet<string>, branches
     // 표시를 읽은 줄은 기능을 꺼도 첫 번호 단계를 쓴다. 옛 표시 없는 줄의 판정은 유지한다.
     const step = fact?.mark ? fact.step : pendingStep(item)
     if (step === null) continue
+    if (boardWorkerRows(item).some((row) => row.status === 'working' && liveWorkerOn({ worktree: row.worktree, branch: row.branch }, live, branches))) continue
     const worktree = typeof item.worktree === 'string' && item.worktree.trim() ? item.worktree.trim() : null
     const branch = typeof item.branch === 'string' && item.branch.trim() ? item.branch.trim() : null
     if (!launched && !worktree && !branch) continue

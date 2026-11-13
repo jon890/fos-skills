@@ -1,4 +1,4 @@
-import { autoStepNumberOf } from '../scripts/lib/spec.ts'
+import { autoStepNumberOf, boardNewOf, workerRoleOf } from '../scripts/lib/spec.ts'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -404,4 +404,12 @@ test('자동 진행 단계는 지시서 머리에 명시한 번호만 읽는다'
   assert.equal(autoStepNumberOf('# 일\n## 할 일\n자동 진행 단계: 2\n'), null)
   for (const value of ['0', '-1', '1.5', 'two', '9007199254740992']) assert.throws(() => autoStepNumberOf(`# 일\n자동 진행 단계: ${value}\n`))
   assert.throws(() => autoStepNumberOf('# 일\n자동 진행 단계: 2\n자동 진행 단계: 3\n'))
+})
+
+test('지시서 머리의 새 보드 항목과 검증 역할만 읽는다', () => {
+  for (const text of ['보드 항목: 새로', '- 보드 항목: 새로']) assert.equal(boardNewOf(text), true)
+  for (const text of ['## 할 일\n보드 항목: 새로', '보드 항목: 새 항목', '보드 항목 id: x']) assert.equal(boardNewOf(text), false)
+  assert.equal(workerRoleOf('worker 역할: 검증'), 'verify')
+  assert.equal(workerRoleOf('worker 역할: 리뷰'), null)
+  assert.equal(workerRoleOf('## 할 일\nworker 역할: 검증'), null)
 })

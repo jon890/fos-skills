@@ -1,5 +1,6 @@
 # {{PR 제목}} 리뷰 (PR #{{N}})
 
+<!-- `리뷰 PR:` 줄로 대상 PR 의 보드 항목에 리뷰 worker 로 붙는다. `보드 항목 id:` 는 적지 않는다. -->
 <!-- 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서 틀이다. 개별 지시서로 복사해 {{...}} 를 채운다. 파일 이름은 spec-review-pr-<N>.md 다. -->
 <!-- 줄 형식의 원본은 skills/orch/references/spec-writing.md 의 「넣을 것」 과 「리뷰 worker 지시서」 다. 아래 꼴을 바꾸면 worker_done 이 DONE-SUSPECT 로 분류되거나 등급별 건수를 읽지 못한다. -->
 

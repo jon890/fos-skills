@@ -95,6 +95,7 @@
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
 //        기록 실패는 stderr 로만 알리고 LAUNCHED 와 종료 코드는 유지한다.
+//        붙인 worker 는 `BOARD-ATTACH <항목> <역할>` 한 줄을 낸다.
 //        보드가 있으면 지시서의 항목 id, 제목과 마일스톤 단계(lib/milestones.ts)로 doing 항목을 갱신한다. 실패는 stderr 로 알리고 LAUNCHED 는 유지한다.
 //        설정이 보드를 가리키는데 파일이 없으면 그 사실을 알린다.
 //        핸들러의 실패와 이벤트 실행기의 예외(설정 파일 오류, state 폴더를 쓰지 못함 같은 것)가 모두 그렇다.
@@ -974,7 +975,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       err(`launch-worker: 띄운 단계 기록을 남기지 못했다: ${(e as Error).message}`)
     }
     try {
-      registerBoard(repo, a.spec, worktree, a.name, common.branch || '')
+      const attached = registerBoard(repo, a.spec, worktree, a.name, common.branch || '', dispatch)
+      if (attached?.attached) out(`BOARD-ATTACH ${attached.item} ${attached.role}`)
     } catch (e) {
       err(`launch-worker: 보드를 갱신하지 못했다: ${(e as Error).message}`)
     }

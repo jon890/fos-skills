@@ -353,7 +353,7 @@ async function recordFollowUp(a: Args, prior: Described, run: string, receipt: J
     const id = boardIdOf(spec.text)?.id
     if (id) recordStepLaunch(repo, id, dispatch, launch.branch || null, autoStepNumberOf(spec.text))
   } catch (e) { err(`send-to-worker: 띄운 단계 기록을 남기지 못했다: ${(e as Error).message}`) }
-  try { registerBoard(repo, a.spec!, prior.worktree, '', launch.branch || '') }
+  try { registerBoard(repo, a.spec!, prior.worktree, '', launch.branch || '', dispatch) }
   catch (e) { err(`send-to-worker: 보드를 갱신하지 못했다: ${(e as Error).message}`) }
   try {
     await fire('worker-launched', {
