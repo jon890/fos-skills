@@ -2,6 +2,7 @@
 // 사용법: orch board set <항목> <상태> | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
 //         orch board add-step <항목> "<글>" | show <항목>
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
+// 경고(stderr)는 board.ts 가 낸다: 단계 줄이 progress 의 전체 값을 넘으면 progress 를 지우고, 글에 #번호 와 머지 낱말이 있는데 --on 이 없으면 알린다.
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
 // 진입점의 --full 은 모든 줄도 낸다. 종료 코드: 0 성공, 1 거절, 2 사용법·설정 오류.
 import { unmatchedRecords, unmatchedLine, unmatchedResolved } from '../lib/board-unmatched.ts'

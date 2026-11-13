@@ -39,6 +39,10 @@
 //     꼬리표가 있는 항목은 goal 도 사건별 단계만 끝내고 항목 상태와 꼬리표 없는 줄은 그대로 둔다.
 //     release 는 board-release.ts 에 맡긴다.
 //
+// 갱신 필요: 끝나지 않은 단계의 글에 이미 머지된 PR 번호(#N)가 있고 이 틱이 그 단계를 끝내지 않으면, 항목 id, 단계 번호, PR 번호를 알린다.
+//     자동으로 끝내지 않는다. 일이 끝났는지는 사람이 정한다. stages 가 가리키는 단계, 사건 꼬리표나 자동 진행 표시가 있는 단계,
+//     머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)과 done 항목은 알리지 않는다. 짧은 출력은 `BOARD <id> update-needed <단계> PR #<번호>` 다
+//
 // 모든 항목(done, goal 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
 // 창이 「worker 없음」 을 보이지 않게 한다. 워크트리 목록을 읽지 못하면 비우지 않는다
 //
@@ -92,6 +96,7 @@ import { pathOf } from '../lib/paths.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
 import { waitTimeMs } from '../core/step-ready.ts'
+import { withoutEvidence } from '../core/evidence.ts'
 import { parseStepMark } from '../../../../extensions/work-board/hooks/step-marks.js'
 import { stageTag, parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { emit, short } from '../lib/output.ts'
@@ -186,6 +191,29 @@ function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerd
   return judgeLastPr(repo, { number: num, title, branch }, rules)
 }
 
+// 끝나지 않았는데 머지된 PR 번호(#N)를 가리키는 단계. 이 틱의 명령이 끝낼 단계, stages 가 가리키는 사건 단계,
+// 사건 꼬리표나 자동 진행 표시가 있는 단계는 따로 끝나므로 뺀다. 단계 목록을 읽지 못하면 null 이다
+function staleSteps(
+  item: Record<string, unknown>, id: string, commands: string[][], boardBin: string, board: string,
+  stateFor: (pr: unknown) => string | null,
+): { number: number; pr: string }[] | null {
+  if (!/#\d/.test(JSON.stringify([item.details, item.next]))) return []
+  const steps = boardSteps(boardBin, id, board)
+  if (steps === null) return null
+  const scheduled = new Set(commands.filter((cmd) => cmd[0] === 'step' && cmd[1] === id).map((cmd) => Number(cmd[2])))
+  const events = Object.values(stagesOf(item) ?? {})
+  const known = prNumbers(item['merged-pr'])
+  const found: { number: number; pr: string }[] = []
+  for (const step of steps) {
+    if (step.done || scheduled.has(step.number) || events.includes(step.number)) continue
+    if (stageTag(step.text) !== null || parseEventTag(step.text) || parseStepMark(step.text)?.mark) continue
+    const pr = [...new Set([...withoutEvidence(step.text).matchAll(/#([1-9]\d*)(?!\d)/g)].map((m) => m[1]))]
+      .find((num) => known.has(num) || stateFor(num) === 'MERGED')
+    if (pr) found.push({ number: step.number, pr })
+  }
+  return found
+}
+
 function main(argv: string[]): number {
   let parsed
   try {
@@ -271,6 +299,8 @@ function main(argv: string[]): number {
     const cmds: string[][] = []
     const after: string[][] = []
     let finish = false
+    // 이번 틱에 머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)은 끝나지 않은 단계를 갱신 필요로 알리지 않는다
+    let hold = false
     let reflected: { pr: string; steps: BoardStep[] } | null = null
     // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 과 goal 항목도 본다
     if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree)) cmds.push(['set', id, '--worktree', ''])
@@ -350,10 +380,12 @@ function main(argv: string[]): number {
       const stages = stagesOf(item)
       const pendingFeature = merged && num ? featureCompletionProblem(repo, num, branch) : null
       if (pendingFeature) {
+        hold = true
         out(`board-sync: ${id} 는 기능 검증이 남았다: ${pendingFeature}`)
         brief(`BOARD ${id} pending-feature ${pendingFeature}`)
       } else if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
         // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
+        hold = true
         out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)
         brief(`BOARD ${id} finishing PR ${num}`)
       } else if (stages && (state === 'OPEN' || merged)) {
@@ -388,6 +420,7 @@ function main(argv: string[]): number {
           const verdict = judge(repo, num, rules)
           const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '마지막으로 봄') : verdict.last ? '마지막' : '중간'
           if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
+          if (verdict?.retry) hold = true
           if (!verdict?.retry) {
             const last = verdict?.last ?? true
             const reached = deployPending() && deploymentFor(num, deploy as { workflow: string; branch: string }) === 'success' ? 'deploy' : 'merge'
@@ -408,6 +441,7 @@ function main(argv: string[]): number {
         const verdict = judge(repo, num, rules)
         const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : 'PR 번호의 단계만 끝냄') : verdict.last ? '마지막' : '중간'
         if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
+        if (verdict?.retry) hold = true
         if (!verdict?.retry) {
           const last = verdict?.last !== false
           const matched = prSteps(steps, num)
@@ -438,6 +472,17 @@ function main(argv: string[]): number {
             after.push(['set', id, 'done', '--worktree', ''])
           }
         }
+      }
+    }
+    if (!hold && !finish && !review && item.status !== 'done') {
+      const stale = staleSteps(item, id, [...cmds, ...after], boardBin, board, stateFor)
+      if (stale === null) {
+        err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
+        return 1
+      }
+      for (const { number, pr } of stale) {
+        out(`board-sync: ${id} 갱신 필요: ${number} 번 단계가 머지된 PR #${pr} 를 가리키지만 끝나지 않았다. 자동으로 끝내지 않는다. 일이 끝났으면 orch board step ${id} ${number} done 으로 끝내고, 앞으로 자동으로 끝내려면 orch board step ${id} ${number} text "<줄 전체>" --on "${pr} merge" 로 사건을 붙인다`)
+        brief(`BOARD ${id} update-needed ${number} PR #${pr}`)
       }
     }
     const rewrite = details.length !== old.length || details.some((d, i) => d !== old[i])
