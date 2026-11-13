@@ -96,6 +96,14 @@ test('기본 보드가 없어도 루프가 지정 보드의 동기화를 실행�
   assert.equal(existsSync(fallback), false)
 })
 
+test('루프가 이미 읽은 dispatch 끝남을 보드 줄에 넘긴다', async () => {
+  board([{ id: 'a', status: 'done', workers: [{ role: 'review', worktree: 'r', dispatch: 'd', status: 'working', at: '2026-01-01', pr: 7 }] }])
+  const ctx: StepContext = { ...context(repo, undefined, undefined), tick: 1, runs: [{ run: 'run1' } as any], primary: null, loaded: null, previous: {}, lookup: { runs: [], rows: new Map([['run1', { ok: true, rows: [{ dispatchId: 'd', projection: { outcome: 'succeeded' } }] }]]) }, completions: new Map() }
+  const result = await syncBoard(ctx, initialState())
+  assert.deepEqual(result.errors, { board: null })
+  assert.equal(items()[0].workers[0].status, 'done')
+})
+
 test('단계 멈춤 조회와 등록도 지정 보드를 쓰고 기본 보드 글은 보존한다', () => {
   const original = readFileSync(fallback, 'utf8')
   board([{ id: 'a', status: 'doing', branch: 'feat/x', details: [{ text: '1. 구현', done: false }] }])

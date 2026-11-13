@@ -1,7 +1,9 @@
 // 보드 항목 id 로 대상 리뷰 PR 을 찾는 판정(lib/review.ts 의 reviewPrsByItem, reviewPrOfItem, boardItemOfDispatch)을 본다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -47,4 +49,17 @@ test('지시서 판정이 없으면 id 꼴로 읽고 다른 꼴은 리뷰 항목
   assert.equal(reviewPrOfItem('review-pr-486-b', none), 486)
   assert.equal(reviewPrOfItem('verify-pr-486', none), 486)
   assert.equal(reviewPrOfItem('review-pr-12abc', none), null)
+})
+
+test('명시한 항목에 붙은 리뷰 이력이 구현 항목을 닫지 않는다', () => {
+  const review = spec('attached-review.md', '# 리뷰\n보드 항목 id: attached\n리뷰 PR: #7')
+  writeFileSync(join(tmp, 'orch/state/launch-history.jsonl'), JSON.stringify({ dispatch: 'attached-review', at: '2026-11-13T03:00:00Z', worktree: 'r', spec: review }) + '\n')
+  const gh = writeNodeBin(tmp, 'gh', "process.stdout.write(process.argv.includes('list') ? '[]' : 'MERGED')")
+  const file = join(tmp, 'board.json')
+  for (const role of ['impl', null, 'review']) {
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'attached', status: 'doing', details: ['1. 구현'], ...(role ? { workers: [{ role, worktree: 'w', status: 'done', at: '2026-01-01', pr: 7 }] } : {}) }] }))
+    const r = spawnSync(process.execPath, [new URL('../scripts/board/board-sync.ts', import.meta.url).pathname, '--repo', tmp, '--board', file, '--completed-items', '["attached"]'], { env: { ...process.env, GH: gh, GIT_CEILING_DIRECTORIES: tmp }, encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, role === 'impl' ? 'doing' : 'done')
+  }
 })

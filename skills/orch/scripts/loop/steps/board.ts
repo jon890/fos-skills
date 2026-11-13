@@ -1,4 +1,5 @@
 // 보드 동기화(틱 3, 워크트리 정리 전): 보드 파일(lib/board-file.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
+// worker_done 과 이미 읽은 Orca 행에서 끝남을 모아 --worker-ends 로 넘긴다.
 //     결정이 남았을 때의 알림은 decisions.ts 가 맡는다.
 
 import { notifyUnmatched } from '../../lib/board-unmatched.ts'
@@ -12,7 +13,8 @@ import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
-import { oneLine, relay, SWEEP_TIMEOUT_MS } from './shared.ts'
+import { oneLine, relay, rowsOf, SWEEP_TIMEOUT_MS } from './shared.ts'
+import { hasWorkRows, rowsReviewPr, workingDispatches, workerEnds } from '../../core/board-workers.ts'
 
 export async function syncBoard(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { prs } = state
@@ -24,7 +26,22 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
       const args = ['--repo', ctx.repo]
       const reviews = new Set<number>()
       const byItem = reviewPrsByItem(ctx.repo)
-      const openItems = readBoard(boardPath(ctx.repo)).filter((item) => item.status !== 'done' && reviewPrOfItem(String(item.id), byItem) !== null).map((item) => String(item.id))
+      const boardItems = readBoard(boardPath(ctx.repo))
+      const openItems = boardItems.filter((item) => item.status !== 'done' && hasWorkRows(item) !== true && (rowsReviewPr(item) ?? reviewPrOfItem(String(item.id), byItem)) !== null).map((item) => String(item.id))
+      const watched = workingDispatches(boardItems)
+      if (watched.size) {
+        const rows = ctx.runs.flatMap((run) => {
+          if (!run.run) return []
+          const result = rowsOf(run.run, ctx.lookup)
+          return result.ok ? result.rows : []
+        })
+        const reported = new Set([...ctx.completions.values()].flat().flatMap((message) => {
+          const dispatch = context(message)[1]
+          return dispatch ? [String(dispatch)] : []
+        }))
+        const ends = workerEnds(rows, reported, watched)
+        if (Object.keys(ends).length) args.push('--worker-ends', JSON.stringify(ends))
+      }
       const pending = new Set(openItems.flatMap((id) => /^review-pr-(\d+)$/.test(id) ? [Number(id.slice('review-pr-'.length))] : []))
       const items = new Set<string>()
       const messages = [...ctx.completions.values()].flat().filter((message) => (message.outcome ?? payload(message).outcome) === 'succeeded')

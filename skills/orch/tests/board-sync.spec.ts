@@ -84,6 +84,60 @@ function load(): Record<string, Json> {
 
 const step = (text: string, done: boolean): Json => ({ text, done })
 
+const worker = (role: string, worktree: string, dispatch: string, extra = {}) => ({ role, worktree, dispatch, branch: 'feat/a', pr: null, at: '2026-01-01', status: 'working', endedAt: null, ...extra })
+
+test('루프 끝남은 해당 줄만 끝내고 done 항목의 줄도 끝낸다', () => {
+  const r = sync([
+    { id: 'a', status: 'doing', details: ['1. 남음'], workers: [worker('impl', 'w1', 'd1'), worker('review', 'r1', 'd2')] },
+    { id: 'b', status: 'done', workers: [worker('review', 'r2', 'd3')] },
+  ], ['--worker-ends', '{"d1":"done","d3":"done"}'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal((r.board.a.workers as any[])[0].status, 'done')
+  assert.equal((r.board.a.workers as any[])[1].status, 'working')
+  assert.equal((r.board.b.workers as any[])[0].status, 'done')
+  for (const value of ['[]', 'null', '{"d":"other"}', '{broken']) assert.equal(run(['--board', board, '--repo', tmp, '--worker-ends', value]).code, 2)
+})
+
+test('사라진 대표 줄을 끝낸 뒤 남은 후속 줄로 대표를 바꾼다', () => {
+  // 실제 git 워크트리 목록을 사용한다.
+  const git = (...args: string[]) => {
+    const r = spawnSync('git', ['-C', tmp, ...args], { encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+  }
+  git('init', '-q')
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-qm', 'init')
+  const name = basename(tmp)
+  for (const follow of [true, false]) {
+    const r = sync([{ id: 'a', status: 'doing', worktree: 'missing', details: ['1. 남음'], workers: [
+      worker('impl', 'missing', 'd1'), ...(follow ? [worker('follow', name, 'd2', { at: '2026-02-01' })] : []),
+    ] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal((r.board.a.workers as any[])[0].status, 'lost')
+    assert.equal(r.board.a.worktree, follow ? name : undefined)
+  }
+})
+
+test('리뷰 줄의 보고는 리뷰만 하는 항목만 닫고 구현 항목을 닫지 않는다', () => {
+  states = { '7': 'OPEN' }
+  const r = sync([
+    { id: 'rev-a', status: 'doing', details: ['1. 리뷰'], workers: [worker('review', 'r', 'd1', { pr: 7 })] },
+    { id: 'impl-a', status: 'doing', details: ['1. 구현'], workers: [worker('impl', 'w', 'd0'), worker('review', 'r2', 'd2', { pr: 7 })] },
+  ], ['--worker-ends', '{"d1":"done","d2":"done"}'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board['rev-a'].status, 'done')
+  assert.equal(r.board['impl-a'].status, 'doing')
+})
+
+test('구현 PR 이 머지되면 작업 중 리뷰 줄이 있어도 항목을 닫는다', () => {
+  states = { '7': 'MERGED' }
+  const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'], workers: [
+    worker('impl', 'w', 'd0'), worker('review', 'r', 'd1', { pr: 7 }),
+  ] }])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.a.status, 'done')
+  assert.equal((r.board.a.workers as any[])[1].status, 'working')
+})
+
 test('시각 wait 는 첫 단계가 아니어도 지난 줄만 끝내며 항목 상태는 유지한다', () => {
   const details = ['참고: 설명', '1. 아직 앞 단계', '2. [wait: 2020-01-01 00:00] 지난 시각',
     '3. [wait: 2099-01-01 00:00] 미래', '4. [wait: 2026-02-30 00:00] 잘못된 날짜', '5. [wait: 내일 아침] 글', '6. [wait] 조건']
