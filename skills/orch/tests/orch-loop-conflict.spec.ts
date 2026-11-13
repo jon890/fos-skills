@@ -434,7 +434,10 @@ describe('send-to-worker 의 사용법 오류', () => {
     assert.equal(r.code, 0, r.stdout + r.stderr)
     const last = JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '') as Json
     assert.equal((last.errors as Json)['conflicts@r'], 'send-to-worker 사용법 오류')
-    assert.equal(conflictErrors().length, 1, '같은 이유를 다시 알렸다')
+    assert.equal(conflictErrors().length, 2, '세 번째 실패 틱은 모음 알림 외에 바로 알림을 하나 보낸다')
+    const fourth = loop(['--tick', '--tick-number', '4'])
+    assert.equal(fourth.code, 0, fourth.stdout + fourth.stderr)
+    assert.equal(conflictErrors().length, 2, '네 번째 실패 틱은 다시 알리지 않는다')
   })
 })
 

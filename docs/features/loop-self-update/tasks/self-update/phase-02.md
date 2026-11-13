@@ -46,13 +46,14 @@
 ### 4. 테스트
 
 - `skills/orch/tests/notice-digest.spec.ts` 39-60행: 기대값을 `[false, false, true]` 꼴로 바꾸고 제목의 「세 틱 넘게」 를 「세 번째 틱에」 로 고친다.
+- `skills/orch/tests/orch-loop-conflict.spec.ts`: 같은 충돌 오류의 세 번째 틱에 바로 알림이 추가되고, 네 번째에는 추가되지 않는지 확인한다.
 - `skills/orch/tests/loop-tick-failure.spec.ts`(신규): `tickCause` 와 `causeKey` 단위 사례. stderr 마지막 줄, `STALE-BUNDLE` 줄만 있는 stderr 에서 stdout 오류 줄로 넘어가기, 둘 다 없음, 200자 자르기, 시각·pid 만 다른 두 이유의 키가 같은지.
 - 같은 파일에 프로세스 사례 하나: `orch-loop.spec.ts` 「틱 자식의 실패」 의 꼴(가짜 ORCA, `tick_sec: 0.2`, `--foreground`)로 부모를 띄운 뒤 설정 파일(`.orch/config.json`)을 모르는 절이 든 내용으로 바꿔 틱 자식이 2 로 끝나게 한다. 3번째 실패 틱 뒤 가짜 ORCA 기록에 `WATCH-ERROR` 본문 `tick: 종료 코드 2: orch-loop: …` 가 바로 보내기로 하나 있고, 4번째·5번째 틱 뒤에도 하나뿐인지 본다. 설정을 되돌려 한 틱이 성공한 뒤 다시 깨 세 번 실패하면 하나 더 오는지 본다. 가짜 ORCA 와 설정 helper 는 `orch-loop.spec.ts` 의 것을 옮기지 말고 `skills/orch/tests/fixtures/` 에 이미 있는 helper(`fake-bin.ts`)를 쓴다. 모자라면 그 사례 파일 안에 둔다.
 
 ## 검증
 
 ```bash
-node scripts/run-tests.ts skills/orch/tests/notice-digest.spec.ts skills/orch/tests/loop-tick-failure.spec.ts skills/orch/tests/orch-loop.spec.ts skills/orch/tests/loop-steps.spec.ts
+node scripts/run-tests.ts skills/orch/tests/notice-digest.spec.ts skills/orch/tests/loop-tick-failure.spec.ts skills/orch/tests/orch-loop.spec.ts skills/orch/tests/loop-steps.spec.ts skills/orch/tests/orch-loop-conflict.spec.ts
 node scripts/run-tests.ts --tsc-only
 ```
 
@@ -65,4 +66,5 @@ node scripts/run-tests.ts --tsc-only
 | `skills/orch/scripts/loop/steps/errors.ts` | 수정 (주석) |
 | `skills/orch/scripts/loop/orch-loop.ts` | 수정 (머리 주석 「알림 방식」) |
 | `skills/orch/tests/notice-digest.spec.ts` | 수정 |
+| `skills/orch/tests/orch-loop-conflict.spec.ts` | 수정 (세 번째 틱 바로 알림) |
 | `skills/orch/tests/loop-tick-failure.spec.ts` | 신규 |
