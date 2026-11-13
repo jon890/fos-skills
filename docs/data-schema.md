@@ -137,6 +137,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `worktree` | 워크트리 이름. 줄의 열쇠 |
 | `branch` | 브랜치 이름 또는 `null` |
 | `pr` | PR 번호 또는 `null`. 리뷰·검증은 대상 PR |
+| `stages` | `pr=N,merge=M`. 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. 그 PR 의 단계 번호이고 없으면 칸이 없다 |
 | `status` | `working`, `done`, `lost`(보고 없이 끊김) |
 | `at` | 더하거나 다시 띄운 시각 |
 | `endedAt` | 끝난 시각 또는 `null` |

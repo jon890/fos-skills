@@ -52,5 +52,6 @@ node export-only-skills/korean-check/scripts/check.ts extensions/work-board/refe
 | `extensions/work-board/references/behavior.md` | 수정 |
 | `skills/orch/references/board.md` | 수정 |
 | `docs/data-schema.md` | 수정 |
+| `docs/features/board-item-workers/design.md` | 수정 (표기 검사에 걸린 낱말) |
 | `extensions/work-board/changes/board-item-worker-rows.minor.md` | 신규 |
 | `skills/orch/changes/board-item-multi-pr.minor.md` | 신규 |
