@@ -42,6 +42,8 @@
 //     CI 상태가 loop.json 에 남지 않아 다음 틱이 같은 실패를 다시 알린다. 틱 자식이 0 이 아니면 errors.tick 에 `종료 코드 <n>` 을 둔다.
 //     결과 줄 없이 끝나면 last_tick 은 그대로 두고 errors.tick 에 `종료 코드 <n>`(0 이 아닐 때)이나 `결과 줄 없음` 을 둔다.
 //
+//     실패 이유에는 출력의 원인 줄을 더하고, 숫자 묶음을 제외한 같은 원인이 연속 세 번째 틱이면 바로 한 번 알린다.
+//
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
@@ -58,6 +60,7 @@ import { envMs } from '../lib/env.ts'
 import { reclaim } from '../lib/events.ts'
 import { DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from '../lib/loop.ts'
 import type { LoopState } from '../lib/loop.ts'
+import { markStreakSent, watchStreak } from '../lib/notice-digest.ts'
 import { orcaJson } from '../lib/orca.ts'
 import { short } from '../lib/output.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
@@ -454,8 +457,17 @@ export function status(repo: string): number {
   return 0
 }
 
+// stderr 의 마지막 원인 줄을 우선하고 없으면 stdout 의 마지막 오류 줄을 쓴다.
+export function tickCause(stdout: string[], stderr: string[]): string | null {
+  const error = stderr.filter(line => line.trim() && !line.startsWith('STALE-BUNDLE ')).at(-1)
+    ?? stdout.filter(line => line.startsWith('orch-loop:') || /오류|실패|Error/.test(line)).at(-1)
+  return error?.slice(0, 200) ?? null
+}
+
+export function causeKey(reason: string): string { return reason.replace(/\d+/g, '#') }
+
 // 틱 자식의 출력에서 결과 줄을 꺼내고 나머지를 로그로 옮긴다
-function tickResult(done: RunResult): { result: TickResult | null; reason: string | null } {
+function tickResult(done: RunResult, staleLogged = false): { result: TickResult | null; reason: string | null } {
   const out = lines(done.stdout)
   let result: TickResult | null = null
   const last = out.at(-1)
@@ -470,10 +482,12 @@ function tickResult(done: RunResult): { result: TickResult | null; reason: strin
       // 결과 줄이 아니다
     }
   }
-  for (const line of [...out, ...lines(done.stderr)]) log(line)
+  for (const line of [...out, ...lines(done.stderr)]) if (!staleLogged || !line.startsWith('STALE-BUNDLE ')) log(line)
+  const cause = tickCause(out, lines(done.stderr))
+  const detail = cause === null ? '' : `: ${cause}`
   // 결과 줄이 있으면 종료 코드와 상관없이 낸다(머리 주석의 「틱 자식」)
-  if (done.code !== 0) return { result, reason: `종료 코드 ${done.code}` }
-  if (!result) return { result: null, reason: '결과 줄 없음' }
+  if (done.code !== 0) return { result, reason: `종료 코드 ${done.code}${detail}` }
+  if (!result) return { result: null, reason: `결과 줄 없음${detail}` }
   return { result, reason: null }
 }
 
@@ -591,7 +605,7 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       const tickKey = state.run ? `tick@${state.run}` : 'tick'
       if (reason !== null) {
         log(`WATCH-ERROR tick: ${reason}`)
-        if (state.errors[tickKey] !== reason) {
+        if (causeKey(state.errors[tickKey] ?? '') !== causeKey(reason)) {
           try {
             sendNotice('WATCH-ERROR', null, `tick: ${reason}`, state.run, ctx.repo)
             state.errors[tickKey] = reason
@@ -600,7 +614,13 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
           }
         }
       }
-      if (reason === null || state.errors[tickKey] === reason) state.errors[tickKey] = reason
+      if (reason === null || causeKey(state.errors[tickKey] ?? '') === causeKey(reason)) state.errors[tickKey] = reason
+      if (state.run && watchStreak(ctx.repo, tickKey, reason === null ? null : causeKey(reason))) {
+        try {
+          sendNotice('WATCH-ERROR', null, `tick: ${reason}`, state.run, ctx.repo, true)
+          markStreakSent(ctx.repo, tickKey)
+        } catch (e) { log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`) }
+      }
       dropStaleErrors(state.errors, runs, state.run)
       state.alive_at = iso()
       writeLoop(ctx.repo, state)

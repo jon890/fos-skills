@@ -84,7 +84,7 @@
 //     tick 이 결과를 차례로 합쳐 결과 줄을 낸다. 부모가 결과 줄을 loop.json 에 합치는 규칙은 lifecycle.ts 머리 주석의 「틱 자식」 이다.
 //
 // 알림 방식: 코디네이터가 할 일이 있는 kind 는 그 틱에 Run 메시지로 바로 보내고, WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED 는 loop.log 에 남긴 뒤
-//     state/notice-digest/<Run>.json 에 모아 pipeline.digest_sec(기본 1800)마다 DIGEST 하나로 보낸다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 바로 보낸다.
+//     state/notice-digest/<Run>.json 에 모아 pipeline.digest_sec(기본 1800)마다 DIGEST 하나로 보낸다. 같은 WATCH-ERROR 가 연속 세 번째 틱에 바로 보낸다.
 //     한 Run 에 여러 저장소의 루프가 있으면 lib/run-notice.ts 가 머신 폴더의 run-notices/<Run>/<해시> 로 다른 루프가 보낸 같은 알림을 건너뛴다.
 //     어떤 kind 가 어느 쪽인지의 표는 lib/notice-digest.ts 와 references/waiting.md 가 갖는다. 틱마다 Run 별로 flushDigest 를 부른다.
 //

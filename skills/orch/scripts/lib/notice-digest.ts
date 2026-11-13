@@ -5,7 +5,7 @@
 // 모아 보내는 kind(DIGEST_KINDS): WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED. 안내이거나 다음 틱에 풀리는 일이다.
 //   loop.log 에는 그 틱에 남고(호출자가 쓴다), Run 메시지는 state/notice-digest/<runKey>.json 에 쌓았다가 주기(pipeline.digest_sec, 기본 1800초)마다 DIGEST 하나로 보낸다.
 //   모을 것이 없으면 보내지 않는다. 마지막으로 보낸 시각(sent_at)은 처음 쌓은 시각으로 시작한다.
-//   같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면(streaks) 그 틱에 바로 한 번 보낸다.
+//   같은 WATCH-ERROR 가 연속 세 번째 틱에(streaks) 그 틱에 바로 한 번 보낸다.
 // 파일: { sent_at: ISO, items: [{ kind, text, at }], streaks: { <키>: { reason, count, sent } } }. 보낸 뒤에만 items 를 비운다.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -48,7 +48,7 @@ export function queueDigest(repo: string, run: string, kind: string, text: strin
   save(repo, run, data)
 }
 
-// 오류가 이어진 틱 수를 센다. 연속 세 틱을 넘기면 true 를 낸다(markStreakSent 로 보낸 것을 확정하면 오류가 풀릴 때까지 다시 내지 않는다). reason 이 null 이면 풀린 것이다
+// 오류가 이어진 틱 수를 센다. 연속 세 번째 틱에 true 를 낸다(markStreakSent 로 보낸 것을 확정하면 오류가 풀릴 때까지 다시 내지 않는다). reason 이 null 이면 풀린 것이다
 export function watchStreak(repo: string, key: string, reason: string | null): boolean {
   const data = load(repo, '__streaks__') ?? { sent_at: '', items: [], streaks: {} }
   const current = data.streaks[key]
@@ -60,7 +60,7 @@ export function watchStreak(repo: string, key: string, reason: string | null): b
   data.streaks[key] = next
   save(repo, '__streaks__', data)
   // 보낸 것으로 확정하는 것은 markStreakSent 다. 전송이 실패하면 다음 틱도 true 를 낸다
-  return next.count > STREAK_LIMIT && !next.sent
+  return next.count >= STREAK_LIMIT && !next.sent
 }
 
 // 연속 오류의 바로 보내기가 성공한 뒤 불러 같은 오류가 풀릴 때까지 다시 보내지 않게 한다

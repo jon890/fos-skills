@@ -36,12 +36,12 @@ test('DIGEST 전송이 실패하면 쌓아 둔 것을 지우지 않고 다음에
   bin.setRules([{ args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'n' } } }) }])
   assert.equal(flushDigest(repo, 'R', 1, Date.now() + 5000), true)
 })
-test('같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 한 번 바로 보내고 풀리면 다시 센다', () => {
-  assert.deepEqual([1, 2, 3, 4].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, false, true])
+test('같은 WATCH-ERROR 가 연속 세 번째 틱에 한 번 바로 보내고 풀리면 다시 센다', () => {
+  assert.deepEqual([1, 2, 3].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, true])
   markStreakSent(repo, 'q@R')
   assert.equal(watchStreak(repo, 'q@R', 'offline'), false)
   assert.equal(watchStreak(repo, 'q@R', null), false)
-  assert.deepEqual([1, 2, 3, 4].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, false, true])
+  assert.deepEqual([1, 2, 3].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, true])
 })
 test('한 Run 에 등록된 다른 저장소의 루프가 보낸 같은 알림은 보내지 않는다', t => {
   process.env.ORCH_MACHINE_DIR = join(repo, 'machine')
@@ -54,7 +54,7 @@ test('한 Run 에 등록된 다른 저장소의 루프가 보낸 같은 알림�
 })
 test('연속 오류의 바로 보내기가 실패하면 다음 틱도 다시 시도하고 성공을 확정한 뒤에는 멈춘다', () => {
   const fires = () => watchStreak(repo, 'q@R', 'offline')
-  assert.deepEqual([fires(), fires(), fires(), fires()], [false, false, false, true])
+  assert.deepEqual([fires(), fires(), fires()], [false, false, true])
   assert.equal(fires(), true, '전송이 실패해 확정하지 않았으면 다시 낸다')
   markStreakSent(repo, 'q@R')
   assert.equal(fires(), false)
