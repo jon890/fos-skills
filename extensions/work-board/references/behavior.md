@@ -157,4 +157,3 @@ PR 은 목록 조회에 성공한 시각, 알림은 inbox 가 넘긴 `fetchedAt`
 ## 플러그인에 넣기
 
 `.claude-plugin/plugin.json` 의 `hooks` 배열이 `extensions/work-board/hooks/hooks.json` 을 가리킨다. 훅 모듈은 `hooks/register.js` 하나다.
-
