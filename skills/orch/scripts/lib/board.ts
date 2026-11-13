@@ -259,8 +259,7 @@ export function boardSteps(bin: string, id: string, file: string): BoardStep[] |
   }
 }
 
-// pr 칸이 빈 항목을 브랜치로 찾아 그 PR 번호로 채운다. 채운 항목 id 를 내고, 찾지 못했거나 pr 칸에 이미 든 항목이거나
-// 둘 이상이면 null 이다. 보드 명령이 실패하면 Error 다
+// PR 제목의 업무 번호를 설정 규칙으로 읽고 어댑터의 번호 꼴로 맞춘다. 규칙이나 설정을 읽지 못하면 null 이다.
 export function prTaskRef(repo: string, title: string): string | null {
   try {
     const finish = section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS)
@@ -269,6 +268,9 @@ export function prTaskRef(repo: string, title: string): string | null {
   } catch { return null }
 }
 
+// pr 칸이 빈 항목을 브랜치로 찾아 그 PR 번호로 채운다. 채운 항목 id 를 내고, 찾지 못했거나 pr 칸에 이미 든 항목이거나
+// 둘 이상이면 null 이다. 보드 명령이 실패하면 Error 다
+// ref 를 주면 업무 번호도 빈 칸일 때만 함께 채운다.
 export function linkBoardPr(file: string, number: string, branch: string, ref?: string | null): string | null {
   const found = findBoardItems(file, number, branch, null)
   if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
