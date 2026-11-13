@@ -1087,6 +1087,10 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
       if (match(rel, config.core) || (!match(rel, config.tests) && !match(rel, config.docs))) core += lines
     }
     const metrics: Record<string, number> = { core_lines: core, total_lines: total, files: count }
+    if (config.grades && !['A', 'B', 'D'].every((name) => config.grades![name] && Object.entries(config.grades![name]).every(([key, value]) => key in metrics && typeof value === 'number' && Number.isFinite(value) && value >= 0))) {
+      warnings.push(`${configPath} — PR 크기 등급 설정은 A, B, D 기준과 유효한 수치가 필요하다`)
+      return
+    }
     const exceeds = (grade: string) => Object.entries(config.grades![grade]).some(([key, limit]) => metrics[key] > limit)
     const grade = config.grades ? (exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A') : null
     warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: ${config.grades ? `본 코드 ${core}줄, ` : ''}전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개${unknown ? ", 미상을 제외한 추정" : ""}).${grade === 'D' && unknown === 0 ? ' PR 나눔 검토' : ''}`)

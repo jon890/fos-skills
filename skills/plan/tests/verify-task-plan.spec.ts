@@ -610,6 +610,10 @@ test('PR 크기 추정은 저장소 등급과 미상 신규 파일을 알리고 
   checkEstimatedSize('plan', new Set(['src/new.ts\0신규']), repo.root, small)
   assert.match(small[0], /A등급/)
   assert.doesNotMatch(small[0], /PR 나눔 검토/)
+  repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 } } }))
+  const invalid: string[] = []
+  checkEstimatedSize('plan', new Set(), repo.root, invalid)
+  assert.match(invalid[0], /A, B, D 기준/)
   const noConfig = new Repo()
   noConfig.file('src/a.ts', 'a\nb\n')
   const estimate: string[] = []
