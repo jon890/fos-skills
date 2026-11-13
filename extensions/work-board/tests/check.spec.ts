@@ -1,27 +1,10 @@
-// c 다음 번호가 고르는 항목과 채우는 상태 확인 요청문을 본다 (docs/features/board-item-check REQ1~REQ3).
+// 제목 줄을 눌러 채우는 상태 확인·재개 요청문을 본다 (docs/features/board-item-check). 단축키(c 다음 번호)는 없앴다.
 //
 // 실행: node --test extensions/work-board/tests/check.spec.ts
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { CHECK_PROMPT, CHECK_ROWS, RESUME_PROMPT, checkPrompt, checkTargets, closeCancelsCheck, itemPrompt, onPaneClose, resumePrompt, toggleCheckMode, waitReasons } from '../hooks/register.js'
-
-test('대상은 진행 중 다음 대기 항목을 파일 순서로 고르고 앞 9개만 받는다', () => {
-  const items = [
-    { id: 'w1', status: 'wait' },
-    { id: 'd1', status: 'doing' },
-    { id: 'x', status: 'done' },
-    { id: 'q', status: 'decide' },
-    { id: 'g', status: 'goal' },
-    { id: 'd2', status: 'doing' },
-    { id: 'w2', status: 'wait' },
-  ]
-  assert.deepEqual(checkTargets(items).map((item) => item.id), ['d1', 'd2', 'w1', 'w2'])
-  const many = Array.from({ length: 12 }, (_, i) => ({ id: 'i' + i, status: 'doing' }))
-  assert.equal(CHECK_ROWS, 9)
-  assert.deepEqual(checkTargets(many).map((item) => item.id), many.slice(0, 9).map((item) => item.id))
-  assert.deepEqual(checkTargets(null), [])
-})
+import { CHECK_PROMPT, RESUME_PROMPT, checkPrompt, itemPrompt, resumePrompt, waitReasons } from '../hooks/register.js'
 
 test('요청문은 항목 id, 제목, 끝나지 않은 단계, worker, PR 번호를 담는다', () => {
   const item = { id: 'board-item-check', title: '보드 항목 확인', status: 'doing', pr: '#310', worktree: 'board-item-check',
@@ -86,24 +69,4 @@ test('클릭 요청문은 대기 항목이면 재개, 진행 중이면 상태 �
   const doing = { id: 'd', status: 'doing', next: '1. 구현' }
   assert.equal(itemPrompt(wait, null, null), resumePrompt(wait, null, null))
   assert.equal(itemPrompt(doing, null, null), checkPrompt(doing, null, null))
-})
-
-test('확인 모드에서 사람이 창을 닫으면(Esc) 모드만 끄고, 엔진의 unload 나 모드 밖의 닫기는 그대로 닫는다 (REQ1)', () => {
-  assert.equal(closeCancelsCheck({ id: 'work-board', origin: { kind: 'person' } }, true), true)
-  assert.equal(closeCancelsCheck({ id: 'work-board', origin: { kind: 'person' } }, false), false)
-  assert.equal(closeCancelsCheck({ id: 'work-board', origin: { kind: 'unload' } }, true), false)
-  assert.equal(closeCancelsCheck({ id: 'other', origin: { kind: 'person' } }, true), false)
-})
-
-test('확인 모드의 창 닫기 훅은 next 없이 { value: undefined } 로 답해 창을 남기고, 모드를 끈 뒤에는 닫기를 넘긴다 (REQ1)', async () => {
-  const calls = []
-  const $ = { ui: { invalidate: (name) => calls.push('invalidate ' + name) } }
-  const next = async (e) => { calls.push('next ' + e.id); return { value: undefined } }
-  const esc = { id: 'work-board', origin: { kind: 'person' } }
-  assert.equal(toggleCheckMode(), true)
-  assert.deepEqual(await onPaneClose($, esc, next), { value: undefined })
-  assert.deepEqual(calls, ['invalidate ui.render'])
-  // 모드가 꺼졌으니 다음 Esc 는 엔진에 넘겨 창을 닫는다
-  await onPaneClose($, esc, next)
-  assert.deepEqual(calls, ['invalidate ui.render', 'next work-board'])
 })
