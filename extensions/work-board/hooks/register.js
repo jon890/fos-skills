@@ -1816,23 +1816,32 @@ export function register(on) {
       return counts ? [indent('steps', 2 + STEP_MARK_WIDTH, dim('counts', counts))] : []
     }
 
-    // 표시 다음에 업무 칩을 두고, 제목만 버튼으로 그려 상태 확인 요청문을 채운다.
-    const headChildren = (item, section, done, worker) => {
+    // 머리 줄. 칩이 없으면 「표시 제목」 가로 한 줄이다.
+    // 칩이 있으면 첫 줄에 표시와 칩, 다음 줄에 들여 쓴 제목을 둔다. 좁은 창에서 제목이 폭을 다 차지해 칩이 한 글자 폭으로 눌리지 않게 한다.
+    // 제목만 버튼으로 그려 상태 확인 요청문을 채운다.
+    const itemHead = (item, section, done, worker) => {
       const chip = chipOf(item, done)
       const title = item.title || item.id
-      return [
-        Text({ key: 'mark', color: section.color, children: [section.mark] }),
-        ...(chip ? [chip] : []),
-        done || !checkable(item)
-          ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: [title] })
-          : Button({ key: 'check-' + item.id, plain: true,
-            onPress: () => {
-              if (dismissMode) return
-              fillPrompt($, itemPrompt(item, worker, live.prs))
-              $.ui.invalidate('ui.render')
-            },
-            children: [Text({ key: 'title', bold: true, wrap: 'wrap', children: [title] })] }),
-      ]
+      const mark = Text({ key: 'mark', color: section.color, children: [section.mark] })
+      const titleView = done || !checkable(item)
+        ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: [title] })
+        : Button({ key: 'check-' + item.id, plain: true,
+          onPress: () => {
+            if (dismissMode) return
+            fillPrompt($, itemPrompt(item, worker, live.prs))
+            $.ui.invalidate('ui.render')
+          },
+          children: [Text({ key: 'title', bold: true, wrap: 'wrap', children: [title] })] })
+      if (!chip) return Box({ key: 'head', flexDirection: 'row', columnGap: 1, children: [mark, titleView] })
+      return Box({
+        key: 'head',
+        flexDirection: 'column',
+        children: [
+          Box({ key: 'chip-line', flexDirection: 'row', flexWrap: 'wrap', columnGap: 1,
+            children: [mark, Box({ key: 'chip-box', flexShrink: 0, children: [chip] })] }),
+          indent('title-line', 2, titleView),
+        ],
+      })
     }
     // 접힌 보기는 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다
     // 펼친 보기(d)는 「표시 제목」, 막대, 담당·PR, 모든 단계 줄을 적힌 순서대로 그린다
@@ -1848,14 +1857,7 @@ export function register(on) {
         key: 'item-' + item.id,
         flexDirection: 'column',
         children: [
-          Box({
-            key: 'head',
-            flexDirection: 'row',
-            columnGap: 1,
-            children: [
-              ...headChildren(item, section, done, worker),
-            ],
-          }),
+          itemHead(item, section, done, worker),
           ...(done ? [] : [indent('bar', 2, bar
             ? Text({ color: section.color, wrap: 'truncate', children: [bar] })
             : Text({ dimColor: true, children: ['진행률 없음'] }))]),

@@ -597,16 +597,27 @@ test('넘기기(x) 모드에서는 항목 제목 줄을 눌러도 요청문을 �
   await ui.unmount()
 })
 
-test('칩은 버튼 밖에서 표시와 제목 사이에 있고 버튼에는 제목만 있다', async ($, on) => {
+test('칩이 있으면 첫 줄에 표시와 칩, 다음 줄에 들여 쓴 제목 버튼을 그리고 칩이 없으면 한 줄이다', async ($, on) => {
   await start($, on, undefined, JSON.stringify({ items: [
     { id: 't', title: '배포 #342 정리', status: 'doing', task: 'https://example.dooray.com/task/342', 'task-ref': 'P/342' },
+    { id: 'n', title: '칩 없음', status: 'doing' },
   ] }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const head = await ui.find({ type: 'Box', key: 'head' })
-  const [mark, link, button] = head.children as Drawn[]
+  const heads = await ui.findAll({ type: 'Box', key: 'head' })
+  const [withChip, noChip] = heads as Drawn[]
+  const [chipLine, titleLine] = withChip.children as Drawn[]
+  expect(withChip.props.flexDirection).toBe('column')
+  const [mark, chipBox] = chipLine.children as Drawn[]
   expect(mark.type).toBe('Text'); expect(textOf(mark)).toBe('▶')
+  const link = (chipBox.children as Drawn[])[0]
   expect(link.type).toBe('Link'); expect(textOf(link)).toBe('[두레이 P/342]')
+  expect(chipBox.props.flexShrink).toBe(0)
+  expect(titleLine.props.paddingLeft).toBe(2)
+  const button = (titleLine.children as Drawn[])[0]
   expect(button.type).toBe('Button'); expect(textOf(button)).toBe('배포 #342 정리')
+  // 칩이 없는 항목은 표시와 제목이 가로 한 줄이다
+  expect(noChip.props.flexDirection).toBe('row')
+  expect((noChip.children as Drawn[]).map((c) => c.type)).toEqual(['Text', 'Button'])
   await ui.unmount()
 })
 
