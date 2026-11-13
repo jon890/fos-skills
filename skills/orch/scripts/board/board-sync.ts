@@ -370,10 +370,13 @@ function main(argv: string[]): number {
     const reviewOnly = isReviewItem(item, reviewOrigins)
     const target = reviewOnly ? rowsReviewPr(item) ?? reviewPrOfItem(id, reviewItems) : null
     const review = target === null ? null : [id, String(target)]
-    const rowsDone = reviewOnly && workerRows.length > 0 &&
+    const endedNow = cmds.some((cmd) => cmd[0] === 'worker-end')
+    const endedAfterChange = typeof item.stepAt === 'string' && workerRows.some((row) =>
+      typeof row.endedAt === 'string' && Date.parse(row.endedAt) > Date.parse(String(item.stepAt)))
+    const rowsDone = reviewOnly && workerRows.length > 0 && (endedNow || endedAfterChange) &&
       !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !(names !== null && !names.has(row.worktree)))
     const reviewDone = !SKIP_STATUS.has(String(item.status)) && (rowsDone || (review &&
-      (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)) || stateFor(review[1]) === 'MERGED')))
+      ((!Array.isArray(item.workers) && (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)))) || stateFor(review[1]) === 'MERGED')))
     if (reviewDone) {
       const steps = boardSteps(boardBin, id, board)
       if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }

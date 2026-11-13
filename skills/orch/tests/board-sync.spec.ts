@@ -159,7 +159,7 @@ test('구현 PR 이 머지되면 작업 중 리뷰 줄이 있어도 항목을 �
   assert.equal((r.board.a.workers as any[])[1].status, 'working')
 })
 
-test('리뷰만 있는 항목은 마지막 줄이 끊겨도 닫고 이미 끝난 줄도 복구한다', () => {
+test('리뷰만 있는 항목은 마지막 줄이 끊겨도 닫고 상태 변경 뒤 끝난 줄만 복구한다', () => {
   states = { '7': 'OPEN' }
   for (const first of ['done', 'lost']) {
     const r = sync([{ id: 'review-pr-7-a', status: 'doing', details: ['1. 리뷰'], workers: [
@@ -170,11 +170,21 @@ test('리뷰만 있는 항목은 마지막 줄이 끊겨도 닫고 이미 끝난
     assert.equal(r.board['review-pr-7-a'].status, 'done')
     assert.equal((r.board['review-pr-7-a'].workers as any[])[1].status, 'lost')
   }
-  const r = sync([{ id: 'review-pr-7-a', status: 'doing', details: ['1. 리뷰'], workers: [
-    worker('review', 'r1', 'd1', { pr: 7, status: 'lost' }),
+  const r = sync([{ id: 'review-pr-7-a', status: 'doing', stepAt: '2026-01-01T00:00:00Z', details: ['1. 리뷰'], workers: [
+    worker('review', 'r1', 'd1', { pr: 7, status: 'lost', endedAt: '2026-01-02T00:00:00Z' }),
   ] }])
   assert.equal(r.code, 0, r.result.stderr)
   assert.equal(r.board['review-pr-7-a'].status, 'done')
+})
+
+test('다시 연 리뷰 항목은 지난 끝남과 지난 완료 보고로 닫지 않는다', () => {
+  states = { '7': 'OPEN' }
+  const r = sync([{ id: 'review-pr-7', status: 'doing', stepAt: '2026-01-03T00:00:00Z', details: [{ text: '1. 후속 확인', done: false }], workers: [
+    worker('review', 'r1', 'd1', { pr: 7, status: 'done', endedAt: '2026-01-02T00:00:00Z' }),
+  ] }], ['--worker-ends', '{"d1":"done"}', '--completed-items', '["review-pr-7"]', '--completed-reviews', '[7]'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board['review-pr-7'].status, 'doing')
+  assert.equal((r.board['review-pr-7'].details as any[])[0].done, false)
 })
 
 test('시각 wait 는 첫 단계가 아니어도 지난 줄만 끝내며 항목 상태는 유지한다', () => {
