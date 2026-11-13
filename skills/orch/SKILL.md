@@ -47,7 +47,7 @@ orch doctor
 셸 함수는 그 Bash 호출 안에서만 살아, 다른 문서의 `orch` 명령도 같은 셸에서는 이 줄을 먼저 둔다.
 `CLI-MISSING`, `CLI-STALE` 이면 다음 줄의 `orch doctor install-cli` 를 한 번 돌린다. `CLI-CONFLICT`(다른 `orch` 가 있어 덮지 않았다)와 `CLI-NOT-ON-PATH` 는 사용자에게 알린다.
 `OLD-CALL`, `DIRECT-PATH` 는 그 저장소의 오버레이·공통 지시서·핸들러가 옛 꼴로 orch 를 부른다는 뜻이다. 진행을 막지 않으니 다음 줄의 새 꼴로 그 저장소 worker 에게 고치게 한다.
-`LOOP-STALE` 이면 다음 줄의 명령으로 다시 시작한다. `WAITER-LEFT` 는 옛 대기 종료 안내를 따른다.
+doctor·status 의 `LOOP-STALE` 은 루프가 스스로 다시 뜨기를 기다리는 중이거나 이 기능 전 번들의 루프다. `LOOP-UPDATE-FAIL` 을 받았거나 오래 남으면 안내된 stop·start 명령으로 다시 시작한다([플러그인을 갱신한 뒤](references/waiting.md#플러그인을-갱신한-뒤)). `WAITER-LEFT` 는 옛 대기 종료 안내를 따른다.
 
 새 세션을 시작하거나 압축·계정 전환 뒤에는 `orch worker adopt` 로 이전 세션에서 떨어진 터미널을 확인한다. 저장소는 작업 폴더에서 읽고, 다른 저장소면 `--repo` 를 준다. 목록을 검토한 뒤 이어받을 때만 `--apply` 를 쓴다. 상세는 [`references/launch.md`](references/launch.md) 의 「이전 세션 이어받기」 를 따른다.
 

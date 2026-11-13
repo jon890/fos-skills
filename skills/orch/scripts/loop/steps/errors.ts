@@ -50,7 +50,7 @@ export function reporter(ctx: StepContext): { report: Report; errors: Record<str
     const key = keyOf(source, run)
     const kind = opts.kind ?? 'WATCH-ERROR'
     const text = opts.text ?? `${source}: ${reason}`
-    // 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 모으지 않고 바로 보낸다(lib/notice-digest.ts)
+    // 같은 WATCH-ERROR 가 연속 세 번째 틱에 모으지 않고 바로 보낸다(lib/notice-digest.ts)
     const streak = kind === 'WATCH-ERROR' && run ? watchStreak(ctx.repo, key, reason) : false
     if (reason === null) { errors[key] = null; return }
     errors[key] = previous[key] === reason ? reason : null

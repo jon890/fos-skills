@@ -5,6 +5,7 @@ export const DEFAULT_TICK_SEC = 300
 export const MIN_DEAD_SEC = 120
 
 export type LoopState = {
+  bundle_version?: string | null
   pid: number
   run: string | null
   runs?: string[]

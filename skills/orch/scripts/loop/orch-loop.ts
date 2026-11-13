@@ -43,7 +43,7 @@
 //                    pid 가 살아 있어도 그 명령줄에 orch-loop 가 없으면 루프가 아니다. 죽은 루프의 pid 를 다른 프로세스가 다시 받았을 수 있다.
 //                    ps 로 판정할 수 없으면(lib/loop.ts 의 isLoopProcess 가 null) 신호를 보내지 않고 LOOP-STOP-UNKNOWN <pid> <이유> 와 1.
 //                    루프가 아닌 프로세스에 TERM 을 보내지 않으려는 것이다
-//     --status       LOOP-ALIVE <pid> run=<…> last_tick=<…> alive_at=<…> 와 0, LOOP-DEAD <repo> <이유> 와 1. 판정은 lib/loop.ts 의 loopStatus
+//     --status       LOOP-ALIVE <pid> run=<…> last_tick=<…> alive_at=<…> bundle=<버전 또는 -> 와 0, LOOP-DEAD <repo> <이유> 와 1. 판정은 lib/loop.ts 의 loopStatus
 //     --foreground   지금 프로세스에서 틱을 돈다. --start 의 자식과 테스트가 쓴다. 신호를 받으면 진행 중인 틱 자식을 끝내고(lifecycle.ts 머리 주석의 「틱 자식」)
 //                    128 + 신호 번호
 //     --once         --foreground 와 함께 틱 한 번만 돌고 0 으로 끝난다
@@ -85,7 +85,7 @@
 //     tick 이 결과를 차례로 합쳐 결과 줄을 낸다. 부모가 결과 줄을 loop.json 에 합치는 규칙은 lifecycle.ts 머리 주석의 「틱 자식」 이다.
 //
 // 알림 방식: 코디네이터가 할 일이 있는 kind 는 그 틱에 Run 메시지로 바로 보내고, WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED 는 loop.log 에 남긴 뒤
-//     state/notice-digest/<Run>.json 에 모아 pipeline.digest_sec(기본 1800)마다 DIGEST 하나로 보낸다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 바로 보낸다.
+//     state/notice-digest/<Run>.json 에 모아 pipeline.digest_sec(기본 1800)마다 DIGEST 하나로 보낸다. 같은 WATCH-ERROR 가 연속 세 번째 틱에 바로 보낸다.
 //     한 Run 에 여러 저장소의 루프가 있으면 lib/run-notice.ts 가 머신 폴더의 run-notices/<Run>/<해시> 로 다른 루프가 보낸 같은 알림을 건너뛴다.
 //     어떤 kind 가 어느 쪽인지의 표는 lib/notice-digest.ts 와 references/waiting.md 가 갖는다. 틱마다 Run 별로 flushDigest 를 부른다.
 //

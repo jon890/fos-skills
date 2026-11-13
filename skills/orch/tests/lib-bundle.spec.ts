@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { COMMANDS } from '../scripts/lib/commands.ts'
-import { staleBundleWarning } from '../scripts/lib/bundle.ts'
+import { bundleVersion, currentBundle, ownBundle, staleBundleWarning } from '../scripts/lib/bundle.ts'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 let root: string, config: string, old: string, current: string
@@ -109,3 +109,18 @@ test('ORCH_CONTEXT 는 스크립트가 읽고 지워 자식에 물려주지 않�
   assert.equal(run.stdout, '{"run":"run-current","loop-repo":"registered"}\nnone\n')
 })
 
+
+test('번들 helper 는 다른 설치본과 버전을 읽고 깨진 파일은 무시한다', () => {
+  assert.equal(currentBundle(old, config), current)
+  assert.equal(currentBundle(current, config), null)
+  assert.equal(currentBundle(root, config), null)
+  assert.equal(currentBundle(old, '/missing'), null)
+  assert.ok(ownBundle())
+  const file = join(current, '.claude-plugin', 'plugin.json')
+  mkdirSync(dirname(file), { recursive: true })
+  assert.equal(bundleVersion(current), null)
+  for (const [raw, expected] of [['{"version":"1.2.3"}', '1.2.3'], ['{"version":3}', null], ['{"version":" "}', null], ['broken', null]] as const) {
+    writeFileSync(file, raw)
+    assert.equal(bundleVersion(current), expected)
+  }
+})
