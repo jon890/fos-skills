@@ -1,11 +1,11 @@
 // lib/board.ts 의 보드 항목 찾기(prNumbers, findBoardItems), 중간 PR 명령(intermediateCommands), 지시서의 중간 과정 줄(interimOf)을 본다. 보드는 임시 파일이다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { prTaskRef, findBoardItems, interimOf, intermediateCommands, noteLine, prNumbers, guardedCommands, staleBoardWrite } from '../scripts/lib/board.ts'
+import { linkBoardPr, prTaskRef, findBoardItems, interimOf, intermediateCommands, noteLine, prNumbers, guardedCommands, staleBoardWrite } from '../scripts/lib/board.ts'
 
 let tmp = ''
 let n = 0
@@ -154,4 +154,11 @@ test('PR 업무 번호는 설정 규칙으로 읽고 한글과 기본 프로젝�
   assert.equal(prTaskRef(repo, '[458] 제목'), 'P/458')
   assert.equal(prTaskRef(repo, '[한글/458] 제목'), '한글/458')
   assert.equal(prTaskRef(repo, '없음'), null); assert.equal(prTaskRef(repo, '[bad ref] 제목'), null)
+})
+
+test('하이픈으로 시작하는 업무 번호도 PR 과 함께 연결한다', () => {
+  const file = board([{ id: 'dash', status: 'wait', branch: 'feat/dash' }])
+  assert.equal(linkBoardPr(file, '99', 'feat/dash', '-x'), 'dash')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0]['task-ref'], '-x')
+  assert.equal(findBoardItems(file, '99', 'feat/dash', null)?.by, 'pr')
 })

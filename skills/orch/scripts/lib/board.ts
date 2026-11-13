@@ -275,7 +275,7 @@ export function linkBoardPr(file: string, number: string, branch: string, ref?: 
   const found = findBoardItems(file, number, branch, null)
   if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
   const bin = process.env.BOARD_BIN || BOARD_BIN
-  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, ...(ref ? ['--fill', '--task-ref', ref] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
   if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
   return found.ids[0]
 }

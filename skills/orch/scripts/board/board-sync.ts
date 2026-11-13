@@ -343,7 +343,7 @@ function main(argv: string[]): number {
         if (discovered) {
           item.pr = String(discovered.number)
           const ref = prTaskRef(repo, discovered.title ?? '')
-          cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch, ...(ref ? ['--fill', '--task-ref', ref] : [])])
+          cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch, ...(ref ? ['--fill', `--task-ref=${ref}`] : [])])
         }
       }
       const state = discovered ? (discovered.state ?? 'OPEN') : stateFor(item.pr)

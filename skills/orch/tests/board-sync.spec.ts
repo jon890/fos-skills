@@ -686,3 +686,11 @@ test('PR 제목의 번호는 PR 을 새로 연결할 때 빈 업무 칸에만 �
     assert.equal(got.board.empty['task-ref'], 'AI-스마트홈-AI/458'); assert.equal(got.board.kept['task-ref'], 'P/1'); assert.equal(got.board.linked['task-ref'], undefined); assert.equal(got.board.url['task-ref'], undefined)
   }
 })
+
+test('하이픈으로 시작하는 PR 업무 번호를 옵션과 구분한다', () => {
+  mkdirSync(join(tmp, '.orch'), { recursive: true })
+  writeFileSync(join(tmp, '.orch/config.json'), JSON.stringify({ finish: { task_pattern: String.raw`\[([^\]]+)\]` } }))
+  const got = sync([{ id: 'dash', status: 'wait', branch: 'feat/dash' }], ['--open-prs', JSON.stringify([{ number: 99, headRefName: 'feat/dash', title: '[-x] 고침' }])])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.dash['task-ref'], '-x'); assert.equal(String(got.board.dash.pr), '99')
+})
