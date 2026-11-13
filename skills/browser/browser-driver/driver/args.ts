@@ -39,6 +39,17 @@ export function parseJsArgs(args: string[]): [string, string, bigint | null] {
   return [rest[0], rest[1], timeout]
 }
 
+// `shot <handle> [path] [--size WxH]` → [handle, path 또는 생략, [너비, 높이] 또는 생략]. 크기는 CSS 픽셀이다
+export function parseShotArgs(args: string[]): any[] {
+  const [rest, raw] = splitOption(args, '--size')
+  if (raw === null) return rest
+  if (rest.length < 1 || rest.length > 2) throw new UsageError('인자가 모자라거나 남는다. shot <handle> [path] [--size WxH]')
+  const m = /^(\d+)x(\d+)$/i.exec(raw)
+  const [w, h] = m ? [Number(m[1]), Number(m[2])] : [0, 0]
+  if (w < 1 || h < 1 || w > 16384 || h > 16384) throw new UsageError(`--size 는 WxH 꼴의 1 이상 16384 이하 픽셀이어야 한다 (예: 1280x800): ${raw}`)
+  return [rest[0], rest.length > 1 ? rest[1] : undefined, [w, h]]
+}
+
 // `<handle> <x> <y> ...` 를 [handle, 좌표..., button] 로 정규화한다. 좌표는 CSS 픽셀이다
 export function parsePointerArgs(cmd: string, args: string[], points: number, allowButton: boolean): [string, ...unknown[]] {
   const [rest, button] = allowButton ? splitOption(args, '--button') : ([[...args], null] as [string[], null])
