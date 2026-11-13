@@ -566,7 +566,7 @@ function checkCli(skillDir: string): string[] {
   const pluginBin = real(dirname(launcher))
   const dirs = (process.env.PATH ?? '').split(delimiter).filter((dir) => dir && real(dir) !== pluginBin)
   if (!dirs.some((dir) => real(dir) === real(dirname(file)))) {
-    lines.push(`CLI-NOT-ON-PATH ${dirname(file)}`, `  셸 설정(~/.zshrc 같은 것)에 export PATH="${dirname(file)}:$PATH" 를 더한다`)
+    lines.push(`CLI-NOT-ON-PATH ${dirname(file)}`, `  셸 설정(비대화형 셸도 읽는 ~/.zshenv 같은 것)에 export PATH="${dirname(file)}:$PATH" 를 더한다`)
   }
   return lines
 }

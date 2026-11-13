@@ -1,5 +1,6 @@
 // `orch doctor install-cli`. 이 번들의 플러그인 루트 실행기 `bin/orch` 를 `~/.local/bin/orch` 에 복사해, Claude 세션 밖의 셸(Codex, 사람)에서도
 // `orch` 를 부르게 한다. Claude 세션의 Bash 는 플러그인 bin/ 이 PATH 에 들어가 이 설치가 필요 없다.
+// worker 를 띄울 때(`orch worker launch`)는 worker 셸의 PATH 에 이 사본이 있어야 한다(lib/worker-path.ts). PATH 에 그 폴더를 두는 설정은 비대화형 셸도 읽는 파일(zsh 는 ~/.zshenv)에 둔다.
 // 실행기는 설치 기록을 따라가므로 사본은 한 번만 깔면 된다. 실행기 자체가 바뀌면 doctor 가 CLI-STALE 로 다시 깔라고 알린다.
 //
 // 사용법:
@@ -87,7 +88,7 @@ function main(argv: string[]): number {
   }
   process.stdout.write(`${verdict} ${target}\n`)
   if (!(process.env.PATH ?? '').split(delimiter).includes(dirname(target))) {
-    process.stderr.write(`install-cli: ${dirname(target)} 가 PATH 에 없다. 셸 설정에 export PATH="${dirname(target)}:$PATH" 를 더한다\n`)
+    process.stderr.write(`install-cli: ${dirname(target)} 가 PATH 에 없다. 셸 설정(비대화형 셸도 읽는 ~/.zshenv 같은 것)에 export PATH="${dirname(target)}:$PATH" 를 더한다\n`)
   }
   return 0
 }

@@ -12,6 +12,7 @@ import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
+import { workerPathWithOrch } from './fixtures/worker-orch.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/launch-worker-run.ts', import.meta.url))
@@ -135,6 +136,8 @@ beforeEach(() => {
     SPEC_LINT: join(binDir, 'spec-lint-ok.sh'),
     // 실제 Orca 프로필에 기대지 않게 없는 폴더로 고정한다(Orca 없음이라 프로필 판정을 건너뛴다). 판정은 「claude 프로필 준비 판정」 에서 본다
     ORCA_CLAUDE_PROFILES: join(tmp, 'no-profiles'),
+    // 이 기계의 셸 설정에 기대지 않게 worker 셸의 PATH 를 고정한다. 판정은 「worker 셸의 orch 판정」 에서 본다
+    ORCH_WORKER_PATH: workerPathWithOrch(tmp),
     LAUNCH_POLL: '0',
     LAUNCH_WT_POLL: '0',
     LAUNCH_WT_WAIT: '3',
@@ -1868,6 +1871,64 @@ describe('모델과 effort 검사', () => {
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /--model \(없음\), 지시서 gpt-6\.1-sol/)
     assert.doesNotMatch(r.stderr, /경고/)
+  })
+})
+
+describe('worker 셸의 orch 판정', () => {
+  // 임시 HOME 으로 ~/.local/bin 사본의 유무를 정한다
+  function withoutOrchOnPath(copy: boolean): void {
+    const home = join(tmp, 'home')
+    mkdirSync(join(home, '.local', 'bin'), { recursive: true })
+    if (copy) writeFileSync(join(home, '.local', 'bin', 'orch'), '#!/usr/bin/env node\n// fos-skills orch launcher\n')
+    env.HOME = home
+    env.ORCH_WORKER_PATH = '/usr/bin:/bin'
+    // 안내 문구가 셸 종류로 갈리므로 이 기계의 SHELL 에 기대지 않는다
+    env.ORCH_WORKER_SHELL = '/bin/zsh'
+  }
+
+  for (const agent of [CLAUDE, CODEX]) {
+    test(`worker 셸의 PATH 에 orch 가 없으면 ${agent[1]} 도 워크트리를 만들거나 띄우기 전에 install-cli 를 안내하고 멈춘다`, () => {
+      withoutOrchOnPath(false)
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--', ...agent])
+      assert.equal(r.code, 1, both(r))
+      assert.match(r.stderr, /^거부: worker 터미널에서 orch 를 부를 수 없다\. .*PATH=\/usr\/bin:\/bin/m)
+      assert.match(r.stderr, /^orch doctor install-cli$/m)
+      assert.match(r.stderr, /^~\/\.zshenv에 export PATH=".*\/\.local\/bin:\$PATH" 를 더한다/m)
+      assert.equal(existsSync(log), false)
+    })
+  }
+
+  test('사본이 이미 깔려 있으면 PATH 설정만 안내한다', () => {
+    withoutOrchOnPath(true)
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.doesNotMatch(r.stderr, /install-cli/)
+    assert.match(r.stderr, /export PATH=/)
+  })
+
+  test('새 워크트리를 만드는 호출도 make-worktree 전에 멈춘다', () => {
+    withoutOrchOnPath(false)
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--repo', tmp, '--name', 'x', '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /worker 터미널에서 orch 를 부를 수 없다/)
+    assert.doesNotMatch(both(r), /워크트리를 만들었다/)
+  })
+
+  test('--terminal 로 이어 쓰는 터미널은 이미 떠 있어 보지 않는다', () => {
+    withoutOrchOnPath(false)
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'])
+    assert.equal(r.code, 0, both(r))
+  })
+
+  test('worker 셸의 PATH 에 orch 가 있으면 띄운다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
   })
 })
 
