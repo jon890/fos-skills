@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path'
 import { specHold } from '../../lib/auto-merge.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { specFiles } from '../../lib/last-pr.ts'
+import { mainCheckout } from '../../lib/git.ts'
 import { registeredRuns } from '../../lib/loop.ts'
 import { pathOf } from '../../lib/paths.ts'
 import { branchesOf } from '../../lib/spec.ts'
@@ -22,7 +23,7 @@ export function specTargets(repo: string, runs?: SpecRun[]): Map<string, { run: 
   const targets = new Map<string, { run: string; text: string; hold: string | null }>()
   for (const { run, specsDir } of sources) {
     if (!run || !specsDir) continue
-    for (const spec of specFiles(isAbsolute(specsDir) ? specsDir : join(repo, specsDir))) {
+    for (const spec of specFiles(isAbsolute(specsDir) ? specsDir : join(mainCheckout(repo), specsDir))) {
       for (const branch of branchesOf(spec.text)) {
         if (!targets.has(branch)) targets.set(branch, { run, text: spec.text, hold: specHold(spec.text) })
       }

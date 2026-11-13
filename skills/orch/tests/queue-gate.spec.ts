@@ -2,6 +2,7 @@
 // 가짜 gh, git 은 merge-queue.spec.ts 와 같은 것을 쓴다(tests/fixtures/merge-queue-fakes.ts).
 
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -153,6 +154,31 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
       const r = await invoke(c, { '1': pr() }, 0)
       assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
       assert.match(r.stdout, invoke === gate ? /^HOLD 백업 대기$/m : /GATE-HOLD 백업 대기/)
+    }
+  })
+
+  test('워크트리에서도 주 checkout 의 상대경로 지시서를 찾는다', async (t) => {
+    const c = setup(t)
+    const root = c.tmp
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+    }
+    git('init', '-q', '--initial-branch=main')
+    git('-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'init')
+    const worktree = join(root, 'linked-worktree')
+    git('worktree', 'add', '--detach', worktree, 'HEAD')
+    mkdirSync(join(root, 'custom-specs'))
+    writeFileSync(join(root, '.orch', 'config.json'), JSON.stringify({ finish: { specs_dir: 'custom-specs' } }))
+    writeFileSync(join(root, 'custom-specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 주 checkout 의 확인 대기\n')
+    // gh 는 함수 가짜로 두고 git 은 실제 임시 저장소를 읽게 한다.
+    c.env.PATH = process.env.PATH
+    c.env.MERGE_QUEUE_FAKE_GIT = '0'
+    c.tmp = worktree
+    for (const invoke of [gate, queue]) {
+      const r = await invoke(c, { '1': pr() }, 0)
+      assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+      assert.match(r.stdout, invoke === gate ? /^HOLD 주 checkout 의 확인 대기$/m : /GATE-HOLD 주 checkout 의 확인 대기/)
     }
   })
 
