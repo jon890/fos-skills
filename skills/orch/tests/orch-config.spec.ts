@@ -62,6 +62,7 @@ test('show 는 읽기만 하고 잘못된 파일도 문제와 함께 보여 준�
   assert.equal(readFileSync(file, 'utf8'), text)
   writeFileSync(file, '{'); refused(['show'], /읽지 못했다/)
   put(null); assert.equal(ok(['show']).stdout, 'null\n')
+  put({ pipeline: null }); assert.equal(ok(['show', 'pipeline']).stdout, 'null\n')
 })
 
 test('get 은 있는 값만 JSON 한 줄로 내고 모르는 이름과 부재를 구분한다', () => {
@@ -88,6 +89,8 @@ test('set 은 문자와 JSON 을 구분하고 배치 변경과 이전 값을 낸
   assert.equal(get().finish.deploy_branch, 'main')
   assert.equal(ok(['set', 'routing.review_author', '--', '--literal']).status, 0)
   assert.equal(get().routing.review_author, '--literal')
+  assert.ok(readFileSync(file, 'utf8').endsWith('\n'))
+  assert.deepEqual(Object.keys(get()), ['routing', 'pipeline', 'queue', 'hooks', 'finish'])
 })
 
 test('새 오류와 같은 문구의 오류는 거절하고 기존의 다른 오류는 경고한다', () => {
@@ -124,6 +127,8 @@ test('옛 칸을 포함한 삭제와 변경은 막고 조회는 허용한다', (
   put({ queue: { before: 'echo old' } })
   for (const args of [['unset', 'queue'], ['unset', 'queue.before'], ['set', 'queue.before', 'echo new']]) refused(args, /doctor migrate-hooks/)
   assert.equal(ok(['get', 'queue.before']).stdout, '"echo old"\n')
+  ok(['set', 'routing.review_author', 'bot'])
+  assert.equal(get().queue.before, 'echo old')
   mkdirSync(join(repo, '.claude'), { recursive: true }); writeFileSync(join(repo, '.claude/orch-finish.json'), '{}')
   for (const args of [['show'], ['get', 'queue.before'], ['set', 'routing.review_author', 'bot'], ['unset', 'queue']]) refused(args, /옛|migrate/, 2)
 })
@@ -159,6 +164,16 @@ test('동시 set 은 두 값을 모두 남긴다', async () => {
   const results = await Promise.all([child(['set', 'routing.review_author', 'bot']), child(['set', 'pipeline.tick_sec', '60', '--json'])])
   for (const result of results) assert.equal(result.code, 0, result.err)
   assert.deepEqual(get(), { ...get(), routing: { review_author: 'bot' }, pipeline: { tick_sec: 60 } })
+})
+
+test('잠금 실패와 깨진 JSON 의 set/unset 은 파일 바이트를 보존한다', () => {
+  put({ routing: { review_author: 'bot' } })
+  writeFileSync(`${file}.lock`, 'other')
+  refused(['set', 'routing.review_author', 'new'], /잠금/)
+  rmSync(`${file}.lock`)
+  writeFileSync(file, '{ broken')
+  refused(['set', 'routing.review_author', 'new'], /읽지 못했다/)
+  refused(['unset', 'routing'], /읽지 못했다/)
 })
 
 test('살아 있는 루프와 오래된 생존 기록에서만 재시작을 알린다', () => {

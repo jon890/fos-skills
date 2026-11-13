@@ -60,7 +60,8 @@ async function main(): Promise<number> {
       if (verb === 'show') {
         const name = values[0]
         if (name !== undefined && !(SECTIONS as readonly string[]).includes(name)) throw new ConfigError(`모르는 절이다: ${name}. ${SECTIONS.join(', ')} 중 하나다`)
-        console.log(JSON.stringify(name === undefined ? raw : getAt(raw, [name]) ?? {}, null, 2))
+        const value = name === undefined ? raw : getAt(raw, [name])
+        console.log(JSON.stringify(value === undefined ? {} : value, null, 2))
       } else {
         const names = paths[0]
         if (schema.knownPath(names) === 'unknown') throw new ConfigError(`모르는 키: ${names.join('.')}`)
