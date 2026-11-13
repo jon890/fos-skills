@@ -7,7 +7,7 @@ import { delimiter, join, sep } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { ConfigError } from '../scripts/lib/config.ts'
+import { ConfigError, HOOK_EVENT_NAMES } from '../scripts/lib/config.ts'
 import { EVENTS, fire, handlerFile, reclaim, unknownHandlers } from '../scripts/lib/events.ts'
 import type { FireContext } from '../scripts/lib/events.ts'
 import { alive } from '../scripts/lib/process.ts'
@@ -566,4 +566,8 @@ describe('출력과 기록', () => {
     assert.equal(existsSync(`${same}.1`), false, '1MB 와 같은데 옮겼다')
     assert.ok(statSync(same).size > 1_048_576)
   })
+})
+
+test('설정 검사표가 쓰는 이벤트 이름 목록은 EVENTS 의 키와 순서까지 같다', () => {
+  assert.deepEqual([...HOOK_EVENT_NAMES], Object.keys(EVENTS))
 })

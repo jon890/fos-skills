@@ -27,6 +27,9 @@ jobs:
           check-latest: true
       - name: Install Claude Code CLI
         run: npm install --global @anthropic-ai/claude-code@2.1.309
+      - name: Install npm dependencies
+        # 테스트 실행기 단계는 plugin test 가 실패해도 돈다. 설치를 그 뒤에 두면 건너뛰어져 의존 없이 돈다
+        run: npm ci --ignore-scripts
       - name: Run plugin tests from repository root
         run: claude plugin test .
       - name: Run repository test runner

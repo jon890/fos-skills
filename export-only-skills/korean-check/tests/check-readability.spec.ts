@@ -249,10 +249,10 @@ describe('훅 모드', () => {
 })
 
 describe('링크로 부르기', () => {
-  // 사용자 훅이 ~/.claude/scripts/check-readability.py 링크로 --hook 을 부른다(스펙 REQ6)
+  // 사용자 훅이 ~/.claude/scripts/check-readability.ts 링크로 --hook 을 부른다
   const link = () => {
-    const path = join(tempDir(), 'check-readability.py')
-    symlinkSync(realpathSync(join(SCRIPTS_DIR, 'check-readability.py')), path)
+    const path = join(tempDir(), 'check-readability.ts')
+    symlinkSync(realpathSync(join(SCRIPTS_DIR, 'check-readability.ts')), path)
     return path
   }
   test('일반 모드의 stdout 과 종료 코드가 같다', () => {

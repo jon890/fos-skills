@@ -114,7 +114,7 @@
 
 | 저장소 밖의 것 | 가리키는 곳 | 플러그인으로 옮긴 뒤 |
 | --- | --- | --- |
-| `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | 체크아웃의 `export-only-skills/korean-check/scripts/` 의 같은 이름 진입(node shebang JS). 새 `.ts` 를 불러 같은 결과를 낸다. 새로 거는 링크는 `.ts` 이름이다 | 그대로 둔다. 진입은 다음 major 에서 지운다 |
+| `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | korean-check 3.0.0 에서 옛 이름 진입을 지웠다. 루트 `package.json` 의 `"type": "module"` 아래에서 확장자 `.py` 는 실행되지 않는다. 새 링크는 `.ts` 이름이다(`export-only-skills/korean-check/scripts/*.ts`) | 링크와 훅 설정을 `.ts` 이름으로 바꾼다 |
 | `~/.claude/scripts/browser-driver` 링크 | 새로 거는 링크는 체크아웃의 `skills/browser/browser-driver/browser_driver.ts` 이다. 옛 `tools/browser-driver/browser_driver.py` 진입은 browser 3.0.0 에서 지웠다 | 옛 링크는 `install` 로 다시 건다 |
 | `~/.claude/rules/korean-style.md` 링크 | 체크아웃의 `export-only-skills/korean-check/references/korean-style.md` | 그대로 둔다 |
 | `~/.claude/settings.json` 의 `PostToolUse` 훅 | `~/.claude/scripts/` 의 링크 | 그대로 둔다 |
@@ -175,8 +175,8 @@
 | Node 버전 | 24 이상. 고른 이유는 [ADR-011](adr/011-node-24-minimum.md) 이 소유한다. 값의 원본은 `scripts/runtime-policy.json` 의 `min_node` 이고, 진입이 줄 머리에 적은 `const MIN_NODE = [a, b]` 를 저장소 검사가 그 값과 대조한다 |
 | 언어 | TypeScript. Python·셸 파일을 두지 않는다. JS 는 `scripts/runtime-policy.json` 의 `entry_js` 와 `legacy` 에 적은 진입만 둔다. 옮기는 동안 남은 파일은 같은 파일의 `pending` 이 영역별로 허용한다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
-| 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
-| import 범위 | 스킬과 도구는 자기 폴더와 Node 내장 모듈만 import 한다. 팀 저장소와 플러그인 캐시가 폴더 밖 배치를 보장하지 않는다 |
+| 의존 | 의존은 루트 `package.json` 에 정확한 버전으로 두고 `package-lock.json` 을 커밋한다. `node_modules` 는 커밋하지 않는다. 사용자 머신은 Claude Code 가 설치하고 체크아웃·워크트리·CI 는 `npm ci` 로 설치한다. bare import 는 `scripts/runtime-policy.json` 의 `bare_imports` 짝에서만 쓴다([ADR-030](adr/030-plugin-npm-dependencies.md)) |
+| import 범위 | 스킬과 도구는 자기 폴더, Node 내장 모듈, `bare_imports` 에 적은 의존만 import 한다. 팀 저장소와 플러그인 캐시가 폴더 밖 배치를 보장하지 않는다 |
 | 호출 꼴 | 문서는 `node "$SKILL_DIR/scripts/<이름>.ts"` 로 부른다 |
 | 테스트 | `node:test` 의 `*.spec.ts` 를 `tests/` 아래 둔다. 돌리는 명령은 `node scripts/run-tests.ts` 이고 묶음 찾기는 그 머리 주석이 소유한다. `*.test.ts` 는 `claude plugin test .` 가 고르므로 쓰지 않는다 |
 | 주석 | 한국어로 쓴다. 함정에는 이유 주석을 단다. 머리 주석이 사용법, 옵션, 종료 코드를 소유하고 문서는 그것을 옮겨 적지 않는다 |
@@ -209,7 +209,7 @@
 ### 배치
 
 orch 의 값 판정은 `scripts/core/`, 외부 조회와 기록은 `scripts/lib/` 와 명령 파일이 맡는다.
-core 는 core 안의 상대 모듈과 허용한 내장 모듈만 가져온다. 기존 lib 경로는 호환 재수출로 남는다.
+core 는 core 안의 상대 모듈, 허용한 내장 모듈과 `config-schema.ts` 의 `zod` 만 가져온다. 기존 lib 경로는 호환 재수출로 남는다.
 [ADR-028](adr/028-orch-core-layer.md)이 선택 이유를, [경계 검사](../skills/orch/tests/core-boundary.spec.ts)가 허용 의존과 외부 상태 접근 금지를 소유한다.
 
 ```

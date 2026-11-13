@@ -115,8 +115,10 @@ describe('플러그인 매니페스트', () => {
   test('author 이름이 있다', () => assert.ok(load(PLUGIN).author.name))
 
   // 루트 bin/ 에는 orch 실행기 하나만 둔다. 공용 도구의 PATH 명령은 nhn-dev 가 소유한다. 근거는 docs/adr/004-no-plugin-bin.md
+  // package.json 은 실행기가 아니다. 루트의 "type": "module" 아래에서 CommonJS 인 orch 가 돌게 {"type": "commonjs"} 만 담는다(docs/adr/030-plugin-npm-dependencies.md)
   test('루트 bin/ 에는 orch 실행기 하나만 있다', () => {
-    assert.deepEqual(readdirSync(join(ROOT, 'bin')).sort(), ['orch'])
+    assert.deepEqual(readdirSync(join(ROOT, 'bin')).sort(), ['orch', 'package.json'])
+    assert.deepEqual(JSON.parse(readFileSync(join(ROOT, 'bin/package.json'), 'utf8')), { type: 'commonjs' })
     accessSync(join(ROOT, 'bin/orch'), constants.X_OK)
   })
 })

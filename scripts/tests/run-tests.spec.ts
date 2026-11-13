@@ -8,7 +8,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseArgs, reconcile } from "../run-tests.ts";
+import { installMismatch, parseArgs, reconcile } from "../run-tests.ts";
 
 const RUNNER = fileURLToPath(new URL("../run-tests.ts", import.meta.url));
 
@@ -282,6 +282,61 @@ test('release', async () => { while (!existsSync(${JSON.stringify(release)})) aw
     const done = await runner(root, ["t/a.spec.mjs"], { NODE_TEST_CONTEXT: "child-v8" });
     assert.equal(done.code, 0, done.out + done.err);
     assert.match(done.out, /^통과 t\/a\.spec\.mjs [\d.]+s$/m);
+  });
+});
+
+describe("의존 설치 확인", () => {
+  const lock = (version: string) => JSON.stringify({ packages: { "": {}, "node_modules/zod": { version } } });
+
+  test("package-lock.json 이 없으면 확인하지 않고 돈다", async () => {
+    const root = tempDir();
+    write(root, "t/a.spec.mjs", PASS);
+    const done = await runner(root, ["t/a.spec.mjs"]);
+    assert.equal(done.code, 0, done.out + done.err);
+  });
+
+  test("lock 만 있고 node_modules 가 없으면 2 와 안내가 나오고 테스트는 돌지 않는다", async () => {
+    const root = tempDir();
+    write(root, "package-lock.json", lock("4.6.7"));
+    write(root, "t/a.spec.mjs", PASS);
+    const done = await runner(root, ["t/a.spec.mjs"]);
+    assert.equal(done.code, 2, done.out + done.err);
+    assert.match(done.err, /^run-tests: 의존 설치가 lock 과 다르다\(zod\)\. 저장소 루트에서 npm ci 를 돈다$/m);
+    assert.doesNotMatch(done.out, /통과/);
+  });
+
+  test("설치된 버전이 lock 과 다르면 2 다", async () => {
+    const root = tempDir();
+    write(root, "package-lock.json", lock("4.6.7"));
+    write(root, "node_modules/.package-lock.json", lock("4.6.6"));
+    write(root, "t/a.spec.mjs", PASS);
+    const done = await runner(root, ["t/a.spec.mjs"]);
+    assert.equal(done.code, 2, done.out + done.err);
+    assert.match(done.err, /다르다\(zod\)/);
+  });
+
+  test("버전이 같으면 다음 단계로 간다", async () => {
+    const root = tempDir();
+    write(root, "package-lock.json", lock("4.6.7"));
+    write(root, "node_modules/.package-lock.json", lock("4.6.7"));
+    write(root, "t/a.spec.mjs", PASS);
+    const done = await runner(root, ["t/a.spec.mjs"]);
+    assert.equal(done.code, 0, done.out + done.err);
+    assert.match(done.out, /^통과 t\/a\.spec\.mjs/m);
+  });
+
+  test("--wait 는 확인하지 않는다", async () => {
+    const root = tempDir();
+    write(root, "package-lock.json", lock("4.6.7"));
+    const done = await runner(root, ["--wait", join(root, "missing")]);
+    assert.equal(done.code, 2);
+    assert.doesNotMatch(done.err, /의존 설치/);
+  });
+
+  test("installMismatch 는 중첩 패키지의 이름도 낸다", () => {
+    const root = tempDir();
+    write(root, "package-lock.json", JSON.stringify({ packages: { "node_modules/a/node_modules/b": { version: "1.0.0" } } }));
+    assert.equal(installMismatch(root), "b");
   });
 });
 

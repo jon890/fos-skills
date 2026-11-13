@@ -11,6 +11,9 @@
 //   pending        { area, prefix } 배열. 아직 옮기지 않은 영역과 그 경로 접두. 한 접두가 다른 접두를 덮으면 형식 오류다
 //   legacy         한 major 동안 남기는 옛 이름 진입(node shebang JS)의 경로
 //   entry_js       허용하는 JS 진입(.js·.mjs·.cjs 와 확장자 없는 node 진입)의 경로
+//   bare_imports   { path, name } 배열. 상대 경로도 node: 도 아닌 import(bare import)를 허용하는 짝이다. path 는 저장소 상대 경로나
+//                  `*` 를 쓴 glob(`*` 는 `/` 를 넘지 않는다), name 은 import 하는 이름 그대로다. name 이 루트 package.json 의
+//                  dependencies 에도 `claude-code/` 로 시작하는 플러그인 테스트 모듈에도 없으면 형식 오류다
 //   migrated_docs  옮긴 영역의 경로 접두. 그 아래 문서의 옛 호출(DOC 줄)을 막는다
 //   min_node       진입들이 보는 최소 Node 버전 [major, minor]
 //   그 밖의 키는 다른 검사가 쓸 수 있어 막지 않는다.
@@ -34,6 +37,14 @@
 //   NEW <경로> <종류>               python·shell 파일이 pending 접두 밖에 있거나, js-entry 가 entry_js·legacy 에 없다
 //   STALE pending <영역> <접두>     그 접두 아래 python·shell 파일이 없다. 영역을 옮겼으면 그 줄을 지운다
 //   STALE <entry_js|legacy> <경로>  적은 경로가 추적 파일에 없거나 js-entry 가 아니다
+//   PACKAGE <경로> <이유>           루트 밖 package.json 에 type 말고 다른 키가 있거나, 루트 package.json 의 dependencies 가
+//                                   정확한 버전이 아니다. 의존은 루트 하나만 가진다(docs/adr/030-plugin-npm-dependencies.md)
+//   IMPORT <경로>:<줄> <이름>       bare import 가 bare_imports 의 짝에 없다. .ts·.mts·.cts·.js·.mjs·.cjs 와 entry_js 의 진입에서
+//                                   줄 머리(앞 공백만 허용)의 import·export from·부수 효과 import 문을 본다. 여러 줄 문은 첫 줄이 import·export 여야 한다.
+//                                   import(·require( 호출은 줄 어디서든 문자열 인자 하나와 닫는 괄호가 오는 꼴만 본다. 문자열 아닌 인자는 보지 않는다.
+//                                   문자열·템플릿·정규식을 해석하지 않는다. 표본은 해당 줄에 // runtime-policy: sample 을 달아 뺀다.
+//                                   여러 줄 정적 문은 어느 줄에든 표시가 있으면 그 문만 뺀다. 표시는 다음 줄에 듣지 않는다.
+//                                   줄 머리(앞 공백만 허용)가 // 나 * 인 주석 줄은 보지 않는다.
 //   MIN-NODE <경로>:<줄> <값>       줄 머리의 `[export ]const MIN_NODE[: 타입] = [a, b]` 가 min_node 와 다르다
 //                                   (js-entry 와 tests/ 밖 .ts). 이 꼴로 읽지 못한 MIN_NODE 선언은 값을 `?` 로 낸다
 //   DOC <경로>:<줄> <내용>          migrated_docs 접두 아래 .md 가 `python3 ` 나 `bash "$SKILL_DIR/...sh` 로 부른다
@@ -54,8 +65,10 @@ import { isMainModule } from "./is-main.ts";
 
 export type Kind = "python" | "shell" | "js-entry";
 export type PendingEntry = { area: string; prefix: string };
+export type BareImport = { path: string; name: string };
 export type Policy = {
   pending: PendingEntry[];
+  bare_imports: BareImport[];
   legacy: string[];
   entry_js: string[];
   migrated_docs: string[];
@@ -173,12 +186,105 @@ export function checkDocs(prefixes: string[], docs: FileText[]): string[] {
   return lines;
 }
 
+// package.json 은 루트 하나만 dependencies 를 가진다. 루트 밖의 것은 키가 type 하나뿐이다(bin/package.json 이 그 꼴이다).
+export function checkPackages(files: FileText[]): string[] {
+  const lines: string[] = [];
+  for (const file of files) {
+    if (basename(file.path) !== "package.json") continue;
+    let data: unknown;
+    try {
+      data = JSON.parse(file.text);
+    } catch {
+      lines.push(`PACKAGE ${file.path} JSON 이 아니다`);
+      continue;
+    }
+    if (data === null || typeof data !== "object" || Array.isArray(data)) {
+      lines.push(`PACKAGE ${file.path} 최상위가 객체가 아니다`);
+      continue;
+    }
+    const record = data as Record<string, unknown>;
+    if (file.path !== "package.json") {
+      const extra = Object.keys(record).filter((key) => key !== "type");
+      if (extra.length > 0) lines.push(`PACKAGE ${file.path} 루트 밖 package.json 은 type 만 둘 수 있다(${extra.join(", ")})`);
+      continue;
+    }
+    const deps = record.dependencies;
+    if (deps === undefined) continue;
+    if (deps === null || typeof deps !== "object" || Array.isArray(deps)) {
+      lines.push(`PACKAGE ${file.path} dependencies 가 객체가 아니다`);
+      continue;
+    }
+    for (const [name, version] of Object.entries(deps)) {
+      if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+        lines.push(`PACKAGE ${file.path} dependencies.${name} 는 정확한 버전이어야 한다(Claude Code 의 의존 설치가 범위를 받지 않는다)`);
+      }
+    }
+  }
+  return lines;
+}
+
+const SOURCE_EXTENSIONS = new Set([".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]);
+// 정적 문은 줄 머리에서 시작하며 여러 줄에 걸칠 수 있다. 호출은 문자열 인자 하나인 꼴만 본다.
+const STATIC_IMPORTS = [
+  /^[ \t]*(?:import\b|export\b\s*(?:type\s+)?(?=[{*]))(?:(?!^[ \t]*(?:import|export)\b)[^;'"`])*?\bfrom\s*(['"])([^'"\r\n]+)\1/gm,
+  /^[ \t]*import\s*(['"])([^'"\r\n]+)\1/gm,
+];
+const CALL_IMPORTS = [/\bimport\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g, /\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g];
+const SAMPLE_MARKER = "// runtime-policy: sample";
+
+function isBare(specifier: string) {
+  return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("node:");
+}
+
+function globToRegExp(glob: string) {
+  return new RegExp(`^${glob.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*")}$`);
+}
+
+export function isSourceFile(path: string, entryJs: string[]) {
+  return SOURCE_EXTENSIONS.has(extension(path)) || entryJs.includes(path);
+}
+
+export function checkImports(allowed: BareImport[], sources: FileText[]): string[] {
+  const lines: string[] = [];
+  const matchers = allowed.map((entry) => ({ path: globToRegExp(entry.path), name: entry.name }));
+  for (const source of sources) {
+    const rows = source.text.split("\n");
+    const found = new Map<number, Set<string>>();
+    const add = (row: number, specifier: string) => {
+      if (!isBare(specifier)) return;
+      if (matchers.some((entry) => entry.name === specifier && entry.path.test(source.path))) return;
+      if (!found.has(row)) found.set(row, new Set());
+      found.get(row)!.add(specifier);
+    };
+    // 주석 줄은 공백으로 바꾼다. 여러 줄 문의 *·* from·* as 는 정적 문의 토큰으로 남긴다.
+    const text = rows.map((row, index) => {
+      const star = /^[ \t]*\*(?:\s*$|\s*(?:from|as)\b)/.test(row)
+        && /(?:^|\n)[ \t]*(?:export\b(?:\s+type\b)?|import\b(?:\s+type\b)?(?:\s+[\w$]+\s*,)?)\s*$/.test(rows.slice(0, index).join("\n"));
+      return /^[ \t]*\/\//.test(row) || (/^[ \t]*\*/.test(row) && !star) ? " ".repeat(row.length) : row;
+    }).join("\n");
+    for (const pattern of STATIC_IMPORTS) for (const match of text.matchAll(pattern)) {
+      const start = text.slice(0, match.index).split("\n").length - 1;
+      const end = start + match[0].split("\n").length - 1;
+      if (rows.slice(start, end + 1).some((row) => row.includes(SAMPLE_MARKER))) continue;
+      add(start, match[2]);
+    }
+    rows.forEach((row, index) => {
+      if (/^[ \t]*(?:\/\/|\*)/.test(row) || row.includes(SAMPLE_MARKER)) return;
+      for (const pattern of CALL_IMPORTS) for (const match of row.matchAll(pattern)) add(index, match[2]);
+    });
+    for (const [row, names] of [...found].sort(([a], [b]) => a - b)) {
+      for (const name of names) lines.push(`IMPORT ${source.path}:${row + 1} ${name}`);
+    }
+  }
+  return lines;
+}
+
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0);
 }
 
 // 형식이 틀리면 이유를 담은 Error 를 던진다. 다른 키는 다른 검사가 쓸 수 있어 막지 않는다.
-export function parsePolicy(text: string): Policy {
+export function parsePolicy(text: string, rootDependencies: string[] = []): Policy {
   const data = JSON.parse(text) as Record<string, unknown>;
   if (data === null || typeof data !== "object" || Array.isArray(data)) throw new Error("최상위가 객체가 아니다");
   const pending = data.pending;
@@ -193,6 +299,15 @@ export function parsePolicy(text: string): Policy {
     const wider = prefixes.find((b) => b !== a && a.startsWith(b));
     if (wider) throw new Error(`pending 접두 ${wider} 가 ${a} 를 덮는다`);
     if (prefixes.indexOf(a) !== prefixes.lastIndexOf(a)) throw new Error(`pending 접두 ${a} 가 두 번 있다`);
+  }
+  const bare = data.bare_imports;
+  if (!Array.isArray(bare) || !bare.every((entry) => entry && typeof entry.path === "string" && entry.path && typeof entry.name === "string" && entry.name)) {
+    throw new Error("bare_imports 는 { path, name } 문자열 객체의 배열이어야 한다");
+  }
+  for (const entry of bare as BareImport[]) {
+    if (!rootDependencies.includes(entry.name) && !entry.name.startsWith("claude-code/")) {
+      throw new Error(`bare_imports 의 ${entry.name} 이 루트 package.json 의 dependencies 에도 claude-code/ 모듈에도 없다`);
+    }
   }
   for (const key of ["legacy", "entry_js", "migrated_docs"]) {
     const list = data[key];
@@ -225,6 +340,17 @@ function isFile(path: string) {
   }
 }
 
+// 루트 package.json 의 dependencies 이름. 파일이 없거나 읽지 못하면 빈 목록이다(PACKAGE 줄은 checkPackages 가 낸다).
+function rootDependencies(root: string): string[] {
+  try {
+    const data = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { dependencies?: unknown };
+    const deps = data.dependencies;
+    return deps && typeof deps === "object" && !Array.isArray(deps) ? Object.keys(deps) : [];
+  } catch {
+    return [];
+  }
+}
+
 function fail(message: string): never {
   process.stderr.write(`runtime-policy: ${message}\n`);
   process.exit(2);
@@ -242,7 +368,7 @@ function main(argv: string[]) {
 
   let policy: Policy;
   try {
-    policy = parsePolicy(readFileSync(join(root, "scripts/runtime-policy.json"), "utf8"));
+    policy = parsePolicy(readFileSync(join(root, "scripts/runtime-policy.json"), "utf8"), rootDependencies(root));
   } catch (error) {
     fail(`scripts/runtime-policy.json 을 읽지 못했다: ${(error as Error).message}`);
   }
@@ -261,6 +387,11 @@ function main(argv: string[]) {
     .filter((path) => policy.migrated_docs.some((prefix) => isCheckedDoc(path, prefix)))
     .map((path) => ({ path, text: readFileSync(join(root, path), "utf8") }));
 
+  const packages = paths.filter((path) => basename(path) === "package.json").map((path) => ({ path, text: readFileSync(join(root, path), "utf8") }));
+  const importSources = paths
+    .filter((path) => isSourceFile(path, policy.entry_js))
+    .map((path) => ({ path, text: readFileSync(join(root, path), "utf8") }));
+
   const areas = [...new Set(policy.pending.map((entry) => entry.area))];
   if (showPending) {
     for (const area of areas) {
@@ -272,6 +403,8 @@ function main(argv: string[]) {
 
   const violations = [
     ...checkPolicy(policy, heads),
+    ...checkPackages(packages),
+    ...checkImports(policy.bare_imports, importSources),
     ...checkMinNode(policy.min_node, sources),
     ...checkDocs(policy.migrated_docs, docs),
   ];

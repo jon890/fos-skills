@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -21,7 +21,9 @@ function issues(file: string, root = core): string[] {
     const name = match[1]
     const rel = relative(root, resolve(dirname(file), name))
     const local = name.startsWith('.') && rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel)
-    if (!local && name !== 'node:path' && name !== 'node:crypto') report(match.index, `금지 import: ${name}`)
+    // zod 는 설정 검사표(config-schema.ts) 하나만 쓴다(docs/adr/030-plugin-npm-dependencies.md)
+    const schemaZod = name === 'zod' && basename(file) === 'config-schema.ts'
+    if (!local && name !== 'node:path' && name !== 'node:crypto' && !schemaZod) report(match.index, `금지 import: ${name}`)
   }
   for (const rule of [/\bprocess\s*\./g, /\bDate\s*\.\s*now\s*\(/g, /\bnew\s+Date\s*\(\s*\)/g, /\brequire\s*\(/g, /\bimport\s*\(/g, /\bglobalThis\b/g]) {
     for (const match of source.matchAll(rule)) report(match.index, `외부 상태 접근: ${match[0]}`)
@@ -56,6 +58,12 @@ test('금지 import 와 외부 상태 접근은 임시 파일의 줄 번호로 �
     }
     writeFileSync(file, "import type { Value } from './value.ts'\nimport { basename } from 'node:path'\nimport { createHash } from 'node:crypto'\n")
     assert.deepEqual(issues(file, dir), [])
+    // zod 는 config-schema.ts 만 가져올 수 있다
+    writeFileSync(file, "import * as z from 'zod'\n")
+    assert.match(issues(file, dir).join('\n'), /bad\.ts:1: 금지 import: zod/)
+    const schema = join(dir, 'config-schema.ts')
+    writeFileSync(schema, "import * as z from 'zod'\n")
+    assert.deepEqual(issues(schema, dir), [])
     writeFileSync(file, "import { fakeBin } from './fixtures/" + "fake-bin.ts'\n")
     assert.equal(testIssues(file).length, 1)
     writeFileSync(file, 'const settings = {' + 'ORCA' + ': \"fake\"}\n')

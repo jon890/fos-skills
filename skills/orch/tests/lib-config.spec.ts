@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ConfigError, INBOX_KEYS, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
+import { ConfigError, INBOX_KEYS, readConfigFile, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
@@ -191,4 +191,32 @@ test('routing 절의 알려진 키만 읽는다', () => {
   const body = { review_author: 'bot', review_pattern: '(1)(2)(3)(4)(5)', size_pattern: '([A-D])' }
   assert.deepEqual(section({ routing: body }, 'routing', ROUTING_KEYS), body)
   assert.throws(() => section({ routing: { typo: true } }, 'routing', ROUTING_KEYS), ConfigError)
+})
+
+describe('readConfigFile', () => {
+  test('파일이 없으면 exists false 다', () => {
+    const empty = join(tmp, 'read-none')
+    mkdirSync(empty)
+    assert.deepEqual(readConfigFile(empty), { file: join(empty, '.orch', 'config.json'), exists: false })
+  })
+
+  test('모르는 절과 틀린 값이 있어도 검사하지 않고 값 그대로 돌려준다', () => {
+    const dir = join(tmp, 'read-bad')
+    mkdirSync(join(dir, '.orch'), { recursive: true })
+    writeFileSync(join(dir, '.orch/config.json'), JSON.stringify({ queu: {}, pipeline: { tick_sec: 'x' } }))
+    const read = readConfigFile(dir)
+    assert.equal(read.exists, true)
+    assert.deepEqual(read.value, { queu: {}, pipeline: { tick_sec: 'x' } })
+    assert.equal(read.error, undefined)
+  })
+
+  test('깨진 JSON 은 error 에 이유를 담는다', () => {
+    const dir = join(tmp, 'read-broken')
+    mkdirSync(join(dir, '.orch'), { recursive: true })
+    writeFileSync(join(dir, '.orch/config.json'), '{')
+    const read = readConfigFile(dir)
+    assert.equal(read.exists, true)
+    assert.equal(read.value, undefined)
+    assert.match(read.error ?? '', /JSON/)
+  })
 })

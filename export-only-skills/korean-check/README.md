@@ -76,7 +76,7 @@ ln -sfn "$CHECKOUT"/korean-check/scripts/check-readability.ts ~/.claude/scripts/
 
 `korean-style-check.ts` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
 
-이전에 `korean-style-check.py`, `check-readability.py` 이름으로 링크를 걸어 둔 훅은 그대로 돈다. 두 이름은 한 major 동안 새 명령을 부르는 진입으로 남고, 훅 모드는 발견을 알릴 때 새 명령을 한 줄로 알린다. 다음 major 에서 지우므로 그 전에 위 새 이름으로 바꾼다.
+이전에 `korean-style-check.py`, `check-readability.py` 이름으로 링크를 걸어 둔 훅은 3.0.0 에서 지웠다. 두 이름은 더 돌지 않으므로 위 `.ts` 이름으로 링크와 훅 설정을 바꾼다.
 
 규칙 파일을 항상 맥락에 두려면 규칙 디렉터리에도 건다.
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.

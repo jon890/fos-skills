@@ -468,12 +468,12 @@ describe('훅 모드', () => {
 })
 
 describe('링크로 부르기', () => {
-  // 사용자 훅이 ~/.claude/scripts/korean-style-check.py 링크로 이 검사기를 --hook 으로 부른다(스펙 REQ6).
+  // 사용자 훅이 ~/.claude/scripts/korean-style-check.ts 링크로 이 검사기를 --hook 으로 부른다.
   // 링크를 실체까지 따라가 매핑 표를 찾아야 한다. 일반 모드의 출력은 링크로 불러도 같다
-  const legacyPath = join(SCRIPTS_DIR, 'korean-style-check.py')
+  const linkedTarget = join(SCRIPTS_DIR, 'korean-style-check.ts')
   function linked() {
-    const link = join(tempDir(), 'korean-style-check.py')
-    symlinkSync(realpathSync(legacyPath), link)
+    const link = join(tempDir(), 'korean-style-check.ts')
+    symlinkSync(realpathSync(linkedTarget), link)
     return link
   }
   test('링크로 부른 일반 모드의 stdout 과 종료 코드가 같다', () => {

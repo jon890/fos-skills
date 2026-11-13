@@ -27,3 +27,10 @@ test('실패해도 결과 폴더의 node.log 를 짧은 보존 기간으로 arti
   const days = Number(/retention-days: (\d+)/.exec(upload)?.[1])
   assert.ok(days >= 1 && days <= 14, `보존 기간이 짧다: ${days}`)
 })
+
+test('npm ci 단계가 두 테스트 단계보다 앞에 있다', () => {
+  assert.match(step('Install npm dependencies'), /run: npm ci --ignore-scripts/)
+  const at = (name: string) => workflow.indexOf(`- name: ${name}`)
+  assert.ok(at('Install npm dependencies') < at('Run plugin tests from repository root'))
+  assert.ok(at('Install npm dependencies') < at('Run repository test runner'))
+})

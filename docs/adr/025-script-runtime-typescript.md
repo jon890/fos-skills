@@ -8,6 +8,7 @@
   JS 는 타입 제거가 닿지 않는 진입에만 쓴다. 확장자 없는 git 훅과 실행기, 옛 이름 진입, 이미 있는 work-board hooks 모듈이 여기 해당한다.
   스킬과 도구는 자기 폴더와 Node 내장 모듈만 import 한다. 사용자 결정 2026-11-04, 2026-11-05.
   [ADR-010](010-orch-typescript.md) 과 [ADR-011](011-node-24-minimum.md) 이 orch 와 work-board 에 정한 언어와 Node 버전을 저장소 전체로 넓힌다.
+- **대체된 부분**: 「Node 내장 모듈만 import 한다」 와 「npm 의존을 두지 않는다」 는 orch 에 한해 [ADR-030](030-plugin-npm-dependencies.md) 이 바꿨다.
 - **맥락**: orch, work-board, inbox 를 옮긴 뒤에도 다른 스킬과 저장소 관리 명령에 Python 124개 파일(약 2만 3천 줄)과 셸 16개가 남았다(2026-11-05 실측).
   두 언어가 같은 꼴의 helper(옵션 줄임 처리, JSON 출력 꼴, 셸 인용)를 따로 두었고, 테스트도 `node --test` 와 `unittest` 두 벌로 돌았다.
   사용자는 한 언어로 유지보수, 테스트와 실행 속도, python3 가 없는 환경 지원을 얻으려 했다(스펙 DECISION1).

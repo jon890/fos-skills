@@ -27,11 +27,9 @@ import { poll } from '../../lib/questions.ts'
 import { refreshSettings } from '../../lib/refresh.ts'
 import type { RefreshSettings } from '../../lib/refresh.ts'
 import type { CiEntry, Lookup, Prs, Stall, StallState, TickRun, Waiting } from './shared.ts'
+import { stallTicks } from '../../core/loop.ts'
 
 const DEFAULT_TICK_SEC = 300
-
-// pipeline.stall_ticks 의 기본값(stalls.ts 머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
-const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 
 export type Context = {
   repo: string
@@ -64,22 +62,6 @@ function optionalString(value: unknown, key: string): string | null {
   if (value === undefined || value === null || value === '') return null
   if (typeof value !== 'string') throw new ConfigError(`설정 파일의 ${key} 는 문자열이어야 한다`)
   return value
-}
-
-function stallTicks(value: unknown): Record<StallState, number> {
-  if (value === undefined) return { ...DEFAULT_STALL_TICKS }
-  const shape = '설정 파일의 pipeline.stall_ticks 는 {"error": 틱 수, "idle": 틱 수} 객체여야 한다'
-  if (!isObject(value)) throw new ConfigError(shape)
-  const unknown = Object.keys(value).filter((key) => !Object.hasOwn(DEFAULT_STALL_TICKS, key))
-  if (unknown.length > 0) throw new ConfigError(`${shape}. 모르는 키: ${unknown.sort().join(', ')}`)
-  const ticks = { ...DEFAULT_STALL_TICKS }
-  for (const key of Object.keys(DEFAULT_STALL_TICKS) as StallState[]) {
-    const n = value[key]
-    if (n === undefined) continue
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new ConfigError(`설정 파일의 pipeline.stall_ticks.${key} 는 0 이상의 정수여야 한다: ${JSON.stringify(n)}`)
-    ticks[key] = n
-  }
-  return ticks
 }
 
 export function context(repo: string, run: string | undefined, specsDir: string | undefined): Context {

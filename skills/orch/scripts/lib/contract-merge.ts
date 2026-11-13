@@ -26,14 +26,13 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CONTRACTS_KEYS, ConfigError, section } from './config.ts'
-import type { Config } from './config.ts'
 import { git } from './git.ts'
 import { run } from './proc.ts'
-import { pyRegExp } from '../core/regexp.ts'
-import { joined } from '../core/refresh.ts'
+import { contractSettings } from '../core/contracts.ts'
+import type { ContractSettings } from '../core/contracts.ts'
 
-export type ContractSettings = { command: string; paths: RegExp }
+export { contractSettings }
+export type { ContractSettings }
 
 export type ContractTarget = { number: number; branch: string; head: string; base: string; baseSha: string }
 
@@ -45,20 +44,6 @@ export type ContractMerge =
 
 export const MERGE_COMMAND_MS = 300_000
 const MARKER = /^(?:<{7}|>{7}|\|{7})(?: |$)/m
-
-export function contractSettings(config: Config): ContractSettings | null {
-  const body = section<Record<string, unknown>>(config, 'contracts', CONTRACTS_KEYS)
-  if (body.merge_command === undefined && body.paths === undefined) return null
-  const command = body.merge_command
-  if (typeof command !== 'string' || !command.trim()) throw new ConfigError('설정 파일의 contracts.merge_command 는 비지 않은 문자열이어야 한다')
-  const source = joined(body.paths, 'contracts.paths', '|')
-  if (!source) throw new ConfigError('설정 파일의 contracts.paths 가 없다. merge_command 와 함께 준다')
-  try {
-    return { command, paths: pyRegExp(source) }
-  } catch (e) {
-    throw new ConfigError(`설정 파일의 contracts.paths 를 정규식으로 읽지 못했다: ${(e as Error).message}`)
-  }
-}
 
 export function onlyContracts(files: readonly string[], settings: ContractSettings): boolean {
   return files.length > 0 && files.every((file) => settings.paths.test(file))

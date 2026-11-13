@@ -1,0 +1,65 @@
+{
+  "name": "deps-and-schema",
+  "description": "플러그인 npm 의존(zod) 설치 기반, 설정 키 검사표, orch doctor 의 설정 문제 알림",
+  "pr_scope": "루트 package.json 으로 zod 를 들이고 설정 키 검사표를 만들어 orch doctor 가 설정 파일의 모든 문제를 INVALID-CONFIG 로 알리게 한다.",
+  "deferred": [
+    {
+      "what": "orch config show·get·set·unset 명령, updateConfig 잠금과 doctor migrate 의 쓰기 이전, 루프 재시작 알림, 문서 안내와 공통 지시서 no-config-edit 규칙(REQ1~5, REQ8~13), 그리고 docs/data-schema.md 와 skills/orch/references/overlay.md 의 키 타입을 검사표에 맞추는 REQ6 의 문서 몫, README.md 기여 절의 npm ci 안내와 scripts/test-plugin-install.ts 머리 주석(「네트워크는 쓰지 않는다」) 고침",
+      "why": "명령은 이 PR 의 검사표(core/config-schema.ts)와 의존 설치에 기대고, 같은 두 문서를 고치는 문서 정리는 다음 PR 의 안내 문서 작업과 함께 하는 편이 한 번에 맞출 수 있다. 이 PR 에 넣으면 PR 이 그만큼 커진다",
+      "after": "이 PR(deps-and-schema)이 머지된 뒤"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-12",
+  "spec": "docs/features/orch-config-cli/spec.md",
+  "design": "docs/features/orch-config-cli/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ6",
+    "REQ7"
+  ],
+  "total_phases": 5,
+  "current_phase": 5,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ6"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ6"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ6"
+      ]
+    },
+    {
+      "number": 4,
+      "file": "phase-04.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ6"
+      ]
+    },
+    {
+      "number": 5,
+      "file": "phase-05.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ7"
+      ]
+    }
+  ]
+}

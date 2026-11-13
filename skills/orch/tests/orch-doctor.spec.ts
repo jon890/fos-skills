@@ -600,7 +600,7 @@ describe('저장소 판정', () => {
     write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_merge: true, auto_review: review } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 1, r.stdout + r.stderr)
-    assert.match(r.stdout, /^INVALID-CONFIG queue\.auto_review\.require 에 모르는 조건이 있다: thread-resolved\. 쓸 수 있는 조건: verdict-on-head, /m)
+    assert.match(r.stdout, /^INVALID-CONFIG queue\.auto_review\.require 모르는 조건이 있다: thread-resolved\. 쓸 수 있는 조건: verdict-on-head, /m)
   })
 
   test('아는 조건만 적은 조합은 INVALID-CONFIG 가 아니다', () => {
@@ -637,15 +637,57 @@ describe('저장소 판정', () => {
     write(join(tmp, '.orch', 'config.json'), JSON.stringify({ inbox: { doorey: {} } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 1, r.stdout + r.stderr)
-    assert.match(r.stdout, /^INVALID-CONFIG .*inbox 절에 모르는 키가 있다: doorey/m)
+    assert.match(r.stdout, /^INVALID-CONFIG inbox\.doorey 모르는 키다$/m)
   })
 
-  test('설정 파일이 깨졌으면 이유를 stderr 에 내고 그 판정만 건너뛴다', () => {
+  test('설정 파일이 깨졌으면 INVALID-CONFIG config.json 이고 종료 코드 1 이다', () => {
     write(join(tmp, '.orch', 'config.json'), '{')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, /^INVALID-CONFIG config\.json .+$/m)
+    assert.match(r.stdout, /^OK-SCRIPTS 0$/m)
+  })
+
+  const broken: [string, unknown, string][] = [
+    ['틀린 값', { pipeline: { tick_sec: '60' } }, 'pipeline.tick_sec'],
+    ['오타 키', { pipeline: { tick_secs: 60 } }, 'pipeline.tick_secs'],
+    ['모르는 절', { queu: {} }, 'queu'],
+    ['짝 규칙 위반', { contracts: { merge_command: 'make' } }, 'contracts.merge_command'],
+  ]
+  for (const [name, config, path] of broken) {
+    test(`설정의 ${name} 은 그 경로의 INVALID-CONFIG 이고 종료 코드 1 이다`, () => {
+      write(join(tmp, '.orch', 'config.json'), JSON.stringify(config))
+      const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+      assert.equal(r.code, 1, r.stdout + r.stderr)
+      const lines = r.stdout.split('\n').filter((line) => line.startsWith('INVALID-CONFIG '))
+      assert.equal(lines.length, 1, r.stdout)
+      assert.ok(lines[0].startsWith(`INVALID-CONFIG ${path} `), lines[0])
+      assert.ok(lines[0].length > `INVALID-CONFIG ${path} `.length, '이유가 있다')
+    })
+  }
+
+  test('문제가 없는 설정에는 INVALID-CONFIG 줄이 없다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ pipeline: { tick_sec: 60 }, queue: { method: 'squash' }, hooks: { timeouts: { 'after-queue': 900 } } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
-    assert.match(r.stderr, /설정 파일을 읽지 못했다/)
+  })
+
+  test('설정이 없는 저장소에는 INVALID-CONFIG 줄이 없다', () => {
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /INVALID-CONFIG/)
+  })
+
+  test('검사표를 불러오지 못하면 CLI-DEPS-MISSING 을 내고 설정 검사만 건너뛰며 다른 줄은 지금처럼 나온다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ pipeline: { tick_sec: '60' } }))
+    write(join(tmp, '.orch', 'hooks', 'befor-merge.ts'), '')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { ORCH_CONFIG_SCHEMA: join(tmp, 'no-such-schema.ts') } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^CLI-DEPS-MISSING 의존을 읽지 못했다\(.+\)\. 플러그인을 다시 설치하거나 플러그인 폴더에서 npm ci 를 돈다$/m)
+    assert.doesNotMatch(r.stdout, /INVALID-CONFIG/)
+    assert.match(r.stdout, /^OK-SCRIPTS 0$/m)
+    assert.match(r.stdout, /^UNKNOWN-HOOK .*befor-merge\.ts$/m)
   })
 
   test('다시 보지 않은 개선 후보 파일 수를 FEEDBACK-OPEN 으로 내고 종료 코드는 0 이다', () => {
