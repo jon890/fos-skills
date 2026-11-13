@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.50.0 (2026-11-13)
+
+- `orch config show`, `orch config get`, `orch config set`, `orch config unset` 으로 설정을 조회하고 바꾼다. 여러 값은 함께 검사하고 저장하며, 잘못된 값은 이유와 함께 거절한다.
+- 설정을 바꿔 루프를 다시 시작해야 하면 안내한다. worker 는 설정 변경을 코디네이터에게 요청한다.
+
 ## 7.49.0 (2026-11-13)
 
 - orch doctor 가 설정 파일의 깨진 JSON, 모르는 절과 키, 틀린 값, 짝 규칙 위반을 `INVALID-CONFIG <경로> <이유>` 와 종료 코드 1 로 알린다
