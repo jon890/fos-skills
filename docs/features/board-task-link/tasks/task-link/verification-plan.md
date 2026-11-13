@@ -1,0 +1,21 @@
+# 보드 업무 링크 인수 검증 계획
+
+## 인수 검증 계획
+
+| 요구사항 | 준비 조건 | 실행 절차 | 기대 결과 | 실행 환경 | 실행 담당 | 선행 조건 | 시점 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| REQ1 | 항목 `a`(상태 wait)가 든 임시 보드와 `board.task` 가 `dooray`(project `P`)인 임시 저장소 | `node skills/orch/bin/orch.ts board set a --task-ref 458 --repo <저장소>` 뒤 `board get a task-ref`, `board get a status`. 이어 `--task https://x.dooray.com/project/tasks/1`, `--task-ref ''`, `--task ftp://x` 를 차례로 준다 | 번호 칸이 `P/458`, 상태는 wait 그대로. 주소가 들어가고, 빈 값은 번호 칸만 지우고, `ftp://` 는 종료 코드 1 이며 보드가 그대로다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ1 | phase 02 의 테스트 | `node scripts/run-tests.ts extensions/work-board/tests/board-task-ref.spec.ts skills/orch/tests/board-edit.spec.ts` | 두 칸 넣기·고치기·지우기, `--fill`, `--if-task-ref`, 사용법 오류가 통과한다 | 로컬 작업 공간 | worker | 없음 | PR 전 |
+| REQ2 | phase 06 의 창 테스트 | `claude plugin test .` | 번호와 주소가 있으면 `[두레이 P/342]` 링크, 주소를 지우면 흐린 글자, 주소만 있으면 `[두레이]`, 둘 다 없으면 칩 없음, 제목 안 `#342` 비링크, 결정·완료 줄의 칩, 제목 누르기의 요청문이 통과한다 | 로컬 작업 공간의 Claude Code CLI | worker | 없음 | PR 전 |
+| REQ2 | 이 PR 의 번들을 설치한 코디네이터 세션과 ai-analysis 보드 | 코디네이터가 `/board` 를 열고 `orch board set <항목> --task-ref <번호>` 를 넣은 항목과 주소가 채워진 항목의 머리 줄을 보고, 칩을 눌러 업무가 열리는지, 제목을 눌러 요청문이 채워지는지 본다 | 칩이 제목 앞에 보이고 링크가 두레이 업무로 열린다. 번호만 있는 동안은 흐린 글자다 | 실제 Orca 코디네이터 세션의 /board 창 | 코디네이터 | 머지 | PR 뒤 |
+| REQ3 | phase 01 의 테스트 | `node scripts/run-tests.ts skills/orch/tests/core-task-adapters.spec.ts skills/orch/tests/core-config-schema.spec.ts skills/orch/tests/orch-config.spec.ts` | 두 어댑터 설정이 통과하고, 모르는 어댑터·빠진 값·남의 키가 거절되며 파일이 그대로다 | 로컬 작업 공간 | worker | 없음 | PR 전 |
+| REQ4 | `두레이 업무: P/458 https://x.dooray.com/project/tasks/9` 줄(앞에 빈 줄이 있는 꼴 포함)과 본문의 위키 주소가 든 지시서, 가짜 orca 실행 파일, 부르면 기록을 남기는 가짜 `DOORAY_BIN` | `node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts` 의 새 사례(새 항목, 기존 항목, 다시 연 항목, 중간 과정) | 네 길 모두 번호 칸이 채워지고, 주소는 업무 주소만 들어가며, `DOORAY_BIN` 기록이 비어 있다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ5 | 제목이 `[P/458] 고침` 인 열린 PR 을 내는 가짜 gh, `finish.task_pattern` 이 든 임시 저장소 | `node scripts/run-tests.ts skills/orch/tests/board-sync.spec.ts skills/orch/tests/completion-watch.spec.ts` | 번호 칸이 빈 항목은 보드 맞추기와 완료 확인 두 길 모두에서 `P/458` 이 되고, PR 칸이 찬 항목은 그대로다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ6 | 가짜 주소 만들기와 고정 시각 | `node scripts/run-tests.ts skills/orch/tests/loop-task-links.spec.ts` | 주소 채우기, 첫 실패 로그 한 줄, 30분 동안 다시 부르지 않음, 기록 파일로 간격이 이어짐, 설정 없음, done 제외, 시간 예산이 통과한다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ6 | `board.task`(`dooray`)가 든 임시 저장소, 종료 코드 1 로 끝나는 가짜 `DOORAY_BIN`, 번호만 있는 doing 항목 | 같은 spec 의 틱 전체 사례: `orch-loop.ts --tick` 을 상태 폴더를 둔 채 두 번 돈다 | `loop.log` 에 `TASK-LINK-FAIL <id> <번호> <이유>` 가 한 줄뿐이고 주소 칸은 비어 있다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ6 | 사내 dooray CLI 가 설정된 머신 | 읽기 전용으로 `dooray --json post get <프로젝트> <번호>` 를 한 번 돌려 응답 맨 위 `id` 가 있는지, 한글 프로젝트 코드를 받는지 본다. 결과(CLI 버전, 칸 이름)만 PR 본문에 적고 응답 본문은 옮기지 않는다 | 맨 위 `id` 가 있고 한글 코드로 조회된다. 다르면 `lib/task-adapters.ts` 를 고친다 | 사내 dooray CLI 가 있는 코디네이터 머신 | 코디네이터 | 없음 | PR 전 |
+| REQ6 | 이 PR 의 번들을 설치하고 `board.task`(`dooray`)를 넣은 ai-analysis 저장소의 상주 루프 | 코디네이터가 번호만 있는 열린 항목 하나에 `orch board set <항목> --task-ref <번호>` 를 넣고 다음 틱 뒤 `orch board get <항목> task` 와 루프 로그의 `TASK-LINK` 줄을 본다 | 주소가 `<사내 두레이>/project/tasks/<postId>` 꼴로 채워지고 그 주소가 같은 업무를 연다 | 사내 dooray CLI 가 있는 코디네이터 머신 | 코디네이터 | 머지 | PR 뒤 |
+| REQ7 | 번호 A 가 든 항목들 | REQ4·REQ5·REQ6 행의 테스트 가운데 이미 값이 든 항목 사례 | 번호 B 의 지시서나 PR 이 와도 번호 칸은 A 이고, 루프는 A 로 주소를 만들며, 쓰기 전에 번호가 바뀐 항목에는 주소를 쓰지 않는다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ8 | 이 PR 브랜치 | `node scripts/run-tests.ts skills/orch/tests/config-docs.spec.ts` 와 `docs/data-schema.md`, `skills/orch/references/overlay.md`, `skills/orch/references/board.md`, `extensions/work-board/references/behavior.md` 의 diff 검토 | 문서 표에 `board.task` 와 `state/task-links.json` 이 있고, 업무 번호 칸과 `orch board set` 의 두 옵션이 설명돼 있다 | 로컬 작업 공간 | worker | 없음 | PR 전 |
+| REQ9 | 업무 연결 줄이 있는 지시서, 번호 칸이 찬 항목과 번호 칸이 빈 옛 항목이 든 보드 | `node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts` 의 같은 업무 찾기 사례 | 새 제목에 번호가 없고, 번호 칸이 같은 항목을 먼저 쓰고, 번호 칸이 빈 옛 항목은 제목으로 찾으며, 기존 제목은 바뀌지 않는다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ1, REQ2, REQ3, REQ4, REQ5, REQ6, REQ7, REQ8, REQ9 | PR 의 CI | PR 을 연 뒤 `Tests` job 결과를 본다 | 테스트 실행기와 `claude plugin test .` 가 통과한다 | GitHub Actions | worker | push | PR 뒤 |

@@ -1,0 +1,32 @@
+{
+  "name": "task-link",
+  "description": "보드 항목의 업무 번호 칸, 업무 도구 어댑터, 띄울 때와 PR 연결 때의 번호 저장, 루프의 주소 만들기, 창의 업무 칩",
+  "pr_scope": "보드 항목에 업무 번호 칸과 업무 도구 어댑터를 더하고, orch 가 띄울 때와 PR 을 붙일 때 번호를 저장하고 상주 루프가 주소를 만들어 창이 제목 앞에 업무 칩을 그리게 한다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-13",
+  "spec": "docs/features/board-task-link/spec.md",
+  "design": "docs/features/board-task-link/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ7",
+    "REQ8",
+    "REQ9"
+  ],
+  "total_phases": 6,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ3", "REQ8"] },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ7", "REQ8"] },
+    { "number": 3, "file": "phase-03.md", "execution_profile": "standard", "requirements": ["REQ4", "REQ7", "REQ8", "REQ9"] },
+    { "number": 4, "file": "phase-04.md", "execution_profile": "standard", "requirements": ["REQ5", "REQ7", "REQ8"] },
+    { "number": 5, "file": "phase-05.md", "execution_profile": "standard", "requirements": ["REQ6", "REQ7", "REQ8"] },
+    { "number": 6, "file": "phase-06.md", "execution_profile": "standard", "requirements": ["REQ2", "REQ8"] }
+  ]
+}
