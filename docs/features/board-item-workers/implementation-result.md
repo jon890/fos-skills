@@ -55,3 +55,45 @@ worker 줄의 열쇠, 대표 칸, 역할, 끝남과 새 항목 요청을 스펙�
 - Orca 조회 실패와 형식 오류는 모름으로 보고 옛 dispatch 를 작업 중으로 보존한다. 이력 없는 옛 대표를 끝난 줄로 옮기는 규칙은 유지한다.
 - 다시 연 리뷰 항목은 지난 보고로 닫지 않는다. 새 종료가 생겼거나 상태 변경 뒤의 종료를 복구할 때만 닫는다. 마지막 줄이 이번에 끊긴 경우에는 코디네이터가 정한 기존 닫기 규칙을 유지한다.
 - 같은 대표 워크트리의 재시도에서 브랜치를 읽지 못하면 기존 값을 둔다. 대표 워크트리가 바뀌었을 때만 모르는 브랜치를 지운다.
+
+# 보드 항목 하위 worker PR2 개발 검증
+
+계획: [tasks/multi-pr-window/](tasks/multi-pr-window/index.json), 인수 검증 계획: [verification-plan.md](tasks/multi-pr-window/verification-plan.md).
+구현은 하위 에이전트 없이 phase 순서대로 진행했다. 독립 리뷰와 인수 검증은 코디네이터가 맡는다.
+
+## 구현한 범위
+
+| 요구사항 | 변경과 개발 검증 |
+| --- | --- |
+| REQ4 | `core/milestones.ts` 의 `prStages`, `eventKinds`, `advanceCommands`·`mergedCommands` 의 `kinds`·`remaining` 으로 PR 마다 묶음을 고른다. `lib/milestones` 순수 함수 테스트에서 묶음 고르기, 다른 묶음의 앞 단계 닫기, 배포 단계 보존, `done_after` 별 done 시점을 확인했다 |
+| REQ4 | `registerBoard` 가 앞 PR 이 열린 마일스톤 항목에 새 브랜치 후속을 붙이면 두 단계를 더하고 줄에 `stages` 를 적는다. `board-attach.spec.ts` 에서 더하는 경우와 더하지 않는 경우(같은 워크트리·브랜치, 리뷰, 앞 PR 없음·머지됨, 옛 단계 항목, 단계 더하기 실패)를 확인했다 |
+| REQ4 | 보드 맞추기·머지 마무리·릴리스 확인이 PR 마다 자기 묶음을 끝낸다. `board-sync.spec.ts`, `finish-pr.spec.ts`, `board-release.spec.ts`, `lib-board.spec.ts` 에서 뒤 PR 만 머지, 앞 PR 이 나중에 머지돼 done, 같은 틱 두 머지의 한 건 반영, 상태를 읽지 못한 PR, 배포 단계, 줄로 PR 잇기를 확인했다 |
+| REQ6, REQ7 | 창이 작업 중·끝남·끊김 줄을 그린다. `live.test.ts`, `pane.test.ts` 에서 줄 만들기, 줄 글, 접힌·펼친 보기, 완료 항목, 「worker 없음」 감추기, 옛 항목 보존을 확인했다 |
+| REQ8 | 창 동작 문서, orch 보드 문서, 데이터 스키마와 변경 이력 조각을 설계와 대조했다 |
+
+## 실제 보드 사본 확인
+
+2026-11-14 에 저장소의 실제 보드를 세션 임시 폴더로 복사하고, 임시 git 저장소와 별도 `ORCH_DIR`, 가짜 gh 로 실행했다. 원본 보드는 읽기만 했다.
+
+- 구현 PR(7)이 열린 항목에 같은 업무 번호의 후속 지시서를 새 브랜치로 `registerBoard` 에 넘기자 단계가 둘 늘고(`3. PR (wb)`, `4. 머지 (wb)`) 후속 줄에 `stages` 가 적혔다
+- 후속 PR(9)이 열리자 보드 맞추기가 그 PR 을 줄과 항목의 `pr`(`7, 9`)에 잇고 3번 단계만 끝냈다
+- 후속 PR 만 머지되자 3·4번만 끝나고 항목은 doing, `pr` 은 7, `merged-pr` 은 9 였다
+- 구현 PR 도 머지되자 1·2번이 끝나고 항목이 done 이 됐다
+- 실제 Orca dispatch 수명과 창의 실제 모양은 코디네이터의 인수 검증에 남긴다
+
+## 개발 검증
+
+phase 마다 계획의 검증 명령을 돌려 통과했다. `claude plugin test .` 는 104건 통과했고, `orch slot heavy --exclusive` 로 돈 전체 테스트(`node scripts/run-tests.ts`, tsc 포함)는 301건이 통과했다. 한국어 표기 검사는 변경 문서에서 발견이 없었다.
+
+## 결정
+
+- 앞 PR 이 열린 때 단계를 더하는 규칙은 `stages` 가 있는 마일스톤 항목에만 쓴다. 옛 단계 항목은 단계 글의 PR 번호로 끝내는 규칙이라 사건 단계를 섞지 않는다
+- `remaining`(마지막 PR 판정을 거짓으로 만드는 다른 PR)에는 열린 PR 에 더해 머지됐지만 아직 반영하지 않은 PR 과 상태를 읽지 못한 PR 도 센다. 같은 틱에 두 PR 이 머지돼도 번호가 작은 쪽이 마지막 PR 로 판정돼 항목을 먼저 닫지 않는다
+- `finish-pr` 는 다른 PR 의 상태를 `gh pr view --json state` 로 읽고, 닫힌(CLOSED) PR 은 남은 PR 로 세지 않는다
+- 줄로 항목을 찾는 `findBoardItems` 는 `BoardMatch` 에 선택 칸 `rows`(항목 id → 줄의 워크트리)를 더한다. 줄로 찾은 항목이 없으면 이 칸이 없어 기존 호출과 결과가 같다
+
+## 문서 대조와 다음 단계
+
+스펙·설계·데이터 스키마·창 동작 문서·orch 보드 문서가 같은 규칙(묶음 고르기, 마지막 PR 판정, 배포 단계, 줄 그리기)을 말한다. 공통 문서로 옮길 반복 계약은 발견하지 못했다.
+계획 폴더는 독립 verify 가 인수 검증 계획을 읽을 수 있도록 남겼다. 계획 정리는 orch 가 맡는다.
+스킬 개선 후보와 공부 후보는 없다.
