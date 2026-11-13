@@ -514,7 +514,7 @@ export class EgoBackend extends Backend {
     if (cmd === 'snap') return this.run(this.page(args[0]) + '__out(await page.snapshot());\n').replace(/\n+$/, '')
 
     if (cmd === 'shot') {
-      const out: string = args.length > 1 ? args[1] : '/tmp/ego-shot.png'
+      const out: string = args[1] ?? '/tmp/ego-shot.png'
       // --size 는 같은 스크립트 안에서 CDP 로 크기를 건 뒤 찍는다. 호출이 끝나면 풀리므로 되돌리지 않는다
       const size = args[2] ? `await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${args[2][0]}, height: ${args[2][1]}, deviceScaleFactor: 1, mobile: false });\n` : ''
       this.run(this.page(args[0]) + size + `await page.screenshot({ path: ${jd(out)} });\n` + "__out('');\n")

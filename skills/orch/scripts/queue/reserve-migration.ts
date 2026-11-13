@@ -20,8 +20,9 @@
 //     --branch  예약할 브랜치. 기본은 작업 디렉터리의 `git branch --show-current` 다. worker 는 자기 worktree 에서 부른다. 비면 사용법 오류다
 //     --base    기준 브랜치. 기본은 origin/HEAD(lib/git.ts 의 defaultBase), 그것도 없으면 main 이다. 앞의 `origin/` 은 뗀다(--base origin/develop 도 develop)
 //     --again   같은 브랜치, 모듈, 설명의 예약을 버리고 새 번호를 받는다
-//     --rename  --again 과 함께만 준다. 새 번호를 받은 뒤 부른 디렉터리가 속한 워크트리의 같은 폴더에서, 같은 설명으로 만든 옛 번호의 파일을
-//               새 이름으로 바꾼다. 같은 설명의 파일이 정확히 하나일 때만 바꾼다. 파일 안의 옛 이름도 새 이름으로 고친다
+//     --rename  --again 과 함께만 준다. 새 번호를 받은 뒤 --again 이 버린 이 브랜치의 옛 예약 경로의 파일을 새 이름으로 바꾼다.
+//               부른 디렉터리가 --repo 와 같은 저장소에서 예약 브랜치를 체크아웃한 워크트리일 때만, 그리고 그 파일이 기준 브랜치에 없을 때만 바꾼다.
+//               파일 안의 옛 이름도 새 이름으로 고친다
 //               (Java 는 클래스 이름 `V<버전>__<이름>`, ADR 은 `ADR-<번호>`. SQL 은 파일 안에 버전이 없어 이름만 바꾼다)
 //     --prune   번호를 받지 않고 정리만 한다. 형식이 틀린 예약도 파일에서 뺀다. --repo 밖의 옵션과 함께 주면 사용법 오류다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
@@ -70,7 +71,7 @@
 //
 // 출력(stdout):
 //     RENAMED <옛 경로> <새 경로>           --rename 이 파일 이름을 바꿨다. RESERVED 줄 바로 뒤에 낸다. 경로는 저장소 루트 기준이다
-//     RENAME-NONE <사유>                    --rename 이 바꿀 파일을 정하지 못했다(옛 파일이 없음, 여럿, 새 이름이 이미 있음). 아무것도 바꾸지 않았다. 종료 코드는 0 이다
+//     RENAME-NONE <사유>                    --rename 이 바꿀 파일을 정하지 못했거나 바꾸면 안 된다(옛 예약이나 파일이 없음, 다른 저장소나 브랜치, 기준 브랜치에 이미 있음, 새 이름이 이미 있음). 아무것도 바꾸지 않았다. 종료 코드는 0 이다
 //     PRUNED <module> <label> <branch>      정리로 지운 항목마다. 아래 끝 줄보다 앞에 낸다. ADR 예약이면 label 이 `ADR-<번호>` 다
 //     RESERVED <module> <label> <path>      예약했다. path 는 저장소 루트 기준이다. 다시 준 예약이면 끝에 ` reused`,
 //                                           번호가 무효가 되어 새로 정했으면 ` renewed` 를 붙인다. --again 은 붙이지 않는다
@@ -96,8 +97,8 @@
 //     ORCH_DIR              orch 루트(lib/paths.ts). 기본은 주 checkout 의 .orch
 
 import { isObject } from '../core/json.ts'
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { autoMergeConfig, compareVersion, migrationOf, watchedDirs } from '../lib/auto-merge.ts'
@@ -250,38 +251,38 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// --rename. 새 번호의 파일 이름이 되도록 같은 설명의 옛 번호 파일을 바꾼다. 부른 디렉터리의 워크트리를 보고 예약 파일은 건드리지 않는다.
-// 옛 파일은 새 경로와 이름이 다르고 설명 꼬리가 같은 파일이 정확히 하나일 때만 정한다. 여럿이면 어느 것인지 몰라 바꾸지 않는다
-function renameForReservation(target: Target, reservation: Reservation): string[] {
+// --rename. 새 번호의 파일 이름이 되도록 이 브랜치가 만든 옛 번호 파일을 바꾼다. 예약 파일은 건드리지 않는다.
+// 바꿀 파일은 --again 이 버린 옛 예약의 경로 하나뿐이다. 설명이 같은 다른 파일을 찾아 바꾸지 않는다.
+// 부른 디렉터리가 --repo 와 같은 저장소의 예약 브랜치 워크트리가 아니거나, 그 파일이 기준 브랜치에 이미 있으면 바꾸지 않는다(이미 나간 마이그레이션이다)
+function renameForReservation(repo: string, target: Target, reservation: Reservation, oldPath: string | null): string[] {
+  if (!oldPath) return ['RENAME-NONE 이 브랜치의 옛 예약이 없어 바꿀 파일을 정하지 못했다']
   const top = git(process.cwd(), ['rev-parse', '--show-toplevel'])
   if (top.code !== 0) return ['RENAME-NONE 부른 디렉터리가 git 작업 트리가 아니다']
   const root = top.stdout.trim()
-  const dir = join(root, target.dir)
-  const adr = target.kind === 'adr'
-  const tail = adr ? `-${reservation.name}.md` : `__${reservation.name}${target.kind === 'java' ? '.java' : '.sql'}`
-  const head = adr ? /^\d+$/ : /^V\d[\d._]*$/
-  const newName = reservation.path.slice(reservation.path.lastIndexOf('/') + 1)
-  const found = existsSync(dir)
-    ? readdirSync(dir).filter((f) => f !== newName && f.endsWith(tail) && head.test(f.slice(0, f.length - tail.length)))
-    : []
-  if (found.length === 0) return [`RENAME-NONE ${target.dir} 에 이름을 바꿀 옛 파일이 없다`]
-  if (found.length > 1) return [`RENAME-NONE ${target.dir} 에 같은 설명의 파일이 여럿이라 고르지 못했다: ${found.join(', ')}`]
-  const from = join(dir, found[0])
-  const to = join(dir, newName)
-  if (existsSync(to)) return [`RENAME-NONE 새 이름의 파일이 이미 있다: ${relative(root, to)}`]
+  const common = (dir: string) => git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']).stdout.trim()
+  if (!common(root) || realpathSync(common(root)) !== realpathSync(common(repo))) return ['RENAME-NONE 부른 디렉터리가 --repo 와 다른 저장소다']
+  const current = git(root, ['branch', '--show-current']).stdout.trim()
+  if (current !== target.branch) return [`RENAME-NONE 부른 디렉터리의 브랜치(${current || '없음'})가 예약 브랜치(${target.branch})와 다르다`]
+  if (oldPath === reservation.path) return ['RENAME-NONE 같은 번호를 다시 받아 바꿀 것이 없다']
+  if (git(root, ['cat-file', '-e', `origin/${target.base}:${oldPath}`]).code === 0) return [`RENAME-NONE ${oldPath} 는 origin/${target.base} 에 이미 있어 바꾸지 않는다`]
+  const from = join(root, oldPath)
+  const to = join(root, reservation.path)
+  if (!existsSync(from)) return [`RENAME-NONE 옛 파일이 없다: ${oldPath}`]
+  if (existsSync(to)) return [`RENAME-NONE 새 이름의 파일이 이미 있다: ${reservation.path}`]
   renameSync(from, to)
   // 파일 안의 옛 이름을 새 이름으로 고친다. SQL 은 파일 안에 버전이 없다
-  const oldPart = found[0].slice(0, found[0].length - tail.length)
-  const newPart = newName.slice(0, newName.length - tail.length)
+  const base = (path: string) => path.slice(path.lastIndexOf('/') + 1)
   if (target.kind !== 'sql') {
-    const [oldText, newText] = adr
-      ? [new RegExp(`\\bADR-${escapeRegExp(oldPart)}\\b`, 'g'), reservation.label]
-      : [new RegExp(`\\b${escapeRegExp(oldPart)}__${escapeRegExp(reservation.name)}\\b`, 'g'), `${newPart}__${reservation.name}`]
+    const adr = target.kind === 'adr'
+    const oldPart = adr ? `ADR-${base(oldPath).split('-')[0]}` : base(oldPath).split('__')[0]
+    const [pattern, text] = adr
+      ? [new RegExp(`\\b${escapeRegExp(oldPart)}\\b`, 'g'), reservation.label]
+      : [new RegExp(`\\b${escapeRegExp(oldPart)}__${escapeRegExp(reservation.name)}\\b`, 'g'), `${reservation.label}__${reservation.name}`]
     const body = readFileSync(to, 'utf8')
-    const fixed = body.replace(oldText, newText)
+    const fixed = body.replace(pattern, text)
     if (fixed !== body) writeFileSync(to, fixed, 'utf8')
   }
-  return [`RENAMED ${relative(root, from)} ${relative(root, to)}`]
+  return [`RENAMED ${oldPath} ${reservation.path}`]
 }
 
 function parse(argv: string[]): { repo: string; prune: boolean; values: Record<string, string | boolean | undefined> } {
@@ -438,6 +439,7 @@ async function main(argv: string[]): Promise<number> {
     const removedAll: Reservation[] = []
     let invalid = 0
     let chosen: ReturnType<typeof choose> | null = null
+    let oldPath: string | null = null
     for (const store of stores) {
       let current
       try {
@@ -458,6 +460,9 @@ async function main(argv: string[]): Promise<number> {
       removedAll.push(...removed)
       let picked: ReturnType<typeof choose> | null = null
       if (target && lookup?.ok) {
+        // --rename 이 바꿀 파일. --again 이 버리는 이 브랜치의 옛 예약 경로다
+        const own = migrationName(target.name, target.kind)
+        oldPath = current.list.find((r) => r.branch === target.branch && r.module === target.module && r.name === own)?.path ?? null
         picked = choose({
           module: target.module,
           name: target.name,
@@ -500,7 +505,7 @@ async function main(argv: string[]): Promise<number> {
     const { reservation } = chosen
     const suffix = chosen.reused ? ' reused' : chosen.renewed ? ' renewed' : ''
     say(`RESERVED ${reservation.module} ${reservation.label} ${reservation.path}${suffix}`)
-    if (target?.rename) for (const line of renameForReservation(target, reservation)) say(line)
+    if (target?.rename) for (const line of renameForReservation(repo, target, reservation, oldPath)) say(line)
     return 0
   } finally {
     // 5. 예외가 나도 내 잠금은 푼다

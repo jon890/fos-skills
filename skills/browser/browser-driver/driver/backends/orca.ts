@@ -157,7 +157,7 @@ export class OrcaBackend extends Backend {
 
     if (cmd === 'shot') {
       // orca screenshot 은 파일이 아니라 base64 를 JSON 으로 돌려주므로 직접 디코딩한다.
-      const out = pyPath(args.length > 1 ? args[1] : '/tmp/orca-shot.png')
+      const out = pyPath(args[1] ?? '/tmp/orca-shot.png')
       const fmt = ['.jpg', '.jpeg'].includes(pySuffix(out).toLowerCase()) ? 'jpeg' : 'png'
       // --size 는 찍기 전에 이 탭의 뷰포트를 바꾼다. 뒤 촬영도 그 크기로 남는다
       if (args[2]) this.call('', 'viewport', '--width', String(args[2][0]), '--height', String(args[2][1]), '--page', args[0])

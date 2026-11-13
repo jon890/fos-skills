@@ -72,5 +72,7 @@ describe('ego 스크립트', () => {
     const set = 'await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1038, height: 556, deviceScaleFactor: 1, mobile: false });'
     assert.ok(text.includes(set), text)
     assert.ok(text.indexOf(set) < text.indexOf('page.screenshot'), text)
+    // 경로를 생략해도 기본 경로로 찍는다
+    assert.ok(script(t, ['shot', '3:p2', '--size', '800x600']).includes('/tmp/ego-shot.png'))
   })
 })
