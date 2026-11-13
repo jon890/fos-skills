@@ -1061,7 +1061,7 @@ export function checkChangedFileCount(path: string, entries: Set<string>, warnin
   }
 }
 
-// 기존 수정·삭제 파일의 전체 줄을 변경량의 근사치로 센다. 신규 파일은 아직 줄 수를 알 수 없다.
+// 수정은 현재 줄의 20%, 삭제는 전체 줄을 센다. 신규 파일은 아직 줄 수를 알 수 없다.
 export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[]): void {
   const configPath = pjoin(repo, '.github/pr-size.json')
   try {
@@ -1078,7 +1078,10 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
       count++
       let lines = 0
       if (action.includes('수정') || action.includes('삭제')) {
-        try { lines = pySplitLines(normalizeNewlines(readFileSync(pjoin(repo, rel), 'utf8'))).length } catch { unknown++ }
+        try {
+          const current = pySplitLines(normalizeNewlines(readFileSync(pjoin(repo, rel), 'utf8'))).length
+          lines = action.includes('삭제') ? current : Math.ceil(current * 0.2)
+        } catch { unknown++ }
       } else unknown++
       total += lines
       if (match(rel, config.core) || (!match(rel, config.tests) && !match(rel, config.docs))) core += lines
@@ -1086,7 +1089,7 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
     const metrics: Record<string, number> = { core_lines: core, total_lines: total, files: count }
     const exceeds = (grade: string) => Object.entries(config.grades![grade]).some(([key, limit]) => metrics[key] > limit)
     const grade = config.grades ? (exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A') : null
-    warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: 본 코드 ${core}줄, 전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개).${grade === 'D' ? ' PR 나눔 검토' : ''}`)
+    warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: 본 코드 ${core}줄, 전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개${unknown ? ", 미상을 제외한 추정" : ""}).${grade === 'D' && unknown === 0 ? ' PR 나눔 검토' : ''}`)
   } catch {
     warnings.push(`${configPath} — PR 크기 설정을 읽지 못해 줄 수를 추정하지 못했다`)
   }
