@@ -36,6 +36,7 @@
 | [ADR-030](030-plugin-npm-dependencies.md) | 플러그인 루트의 package.json 으로 npm 의존을 두고 설치는 Claude Code 에 맡긴다 | accepted | - |
 | [ADR-031](031-board-task-adapter.md) | 업무 도구 어댑터는 orch 가 갖고, 보드는 업무 번호와 주소만 저장한다 | accepted | - |
 | [ADR-032](032-loop-bundle-handover.md) | 옛 번들의 상주 루프는 잠금 파일을 새 루프의 pid 로 바꿔 넘기고, 새 루프가 상태를 쓴 뒤에 끝난다 | accepted | - |
+| [ADR-033](033-board-item-worker-rows.md) | 보드 항목은 worker 줄 목록을 갖고, 후속 PR 의 사건 단계는 그 줄이 갖는다 | accepted | - |
 
 ## 대체됨
 
