@@ -56,7 +56,7 @@ test('이 저장소의 살아 있는 마무리와 큐만 기다리고 ps 오류�
   ps.setRules([{ stdout: ` 123 node merge-with-finish.ts --repo ${join(root, 'other')}\n` }])
   assert.equal(busyReason(root), null)
   ps.setRules([{ stdout: ' 123 node merge-queue.sh\n' }])
-  assert.equal(busyReason(root), '머지 큐 pid 123')
+  assert.equal(busyReason(root), null, '저장소를 확인하지 못한 큐는 기다리지 않는다')
   ps.setRules([{ code: 1 }])
   assert.equal(busyReason(root), '프로세스 목록을 읽지 못했다')
 })

@@ -56,7 +56,7 @@ export function busyReason(repo: string): string | null {
     const found = /^\s*(\d+)\s+(.+)$/.exec(line)
     if (!found || !/merge_queue\.|merge-queue\.sh|merge-with-finish\./.test(found[2])) continue
     const target = /\s--repo\s+(\S+)/.exec(found[2])?.[1]
-    if (!target || mainCheckout(target) === mainCheckout(repo)) return `머지 큐 pid ${found[1]}`
+    if (target && mainCheckout(target) === mainCheckout(repo)) return `머지 큐 pid ${found[1]}`
   }
   return null
 }

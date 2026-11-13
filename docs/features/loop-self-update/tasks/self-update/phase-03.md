@@ -51,7 +51,7 @@
 - `skills/orch/tests/loop-self-update.spec.ts`(신규, 단위):
   - `decide`: 표의 줄마다 한 사례. target 없음, failed 와 같은 진입점, 종료 코드 2 에 바쁨이 있어도 `go`, since 에서 60분 1초 뒤 바쁨이 있어도 `go`, 59분에 바쁨이면 `wait`, 바쁨 없으면 `go`.
   - `observe`: 처음 줄 하나, 같은 target 두 번째는 null, target 이 바뀌면 줄이 다시 나오고 `failed` 가 지워지며 `since` 는 그대로, null 이면 상태가 빈다. 임시 폴더에 `.claude-plugin/plugin.json` 을 둔 두 번들로 버전 칸을 본다.
-  - `busyReason`: 임시 `ORCH_DIR` 의 `queue/finish-7.pid` 에 지금 프로세스 pid 를 쓰면 `마무리 PR 7`, 죽은 pid 면 null. 가짜 `PS`(받은 줄을 내는 스크립트, `skills/orch/tests/fixtures/fake-bin.ts` 꼴)로 `--repo <이 저장소>` 큐는 이유가 있고, `--repo <다른 저장소>` 큐는 null, `--repo` 없는 큐는 이유가 있고, `PS` 가 1 로 끝나면 `프로세스 목록을 읽지 못했다`.
+  - `busyReason`: 임시 `ORCH_DIR` 의 `queue/finish-7.pid` 에 지금 프로세스 pid 를 쓰면 `마무리 PR 7`, 죽은 pid 면 null. 가짜 `PS`(받은 줄을 내는 스크립트, `skills/orch/tests/fixtures/fake-bin.ts` 꼴)로 `--repo <이 저장소>` 큐는 이유가 있고, `--repo <다른 저장소>` 큐는 null, `--repo` 없는 큐는 null 이고, `PS` 가 1 로 끝나면 `프로세스 목록을 읽지 못했다`.
 - `skills/orch/tests/loop-steps.spec.ts`: lifecycle 의 상대 import 허용 목록에 `./self-update.ts` 를 더한다. `self-update.ts` 가 `lifecycle.ts` 와 `orch-loop.ts` 를 import 하지 않는지 같은 꼴로 본다.
 - `skills/orch/tests/script-folders.spec.ts`: helpers 에 `'loop/self-update.ts': 'orch-loop 의 부모가 옛 번들 판정과 다시 뜨기에 쓰는 모듈이다. 직접 실행하지 않는다'` 를 더한다.
 

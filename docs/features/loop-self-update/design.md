@@ -64,7 +64,7 @@
 `busyReason(repo)` 는 아래 둘을 본다(스펙 DECISION7).
 
 - 마무리: `pathOf('queue', repo)` 의 `finish-*.pid` 가운데 `pidFileAlive` 가 참인 것. 이유는 `마무리 PR <번호>` 다. `state/finish-started/` 표시는 보지 않는다. 지우지 않는 표시라 끝난 마무리도 남는다(스펙 「조사한 사실」).
-- 머지 큐: `PS -Ao pid=,command=` 의 줄 가운데 명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 것. 명령줄의 `--repo <경로>` 를 `mainCheckout` 으로 바꿔 이 저장소와 같을 때만 센다. `--repo` 가 없으면 이 저장소의 것으로 센다. 큐는 `--repo` 가 없으면 자기 cwd 를 쓰는데 cwd 를 읽는 비용을 들이지 않고, 잘못 세도 60분 상한이 끝을 정한다. 이유는 `머지 큐 pid <pid>` 다. 프로세스 목록을 읽지 못하면 이유는 `프로세스 목록을 읽지 못했다` 이고 기다린다.
+- 머지 큐: `PS -Ao pid=,command=` 의 줄 가운데 명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 것. 명령줄의 `--repo <경로>` 를 `mainCheckout` 으로 바꿔 이 저장소와 같을 때만 센다. `--repo` 가 없으면 저장소를 확인하지 못한 것으로 보고 기다림에서 뺀다. 다른 저장소의 큐 때문에 재시작이 늦어지지 않게 한다. 이유는 `머지 큐 pid <pid>` 다. 프로세스 목록을 읽지 못하면 이유는 `프로세스 목록을 읽지 못했다` 이고 기다린다.
 
 ### 다시 뜨는 차례
 
@@ -176,7 +176,7 @@ sequenceDiagram
 | DECISION3 | `LOOP-UPDATED` 를 보내는 쪽 | 옛 루프 | 작성자 | 이 기능이 있는 쪽은 옛 루프로 정해져 있다. 새 루프가 보내면 넘겨받기 정보를 하나 더 넘겨야 한다 |
 | DECISION4 | 판정 상태(target, since, failed)의 자리 | 부모 메모리 | 작성자 | 사람이 다시 띄우면 기억을 지운다는 스펙 DECISION11 과 같다. 파일로 두면 지울 때를 따로 정해야 한다 |
 | DECISION5 | 새 루프의 진입점 | 새 번들의 `orch-loop.ts` 에 `--foreground` 를 준다. `bin/orch.ts` 를 거치지 않는다 | 작성자 | 명령 표에 `--foreground` 가 없고, `--start` 도 같은 꼴로 자식을 띄운다. 경로는 번들 사이 계약으로 ADR 에 둔다 |
-| DECISION6 | `--repo` 없는 머지 큐 | 이 저장소의 것으로 센다 | 작성자 | 잘못 세는 쪽은 기다림이고 60분 상한이 끝을 정한다. 놓치는 쪽은 도는 머지를 두고 다시 뜨는 것이다 |
+| DECISION6 | `--repo` 없는 머지 큐 | 저장소를 확인하지 못하므로 기다림에서 뺀다 | 코디네이터 2026-11-13 | 다른 저장소의 큐 때문에 재시작을 기다리지 않는 스펙 DECISION7 을 따른다 |
 | DECISION7 | 넘겨받기 실패 알림의 재전송 | 하지 않는다 | 작성자 | 스펙 REQ5 의 「한 번」 이다. 실패한 진입점은 다시 시도하지 않으므로 알림도 다시 나지 않는다 |
 
 | 결정 | 종류 | ADR | 현재 규칙의 원본 |
