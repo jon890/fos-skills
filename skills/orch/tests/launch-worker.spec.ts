@@ -1917,6 +1917,17 @@ describe('worker 셸의 orch 판정', () => {
     assert.doesNotMatch(both(r), /워크트리를 만들었다/)
   })
 
+  for (const option of [['--on', 'macbook'], ['--environment', 'macbook'], ['--pairing-code', 'orca://pair?x']]) {
+    test(`원격 환경(${option[0]})의 worker 는 이 머신의 PATH 로 판정하지 않는다`, () => {
+      withoutOrchOnPath(false)
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--', ...CLAUDE, ...option])
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(both(r), /worker 터미널에서 orch 를 부를 수 없다/)
+      assert.ok(lines('orca orchestration worker-start')[0].includes(`${option[0]} ${option[1]}`))
+    })
+  }
+
   test('--terminal 로 이어 쓰는 터미널은 이미 떠 있어 보지 않는다', () => {
     withoutOrchOnPath(false)
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })

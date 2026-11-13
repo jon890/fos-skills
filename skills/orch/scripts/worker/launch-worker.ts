@@ -32,7 +32,7 @@
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
-//     0-3. 새 터미널이면(--terminal 이 없으면) worker 의 셸이 PATH 로 orch 실행기를 찾는지 본다(lib/worker-path.ts). 못 찾으면 고칠 명령을 내고 1 이다.
+//     0-3. 새 터미널이면(--terminal 이 없고 원격 환경 옵션 --on, --environment, --pairing-code 도 없으면) 이 머신에서 worker 의 셸이 PATH 로 orch 실행기를 찾는지 본다(lib/worker-path.ts). 못 찾으면 고칠 명령을 내고 1 이다.
 //        공통 지시서가 `orch …` 로만 부르고 Orca 의 worker-start 가 터미널 환경을 받지 않아서, 띄우는 쪽이 PATH 를 넣을 수 없다. 워크트리를 만들기 전에 멈춘다
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
 //     1-1. spec-lint 로 이 지시서를 검사한다. 함께 넘기는 활성 지시서는 살아 있는 dispatch(pending, dispatched, running)가 쓰는 지시서
@@ -645,8 +645,10 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (rejected.length) throw new Stop(rejected.join('; '), 1)
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
-  // 새 터미널이면 worker 의 셸이 PATH 로 orch 를 찾아야 한다(지시서가 `orch …` 만 쓴다). 이어 쓰는 터미널은 이미 떠 있어 보지 않는다
-  if (!passthru.includes('--terminal')) {
+  // 새 터미널이면 worker 의 셸이 PATH 로 orch 를 찾아야 한다(지시서가 `orch …` 만 쓴다). 이어 쓰는 터미널은 이미 떠 있어 보지 않는다.
+  // 원격 환경(--on, --environment, --pairing-code)의 worker 는 이 머신의 셸이 아니라 그 서버의 셸에서 뜨므로 이 머신의 PATH 로 판정하지 않는다
+  const remote = ['--on', '--environment', '--pairing-code'].some((name) => passthru.includes(name))
+  if (!passthru.includes('--terminal') && !remote) {
     const orchOnPath = checkWorkerOrch()
     if (!orchOnPath.ok) {
       err(`거부: worker 터미널에서 orch 를 부를 수 없다. ${orchOnPath.reason}. 지시서가 \`orch …\` 로만 부르므로 worker 가 첫 명령에서 막힌다. 아래대로 고친 뒤 다시 띄운다`)

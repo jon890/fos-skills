@@ -1,3 +1,3 @@
-- 공통 지시서 틀의 명령 블록에서 실행기 경로를 푸는 약 600자 한 줄과 설명 문단을 지운다. 명령은 `orch …` 만 쓴다. 저장소의 공통 지시서 사본은 `orch spec sync-common` 으로 맞춘다. 명령 블록이 있던 `study-add` 항목에 표지를 더한다
-- `orch worker launch` 가 새 터미널을 띄우기 전에 worker 셸이 PATH 로 `orch` 실행기를 찾는지 보고, 못 찾으면 `orch doctor install-cli` 와 PATH 설정을 안내하며 멈춘다(`--terminal` 로 이어 쓰는 터미널은 보지 않는다)
+- 공통 지시서 틀의 명령 블록에서 실행기 경로를 푸는 약 600자 한 줄과 설명 문단을 지운다. 명령은 `orch …` 만 쓴다. 저장소의 공통 지시서 사본은 `orch spec sync-common` 으로 맞춘다.
+- `orch worker launch` 가 새 터미널을 띄우기 전에 worker 셸이 PATH 로 `orch` 실행기를 찾는지 보고, 못 찾으면 `orch doctor install-cli` 와 PATH 설정을 안내하며 멈춘다(`--terminal` 로 이어 쓰는 터미널과 원격 환경 옵션 `--on`, `--environment`, `--pairing-code` 로 띄우는 worker 는 보지 않는다)
 - `orch worker resume` 이 같은 조건을 보고, 사본이 깔려 있으면 새 터미널 명령 앞에 `export PATH=…` 를 더한다
