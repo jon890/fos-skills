@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.50.1 (2026-11-13)
+
+- `orch doctor migrate` 가 깨진 설정 때문에 설정 쪽만 건너뛰면 끝에 「config.json 을 고친 뒤 다시 돌린다」 를 알리고, 이 경우를 「옮길 것이 없다」 로 세지 않는다. 설정 잠금을 시간 안에 잡지 못하면 건너뛰지 않고 실패하는 동작을 테스트로 묶었다.
+
 ## 7.50.0 (2026-11-13)
 
 - `orch config show`, `orch config get`, `orch config set`, `orch config unset` 으로 설정을 조회하고 바꾼다. 여러 값은 함께 검사하고 저장하며, 잘못된 값은 이유와 함께 거절한다.
