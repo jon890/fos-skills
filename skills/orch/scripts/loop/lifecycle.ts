@@ -473,8 +473,9 @@ export function status(repo: string): number {
 
 // stderr 의 마지막 원인 줄을 우선하고 없으면 stdout 의 마지막 오류 줄을 쓴다.
 export function tickCause(stdout: string[], stderr: string[]): string | null {
-  const error = stderr.filter(line => line.trim() && !line.startsWith('STALE-BUNDLE ')).at(-1)
-    ?? stdout.filter(line => line.startsWith('orch-loop:') || /오류|실패|Error/.test(line)).at(-1)
+  const relevant = (line: string) => line.trim() && !/^(?:STALE-BUNDLE |Node\.js v|\(node:\d+\) (?:\[[^\]]+\] )?\w*Warning:|\(Use .*--trace-(?:warnings|deprecation|uncaught)\b)/.test(line.trim())
+  const error = stderr.filter(relevant).at(-1)
+    ?? stdout.filter(line => relevant(line) && (line.startsWith('orch-loop:') || /오류|실패|Error/.test(line))).at(-1)
   return error?.slice(0, 200) ?? null
 }
 
