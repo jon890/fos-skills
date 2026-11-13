@@ -29,10 +29,10 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 
 | 방식 | kind |
 |---|---|
-| 바로 | STEP-READY, CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
+| 바로 | STEP-READY, CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, LOOP-DEAD 류, LOOP-UPDATED, LOOP-UPDATE-FAIL, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
 | 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
 
-모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 그 틱에 바로 한 번 보낸다.
+모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 이유의 WATCH-ERROR 가 연속 세 번째 틱이면 바로 한 번 보낸다. 부모의 틱 실패(`tick`)도 같고, 본문 앞에 저장소 루트 폴더 이름을 쓰며 원인 줄을 담는다.
 
 한 Run 에 저장소마다 루프가 등록돼 있으면 같은 알림이 루프 수만큼 오지 않게, 보내기 전에 머신 폴더의 `run-notices/<Run>/<해시>` 를 본다. 다른 저장소의 루프가 10분 안에 같은 Run, kind, 본문을 보냈으면 보내지 않는다(`lib/run-notice.ts`). 완료 보고 확인은 이 저장소가 띄우지 않은 dispatch 의 PR 조회가 실패하면 건너뛴다. 띄운 저장소의 루프가 맡는다.
 
@@ -49,7 +49,10 @@ WAITER-LEFT 는 옛 대기 프로세스가 남았다는 뜻이다. 출력의 pid
 
 ## 플러그인을 갱신한 뒤
 
-플러그인 갱신은 이미 실행 중인 옛 번들 루프의 코드를 바꾸지 않는다. 갱신 뒤 `orch doctor --run <Run>` 으로 LOOP-STALE 을 확인하고, 그 Run 의 코디네이터 세션에서 안내한 stop·start 명령으로 루프를 다시 띄운다. start 만 부르면 옛 루프에 합류할 수 있다.
+상주 루프는 틱 사이에 옛 번들을 알아채면 이 저장소의 머지 큐·마무리가 끝날 때까지 최대 60분 기다린 뒤 새 설치본으로 다시 뜬다. 틱이 설정 오류로 실패하면 바로 다시 뜬다. 성공하면 등록된 Run 마다 `LOOP-UPDATED` 를 보내고, 실패하면 `LOOP-UPDATE-FAIL` 을 보내며 옛 루프가 계속 돈다. 두 알림은 모아 보내지 않으며, 전송 실패는 로그에만 남기고 다시 보내지 않는다.
+`LOOP-UPDATE-FAIL` 을 받았을 때와 이 기능 전 번들로 뜬 루프는 그 Run 의 코디네이터 세션에서 `orch loop stop` 뒤 `orch loop start` 로 다시 띄운다. `orch loop status` 의 `bundle=` 로 버전을 확인한다. start 만 부르면 옛 루프에 합류할 수 있다.
+새 설치본이 망가져 `orch loop stop` 도 실행되지 않으면, orch 상태 폴더의 `state/loop.json` 에서 옛 루프 pid 를 읽고 `ps -p` 에 그 pid 를 줘서 해당 루프인지 확인한 뒤 `kill -TERM` 에 같은 pid 를 줘서 멈춘다. 설치본을 복구한 뒤 다시 시작한다.
+루프 밖에서 직접 부른 스크립트의 `STALE-BUNDLE` 경고는 그대로다.
 다시 시작한 루프는 옛 파일에 남은 읽지 않은 알림을 정리 단계에서 Run 메시지로 전달한다. 앞 루프에서 등록을 뺀 Run 은 재시작 알림이 거절돼도 한 번만 시도하고, 지금 등록된 Run 의 일시 실패는 다음 틱에 재시도한다.
 
 ## 못 맞춘 머지 알림

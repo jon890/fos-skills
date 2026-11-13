@@ -9,7 +9,7 @@
 //             셋 다 없으면 Run 줄 없이 루프와 보드만 낸다(스펙 DECISION22). 진입점은 Run 을 문맥으로 채우지 않는다
 //
 // 출력(한 줄에 판정 하나):
-//     LOOP-ALIVE <pid> runs=<등록된 Run 을 쉼표로 또는 -> last_tick=<시각 또는 ->   루프가 살았다
+//     LOOP-ALIVE <pid> runs=<등록된 Run 을 쉼표로 또는 -> last_tick=<시각 또는 -> bundle=<버전 또는 ->   루프가 살았다
 //     LOOP-STALE <repo> <pid> <번들>                   살아 있지만 지금 세션의 user 설치본과 다른 번들이다(doctor 와 같은 판정)
 //     LOOP-DEAD <repo> <이유>                         루프가 없거나 죽었다(lib/loop.ts 의 loopStatus. 재확인을 기다리지 않는다)
 //     RUN <id> workers=<이 저장소 워크트리의 열린 dispatch 수> stalled=<멈춘 수>   같은 Run 의 다른 저장소 worker 는 세지 않는다
@@ -96,7 +96,7 @@ function main(argv: string[]): number {
   const loop = loopStatus(repo, now)
   if (loop.alive) {
     const registered = registeredRuns(repo).map((entry) => entry.run)
-    out(`LOOP-ALIVE ${loop.state.pid} runs=${registered.join(',') || '-'} last_tick=${loop.state.last_tick || '-'}`)
+    out(`LOOP-ALIVE ${loop.state.pid} runs=${registered.join(',') || '-'} last_tick=${loop.state.last_tick || '-'} bundle=${loop.state.bundle_version || '-'}`)
     const stale = staleLoopBundles().find((entry) => entry.pid === Number(loop.state.pid))
     if (stale) out(`LOOP-STALE ${repo} ${stale.pid} ${stale.sha}`)
   } else {
