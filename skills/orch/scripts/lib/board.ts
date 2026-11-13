@@ -260,6 +260,9 @@ export function boardSteps(bin: string, id: string, file: string): BoardStep[] |
 }
 
 // PR 제목의 업무 번호를 설정 규칙으로 읽고 어댑터의 번호 꼴로 맞춘다. 규칙이나 설정을 읽지 못하면 null 이다.
+// extractTaskNumber 는 마지막 PR 판정의 기존 영문 번호 계약을 유지한다.
+// 보드 번호는 한글 프로젝트도 받아야 하므로 별도로 검사한다(ADR-031, 설계 DECISION5).
+// 보드 연결 기능 때문에 마지막 PR 판정의 허용 문자를 넓히지 않는다.
 export function prTaskRef(repo: string, title: string): string | null {
   try {
     const finish = section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS)
