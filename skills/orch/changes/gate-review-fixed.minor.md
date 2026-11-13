@@ -1,0 +1,3 @@
+- `queue.auto_review.fixed_after_block` 을 `true` 로 두면 「반영 필요」 를 받고 반영한 PR 이 재리뷰 없이 머지 gate 와 자동 머지를 통과한다
+- 조건은 block 이 본 커밋 뒤의 반영 커밋과 미해결 스레드 0 이다. 기본은 `false` 라 기존 설정은 그대로다
+- 이 갈래로 통과하면 `orch queue gate` 가 `GATE-OK` 다음 줄에 `REVIEW-FIXED <리뷰 id> <커밋 범위>` 를 낸다

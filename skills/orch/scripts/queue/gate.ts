@@ -15,6 +15,9 @@
 //
 // 출력(판정 줄은 `orch --full` 이어도 그대로다):
 //   GATE-OK <PR>
+//   REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>
+//                 GATE-OK 뒤에 줄이 더 붙을 수 있다. 리뷰 설정에 fixed_after_block 이 true 이고 block 을 받은 PR 이 재리뷰 없이 풀렸을 때만 낸다.
+//                 조건은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다. GATE-FAIL 일 때는 내지 않는다
 //   GATE-FAIL <PR>
 //     <이유>        걸린 이유를 한 줄씩. PR 을 읽지 못하거나 이미 MERGED 이거나 OPEN 이 아니어도 GATE-FAIL 이다
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
@@ -44,19 +47,20 @@ function print(lines: string[]): void {
   process.stdout.write(`${lines.join('\n')}\n`)
 }
 
-// 판정 줄과 이유 줄. 이유가 없으면 통과다
-export function gateLines(n: string, reasons: GateReason[]): string[] {
-  return reasons.length === 0 ? [`GATE-OK ${n}`] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]
+// 판정 줄과 이유 줄. 이유가 없으면 통과다. 통과일 때 fixed 의 `REVIEW-FIXED …` 줄이 판정 줄 뒤에 붙는다
+export function gateLines(n: string, reasons: GateReason[], fixed: string[] = []): string[] {
+  return reasons.length === 0 ? [`GATE-OK ${n}`, ...fixed] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]
 }
 
-async function gate(state: StepState, n: string): Promise<GateReason[]> {
+async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[]; fixed: string[] }> {
   try {
-    if ((await loadPr(stepContext, state, n)) === 'merged') return [{ kind: 'lookup', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }]
-    return (await gateReasons(stepContext, state, 'all')).reasons
+    if ((await loadPr(stepContext, state, n)) === 'merged') return { reasons: [{ kind: 'lookup', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }], fixed: [] }
+    const { reasons, fixed } = await gateReasons(stepContext, state, 'all')
+    return { reasons, fixed }
   } catch (e) {
     if (!(e instanceof Stop)) throw e
     // 조회 실패와 HEAD 변경은 확인하지 못한 것이다. 통과로 보지 않고 이유로 낸다
-    return [{ kind: 'lookup', text: e.message.startsWith(`${n} `) ? e.message.slice(n.length + 1) : e.message }]
+    return { reasons: [{ kind: 'lookup', text: e.message.startsWith(`${n} `) ? e.message.slice(n.length + 1) : e.message }], fixed: [] }
   }
 }
 
@@ -100,8 +104,8 @@ async function mainImpl(argv: string[]): Promise<number> {
     return 2
   }
   try {
-    const reasons = await gate(state, n)
-    print(gateLines(n, reasons))
+    const { reasons, fixed } = await gate(state, n)
+    print(gateLines(n, reasons, fixed))
     return reasons.length === 0 ? 0 : 1
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e

@@ -134,6 +134,7 @@ orch queue ready 101 102
 
 `orch queue gate <PR>` 은 머지 큐가 머지 전에 보는 조건(체크, 미해결 리뷰 스레드, 충돌, 설정한 리뷰 판정, 기능 완료 근거 블록과 독립 리뷰 줄)을 머지 없이 돌린다.
 통과하면 `GATE-OK <PR>`, 걸리면 `GATE-FAIL <PR>` 과 걸린 이유를 한 줄씩 낸다(종료 코드 0, 1). 판정은 머지 큐와 같은 함수가 하므로 큐가 멈출 이유를 큐에 걸기 전에 안다.
+리뷰 판정은 `block` 을 받은 PR 을 기본으로 막는다. 저장소가 `queue.auto_review.fixed_after_block` 을 `true` 로 두면 `block` 이 가리키는 커밋 뒤에 반영 커밋이 있고(기준 브랜치를 합친 merge 만 있으면 반영이 아니다) 미해결 스레드가 0 일 때 재리뷰 없이 통과한다. 그때 `GATE-OK <PR>` 다음 줄에 `REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>` 를 낸다. 자동 리뷰가 PR 을 열 때만 돌고 재리뷰를 금지하는 저장소를 위한 설정이다. 조건의 정확한 뜻은 `scripts/core/auto-merge.ts` 머리 주석의 「judgeReview」 가 소유한다.
 worker 는 「준비됨」 을 보내기 전에 이 명령을 통과해야 한다(공통 지시서). 옵션과 출력은 `scripts/queue/gate.ts` 머리 주석이 소유한다.
 
 `HELD <PR> <이유>` 줄(`--full` 은 `보류`)의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. ready 로 바꾼 PR 은 `READY <PR>` 이다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.

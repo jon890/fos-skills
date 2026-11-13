@@ -10,7 +10,7 @@ function reviewNotes(rows: unknown, at: string): ReviewNote[] {
   if (!Array.isArray(rows)) return []
   return rows.filter(isObject).map((row) => {
     const commit = isObject(row.commit) && typeof row.commit.oid === 'string' && row.commit.oid ? row.commit.oid : null
-    return { body: typeof row.body === 'string' ? row.body : '', at: typeof row[at] === 'string' ? row[at] as string : '', commit }
+    return { body: typeof row.body === 'string' ? row.body : '', at: typeof row[at] === 'string' ? row[at] as string : '', commit, ...(typeof row.id === 'string' && row.id ? { id: row.id } : {}) }
   })
 }
 
@@ -20,7 +20,8 @@ export function featureReviewRule(review: ReviewConfig, feature: boolean): Revie
   return { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] }
 }
 
-export function judgePrReview(repo: string, pr: { head: string; branch: string; base: string }, data: { reviews?: unknown; comments?: unknown }, review: ReviewConfig, feature: boolean): ReviewJudgement {
+// threads 는 지금 미해결 리뷰 스레드 수다. 모르면 null 이고, 그러면 fixed_after_block 이 켜져 있어도 block 을 풀지 않는다
+export function judgePrReview(repo: string, pr: { head: string; branch: string; base: string }, data: { reviews?: unknown; comments?: unknown }, review: ReviewConfig, feature: boolean, threads: number | null = null): ReviewJudgement {
   git(repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
   const listed = git(repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
   const chain: ChainCommit[] = listed.code === 0 ? listed.stdout.trim().split('\n').filter(Boolean).map((row) => {
@@ -29,5 +30,5 @@ export function judgePrReview(repo: string, pr: { head: string; branch: string; 
   }) : []
   const scope = reviewScope(pr.head, chain, (oid) => git(repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0)
   const rule = featureReviewRule(review, feature)
-  return judgeReview({ notes: [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], scope, chain }, rule)
+  return judgeReview({ notes: [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], scope, chain, threads }, rule)
 }
