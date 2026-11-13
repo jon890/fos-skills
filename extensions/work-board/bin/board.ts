@@ -33,7 +33,7 @@
 //   board.ts step-add <id> <글> [--event "PR 사건"] (번호가 없으면 가장 큰 번호 다음으로 더한다)
 //   step-edit 는 다른 번호나 사건 꼬리표를 지우는 글을 거절한다.
 //   step-add 는 이미 있는 번호와 done 항목을 거절한다. 두 동작은 결과 JSON 에 number 를 넣는다.
-//   step-add, set --detail, set --next 로 단계 줄이 progress 의 전체 값(N/M 의 M)보다 많아지면 progress 를 지우고 단계 줄로 센다(같은 set 이 --progress 를 주면 그 값을 따른다).
+//   step-add, set --detail, set --next 로 단계 줄이 progress 의 전체 값(N/M 의 M)보다 많아지면 progress 를 지우고 단계 줄로 센다(같은 set 이 --progress 를 주면 그 값을 따르고, goal 항목은 하위 항목 집계값일 수 있어 지우지 않는다).
 //   step-edit, set 으로 stages 가 가리키는 단계 줄의 글이 바뀌면 stderr 로 경고한다.
 //   step-edit, step-add 의 글에 「#번호」 와 머지·배포·릴리스 낱말이 있는데 --event 도 꼬리표도 없으면 stderr 로 경고한다(자동으로 끝나지 않는다).
 //   board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>] (번호 뒤의 자동 진행 표시만 바꾼다. plain 은 지운다)
@@ -462,6 +462,8 @@ function stepCount(item: Item): number {
 
 // progress 의 전체 값(N/M 의 M)보다 단계 줄이 많으면 progress 를 지워 단계 줄로 세게 한다. 지웠으면 true
 function dropStaleProgress(item: Item, id: string): boolean {
+  // 목표(goal)의 progress 는 하위 항목을 집계한 값(goal-progress.ts)일 수 있어 단계 줄 수와 비교하지 않는다
+  if (item.status === 'goal') return false
   const m = PROGRESS.exec(String(item.progress || ''))
   const count = stepCount(item)
   if (!m || Number(m[2]) <= 0 || count <= Number(m[2])) return false
@@ -491,7 +493,8 @@ function warnStageTextChanged(item: Item, id: string, before: Map<number, string
 }
 
 // 글에 PR 번호(#N)와 머지·배포·릴리스 낱말이 있는데 사건을 정하지 않았으면 자동으로 끝나지 않는다고 알린다
-const MERGE_WORDS = /머지|배포|릴리[스즈]|merge|deploy|release/i
+// 「나머지」 처럼 다른 낱말의 일부는 빼고, 「재배포」 와 조사·활용형은 받는다
+const MERGE_WORDS = /(?<![가-힣])(?:재)?(?:머지|배포|릴리[스즈])|(?<![A-Za-z])(?:merge|deploy|release)/i
 function warnMissingEvent(item: Item, id: string, number: number, text: string): void {
   if (parseEventTag(text) || stageTag(text) || stageNumbers(item).includes(number)) return
   const body = text.replace(/\((?:스펙|계획|앞 사건)\s*:[^()]*\)/g, '')
