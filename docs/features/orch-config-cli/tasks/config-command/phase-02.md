@@ -24,6 +24,8 @@
 
 ### 1. 코드와 문서를 변경한다
 
+`core/config-schema.ts` 의 knownPath 에서 목록 항목은 unknown 으로 거절하고, 이름을 정한 객체에서 프로토타입 속성을 읽지 않게 한다. 승인한 경로 문법을 지키는 수정이며 core-config-schema 테스트에 두 사례를 더한다.
+
 명령 표에 config show/get/set/unset 을 prepend 와 repo 문맥으로 등록하고 positional 은 두지 않는다. orch-config.ts 가 --repo, set 전용 --json, -- 와 단일 - 값을 직접 푼다. 겹치는 경로와 잘못된 인자 수는 종료 코드 2 다. requireMigrated 를 네 동작 앞에서 부른다. 검사표는 동적 import 로만 읽고 실패하면 의존 설치 안내와 종료 코드 1 을 낸다.
 
 show/get 은 readConfigFile 로 읽고 problems 를 경고로 낸다. show 는 절 목록을 확인하고 JSON 두 칸, get 은 파일에 있는 값만 한 줄로 낸다. set/unset 은 updateConfig 의 잠금 안에서 모든 경로를 함께 적용하고 검사한다. knownPath 의 removed 와 unset 범위의 옛 칸은 migrate-hooks 로 안내한다. 바꾼 최상위 키의 문제와 관련 짝 문제는 기존 문제여도 거절한다. 다른 문제는 옛 문제와 비교한다. 글자 대신 JSON 값이 검사를 통과할 때 --json 을 안내한다. 성공 줄의 이전 값은 잠금 안에서 읽은 값이고 기존 문제·새 파일·재시작 안내는 stderr 에 낸다.
@@ -39,7 +41,7 @@ RESTART_KEYS 의 실제 바뀐 값과 loopStatus 의 alive/recheck 로 재시작
 ## 검증
 
 ```bash
-node --test skills/orch/tests/orch-config.spec.ts skills/orch/tests/lib-commands.spec.ts
+node --test skills/orch/tests/orch-config.spec.ts skills/orch/tests/lib-commands.spec.ts skills/orch/tests/core-config-schema.spec.ts
 ```
 
 종료 코드 0 이고 테스트의 파일 값과 출력 단언이 통과한다.
@@ -51,3 +53,5 @@ node --test skills/orch/tests/orch-config.spec.ts skills/orch/tests/lib-commands
 | `skills/orch/scripts/config/orch-config.ts` | 신규 |
 | `skills/orch/scripts/lib/commands.ts` | 수정 |
 | `skills/orch/tests/orch-config.spec.ts` | 신규 |
+| `skills/orch/scripts/core/config-schema.ts` | 수정 |
+| `skills/orch/tests/core-config-schema.spec.ts` | 수정 |

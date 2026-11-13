@@ -448,10 +448,11 @@ function inZod(schema: z.ZodType, names: readonly string[]): boolean {
   if (def.type === 'optional' || def.type === 'nullable') return inZod(def.innerType as z.ZodType, names)
   if (def.type === 'record') return true
   if (def.type === 'object') {
-    const next = def.shape?.[names[0]]
+    const next = def.shape && Object.hasOwn(def.shape, names[0]) ? def.shape[names[0]] : undefined
     return next !== undefined && inZod(next, names.slice(1))
   }
-  if (def.type === 'array') return /^\d+$/.test(names[0]) && inZod(def.element as z.ZodType, names.slice(1))
+  // 목록 항목은 경로로 고르지 않는다. 목록 전체를 set --json 으로 바꾼다.
+  if (def.type === 'array') return false
   return false
 }
 
