@@ -54,6 +54,7 @@ if (is('worktree', 'list')) {
 if (is('repo', 'show')) out({ repo: { externalWorktreeVisibility: state.visibility || 'hide' } })
 if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
 if (is('terminal', 'create')) out(state.create_fails ? { error: 'remote unreachable' } : { terminal: { handle: 'term_probe' } }, state.create_fails ? 1 : 0)
+if (is('terminal', 'read') && state.read_delay && args.includes('term_probe')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, state.read_delay * 1000)
 if (is('terminal', 'read') && state.screen) out({ terminal: { tail: state.screen } })
 if (is('terminal', 'close')) out({}, state.close_fails ? 1 : 0)
 if (is('orchestration', 'worker-start')) {
@@ -1979,6 +1980,19 @@ describe('worker 셸의 orch 판정', () => {
     const r = launch(['--worktree', worktree, '--', ...CODEX, '--on', 'macbook'])
     assert.equal(r.code, 0, both(r))
     assert.match(r.stderr, /0초 안에 확인 터미널의 결과를 읽지 못했다/)
+    assert.equal(lines('orca terminal close').length, 1)
+  })
+
+  test('원격 터미널 읽기가 멎어도 대기 한도 안에서 끝내고 경고만 내며 터미널을 닫는다', () => {
+    withoutOrchOnPath(false)
+    env.LAUNCH_PROBE_WAIT = '1'
+    state({ next_ids: ['ctx_1'], screen: probeScreen('/r/orch', '/r/node'), read_delay: 6, dispatches: { ctx_1: shown('input_accepted') } })
+    const started = Date.now()
+    // 함수 평가 fixture 는 timeoutMs 를 적용하지 않으므로 실제 CLI 로 돌린다
+    const r = launch(['--worktree', worktree, '--', ...CODEX, '--on', 'macbook'], 'bash', true, SCRIPT)
+    assert.equal(r.code, 0, both(r))
+    assert.ok(Date.now() - started < 5000, `읽기 시간이 한도에 들지 않았다: ${Date.now() - started}ms`)
+    assert.match(r.stderr, /1초 안에 확인 터미널의 결과를 읽지 못했다/)
     assert.equal(lines('orca terminal close').length, 1)
   })
 

@@ -456,6 +456,7 @@ function remoteSelectorOf(passthru: string[]): { option: string; args: string[] 
   return null
 }
 
+const PROBE_READ_MIN_MS = 1000
 const PROBE_LINE = /^__ORCH_PROBE__ orch=(\S*) node=(\S*)\s*$/
 
 // 머리 주석의 「0-3」. 원격 머신에 짧은 터미널을 열어 orch 와 node 가 PATH 에 있는지 읽고 닫는다.
@@ -478,9 +479,10 @@ async function remoteOrchProbe(
   try {
     const wait = seconds('LAUNCH_PROBE_WAIT', '20')
     const interval = seconds('LAUNCH_PROBE_POLL', '1')
-    let spent = 0
+    const deadline = Date.now() + wait * 1000
     for (;;) {
-      const read = await call(['terminal', 'read', '--terminal', handle, '--screen', '--json', ...selector.args])
+      // 읽기 한 번도 남은 시간 안에 끝내 원격이 멎어도 전체가 대기 한도를 크게 넘지 않는다. 한 번은 읽어 보도록 1초는 남긴다
+      const read = await call(['terminal', 'read', '--terminal', handle, '--screen', '--json', ...selector.args], Math.max(PROBE_READ_MIN_MS, deadline - Date.now()))
       let result: Record<string, unknown> = {}
       try {
         result = ((JSON.parse(read.stdout) as { result?: Record<string, unknown> }).result ?? {}) as Record<string, unknown>
@@ -493,9 +495,9 @@ async function remoteOrchProbe(
         const names = [...(m[1] ? [] : ['orch']), ...(m[2] ? [] : ['node'])]
         return names.length ? { kind: 'missing', names } : { kind: 'found' }
       }
-      if (spent >= wait) return { kind: 'unknown', reason: `${wait}초 안에 확인 터미널의 결과를 읽지 못했다` }
-      await sleep(interval * 1000)
-      spent += interval || 1
+      const left = deadline - Date.now()
+      if (left <= 0) return { kind: 'unknown', reason: `${wait}초 안에 확인 터미널의 결과를 읽지 못했다` }
+      await sleep(Math.min(Math.max(interval, 0.001) * 1000, left))
     }
   } finally {
     closeTerminal(handle, { extraArgs: selector.args })
