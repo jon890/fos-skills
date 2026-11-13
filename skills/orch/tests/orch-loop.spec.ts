@@ -43,6 +43,10 @@ if (st.bound && sub === 'check' && run && run !== st.bound) {
   process.stdout.write(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'This caller is bound to Run ' + st.bound + ', not Run ' + run } }) + '\\n')
   process.exit(1)
 }
+if (st.unbound_fenced && sub === 'check' && run) {
+  process.stdout.write(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'This caller is not bound; consumer_fenced for bound to Run ' + run } }) + '\\n')
+  process.exit(1)
+}
 if (sub === 'run-current') {
   if (st.slow_run_current) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.slow_run_current * 1000)
   reply({ run: st.bound ? { id: st.bound } : null })
@@ -868,6 +872,18 @@ describe('--start, --status, --stop', () => {
     assert.equal(fenced.code, 5, fenced.stdout + fenced.stderr)
     assert.match(fenced.stdout, /^LOOP-START-FENCED r1 X$/m)
     assert.match(fenced.stdout, /^안내: 이 터미널은 Run X 에 묶여 Run r1 의 질문을 읽지 못한다/m)
+    assert.equal(loopState(), null)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
+  })
+
+  test('터미널이 어떤 Run 에도 묶이지 않았으면 LOOP-START-UNBOUND 와 run-use 안내, 5 다', () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ unbound_fenced: true })
+    const out = loop(['--run', 'r1', '--start'])
+    assert.equal(out.code, 5, out.stdout + out.stderr)
+    assert.match(out.stdout, /^LOOP-START-UNBOUND r1$/m)
+    assert.match(out.stdout, /orca orchestration run-use --id r1$/m)
+    assert.doesNotMatch(out.stdout, /LOOP-START-FENCED/)
     assert.equal(loopState(), null)
     assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
   })

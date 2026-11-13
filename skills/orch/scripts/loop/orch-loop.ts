@@ -12,6 +12,8 @@
 //     --specs-dir    그 Run 의 정리에 넘길 지시서 폴더. 없으면 finish.specs_dir 이고, 둘 다 없으면 넘기지 않는다. 등록 파일에 적는다
 //     --start        Run 이 있으면 먼저 이 프로세스가 그 Run 을 조회할 수 있는지 본다(lifecycle.ts 머리 주석의 「명의」). consumer_fenced 면 띄우지도
 //                    합류하지도 않고 LOOP-START-FENCED <Run> <묶인 Run> 과 `안내: …` 한 줄, 5 다.
+//                    터미널이 어떤 Run 에도 묶이지 않았으면(run-current 가 비었다) LOOP-START-UNBOUND <Run> 과 `orca orchestration run-use --id <Run>` 을
+//                    담은 `안내: …` 한 줄, 5 다.
 //                    그다음 등록한다(lib/loop.ts 의 registerRun). 살아 있는 루프가 없으면 자기 자신을 --foreground 로
 //                    분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에 자기 pid 를 쓸 때까지 10초까지 기다린다.
 //                    하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다.
@@ -98,7 +100,7 @@
 //     1  --start 실패, --stop 시간 초과나 루프 프로세스인지 판정하지 못함, --status 가 죽었다, 잡지 않은 예외
 //     2  사용법 오류와 설정 오류(ConfigError, ORCH_LOOP_ALIVE_SEC 가 양수가 아님)
 //     4  살아 있는 루프가 있다(LOOP-RUNNING)
-//     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED)
+//     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED, LOOP-START-UNBOUND)
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { existsSync, realpathSync } from 'node:fs'
