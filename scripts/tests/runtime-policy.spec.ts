@@ -255,6 +255,32 @@ describe('checkImports', () => {
     }
   })
 
+  test('정적 문의 모든 토큰 사이에서 줄바꿈을 포함한 공백을 허용한다', () => {
+    const examples = [
+      "export\n{ x } from 'zod'", "export\n* from 'zod'",
+      "export *\nas ns\nfrom 'zod'", "export type\n{ T }\nfrom 'zod'",
+      "import\n{ z }\nfrom\n'zod'",
+    ]
+    for (const text of examples) {
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:1 zod'], text)
+    }
+    const forms = [
+      ['export', '{ x }', 'from', "'zod'"], ['export', '*', 'from', "'zod'"],
+      ['export', '*', 'as', 'ns', 'from', "'zod'"], ['export', 'type', '{ T }', 'from', "'zod'"],
+      ['import', '{ z }', 'from', "'zod'"], ['import', '*', 'as', 'ns', 'from', "'zod'"],
+      ['import', 'type', '{ T }', 'from', "'zod'"], ['import', 'z', 'from', "'zod'"],
+    ]
+    for (const tokens of forms) for (const space of [' ', '\t', '\n', '\r\n', '\n \t\n']) {
+      const text = tokens.join(space)
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:1 zod'], text)
+    }
+    for (const prefix of ['import\n{', 'export\n{', 'export\ntype\n{', 'export\n*\nas\nns']) {
+      const text = prefix + " // runtime-policy: sample\nimport { z } from 'zod'"
+      const row = prefix.split('\n').length + 1
+      assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), [`IMPORT fixture.ts:${row} zod`], text)
+    }
+  })
+
   test('부수 효과 import는 줄바꿈을 포함한 공백을 허용한다', () => {
     const text = "import\n'zod'"
     assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:1 zod'])
