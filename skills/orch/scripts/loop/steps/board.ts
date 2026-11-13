@@ -7,7 +7,7 @@ import { isFile } from '../../lib/fs.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { context, payload } from '../../lib/completion.ts'
-import { reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem } from '../../lib/review.ts'
+import { boardItemOfDispatch, reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem } from '../../lib/review.ts'
 import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
@@ -24,12 +24,11 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
       const args = ['--repo', ctx.repo]
       const reviews = new Set<number>()
       const byItem = reviewPrsByItem(ctx.repo)
-      const pending = new Set(readBoard(boardPath(ctx.repo)).flatMap((item) => {
-        const number = reviewPrOfItem(String(item.id), byItem)
-        return number !== null && item.status !== 'done' ? [number] : []
-      }))
+      const openItems = readBoard(boardPath(ctx.repo)).filter((item) => item.status !== 'done' && reviewPrOfItem(String(item.id), byItem) !== null).map((item) => String(item.id))
+      const pending = new Set(openItems.flatMap((id) => /^review-pr-(\d+)$/.test(id) ? [Number(id.slice('review-pr-'.length))] : []))
+      const items = new Set<string>()
       const messages = [...ctx.completions.values()].flat().filter((message) => (message.outcome ?? payload(message).outcome) === 'succeeded')
-      if (pending.size && messages.length) {
+      if (openItems.length && messages.length) {
         const history = new Map(launchHistory(ctx.repo).map((row) => [row.dispatch, row]))
         const known = new Map<string, number | null>()
         for (const message of messages) {
@@ -38,10 +37,15 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
           const id = String(dispatch)
           if (!known.has(id)) known.set(id, reviewPrOfDispatch(ctx.repo, id, history))
           const pr = known.get(id)
-          if (pr != null && pending.has(pr)) reviews.add(pr)
+          // worker_done 은 그 dispatch 가 맡은 항목만 닫는다. 같은 PR 의 다른 리뷰·검증 항목은 그 항목의 worker 나 대상 PR 머지로 닫는다
+          if (pr == null) continue
+          const item = boardItemOfDispatch(ctx.repo, id, history)
+          if (item && openItems.includes(item)) items.add(item)
+          else if (!item && pending.has(pr)) reviews.add(pr)
         }
       }
       if (reviews.size) args.push('--completed-reviews', JSON.stringify([...reviews]))
+      if (items.size) args.push('--completed-items', JSON.stringify([...items]))
       if (prs.ok) args.push('--open-prs', JSON.stringify(prs.mine.map((pr) => ({ number: pr.number, headRefName: pr.branch, title: pr.title }))))
       const done = await runAsync(scriptCommand(sync, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
       relay(done)

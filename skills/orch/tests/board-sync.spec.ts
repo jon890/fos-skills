@@ -128,7 +128,7 @@ describe('board-sync', () => {
       { id: 'review-pr-486-b', status: 'doing', details: ['1. 리뷰'] },
       { id: 'verify-pr-486', status: 'doing', details: ['1. 검증'] },
       { id: 'review-pr-9-r2', status: 'doing', details: ['1. 리뷰'] },
-    ], ['--completed-reviews', '[477]'])
+    ], ['--completed-items', '["review-pr-477-r2"]', '--completed-reviews', '[9]'])
     assert.equal(result.code, 0, result.result.stderr)
     assert.equal(result.board['review-pr-477-r2'].status, 'done')
     assert.equal(result.board['review-pr-486-b'].status, 'done')

@@ -50,8 +50,9 @@
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
 //     PR 을 처음 연결할 때 finish.task_pattern 으로 읽은 업무 번호도 빈 task-ref 에 넣는다.
 //     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName, title). 없으면 직접 조회한다
-//     --completed-reviews 루프 내부용. worker_done 을 받은 리뷰 PR 번호 JSON 목록.
-//                   리뷰·검증 항목(지시서의 `리뷰 PR: #N`, 없으면 id 가 review-pr-N, verify-pr-N 꼴, 뒤에 -r2 같은 꼬리가 붙어도 된다)은 이 목록에 있거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
+//     --completed-items 루프 내부용. worker_done 을 받은 dispatch 가 맡은 리뷰·검증 보드 항목 id JSON 목록. 그 항목만 끝낸다.
+//     --completed-reviews 루프 내부용. 지시서에 보드 항목 id 가 없는 dispatch 의 worker_done 을 받은 리뷰 PR 번호 JSON 목록. id 가 정확히 review-pr-N 인 항목만 끝낸다.
+//                   리뷰·검증 항목(그 id 의 가장 최근 지시서에 `리뷰 PR: #N` 이 있거나, 지시서를 못 읽으면 id 가 review-pr-N, verify-pr-N 꼴, 뒤에 -r2 같은 꼬리가 붙어도 된다)은 worker_done 을 받았거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
 //     --goal, --goal-items
 //                   --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다.
 //                   --goal-items 가 없으면 목표 항목의 단계 줄을 센다
@@ -110,6 +111,7 @@ const OPTIONS = {
   repo: { type: 'string' },
   'open-prs': { type: 'string' },
   'completed-reviews': { type: 'string' },
+  'completed-items': { type: 'string' },
   goal: { type: 'string' },
   'goal-items': { type: 'string' },
   'dry-run': { type: 'boolean' },
@@ -226,6 +228,15 @@ function main(argv: string[]): number {
     err(`board-sync: --completed-reviews: ${(e as Error).message}`)
     return 2
   }
+  let completedItems: string[] = []
+  try {
+    const parsed: unknown = JSON.parse(values['completed-items'] ?? '[]')
+    if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) throw new Error('항목 id 목록이 아니다')
+    completedItems = parsed
+  } catch (e) {
+    err(`board-sync: --completed-items: ${(e as Error).message}`)
+    return 2
+  }
   let items: Record<string, unknown>[]
   try {
     const raw = (JSON.parse(readFileSync(board, 'utf8')) as { items?: unknown }).items
@@ -252,7 +263,7 @@ function main(argv: string[]): number {
   const names = worktreeNames(repo)
   const liveBranches = new Set(branches.values())
   let rules: LastPrRules | null | undefined
-  let reviewItems: Map<string, number> | undefined
+  let reviewItems: Map<string, number | null> | undefined
   let settings: BoardSettings | null | undefined
   const runs: { runs: RunRow[] | null } = { runs: null }
   const deployments = new Map<string, DeployVerdict>()
@@ -301,7 +312,7 @@ function main(argv: string[]): number {
     const target = reviewPrOfItem(id, reviewItems)
     const review = target === null ? null : [id, String(target)]
     const reviewDone = review && !SKIP_STATUS.has(String(item.status)) &&
-      (completedReviews.includes(target!) || stateFor(review[1]) === 'MERGED')
+      (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)) || stateFor(review[1]) === 'MERGED')
     if (reviewDone) {
       const steps = boardSteps(boardBin, id, board)
       if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }

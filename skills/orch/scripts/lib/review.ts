@@ -143,26 +143,33 @@ export function reviewPrOfDispatch(repo: string, dispatch: string, history?: Rea
 // 보드 항목 id 꼴. 재리뷰(`review-pr-477-r2`), 다시 띄운 리뷰(`review-pr-486-b`), 인수 검증(`verify-pr-486`) 항목도 대상 PR 이 있다
 const ITEM_ID = /^(?:review|verify)-pr-(\d+)(?:-.+)?$/
 
-// 보드 항목 id 가 리뷰·검증 항목이면 대상 PR 번호를 낸다. 띄우기 이력의 지시서 가운데 `보드 항목 id:` 가 같고 `리뷰 PR:` 줄이 있는 것을 먼저 찾고,
-// 지시서를 찾지 못하면 id 꼴로 읽는다. 둘 다 아니면 null 이다. 같은 이력으로 여러 번 부르면 `byItem` 에 지시서 읽은 결과를 모아 둔다
-export function reviewPrOfItem(id: string, byItem: Map<string, number>): number | null {
-  const found = byItem.get(id)
-  if (found !== undefined) return found
+// 보드 항목 id 가 리뷰·검증 항목이면 대상 PR 번호를 낸다. `byItem` 에 그 id 의 가장 최근 지시서 판정이 있으면 그것이 먼저다
+// (`리뷰 PR:` 줄이 없는 지시서면 null, 곧 리뷰 항목이 아니다). 지시서를 읽지 못해 판정이 없으면 id 꼴로 읽는다
+export function reviewPrOfItem(id: string, byItem: Map<string, number | null>): number | null {
+  if (byItem.has(id)) return byItem.get(id) ?? null
   const m = ITEM_ID.exec(id)
   return m ? number(m[1]) : null
 }
 
-// 띄우기 이력의 지시서에서 보드 항목 id → 리뷰 PR 번호를 모은다. 읽지 못한 지시서는 건너뛴다
-export function reviewPrsByItem(repo: string): Map<string, number> {
-  const byItem = new Map<string, number>()
-  for (const row of launchHistory(repo)) {
+// 띄우기 이력의 지시서에서 보드 항목 id → 리뷰 PR 번호를 모은다. 항목 id 마다 가장 최근 띄우기 하나만 본다(id 를 다시 쓴 옛 이력은 보지 않는다).
+// 그 지시서에 `리뷰 PR:` 줄이 없으면 null 이다. 지시서를 읽지 못한 이력과 `보드 항목 id:` 줄이 없는 지시서는 건너뛴다
+export function reviewPrsByItem(repo: string): Map<string, number | null> {
+  const byItem = new Map<string, number | null>()
+  const rows = [...launchHistory(repo)].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+  for (const row of rows) {
     if (!row.spec) continue
     try {
       const text = readFileSync(row.spec, 'utf8')
       const item = boardIdOf(text)?.id
-      const pr = reviewPrOfSpec(text)
-      if (item && pr !== null) byItem.set(item, pr)
+      if (item) byItem.set(item, reviewPrOfSpec(text))
     } catch { /* 지시서가 지워졌으면 id 꼴로 읽는다 */ }
   }
   return byItem
+}
+
+// worker_done 을 보낸 dispatch 가 맡은 보드 항목 id. 지시서에 `보드 항목 id:` 줄이 없으면 null 이다
+export function boardItemOfDispatch(repo: string, dispatch: string, history?: ReadonlyMap<string, { spec?: string | null }>): string | null {
+  const spec = (readLaunch(repo, dispatch) ?? (history ? history.get(dispatch) : launchHistory(repo).find((row) => row.dispatch === dispatch)))?.spec
+  if (!spec) return null
+  try { return boardIdOf(readFileSync(spec, 'utf8'))?.id ?? null } catch { return null }
 }
