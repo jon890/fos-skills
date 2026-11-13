@@ -260,6 +260,7 @@ describe('checkImports', () => {
       "export\n{ x } from 'zod'", "export\n* from 'zod'",
       "export *\nas ns\nfrom 'zod'", "export type\n{ T }\nfrom 'zod'",
       "import\n{ z }\nfrom\n'zod'",
+      "export\n*from'zod'", "export\n*as ns\nfrom'zod'",
     ]
     for (const text of examples) {
       assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), ['IMPORT fixture.ts:1 zod'], text)
@@ -279,6 +280,8 @@ describe('checkImports', () => {
       const row = prefix.split('\n').length + 1
       assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text }]), [`IMPORT fixture.ts:${row} zod`], text)
     }
+    const comment = "export {\n/*\n * from 'ignored'\n */\nx\n} from 'zod'"
+    assert.deepEqual(checkImports([], [{ path: 'fixture.ts', text: comment }]), ['IMPORT fixture.ts:1 zod'])
   })
 
   test('부수 효과 import는 줄바꿈을 포함한 공백을 허용한다', () => {

@@ -256,8 +256,12 @@ export function checkImports(allowed: BareImport[], sources: FileText[]): string
       if (!found.has(row)) found.set(row, new Set());
       found.get(row)!.add(specifier);
     };
-    // 주석 줄은 공백으로 바꿔 원래 줄 번호와 여러 줄 문의 범위를 유지한다.
-    const text = rows.map((row) => /^[ \t]*(?:\/\/|\*)/.test(row) ? " ".repeat(row.length) : row).join("\n");
+    // 주석 줄은 공백으로 바꾼다. 여러 줄 문의 *·* from·* as 는 정적 문의 토큰으로 남긴다.
+    const text = rows.map((row, index) => {
+      const star = /^[ \t]*\*(?:\s*$|\s*(?:from|as)\b)/.test(row)
+        && /(?:^|\n)[ \t]*(?:export\b(?:\s+type\b)?|import\b(?:\s+type\b)?(?:\s+[\w$]+\s*,)?)\s*$/.test(rows.slice(0, index).join("\n"));
+      return /^[ \t]*\/\//.test(row) || (/^[ \t]*\*/.test(row) && !star) ? " ".repeat(row.length) : row;
+    }).join("\n");
     for (const pattern of STATIC_IMPORTS) for (const match of text.matchAll(pattern)) {
       const start = text.slice(0, match.index).split("\n").length - 1;
       const end = start + match[0].split("\n").length - 1;
