@@ -8,14 +8,62 @@
   "spec": "docs/features/loop-self-update/spec.md",
   "design": "docs/features/loop-self-update/design.md",
   "verification_plan": "verification-plan.md",
-  "requirements": ["REQ1", "REQ2", "REQ3", "REQ4", "REQ5", "REQ6", "REQ7", "REQ8"],
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ7",
+    "REQ8"
+  ],
   "total_phases": 5,
-  "current_phase": 1,
+  "current_phase": 2,
   "phases": [
-    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ7"] },
-    { "number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["REQ6"] },
-    { "number": 3, "file": "phase-03.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ3"] },
-    { "number": 4, "file": "phase-04.md", "execution_profile": "standard", "requirements": ["REQ2", "REQ3", "REQ4", "REQ5"] },
-    { "number": 5, "file": "phase-05.md", "execution_profile": "standard", "requirements": ["REQ8"] }
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ7"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ6"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ3"
+      ]
+    },
+    {
+      "number": 4,
+      "file": "phase-04.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ2",
+        "REQ3",
+        "REQ4",
+        "REQ5"
+      ]
+    },
+    {
+      "number": 5,
+      "file": "phase-05.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ8"
+      ]
+    }
   ]
 }

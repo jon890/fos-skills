@@ -97,9 +97,17 @@ describe('orch status', () => {
     const before = snapshot()
     const r = status()
     assert.equal(r.code, 0, r.stdout + r.stderr)
-    assert.match(r.lines[0], new RegExp(`^LOOP-ALIVE ${process.pid} runs=r1,r2 last_tick=\\S+$`))
+    assert.match(r.lines[0], new RegExp(`^LOOP-ALIVE ${process.pid} runs=r1,r2 last_tick=\\S+ bundle=-$`))
     assert.deepEqual(r.lines.slice(1), ['RUN r1 workers=2 stalled=1', 'RUN r2 workers=0 stalled=0', 'BOARD doing=2 decide=1', 'STALLED\td1\tidle\t45\twt-old\tr1'])
     assert.deepEqual(snapshot(), before)
+  })
+
+  test('상태에 기록된 번들 버전을 줄 끝에 보인다', () => {
+    scene()
+    const file = join(repo, '.orch/state/loop.json')
+    const state = JSON.parse(readFileSync(file, 'utf8'))
+    writeFileSync(file, JSON.stringify({ ...state, bundle_version: 'test-version' }))
+    assert.match(status().lines[0], / bundle=test-version$/)
   })
 
   for (const [name, bundle, scope, expectStale] of [

@@ -45,7 +45,7 @@
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
-// loop.json: pid, run(주 Run), runs(등록된 Run 목록), repo, tick_sec, started_at, alive_at, last_tick, ticks, errors, ci, stalls. 시각은 ISO 8601 UTC 다. 부모만 쓴다.
+// loop.json: bundle_version, pid, run(주 Run), runs(등록된 Run 목록), repo, tick_sec, started_at, alive_at, last_tick, ticks, errors, ci, stalls. 시각은 ISO 8601 UTC 다. 부모만 쓴다.
 //     시작할 때 앞 loop.json 의 errors, ci, stalls 를 이어받는다. 다시 띄운 루프가 같은 실패를 다시 알리지 않게 한다.
 
 import { spawn } from 'node:child_process'
@@ -53,6 +53,7 @@ import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } fr
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { isObject } from '../core/json.ts'
+import { bundleVersion, ownBundle } from '../lib/bundle.ts'
 import { envMs } from '../lib/env.ts'
 import { reclaim } from '../lib/events.ts'
 import { DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from '../lib/loop.ts'
@@ -449,7 +450,7 @@ export function status(repo: string): number {
     return 1
   }
   const { state } = found
-  log(`LOOP-ALIVE ${state.pid} run=${state.run || '-'} last_tick=${state.last_tick || '-'} alive_at=${state.alive_at}`)
+  log(`LOOP-ALIVE ${state.pid} run=${state.run || '-'} last_tick=${state.last_tick || '-'} alive_at=${state.alive_at} bundle=${state.bundle_version || '-'}`)
   return 0
 }
 
@@ -525,6 +526,7 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
   const now = iso()
   const state: LoopState = {
     pid: process.pid,
+    bundle_version: bundleVersion(ownBundle()),
     ...(bound === undefined ? {} : { bound_run: bound }),
     run: runs[0] ?? ctx.run,
     runs,
