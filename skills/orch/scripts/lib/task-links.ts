@@ -1,4 +1,5 @@
 // 열린 항목 중 task-ref 만 있는 항목의 업무 주소를 채운다. 실패 뒤 30분 간격, 틱 예산 60초, CLI 호출 15초.
+// reason 은 첫 실패 이유를 보존하고 at 만 마지막 시도 시각으로 갱신한다. 로그와 기록 모두 최초 원인을 남긴다.
 // state/task-links.json: { items: { [id]: { ref, at(ISO), reason } }, config?: string }. 깨진 기록은 비운다.
 // 성공 TASK-LINK <id> <번호>, 첫 실패 TASK-LINK-FAIL <id> <번호> <이유>, 설정 오류 TASK-LINK-CONFIG <이유>.
 import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
