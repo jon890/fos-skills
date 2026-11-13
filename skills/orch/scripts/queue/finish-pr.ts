@@ -583,8 +583,9 @@ function linkRowPr(args: Args, repo: string, item: string, worktree: string): bo
   const got = boardRow(args, repo, item)
   if (!got) return false
   const list = [...new Set([...prNumbers(got.row.pr), args.pr])].join(', ')
-  return (prNumbers(got.row.pr).has(args.pr) || board(args, repo, ['set', item, '--pr', list])) &&
-    board(args, repo, ['worker-set', item, '--worktree', worktree, '--pr', args.pr])
+  // 줄을 먼저 채운다. pr 칸에만 이어지고 줄이 비면 보드 맞추기가 그 PR 을 항목 묶음으로 읽는다
+  return board(args, repo, ['worker-set', item, '--worktree', worktree, '--pr', args.pr]) &&
+    (prNumbers(got.row.pr).has(args.pr) || board(args, repo, ['set', item, '--pr', list]))
 }
 
 function setBoardDone(args: Args, repo: string, item: string): boolean {
@@ -732,15 +733,19 @@ async function finish(args: Args, repo: string): Promise<number> {
     }
     log(`보드 ${item.id} 는 사건 꼬리표가 있어 board-sync 에 맡긴다`)
   } else if (item && stages) {
-    // worker 줄의 브랜치로 찾은 항목은 보드 맞추기가 이 PR 을 잇기 전일 수 있다. 먼저 줄과 pr 칸에 이어야 그 줄의 묶음 단계를 끝낸다
-    if (item.row !== undefined && !linkRowPr(args, repo, item.id, item.row)) problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 잇지 못했다`)
-    // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
-    // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
-    const result = setBoardMilestone(args, repo, item.id, stages, deploy, last, last ? null : noteLine(verdict.prs, verdict.specs))
-    const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
-    if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
-    else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
-    else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
+    // worker 줄의 브랜치로 찾은 항목은 보드 맞추기가 이 PR 을 잇기 전일 수 있다. 먼저 줄과 pr 칸에 이어야 그 줄의 묶음 단계를 끝낸다.
+    // 잇지 못하면 항목의 단계와 merged-pr 을 건드리지 않는다. 줄의 pr 이 빈 채로 항목 묶음을 끝내면 잘못된 단계가 끝난다
+    if (item.row !== undefined && !linkRowPr(args, repo, item.id, item.row)) {
+      problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 잇지 못해 단계를 끝내지 않았다`)
+    } else {
+      // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
+      // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
+      const result = setBoardMilestone(args, repo, item.id, stages, deploy, last, last ? null : noteLine(verdict.prs, verdict.specs))
+      const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
+      if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
+      else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
+      else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
+    }
   } else if (item) {
     const result = setBoardLegacy(args, repo, item.id, last, last ? null : noteLine(verdict.prs, verdict.specs))
     if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)

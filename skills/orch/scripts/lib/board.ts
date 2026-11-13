@@ -340,14 +340,17 @@ export function findBoardItems(file: string, pr: string, branch: string, worktre
       open(i) &&
       ((branch && i.branch === branch) || (worktree && i.worktree === worktree)),
   )
+  // 일치하는 구현·후속 줄(pr 이 빔)이 있으면 그 줄의 워크트리를 rows 에 담는다. 항목을 대표 칸으로 찾았어도 같다
   const rows: Record<string, string> = {}
-  const byRow = items.filter((i) => {
-    if (!open(i) || byBranch.includes(i)) return false
-    const row = boardWorkerRows(i).find((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).size === 0 &&
+  const rowOf = (i: BoardItem) => boardWorkerRows(i)
+    .filter((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).size === 0 &&
       ((branch && one.branch === branch) || (worktree && one.worktree === worktree)))
+    .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+  const byRow = items.filter((i) => open(i) && !byBranch.includes(i) && rowOf(i) !== undefined)
+  for (const i of [...byBranch, ...byRow]) {
+    const row = rowOf(i)
     if (row) rows[id(i)] = row.worktree
-    return row !== undefined
-  })
+  }
   const ids = [...byBranch, ...byRow].map(id)
   return ids.length > 0 ? { by: 'branch', ids, ...(Object.keys(rows).length > 0 ? { rows } : {}) } : null
 }

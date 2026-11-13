@@ -1141,6 +1141,35 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(item.status, 'doing')
   })
 
+  test('대표 브랜치로 찾은 항목도 같은 브랜치의 후속 줄에 PR 을 이어 그 줄의 묶음 단계를 끝낸다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'board.json')
+    const details = [1, 2, 3, 4].map((n) => ({ text: `${n}. 단계`, done: false }))
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'm', status: 'doing', worktree: 'wb', branch: 'feat/x', stages: 'pr=1,merge=2', details, workers: [follow({ pr: null, branch: 'feat/x' })] }] }))
+    const r = await c.finish(['--intermediate', '--board', file])
+    assert.equal(r.code, 0, both(r))
+    const item = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items[0]
+    assert.deepEqual((item.details as Json[]).map((d) => d.done), [false, false, true, true])
+    assert.equal((item.workers as Json[])[0].pr, 77)
+    assert.equal(item['merged-pr'], 77)
+  })
+
+  test('줄에 PR 을 잇지 못하면 단계와 merged-pr 을 건드리지 않고 실패로 끝낸다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'board.json')
+    const real = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
+    const wrapper = join(c.tmp, 'board-wrapper.ts')
+    writeFileSync(wrapper, `import {spawnSync} from 'node:child_process'; const args=process.argv.slice(2); if(args[0]==='worker-set'){process.stderr.write('거절\\n');process.exit(1)} const r=spawnSync(process.execPath,[${JSON.stringify(real)},...args],{stdio:'inherit'}); process.exitCode=r.status`)
+    const details = [1, 2, 3, 4].map((n) => ({ text: `${n}. 단계`, done: false }))
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'm', status: 'doing', pr: 78, worktree: 'wb', branch: 'feat/b', stages: 'pr=1,merge=2', details, workers: [follow({ pr: null, branch: 'feat/x' })] }] }))
+    const r = await c.finish(['--complete', '--board', file, '--board-bin', wrapper])
+    assert.notEqual(r.code, 0, both(r))
+    const item = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items[0]
+    assert.deepEqual((item.details as Json[]).map((d) => d.done), [false, false, false, false])
+    assert.equal(item['merged-pr'], undefined)
+    assert.equal(item.pr, 78)
+  })
+
   test('pr 칸이 아직 비었으면 구현 줄의 브랜치가 머지 PR 의 브랜치인 항목을 찾아 항목 묶음 단계를 끝낸다', async (t) => {
     const impl = { role: 'impl', worktree: 'wa', branch: 'feat/x', dispatch: 'd1', pr: null, status: 'done', at: '2026-01-01', endedAt: '2026-01-02' }
     const { done, rows } = await realBoard(t, [impl, follow({ pr: 78 })])
