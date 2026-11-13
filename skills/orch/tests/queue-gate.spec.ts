@@ -114,13 +114,14 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
   })
 
   for (const line of ['머지 보류: real 확인 전', '- **머지 보류:** real 확인 전', '머지 보류:']) {
-    test(`보류 줄이 있으면 gate 와 merge 가 거절한다: ${line}`, async (t) => {
+    test(`보류 줄이 있으면 gate 는 안내하고 merge 는 거절한다: ${line}`, async (t) => {
       const c = setup(t)
       writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), `브랜치: \`feat\`\n${line}\n`)
       for (const invoke of [gate, queue]) {
         const r = await invoke(c, { '1': pr() }, 0)
-        assert.equal(r.code, 1, both(r))
-        assert.match(r.stdout, /GATE-HOLD (real 확인 전|이유 없음)/)
+        assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+        assert.match(r.stdout, invoke === gate ? /^HOLD (real 확인 전|이유 없음)$/m : /GATE-HOLD (real 확인 전|이유 없음)/)
+        if (invoke === gate) assert.match(r.stdout, /^GATE-OK 1$/m)
         assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
       }
     })
@@ -138,8 +139,8 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     }
     for (const invoke of [gate, queue]) {
       const r = await invoke(c, { '1': pr() }, 0)
-      assert.equal(r.code, 1, both(r))
-      assert.match(r.stdout, /GATE-HOLD 먼저 등록한 Run/)
+      assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+      assert.match(r.stdout, invoke === gate ? /^HOLD 먼저 등록한 Run$/m : /GATE-HOLD 먼저 등록한 Run/)
     }
   })
 
@@ -150,9 +151,20 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     writeFileSync(join(c.tmp, 'custom-specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 백업 대기\n')
     for (const invoke of [gate, queue]) {
       const r = await invoke(c, { '1': pr() }, 0)
-      assert.equal(r.code, 1, both(r))
-      assert.match(r.stdout, /GATE-HOLD 백업 대기/)
+      assert.equal(r.code, invoke === gate ? 0 : 1, both(r))
+      assert.match(r.stdout, invoke === gate ? /^HOLD 백업 대기$/m : /GATE-HOLD 백업 대기/)
     }
+  })
+
+  test('보류 중에도 CI 와 미해결 스레드 이유를 모두 내고 실패한다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 배포 대기\n')
+    const r = await gate(c, { '1': pr({ statusCheckRollup: FAILED }) }, 2)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^GATE-FAIL 1$/m)
+    assert.match(r.stdout, /실패한 체크 1 개/)
+    assert.match(r.stdout, /미해결 리뷰 스레드 2 개/)
+    assert.match(r.stdout, /^HOLD 배포 대기$/m)
   })
 
   test('다른 브랜치의 보류 줄은 gate 와 merge 를 막지 않는다', async (t) => {
