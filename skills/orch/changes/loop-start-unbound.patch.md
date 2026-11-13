@@ -1,1 +1,0 @@
-- 묶이지 않은 터미널에서 `loop --start` 를 부르면 `LOOP-START-UNBOUND <Run>` 과 고칠 명령(`orca orchestration run-use --id <Run>`)을 낸다. 다른 Run 에 묶인 경우의 `LOOP-START-FENCED` 는 그대로다.

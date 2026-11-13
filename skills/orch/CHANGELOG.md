@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.48.2 (2026-11-13)
+
+- 묶이지 않은 터미널에서 `loop --start` 를 부르면 `LOOP-START-UNBOUND <Run>` 과 고칠 명령(`orca orchestration run-use --id <Run>`)을 낸다. 다른 Run 에 묶인 경우의 `LOOP-START-FENCED` 는 그대로다.
+
+## 7.48.1 (2026-11-13)
+
+- 앞 PR 이 머지돼 단계가 모두 끝난 보드 항목에 새 브랜치의 worker 를 띄우면 그 PR 의 PR·머지 단계를 더하고 stages 를 새 번호로 옮긴다. 같은 브랜치를 다시 띄우면 더하지 않는다.
+
 ## 7.48.0 (2026-11-13)
 
 - `queue.auto_review.fixed_after_block` 을 `true` 로 두면 「반영 필요」 를 받고 반영한 PR 이 재리뷰 없이 머지 gate 와 자동 머지를 통과한다
