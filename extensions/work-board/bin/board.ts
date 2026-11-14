@@ -5,8 +5,11 @@
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
 // 사용:
-//   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--keep-current ROLE] [--keep-dispatch D]
+//   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]
 //   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
+//   board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로이고 맞는 줄이 없으면 종료 코드 0 으로 아무것도 하지 않는다)
+//   board.ts worker-link <id> --worktree W --pr N   (그 줄의 pr 을 N 으로 하고 항목 pr 칸에 N 을 더한다. 한 잠금, 한 번 저장이라 둘 중 하나만 저장되지 않는다. 맞는 줄이 없으면 거절한다)
+//   --stages 는 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄의 PR·머지 단계 번호다. 같은 줄을 다시 쓸 때 주지 않으면 그대로 둔다.
 //   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
 //   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D ...]
 //   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
@@ -83,16 +86,18 @@ const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
 const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'task', 'task-ref', 'progress', 'stages'] as const
 // stages 칸의 값. 사건과 단계 번호의 짝을 쉼표로 잇는다
 const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|release)=\d+)*\s*$/
+// worker 줄의 stages 값. 후속 묶음은 PR·머지 두 단계만 갖는다
+const ROW_STAGES = /^\s*pr=\d+\s*,\s*merge=\d+\s*$/
 // PR 번호를 담는 칸. 「#555」 와 「555」 를 같은 값으로 저장한다(prValue)
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
 export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'worker-add', 'worker-end']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link']
 const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,worker-add,worker-end} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -103,8 +108,10 @@ const HELP = `${USAGE}
 파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
 
 사용:
-  board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--keep-current ROLE] [--keep-dispatch D]
+  board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]
   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
+  board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로다)
+  board.ts worker-link <id> --worktree W --pr N   (줄의 pr 과 항목 pr 칸을 한 번에 쓴다. 맞는 줄이 없으면 거절한다)
   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
   board.ts step-edit <id> <번호> <글> [--event "PR 사건"]
   board.ts step-add <id> <글> [--event "PR 사건"]
@@ -401,6 +408,9 @@ function parse(argv: string[]): Args | 'help' {
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
   if ((values.fill !== undefined || values['if-task-ref'] !== undefined) && cmd !== 'set') throw new Error('--fill, --if-task-ref 는 set 에만 쓴다')
   if (values.fill && (values.task === '' || values['task-ref'] === '')) throw new Error('--fill 과 빈 업무 값은 함께 쓰지 않는다')
+  if (cmd === 'worker-add' && values.stages !== undefined && !ROW_STAGES.test(values.stages)) throw new Error(`worker-add 의 --stages 는 pr=N,merge=M 꼴이다: ${values.stages}`)
+  if (cmd === 'worker-link' && (!id || status !== undefined || !values.worktree?.trim() || !PR_LIST.test(values.pr ?? '') || (values.pr!.match(/\d+/g) ?? []).length !== 1)) throw new Error('worker-link 에는 id, --worktree, PR 번호 하나(--pr)가 필요하다')
+  if (cmd === 'worker-set' && (!id || status !== undefined || !values.worktree?.trim())) throw new Error('worker-set 에는 id 와 --worktree 가 필요하다')
   if (values.dispatch !== undefined && !['worker-add', 'worker-end'].includes(cmd)) throw new Error('--dispatch 는 worker-add, worker-end 에만 쓴다')
   if ((values['keep-current'] !== undefined || values['keep-dispatch'] !== undefined) && cmd !== 'worker-add') throw new Error('--keep-current, --keep-dispatch 는 worker-add 에만 쓴다')
   if (values.clear !== undefined && cmd !== 'worker-end') throw new Error('--clear 는 worker-end 에만 쓴다')
@@ -480,8 +490,10 @@ function findStep(item: Item, id: string, number: number): { source: string; lin
 }
 
 // stages 칸(「pr=1,merge=2」)이 가리키는 단계 번호들. 칸 값이 규칙 밖이면 비어 있다
+// worker 줄의 stages(후속 묶음의 PR·머지 단계)도 같은 사건 단계라 합친다. orch 의 eventNumbers 와 같은 규칙이다
 function stageNumbers(item: Item): number[] {
-  return typeof item.stages === 'string' && STAGES.test(item.stages) ? (item.stages.match(/=(\d+)/g) ?? []).map((part) => Number(part.slice(1))) : []
+  const values = [item.stages, ...(Array.isArray(item.workers) ? item.workers.map((row) => (row !== null && typeof row === 'object' ? (row as Record<string, unknown>).stages : undefined)) : [])]
+  return values.flatMap((value) => (typeof value === 'string' && STAGES.test(value) ? (value.match(/=(\d+)/g) ?? []).map((part) => Number(part.slice(1))) : []))
 }
 
 // 진행률을 세는 쪽의 단계 줄 수
@@ -558,11 +570,37 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
+  if (a.cmd === 'worker-link') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    const rows = (Array.isArray(item.workers) ? item.workers : []) as Array<Record<string, unknown>>
+    const row = rows.find((one) => one !== null && typeof one === 'object' && one.worktree === a.fields.worktree)
+    if (!row) throw new Refused(`worker 줄이 없다: ${id} ${a.fields.worktree}`)
+    const number = (a.fields.pr as string).match(/\d+/)![0]
+    const list = [...new Set([...(String(item.pr ?? '').match(/\d+/g) ?? []), number])].join(', ')
+    const next = prValue(number)
+    const nextItem = prValue(list)
+    if (row.pr === next && item.pr === nextItem) return false
+    row.pr = next
+    item.pr = nextItem
+    return true
+  }
+  if (a.cmd === 'worker-set') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    const rows = (Array.isArray(item.workers) ? item.workers : []) as Array<Record<string, unknown>>
+    const row = rows.find((one) => one !== null && typeof one === 'object' && one.worktree === a.fields.worktree)
+    if (!row || a.fields.pr === undefined) return false
+    const next = a.fields.pr === '' ? null : prValue(a.fields.pr)
+    if (row.pr === next) return false
+    row.pr = next
+    return true
+  }
   if (a.cmd === 'worker-add' || a.cmd === 'worker-end') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)
     const stamp = localIso(new Date())
-    type Worker = { role: string; dispatch: string | null; worktree: string; branch: string | null; pr: unknown; status: string; at: string; endedAt: string | null }
+    type Worker = { role: string; dispatch: string | null; worktree: string; branch: string | null; pr: unknown; stages?: string; status: string; at: string; endedAt: string | null }
     const rows = (Array.isArray(item.workers) ? item.workers : []) as Worker[]
     const work = (row: Worker) => ['impl', 'follow'].includes(row.role)
     if (a.cmd === 'worker-add') {
@@ -578,6 +616,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       if (a.dispatch !== undefined) row.dispatch = a.dispatch
       if (a.fields.branch !== undefined) row.branch = a.fields.branch
       if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
+      if (a.fields.stages !== undefined) row.stages = a.fields.stages.replace(/\s+/g, '')
       row.at = stamp
       row.status = 'working'
       row.endedAt = null

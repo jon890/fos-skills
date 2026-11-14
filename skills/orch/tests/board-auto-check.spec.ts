@@ -117,6 +117,21 @@ test('앞 사건과 관련 없는 마일스톤 항목은 단계 조회 프로세
   assert.deepEqual(read.map(args => args.slice(0, 2)), [['steps', 'a'], ['steps', 'related']])
 })
 
+test('첫 미완료 단계가 후속 묶음의 [pr] 단계이면 [auto] 표시가 있어도 자동 진행 대상이 아니다', t => {
+  const c = setup(t)
+  const follow = { role: 'follow', worktree: 'wb', branch: 'feat/b', dispatch: 'd', pr: null, stages: 'pr=2,merge=3', status: 'working', at: '2026-11-13T00:00:00Z', endedAt: null }
+  c.put([{
+    id: 'a', status: 'doing', stages: 'pr=1', workers: [follow],
+    details: [{ text: '1. PR', done: true }, { text: '2. [auto] PR (wb) (계획: docs/plan)', done: false }, { text: '3. 머지 (wb)', done: false }],
+  }])
+  assert.equal(c.run().first, 'AUTO-REJECT a 2 첫 미완료 단계가 [auto] 가 아니다')
+  c.put([{
+    id: 'a', status: 'doing', stages: 'pr=1', workers: [{ ...follow, stages: undefined }],
+    details: [{ text: '1. PR', done: true }, { text: '2. [auto] PR (wb) (계획: docs/plan)', done: false }, { text: '3. 머지 (wb)', done: false }],
+  }])
+  assert.equal(c.run().status, 0)
+})
+
 test('진행 중인지 먼저 확인하고 같은 단계의 재실행을 막는다', t => {
   const c = setup(t)
   c.launch()

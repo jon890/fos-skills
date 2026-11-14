@@ -702,3 +702,77 @@ for (const [name, queue] of [['큐를 쓰지 않는 저장소', JSON.stringify({
     await ui.unmount()
   })
 }
+
+// worker 줄 그리기: 작업 중 둘(구현, 리뷰), 끝남 둘, 끊김 하나인 항목과 그 worker 를 Orca 가 낸다
+const row = (extra = {}) => ({ role: 'impl', worktree: 'wa', branch: 'feat/a', dispatch: 'd1', pr: null, status: 'working', at: '2026-11-13T01:00:00Z', endedAt: null, ...extra })
+const ROWS = [
+  row(),
+  row({ role: 'review', worktree: 'wr', dispatch: 'd2', pr: 7, at: '2026-11-13T02:00:00Z' }),
+  row({ role: 'follow', worktree: 'wf', dispatch: 'd3', status: 'done', at: '2026-11-13T03:00:00Z', endedAt: '2026-11-13T03:30:00Z' }),
+  row({ role: 'review', worktree: 'wg', dispatch: 'd4', status: 'done', pr: 7, at: '2026-11-13T04:00:00Z', endedAt: '2026-11-13T04:30:00Z' }),
+  row({ role: 'verify', worktree: 'wl', dispatch: 'd5', status: 'lost', pr: 7, at: '2026-11-13T05:00:00Z', endedAt: '2026-11-13T05:10:00Z' }),
+]
+const WORKER_BOARD = (items) => JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items })
+const liveWorkers = (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+  argv.includes('run-current') ? { run: { id: 'r' } }
+    : argv.includes('worker-list') ? { workers: [
+      { dispatchId: 'd1', dispatchStatus: 'dispatched', workerState: 'ready', resource: { worktreeId: 'repo::wa' } },
+      { dispatchId: 'd2', dispatchStatus: 'dispatched', workerState: 'busy', resource: { worktreeId: 'repo::wr' } },
+    ] } : { messages: [] },
+}) })
+const texts = async (ui, id) => ((await ui.find({ type: 'Box', key: 'item-' + id })).children as Drawn[]).map((child) => child.props.key + ':' + textOf(child))
+
+test('접힌 보기는 작업 중 worker 를 한 줄씩, 끊김을 빨간 줄로, 끝난 worker 를 개수 한 줄로 그린다', async ($, on) => {
+  await start($, on, liveWorkers, WORKER_BOARD([{ id: 'a', title: 'w', status: 'doing', worktree: 'wa', details: [{ text: '1. 구현', done: false }], workers: ROWS }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const got = (await texts(ui, 'a')).filter((line) => /^w/.test(line))
+  expect(got).toEqual(['w-0:⚙ 구현 wa', 'w-1:⚙ 리뷰 wr  PR #7  busy', 'wl-0:⚠ 끊김 검증 wl', 'wd:✓ 끝난 worker 2'])
+  const lost = (await ui.find({ type: 'Box', key: 'item-a' })).children.find((child) => child.props.key === 'wl-0') as Drawn
+  expect((lost.children[0] as Drawn).props.color).toBe('red')
+  expect(await ui.find({ type: 'Text', text: /worker 없음/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('펼친 보기는 모든 worker 줄을 at 순으로 그린다', async ($, on) => {
+  await start($, on, liveWorkers, WORKER_BOARD([{ id: 'a', title: 'w', status: 'doing', worktree: 'wa', details: [{ text: '1. 구현', done: false }], workers: ROWS }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'toggle-done' })
+  const got = (await texts(ui, 'a')).filter((line) => /^w-/.test(line))
+  expect(got).toEqual(['w-0:⚙ 구현 wa', 'w-1:⚙ 리뷰 wr  PR #7  busy', 'w-2:✓ 후속 wf', 'w-3:✓ 리뷰 wg  PR #7', 'w-4:⚠ 끊김 검증 wl'])
+  await ui.unmount()
+})
+
+test('리뷰 줄만 작업 중인 항목에는 「worker 없음」 이 없고, 작업 중 줄이 없으면 그린다', async ($, on) => {
+  const items = [
+    { id: 'r', title: '리뷰만', status: 'doing', worktree: 'wa', details: [{ text: '1. 구현', done: false }], workers: [row({ status: 'done', endedAt: '2026-11-13T02:00:00Z' }), row({ role: 'review', worktree: 'wr', dispatch: 'd2', pr: 7, at: '2026-11-13T02:00:00Z' })] },
+    { id: 'n', title: '없음', status: 'doing', worktree: 'wn', details: [{ text: '1. 구현', done: false }], workers: [row({ worktree: 'wn', dispatch: 'dn', status: 'done', endedAt: '2026-11-13T02:00:00Z' })] },
+  ]
+  await start($, on, liveWorkers, WORKER_BOARD(items))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await texts(ui, 'r')).some((line) => /worker 없음/.test(line))).toBe(false)
+  expect((await texts(ui, 'r')).some((line) => /⚙ 리뷰 wr/.test(line))).toBe(true)
+  expect((await texts(ui, 'n')).some((line) => /worker 없음 \(wn\)/.test(line))).toBe(true)
+  expect((await texts(ui, 'n')).some((line) => /끝난 worker 1/.test(line))).toBe(true)
+  await ui.unmount()
+})
+
+test('완료 항목은 작업 중 줄만 그리고 끝난 줄과 끊김 줄은 그리지 않는다(완료 칸은 펼쳐야 보인다)', async ($, on) => {
+  const done = { id: 'x', title: '끝', status: 'done', details: [{ text: '1. 구현', done: true }], workers: [row({ status: 'done', endedAt: '2026-11-13T02:00:00Z' }), row({ role: 'review', worktree: 'wr', dispatch: 'd2', pr: 7, at: '2026-11-13T02:00:00Z' }), row({ role: 'verify', worktree: 'wl', dispatch: 'd5', status: 'lost', at: '2026-11-13T03:00:00Z' })] }
+  await start($, on, liveWorkers, WORKER_BOARD([done]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'toggle-done' })
+  const got = (await texts(ui, 'x')).filter((line) => /^w/.test(line))
+  expect(got).toEqual(['w-0:⚙ 리뷰 wr  PR #7  busy'])
+  await ui.unmount()
+})
+
+test('workers 칸이 없는 옛 항목은 지금 그림과 같고 worker 가 없으면 「worker 없음」 을 그린다', async ($, on) => {
+  await start($, on, liveWorkers, WORKER_BOARD([
+    { id: 'o', title: '옛', status: 'doing', worktree: 'wa', details: [{ text: '1. 구현', done: false }] },
+    { id: 'p', title: '옛 없음', status: 'doing', worktree: 'wp', details: [{ text: '1. 구현', done: false }] },
+  ]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await texts(ui, 'o')).toContain('w:⚙ worker wa')
+  expect(await texts(ui, 'p')).toContain('w:⚙ worker 없음 (wp)')
+  await ui.unmount()
+})

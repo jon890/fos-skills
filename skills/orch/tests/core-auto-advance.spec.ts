@@ -20,6 +20,25 @@ test('보드의 완료 사건을 꼬리표와 마일스톤, 머지 기록에서 
   assert.equal(eventDone([row], '665', 'deploy'), false)
 })
 
+test('후속 묶음이 있는 항목은 그 PR 의 묶음 번호로 pr 와 merge 사건을 본다', () => {
+  const row: BoardView = {
+    pr: ['7', '9'], mergedPr: [], stages: { pr: 1, merge: 2, deploy: 3 },
+    groups: [{ pr: '7', stages: { pr: 1, merge: 2, deploy: 3 } }, { pr: '9', stages: { pr: 4, merge: 5, deploy: 3 } }],
+    steps: [{ number: 1, done: true, tag: null }, { number: 2, done: false, tag: null }, { number: 4, done: false, tag: null }, { number: 5, done: false, tag: null }],
+  }
+  assert.equal(eventDone([row], '7', 'pr'), true)
+  assert.equal(eventDone([row], '9', 'pr'), false)
+  assert.equal(eventDone([row], '9', 'merge'), false)
+  row.steps[2].done = true
+  assert.equal(eventDone([row], '9', 'pr'), true)
+  assert.equal(eventDone([row], '7', 'merge'), false)
+  row.steps[3].done = true
+  assert.equal(eventDone([row], '9', 'merge'), true)
+  row.mergedPr = ['7']
+  row.pr = ['9']
+  assert.equal(eventDone([row], '7', 'merge'), true)
+})
+
 test('worker 와 열린 PR, 보드 잇기 실패 뒤 남은 기록으로 진행 중인 일을 찾는다', () => {
   const empty = { worktree: null, branch: null, pr: [] }
   const live = { paths: new Set(['/repo/work']), dispatches: new Set(['ctx_9']) }

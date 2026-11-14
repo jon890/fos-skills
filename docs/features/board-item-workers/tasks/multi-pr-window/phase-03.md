@@ -39,7 +39,7 @@
 
 - 항목 `pr` 필드의 PR 을 번호 순으로 모두 본다(`prNumbers`). 상태는 `stateFor` 로 캐시해 읽는다. 하나라도 읽지 못했으면 이 항목은 이번 틱에 고치지 않는다(`hold`).
 - 열린 PR 마다 `prStages(item, n)` 의 `[pr]` 단계를 끝낸다(`advanceCommands(…, 'pr', { last: false, … })`).
-- 머지된 PR 가운데 `merged-pr` 에 없는 가장 작은 번호 하나만 반영한다. `remaining` 은 같은 칸의 다른 열린 PR 이다.
+- 머지된 PR 가운데 `merged-pr` 에 없는 가장 작은 번호 하나만 반영한다. `remaining` 은 같은 칸의 다른 PR 가운데 열려 있거나 머지됐지만 아직 반영하지 않은 것이다. 그래야 같은 틱에 둘이 머지돼도 번호가 작은 쪽이 마지막 PR 로 판정되지 않는다.
   - `remaining` 이 비지 않았으면 판정 함수를 부르지 않고 `last: false`, `reached: 'merge'`, `note: null` 로 `mergedCommands(item, steps, prStages(item, n), n, 'merge', { last: false, doneAfter, note: null, remaining, kinds: eventKinds(item) })` 를 부른다.
   - 비었으면 지금처럼 판정하고 배포를 본다. 묶음은 `prStages(item, n)`, `kinds` 는 `eventKinds(item)` 다.
 - 이미 반영한 마지막 PR(`merged-pr` 에 있고 `pr` 필드에 남은 것)의 배포 대기도 `prStages` 로 본다.
@@ -49,7 +49,7 @@
 
 ### 3. `skills/orch/scripts/queue/finish-pr.ts`
 
-- 마일스톤 반영에서 묶음을 `prStages(row, args.pr) ?? stages` 로 고른다. 항목 `pr` 필드에 이 PR 밖의 PR 이 있으면 그 상태를 읽어 열린 것을 `remaining` 으로 넘기고, 비지 않았으면 마지막 PR 판정 대신 `last: false` 로 본다. 배포 성공은 `remaining` 이 빌 때만 본다.
+- 마일스톤 반영에서 묶음을 `prStages(row, args.pr) ?? stages` 로 고른다. 항목 `pr` 필드에 이 PR 밖의 PR 이 있으면 그 상태를 읽어 닫히지 않은 것(열림, 머지됨, 읽지 못함)을 `remaining` 으로 넘기고, 비지 않았으면 마지막 PR 판정 대신 `last: false` 로 본다. 배포 성공은 `remaining` 이 빌 때만 본다.
 
 ### 4. `skills/orch/scripts/board/board-release.ts`
 
@@ -88,6 +88,8 @@ node scripts/run-tests.ts --tsc-only
 | `skills/orch/tests/board-sync.spec.ts` | 수정 |
 | `skills/orch/tests/finish-pr.spec.ts` | 수정 |
 | `skills/orch/scripts/lib/board.ts` | 수정 (findBoardItems, linkBoardPr 의 줄 찾기) |
+| `skills/orch/scripts/core/milestones.ts` | 수정 (`hasPrGroup`: 그 PR 이 후속 묶음을 갖는지) |
+| `docs/features/board-item-workers/design.md` | 수정 (남은 PR 의 뜻) |
 | `skills/orch/scripts/board/board-release.ts` | 수정 (eventKinds) |
 | `skills/orch/tests/board-release.spec.ts` | 수정 |
 | `skills/orch/tests/lib-board.spec.ts` | 수정 |

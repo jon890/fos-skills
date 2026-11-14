@@ -13,7 +13,7 @@ import { loadConfig } from './config.ts'
 import { ghJson } from './gh.ts'
 import { mainCheckout } from './git.ts'
 import { registeredRuns } from './loop.ts'
-import { stagesOf } from './milestones.ts'
+import { eventNumbers, prStages, stagesOf } from './milestones.ts'
 import { openRows, worktreeOf } from '../core/movement.ts'
 import { confirmProblem } from './spec-confirm.ts'
 import { LIMITED_PAUSE_MS } from '../core/step-ready.ts'
@@ -35,7 +35,7 @@ export function firstPendingStep(file: string, item: Record<string, unknown>): P
   const step = steps.find(row => !row.done)
   if (!step) return null
   const parsed = parseStepMark(step.text)
-  const event = Object.values(stagesOf(item) ?? {}).includes(step.number) || stageTag(step.text) !== null
+  const event = eventNumbers(item).has(step.number) || stageTag(step.text) !== null
   return { number: step.number, mark: event ? null : parsed?.mark ?? null, condition: event ? null : parsed?.condition ?? null,
     text: step.text, key: hideEventTag(step.text), body: parsed?.body ?? step.text }
 }
@@ -46,6 +46,10 @@ function boardViews(file: string, items: Record<string, unknown>[], pr: string):
     JSON.stringify([item.details, item.next]).includes(`(#${pr} `))
   return related.map(item => ({
     pr: [...prNumbers(item.pr)], mergedPr: [...prNumbers(item['merged-pr'])], stages: stagesOf(item),
+    groups: [...new Set([...prNumbers(item.pr), ...prNumbers(item['merged-pr'])])].flatMap(number => {
+      const stages = prStages(item, number)
+      return stages ? [{ pr: number, stages }] : []
+    }),
     steps: (stagesOf(item) || JSON.stringify([item.details, item.next]).includes('(#') ?
       boardSteps(process.env.BOARD_BIN || BOARD_BIN, String(item.id), file) ?? [] : [])
       .map(step => ({ ...step, tag: parseEventTag(step.text) })),

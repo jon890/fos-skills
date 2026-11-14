@@ -11,13 +11,17 @@ import {
   boardSettings,
   DEFAULT_STEPS,
   doneStep,
+  eventKinds,
+  eventNumbers,
   mergedCommands,
   milestoneLines,
   parseSteps,
+  prStages,
   specSteps,
   stagesOf,
   stagesText,
 } from '../scripts/lib/milestones.ts'
+import type { Stages } from '../scripts/lib/milestones.ts'
 
 const saved = { ORCH_DIR: process.env.ORCH_DIR, GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES }
 let tmp = ''
@@ -181,5 +185,71 @@ describe('사건마다 끝낼 단계', () => {
       ['set', 'a', '--merged-pr', '8'],
     ])
     assert.equal(got.done, true)
+  })
+})
+
+describe('PR 묶음', () => {
+  const row = { role: 'follow', worktree: 'wb', branch: 'feat/b', dispatch: 'd', pr: 9, stages: 'pr=4,merge=5', status: 'working', at: '2026-11-13T01:00:00Z', endedAt: null }
+  const item = { id: 'a', stages: 'pr=1,merge=2,deploy=3', pr: '7, 9', workers: [{ ...row, role: 'impl', worktree: 'wa', pr: 7, stages: undefined }, row] }
+
+  test('줄의 pr 이 그 PR 이면 줄의 pr·merge 에 항목의 deploy 를 더하고 다른 PR 은 항목 stages 다', () => {
+    assert.deepEqual(prStages(item, '9'), { pr: 4, merge: 5, deploy: 3 })
+    assert.deepEqual(prStages(item, '7'), { pr: 1, merge: 2, deploy: 3 })
+    assert.deepEqual(prStages({ id: 'a', stages: 'pr=1,merge=2' }, '9'), { pr: 1, merge: 2 })
+    assert.equal(prStages({ id: 'a' }, '9'), null)
+  })
+
+  test('줄에 stages 가 없거나 형식이 틀리면 항목 stages 를 쓴다', () => {
+    const plain = { ...item, workers: [{ ...row, stages: undefined }, { ...row, worktree: 'wc', stages: 'pr=4' }] }
+    assert.deepEqual(prStages(plain, '9'), { pr: 1, merge: 2, deploy: 3 })
+    assert.deepEqual([...eventNumbers(plain)].sort(), [1, 2, 3])
+  })
+
+  test('사건 단계의 번호와 종류는 항목과 모든 줄을 합친다', () => {
+    assert.deepEqual([...eventKinds(item)], [[1, 'pr'], [2, 'merge'], [3, 'deploy'], [4, 'pr'], [5, 'merge']])
+    assert.deepEqual([...eventNumbers(item)].sort(), [1, 2, 3, 4, 5])
+    assert.deepEqual([...eventNumbers({ id: 'a' })], [])
+  })
+
+  test('kinds 를 주면 마지막 PR 이 다른 묶음의 앞 단계를 끝내고 배포는 남긴다', () => {
+    const all = steps([1, true], [2, true], [3, false], [4, false], [5, false])
+    const got = advanceCommands('a', all, prStages(item, '9') as Stages, 'merge', { last: true, doneAfter: null, kinds: eventKinds(item) })
+    assert.deepEqual(got, { cmds: [['step', 'a', '4'], ['step', 'a', '5'], ['set', 'a', 'done', '--worktree', '']], done: true })
+  })
+
+  test('kinds 를 줘도 done 지점 뒤에 끝나지 않은 수동 단계가 있으면 done 이 아니다', () => {
+    const all = steps([1, true], [2, true], [3, false], [4, false], [5, false], [6, false])
+    const got = advanceCommands('a', all, prStages(item, '9') as Stages, 'merge', { last: true, doneAfter: null, kinds: eventKinds(item) })
+    assert.deepEqual(got, { cmds: [['step', 'a', '4'], ['step', 'a', '5']], done: false })
+  })
+
+  test('앞 PR 의 묶음이 아직 끝나지 않았으면 마지막 PR 이 그 단계도 끝낸다', () => {
+    const all = steps([1, false], [2, false], [3, false], [4, false], [5, false])
+    const got = advanceCommands('a', all, prStages(item, '9') as Stages, 'merge', { last: true, doneAfter: null, kinds: eventKinds(item) })
+    assert.deepEqual(got.cmds, [['step', 'a', '1'], ['step', 'a', '2'], ['step', 'a', '4'], ['step', 'a', '5'], ['set', 'a', 'done', '--worktree', '']])
+  })
+
+  test('kinds 없이 부르면 번호 순서의 지금 결과와 같다', () => {
+    const all = steps([1, true], [2, true], [3, false], [4, false], [5, false])
+    const got = advanceCommands('a', all, { pr: 4, merge: 5, deploy: 3 }, 'merge', { last: true, doneAfter: null })
+    assert.deepEqual(got.cmds, [['step', 'a', '3'], ['step', 'a', '4'], ['step', 'a', '5'], ['set', 'a', 'done', '--worktree', '']])
+  })
+
+  test('done_after 가 deploy 이면 마지막 PR 의 배포가 끝나야 done 이다', () => {
+    const all = steps([1, true], [2, true], [3, false], [4, false], [5, false])
+    const merged = advanceCommands('a', all, prStages(item, '9') as Stages, 'merge', { last: true, doneAfter: 'deploy', kinds: eventKinds(item) })
+    assert.deepEqual(merged, { cmds: [['step', 'a', '4'], ['step', 'a', '5']], done: false })
+    const deployed = advanceCommands('a', steps([1, true], [2, true], [3, false], [4, true], [5, true]), prStages(item, '9') as Stages, 'deploy', { last: true, doneAfter: 'deploy', kinds: eventKinds(item) })
+    assert.deepEqual(deployed, { cmds: [['step', 'a', '3'], ['set', 'a', 'done', '--worktree', '']], done: true })
+  })
+
+  test('mergedCommands 의 remaining 은 중간 PR 의 pr 칸에 남은 열린 PR 을 둔다', () => {
+    const base = { id: 'a', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }] }
+    const mid = mergedCommands(base, steps([1, false], [2, false]), { pr: 1, merge: 2 }, '9', 'merge', { last: false, doneAfter: null, note: null, remaining: ['7'] })
+    assert.deepEqual(mid.cmds.at(-1), ['set', 'a', '--pr', '7', '--merged-pr', '9'])
+    const both = mergedCommands(base, steps([1, false], [2, false]), { pr: 1, merge: 2 }, '9', 'merge', { last: false, doneAfter: null, note: null, remaining: ['7', '8'] })
+    assert.deepEqual(both.cmds.at(-1), ['set', 'a', '--pr', '7, 8', '--merged-pr', '9'])
+    const none = mergedCommands(base, steps([1, false], [2, false]), { pr: 1, merge: 2 }, '9', 'merge', { last: false, doneAfter: null, note: null })
+    assert.deepEqual(none.cmds.at(-1), ['set', 'a', '--pr', '', '--merged-pr', '9'])
   })
 })

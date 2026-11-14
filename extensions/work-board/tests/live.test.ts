@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, queryWorkers, questionText, decisionOf } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, workerRowsFor, workerRowLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, queryWorkers, questionText, decisionOf } from '../hooks/register.js'
 import { queryQuestions, prAuthors, nextAuthor } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
@@ -443,4 +443,44 @@ test('답변은 ack 전에 질문을 지우고 worker 후속 글은 답변으로
   expect(countQuestions(JSON.stringify({ messages: [{ ...q, type: 'escalation' }, reply] }), 'r')).toBe(0)
   expect(() => parseQuestions('broken')).toThrow()
   expect(() => parseQuestions('{"ok":false}')).toThrow()
+})
+
+const rowOf = (extra = {}) => ({ role: 'impl', worktree: 'wa', branch: 'feat/a', dispatch: 'd1', pr: null, status: 'working', at: '2026-11-13T01:00:00Z', endedAt: null, ...extra })
+
+test('workerRowsFor 는 줄마다 dispatch 로, 없으면 워크트리로 살아 있는 worker 를 붙이고 at 순으로 낸다', () => {
+  const workers = [{ id: 'd2', state: 'busy', worktree: 'moved' }, { id: 'd9', state: 'ready', worktree: 'wb' }]
+  const item = { id: 'x', workers: [rowOf({ role: 'review', worktree: 'wr', dispatch: 'd2', at: '2026-11-13T03:00:00Z' }), rowOf({ worktree: 'wb', dispatch: 'other' }), rowOf({ worktree: 'wc', dispatch: null, at: '2026-11-13T02:00:00Z' })] }
+  const rows = workerRowsFor(item, workers)
+  expect(rows.map((row) => row.worktree)).toEqual(['wb', 'wc', 'wr'])
+  expect(rows.map((row) => row.live?.id ?? null)).toEqual(['d9', null, 'd2'])
+  expect(workerRowsFor(item, null).every((row) => row.live === null)).toBe(true)
+  expect(workerRowsFor({ id: 'y', workers: [] }, workers)).toEqual([])
+})
+
+test('workers 칸이 없는 옛 항목은 worktree 칸의 살아 있는 worker 하나만 줄로 만든다', () => {
+  const workers = [{ id: 'd1', state: 'ready', worktree: 'wa' }]
+  const rows = workerRowsFor({ id: 'x', worktree: 'wa' }, workers)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ role: 'impl', worktree: 'wa', status: 'working', legacy: true })
+  expect(workerRowsFor({ id: 'x', worktree: 'none' }, workers)).toEqual([])
+  expect(workerRowsFor({ id: 'x' }, workers)).toEqual([])
+  expect(workerRowLine(rows[0], [])).toBe(workerLine(workers[0], []))
+})
+
+test('workerRowLine 은 리뷰 줄에 대상 PR 번호와 CI 요약을, 구현 줄에 워크트리 이름의 PR 을 붙인다', () => {
+  const prs = [{ number: 7, branch: 'feat/a', pass: 3, fail: 0, pending: 1 }, { number: 9, branch: 'owner/wb', pass: 2, fail: 1, pending: 0 }]
+  expect(workerRowLine({ ...rowOf({ role: 'review', worktree: 'wr', pr: 7 }), live: { id: 'd', state: 'ready' } }, prs)).toBe('리뷰 wr  PR #7 CI 3/4 · 진행 1')
+  expect(workerRowLine({ ...rowOf({ role: 'verify', worktree: 'wr', pr: 99 }), live: null }, prs)).toBe('검증 wr  PR #99')
+  expect(workerRowLine({ ...rowOf({ role: 'follow', worktree: 'wb' }), live: { id: 'd', state: 'busy' } }, prs)).toBe('후속 wb  PR #9 CI 2/3 · 실패 1  busy')
+  expect(workerRowLine({ ...rowOf({ worktree: 'solo' }), live: null }, prs)).toBe('구현 solo')
+  expect(workerRowLine({ ...rowOf({ worktree: 'solo' }), live: null }, null)).toBe('구현 solo')
+})
+
+test('unmappedWorkers 는 done 항목의 작업 중 줄 worker 도 붙은 것으로 센다', () => {
+  const workers = [{ id: 'd1', worktree: 'wr' }, { id: 'd2', worktree: 'moved' }, { id: 'd3', worktree: 'free' }, { id: 'd4', worktree: 'wd' }]
+  const items = [
+    { id: 'done', status: 'done', workers: [rowOf({ role: 'review', worktree: 'wr', dispatch: 'd1' }), rowOf({ worktree: 'wd', dispatch: 'old', status: 'done' }), rowOf({ worktree: 'elsewhere', dispatch: 'd2' })] },
+    { id: 'open', status: 'doing', worktree: 'wa', workers: [rowOf()] },
+  ]
+  expect(unmappedWorkers(items, workers).map((worker) => worker.id)).toEqual(['d3', 'd4'])
 })

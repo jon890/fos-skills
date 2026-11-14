@@ -80,6 +80,50 @@ describe('findBoardItems', () => {
     assert.deepEqual(findBoardItems(file, '77', 'feat/x', null), { by: 'branch', ids: ['open'] })
   })
 
+  test('pr 칸이 차 있어도 구현·후속 줄의 브랜치나 워크트리가 같고 그 줄의 pr 이 비었으면 줄로 찾는다', () => {
+    const row = (role: string, worktree: string, branch: string, pr: number | null) => ({ role, worktree, branch, pr, status: 'working', at: '2026-01-01', dispatch: null, endedAt: null })
+    const file = board([
+      { id: 'rows', status: 'doing', pr: 9, branch: 'feat/b', workers: [row('impl', 'wa', 'feat/a', null), row('follow', 'wb', 'feat/b', 9)] },
+      { id: 'filled', status: 'doing', pr: 9, workers: [row('impl', 'wc', 'feat/a', 5)] },
+      { id: 'review', status: 'doing', pr: 9, workers: [row('review', 'wd', 'feat/a', null)] },
+      { id: 'handled', status: 'doing', pr: 9, 'merged-pr': '77', workers: [row('impl', 'we', 'feat/a', null)] },
+    ])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/a', null), { by: 'branch', ids: ['rows'], rows: { rows: 'wa' } })
+    assert.deepEqual(findBoardItems(file, '77', 'other', 'wa'), { by: 'branch', ids: ['rows'], rows: { rows: 'wa' } })
+    assert.equal(findBoardItems(file, '77', 'feat/z', null), null)
+  })
+
+  test('대표 브랜치로 찾은 항목도 같은 브랜치의 줄이 있으면 rows 에 담는다', () => {
+    const file = board([{ id: 'rep', status: 'doing', branch: 'feat/b', workers: [{ role: 'follow', worktree: 'wb', branch: 'feat/b', pr: null, stages: 'pr=3,merge=4', status: 'working', at: '2026-01-02', dispatch: null, endedAt: null }] }])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/b', null), { by: 'branch', ids: ['rep'], rows: { rep: 'wb' } })
+  })
+
+  test('줄의 pr 만 저장된 항목도 그 PR 로 찾는다', () => {
+    const file = board([{ id: 'half', status: 'doing', pr: 78, workers: [{ role: 'follow', worktree: 'wb', branch: 'feat/b', pr: 77, status: 'working', at: '2026-01-02', dispatch: null, endedAt: null }] }])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/z', null), { by: 'pr', ids: ['half'] })
+  })
+
+  test('리뷰·검증 줄의 대상 PR 로는 항목을 찾지 않는다', () => {
+    const row = (role: string, pr: number) => ({ role, worktree: 'w' + role, branch: 'x', pr, status: 'working', at: '2026-01-02', dispatch: null, endedAt: null })
+    const file = board([
+      { id: 'review-only', status: 'doing', workers: [row('review', 77), row('verify', 77)] },
+      { id: 'impl', status: 'doing', pr: 77 },
+    ])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/z', null), { by: 'pr', ids: ['impl'] })
+    const only = board([{ id: 'review-only', status: 'doing', workers: [row('review', 77)] }])
+    assert.equal(findBoardItems(only, '77', 'feat/z', null), null)
+  })
+
+  test('줄로 찾은 항목은 linkBoardPr 이 pr 칸에 더하고 그 줄의 pr 을 채운다', () => {
+    const file = board([{ id: 'rows', status: 'doing', pr: 9, branch: 'feat/b', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'],
+      workers: [{ role: 'impl', worktree: 'wa', branch: 'feat/a', pr: null, status: 'done', at: '2026-01-01', dispatch: null, endedAt: '2026-01-02' }] }])
+    assert.equal(linkBoardPr(file, '77', 'feat/a'), 'rows')
+    const row = (JSON.parse(readFileSync(file, 'utf8')) as { items: Array<Record<string, any>> }).items[0]
+    assert.equal(row.pr, '9, 77')
+    assert.equal(row.workers[0].pr, 77)
+    assert.equal(row.workers[0].status, 'done')
+  })
+
   test('빈 브랜치 이름은 branch 칸이 없는 항목과 맞지 않는다', () => {
     const file = board([{ id: 'blank' }])
     assert.equal(findBoardItems(file, '77', '', null), null)

@@ -8,16 +8,19 @@ export type BoardView = {
   pr: string[]
   mergedPr: string[]
   stages: Stages | null
+  // PR 마다의 단계 묶음(core/milestones.ts 의 prStages). 후속 묶음이 있는 항목의 pr·merge 사건은 이 번호로 본다
+  groups?: Array<{ pr: string; stages: Stages }>
   steps: Array<{ number: number; done: boolean; tag: { pr: string; event: string } | null }>
 }
 
 export function eventDone(items: BoardView[], pr: string, event: StageKind): boolean {
   return items.some(item => {
     if (item.steps.some(step => step.done && step.tag?.pr === pr && step.tag.event === event)) return true
-    if (event === 'merge') return item.mergedPr.includes(pr)
+    const group = event === 'pr' || event === 'merge' ? item.groups?.find(one => one.pr === pr)?.stages : undefined
+    if (event === 'merge') return item.mergedPr.includes(pr) || (group?.merge !== undefined && item.steps.some(step => step.done && step.number === group.merge))
     const prs = new Set([...item.pr, ...item.mergedPr])
     return prs.has(pr) && (event === 'pr' || prs.size === 1) &&
-      item.steps.some(step => step.done && step.number === item.stages?.[event])
+      item.steps.some(step => step.done && step.number === (group ?? item.stages)?.[event])
   })
 }
 

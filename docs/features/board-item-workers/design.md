@@ -28,7 +28,7 @@ config:
 flowchart TD
     L["worker 띄우기 · launch-worker, send-to-worker"] --> R["lib/board.ts · registerBoard, targetItem"]
     R --> S["lib/spec.ts · boardNewOf, workerRoleOf"]
-    R --> B["work-board bin/board.ts · worker-add, worker-end, worker-set"]
+    R --> B["work-board bin/board.ts · worker-add, worker-end, worker-set, worker-link"]
     T["루프 틱 3 · loop/steps/board.ts"] --> E["core/board-workers.ts · workerEnds, hasWorkRows"]
     T --> Y["board/board-sync.ts"]
     Y --> E
@@ -92,12 +92,14 @@ flowchart TD
 board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages S] [--keep-current <role>] [--keep-dispatch D]
 board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
 board.ts worker-set <id> --worktree W [--pr N]        # PR2
+board.ts worker-link <id> --worktree W --pr N         # PR2
 ```
 
 - `worker-add` 는 워크트리 열쇠로 줄을 더하거나 바꾼다. 역할이 `impl`·`follow` 면 대표 칸을 그 줄 값으로 바꾼다. `review`·`verify` 는 대표 칸, `status`, 단계를 건드리지 않는다. done 항목에도 더한다(스펙 DECISION17).
 - `--keep-current <role>` 은 `workers` 필드가 없는 옛 항목에 붙을 때 쓴다. 지금 대표 칸(`worktree`, `branch`)을 먼저 그 역할의 줄로 옮겨 적는다. `registerBoard` 가 역할을 정한다. 옛 판정(`lib/review.ts` 의 `reviewPrOfItem`)이 리뷰 항목이라고 하면 `review`, 아니면 `impl` 이다. 그래서 옛 리뷰 항목에 재리뷰가 붙어도 리뷰 항목으로 남아 PR #487 대로 닫힌다. `--keep-dispatch` 는 `registerBoard` 가 띄우기 이력(`lib/launch-history.ts`)에서 그 워크트리의 가장 최근 dispatch 를 찾아 넘긴 값이다. 찾지 못했으면 `null` 이다. dispatch 이력이 없거나 현재 조회 결과 끝났으면 `status` 를 `done` 으로 적는다. dispatch 없는 작업 중 줄은 워크트리를 지울 때까지 끝나지 않아 「worker 없음」 을 영영 가린다. 대표 워크트리가 비었으면 옛 대표 줄은 만들지 않는다. 옛 대표를 작업 중으로 옮기려면 이력의 워크트리가 남아 있고 해당 Run 의 Orca dispatch 가 현재 살아 있어야 한다. 끝난 상태이면 dispatch 를 넘기지 않아 끝난 줄로 남긴다. Orca 조회가 실패하거나 응답 형식을 읽지 못하면 이력의 dispatch 를 작업 중으로 옮겨 다음 동기화에서 다시 확인한다.
 - `worker-end` 는 맞는 `working` 줄을 끝낸다. 끝난 줄이 대표였고 다른 `working` 구현·후속 줄이 있으면 그중 `at` 이 가장 늦은 줄로 대표 칸을 바꾼다. 없으면 대표 칸을 그대로 두고, `--clear` 를 줬으면 비운다. 보드 맞추기는 워크트리가 사라져 끝낼 때만 `--clear` 를 준다. 맞는 줄이 없으면 종료 코드 0 으로 아무것도 하지 않는다. 보드 맞추기가 같은 끝남을 다음 틱에 다시 보내도 된다.
 - `worker-set` 은 PR2 에서 보드 맞추기가 구현·후속 줄의 `pr` 을 채울 때 쓴다. `status` 를 바꾸지 않아 끝난 줄을 되살리지 않는다.
+- `worker-link` 는 줄의 `pr` 과 항목 `pr` 필드(목록에 그 PR 을 더함)를 한 잠금 안에서 한 번 저장한다. 보드 맞추기, `finish-pr`, `linkBoardPr` 이 줄로 찾은 항목에 PR 을 이을 때 이 명령 하나만 부른다. 두 번 나눠 쓰면 한쪽만 저장된 채 실패했을 때 다시 돌려도 항목을 못 찾아 단계가 끝나지 않는다. 맞는 줄이 없으면 쓰지 않고 거절(종료 코드 1)하고, 부르는 쪽은 단계를 건드리지 않고 실패로 끝낸다. `findBoardItems` 는 `pr` 필드나 구현·후속 줄의 `pr` 어느 쪽으로도 PR 의 항목을 찾는다. 리뷰·검증 줄의 `pr` 은 대상 PR 이라 보지 않는다.
 - `item`, `items` 출력에 `workers` 를 넣는다. 사용법 오류는 종료 코드 2, 없는 항목은 1 이다.
 
 ### 역할 정하기
@@ -169,16 +171,16 @@ core 의 `hasWorkRows`는 구현·후속 줄의 존재만 알려 준다. 항목�
 
 PR2 의 규칙이다. 원본은 `core/milestones.ts` 머리 주석이 갖는다.
 
-- **단계 더하기(REQ4, 스펙 DECISION7, 스펙 DECISION16).** 후속 줄이 새 브랜치(어느 구현·후속 줄의 브랜치와도 다름)로 붙고 항목 `pr` 필드에 열린 PR 이 있으면, 마일스톤 정의의 `[pr]`·`[merge]` 줄 글로 두 단계를 다음 번호로 더한다. 글은 정의 글 뒤에 `(<워크트리>)` 를 붙인다(스펙 DECISION25). 그 번호를 줄의 `stages`(`pr=N,merge=N+1`)로 적는다. 마일스톤 정의에 `[pr]`·`[merge]` 가 없으면 기본값의 글을 쓴다. 스펙 DECISION22 가 이 규칙을 「앞 PR 이 아직 열려 있을 때만」 쓰라고 정했다. 그 밖의 경우는 지금 동작 그대로다. 다시 열기 조건(done 을 id 로 정함, 또는 merged-pr 이 있고 단계를 모두 끝낸 doing)이면 마일스톤 전체를 붙인다. 앞 PR 이 아직 없거나 머지됐는데 단계가 남았으면 단계를 더하지 않는다. 리뷰·검증은 단계를 더하지 않는다.
+- **단계 더하기(REQ4, 스펙 DECISION7, 스펙 DECISION16).** 마일스톤 항목(`stages` 가 있는 항목)에 후속 줄이 새 브랜치(대표 브랜치와 어느 구현·후속 줄의 브랜치와도 다름, 같은 워크트리의 재시도가 아님)로 붙고 항목 `pr` 필드에 열린 PR 이 있으면, 마일스톤 정의의 `[pr]`·`[merge]` 줄 글로 두 단계를 다음 번호로 더한다. 글은 정의 글 뒤에 `(<워크트리>)` 를 붙인다(스펙 DECISION25). 그 번호를 줄의 `stages`(`pr=N,merge=N+1`)로 적는다. 마일스톤 정의에 `[pr]`·`[merge]` 가 없으면 기본값의 글을 쓴다. 스펙 DECISION22 가 이 규칙을 「앞 PR 이 아직 열려 있을 때만」 쓰라고 정했다. 그 밖의 경우는 지금 동작 그대로다. 다시 열기 조건(done 을 id 로 정함, 또는 merged-pr 이 있고 단계를 모두 끝낸 doing)이면 마일스톤 전체를 붙인다. 앞 PR 이 아직 없거나 머지됐는데 단계가 남았으면 단계를 더하지 않는다. 리뷰·검증은 단계를 더하지 않는다.
 - **PR 의 묶음(`prStages(item, pr)`).** `pr` 이 그 PR 이고 `stages` 가 있는 줄이 있으면 그 줄의 `pr`·`merge` 번호에 항목 `stages` 의 `deploy`·`release` 번호를 더한 값이다. 없으면 항목 `stages` 다. 배포와 릴리스 단계는 항목에 하나씩이다.
-- **PR 잇기.** `stages` 가 있는 후속 줄은 줄의 브랜치로 PR 을 찾아 줄의 `pr`(`worker-set`)과 항목 `pr` 필드 목록에 더한다. 항목 `stages` 묶음의 PR 은 지금 규칙으로 잇되, 조건을 「`pr` 필드가 비었을 때」 에서 「`pr` 필드에 묶음 없는 PR 이 없을 때」 로, 브랜치를 「대표 브랜치」 에서 「`stages` 가 없는 가장 최근 구현·후속 줄의 브랜치(줄이 없으면 대표 브랜치)」 로 바꾼다. `findBoardItems` 가 브랜치·워크트리로 찾을 때도 같은 두 갈래로 본다. 그래서 대표가 후속 줄로 바뀐 뒤에도 앞 줄의 PR 을 머지 마무리와 완료 확인이 찾는다.
+- **PR 잇기.** `stages` 가 있는 후속 줄은 줄의 브랜치로 PR 을 찾아 줄의 `pr` 과 항목 `pr` 필드 목록에 `worker-link` 하나로 함께 더한다. 항목 `stages` 묶음의 PR 은 지금 규칙으로 잇되, 조건을 「`pr` 필드가 비었을 때」 에서 「`pr` 필드에 묶음 없는 PR 이 없을 때」 로, 브랜치를 「대표 브랜치」 에서 「`stages` 가 없는 가장 최근 구현·후속 줄의 브랜치(줄이 없으면 대표 브랜치)」 로 바꾼다. `findBoardItems` 가 브랜치·워크트리로 찾을 때도 같은 두 갈래로 본다. 그래서 대표가 후속 줄로 바뀐 뒤에도 앞 줄의 PR 을 머지 마무리와 완료 확인이 찾는다.
 - **PR 필드.** 열린 PR 이 여럿이면 `pr` 필드는 `"492, 495"` 다. 보드 맞추기는 그 PR 을 번호 순으로 하나씩 본다. 열린 PR 은 그 묶음의 `[pr]` 단계를 끝낸다.
 - **머지 반영.** 한 틱에 항목마다 머지된 PR 하나만 반영한다(번호가 작은 것). `guardedCommands` 는 한 항목의 명령에서 마지막 `set --detail` 하나만 남기므로 둘을 한 번에 쓰면 앞 PR 의 남은 일 줄 갱신이 사라진다.
-  - 필드에 다른 열린 PR 이 남았으면 「마지막 PR」 판정은 거짓이다. 판정 함수(`judgeLastPr`)를 부르지 않고 그 묶음의 `[pr]`·`[merge]` 단계만 끝낸다. 배포 성공을 보지 않는다. `pr` 필드에서 그 PR 만 빼고 `merged-pr` 에 더한다.
+  - 필드에 다른 열린 PR(머지됐지만 아직 반영하지 않은 PR 과 상태를 읽지 못한 PR 도 센다)이 남았으면 「마지막 PR」 판정은 거짓이다. 판정 함수(`judgeLastPr`)를 부르지 않고 그 묶음의 `[pr]`·`[merge]` 단계만 끝낸다. 배포 성공을 보지 않는다. `pr` 필드에서 그 PR 만 빼고 `merged-pr` 에 더한다.
   - 남은 열린 PR 이 없으면 지금처럼 판정한다. 배포 단계는 이 마지막 PR 의 배포로 끝낸다(스펙 DECISION22).
   - 남은 PR 의 상태를 읽지 못했으면 그 항목은 이번 틱에 고치지 않는다(지금의 「다시 판정」 과 같다).
 - **done 지점.** 마지막 PR 의 묶음에서 done 지점(`board.done_after`)을 정한다. 닫을 때 끝내는 것은 끝나지 않은 수동 단계 가운데 그 번호까지의 것과, 모든 묶음의 사건 단계 가운데 종류가 done 지점의 종류 이하인 것이다. done 지점보다 늦은 종류(배포, 릴리스)의 사건 단계는 번호가 앞서도 남긴다. 그래서 `advanceCommands` 에 항목의 모든 사건 번호와 종류(`eventKinds`)를 넘긴다. 남은 수동 단계가 있으면 done 으로 가지 않는 지금 규칙은 그대로다.
-- **`queue/finish-pr.ts`** 와 **`board/board-release.ts`** 도 같은 `prStages`, `eventKinds`, 「남은 열린 PR」 규칙을 쓴다. 둘 다 `mergedCommands` 를 부른다. `mergedCommands` 의 중간 PR 명령은 `--pr ''` 대신 남은 PR 목록을 쓴다.
+- **`queue/finish-pr.ts`** 와 **`board/board-release.ts`** 도 같은 `prStages`, `eventKinds`, 「남은 열린 PR」 규칙을 쓴다. `finish-pr` 는 줄의 브랜치로 항목을 찾았으면 보드 맞추기가 잇기 전이라도 먼저 그 PR 을 줄과 `pr` 에 잇고 그 줄의 묶음으로 끝낸다. `board-release` 는 `pr` 에 반영하지 않은 다른 PR 이 남았고 그 PR 이 이번 릴리스에 들지 않았으면 그 항목을 끝내지 않는다. 둘 다 `mergedCommands` 를 부른다. `mergedCommands` 의 중간 PR 명령은 `--pr ''` 대신 남은 PR 목록을 쓴다.
 
 ### 창
 

@@ -14,7 +14,7 @@ import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tag
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesText } from './milestones.ts'
+import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesOf, stagesText } from './milestones.ts'
 import { section } from '../core/config.ts'
 import { FINISH_KEYS } from '../core/finish-options.ts'
 import { rulesFrom } from './last-pr.ts'
@@ -48,6 +48,8 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 리뷰·검증은 같은 워크트리, 명시한 id, 대상 PR, head 브랜치 순으로 찾고 상태·단계를 바꾸지 않는다.
 // 구현·후속은 중간 과정, id, 같은 워크트리·브랜치, 업무 번호 순이다. 새로 요청은 자동 찾기를 끈다.
 // 기존 항목의 대표 칸은 worker-add 가 잠금 안에서 쓰고, 실패할 때만 set 으로 돌아간다.
+// 앞 PR 이 열린 마일스톤 항목에 새 브랜치의 후속 worker 가 붙으면 PR·머지 두 단계를 다음 번호로 더하고(step-add, 글 뒤에 `(<워크트리>)`),
+// 그 번호를 후속 줄의 stages 로 적는다(worker-add --stages). 순서는 단계 더하기, worker-add, set 이다. 규칙은 core/milestones.ts 의 「PR 묶음」 이다.
 export type BoardAttach = { item: string; role: WorkerRole; attached: boolean }
 export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string, dispatch = ''): BoardAttach | null {
   const remembered: { value?: BoardAttach } = {}
@@ -128,8 +130,8 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const working = (listed && !listed.ok) || (row && isLive(row) && !workerEnds([row], new Set(), new Set([prior!.dispatch]))[prior!.dispatch])
     return ['--keep-current', role, ...(working ? ['--keep-dispatch', prior!.dispatch] : [])]
   }
-  function add(item: BoardItem | undefined, id: string, role: WorkerRole): boolean {
-    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(item ? keepArgs(item) : [])]
+  function add(item: BoardItem | undefined, id: string, role: WorkerRole, stages = ''): boolean {
+    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(stages ? ['--stages', stages] : []), ...(item ? keepArgs(item) : [])]
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (done.code === 0) return true
     process.stderr.write(`보드: worker 줄을 쓰지 못했다: ${done.stderr.trim() || done.code}\n`)
@@ -183,8 +185,6 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const title = specTitle(text, { items, explicit, task, id })
   const item = items.find((row) => row.id === id)
   const r = result(item, id, reviewRole ?? (item ? 'follow' : 'impl'))
-  const added = item && !reviewRole ? add(item, id, r.role) : false
-  const representative = added ? [] : ['--worktree', wt, ...branchArgs]
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
   const milestones = () => {
     const given = specSteps(text)
@@ -196,7 +196,10 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const nextPr =
     !!item && item.status !== 'done' && !!branch && item.branch !== branch &&
     prNumbers(item['merged-pr']).size > 0 && allStagesDone(item)
-  if (item && ((explicit && item.status === 'done') || nextPr)) {
+  const reopen = !!item && ((explicit && item.status === 'done') || nextPr)
+  const added = item && !reviewRole ? add(item, id, r.role, !reopen && r.role === 'follow' ? followStages(item) : '') : false
+  const representative = added ? [] : ['--worktree', wt, ...branchArgs]
+  if (item && reopen) {
     const old = lines(item.details)
       .map(plain)
       .filter((text) => !text.startsWith(NOTE) && !text.startsWith(INTERIM))
@@ -229,6 +232,26 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   write([...args, ...taskArgs])
   add(undefined, id, r.role)
   return r
+  // 앞 PR 이 열려 있는 마일스톤 항목에 새 브랜치의 후속 줄이 붙을 때 더할 PR·머지 단계. 더한 번호를 `pr=N,merge=M` 로 돌려준다.
+  // 앞 PR 이 아직 이어지지 않았거나 이미 머지됐으면, 같은 워크트리 재시도나 같은 브랜치이면, 단계 항목이 아니면 더하지 않는다(빈 문자열)
+  function followStages(item: BoardItem): string {
+    const merged = prNumbers(item['merged-pr'])
+    const known = new Set([item.branch, ...boardWorkerRows(item).filter((row) => row.role === 'impl' || row.role === 'follow').map((row) => row.branch)])
+    if (!branch || known.has(branch) || current(item) || !stagesOf(item) || ![...prNumbers(item.pr)].some((pr) => !merged.has(pr))) return ''
+    const defs = milestones()
+    const numbers: number[] = []
+    for (const kind of ['pr', 'merge'] as const) {
+      const base = (defs.find((step) => step.kind === kind) ?? DEFAULT_STEPS.find((step) => step.kind === kind) as { text: string }).text
+      const done = run(scriptCommand(bin, ['step-add', id, `${base} (${wt})`, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+      const number = done.code === 0 ? Number((JSON.parse(done.stdout) as { number?: unknown }).number) : NaN
+      if (!Number.isInteger(number)) {
+        process.stderr.write(`보드: 후속 worker 의 ${kind} 단계를 더하지 못해 단계 묶음 없이 붙인다: ${done.stderr.trim() || done.code}\n`)
+        return ''
+      }
+      numbers.push(number)
+    }
+    return `pr=${numbers[0]},merge=${numbers[1]}`
+  }
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)
@@ -292,11 +315,14 @@ export function specTitle(text: string, opts: { items: BoardItem[]; explicit?: s
   return title
 }
 
-export type BoardMatch = { by: 'pr' | 'branch'; ids: string[] }
+// rows 는 브랜치로 찾은 항목 가운데 worker 줄로 찾은 것의 항목 id → 그 줄의 워크트리다. 줄로 찾은 항목이 없으면 이 칸이 없다
+export type BoardMatch = { by: 'pr' | 'branch'; ids: string[]; rows?: Record<string, string> }
 
-// 머지한 PR 의 보드 항목. pr 칸에 그 PR 이 든 항목을 먼저 찾고, 없으면 pr 칸이 빈 항목 가운데 branch 가 PR 브랜치이거나
-// worktree 가 그 워크트리 이름인 항목을 찾는다. 브랜치로 찾을 때 done 항목과 merged-pr 에 이미 그 PR 이 든 항목은 뺀다.
-// 이미 처리한 머지 PR 을 다시 연결하지 않기 위해서다. 어느 쪽도 없거나 보드를 읽지 못하면 null 이다. 둘 이상이면 ids 에 모두 담는다
+// 머지한 PR 의 보드 항목. pr 칸에 그 PR 이 든 항목을 먼저 찾고, 없으면 아래 항목을 찾는다. 둘 다 done 항목과 merged-pr 에 이미 그 PR 이 든 항목은 뺀다.
+// 이미 처리한 머지 PR 을 다시 연결하지 않기 위해서다.
+//   - pr 칸이 비고 branch 가 PR 브랜치이거나 worktree 가 그 워크트리 이름인 항목
+//   - worker 줄(구현·후속)의 브랜치나 워크트리가 같고 그 줄의 pr 이 빈 항목. 대표가 후속 줄로 바뀌어도 앞 줄의 PR 을 찾는다(PR 묶음, core/milestones.ts)
+// 어느 쪽도 없거나 보드를 읽지 못하면 null 이다. 둘 이상이면 ids 에 모두 담는다
 export function findBoardItems(file: string, pr: string, branch: string, worktree: string | null): BoardMatch | null {
   let items: BoardItem[]
   try {
@@ -305,16 +331,29 @@ export function findBoardItems(file: string, pr: string, branch: string, worktre
     return null
   }
   const id = (i: BoardItem) => (typeof i.id === 'string' ? i.id : JSON.stringify(i.id))
-  const byPr = items.filter((i) => prNumbers(i.pr).has(pr))
+  // pr 칸에 들었거나 구현·후속 줄의 pr 이 그 PR 인 항목(리뷰·검증 줄의 pr 은 대상 PR 이라 보지 않는다). 줄만 저장된 부분 실패 뒤 다시 돌려도 찾는다
+  const byPr = items.filter((i) => prNumbers(i.pr).has(pr) || boardWorkerRows(i).some((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).has(pr)))
   if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
+  const open = (i: BoardItem) => i.status !== 'done' && !prNumbers(i['merged-pr']).has(pr)
   const byBranch = items.filter(
     (i) =>
       prNumbers(i.pr).size === 0 &&
-      i.status !== 'done' &&
-      !prNumbers(i['merged-pr']).has(pr) &&
+      open(i) &&
       ((branch && i.branch === branch) || (worktree && i.worktree === worktree)),
   )
-  return byBranch.length > 0 ? { by: 'branch', ids: byBranch.map(id) } : null
+  // 일치하는 구현·후속 줄(pr 이 빔)이 있으면 그 줄의 워크트리를 rows 에 담는다. 항목을 대표 칸으로 찾았어도 같다
+  const rows: Record<string, string> = {}
+  const rowOf = (i: BoardItem) => boardWorkerRows(i)
+    .filter((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).size === 0 &&
+      ((branch && one.branch === branch) || (worktree && one.worktree === worktree)))
+    .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+  const byRow = items.filter((i) => open(i) && !byBranch.includes(i) && rowOf(i) !== undefined)
+  for (const i of [...byBranch, ...byRow]) {
+    const row = rowOf(i)
+    if (row) rows[id(i)] = row.worktree
+  }
+  const ids = [...byBranch, ...byRow].map(id)
+  return ids.length > 0 ? { by: 'branch', ids, ...(Object.keys(rows).length > 0 ? { rows } : {}) } : null
 }
 
 // 보드 명령(board.ts steps)이 판정한 단계 목록. 읽지 못하면 null 이다
@@ -348,9 +387,18 @@ export function linkBoardPr(file: string, number: string, branch: string, ref?: 
   const found = findBoardItems(file, number, branch, null)
   if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
   const bin = process.env.BOARD_BIN || BOARD_BIN
-  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  const id = found.ids[0]
+  const worktree = found.rows?.[id]
+  // worker 줄로 찾았으면 줄의 pr 과 항목 pr 칸을 worker-link 하나로 함께 쓴다(한 잠금, 한 번 저장). 칸에 다른 PR 이 이미 있을 수 있다
+  const done = worktree === undefined
+    ? run(scriptCommand(bin, ['set', id, '--pr', number, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    : run(scriptCommand(bin, ['worker-link', id, '--worktree', worktree, '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
   if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
-  return found.ids[0]
+  if (worktree !== undefined && ref) {
+    const fill = run(scriptCommand(bin, ['set', id, '--fill', `--task-ref=${ref}`, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    if (fill.code !== 0) throw new Error(fill.stderr.trim() || `보드 명령 종료 코드 ${fill.code}`)
+  }
+  return id
 }
 
 // 진행률을 세는 쪽은 board.ts steps 가 정한다. 꼬리표 후보가 없는 항목은 CLI 를 부르지 않는다.
