@@ -149,13 +149,14 @@ test('리뷰 줄의 보고는 리뷰만 하는 항목만 닫고 구현 항목을
   assert.equal(r.board['impl-a'].status, 'doing')
 })
 
-test('구현 PR 이 머지되면 작업 중 리뷰 줄이 있어도 항목을 닫는다', () => {
+test('마지막 PR 을 판정하지 못하면 작업 중 리뷰 worker 가 있어도 항목을 닫지 않는다', () => {
   states = { '7': 'MERGED' }
   const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'], workers: [
     worker('impl', 'w', 'd0'), worker('review', 'r', 'd1', { pr: 7 }),
   ] }])
   assert.equal(r.code, 0, r.result.stderr)
-  assert.equal(r.board.a.status, 'done')
+  assert.equal(r.board.a.status, 'doing')
+  assert.deepEqual(r.board.a.details, ['1. PR', '2. 머지'])
   assert.equal((r.board.a.workers as any[])[1].status, 'working')
 })
 
@@ -584,8 +585,9 @@ describe('board-sync 마일스톤 항목', () => {
   })
 
   test('done 지점이 release 면 머지 뒤에도 doing 으로 두고 pr 칸을 남기며 다시 판정하지 않는다', () => {
-    config({ board: { done_after: 'release' } })
+    config({ board: { done_after: 'release' }, finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]' } })
     states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 작업', headRefName: 'feat/a' }
     const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2,deploy=3,release=4', details: four }])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'doing')
@@ -595,6 +597,47 @@ describe('board-sync 마일스톤 항목', () => {
     const again = run(['--board', board, '--repo', tmp])
     assert.equal(again.code, 0, again.stderr)
     assert.match(again.stdout, /바뀐 항목 없음/)
+  })
+
+  test('마지막 PR 을 판정하지 못해도 모든 단계와 작업이 끝났으면 done 으로 바꾼다', () => {
+    states['7'] = 'MERGED'
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true)])
+    assert.match(r.result.stdout, /마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없어 done 으로 바꾼다/)
+  })
+
+  test('마지막 PR 판정 규칙을 읽지 못하면 모든 단계가 끝나도 done 으로 바꾸지 않는다', () => {
+    config({ finish: { task_pattern: '[' } })
+    states['7'] = 'MERGED'
+    const details = [step('1. PR', false), step('2. 머지', false)]
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual(r.board.a.details, details)
+    assert.match(r.result.stderr, /마지막 PR 판정 규칙을 읽지 못해 PR 번호의 단계만 끝낸다/)
+    assert.match(r.result.stdout, /마지막 PR 판정 규칙을 읽지 못해 done 으로 바꾸지 않는다/)
+  })
+
+  test('마지막 PR 을 판정하지 못했을 때 작업 중 worker, 열린 PR, 남은 단계가 있으면 그대로 둔다', () => {
+    states['7'] = 'MERGED'
+    states['8'] = 'OPEN'
+    const cases = [
+      { id: 'worker', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)], workers: [worker('review', 'r', 'd1')] },
+      { id: 'open', pr: '7, 8', stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)] },
+      { id: 'step', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false), step('3. 추가 확인', false)] },
+    ].map((item) => ({ status: 'doing', ...item }))
+    const r = sync(cases)
+    assert.equal(r.code, 0, r.result.stderr)
+    for (const id of ['worker', 'step']) {
+      assert.equal(r.board[id].status, 'doing')
+      assert.deepEqual(r.board[id].details, cases.find((item) => item.id === id)?.details)
+    }
+    assert.equal(r.board.open.status, 'doing')
+    assert.deepEqual(r.board.open.details, [step('1. PR', true), step('2. 머지', true)])
+    assert.equal(String(r.board.open.pr), '8')
+    assert.equal(String(r.board.open['merged-pr']), '7')
   })
 
   test('배포 워크플로가 머지 커밋을 성공으로 배포했으면 [deploy] 단계까지 끝낸다', () => {
@@ -611,8 +654,9 @@ describe('board-sync 마일스톤 항목', () => {
 
   test('배포가 끝나지 않았으면 [deploy] 단계를 그대로 둔다', () => {
     const sha = gitRepo()
-    config({ board: { done_after: 'release' }, finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
+    config({ board: { done_after: 'release' }, finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]', deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
     states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 작업', headRefName: 'feat/a' }
     states['merge:7'] = sha
     states.runs = [{ headSha: sha, status: 'in_progress', conclusion: null }]
     const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2,deploy=3,release=4', details: four }])
@@ -926,7 +970,8 @@ describe('board-sync 동시에 열린 PR', () => {
   })
 
   test('앞 PR 이 머지되면 마지막 PR 이라 done 이 되고 뒤 묶음도 끝난 채 남는다', () => {
-    states = { '7': 'MERGED' }
+    config({ finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]' } })
+    states = { '7': 'MERGED', 'info:7': { title: '[PROJ-1] 작업', headRefName: 'feat/a' } }
     const r = sync([item({ pr: 7, 'merged-pr': 9, details: done(3, 4) })])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'done')
@@ -935,13 +980,15 @@ describe('board-sync 동시에 열린 PR', () => {
   })
 
   test('두 PR 이 같은 틱에 머지되면 번호가 작은 PR 만 반영하고 마지막 PR 로 보지 않는다', () => {
-    states = { '7': 'MERGED', '9': 'MERGED' }
+    config({ finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]' } })
+    states = { '7': 'MERGED', '9': 'MERGED', 'info:9': { title: '[PROJ-1] 작업', headRefName: 'feat/b' }, 'info:7': { title: '[PROJ-1] 작업', headRefName: 'feat/a' } }
     const r = sync([item()])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'doing')
     assert.equal(r.board.a.pr, 9)
     assert.equal(r.board.a['merged-pr'], 7)
     assert.deepEqual(r.board.a.details, done(1, 2))
+    states = { '7': 'MERGED', '9': 'MERGED', 'info:9': { title: '[PROJ-1] 작업', headRefName: 'feat/b' } }
     const next = run(['--board', board, '--repo', tmp])
     assert.equal(next.code, 0, next.stderr)
     assert.equal(load().a.status, 'done')
@@ -966,23 +1013,23 @@ describe('board-sync 동시에 열린 PR', () => {
     git('init', '-q', '-b', 'main')
     git('commit', '-q', '--allow-empty', '-m', 'merge')
     const sha = git('rev-parse', 'HEAD')
-    config({ board: { done_after: 'deploy' }, finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
+    config({ board: { done_after: 'deploy' }, finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]', deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
     const five = [step('1. PR', false), step('2. 머지', false), step('3. 배포', false), step('4. PR (wb)', false), step('5. 머지 (wb)', false)]
     const base = (extra: Json = {}): Json => item({ stages: 'pr=1,merge=2,deploy=3', details: five, workers: rows({ stages: 'pr=4,merge=5' }), ...extra })
     // 뒤 PR 이 먼저 머지됐다. 앞 PR 이 열려 있으니 배포를 보지 않는다
-    states = { '7': 'OPEN', '9': 'MERGED', 'merge:9': sha, runs: [{ headSha: sha, status: 'completed', conclusion: 'success' }] }
+    states = { '7': 'OPEN', '9': 'MERGED', 'merge:9': sha, 'info:7': { title: '[PROJ-1] 작업', headRefName: 'feat/a' }, runs: [{ headSha: sha, status: 'completed', conclusion: 'success' }] }
     let r = sync([base()])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'doing')
     assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, false, false, true, true])
     // 앞 PR 이 마지막으로 머지됐다. 배포가 끝나지 않았으면 done 이 아니다
-    states = { '7': 'MERGED', 'merge:7': sha, runs: [{ headSha: sha, status: 'in_progress', conclusion: null }] }
+    states = { '7': 'MERGED', 'merge:7': sha, 'info:7': { title: '[PROJ-1] 작업', headRefName: 'feat/a' }, runs: [{ headSha: sha, status: 'in_progress', conclusion: null }] }
     r = sync([{ ...(r.board.a as Json) }])
     assert.equal(r.board.a.status, 'doing')
     assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, false, true, true])
     assert.equal(r.board.a['merged-pr'], '9, 7')
     // 배포가 성공하면 done 이다
-    states = { '7': 'MERGED', 'merge:7': sha, runs: [{ headSha: sha, status: 'completed', conclusion: 'success' }] }
+    states = { '7': 'MERGED', 'merge:7': sha, 'info:7': { title: '[PROJ-1] 작업', headRefName: 'feat/a' }, runs: [{ headSha: sha, status: 'completed', conclusion: 'success' }] }
     r = sync([{ ...(r.board.a as Json) }])
     assert.equal(r.board.a.status, 'done')
     assert.deepEqual((r.board.a.details as Json[]).map((d) => d.done), [true, true, true, true, true])
@@ -990,7 +1037,8 @@ describe('board-sync 동시에 열린 PR', () => {
 
   test('done_after 기본(merge)이면 마지막 PR 머지 때 done 이고 배포 단계는 남는다', () => {
     const five = [step('1. PR', true), step('2. 머지', false), step('3. 배포', false), step('4. PR (wb)', true), step('5. 머지 (wb)', true)]
-    states = { '7': 'MERGED' }
+    config({ finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]' } })
+    states = { '7': 'MERGED', 'info:7': { title: '[PROJ-1] 작업', headRefName: 'feat/a' } }
     const r = sync([item({ stages: 'pr=1,merge=2,deploy=3', pr: 7, 'merged-pr': 9, details: five, workers: rows({ stages: 'pr=4,merge=5' }) })])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'done')

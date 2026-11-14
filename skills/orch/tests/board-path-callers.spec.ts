@@ -166,6 +166,8 @@ test('끝나지 않은 단계가 남았거나 merged-pr 이 없는 항목은 새
 })
 
 test('sync 는 옛 자동 줄 삭제와 남은 일 줄 변경을 통째 저장 하나로 합친다', () => {
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json', task_pattern: '^\\[(PROJ-[0-9]+)\\]' } }))
+  writeNodeBin(repo, 'gh', `require('node:fs').writeSync(1, process.argv.includes('body,headRefOid,headRefName') ? '{}' : process.argv.includes('title,headRefName') ? '{"title":"[PROJ-1] 작업","headRefName":"feat/a"}' : process.argv.includes('list') ? '[]' : 'MERGED')`)
   board([{ id: 'a', status: 'doing', pr: '#7', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지', '자동: 옛 줄', '남은 일: 옛 줄'] }])
   const done = cli('board/board-sync', ['--repo', repo, '--dry-run'])
   assert.equal(done.status, 0, done.stderr)
