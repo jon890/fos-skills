@@ -11,6 +11,7 @@
 // - verification_plan 이 있으면 그 파일(또는 phase 의 인수 검증 계획 절)과 PR 요구사항 연결을 검사한다.
 //   경로는 계획 폴더 기준이다. --require-verification 은 새 계획의 누락도 막고, 기본값은 기존 계획을 그대로 읽는다.
 // - 새 REQ 형식의 계획은 design 경로가 필요하다. 기존 R 형식 계획은 기술 설계 연결을 강제하지 않는다.
+// - 요구사항·결정 표의 ID 칸이 REQ·R·DECISION·D 로 시작하는데 규칙 꼴이 아니면(REQ1A, REQ-1, REQ01) 건너뛰지 않고 오류로 막는다.
 // - 결정 절은 `| D1 | 결정 | 답 | 누가 | 근거 |` 표이거나 `없음: <이유>` 한 줄이다.
 //   「답」 이 비었거나 미정·TBD·? 면 닫히지 않은 결정이다.
 //   「누가」 는 `사용자 YYYY-MM-DD`, `작성자`, `작성자(위임)` 중 하나다. 사용자 날짜 뒤에는 괄호 설명을 붙일 수 있다.
@@ -30,6 +31,9 @@ const SECTIONS = ['목표', '범위', '요구사항과 인수 조건', '결정']
 const DESIGN_SECTIONS = ['요구사항 연결', '책임과 경계', '인터페이스와 데이터', '실패와 일관성', '검증 전략', '결정']
 const ID = /^(?:REQ|R)[1-9][0-9]*$/
 const DECISION_ID = /^(?:DECISION|D)[1-9][0-9]*$/
+// ID 칸이 접두어 뒤에 숫자나 구분자가 오는데 규칙 꼴이 아닌 행(REQ1A, REQ-1, REQ01, DECISION2b)을 알아본다
+const REQ_LIKE = /^(?:REQ|R)[0-9_-]/
+const DECISION_LIKE = /^(?:DECISION|D)[0-9_-]/
 const DECIDER = /^(사용자 \p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}(?:\s*\([^()\n]+\))?|작성자|작성자\(위임\))$/u
 const OPEN_ANSWERS = new Set(['', '미정', 'tbd', '?', '-'])
 const CONFIRMED = pyre(/^확인:\s*(\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2})\s*$/u)
@@ -98,13 +102,21 @@ export function* tableRows(body: string): Generator<string[]> {
   }
 }
 
+// 규칙 꼴이 아닌 ID 행은 건너뛰지 않고 오류로 알린다
+function badIdRows(body: string, like: RegExp, valid: RegExp, accepted: string, example: string): string[] {
+  return [...tableRows(body)]
+    .filter((cells) => cells.length > 0 && like.test(cells[0]) && !valid.test(cells[0]))
+    .map((cells) => `ID 꼴이 틀렸다: ${cells[0]}. ${accepted} 꼴만 받는다. 다음 번호(예: ${example})를 쓴다`)
+}
+
 function checkDecisions(body: string): string[] {
+  const shape = badIdRows(body, DECISION_LIKE, DECISION_ID, 'DECISION1', 'DECISION9')
   const rows = [...tableRows(body)].filter((cells) => cells.length > 0 && DECISION_ID.test(cells[0]))
   if (rows.length === 0) {
     if (NO_DECISION.test(pyStrip(body))) return []
-    return ['결정 절에 DECISION1 같은 ID 의 결정 표나 「없음: <이유>」 한 줄이 필요하다']
+    return [...shape, '결정 절에 DECISION1 같은 ID 의 결정 표나 「없음: <이유>」 한 줄이 필요하다']
   }
-  const problems: string[] = []
+  const problems: string[] = [...shape]
   const seen = new Set<string>()
   for (const cells of rows) {
     const did = cells[0]
@@ -170,6 +182,7 @@ export function checkSpec(text: string, draft = false): [Set<string>, string[]] 
   const ids: string[] = []
   if (found.has('미결정') && !found.has('결정')) problems.push('옛 「미결정」 절을 「결정」 표로 바꾼다(spec 의 references/interview.md)')
   for (const name of SECTIONS) if (!found.get(name)) problems.push(`스펙의 필수 절이 없거나 비었다: ${name}`)
+  problems.push(...badIdRows(found.get('요구사항과 인수 조건') ?? '', REQ_LIKE, ID, 'REQ1', 'REQ9'))
   for (const cells of tableRows(found.get('요구사항과 인수 조건') ?? '')) {
     if (cells.length === 0 || !ID.test(cells[0])) continue
     const rid = cells[0]

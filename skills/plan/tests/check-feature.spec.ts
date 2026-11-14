@@ -88,6 +88,27 @@ test('중복 ID 와 닫히지 않은 결정은 실패한다', () => {
   for (const text of cases) assert.equal(check(feature(text), SPEC).code, 1, text)
 })
 
+test('꼴이 틀린 REQ·DECISION ID 는 건너뛰지 않고 draft 와 확인 뒤 검사 모두 막는다', () => {
+  for (const bad of ['REQ1A', 'REQ-1', 'REQ01']) {
+    const spec = VALID_REQ.replace('| REQ2 |', `| ${bad} |`)
+    for (const flags of [[], ['--draft']]) {
+      const r = check(feature(spec), SPEC, ...flags)
+      assert.equal(r.code, 1, `${bad} ${flags}`)
+      assert.match(r.stdout, new RegExp(`ID 꼴이 틀렸다: ${bad}\\..*REQ9`), bad)
+    }
+  }
+  for (const bad of ['DECISION2b', 'DECISION-2', 'DECISION02']) {
+    for (const flags of [[], ['--draft']]) {
+      const r = check(feature(VALID_REQ.replace('| DECISION2 |', `| ${bad} |`)), SPEC, ...flags)
+      assert.equal(r.code, 1, `${bad} ${flags}`)
+      assert.match(r.stdout, new RegExp(`ID 꼴이 틀렸다: ${bad}\\..*DECISION9`), bad)
+    }
+  }
+  for (const good of [VALID, VALID_REQ, VALID.replace('| R2 |', '| REQ2 |').replace('| D2 |', '| DECISION3 |').replace('| D1 |', '| D4 |')]) {
+    for (const flags of [[], ['--draft']]) assert.equal(check(feature(good), SPEC, ...flags).code, 0, flags.join())
+  }
+})
+
 test('올바른 스펙과 위임한 결정은 통과한다', () => {
   assert.equal(check(feature(), SPEC).code, 0)
   assert.equal(check(feature(VALID.replace('| 작성자 |', '| 작성자(위임) |')), SPEC).code, 0)
