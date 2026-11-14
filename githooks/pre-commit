@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+// git 이 부르는 pre-commit 훅 진입이다. 동작과 종료 코드는 pre-commit.ts 머리 주석이 소유한다.
+// 확장자가 없어 node 는 타입 문법을 지우지 않는다. 그래서 타입 문법 없이 import() 로 본체를 부른다.
+// 저장소 위쪽 package.json 의 type 에 따라 CommonJS 로도 ESM 으로도 읽히므로 require, __filename 대신
+// process.getBuiltinModule 과 process.argv[1] 을 쓴다.
+// .git/hooks 의 링크로 불려도 원본 옆의 본체를 찾도록 실제 경로 기준으로 고른다.
+const { realpathSync } = process.getBuiltinModule('node:fs')
+const { pathToFileURL } = process.getBuiltinModule('node:url')
+
+import(pathToFileURL(realpathSync(process.argv[1]) + '.ts').href).then(
+  (hook) => {
+    process.exitCode = hook.main(process.argv.slice(2))
+  },
+  (err) => {
+    process.stderr.write('pre-commit 훅을 읽지 못했다: ' + (err && err.message ? err.message : String(err)) + '\n')
+    process.exitCode = 126
+  },
+)

@@ -32,7 +32,7 @@
 | `modules/kit/` | 옛 Python 명령과 같은 글자를 내는 실행용 helper(argparse 꼴 옵션 펼치기, `str.splitlines` 같은 Python 꼴). `scripts/` 와 `githooks/` 는 import 하고, 스킬과 도구는 복사본을 둔다(설계 [`features/node-runtime/design.md`](features/node-runtime/design.md) 「공통 꼴 모듈 kit」) |
 | `modules/testkit/` | 테스트용 helper. 이 저장소의 테스트만 쓴다 |
 | `scripts/` | 이 저장소의 설치·검사·내보내기·버전 관리 |
-| `githooks/` | Git commit-msg 와 post-commit. 확장자 없는 node 진입이 같은 이름의 `.ts` 본체를 부른다. Claude 훅이 아님 |
+| `githooks/` | Git pre-commit, commit-msg 와 post-commit. 확장자 없는 node 진입이 같은 이름의 `.ts` 본체를 부른다. Claude 훅이 아님 |
 | `docs/` | 이 저장소의 책임 문서와 결정 이력 |
 
 배치의 결정은 [ADR-021](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.

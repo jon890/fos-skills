@@ -12,9 +12,9 @@ import { copyFromRepo } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const COMMAND = ['node', 'scripts/install-hooks.ts']
-const FILES = ['scripts/install-hooks.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts', 'githooks/commit-msg', 'githooks/commit-msg.ts', 'githooks/post-commit', 'githooks/post-commit.ts']
+const FILES = ['scripts/install-hooks.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts', 'githooks/commit-msg', 'githooks/commit-msg.ts', 'githooks/pre-commit', 'githooks/pre-commit.ts', 'githooks/post-commit', 'githooks/post-commit.ts']
 // git 이 부르는 훅 이름
-const HOOKS = ['commit-msg', 'post-commit']
+const HOOKS = ['commit-msg', 'post-commit', 'pre-commit']
 // ──
 
 function repo(t: { after(fn: () => void): void }): string {
