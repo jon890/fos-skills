@@ -2,7 +2,7 @@
 
 스펙: [spec.md](spec.md)
 
-PR 은 하나다(스펙 DECISION9). 계획은 [tasks/task-link/](tasks/task-link/index.json) 이다.
+PR 은 하나다(스펙 DECISION9). 구현은 PR #486 이고 검증 기록은 [verification.md](verification.md) 다.
 
 ## 요구사항 연결
 
@@ -221,7 +221,7 @@ orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
 | REQ8 | 설정 문서 검사(`config-docs.spec.ts` 에 `board.task` 단언을 더한다)와 diff 검토 | 문서 표에 `board.task` 와 `state/task-links.json` 이 있는지 |
 | REQ9 | `launch-worker.spec.ts` | 새 제목에 번호 없음, 번호 칸으로 찾기, 번호 칸이 빈 옛 항목의 제목 찾기 |
 
-실제 사내 `dooray` 와 실제 창은 worker 환경에서 확인할 수 없다. 머지 뒤 코디네이터가 ai-analysis 보드에서 한 번 본다([인수 검증 계획](tasks/task-link/verification-plan.md)).
+실제 사내 `dooray` 와 실제 창은 worker 환경에서 확인할 수 없다. 머지 뒤 ai-analysis 보드에서 확인한 것과 남은 것은 [검증 기록](verification.md)에 있다.
 
 ## 결정
 
