@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { test, beforeEach, afterEach } from 'node:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -87,10 +88,8 @@ test('띄우기 기록이 지워져도 영구 이력의 리뷰 지시서와 첫 
 })
 test('지시서가 PR 없는 일로 정한 완료 보고는 첫 줄이 완료일 때 DONE-SUSPECT 에서 뺀다', async () => {
   const instructions = [
-    '허락: PR 을 열지 않는다.\n## 완료 기준\n- 설계 결과를 전달한다.',
-    '## 완료 기준\n- 계획 결과를 전달한다.',
-    '허락: 결과를 다른 저장소에 내보낸다.\n## 완료 기준\n- 내보낸 결과를 확인한다.',
-    '## 완료 기준\n- 팀 저장소로 내보낸 결과를 확인한다.',
+    '허락: PR 은 열지 않는다.\n## 완료 기준\n- 설계 결과를 전달한다.',
+    '허락: 내보내기 결과를 다른 저장소에 만들고 이 저장소에서는 PR 은 열지 않는다.\n## 완료 기준\n- 결과를 확인한다.',
   ]
   const reports = instructions.map((text, i) => {
     const dispatch = `no-pr-${i}`
@@ -104,6 +103,29 @@ test('지시서가 PR 없는 일로 정한 완료 보고는 첫 줄이 완료일
   rules(reports); await watchCompletions(repo, 'R', 'main')
   assert.equal(notices().length, 0)
   assert.deepEqual(state().suspects, [])
+})
+test('다른 저장소에 띄운 dispatch 는 완료 기준에 PR 이 없어도 첫 줄 완료 보고를 인정한다', async () => {
+  const otherRepo = join(repo, 'other-repo')
+  mkdirSync(otherRepo)
+  execFileSync('git', ['init', '-q', repo])
+  execFileSync('git', ['init', '-q', otherRepo])
+  const spec = join(repo, 'export.md')
+  writeFileSync(spec, '## 완료 기준\n- 내보낸 결과를 확인한다.')
+  const launch = { dispatch: 'export', terminal: 'worker', worktree: otherRepo, run: 'R', spec }
+  recordLaunch(repo, launch)
+  recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  rules([{ ...done('export'), subject: '완료: 결과를 내보냈다' }]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+})
+test('지시서를 읽지 못한 완료는 의심으로 남기고 원인을 알린다', async () => {
+  const launch = { dispatch: 'missing-spec', terminal: 'worker', worktree: repo, run: 'R', spec: join(repo, 'missing.md') }
+  recordLaunch(repo, launch)
+  recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  rules([done('missing-spec')]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 1)
+  assert.match(notices()[0].argv.join(' '), /지시서를 읽지 못했다/)
+  assert.deepEqual(state().suspects, ['missing-spec'])
 })
 test('같은 dispatch 의 의심 알림은 틱과 다시 시작을 지나도 상태 파일의 suspects 로 한 번만 보낸다', async () => {
   rules([done('d1')]); await watchCompletions(repo, 'R', 'main')

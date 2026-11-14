@@ -16,6 +16,7 @@ import { runKey } from '../lib/loop.ts'
 import { reviewPrOfDispatch } from '../lib/review.ts'
 import { readLaunch } from '../lib/launched.ts'
 import { launchHistory } from '../lib/launch-history.ts'
+import { git, mainCheckout } from '../lib/git.ts'
 import { fire } from '../lib/events.ts'
 import { notifyRun } from '../lib/run-notice.ts'
 
@@ -65,14 +66,20 @@ export async function watchCompletions(repo: string, run: string, base: string, 
   const historyByDispatch = new Map(history.map(row => [row.dispatch, row]))
   const launchOf = (dispatch: string) => readLaunch(repo, dispatch) ?? history.find(row => row.dispatch === dispatch)
   const isReview = (dispatch: string) => reviewPrOfDispatch(repo, dispatch, historyByDispatch) !== null
+  const launchedInOtherRepo = (worktree: string) => {
+    if (!existsSync(repo) || !existsSync(worktree)) return false
+    const [current, target] = [repo, worktree].map(path => git(path, ['rev-parse', '--show-toplevel']))
+    return current.code === 0 && target.code === 0 && mainCheckout(repo) !== mainCheckout(worktree)
+  }
   const options = {
     isReview,
-    isNoPr: (dispatch: string) => {
+    isNoPr: (dispatch: string): boolean | 'unreadable' => {
       if (isReview(dispatch)) return false
       const launch = launchOf(dispatch)
       if (launch?.completion === 'none') return true
+      if (launch?.worktree && launchedInOtherRepo(launch.worktree)) return true
       if (!launch?.spec) return false
-      try { return noPrInstruction(readFileSync(launch.spec, 'utf8')) } catch { return false }
+      try { return noPrInstruction(readFileSync(launch.spec, 'utf8')) } catch { return 'unreadable' }
     },
   }
   let classified = classify(fresh, statuses, options)

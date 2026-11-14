@@ -49,10 +49,8 @@ describe('classify', () => {
 
   test('PR 없는 지시서의 첫 줄 완료 보고는 no-pr 근거로 인정한다', () => {
     const instructions = [
-      '허락: PR 을 열지 않는다.\n## 완료 기준\n- 설계 문서를 작성한다.',
-      '## 완료 기준\n- 결과를 코디네이터에게 전달한다.',
-      '허락: 다른 저장소에 결과를 내보내고 이 저장소에서는 PR 을 열지 않는다.\n## 완료 기준\n- 내보낸 결과를 확인한다.',
-      '## 완료 기준\n- 계획과 검증 명령을 정리한다.',
+      '허락: PR 은 열지 않는다.\n## 완료 기준\n- 설계 문서를 작성한다.',
+      '허락: 다른 저장소에 결과를 내보내고 이 저장소에서는 PR 은 열지 않는다.\n## 완료 기준\n- 내보낸 결과를 확인한다.',
     ]
     for (const instruction of instructions) assert.equal(noPrInstruction(instruction), true)
     const done = message('worker_done', 2, { subject: '완료: 설계와 계획을 전달했다' })
@@ -63,6 +61,8 @@ describe('classify', () => {
 
   test('PR 을 여는 지시서에서 준비됨 없는 완료 보고는 여전히 의심스럽다', () => {
     assert.equal(noPrInstruction('## 완료 기준\n- PR 이 MERGED 다.'), false)
+    assert.equal(noPrInstruction('## 완료 기준\n- PR 이 머지된다.'), false)
+    assert.equal(noPrInstruction('## 완료 기준\n- PR 을 열고 준비됨을 보낸다.'), false)
     const done = message('worker_done', 2, { subject: '완료: 구현했다' })
     const result = classify([done], [], { isNoPr: () => false })[0]
     assert.equal(result.type, 'suspicious_worker_done')
@@ -76,6 +76,7 @@ describe('classify', () => {
   test('배경이나 코드 예시의 PR 문구는 PR 없는 지시 근거가 아니다', () => {
     assert.equal(noPrInstruction('## 배경\n- PR 을 열지 않는 작업을 예로 든다.\n## 완료 기준\n- PR 이 MERGED 다.'), false)
     assert.equal(noPrInstruction('## 완료 기준\n- PR 이 MERGED 다.\n```text\n허락: PR 을 열지 않는다.\n```'), false)
+    assert.equal(noPrInstruction('허락: 구현과 PR 생성까지 허락한다. 다른 저장소의 PR 은 열지 않는다.\n## 완료 기준\n- 결과를 확인한다.'), false)
   })
 
   test('줄은 \\n 에서만 나눈다. 옛 명령처럼 \\r 이나 \\u2028 앞의 준비됨 줄은 근거가 아니다', () => {

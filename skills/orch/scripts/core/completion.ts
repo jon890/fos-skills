@@ -40,32 +40,18 @@ function startsWithReviewVerdict(message: Json): boolean {
   return REVIEW_VERDICT.test(`${String(message.subject || '')}\n${String(message.body || '')}`)
 }
 
-export type ClassifyOptions = { isReview?: (dispatch: string) => boolean; isNoPr?: (dispatch: string) => boolean }
+export type ClassifyOptions = { isReview?: (dispatch: string) => boolean; isNoPr?: (dispatch: string) => boolean | 'unreadable' }
 
-// 지시서의 완료 기준에 MERGED 가 없거나, 허락 줄에서 PR 을 열지 않는다고 정한 경우 PR 준비를 요구하지 않는다.
-// 배경과 코드 예시의 문장은 판단 근거로 쓰지 않는다.
+// 허락 줄에서 PR 을 열지 않는다고 명시한 지시서만 PR 준비가 없는 일로 본다.
+// 완료 기준의 표현과 배경·코드 예시는 PR 여부를 판단하는 근거로 쓰지 않는다.
 export function noPrInstruction(text: string): boolean {
   let inFence = false
   const visible = text.split('\n').filter(line => {
     if (/^\s*```/.test(line)) { inFence = !inFence; return false }
     return !inFence && !/^\s*>/.test(line)
   })
-  if (visible.some(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?.*\bPR\b.*(?:열지 않는다|열지 않음|만들지 않는다|생성하지 않는다)/i.test(line))) return true
-  let completionLevel = 0
-  let foundCompletion = false
-  let merged = false
-  for (const line of visible) {
-    const heading = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
-    if (heading) {
-      if (completionLevel && heading[1].length <= completionLevel) completionLevel = 0
-      if (heading[2] === '완료 기준') {
-        completionLevel = heading[1].length
-        foundCompletion = true
-      }
-    }
-    if (completionLevel && /\bMERGED\b/i.test(line)) merged = true
-  }
-  return foundCompletion && !merged
+  return visible.some(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?.*\bPR 은 열지 않는다(?:[.!?\s]|$).*$/i.test(line)
+    && !/\bPR\s*생성/i.test(line))
 }
 
 function startsWithCompletion(message: Json): boolean {
@@ -154,7 +140,8 @@ export function classify(messages: Json[], history: Json[] = [], options: Classi
         const [task, dispatch] = context(item)
         let ready: Json | null = null
         let selected: Json | null = null
-        if (task && dispatch && startsWithCompletion(item) && options.isNoPr?.(String(dispatch)) === true) {
+        const noPr = dispatch ? options.isNoPr?.(String(dispatch)) : false
+        if (task && dispatch && startsWithCompletion(item) && noPr === true) {
           ready = { status: 'ready', kind: 'no-pr' }
         }
         for (const candidate of ready ? [] : previous) {
@@ -199,7 +186,10 @@ export function classify(messages: Json[], history: Json[] = [], options: Classi
           }, null)
           if (latest) ready = { status: 'ready', kind: 'review', statusMessageId: latest.id ?? null }
         }
-        item.completionVerification = ready ?? { status: 'suspicious', reason: '같은 Task의 앞선 PR 준비 상태가 없다' }
+        item.completionVerification = ready ?? {
+          status: 'suspicious',
+          reason: `같은 Task의 앞선 PR 준비 상태가 없다${noPr === 'unreadable' ? ' (지시서를 읽지 못했다)' : ''}`,
+        }
         if (!ready) {
           item.originalType = 'worker_done'
           item.type = 'suspicious_worker_done'
