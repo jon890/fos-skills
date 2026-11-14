@@ -39,7 +39,7 @@
 
 | 항목 | 확인한 것 | 근거 |
 | --- | --- | --- |
-| 실제 dooray CLI 응답 꼴 | dooray CLI 0.33.0 은 두레이 보안 사고 뒤 웹 방식(SESSION 쿠키)으로 동작한다. `dooray --json post get AI-스마트홈-AI 458` 이 맨 위 `id`(19자리 postId)와 `project.code`(한글 프로젝트 코드)를 냈다. 설계의 「응답의 `id` 로 주소를 만든다」 와 한글 프로젝트 코드 조회가 실제 응답과 맞다 | 읽기 전용 실행, CLI 버전과 칸 이름만 기록 |
+| 실제 dooray CLI 응답 꼴 | dooray CLI 0.33.0 실측(2026-11-14). `dooray --json post get AI-스마트홈-AI 458` 이 맨 위 `id`(19자리 postId)와 `project.code`(한글 프로젝트 코드)를 냈다. 설계의 「응답의 `id` 로 주소를 만든다」 와 한글 프로젝트 코드 조회가 실제 응답과 맞다 | 읽기 전용 실행, CLI 버전과 칸 이름만 기록 |
 | 주소 자동 채우기 | ai-analysis 저장소(`board.task` = dooray, 기본 프로젝트 설정)의 상주 루프가 업무 번호만 있던 항목 셋의 주소를 만들었다. 항목의 `task` 칸에 `/project/tasks/<postId>` 꼴 주소가 생겼고 `task-links.json` 의 실패 기록은 비어 있다 | 그 저장소 `.orch/state/loop.log` 의 `TASK-LINK qa-attention-429 AI-스마트홈-AI/429`, `TASK-LINK 305-ai-audit AI-스마트홈-AI/305`, `TASK-LINK admin-list-pattern AI-스마트홈-AI/432` |
 | 창의 칩 | 사용자가 실제 창에서 칩이 좁은 폭에 눌리는 것을 보고 #489 로 칩을 제목 윗줄로 옮겼다 | PR #489 |
 
