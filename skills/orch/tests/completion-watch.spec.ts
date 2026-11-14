@@ -85,6 +85,26 @@ test('띄우기 기록이 지워져도 영구 이력의 리뷰 지시서와 첫 
   assert.equal(notices().length, 0)
   assert.deepEqual(state().suspects, [])
 })
+test('지시서가 PR 없는 일로 정한 완료 보고는 첫 줄이 완료일 때 DONE-SUSPECT 에서 뺀다', async () => {
+  const instructions = [
+    '허락: PR 을 열지 않는다.\n## 완료 기준\n- 설계 결과를 전달한다.',
+    '## 완료 기준\n- 계획 결과를 전달한다.',
+    '허락: 결과를 다른 저장소에 내보낸다.\n## 완료 기준\n- 내보낸 결과를 확인한다.',
+    '## 완료 기준\n- 팀 저장소로 내보낸 결과를 확인한다.',
+  ]
+  const reports = instructions.map((text, i) => {
+    const dispatch = `no-pr-${i}`
+    const spec = join(repo, `${dispatch}.md`)
+    writeFileSync(spec, text)
+    const launch = { dispatch, terminal: 'worker', worktree: repo, run: 'R', spec }
+    recordLaunch(repo, launch)
+    recordHistory(repo, { ...launch, at: `2026-11-10T00:00:1${i}Z`, title: null, row: null, retry_of: null })
+    return { ...done(dispatch, dispatch), subject: '완료: 결과를 전달했다' }
+  })
+  rules(reports); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+})
 test('같은 dispatch 의 의심 알림은 틱과 다시 시작을 지나도 상태 파일의 suspects 로 한 번만 보낸다', async () => {
   rules([done('d1')]); await watchCompletions(repo, 'R', 'main')
   for (let tick = 0; tick < 3; tick++) { rules([done('d1'), done(`again${tick}`, 'd1', `2026-11-10T00:0${2 + tick}:00Z`)]); await watchCompletions(repo, 'R', 'main') }

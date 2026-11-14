@@ -8,6 +8,7 @@
 //   SHA 가 40자리보다 길거나 짧으면 근거가 아니다.
 // 같은 dispatch 의 준비 상태를 우선하고 그 안에서 가장 늦은 시각을 고른다. 없으면 같은 Task 의 다른 dispatch 에도 같은 기준을 쓴다.
 // 리뷰 dispatch(지시서에 `리뷰 PR:` 줄이 있다. 부르는 쪽이 options.isReview 로 알린다)는 PR 을 열지 않아 준비 상태가 없다.
+// PR 없는 dispatch 도 지시서가 확인되면 options.isNoPr 로 알린다. 첫 줄 `완료:`만 완료 근거로 인정한다.
 //   그 dispatch 는 준비 상태가 없으면 같은 dispatch, 같은 발신자가 앞서 보낸 결과 status 를 근거로 센다.
 //   띄우기 기록이 없거나 지시서를 못 읽어 isReview 가 모르는 dispatch 도, 같은 발신자의 첫 status 가 `판정:` 줄이면 리뷰로 본다(옛 wait 와 같다)
 //   결과 status 는 제목이나 본문의 한 줄이 `판정:`, `완료:`, `미완료:` 로 시작하는 것이다(목록 기호와 굵은 글씨는 받는다).
@@ -39,7 +40,37 @@ function startsWithReviewVerdict(message: Json): boolean {
   return REVIEW_VERDICT.test(`${String(message.subject || '')}\n${String(message.body || '')}`)
 }
 
-export type ClassifyOptions = { isReview?: (dispatch: string) => boolean }
+export type ClassifyOptions = { isReview?: (dispatch: string) => boolean; isNoPr?: (dispatch: string) => boolean }
+
+// 지시서의 완료 기준에 MERGED 가 없거나, 허락 줄에서 PR 을 열지 않는다고 정한 경우 PR 준비를 요구하지 않는다.
+// 배경과 코드 예시의 문장은 판단 근거로 쓰지 않는다.
+export function noPrInstruction(text: string): boolean {
+  let inFence = false
+  const visible = text.split('\n').filter(line => {
+    if (/^\s*```/.test(line)) { inFence = !inFence; return false }
+    return !inFence && !/^\s*>/.test(line)
+  })
+  if (visible.some(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?.*\bPR\b.*(?:열지 않는다|열지 않음|만들지 않는다|생성하지 않는다)/i.test(line))) return true
+  let completionLevel = 0
+  let foundCompletion = false
+  let merged = false
+  for (const line of visible) {
+    const heading = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+    if (heading) {
+      if (completionLevel && heading[1].length <= completionLevel) completionLevel = 0
+      if (heading[2] === '완료 기준') {
+        completionLevel = heading[1].length
+        foundCompletion = true
+      }
+    }
+    if (completionLevel && /\bMERGED\b/i.test(line)) merged = true
+  }
+  return foundCompletion && !merged
+}
+
+function startsWithCompletion(message: Json): boolean {
+  return /^완료:/.test(`${String(message.subject || '')}\n${String(message.body || '')}`)
+}
 
 // 메시지의 제목과 본문에 리뷰 결과 줄이 있는지
 export function hasVerdict(message: Json): boolean {
@@ -123,7 +154,10 @@ export function classify(messages: Json[], history: Json[] = [], options: Classi
         const [task, dispatch] = context(item)
         let ready: Json | null = null
         let selected: Json | null = null
-        for (const candidate of previous) {
+        if (task && dispatch && startsWithCompletion(item) && options.isNoPr?.(String(dispatch)) === true) {
+          ready = { status: 'ready', kind: 'no-pr' }
+        }
+        for (const candidate of ready ? [] : previous) {
           if (candidate.type !== 'status' || !task || !dispatch) continue
           const [candidateTask, candidateDispatch] = context(candidate)
           if (candidateTask !== task || !candidateDispatch) continue

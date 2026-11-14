@@ -5,7 +5,7 @@
 // 리뷰 dispatch 는 띄우기 기록이 지워져도 영구 이력의 spec 으로 알아본다(lib/review.ts).
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { classify, context, payload } from '../lib/completion.ts'
+import { classify, context, noPrInstruction, payload } from '../lib/completion.ts'
 import { senderOf } from '../core/message-fields.ts'
 import { orcaJson } from '../lib/orca.ts'
 import { ghJson } from '../lib/gh.ts'
@@ -61,19 +61,31 @@ export async function watchCompletions(repo: string, run: string, base: string, 
   const fresh = done.filter(m => !seen.ids.includes(String(m.id)))
   if (!fresh.length) return
   const statuses = messages(['check', '--run', run, '--all', '--types', 'status'])
-  const options = { isReview: (dispatch: string) => reviewPrOfDispatch(repo, dispatch) !== null }
+  const history = launchHistory(repo)
+  const historyByDispatch = new Map(history.map(row => [row.dispatch, row]))
+  const launchOf = (dispatch: string) => readLaunch(repo, dispatch) ?? history.find(row => row.dispatch === dispatch)
+  const isReview = (dispatch: string) => reviewPrOfDispatch(repo, dispatch, historyByDispatch) !== null
+  const options = {
+    isReview,
+    isNoPr: (dispatch: string) => {
+      if (isReview(dispatch)) return false
+      const launch = launchOf(dispatch)
+      if (launch?.completion === 'none') return true
+      if (!launch?.spec) return false
+      try { return noPrInstruction(readFileSync(launch.spec, 'utf8')) } catch { return false }
+    },
+  }
   let classified = classify(fresh, statuses, options)
   if (classified.some(m => m.type === 'suspicious_worker_done')) {
     const inbox = messages(['inbox', '--terminal', `run:${run}`, '--limit', '3000'])
     const mine = inbox.filter(m => m.type === 'status' && (m.run_id ?? m.runId) === run)
     classified = classify(fresh, [...statuses, ...mine], options)
   }
-  const history = launchHistory(repo)
   for (const message of classified) {
     const [task, dispatchValue] = context(message)
     const dispatch = String(dispatchValue ?? '')
     const id = String(message.id)
-    const launch = readLaunch(repo, dispatch) ?? history.find(row => row.dispatch === dispatch)
+    const launch = launchOf(dispatch)
     const verified = message.completionVerification as Json | undefined
     if (launch?.completion !== 'none' && (verified?.status === 'ready' || verified?.status === 'suspicious')) {
       let pr: Json | null = null
