@@ -513,6 +513,15 @@ describe('지시서 검사', () => {
   test('없는 지시서는 사용법 오류다', () => {
     assert.equal(lint([join(specs, 'nope.md')]).code, 2)
   })
+
+  test('PR 을 열지 않는 지시서는 완료 기준에 완료: 보고 규칙을 요구한다', () => {
+    const missing = spec('spec-no-pr-missing', '허락: PR 은 열지 않는다.\n## 완료 기준\n- 설계 결과를 전달한다.')
+    const present = spec('spec-no-pr-present', '허락: PR 은 열지 않는다.\n## 완료 기준\n- worker_done 첫 줄을 `완료:`로 쓴다.\n- 설계 결과를 전달한다.')
+    const result = lint([missing, present])
+    assert.equal(result.code, 0, result.stdout)
+    assert.match(result.stdout, /^spec-no-pr-missing\.md:1: 완료 보고: PR 을 열지 않는 지시서는 완료 기준에 .*적는다$/m)
+    assert.doesNotMatch(result.stdout, /^spec-no-pr-present\.md:.*완료 보고:/m)
+  })
 })
 
 describe('할 일 첫 줄의 루프 선택', () => {

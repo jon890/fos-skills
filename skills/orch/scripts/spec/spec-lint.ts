@@ -361,6 +361,25 @@ const PR_COUNT = /\bPR\s*(?:[2-9]|\d{2,}|두|세|네|여러)\s*(?:개|건)/i
 const DONE_HINT =
   '완료 기준에 PR 이 둘 이상 보인다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. ' +
   '이 지시서는 PR1 만 맡는다고 적고, 뒤 PR 은 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다. 뒤 PR 목록은 참고 절에만 둔다'
+const NO_PR_DONE_HINT = 'PR 을 열지 않는 지시서는 완료 기준에 `worker_done` 첫 줄을 `완료:`로 쓴다고 적는다'
+
+function noPrDoneProblem(lines: string[]): number | null {
+  const visible = outsideFences(lines)
+  const permission = visible.findIndex(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?.*\bPR 은 열지 않는다(?:[.!?\s]|$).*$/i.test(line)
+    && !/\bPR\s*생성/i.test(line))
+  if (permission < 0) return null
+  let completionLevel = 0
+  let hasMarker = false
+  visible.forEach(line => {
+    const heading = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+    if (heading) {
+      if (completionLevel && heading[1].length <= completionLevel) completionLevel = 0
+      if (heading[2] === '완료 기준') completionLevel = heading[1].length
+    }
+    if (completionLevel && /worker_done\s+첫 줄.*완료\s*:`?/i.test(line)) hasMarker = true
+  })
+  return hasMarker ? null : permission + 1
+}
 
 function doneProblem(lines: string[]): { no: number; found: string } | null {
   let inSection = false
@@ -546,6 +565,8 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     }
     const done = doneProblem(spec.lines)
     if (done) warnings.push(`${spec.name}:${done.no}: 완료: ${DONE_HINT}(${done.found})`)
+    const noPrDone = noPrDoneProblem(spec.lines)
+    if (noPrDone !== null) warnings.push(`${spec.name}:${noPrDone}: 완료 보고: ${NO_PR_DONE_HINT}`)
     for (const [glob, no] of spec.owned) {
       for (const c of coordinator) {
         if (overlap(repo, glob, c)) errors.push(`${spec.name}:${no}: 코디네이터: \`${glob}\` 가 코디네이터 소유 \`${c}\` 와 겹친다`)
