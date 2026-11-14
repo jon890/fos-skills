@@ -1,1 +1,1 @@
-`완료:`로 보고하는 PR 없는 worker 를 DONE-SUSPECT 로 잘못 분류하지 않는다.
+- PR 없는 worker 가 `완료:`로 보고하면 DONE-SUSPECT 에서 제외한다.
