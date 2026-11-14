@@ -183,3 +183,25 @@ test('후속 묶음 단계는 사건 단계라 step-mark 가 거절한다', () =
     assert.match(edit.stderr, /3 번 줄은 stages 가 가리키는 사건 단계/)
   } finally { b.cleanup() }
 })
+
+test('worker-link 는 줄의 pr 과 항목 pr 칸을 한 번에 쓰고 맞는 줄이 없으면 아무것도 쓰지 않고 거절한다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', pr: 78, stepAt: 'old', details: ['1. 구현'], workers: [
+      { role: 'follow', worktree: 'wb', branch: 'b', dispatch: 'd', status: 'done', pr: null, at: '2026-01-03', endedAt: '2026-01-04' },
+    ] })
+    assert.equal(run(b.file, ['worker-link', 'a', '--worktree', 'wb', '--pr', '#77']).code, 0)
+    assert.equal(item(b.file, 'a').pr, '78, 77')
+    const rows = item(b.file, 'a').workers as Record<string, unknown>[]
+    assert.equal(rows[0].pr, 77)
+    assert.equal(rows[0].status, 'done')
+    assert.equal(item(b.file, 'a').stepAt, 'old')
+    const before = readFileSync(b.file, 'utf8')
+    assert.equal(run(b.file, ['worker-link', 'a', '--worktree', 'wb', '--pr', '77']).code, 0)
+    assert.equal(readFileSync(b.file, 'utf8'), before)
+    const none = run(b.file, ['worker-link', 'a', '--worktree', 'missing', '--pr', '9'])
+    assert.equal(none.code, 1)
+    assert.equal(readFileSync(b.file, 'utf8'), before)
+    for (const args of [['worker-link', 'a', '--worktree', 'wb'], ['worker-link', 'a', '--pr', '9'], ['worker-link', 'a', '--worktree', 'wb', '--pr', '1, 2']]) assert.equal(run(b.file, args).code, 2, args.join(' '))
+  } finally { b.cleanup() }
+})

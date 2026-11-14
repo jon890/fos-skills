@@ -331,7 +331,8 @@ export function findBoardItems(file: string, pr: string, branch: string, worktre
     return null
   }
   const id = (i: BoardItem) => (typeof i.id === 'string' ? i.id : JSON.stringify(i.id))
-  const byPr = items.filter((i) => prNumbers(i.pr).has(pr))
+  // pr 칸에 들었거나 worker 줄의 pr 이 그 PR 인 항목. 줄만 저장된 부분 실패 뒤 다시 돌려도 찾는다
+  const byPr = items.filter((i) => prNumbers(i.pr).has(pr) || boardWorkerRows(i).some((one) => prNumbers(one.pr).has(pr)))
   if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
   const open = (i: BoardItem) => i.status !== 'done' && !prNumbers(i['merged-pr']).has(pr)
   const byBranch = items.filter(
@@ -388,13 +389,14 @@ export function linkBoardPr(file: string, number: string, branch: string, ref?: 
   const bin = process.env.BOARD_BIN || BOARD_BIN
   const id = found.ids[0]
   const worktree = found.rows?.[id]
-  // worker 줄로 찾았으면 항목 pr 칸에 PR 을 더하고 그 줄의 pr 도 채운다. 칸에 다른 PR 이 이미 있을 수 있다
-  const list = worktree === undefined ? number : [...prNumbers(readBoard(file).find((row) => row.id === id)?.pr), number].join(', ')
-  const done = run(scriptCommand(bin, ['set', id, '--pr', list, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  // worker 줄로 찾았으면 줄의 pr 과 항목 pr 칸을 worker-link 하나로 함께 쓴다(한 잠금, 한 번 저장). 칸에 다른 PR 이 이미 있을 수 있다
+  const done = worktree === undefined
+    ? run(scriptCommand(bin, ['set', id, '--pr', number, ...(ref ? ['--fill', `--task-ref=${ref}`] : []), '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    : run(scriptCommand(bin, ['worker-link', id, '--worktree', worktree, '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
   if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
-  if (worktree !== undefined) {
-    const row = run(scriptCommand(bin, ['worker-set', id, '--worktree', worktree, '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
-    if (row.code !== 0) throw new Error(row.stderr.trim() || `보드 명령 종료 코드 ${row.code}`)
+  if (worktree !== undefined && ref) {
+    const fill = run(scriptCommand(bin, ['set', id, '--fill', `--task-ref=${ref}`, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    if (fill.code !== 0) throw new Error(fill.stderr.trim() || `보드 명령 종료 코드 ${fill.code}`)
   }
   return id
 }

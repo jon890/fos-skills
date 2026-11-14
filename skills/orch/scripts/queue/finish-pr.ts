@@ -578,14 +578,10 @@ function updateBoardRows<T>(args: Args, repo: string, item: string, make: (row: 
   return false
 }
 
-// worker 줄의 pr 을 채우고 항목 pr 칸에 이 PR 을 더한다. 이미 칸에 들었으면 줄만 채운다
+// worker 줄의 pr 을 채우고 항목 pr 칸에 이 PR 을 더한다
 function linkRowPr(args: Args, repo: string, item: string, worktree: string): boolean {
-  const got = boardRow(args, repo, item)
-  if (!got) return false
-  const list = [...new Set([...prNumbers(got.row.pr), args.pr])].join(', ')
-  // 줄을 먼저 채운다. pr 칸에만 이어지고 줄이 비면 보드 맞추기가 그 PR 을 항목 묶음으로 읽는다
-  return board(args, repo, ['worker-set', item, '--worktree', worktree, '--pr', args.pr]) &&
-    (prNumbers(got.row.pr).has(args.pr) || board(args, repo, ['set', item, '--pr', list]))
+  // 줄의 pr 과 항목 pr 칸을 보드 명령 하나(한 잠금, 한 번 저장)로 쓴다. 둘로 나누면 한쪽만 저장돼 다시 돌릴 때 항목을 못 찾는다
+  return board(args, repo, ['worker-link', item, '--worktree', worktree, '--pr', args.pr])
 }
 
 function setBoardDone(args: Args, repo: string, item: string): boolean {

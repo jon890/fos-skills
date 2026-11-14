@@ -98,6 +98,11 @@ describe('findBoardItems', () => {
     assert.deepEqual(findBoardItems(file, '77', 'feat/b', null), { by: 'branch', ids: ['rep'], rows: { rep: 'wb' } })
   })
 
+  test('줄의 pr 만 저장된 항목도 그 PR 로 찾는다', () => {
+    const file = board([{ id: 'half', status: 'doing', pr: 78, workers: [{ role: 'follow', worktree: 'wb', branch: 'feat/b', pr: 77, status: 'working', at: '2026-01-02', dispatch: null, endedAt: null }] }])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/z', null), { by: 'pr', ids: ['half'] })
+  })
+
   test('줄로 찾은 항목은 linkBoardPr 이 pr 칸에 더하고 그 줄의 pr 을 채운다', () => {
     const file = board([{ id: 'rows', status: 'doing', pr: 9, branch: 'feat/b', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'],
       workers: [{ role: 'impl', worktree: 'wa', branch: 'feat/a', pr: null, status: 'done', at: '2026-01-01', dispatch: null, endedAt: '2026-01-02' }] }])

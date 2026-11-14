@@ -1159,7 +1159,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     const file = join(c.tmp, 'board.json')
     const real = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
     const wrapper = join(c.tmp, 'board-wrapper.ts')
-    writeFileSync(wrapper, `import {spawnSync} from 'node:child_process'; const args=process.argv.slice(2); if(args[0]==='worker-set'){process.stderr.write('거절\\n');process.exit(1)} const r=spawnSync(process.execPath,[${JSON.stringify(real)},...args],{stdio:'inherit'}); process.exitCode=r.status`)
+    writeFileSync(wrapper, `import {spawnSync} from 'node:child_process'; const args=process.argv.slice(2); if(args[0]==='worker-link'){process.stderr.write('거절\\n');process.exit(1)} const r=spawnSync(process.execPath,[${JSON.stringify(real)},...args],{stdio:'inherit'}); process.exitCode=r.status`)
     const details = [1, 2, 3, 4].map((n) => ({ text: `${n}. 단계`, done: false }))
     writeFileSync(file, JSON.stringify({ items: [{ id: 'm', status: 'doing', pr: 78, worktree: 'wb', branch: 'feat/b', stages: 'pr=1,merge=2', details, workers: [follow({ pr: null, branch: 'feat/x' })] }] }))
     const r = await c.finish(['--complete', '--board', file, '--board-bin', wrapper])
@@ -1168,6 +1168,26 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.deepEqual((item.details as Json[]).map((d) => d.done), [false, false, false, false])
     assert.equal(item['merged-pr'], undefined)
     assert.equal(item.pr, 78)
+  })
+
+  test('연결 명령이 실패해 줄과 pr 칸이 둘 다 그대로면 다시 돌릴 때 같은 항목을 찾아 끝낸다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'board.json')
+    const real = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
+    const wrapper = join(c.tmp, 'board-wrapper.ts')
+    writeFileSync(wrapper, `import {spawnSync} from 'node:child_process'; const args=process.argv.slice(2); if(args[0]==='worker-link'){process.stderr.write('거절\\n');process.exit(1)} const r=spawnSync(process.execPath,[${JSON.stringify(real)},...args],{stdio:'inherit'}); process.exitCode=r.status`)
+    const details = [1, 2, 3, 4].map((n) => ({ text: `${n}. 단계`, done: false }))
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'm', status: 'doing', pr: 78, worktree: 'wb', branch: 'feat/b', stages: 'pr=1,merge=2', details, workers: [follow({ pr: null, branch: 'feat/x' })] }] }))
+    const first = await c.finish(['--complete', '--board', file, '--board-bin', wrapper])
+    assert.notEqual(first.code, 0, both(first))
+    const mid = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items[0]
+    assert.equal(mid.pr, 78)
+    assert.equal((mid.workers as Json[])[0].pr, null)
+    const second = await c.finish(['--complete', '--board', file])
+    assert.equal(second.code, 0, both(second))
+    const item = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items[0]
+    assert.deepEqual((item.details as Json[]).map((d) => d.done), [false, false, true, true])
+    assert.equal((item.workers as Json[])[0].pr, 77)
   })
 
   test('pr 칸이 아직 비었으면 구현 줄의 브랜치가 머지 PR 의 브랜치인 항목을 찾아 항목 묶음 단계를 끝낸다', async (t) => {

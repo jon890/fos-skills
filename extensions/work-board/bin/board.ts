@@ -8,6 +8,7 @@
 //   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]
 //   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
 //   board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로이고 맞는 줄이 없으면 종료 코드 0 으로 아무것도 하지 않는다)
+//   board.ts worker-link <id> --worktree W --pr N   (그 줄의 pr 을 N 으로 하고 항목 pr 칸에 N 을 더한다. 한 잠금, 한 번 저장이라 둘 중 하나만 저장되지 않는다. 맞는 줄이 없으면 거절한다)
 //   --stages 는 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄의 PR·머지 단계 번호다. 같은 줄을 다시 쓸 때 주지 않으면 그대로 둔다.
 //   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
 //   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D ...]
@@ -92,11 +93,11 @@ const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
 export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'worker-add', 'worker-end', 'worker-set']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link']
 const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,worker-add,worker-end,worker-set} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -110,6 +111,7 @@ const HELP = `${USAGE}
   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]
   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
   board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로다)
+  board.ts worker-link <id> --worktree W --pr N   (줄의 pr 과 항목 pr 칸을 한 번에 쓴다. 맞는 줄이 없으면 거절한다)
   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
   board.ts step-edit <id> <번호> <글> [--event "PR 사건"]
   board.ts step-add <id> <글> [--event "PR 사건"]
@@ -407,6 +409,7 @@ function parse(argv: string[]): Args | 'help' {
   if ((values.fill !== undefined || values['if-task-ref'] !== undefined) && cmd !== 'set') throw new Error('--fill, --if-task-ref 는 set 에만 쓴다')
   if (values.fill && (values.task === '' || values['task-ref'] === '')) throw new Error('--fill 과 빈 업무 값은 함께 쓰지 않는다')
   if (cmd === 'worker-add' && values.stages !== undefined && !ROW_STAGES.test(values.stages)) throw new Error(`worker-add 의 --stages 는 pr=N,merge=M 꼴이다: ${values.stages}`)
+  if (cmd === 'worker-link' && (!id || status !== undefined || !values.worktree?.trim() || !PR_LIST.test(values.pr ?? '') || (values.pr!.match(/\d+/g) ?? []).length !== 1)) throw new Error('worker-link 에는 id, --worktree, PR 번호 하나(--pr)가 필요하다')
   if (cmd === 'worker-set' && (!id || status !== undefined || !values.worktree?.trim())) throw new Error('worker-set 에는 id 와 --worktree 가 필요하다')
   if (values.dispatch !== undefined && !['worker-add', 'worker-end'].includes(cmd)) throw new Error('--dispatch 는 worker-add, worker-end 에만 쓴다')
   if ((values['keep-current'] !== undefined || values['keep-dispatch'] !== undefined) && cmd !== 'worker-add') throw new Error('--keep-current, --keep-dispatch 는 worker-add 에만 쓴다')
@@ -567,6 +570,21 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
+  if (a.cmd === 'worker-link') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    const rows = (Array.isArray(item.workers) ? item.workers : []) as Array<Record<string, unknown>>
+    const row = rows.find((one) => one !== null && typeof one === 'object' && one.worktree === a.fields.worktree)
+    if (!row) throw new Refused(`worker 줄이 없다: ${id} ${a.fields.worktree}`)
+    const number = (a.fields.pr as string).match(/\d+/)![0]
+    const list = [...new Set([...(String(item.pr ?? '').match(/\d+/g) ?? []), number])].join(', ')
+    const next = prValue(number)
+    const nextItem = prValue(list)
+    if (row.pr === next && item.pr === nextItem) return false
+    row.pr = next
+    item.pr = nextItem
+    return true
+  }
   if (a.cmd === 'worker-set') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)

@@ -429,11 +429,13 @@ function main(argv: string[]): number {
         item.pr = list
         if (!tagStates.has(number)) tagStates.set(number, found.state ?? 'OPEN')
         const ref = prTaskRef(repo, found.title ?? '')
-        cmds.push(['set', id, '--pr', list, ...(keepBranch ? ['--branch', target] : []), ...(ref ? ['--fill', `--task-ref=${ref}`] : [])])
+        // 줄이 있으면 줄의 pr 과 항목 pr 칸을 보드 명령 하나(한 잠금, 한 번 저장)로 함께 쓴다
+        const rest = [...(keepBranch ? ['--branch', target] : []), ...(ref ? ['--fill', `--task-ref=${ref}`] : [])]
         if (row) {
-          cmds.push(['worker-set', id, '--worktree', row.worktree, '--pr', number])
+          cmds.push(['worker-link', id, '--worktree', row.worktree, '--pr', number])
+          if (rest.length > 0) cmds.push(['set', id, ...rest])
           row.pr = Number(number)
-        }
+        } else cmds.push(['set', id, '--pr', list, ...rest])
       }
       // 단계 묶음이 있는 후속 줄은 줄의 브랜치로 자기 PR 을 잇는다
       if (stages) {

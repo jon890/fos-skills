@@ -30,6 +30,7 @@
 
 - `worker-add` 에 `--stages S` 를 받는다. 값은 `pr=N,merge=M` 꼴(`STAGES` 정규식 가운데 pr·merge 만)이고 아니면 사용법 오류(종료 코드 2)다. 지금 `set --stages` 는 `main` 에서 검사해 종료 코드 1 을 내므로(777-781행 근처), `worker-add` 의 값은 `parse` 에서 따로 검사한다. 줄의 `stages` 에 저장한다. 같은 열쇠의 줄을 바꿀 때 `--stages` 를 주지 않으면 그대로 둔다.
 - 새 명령 `worker-set <id> --worktree W [--pr N]`: 그 워크트리 줄의 `pr` 만 바꾼다. `status` 는 바꾸지 않는다. 맞는 줄이 없으면 쓰지 않고 종료 코드 0. 머리 주석과 `HELP` 에 적는다.
+- 새 명령 `worker-link <id> --worktree W --pr N`: 줄의 `pr` 과 항목 `pr` 필드를 한 잠금에서 한 번 저장한다. 맞는 줄이 없으면 거절한다. 두 번 나눠 쓰면 한쪽만 저장되는 실패가 생겨 phase 03 의 PR 잇기가 이 명령을 쓴다.
 - 사건 단계 번호(`stageNumbers`, 463행 근처)에 줄 `stages` 의 번호도 합친다. 그래서 `step-mark` 가 후속 묶음 단계를 거절하고, 그 글이 바뀌면 경고한다. bin 은 orch 를 import 하지 않으므로 같은 규칙을 이 파일 안에 둔다.
 - `extensions/work-board/tests/board-workers.spec.ts` 에 `--stages` 저장, 틀린 값(종료 코드 2), `worker-set` 이 끝난 줄의 `status` 를 바꾸지 않는 사례, 후속 묶음 단계의 `step-mark` 거절을 더한다.
 
