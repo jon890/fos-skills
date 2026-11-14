@@ -29,8 +29,10 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // 마일스톤 항목(stages 칸이 있는 항목, lib/milestones.ts, ADR-018)은 위 규칙 대신 사건으로 단계를 끝낸다:
 //     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
 //     - 머지됐으면 위와 같이 마지막 PR 인지 판정하고 lib/milestones.ts 의 mergedCommands 로 [pr], [merge] 단계를 끝낸다.
-//       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 마일스톤 항목은 마지막 PR 이어도 done 지점 전이면 doing 으로 남아
-//       잘못 본 값이 업무 완료로 번지지 않는다. 마지막 PR 은 pr 칸에 두고 merged-pr 에도 적어 다음 틱에 다시 판정하지 않는다.
+//       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 단, 판정 규칙이 없어 판정하지 못한 경우에는 모든 단계가 끝났고,
+//       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다. 그 밖에는 고치지 않고 다음 틱에 다시 본다.
+//       마일스톤 항목은 마지막 PR 이어도 done 지점 전이면 doing 으로 남아 잘못 본 값이 업무 완료로 번지지 않는다.
+//       마지막 PR 은 pr 칸에 두고 merged-pr 에도 적어 다음 틱에 다시 판정하지 않는다.
 //       중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓고 남은 일 줄을 둔다
 //     - 항목에 끝나지 않은 [deploy] 단계가 있고 config.json 에 finish.deploy_workflow 와 deploy_branch 가 있으면, 머지 커밋이 든 배포 실행이
 //       성공했는지 틱마다 한 번 본다(lib/deploy.ts). 성공이면 [deploy] 단계까지 끝낸다. 배포 실행 목록은 틱마다 한 번만 읽는다
@@ -496,7 +498,11 @@ function main(argv: string[]): number {
         // 묶음은 그 PR 의 것이다(core/milestones.ts 의 「PR 묶음」). 끝나지 않은 [deploy] 단계가 있고 배포 설정이 있을 때만 배포를 본다
         const own = prStages(item, num) ?? stages
         const deployPending = () => deploy !== null && own.deploy !== undefined && steps.some((step) => step.number === own.deploy && !step.done)
-        for (const one of openNumbers) after.push(...advanceCommands(id, steps, prStages(item, one) ?? stages, 'pr', { last: false, doneAfter, kinds }).cmds)
+        if (merged && openNumbers.length > 0) {
+          if (rules === undefined) rules = lastPrRules(repo)
+          if (rules !== null && !rules.taskPattern) hold = true
+        }
+        if (!hold) for (const one of openNumbers) after.push(...advanceCommands(id, steps, prStages(item, one) ?? stages, 'pr', { last: false, doneAfter, kinds }).cmds)
         if (!merged) {
           // 열린 PR 의 [pr] 단계만 끝냈다
         } else if (settings !== null && reflectedNow.has(num)) {
@@ -510,14 +516,23 @@ function main(argv: string[]): number {
           // 같은 칸에 다른 열린(또는 머지됐지만 아직 반영하지 않은) PR 이 남았으면 마지막 PR 이 아니다. 판정 함수와 배포를 보지 않고 자기 묶음만 끝낸다.
           // 한 틱에 머지 하나만 반영한다. 반영 명령이 이 틱의 줄 지문을 쓰므로 둘을 한 번에 쓰면 뒤 명령이 거절된다
           const remaining = numbers.filter((one) => one !== num && !reflectedNow.has(one) && ['OPEN', 'MERGED'].includes(states.get(one) ?? ''))
-          if (remaining.length > 0) {
+          if (remaining.some((one) => states.get(one) === 'OPEN')) {
+            if (rules === undefined) rules = lastPrRules(repo)
+            if (rules !== null && !rules.taskPattern) hold = true
+          }
+          if (hold) {
+            // 업무 번호 규칙이 없어 남은 열린 PR 과 같은 업무인지 판별할 수 없다. 항목 전체를 그대로 둔다
+          } else if (remaining.length > 0) {
             const got = mergedCommands({ ...item, details }, steps, own, num, 'merge', { last: false, doneAfter, note: null, remaining, kinds })
             after.push(...got.cmds)
             finish = got.done
             reflected = { pr: num, steps }
           } else {
             if (rules === undefined) rules = lastPrRules(repo)
-            const verdict = judge(repo, num, rules)
+            let verdict = judge(repo, num, rules)
+            if (verdict === null && rules !== null && !rules.taskPattern) {
+              verdict = { last: null, retry: false, number: null, prs: [], specs: [], reason: '판정하지 못했다: task_pattern 이 없다' }
+            }
             const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '마지막으로 봄') : verdict.last ? '마지막' : '중간'
             if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
             if (verdict?.retry) hold = true
@@ -526,9 +541,23 @@ function main(argv: string[]): number {
               const reached = deployPending() && deploymentFor(num, deploy as { workflow: string; branch: string }) === 'success' ? 'deploy' : 'merge'
               const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
               const got = mergedCommands({ ...item, details }, steps, own, num, reached, { last, doneAfter, note, kinds })
-              after.push(...got.cmds)
-              finish = got.done
-              reflected = { pr: num, steps }
+              if (verdict?.last === null) {
+                const activeWorker = rows.some((row) => row.status === 'working')
+                const hasRemainingWork = details.some((detail) => textOf(detail).startsWith(NOTE))
+                const allStepsWillBeDone = steps.length > 0 && steps.every((step) => step.done || got.cmds.some((cmd) => cmd[0] === 'step' && cmd[1] === id && Number(cmd[2]) === step.number))
+                if (openNumbers.length === 0 && !activeWorker && !hasRemainingWork && got.done && allStepsWillBeDone) {
+                  out(`board-sync: ${id} 는 마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없어 done 으로 바꾼다`)
+                  after.push(...got.cmds)
+                  finish = got.done
+                  reflected = { pr: num, steps }
+                } else {
+                  hold = true
+                }
+              } else {
+                after.push(...got.cmds)
+                finish = got.done
+                reflected = { pr: num, steps }
+              }
             }
           }
         }
