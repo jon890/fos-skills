@@ -19,7 +19,11 @@
 //   messenger  false 면 메신저를 읽지 않는다. 기본 true
 //   webUrl     업무 링크의 앞부분. 없으면 링크 없이 보인다
 //
-// stream list 밖의 CLI 출력 필드는 dooray CLI 0.29.1 실측(2026-11-02)이다. stream 원소는 공식 문서의 응답 형식을 따랐다.
+// 두레이 호출은 CLI 의 인증 방식(토큰 또는 웹 SESSION 쿠키)과 무관하다. 어느 쪽이든 같은 명령과 JSON 으로 읽는다.
+// 실측(dooray CLI 0.33.0 웹 방식, 2026-11-14): member get me, stream list --all, messenger channels·logs, post get, post comment list 가 모두 성공했다.
+//   웹 stream 의 event(type comment)에는 시각 칸이 없다(body, creator, id, postId, read, type 뿐). 그래서 같은 업무의 댓글 목록에서 그 댓글의 createdAt 을 찾아 쓴다.
+//   웹 방식의 messenger logs 는 오래된 메시지로 거슬러 가지 못한다. CLI 가 「더 오래된 메시지가 있지만 그 이전으로 갈 수단이 없다」 고 알린다.
+// stream list 밖의 CLI 출력 필드는 dooray CLI 0.29.1 실측(2026-11-02)이다. 토큰 방식 stream 원소는 공식 문서의 응답 형식을 따랐다.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -137,6 +141,17 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     }
   }
 
+  // 댓글 목록은 업무마다 한 번만 읽는다(listOf 가 기억한다). 읽지 못하면 빈 시각을 내어 호출한 쪽이 받은 시각으로 채운다
+  function commentTime(postId: string, commentId: string): string {
+    if (!commentId) return ''
+    try {
+      const found = taskComments(postId, ['--latest', '100']).find((comment) => String(comment?.id) === commentId)
+      return iso(found?.createdAt)
+    } catch {
+      return ''
+    }
+  }
+
   // 원소 하나를 항목으로 바꾼다. 내 알림이 아니면 null
   function taskElement(element: Json, request: FetchRequest, self: Me, now: string): InboxItem | null {
     if (element?.type === 'event') {
@@ -145,9 +160,9 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
       const from = memberOf(event.creator)
       const text = String(event.body?.content ?? '')
       if (from.id === self.id || !mentions(text, self.id)) return null
-      // 공식 문서의 event 원소에는 시각이 없다. 추가 필드가 오면 쓰고, 없으면 처음 받은 시각을 쓴다.
-      // 답함 판정은 이 시각 대신 댓글 목록의 그 댓글 시각을 기준으로 삼는다(answered)
-      const at = iso(event.createdAt ?? event.at ?? event.updatedAt) || now
+      // 웹 방식 stream 의 event 원소에는 시각 칸이 없다(실측 2026-11-14). 시각 필드가 오면 쓰고,
+      // 없으면 그 업무의 댓글 목록에서 같은 id 의 댓글 시각을 찾는다. 그래도 없으면 처음 받은 시각을 쓴다
+      const at = iso(event.createdAt ?? event.at ?? event.updatedAt) || commentTime(String(event.postId), String(event.id ?? '')) || now
       return taskItem('mention', `comment:${event.id}`, String(event.postId), from, at, text,
         { kind: 'task', postId: String(event.postId), commentId: String(event.id ?? '') })
     }
