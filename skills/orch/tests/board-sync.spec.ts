@@ -608,6 +608,18 @@ describe('board-sync 마일스톤 항목', () => {
     assert.match(r.result.stdout, /마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없어 done 으로 바꾼다/)
   })
 
+  test('마지막 PR 판정 규칙을 읽지 못하면 모든 단계가 끝나도 done 으로 바꾸지 않는다', () => {
+    config({ finish: { task_pattern: '[' } })
+    states['7'] = 'MERGED'
+    const details = [step('1. PR', false), step('2. 머지', false)]
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual(r.board.a.details, details)
+    assert.match(r.result.stderr, /마지막 PR 판정 규칙을 읽지 못해 PR 번호의 단계만 끝낸다/)
+    assert.match(r.result.stdout, /마지막 PR 판정 규칙을 읽지 못해 done 으로 바꾸지 않는다/)
+  })
+
   test('마지막 PR 을 판정하지 못했을 때 작업 중 worker, 열린 PR, 남은 단계가 있으면 그대로 둔다', () => {
     states['7'] = 'MERGED'
     states['8'] = 'OPEN'

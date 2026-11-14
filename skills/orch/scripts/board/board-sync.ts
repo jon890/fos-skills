@@ -520,9 +520,11 @@ function main(argv: string[]): number {
             reflected = { pr: num, steps }
           } else {
             if (rules === undefined) rules = lastPrRules(repo)
+            const rulesUnreadable = rules === null
             let verdict = judge(repo, num, rules)
-            if (verdict === null && rules !== null && !rules.taskPattern) {
-              verdict = { last: null, retry: false, number: null, prs: [], specs: [], reason: '판정하지 못했다: task_pattern 이 없다' }
+            if (verdict === null && (rulesUnreadable || !rules?.taskPattern)) {
+              const reason = rulesUnreadable ? '마지막 PR 판정 규칙을 읽지 못했다' : 'task_pattern 이 없다'
+              verdict = { last: null, retry: false, number: null, prs: [], specs: [], reason: `판정하지 못했다: ${reason}` }
             }
             const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '마지막으로 봄') : verdict.last ? '마지막' : '중간'
             if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
@@ -536,12 +538,13 @@ function main(argv: string[]): number {
                 const activeWorker = rows.some((row) => row.status === 'working')
                 const hasRemainingWork = details.some((detail) => textOf(detail).startsWith(NOTE))
                 const allStepsWillBeDone = steps.length > 0 && steps.every((step) => step.done || got.cmds.some((cmd) => cmd[0] === 'step' && cmd[1] === id && Number(cmd[2]) === step.number))
-                if (openNumbers.length === 0 && !activeWorker && !hasRemainingWork && got.done && allStepsWillBeDone) {
+                if (!rulesUnreadable && openNumbers.length === 0 && !activeWorker && !hasRemainingWork && got.done && allStepsWillBeDone) {
                   out(`board-sync: ${id} 는 마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없어 done 으로 바꾼다`)
                   after.push(...got.cmds)
                   finish = got.done
                   reflected = { pr: num, steps }
                 } else {
+                  if (rulesUnreadable) out(`board-sync: ${id} 는 마지막 PR 판정 규칙을 읽지 못해 done 으로 바꾸지 않는다`)
                   hold = true
                 }
               } else {
