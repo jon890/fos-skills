@@ -618,11 +618,14 @@ describe('board-sync 마일스톤 항목', () => {
     ].map((item) => ({ status: 'doing', ...item }))
     const r = sync(cases)
     assert.equal(r.code, 0, r.result.stderr)
-    for (const id of ['worker', 'open', 'step']) {
+    for (const id of ['worker', 'step']) {
       assert.equal(r.board[id].status, 'doing')
       assert.deepEqual(r.board[id].details, cases.find((item) => item.id === id)?.details)
     }
-    assert.equal(String(r.board.open.pr), '7, 8')
+    assert.equal(r.board.open.status, 'doing')
+    assert.deepEqual(r.board.open.details, [step('1. PR', true), step('2. 머지', true)])
+    assert.equal(String(r.board.open.pr), '8')
+    assert.equal(String(r.board.open['merged-pr']), '7')
   })
 
   test('배포 워크플로가 머지 커밋을 성공으로 배포했으면 [deploy] 단계까지 끝낸다', () => {

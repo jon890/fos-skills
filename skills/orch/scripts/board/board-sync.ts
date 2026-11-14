@@ -30,7 +30,8 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
 //     - 머지됐으면 위와 같이 마지막 PR 인지 판정하고 lib/milestones.ts 의 mergedCommands 로 [pr], [merge] 단계를 끝낸다.
 //       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 단, 판정 규칙이 없어 판정하지 못한 경우에는 모든 단계가 끝났고,
-//       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다. 그 밖에는 고치지 않고 다음 틱에 다시 본다.
+//       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다. 그 밖에는 닫지 않고 판정 가능한 단계를 반영한다.
+//       pr 칸에 다른 열린 PR 이 있으면 같은 업무의 후속 PR 로 보고, 머지된 PR 의 단계와 열린 PR 의 [pr] 단계는 계속 반영한다.
 //       마일스톤 항목은 마지막 PR 이어도 done 지점 전이면 doing 으로 남아 잘못 본 값이 업무 완료로 번지지 않는다.
 //       마지막 PR 은 pr 칸에 두고 merged-pr 에도 적어 다음 틱에 다시 판정하지 않는다.
 //       중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓고 남은 일 줄을 둔다
@@ -498,10 +499,6 @@ function main(argv: string[]): number {
         // 묶음은 그 PR 의 것이다(core/milestones.ts 의 「PR 묶음」). 끝나지 않은 [deploy] 단계가 있고 배포 설정이 있을 때만 배포를 본다
         const own = prStages(item, num) ?? stages
         const deployPending = () => deploy !== null && own.deploy !== undefined && steps.some((step) => step.number === own.deploy && !step.done)
-        if (merged && openNumbers.length > 0) {
-          if (rules === undefined) rules = lastPrRules(repo)
-          if (rules !== null && !rules.taskPattern) hold = true
-        }
         if (!hold) for (const one of openNumbers) after.push(...advanceCommands(id, steps, prStages(item, one) ?? stages, 'pr', { last: false, doneAfter, kinds }).cmds)
         if (!merged) {
           // 열린 PR 의 [pr] 단계만 끝냈다
@@ -516,13 +513,7 @@ function main(argv: string[]): number {
           // 같은 칸에 다른 열린(또는 머지됐지만 아직 반영하지 않은) PR 이 남았으면 마지막 PR 이 아니다. 판정 함수와 배포를 보지 않고 자기 묶음만 끝낸다.
           // 한 틱에 머지 하나만 반영한다. 반영 명령이 이 틱의 줄 지문을 쓰므로 둘을 한 번에 쓰면 뒤 명령이 거절된다
           const remaining = numbers.filter((one) => one !== num && !reflectedNow.has(one) && ['OPEN', 'MERGED'].includes(states.get(one) ?? ''))
-          if (remaining.some((one) => states.get(one) === 'OPEN')) {
-            if (rules === undefined) rules = lastPrRules(repo)
-            if (rules !== null && !rules.taskPattern) hold = true
-          }
-          if (hold) {
-            // 업무 번호 규칙이 없어 남은 열린 PR 과 같은 업무인지 판별할 수 없다. 항목 전체를 그대로 둔다
-          } else if (remaining.length > 0) {
+          if (remaining.length > 0) {
             const got = mergedCommands({ ...item, details }, steps, own, num, 'merge', { last: false, doneAfter, note: null, remaining, kinds })
             after.push(...got.cmds)
             finish = got.done
