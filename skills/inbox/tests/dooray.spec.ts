@@ -77,6 +77,7 @@ class MemoryCache implements Cache {
 let calls: string[][]
 let failing: Set<string>
 let comments: unknown[]
+let stream: unknown[]
 let sent: { argv: string[]; body: string }[]
 let dir: string
 
@@ -100,7 +101,7 @@ function runner(argv: string[]): RunResult {
     const names: Record<string, string> = { [KIM]: '김철수', [LEE]: '이영희' }
     return names[args[2]] ? ok({ id: args[2], name: names[args[2]] }) : { code: 1, stdout: '', stderr: '멤버 없음' }
   }
-  if (key === 'stream list') return ok(STREAM)
+  if (key === 'stream list') return ok(stream)
   if (key === 'post get') return ok(POSTS[args[3]])
   if (key === 'post comment') return ok(comments)
   if (key === 'messenger channels') return ok(CHANNELS)
@@ -117,6 +118,7 @@ beforeEach(() => {
   calls = []
   failing = new Set()
   comments = []
+  stream = STREAM
   sent = []
   dir = mkdtempSync(join(tmpdir(), 'dooray-spec-'))
 })
@@ -360,5 +362,54 @@ describe('맥락, 답함, 답변', () => {
     const row = target.fetch({ since: SINCE, cursors: {} }).items.find((item) => item.id === 'dooray:messenger:ch-dm:l9')!
     target.reply(row, '가능해요')
     assert.deepEqual(sent[0].argv.slice(0, 5), ['dooray', 'messenger', 'channel-send', '--channel', 'ch-dm'])
+  })
+})
+
+describe('시각 없는 댓글 event (웹 방식 stream)', () => {
+  const noTime = (id: string, postId: string) => ({ type: 'event', event: { id, type: 'comment', postId, read: false,
+    creator: { type: 'member', member: { organizationMemberId: KIM, name: '김철수' } },
+    body: { content: `${link(ME, '김병태')} 확인 부탁드려요` } } })
+  const commentListCalls = () => calls.filter((argv) => argv[2] === 'post' && argv[3] === 'comment' && argv[4] === 'list')
+
+  test('댓글 목록에서 같은 id 댓글의 createdAt 을 항목 시각으로 쓴다', () => {
+    stream = [noTime('c1', 'p81')]
+    comments = [{ id: 'c1', createdAt: '2026-11-02T14:00:00+09:00' }]
+    const item = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} }).items[0]
+    assert.equal(item.at, '2026-11-02T05:00:00.000Z')
+  })
+
+  test('댓글을 못 찾으면 받은 시각을 쓴다', () => {
+    stream = [noTime('c1', 'p81')]
+    comments = [{ id: 'other', createdAt: '2026-11-02T14:00:00+09:00' }]
+    const item = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} }).items[0]
+    assert.equal(item.at, '2026-11-02T06:00:00.000Z')
+  })
+
+  test('댓글 목록을 읽지 못해도 항목은 받은 시각으로 낸다', () => {
+    stream = [noTime('c1', 'p81')]
+    failing.add('post comment')
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
+    assert.equal(result.items[0].at, '2026-11-02T06:00:00.000Z')
+  })
+
+  test('같은 업무의 두 event 는 댓글 목록을 한 번만 읽는다', () => {
+    stream = [noTime('c1', 'p81'), noTime('c4', 'p81')]
+    comments = [{ id: 'c1', createdAt: '2026-11-02T14:00:00+09:00' }, { id: 'c4', createdAt: '2026-11-02T15:00:00+09:00' }]
+    const items = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} }).items
+    assert.deepEqual(items.map((row) => row.at).sort(), ['2026-11-02T05:00:00.000Z', '2026-11-02T06:00:00.000Z'])
+    assert.equal(commentListCalls().length, 1)
+  })
+
+  test('댓글 목록 읽기가 실패하면 같은 업무는 그 받기 안에서 다시 부르지 않는다', () => {
+    stream = [noTime('c1', 'p81'), noTime('c4', 'p81')]
+    failing.add('post comment')
+    const items = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} }).items
+    assert.deepEqual(items.map((row) => row.at), ['2026-11-02T06:00:00.000Z', '2026-11-02T06:00:00.000Z'])
+    assert.equal(commentListCalls().length, 1)
+  })
+
+  test('시각이 있는 event 는 댓글 목록을 읽지 않는다', () => {
+    adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
+    assert.equal(commentListCalls().length, 0)
   })
 })
