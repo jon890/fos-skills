@@ -142,12 +142,15 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
   }
 
   // 댓글 목록은 업무마다 한 번만 읽는다(listOf 가 기억한다). 읽지 못하면 빈 시각을 내어 호출한 쪽이 받은 시각으로 채운다
+  // 읽지 못한 업무도 그 받기 안에서 기억해 다시 부르지 않는다(429 에 같은 목록을 멘션 수만큼 다시 부르지 않으려는 것)
+  const unreadablePosts = new Set<string>()
   function commentTime(postId: string, commentId: string): string {
-    if (!commentId) return ''
+    if (!commentId || unreadablePosts.has(postId)) return ''
     try {
       const found = taskComments(postId, ['--latest', '100']).find((comment) => String(comment?.id) === commentId)
       return iso(found?.createdAt)
     } catch {
+      unreadablePosts.add(postId)
       return ''
     }
   }
@@ -185,6 +188,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     // 피드는 2주에 수천 건이라, 지난 받기가 있으면 그 뒤만 읽는다. 앞서 받은 항목은 캐시에 남아 있다
     const elements = json(['stream', 'list', '--since', request.cursors.task ?? request.since, '--all'])
     if (!Array.isArray(elements)) throw new Error('dooray stream list 출력이 목록이 아니다')
+    unreadablePosts.clear()
     const items: InboxItem[] = []
     const failures: string[] = []
     // 원소 하나(지운 업무, 권한 없는 업무)가 실패해도 나머지는 받는다. 실패한 원소는 다시 읽지 않는다

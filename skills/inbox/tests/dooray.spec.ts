@@ -400,6 +400,14 @@ describe('시각 없는 댓글 event (웹 방식 stream)', () => {
     assert.equal(commentListCalls().length, 1)
   })
 
+  test('댓글 목록 읽기가 실패하면 같은 업무는 그 받기 안에서 다시 부르지 않는다', () => {
+    stream = [noTime('c1', 'p81'), noTime('c4', 'p81')]
+    failing.add('post comment')
+    const items = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} }).items
+    assert.deepEqual(items.map((row) => row.at), ['2026-11-02T06:00:00.000Z', '2026-11-02T06:00:00.000Z'])
+    assert.equal(commentListCalls().length, 1)
+  })
+
   test('시각이 있는 event 는 댓글 목록을 읽지 않는다', () => {
     adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
     assert.equal(commentListCalls().length, 0)
