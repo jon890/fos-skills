@@ -1,6 +1,6 @@
 # 보드 항목 하위 worker PR1 개발 검증
 
-스펙: [spec.md](spec.md), 설계: [design.md](design.md).
+스펙: [spec.md](spec.md), 설계: [design.md](design.md), 인수 검증 기록: [verification.md](verification.md).
 구현은 하위 에이전트 없이 순서대로 진행했다. 독립 리뷰와 인수 검증은 코디네이터가 맡는다.
 
 ## 구현한 범위
@@ -32,7 +32,7 @@
 ## 문서 대조와 다음 단계
 
 worker 줄의 열쇠, 대표 칸, 역할, 끝남과 새 항목 요청을 스펙·설계·데이터 스키마·참조 문서 사이에서 대조했다. 서로 다른 규칙이나 공통 문서로 옮길 반복 계약은 발견하지 못했다.
-계획 폴더는 독립 verify 가 인수 검증 계획을 읽을 수 있도록 남겼다. 계획 정리는 orch 가 맡는다.
+계획 폴더는 인수 검증 뒤 지웠고 그 계획의 사례와 결과는 [verification.md](verification.md) 로 옮겼다.
 스킬 개선 후보와 공부 후보는 없다.
 
 독립 코드 리뷰와 인수 검증 뒤에는 리뷰 지적 반영 확인, 코디네이터의 실제 Orca 확인, 머지가 남는다. PR2의 동시 PR 단계와 창은 별도 계획을 따른다.
@@ -58,7 +58,7 @@ worker 줄의 열쇠, 대표 칸, 역할, 끝남과 새 항목 요청을 스펙�
 
 # 보드 항목 하위 worker PR2 개발 검증
 
-계획: [tasks/multi-pr-window/](tasks/multi-pr-window/index.json), 인수 검증 계획: [verification-plan.md](tasks/multi-pr-window/verification-plan.md).
+인수 검증 기록: [verification.md](verification.md).
 구현은 하위 에이전트 없이 phase 순서대로 진행했다. 독립 리뷰와 인수 검증은 코디네이터가 맡는다.
 
 ## 구현한 범위
@@ -95,7 +95,7 @@ phase 마다 계획의 검증 명령을 돌려 통과했다. `claude plugin test
 ## 문서 대조와 다음 단계
 
 스펙·설계·데이터 스키마·창 동작 문서·orch 보드 문서가 같은 규칙(묶음 고르기, 마지막 PR 판정, 배포 단계, 줄 그리기)을 말한다. 공통 문서로 옮길 반복 계약은 발견하지 못했다.
-계획 폴더는 독립 verify 가 인수 검증 계획을 읽을 수 있도록 남겼다. 계획 정리는 orch 가 맡는다.
+계획 폴더는 인수 검증 뒤 지웠고 그 계획의 사례와 결과는 [verification.md](verification.md) 로 옮겼다.
 스킬 개선 후보와 공부 후보는 없다.
 
 ## 독립 리뷰 반영

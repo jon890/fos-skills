@@ -2,7 +2,7 @@
 
 스펙: [spec.md](spec.md)
 
-PR 은 둘이다(스펙 DECISION20). 계획은 PR1 [tasks/attach-workers/](tasks/attach-workers/index.json), PR2 [tasks/multi-pr-window/](tasks/multi-pr-window/index.json) 이다.
+PR 은 둘이다(스펙 DECISION20). PR1 은 #490, PR2 는 #491 로 머지됐고 검증 기록은 [verification.md](verification.md) 와 [implementation-result.md](implementation-result.md) 가 갖는다.
 장기 결정은 [ADR-033](../../adr/033-board-item-worker-rows.md) 이 소유한다.
 
 ## 요구사항 연결
@@ -199,7 +199,7 @@ PR2 의 그리기다. 원본은 `extensions/work-board/references/behavior.md` �
 - **끝남을 놓친 틱.** 루프가 꺼진 동안 worker_done 이 지나가도 Orca 행의 outcome 이 succeeded 로 남아 다음 틱에 `done` 이 된다. 행이 사라졌으면 워크트리 정리 뒤 `lost` 가 된다. 이 경우 worker_done 을 보냈어도 끊김으로 보일 수 있다. 오래 움직이지 않는 worker 는 끝내지 않는다(스펙 DECISION14).
 - **옛 번들과 섞임.** 옛 창과 다른 저장소의 옛 루프는 `workers` 필드를 모른다. 대표 칸이 스펙 DECISION8 대로 남으므로 지금처럼 대표 worker 하나를 본다. 옛 `board.ts` 는 항목 객체를 통째로 읽고 쓰고 `FIELDS` 의 칸만 고치므로 `workers` 필드를 남긴다(PR1 테스트가 확인한다). PR2 뒤 옛 번들은 후속 묶음 단계를 수동 단계로 본다. 그 번들의 보드 맞추기는 그 단계를 끝내지 못하고, 그 항목을 done 으로 바꾸지 않는다. 같은 저장소의 루프와 창은 같은 플러그인 번들에서 함께 갱신되므로 이 섞임은 갱신 사이의 짧은 동안이다.
 - **배포 순서.** PR1 이 데이터와 판정을, PR2 가 동시 PR 단계와 창을 낸다(스펙 DECISION20). PR1 만 머지된 동안 새 브랜치 후속 worker 는 지금처럼 대표 칸만 바꾸고 단계를 더하지 않는다. 창은 지금처럼 대표 worker 하나와 「안 붙은 worker」 칸을 보인다(스펙 DECISION23).
-- **앞 PR 이 아직 이어지지 않은 후속.** 루프가 앞 PR 을 `pr` 필드에 잇기 전에 후속을 띄우면 단계를 더하지 않는다(앞 PR 이 열렸는지 띄울 때 gh 를 부르지 않는다). 그 항목은 지금 동작과 같다. 퇴행은 아니지만 스펙 REQ4 를 덮지 못하는 틈이라 PR2 의 verify 가 실제 빈도를 본다.
+- **앞 PR 이 아직 이어지지 않은 후속.** 루프가 앞 PR 을 `pr` 필드에 잇기 전에 후속을 띄우면 단계를 더하지 않는다(앞 PR 이 열렸는지 띄울 때 gh 를 부르지 않는다). 그 항목은 지금 동작과 같다. 퇴행은 아니지만 스펙 REQ4 를 덮지 못하는 틈이다. 실제 빈도는 아직 재지 못했다([verification.md](verification.md) 「확인하지 못한 것」).
 - **띄우기 이력의 순서.** `launch-worker` 는 이력을 `registerBoard` 보다 먼저 쓴다. 옛 항목의 리뷰 판정(`--keep-current` 의 역할)은 지금 띄우는 dispatch 의 이력 줄을 빼고 한다.
 - **리뷰 항목 판정의 이행.** PR1 뒤 새로 띄운 구현 worker 는 언제나 `impl` 줄을 갖는다. PR1 전에 만든 구현 항목에 `보드 항목 id:` 리뷰 지시서가 붙으면 `--keep-current impl` 로 옮겨 적은 줄 때문에 리뷰 항목으로 읽히지 않는다. PR1 전에 만든 리뷰 항목은 `--keep-current review` 로 옮겨 리뷰 항목으로 남는다.
 
@@ -214,7 +214,7 @@ PR2 의 그리기다. 원본은 `extensions/work-board/references/behavior.md` �
 | REQ7 | `workerEnds`·`hasWorkRows` 순수 함수, `--worker-ends` 를 준 보드 맞추기(대표 워크트리가 사라지고 후속 줄이 작업 중인 사례, 리뷰만 하는 항목이 worker_done 으로 닫히는 사례, 옛 리뷰 항목에 재리뷰가 붙은 사례), `stalledStages` 의 리뷰만 도는 항목 사례(자동 진행 갈래 포함) | 같은 곳 |
 | REQ8 | 문서 검사와 문서 내용 대조 | `node scripts/run-tests.ts`, verify 의 문서 검토 |
 
-실제 Orca 로 worker 둘을 붙여 보는 인수 검증은 코디네이터가 맡는다(각 계획의 `verification-plan.md`).
+실제 Orca 로 worker 둘을 붙여 보는 인수 검증은 코디네이터가 맡았고 결과는 [verification.md](verification.md) 가 갖는다.
 
 ## 결정
 
