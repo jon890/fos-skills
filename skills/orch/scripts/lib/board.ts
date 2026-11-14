@@ -331,8 +331,8 @@ export function findBoardItems(file: string, pr: string, branch: string, worktre
     return null
   }
   const id = (i: BoardItem) => (typeof i.id === 'string' ? i.id : JSON.stringify(i.id))
-  // pr 칸에 들었거나 worker 줄의 pr 이 그 PR 인 항목. 줄만 저장된 부분 실패 뒤 다시 돌려도 찾는다
-  const byPr = items.filter((i) => prNumbers(i.pr).has(pr) || boardWorkerRows(i).some((one) => prNumbers(one.pr).has(pr)))
+  // pr 칸에 들었거나 구현·후속 줄의 pr 이 그 PR 인 항목(리뷰·검증 줄의 pr 은 대상 PR 이라 보지 않는다). 줄만 저장된 부분 실패 뒤 다시 돌려도 찾는다
+  const byPr = items.filter((i) => prNumbers(i.pr).has(pr) || boardWorkerRows(i).some((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).has(pr)))
   if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
   const open = (i: BoardItem) => i.status !== 'done' && !prNumbers(i['merged-pr']).has(pr)
   const byBranch = items.filter(

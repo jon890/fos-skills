@@ -103,6 +103,17 @@ describe('findBoardItems', () => {
     assert.deepEqual(findBoardItems(file, '77', 'feat/z', null), { by: 'pr', ids: ['half'] })
   })
 
+  test('리뷰·검증 줄의 대상 PR 로는 항목을 찾지 않는다', () => {
+    const row = (role: string, pr: number) => ({ role, worktree: 'w' + role, branch: 'x', pr, status: 'working', at: '2026-01-02', dispatch: null, endedAt: null })
+    const file = board([
+      { id: 'review-only', status: 'doing', workers: [row('review', 77), row('verify', 77)] },
+      { id: 'impl', status: 'doing', pr: 77 },
+    ])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/z', null), { by: 'pr', ids: ['impl'] })
+    const only = board([{ id: 'review-only', status: 'doing', workers: [row('review', 77)] }])
+    assert.equal(findBoardItems(only, '77', 'feat/z', null), null)
+  })
+
   test('줄로 찾은 항목은 linkBoardPr 이 pr 칸에 더하고 그 줄의 pr 을 채운다', () => {
     const file = board([{ id: 'rows', status: 'doing', pr: 9, branch: 'feat/b', stages: 'pr=1,merge=2', details: ['1. PR', '2. 머지'],
       workers: [{ role: 'impl', worktree: 'wa', branch: 'feat/a', pr: null, status: 'done', at: '2026-01-01', dispatch: null, endedAt: '2026-01-02' }] }])

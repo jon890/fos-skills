@@ -1190,6 +1190,22 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal((item.workers as Json[])[0].pr, 77)
   })
 
+  test('따로 생긴 리뷰 항목이 대상 PR 을 줄에 가져도 구현 항목을 반영한다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'board.json')
+    const details = [1, 2].map((n) => ({ text: `${n}. 단계`, done: false }))
+    const review = { role: 'review', worktree: 'wr', branch: 'feat/r', dispatch: 'd9', pr: 77, status: 'working', at: '2026-01-02', endedAt: null }
+    writeFileSync(file, JSON.stringify({ items: [
+      { id: 'review-item', status: 'doing', worktree: 'wr', branch: 'feat/r', stages: 'pr=1,merge=2', details, workers: [review] },
+      { id: 'impl', status: 'doing', pr: 77, stages: 'pr=1,merge=2', details },
+    ] }))
+    const r = await c.finish(['--complete', '--board', file])
+    assert.equal(r.code, 0, both(r))
+    const items = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items
+    assert.deepEqual((items[1].details as Json[]).map((d) => d.done), [true, true])
+    assert.deepEqual((items[0].details as Json[]).map((d) => d.done), [false, false])
+  })
+
   test('pr 칸이 아직 비었으면 구현 줄의 브랜치가 머지 PR 의 브랜치인 항목을 찾아 항목 묶음 단계를 끝낸다', async (t) => {
     const impl = { role: 'impl', worktree: 'wa', branch: 'feat/x', dispatch: 'd1', pr: null, status: 'done', at: '2026-01-01', endedAt: '2026-01-02' }
     const { done, rows } = await realBoard(t, [impl, follow({ pr: 78 })])
