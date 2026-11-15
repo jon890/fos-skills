@@ -208,6 +208,18 @@ describe('접두사 없는 계획서 이름', () => {
     })
   }
   test('계획 폴더 안의 자기 이름은 제외한다', () => {
-    assert.deepEqual(lines('tasks/049-feat-sample/phase-01.md', 'plan: 049-feat-sample\nplan051'), [])
+    assert.deepEqual(lines('tasks/049-feat-sample/phase-01.md', 'plan: 049-feat-sample'), [])
   })
+})
+
+
+test('tasks 안에서도 다른 계획서 참조는 검출한다', () => {
+  const path = 'tasks/049-feat-sample/phase-01.md'
+  assert.deepEqual(lines(path, 'plan051\nplan: 050-fix-other\n`tasks/050-fix-other/`'), [
+    `${path}:1: PLAN_REF 계획서를 번호로 가리킨다 → plan051`,
+    `${path}:2: PLAN_REF 계획서를 번호로 가리킨다 → 050-fix-other`,
+    `${path}:3: PLAN_REF 계획서를 번호로 가리킨다 → 050-fix-other`,
+  ])
+  assert.deepEqual(lines('tasks/readme.md', 'plan051'), ['tasks/readme.md:1: PLAN_REF 계획서를 번호로 가리킨다 → plan051'])
+  assert.deepEqual(lines('docs/plan027-notes.md', 'plan051'), [])
 })

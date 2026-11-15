@@ -135,7 +135,7 @@ export function checkMarkdown(path: string, lines: string[]): string[] {
 //
 // 계획서 안에서 자기 plan 번호를 부르는 것은 참조가 아니다. 파일과 함께 사라진다.
 function inPlanDir(path: string): boolean {
-  return path.split('/').slice(0, -1).some((part) => part === 'tasks' || PLAN_DIR.test(part))
+  return path.split('/').some((part) => PLAN_DIR.test(part))
 }
 
 // 문서가 계획서를 번호로 가리키는가.
@@ -145,8 +145,12 @@ function inPlanDir(path: string): boolean {
 export function checkPlanRef(path: string, lines: string[]): string[] {
   if (inPlanDir(path)) return []
   const out: string[] = []
+  const parents = path.split('/').slice(0, -1)
+  const tasksIndex = parents.indexOf('tasks')
+  const ownNames = tasksIndex < 0 ? [] : parents.slice(tasksIndex + 1)
   for (const [lineno, line] of outsideFence(lines)) {
     const names = [...line.matchAll(PLAN_NAME)].filter((m) => {
+      if (ownNames.includes(m[0])) return false
       const prefix = line.slice(0, m.index)
       return /^\s*plan\s*:\s*/.test(line) || /(?:^|[^A-Za-z0-9_.-])tasks\/(?:[^\s`/]+\/)*$/.test(prefix)
     })
