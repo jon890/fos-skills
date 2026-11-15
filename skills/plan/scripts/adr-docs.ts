@@ -619,7 +619,6 @@ function checkUnlinked(repo: Repo, path: string, lines: string[], pattern: strin
   const heading = new RegExp(String.raw`^ {0,3}#{1,6}\s+(?:${pattern})\s*:`);
   const find = new RegExp(pattern, "g");
   const docDir = posix.dirname(path);
-  const self = repo.adrs.find((adr) => adr.path === path);
   // 닫힌 파일 맨 위 YAML 만 제외한다. 본문 구분선과 닫히지 않은 머리말은 숨기지 않는다.
   const raw = read(repo, path).replace(/^\uFEFF/, "").split(/\r?\n/);
   const frontmatterEnd = raw[0]?.trim() === "---" ? raw.findIndex((line, i) => i > 0 && line.trim() === "---") : -1;
@@ -633,11 +632,11 @@ function checkUnlinked(repo: Repo, path: string, lines: string[], pattern: strin
       .replace(/\[([^\]\n]+)\]/g, (all, name: string) => (defs.has(name.toLowerCase()) ? "" : all));
     for (const m of outside.matchAll(find)) {
       const id = normalizeId(m[0]);
-      if (self && matchesId(self, id)) continue;
       const candidates = repo.adrs
         .filter((a) => matchesId(a, id))
         .map((a) => a.path)
         .sort((a, b) => commonDepth(docDir, posix.dirname(b)) - commonDepth(docDir, posix.dirname(a)) || (a < b ? -1 : 1));
+      if (candidates.length === 1 && candidates[0] === path) continue;
       const hint = candidates.length ? `→ 후보: ${candidates.join(", ")}` : "→ 후보 없음";
       out.push({ path, line: i + 1, code: "ADR_UNLINKED", message: `${id} ${hint}` });
     }

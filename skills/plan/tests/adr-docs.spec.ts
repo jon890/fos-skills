@@ -519,3 +519,17 @@ describe("머리말과 ADR 자기 번호", () => {
     assert.match(r.out[1], /ADR_UNLINKED ADR-20261007 \/ beta/);
   });
 });
+
+
+test("같은 번호가 여러 ADR 폴더에 있으면 자기 참조로 단정하지 않는다", () => {
+  const root = repo({
+    "docs/adr/001-a.md": adr("ADR-001", "가", "ADR-001 을 본다.\n"),
+    "modules/api/docs/adr/001-b.md": adr("ADR-001", "나", "ADR-001 을 본다.\n"),
+  });
+  const r = run(root, "check", "--adr-dir", "docs/adr", "--adr-dir", "modules/api/docs/adr");
+  assert.equal(r.code, 1);
+  assert.deepEqual(r.out, [
+    "docs/adr/001-a.md:4: ADR_UNLINKED ADR-001 → 후보: docs/adr/001-a.md, modules/api/docs/adr/001-b.md",
+    "modules/api/docs/adr/001-b.md:4: ADR_UNLINKED ADR-001 → 후보: modules/api/docs/adr/001-b.md, docs/adr/001-a.md",
+  ]);
+});
