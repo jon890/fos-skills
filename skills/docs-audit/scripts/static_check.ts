@@ -45,6 +45,8 @@ const ESCAPE = /\\./g
 //   자리 표시자(`plan{N}`, `plan###`)에는 숫자가 없어 걸리지 않는다.
 //   Python 의 \d 는 유니코드 숫자라 \p{Nd} 로 옮긴다.
 const PLAN_REF = /(?<![A-Za-z0-9_])plan[-_]?\p{Nd}{2,}/gu
+// 접두사 없는 이름은 plan: 필드나 tasks/ 경로에서만 찾는다. ADR 파일 이름은 제외한다.
+const PLAN_NAME = /(?<![A-Za-z0-9_.-])\p{Nd}{3,}-(?:feat|fix|refactor|docs|test|chore|perf|build|ci|style)-[A-Za-z0-9][A-Za-z0-9_-]*(?![A-Za-z0-9_.-])/gu
 // 계획서 디렉터리 이름. 모노레포는 `fe-plan027-login` 처럼 하위 프로젝트 접두사를 붙인다.
 const PLAN_DIR = /^(?:[A-Za-z0-9]+-)?plan[-_]?\p{Nd}{2,}(?:-.*)?$/u
 
@@ -133,7 +135,7 @@ export function checkMarkdown(path: string, lines: string[]): string[] {
 //
 // 계획서 안에서 자기 plan 번호를 부르는 것은 참조가 아니다. 파일과 함께 사라진다.
 function inPlanDir(path: string): boolean {
-  return path.split('/').some((part) => PLAN_DIR.test(part))
+  return path.split('/').slice(0, -1).some((part) => part === 'tasks' || PLAN_DIR.test(part))
 }
 
 // 문서가 계획서를 번호로 가리키는가.
@@ -144,7 +146,11 @@ export function checkPlanRef(path: string, lines: string[]): string[] {
   if (inPlanDir(path)) return []
   const out: string[] = []
   for (const [lineno, line] of outsideFence(lines)) {
-    for (const m of line.matchAll(PLAN_REF)) out.push(`${path}:${lineno}: PLAN_REF 계획서를 번호로 가리킨다 → ${m[0]}`)
+    const names = [...line.matchAll(PLAN_NAME)].filter((m) => {
+      const prefix = line.slice(0, m.index)
+      return /^\s*plan\s*:\s*/.test(line) || /(?:^|[^A-Za-z0-9_.-])tasks\/(?:[^\s`/]+\/)*$/.test(prefix)
+    })
+    for (const m of [...line.matchAll(PLAN_REF), ...names].sort((a, b) => a.index - b.index)) out.push(`${path}:${lineno}: PLAN_REF 계획서를 번호로 가리킨다 → ${m[0]}`)
   }
   return out
 }

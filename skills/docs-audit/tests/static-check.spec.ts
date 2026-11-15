@@ -193,3 +193,21 @@ describe('파일 수집과 종료 코드', () => {
     assert.deepEqual([done.status, done.stderr], [2, '사용법 오류: Git 저장소 루트에서 실행해야 한다.\n'])
   })
 })
+
+
+describe('접두사 없는 계획서 이름', () => {
+  for (const body of ['plan: 049-feat-sample', 'plan: `049-feat-sample`', 'plan: [049-feat-sample, 050-fix-cache]', '`tasks/049-feat-sample/` 를 본다.', '[계획](../tasks/049-feat-sample/index.json)']) {
+    test(`계획 문맥에서 찾는다: ${body}`, () => {
+      const found = lines('docs/retrospective.md', body)
+      assert.ok(found.some((line) => line.endsWith('→ 049-feat-sample')))
+    })
+  }
+  for (const body of ['[ADR](adr/049-feat-sample.md)', 'source: 049-feat-sample', '일반 이름 049-feat-sample 은 계획으로 단정하지 않는다.', 'plan: ADR-049', '```yaml\nplan: 049-feat-sample\n```', 'plan: 049-feat-sample.md']) {
+    test(`계획 문맥 밖이나 파일 이름은 제외한다: ${body}`, () => {
+      assert.deepEqual(lines('docs/note.md', body), [])
+    })
+  }
+  test('계획 폴더 안의 자기 이름은 제외한다', () => {
+    assert.deepEqual(lines('tasks/049-feat-sample/phase-01.md', 'plan: 049-feat-sample\nplan051'), [])
+  })
+})
