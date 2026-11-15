@@ -80,6 +80,8 @@
 //                 `PR1~PR3`, `PR 두 개` 꼴이다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 이 지시서는 PR1 만 맡고 뒤 PR 은
 //                 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다(SKILL.md 원칙). 뒤 PR 목록은 완료 기준이 아닌 참고 절에 둔다.
 //                 경고이고 종료 코드에 넣지 않는다
+//     채움        `{{채울 것: …}}` 자리표시가 남았다. `orch spec review <PR>` 이 만든 리뷰 지시서에서 코디네이터가 채울 「배경」 과 「특히 볼 것」 이다.
+//                 채우지 않고 띄우면 worker 가 자리표시를 지시로 읽는다. 코드 블록 안은 보지 않는다. 경고이고 종료 코드에 넣지 않는다
 //     머지 보류   머지 조건 문장이 있는데 `머지 보류:` 줄이 없다. 완료 담당 문장과 코드 블록은 제외한다. 경고이고 종료 코드에 넣지 않는다
 //     오버레이    (--check-overlay) 오버레이의 백틱 값과 config.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
 //                 명령(`bash scripts/verify.sh --fast`)이면 낱말마다 본다. `/` 가 든 확장자 있는 낱말만 경로로 본다.
@@ -565,6 +567,9 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     }
     const done = doneProblem(spec.lines)
     if (done) warnings.push(`${spec.name}:${done.no}: 완료: ${DONE_HINT}(${done.found})`)
+    for (const [index, line] of outsideFences(spec.lines).entries()) {
+      if (/\{\{채울 것:/.test(line)) warnings.push(`${spec.name}:${index + 1}: 채움: 자리표시가 남았다. 채운 뒤에 띄운다`)
+    }
     const noPrDone = noPrDoneProblem(spec.lines)
     if (noPrDone !== null) warnings.push(`${spec.name}:${noPrDone}: 완료 보고: ${NO_PR_DONE_HINT}`)
     for (const [glob, no] of spec.owned) {

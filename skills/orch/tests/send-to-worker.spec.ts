@@ -675,6 +675,17 @@ describe('Orca 후속 일과 기록', () => {
     })
   }
 
+  test('--note 는 후속 지시 줄 끝에 붙고 지시서 없이는 쓰지 못한다', () => {
+    follow()
+    const r = send('--spec', join(tmp, 'next.md'), '--note', 'PR #7 이 아직 열려 있다. 머지될 때까지 맡는다.')
+    assert.equal(r.code, 0, both(r))
+    assert.equal(r.stdout.trim(), 'FOLLOW-UP ctx_1 ctx_new task_new')
+    assert.ok(lines('orca orchestration send')[0].includes('못 읽으면 escalation 으로 알린다. PR #7 이 아직 열려 있다. 머지될 때까지 맡는다.'))
+    const alone = send('--body', 'x', '--note', 'PR #7')
+    assert.equal(alone.code, 2, both(alone))
+    assert.match(alone.stderr, /--note 는 --spec 과 함께 준다/)
+  })
+
   test('새 worker 의 resource.terminalHandle 도 읽는다', () => {
     follow()
     const st = readState()

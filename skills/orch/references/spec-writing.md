@@ -127,7 +127,11 @@ orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 머리의 `보드 항목: 새로`는 자동 붙이기를 끈다. `보드 항목 id:`와 함께 쓰면 spec-lint 오류다.
 `worker 역할: 검증`은 인수 검증 worker 를 뜻한다. [검증 지시서 틀](../templates/spec-verify.md)을 쓰고, PR 뒤에는 `리뷰 PR:`, PR 전에는 `보드 항목 id:` 가운데 하나를 남긴다. 구현 worker 와 다른 워크트리를 쓴다.
 
-남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서는 [`../templates/spec-review.md`](../templates/spec-review.md) 를 복사해 쓴다. 틀이 `리뷰 PR:` 줄, 허락 줄, COMMENT 등록, 본문 머리 등급별 건수 표, 결과 status 첫 줄(`판정: 머지 가능|수정 필요, 차단 N건, 권장 N건`)을 정한다. 결과 status 가 `판정:`, `완료:`, `미완료:` 로 시작하지 않으면 `worker_done` 이 `DONE-SUSPECT` 로 분류된다(`lib/completion.ts`).
+남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서는 `orch spec review <PR>` 으로 만든다. 이 명령이 [`../templates/spec-review.md`](../templates/spec-review.md) 를 채워 지시서 폴더의 `spec-review-pr-<N>.md` 에 쓴다.
+채우는 값은 PR 번호, 제목, `리뷰 PR:` 과 `브랜치: review/pr-<N>` 줄, 그리고 `worker 선택:` 줄이다. 구현 worker 는 영구 이력에서 브랜치가 PR head 인 가장 늦은 행으로 찾고, 그 제공자와 다른 제공자(Claude 면 Codex `gpt-6.1-sol`, Codex 면 Claude Sonnet 5.5, 둘 다 `medium`)를 고른다.
+이력에 구현 worker 가 없으면(직접 띄운 PR) `--impl-agent claude|codex` 로 알려 준다. 있는 파일은 `--force` 없이 덮지 않는다. 같은 PR 을 다시 리뷰하면 `--out` 으로 `spec-review-pr-<N>-<꼬리>.md` 처럼 이름을 달리한다.
+**「배경」 첫 줄과 「특히 볼 것」 절의 `{{채울 것: …}}` 두 곳은 코디네이터가 채운다.** 남아 있으면 `spec-lint` 가 `채움` 경고를 낸다.
+틀이 `리뷰 PR:` 줄, 허락 줄, COMMENT 등록, 본문 머리 등급별 건수 표, 결과 status 첫 줄(`판정: 머지 가능|수정 필요, 차단 N건, 권장 N건`)을 정한다. 결과 status 가 `판정:`, `완료:`, `미완료:` 로 시작하지 않으면 `worker_done` 이 `DONE-SUSPECT` 로 분류된다(`lib/completion.ts`).
 틀을 쓰지 않아도 아래 두 줄은 첫 `##` 제목 앞에 둔다.
 
 ```markdown

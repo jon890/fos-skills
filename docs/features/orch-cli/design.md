@@ -94,13 +94,14 @@ type Command = {
 | `loop status`, `loop stalled` | repo | `loop stalled` 는 run 을 채우지 않는다(스펙 DECISION23). 스크립트가 루프 등록 Run 을 모두 보는 지금 동작이 사람용 확인에 맞다 |
 | `worker launch` | run, repo | `--worktree` 를 주면 repo 를 채우지 않는다(둘은 함께 못 쓴다) |
 | `worker send`, `worker adopt` | run(adopt 는 `--apply` 일 때만), repo(adopt) | worker send 의 run 은 run-current 에서만 채운다 |
+| `worker continue` | repo | run 은 채우지 않는다. 띄우기 기록의 Run 을 쓴다. 지금 Run 으로 채우면 다른 Run 의 worker 에 후속 Task 를 잘못 붙인다 |
 | `worker resume` | repo | run 은 채우지 않는다. 옛 dispatch 의 runId 를 쓰며, 지금 Run 으로 채우면 다른 Run 의 worker 를 잘못 잇는다(docs/features/limit-resume/design.md DECISION9) |
 | `queue merge`, `queue conflicts`, `queue ready`, `queue finish` | repo, run(ready 빼고) | queue merge 는 `explicit` 의 `--finish-arg`, `--sweep-arg` 안의 `--run` 도 명시로 본다 |
 | `queue run`, `queue gate`, `queue overlap`, `queue reserve`, `worker worktree`, `doctor gh-usage` | repo | |
 | `cleanup sweep` | repo, run, specs-dir | `--repo` 를 하나라도 주면 repo 를 채우지 않는다 |
 | `cleanup handoff`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
 | `doctor` | repo | run 을 채우지 않는다(스펙 DECISION23). 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
-| `board sync`, `board release`, `study …`, `spec lint`, `paths` | repo | |
+| `board sync`, `board release`, `study …`, `spec lint`, `spec review`, `paths` | repo(spec review 는 specs-dir 도) | |
 | `board auto-check` | repo, run | |
 | `worker ask` | 없음 | worker 터미널은 Run 에 묶이지 않고, `worker-ask` 는 `check` 결과에서 Run 을 읽는다 |
 | 그 밖 | 없음 | |
@@ -180,6 +181,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `worker screen` | 없음 | 상태 한 낱말 그대로(데이터) | `references/replying.md` |
 | `worker ask` | 답 뒤의 ask JSON, 시간 초과·빈 답·대신 보내기의 JSON | `answer: <답 전체>`(뒤의 ask JSON 만 뺀다). 답이 없으면 `TIMEOUT <질문 id 또는 ->`, `NO-ANSWER <질문 id 또는 ->`, `SENT-RUN <보낸 id>`. 종료 코드 5 의 읽지 않은 메시지는 그대로(데이터) | `templates/spec-common.md`, `skills/spec/references/interview.md` |
 | `worker adopt` | `SESSION` 뒤 JSON, `ADOPTED` 뒤 JSON, `ADOPT-MANUAL` 뒤 설명 | `SESSION <터미널> <상태> <브랜치> specs=<지시서 후보 또는 ->`, `ADOPTED <터미널> <지시서>`, `ADOPT-MANUAL <지시서>`. `LIMITED`, `RESTART` 와 그 고칠 명령 줄은 그대로 | `references/launch.md` |
+| `worker continue` | 없음 | `CONTINUED <앞 dispatch> <새 dispatch> <새 Task> pr=#<번호>`, `CONTINUE-SKIP <dispatch> <이유>`(대상이 아님, 종료 코드 3), `CONTINUE-FAIL <dispatch> <이유>`(종료 코드 1) | `references/replying.md`, `references/waiting.md` |
 | `worker check` | `일치: …`, `불일치: …` | `MATCH <브랜치> <HEAD>`, `MISMATCH <항목> <실제> <지시서>` | `references/verification.md` |
 | `worker link-profile` | 요약과 항목 줄 | 항목마다 `LINK <이름>`, `COPY <이름>`(dry-run 은 `WOULD-LINK`, `WOULD-COPY`), `SKIPPED <이름> state`. 끝 줄 `PROFILE <대상> <건수> applied` 나 `PROFILE <대상> <건수> dry-run` | `references/launch.md` |
 | `queue merge` | `마무리 시작: …`, `마무리는 이미 돌고 있다: …` 와 `merge_queue` 의 진행 줄 | `FINISH-STARTED <PR> <로그>`, `FINISH-RUNNING <PR> <pid 파일>` 과 아래 `queue run` 의 줄 | `references/cleanup.md` |
@@ -195,6 +197,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `board goal` | `<목표> <값>`, `<목표> 단계 줄이 없어 …` | `GOAL <목표> <값>`, `GOAL-SKIP <목표>` | `references/board.md` |
 | `board auto-check` | 확인 결과와 단계·근거 설명 | `AUTO-OK <항목> <번호> <근거>`, `AUTO-REJECT <항목> <번호 또는 -> <이유>` | `references/replying.md` |
 | `study …` | 없음 | 지금 줄(`ADDED`, `SET`, `MIGRATED`, `TRASHED`, `list` 의 탭 줄)이 이미 판정 줄이나 데이터다 | `references/study-candidates.md` |
+| `spec review` | 없음 | `REVIEW-SPEC <파일>`, `REVIEW-SPEC-WORKER impl=<구현> review=<리뷰>`, `REVIEW-SPEC-FILL <설명>; <설명>`, `REVIEW-SPEC-WARN <이유>`, `REVIEW-SPEC-EXISTS <파일>`, `REVIEW-SPEC-FAIL <이유>` | `references/spec-writing.md` |
 | `spec lint` | `<지시서>: <발견>` | `SPEC-ERROR <지시서>: <발견>`, `SPEC-WARN <지시서>: <발견>` | `references/spec-writing.md` |
 | `doctor` | `  안내: …` | 판정 줄과 들여 쓴 고칠 줄 | `SKILL.md` |
 | `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |

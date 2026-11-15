@@ -49,6 +49,7 @@
 | | `orch worker ask` | `worker-ask` | 없음 |
 | | `orch worker adopt [--apply <터미널>]` | `adopt-sessions` | 없음 |
 | | `orch worker resume --dispatch <id>` | `resume-worker` | 없음(새 명령, docs/features/limit-resume) |
+| | `orch worker continue --dispatch <id>` | (새로) | 머지 전에 `worker_done` 을 보낸 worker 를 같은 워크트리에서 이어 맡긴다. Run 은 띄우기 기록의 것을 쓴다 |
 | | `orch worker worktree <저장소> --name …`, `orch worker check <워크트리> --spec …` | `make-worktree`, `make-worktree --check` | `--check` 가 동작으로 |
 | | `orch worker deny <워크트리>` | `worktree-deny` | 없음 |
 | | `orch worker link-profile [대상]` | `link-claude-profile` | 없음 |
@@ -67,6 +68,7 @@
 | `board` | `orch board auto-check <항목>` | `auto-check` | `--repo`, `--run` 을 문맥에서 읽는다 |
 | `study` | `orch study list`, `add`, `set`, `migrate` | `study-candidates <동작>` | 없음 |
 | `spec` | `orch spec lint`, `orch spec line <지시서>` | `spec-lint`, `spec-line` | 없음 |
+| | `orch spec review <PR>` | (새로) | 리뷰 worker 지시서를 PR 번호로 만든다 |
 | `doctor` | `orch doctor` | `orch-doctor.py`, `orch-doctor` | 없음 |
 | | `orch doctor migrate`, `orch doctor migrate-hooks` | `migrate-orch-dir`, `migrate-orch-dir --hooks` | `--hooks` 가 동작으로 |
 | | `orch doctor gh-usage` | `gh-usage` | 없음 |
