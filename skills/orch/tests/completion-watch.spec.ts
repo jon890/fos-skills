@@ -229,3 +229,34 @@ test('준비됨 뒤에도 PR 이 열려 있으면 되돌리고 머지된 PR 이�
   }
   assert.equal(sent().length, 1); assert.deepEqual(kinds(), ['DONE-RETURNED'])
 })
+test('한 번 되돌린 PR 의 후속 worker 가 준비됨 뒤 또 일찍 끝내면 DONE-SUSPECT 로 알린다', async () => {
+  const sha = 'd'.repeat(40)
+  const ready = (dispatch: string) => ({ id: `r-${dispatch}`, type: 'status', run_id: 'R', task_id: 'task', dispatch_id: dispatch, from_handle: 'worker', body: `준비됨 #7, head ${sha}`, created_at: '2026-11-10T00:00:30Z' })
+  const sent = bounceSetup()
+  const gh = fakeBin(repo, 'gh', [])
+  const openRules = [{ args: ['view'], stdout: JSON.stringify({ number: 7, headRefName: 'feat/x', headRefOid: sha, title: '제목', url: 'u', state: 'OPEN' }) },
+    { args: ['list'], stdout: JSON.stringify([{ number: 7, title: '제목', url: 'u', headRefName: 'feat/x' }]) }]
+  gh.setRules(openRules); process.env.GH = gh.path
+  bounceRules([done('d1')], [ready('d1')]); await watchCompletions(repo, 'R', 'main')
+  bounceSetup({ dispatch: 'd2' }); gh.setRules(openRules); process.env.GH = gh.path
+  bounceRules([done('d1'), done('d2', 'd2', '2026-11-10T00:03:00Z')], [ready('d1'), { ...ready('d2'), created_at: '2026-11-10T00:02:30Z' }]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), ['DONE-RETURNED', 'DONE-SUSPECT'])
+  assert.match(notices()[1].argv.join(' '), /PR 이 열린 채 완료 보고가 왔다.*이미 한 번 되돌렸다/)
+  assert.equal(sent().length, 1)
+})
+test('DONE-RETURNED 전송이 실패하면 다시 되돌리지 않고 알림만 다음 틱에 다시 보낸다', async () => {
+  const sent = bounceSetup()
+  bounceRules([done('d1')])
+  bin.setRules([
+    { args: ['check', 'worker_done'], stdout: envelope([done('d1')]) }, { args: ['check', 'status'], stdout: envelope([]) }, { args: ['inbox'], stdout: envelope([]) },
+    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: 'd1', status: 'completed' } } }) },
+    { args: ['send'], stdout: '', code: 1 },
+  ])
+  await assert.rejects(watchCompletions(repo, 'R', 'main'), /NOTICE-FAIL DONE-RETURNED/)
+  assert.equal(sent().length, 1); assert.ok(!state().ids.includes('d1'))
+  bounceRules([done('d1')]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(sent().length, 1, '두 번째 틱은 되돌리지 않는다')
+  assert.ok(state().ids.includes('d1')); assert.deepEqual(state().returnNotes, {})
+  assert.equal(kinds().filter(k => k === 'DONE-RETURNED').length, 2, '실패한 시도 하나와 성공 하나')
+  assert.ok(!kinds().includes('DONE-SUSPECT'))
+})
