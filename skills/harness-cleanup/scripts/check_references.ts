@@ -4,15 +4,16 @@
 // 검사 항목
 //   1. 마크다운 링크 `[텍스트](경로.md)`
 //   2. 백틱으로 감싼 repo 상대 경로. 링크 문구 안의 백틱 경로는 링크 대상이 실재하면 보지 않는다.
+//      `<스킬>-overlay.md` 의 번들 경로는 저장소와 설치된 해당 스킬 폴더에서도 찾는다.
 //      대상은 링크가 이미 말한다. 대상이 없으면 1번이 깨진 링크로 내고, 문구의 경로도 함께 본다.
 //   3. 다른 문서의 섹션 참조 — `"섹션명" 섹션` / `"섹션명" 표`
 //   4. 스킬 참조 — `` `이름` skill ``
 //   5. 절 이름 참조 — 파일 표기 바로 뒤의 「제목」. 「A」 의 「B」 와 「A」 「B」 는 제목마다 본다.
 //      파일 표기는 백틱 경로, Markdown 링크, `{@code 경로}`, 맨 경로(`backend/AGENTS.md`)다.
 //      제목은 그 파일의 `#` 부터 `######` 제목과 앞뒤 공백만 무시하고 글자 그대로 비교한다.
-//      「A」 의 「B」 처럼 두 번째 이후 항목은 줄 머리(목록 표기 뒤)의 굵은 라벨 `**B.**` 도 인정한다.
+//      줄 머리(목록 표기 뒤)의 굵은 항목 이름 `**B.**` 도 첫 항목부터 인정한다.
 //      끝의 마침표와 콜론은 무시한다. check_rename_drift 도 제목과 굵은 라벨을 같은 라벨로 본다.
-//      첫 항목은 Markdown 제목만 인정한다. 점만 있는 「...」 는 서식 자리표시자라 건너뛴다.
+//      점만 있는 「...」 는 서식 자리표시자라 건너뛴다.
 //      대상 파일은 참조하는 파일 기준, 그다음 저장소 루트 기준으로 찾고, 못 찾으면 건너뛴다.
 //      파일 표기가 바로 앞에 없는 「」 는 화면 문구로 보고 검사하지 않는다.
 //
@@ -142,10 +143,12 @@ function run(argv: string[]): number {
       if (pathName(skillFile) === 'SKILL.md' && isRelativeTo(pyResolve(skillFile), root)) names.add(pathName(pathParent(skillFile)))
     }
     // 플러그인 스킬. 스킬을 skills/ 아래에 두지 않는 플러그인도 있어 SKILL.md 로 찾는다.
-    const plug = pjoin(h, '.claude/plugins')
-    if (isDir(plug)) {
+    for (const plug of [pjoin(h, '.claude/plugins'), pjoin(h, '.codex/plugins')]) if (isDir(plug)) {
       for (const step of walk(plug)) {
-        if (exists(pjoin(step.current, 'SKILL.md'))) names.add(pathName(step.current))
+        if (exists(pjoin(step.current, 'SKILL.md'))) {
+          names.add(pathName(step.current))
+          installedDirs.set(pathName(step.current), [...(installedDirs.get(pathName(step.current)) ?? []), step.current])
+        }
       }
     }
     return names
@@ -267,11 +270,11 @@ function run(argv: string[]): number {
       const target = guideTarget(source, name)
       if (target === null || (instructions !== null && !instructions.has(target))) continue
       const known = headers(target)
-      findall(TITLE, g.titles).forEach((t, index) => {
+      findall(TITLE, g.titles).forEach((t) => {
         const title = t[1]
         const text = pyStrip(title)
         if (known.has(text) || PLACEHOLDER_TITLE.test(text) || SKIP.test(text)) return
-        if (index > 0 && labels(target).has(pyStrip(rstripChars(text, '.:')))) return
+        if (labels(target).has(pyStrip(rstripChars(text, '.:')))) return
         found.push([name, title])
       })
     }
@@ -301,9 +304,20 @@ function run(argv: string[]): number {
     return [...named].some((name) => (siblings.get(name) ?? []).some((d) => exists(pjoin(d, bare))))
   }
 
+  const installedDirs = new Map<string, string[]>()
   const skills = installedSkills()
   const plugins = pluginNames()
   const siblings = skillDirs()
+  function overlayHas(source: string, name: string): boolean {
+    const match = /^(.+)-overlay\.md$/.exec(pathName(source))
+    const bare = name.replace(/^\.\//, '')
+    if (!match || !BUNDLE_DIRS.some((dir) => bare.startsWith(dir))) return false
+    const skill = match[1]
+    const dirs = [...(siblings.get(skill) ?? []), ...(installedDirs.get(skill) ?? []),
+      ...[pjoin(home(), '.claude/skills'), pjoin(home(), '.codex/skills'), pjoin(home(), '.agents/skills')].map((base) => pjoin(base, skill))]
+    return dirs.some((dir) => isFile(pjoin(dir, 'SKILL.md')) && exists(pyResolve(pjoin(dir, bare))) && isRelativeTo(pyResolve(pjoin(dir, bare)), pyResolve(dir)))
+  }
+
   const broken: [string, number, string, string][] = []
   const warnings: [string, number, string][] = []
   const h = home()
@@ -325,7 +339,7 @@ function run(argv: string[]): number {
         // 저장소 밖을 가리키는 경로는 판정 대상이 아니다.
         //   상대 경로가 몇 단을 올라가든 해석한 뒤에 경계를 따진다.
         if (!isRelativeTo(target, root)) continue
-        if (!isFile(target)) broken.push([rel, i, '링크', link])
+        if (!isFile(target) && !overlayHas(f, hash >= 0 ? link.slice(0, hash) : link)) broken.push([rel, i, '링크', link])
       }
 
       // 2) 백틱 경로 — repo 상대 경로로 해석
@@ -335,7 +349,7 @@ function run(argv: string[]): number {
         const bare = cand.replace(/\/+$/, '')
         const normalized = bare.startsWith('./') ? bare.slice(2) : bare
         const bases = [root, ...pathParents(f).filter((parent) => isRelativeTo(parent, root))]
-        if (bases.some((base) => exists(pjoin(base, bare)))) continue
+        if (bases.some((base) => exists(pjoin(base, bare))) || overlayHas(f, bare)) continue
         // 다른 스킬의 이름과 함께 적은 번들 경로는 그 형제 스킬 폴더에서 찾는다
         if (BUNDLE_DIRS.some((d) => normalized.startsWith(d)) && inSiblingSkill(line, bare, siblings, plugins)) continue
         // 스킬 번들 안의 문서는 번들 root 기준 상대 경로를 쓴다 (예: scripts 아래 파일)
