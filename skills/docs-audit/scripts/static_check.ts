@@ -152,7 +152,7 @@ export function checkPlanRef(path: string, lines: string[]): string[] {
     const names = [...line.matchAll(PLAN_NAME)].filter((m) => {
       if (ownNames.includes(m[0])) return false
       const prefix = line.slice(0, m.index)
-      return /^\s*plan\s*:\s*/.test(line) || /(?:^|[^A-Za-z0-9_.-])tasks\/(?:[^\s`/]+\/)*$/.test(prefix)
+      return /^\s*(?:[-*>]\s*)?plan\s*:\s*/.test(line) || /(?:^|[^A-Za-z0-9_.-])tasks\/(?:[^\s`/]+\/)*$/.test(prefix)
     })
     for (const m of [...line.matchAll(PLAN_REF), ...names].sort((a, b) => a.index - b.index)) out.push(`${path}:${lineno}: PLAN_REF 계획서를 번호로 가리킨다 → ${m[0]}`)
   }

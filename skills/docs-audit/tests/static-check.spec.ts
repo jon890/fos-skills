@@ -196,7 +196,7 @@ describe('파일 수집과 종료 코드', () => {
 
 
 describe('접두사 없는 계획서 이름', () => {
-  for (const body of ['plan: 049-feat-sample', 'plan: `049-feat-sample`', 'plan: [049-feat-sample, 050-fix-cache]', '`tasks/049-feat-sample/` 를 본다.', '[계획](../tasks/049-feat-sample/index.json)']) {
+  for (const body of ['plan: 049-feat-sample', '- plan: 049-feat-sample', '* plan: 049-feat-sample', '> plan: 049-feat-sample', 'plan: `049-feat-sample`', 'plan: [049-feat-sample, 050-fix-cache]', '`tasks/049-feat-sample/` 를 본다.', '[계획](../tasks/049-feat-sample/index.json)']) {
     test(`계획 문맥에서 찾는다: ${body}`, () => {
       const found = lines('docs/retrospective.md', body)
       assert.ok(found.some((line) => line.endsWith('→ 049-feat-sample')))
