@@ -20,7 +20,8 @@ const COMMANDS = {
 }
 // ──
 
-const NOTICE = '🤖 이 리뷰는 AI 가 작성했고, 등록 전에 사람이 확인했습니다.'
+const NOTICE = '🤖 이 리뷰는 AI 가 작성했습니다.'
+const HUMAN_NOTICE = '🤖 이 리뷰는 AI 가 작성했고, 등록 전에 사람이 확인했습니다.'
 
 // 받은 인자와 --input 파일의 내용을 기록하고, 인자가 match 의 낱말을 모두 가진 첫 규칙의 stdout 과 종료 코드를 낸다
 const GH_BODY = `const fs = require('node:fs')
@@ -341,12 +342,38 @@ describe('gh-review-post', () => {
     assert.equal(create.input, `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}]}\n`)
   })
 
+  test('--human-reviewed 는 사람 확인 문구를 붙이고, 없으면 확인을 말하지 않는다', (t) => {
+    const s = setup(t)
+    const body = s.write('body.md', REVIEW)
+    s.setRules([{ match: ['reviews', 'POST'], stdout: posted() }, { match: ['--jq'], stdout: verifyLine }])
+    const expected = (notice: string) => `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${notice}</sub>"}]}\n`
+    assert.equal(post(s, ['--human-reviewed', 'o/r', '5', 'a/b.ts', '12', body, '낱말A']).code, 0)
+    assert.equal(s.calls().find((call) => call.input !== null)!.input, expected(HUMAN_NOTICE))
+    assert.ok(!NOTICE.includes('사람이 확인'))
+  })
+
+  test('요약 모드도 --human-reviewed 로 문구를 고른다', (t) => {
+    const s = setup(t)
+    const summary = s.write('summary.md', SUMMARY)
+    s.setRules([{ match: ['reviews', 'POST'], stdout: posted() }])
+    assert.equal(post(s, ['--human-reviewed', '--summary', 'o/r', '5', summary, '낱말S']).code, 0)
+    assert.ok(s.calls().find((call) => call.input !== null)!.input!.includes(`---\\n\\n${HUMAN_NOTICE}`))
+  })
+
   test('이미 AI 안내가 있으면 다시 붙이지 않는다', (t) => {
     const s = setup(t)
     const body = s.write('body.md', `${REVIEW}\n<sub>${NOTICE}</sub>\n`)
     s.setRules([{ match: ['reviews', 'POST'], stdout: posted() }, { match: ['--jq'], stdout: verifyLine }])
     assert.equal(post(s, ['o/r', '5', 'a/b.ts', '12', body, '낱말A']).code, 0)
     assert.equal(s.calls().find((call) => call.input !== null)!.input, `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${NOTICE}</sub>"}]}\n`)
+  })
+
+  test('이미 사람 확인 안내가 있으면 기본 안내를 더 붙이지 않는다', (t) => {
+    const s = setup(t)
+    const body = s.write('body.md', `${REVIEW}\n<sub>${HUMAN_NOTICE}</sub>\n`)
+    s.setRules([{ match: ['reviews', 'POST'], stdout: posted() }, { match: ['--jq'], stdout: verifyLine }])
+    assert.equal(post(s, ['o/r', '5', 'a/b.ts', '12', body, '낱말A']).code, 0)
+    assert.equal(s.calls().find((call) => call.input !== null)!.input, `{"event": "COMMENT", "comments": [{"path": "a/b.ts", "line": 12, "side": "RIGHT", "body": "🟠 **P2 높음**\\n본문 낱말A\\n\\n<sub>${HUMAN_NOTICE}</sub>"}]}\n`)
   })
 
   test('줄에 붙은 댓글이 모자라면 1 과 stderr 경고', (t) => {

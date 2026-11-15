@@ -14,6 +14,9 @@
 // 인라인 리뷰의 첫 줄은 `🟠 **P2 높음**` 처럼 색 원과 등급이어야 한다. 표기는 references/grading.md 가 소유한다.
 // 요약의 첫 줄은 `## 코드 리뷰` 로 시작해야 한다.
 // 인라인 리뷰와 요약에는 AI 가 작성했다는 안내를 본문 끝에 붙인다. 이미 있으면 다시 붙이지 않는다.
+// 안내 문구는 기본이 「AI 가 작성했습니다」 다. 사람이 미리보기를 보고 등록을 확인한 흐름(pr-review)만
+//   맨 앞에 `--human-reviewed` 를 붙여 「등록 전에 사람이 확인했습니다」 를 쓴다. 자동 등록(orch 리뷰 worker)은 붙이지 않는다.
+//   예: gh-review-post.ts --human-reviewed --batch <owner/repo> ...
 //
 // 핵심 낱말은 하나 이상 필수다. 그 리뷰에만 있는 문구를 넣는다.
 // 등급 접두사만 보면 접두사가 같은 옛 payload 가 그대로 통과한다.
@@ -36,7 +39,8 @@ import { PY_SPACE, pyInt, pyJson, pyReadText, pyStr } from './kit/py.ts'
 import { isMainModule } from './is-main.ts'
 
 const GRADE_RE = /^(🔴 \*\*P1 치명|🟠 \*\*P2 높음|🟡 \*\*P3 보통|🔵 \*\*P4 낮음|⚪ \*\*P5 참고)\*\*$/
-const AI_NOTICE = '🤖 이 리뷰는 AI 가 작성했고, 등록 전에 사람이 확인했습니다.'
+const AI_NOTICE = '🤖 이 리뷰는 AI 가 작성했습니다.'
+const HUMAN_NOTICE = '🤖 이 리뷰는 AI 가 작성했고, 등록 전에 사람이 확인했습니다.'
 // 옛 셸의 grep -E `\b` 는 UTF-8 로케일에서 한글도 낱말 글자로 본다. 그래서 `@claude가` 는 토큰 뒤에 낱말이 이어진 것이다
 const BOT_TOKEN = /(^|[^`])(\/review|@claude|@github-actions|@dependabot)(?![\p{L}\p{N}_])/u
 const RSTRIP = new RegExp(`${PY_SPACE}+$`)
@@ -147,6 +151,9 @@ function validateInlineLocations(host: string, repo: string, pr: string, locatio
 export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void {
   const args = [...argv]
   let mode: Mode = 'review'
+  const humanReviewed = args[0] === '--human-reviewed'
+  if (humanReviewed) args.shift()
+  const notice = humanReviewed ? HUMAN_NOTICE : AI_NOTICE
   if (args[0] === '--reply') (mode = 'reply'), args.shift()
   if (args[0] === '--summary') (mode = 'summary'), args.shift()
   if (args[0] === '--batch') (mode = 'batch'), args.shift()
@@ -261,7 +268,7 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
       writeFileSync(payload, `${pyJson(data)}\n`)
       return JSON.parse(gh(host, ['api', `repos/${repo}/pulls/${pr}/reviews`, '-X', 'POST', '--input', payload]))
     }
-    const withNotice = (text: string, wrap: (notice: string) => string) => (text.includes(AI_NOTICE) ? text : text + wrap(AI_NOTICE))
+    const withNotice = (text: string, wrap: (notice: string) => string) => (text.includes(AI_NOTICE) || text.includes(HUMAN_NOTICE) ? text : text + wrap(notice))
     const summaryBody = () => withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n---\n\n${n}`)
     if (mode === 'batch') {
       const comments = parsedInlines.map(({ path, line, file }) => ({
