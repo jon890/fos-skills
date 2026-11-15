@@ -1,0 +1,120 @@
+// orch spec review: 리뷰 worker 지시서를 PR 번호로 만든다. 가짜 gh 와 임시 영구 이력으로 본다.
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, beforeEach, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { tempDir } from '../../../modules/testkit/temp.ts'
+import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
+import { recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
+import { fillReviewSpec, implementerOf, reviewerFor, unfilled } from '../scripts/lib/review-spec.ts'
+import { reviewPrOfSpec } from '../scripts/lib/review.ts'
+import { selectionsOf } from '../scripts/lib/spec.ts'
+
+const SCRIPT = fileURLToPath(new URL('../scripts/spec/review-spec.ts', import.meta.url))
+const LINT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
+const TEMPLATE = fileURLToPath(new URL('../templates/spec-review.md', import.meta.url))
+let repo: string, specs: string, gh: FakeBin, env: NodeJS.ProcessEnv
+const VIEW = { number: 262, title: 'fix: 변경 조각 형식을 검사한다', url: 'https://github.com/o/r/pull/262', headRefName: 'fix/precommit', state: 'OPEN' }
+
+const row = (dispatch: string, branch: string, agent: string, at: string, extra: Partial<LaunchHistory> = {}): LaunchHistory => ({
+  dispatch, terminal: null, worktree: repo, run: 'R', branch, agent, model: agent === 'codex' ? 'gpt-6.1-sol' : 'claude-sonnet-5-5', effort: 'medium',
+  at, title: null, row: null, retry_of: null, ...extra,
+})
+
+beforeEach(t => {
+  repo = tempDir('review-spec-', t)
+  specs = join(repo, 'specs'); mkdirSync(specs)
+  spawnSync('git', ['init', '-q', repo])
+  gh = fakeBin(repo, 'gh', [{ args: ['view'], stdout: JSON.stringify(VIEW) }])
+  env = { ...process.env, ORCH_DIR: join(repo, '.orch'), GIT_CEILING_DIRECTORIES: repo, GH: gh.path, ORCH_GH_CACHE: '0' }
+})
+afterEach(() => {})
+
+function make(...args: string[]) {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--specs-dir', specs, ...args], { env, encoding: 'utf8', timeout: 60_000 })
+  return { code: done.status, stdout: done.stdout.trim(), stderr: done.stderr }
+}
+const file = () => join(specs, 'spec-review-pr-262.md')
+
+test('구현 worker 가 Claude 면 Codex 리뷰 지시서를 PR 번호·제목·브랜치로 만든다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  const r = make('262')
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, new RegExp(`^REVIEW-SPEC ${file()}$`, 'm'))
+  assert.match(r.stdout, /^REVIEW-SPEC-WORKER impl=claude\/claude-sonnet-5-5 review=codex\/gpt-6\.1-sol\/medium$/m)
+  assert.match(r.stdout, /^REVIEW-SPEC-FILL PR 이 하는 일 한 줄; 리뷰어가 특히 볼 곳과 이유$/m)
+  const text = readFileSync(file(), 'utf8')
+  assert.match(text, /^# fix: 변경 조각 형식을 검사한다 리뷰 \(PR #262\)\n\n공통 지시서 `.*\/spec-common\.md` 를 먼저 읽는다\./)
+  assert.equal(reviewPrOfSpec(text), 262)
+  assert.match(text, /^브랜치: `review\/pr-262`$/m)
+  assert.match(text, /git fetch origin pull\/262\/head/)
+  const [choice] = selectionsOf(text)
+  assert.deepEqual([choice.agent, choice.model, choice.effort, choice.row, choice.problems], ['codex', 'gpt-6.1-sol', 'medium', 'review', []])
+  assert.match(text, /^## 특히 볼 것$/m)
+  assert.deepEqual(unfilled(text), ['PR 이 하는 일 한 줄', '리뷰어가 특히 볼 곳과 이유'])
+  assert.ok(!/<!--/.test(text.split('## 배경')[0]), '틀의 복사 안내 주석은 남기지 않는다')
+  assert.doesNotMatch(text.replace(/\{\{채울 것:[^}]*\}\}/g, ''), /\{\{/)
+})
+test('구현 worker 가 Codex 면 Claude 리뷰이고 가장 늦은 구현 행의 제공자를 따른다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  recordHistory(repo, row('d2', 'fix/precommit', 'codex', '2026-11-10T00:05:00Z', { retry_of: 'd1' }))
+  recordHistory(repo, row('rv', 'review/pr-262', 'claude', '2026-11-10T00:09:00Z'))
+  const r = make('#262')
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /review=claude\/claude-sonnet-5-5\/medium/)
+  assert.match(r.stdout, /^REVIEW-SPEC-WARN 구현 이력의 제공자가 둘 이상이다\(claude, codex\)/m)
+  const [choice] = selectionsOf(readFileSync(file(), 'utf8'))
+  assert.deepEqual([choice.agent, choice.model], ['claude', 'claude-sonnet-5-5'])
+})
+test('만든 지시서는 spec-lint 가 막지 않고 남은 자리표시는 채움 경고로 알린다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  assert.equal(make('262').code, 0)
+  const lint = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', LINT, '--repo', repo, file()], { env, encoding: 'utf8' })
+  assert.equal(lint.status, 0, lint.stdout + lint.stderr)
+  assert.equal((lint.stderr + lint.stdout).match(/채움: 자리표시가 남았다/g)?.length, 2)
+  writeFileSync(file(), readFileSync(file(), 'utf8').replace(/\{\{채울 것:[^}]*\}\}/g, '채웠다'))
+  const filled = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', LINT, '--repo', repo, file()], { env, encoding: 'utf8' })
+  assert.equal(filled.status, 0); assert.doesNotMatch(filled.stderr + filled.stdout, /채움:/)
+})
+test('이력에 구현 worker 가 없으면 만들지 않고 --impl-agent 로 알리면 만든다', () => {
+  const missing = make('262')
+  assert.equal(missing.code, 1); assert.match(missing.stdout, /^REVIEW-SPEC-FAIL 구현 worker 를 이력에서 찾지 못했다.*--impl-agent/)
+  assert.equal(existsSync(file()), false)
+  const given = make('262', '--impl-agent', 'claude')
+  assert.equal(given.code, 0, given.stdout + given.stderr)
+  assert.match(given.stdout, /impl=claude review=codex\//)
+  assert.match(readFileSync(file(), 'utf8'), /구현한 쪽: claude\./)
+})
+test('있는 파일은 --force 없이 덮지 않는다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  assert.equal(make('262').code, 0)
+  writeFileSync(file(), '채운 배경')
+  const again = make('262')
+  assert.equal(again.code, 1); assert.match(again.stdout, new RegExp(`^REVIEW-SPEC-EXISTS ${file()}$`))
+  assert.equal(readFileSync(file(), 'utf8'), '채운 배경')
+  assert.equal(make('262', '--force').code, 0)
+  assert.match(readFileSync(file(), 'utf8'), /리뷰 PR: #262/)
+})
+test('닫힌 PR 은 경고하고, PR 을 읽지 못하거나 번호가 틀리면 실패한다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  gh.setRules([{ args: ['view'], stdout: JSON.stringify({ ...VIEW, state: 'MERGED' }) }])
+  assert.match(make('262', '--out', join(specs, 'spec-review-pr-262-2.md')).stdout, /^REVIEW-SPEC-WARN PR #262 의 상태가 MERGED 다$/m)
+  gh.setRules([{ stderr: 'no pull requests found', code: 1 }])
+  const failed = make('262', '--force')
+  assert.equal(failed.code, 1); assert.match(failed.stdout, /^REVIEW-SPEC-FAIL PR #262 를 읽지 못했다/)
+  const bad = make('abc')
+  assert.equal(bad.code, 2); assert.match(bad.stderr, /PR 번호 하나를 준다/)
+})
+test('지원하지 않는 제공자는 고르지 않고 틀에 모르는 자리표시가 있으면 만들지 않는다', () => {
+  assert.equal(reviewerFor('cursor'), null)
+  const fill = { number: 1, title: 't', url: 'u', specsDir: '/s', implementer: { agent: 'claude', model: null, effort: null, dispatch: '-' }, reviewer: reviewerFor('claude')! }
+  assert.throws(() => fillReviewSpec(`${readFileSync(TEMPLATE, 'utf8')}\n{{새 자리표시}}\n`, fill), /채우지 못한 자리표시가 있다: 새 자리표시/)
+  assert.deepEqual(implementerOf([row('x', 'review/pr-5', 'claude', '2026-11-10T00:00:00Z')], 'review/pr-5'), { found: null, agents: [] })
+})
+test('틀에 「특히 볼 것」 절이 이미 있으면 하나만 둔다', () => {
+  const template = readFileSync(TEMPLATE, 'utf8').replace('## 할 일', '## 특히 볼 것\n\n- {{채울 것: 이미 있는 자리}}\n\n## 할 일')
+  const fill = { number: 1, title: 't', url: 'u', specsDir: '/s', implementer: { agent: 'codex', model: 'm', effort: 'high', dispatch: 'd' }, reviewer: reviewerFor('codex')! }
+  assert.equal(fillReviewSpec(template, fill).match(/^## 특히 볼 것$/gm)?.length, 1)
+})

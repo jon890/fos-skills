@@ -101,7 +101,7 @@ type Command = {
 | `cleanup sweep` | repo, run, specs-dir | `--repo` 를 하나라도 주면 repo 를 채우지 않는다 |
 | `cleanup handoff`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
 | `doctor` | repo | run 을 채우지 않는다(스펙 DECISION23). 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
-| `board sync`, `board release`, `study …`, `spec lint`, `paths` | repo | |
+| `board sync`, `board release`, `study …`, `spec lint`, `spec review`, `paths` | repo(spec review 는 specs-dir 도) | |
 | `board auto-check` | repo, run | |
 | `worker ask` | 없음 | worker 터미널은 Run 에 묶이지 않고, `worker-ask` 는 `check` 결과에서 Run 을 읽는다 |
 | 그 밖 | 없음 | |
@@ -197,6 +197,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `board goal` | `<목표> <값>`, `<목표> 단계 줄이 없어 …` | `GOAL <목표> <값>`, `GOAL-SKIP <목표>` | `references/board.md` |
 | `board auto-check` | 확인 결과와 단계·근거 설명 | `AUTO-OK <항목> <번호> <근거>`, `AUTO-REJECT <항목> <번호 또는 -> <이유>` | `references/replying.md` |
 | `study …` | 없음 | 지금 줄(`ADDED`, `SET`, `MIGRATED`, `TRASHED`, `list` 의 탭 줄)이 이미 판정 줄이나 데이터다 | `references/study-candidates.md` |
+| `spec review` | 없음 | `REVIEW-SPEC <파일>`, `REVIEW-SPEC-WORKER impl=<구현> review=<리뷰>`, `REVIEW-SPEC-FILL <설명>; <설명>`, `REVIEW-SPEC-WARN <이유>`, `REVIEW-SPEC-EXISTS <파일>`, `REVIEW-SPEC-FAIL <이유>` | `references/spec-writing.md` |
 | `spec lint` | `<지시서>: <발견>` | `SPEC-ERROR <지시서>: <발견>`, `SPEC-WARN <지시서>: <발견>` | `references/spec-writing.md` |
 | `doctor` | `  안내: …` | 판정 줄과 들여 쓴 고칠 줄 | `SKILL.md` |
 | `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |
