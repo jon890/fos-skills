@@ -2,6 +2,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 6.0.1 (2026-11-15)
+
+- 계획서 필드와 tasks 경로에서 plan 접두사 없는 계획 폴더 이름도 찾는다.
+
 ## 6.0.0 (2026-11-12)
 
 - 호환성: 옛 이름 `.claude/docs-check-overlay.md` 를 더는 읽지 않는다. 남아 있으면 `.claude/docs-audit-overlay.md` 로 이름을 바꾼다
