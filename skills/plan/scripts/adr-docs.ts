@@ -619,16 +619,21 @@ function checkUnlinked(repo: Repo, path: string, lines: string[], pattern: strin
   const heading = new RegExp(String.raw`^ {0,3}#{1,6}\s+(?:${pattern})\s*:`);
   const find = new RegExp(pattern, "g");
   const docDir = posix.dirname(path);
+  const self = repo.adrs.find((adr) => adr.path === path);
+  // 닫힌 파일 맨 위 YAML 만 제외한다. 본문 구분선과 닫히지 않은 머리말은 숨기지 않는다.
+  const raw = read(repo, path).replace(/^\uFEFF/, "").split(/\r?\n/);
+  const frontmatterEnd = raw[0]?.trim() === "---" ? raw.findIndex((line, i) => i > 0 && line.trim() === "---") : -1;
   // 단축 참조 링크(`[ADR-001]` 와 `[ADR-001]: 경로`)도 링크다
   const defs = new Set(lines.map((l) => REFERENCE_DEF.exec(l)?.[1].toLowerCase()).filter((x): x is string => !!x));
   lines.forEach((line, i) => {
-    if (heading.test(line)) return;
+    if (i <= frontmatterEnd || heading.test(line)) return;
     const outside = replaceLinks(line, () => "")
       .replace(/\[[^\]\n]*\]\[[^\]\n]*\]/g, "")
       .replace(REFERENCE_DEF, "")
       .replace(/\[([^\]\n]+)\]/g, (all, name: string) => (defs.has(name.toLowerCase()) ? "" : all));
     for (const m of outside.matchAll(find)) {
       const id = normalizeId(m[0]);
+      if (self && matchesId(self, id)) continue;
       const candidates = repo.adrs
         .filter((a) => matchesId(a, id))
         .map((a) => a.path)

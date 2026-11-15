@@ -483,3 +483,39 @@ describe("--scope 와 실패", () => {
     assert.equal(run(root, "check", "--index", "table").code, 2);
   });
 });
+
+
+describe("머리말과 ADR 자기 번호", () => {
+  test("닫힌 YAML 머리말과 자기 번호를 빼고 본문 줄 번호는 유지한다", () => {
+    const root = repo({
+      "docs/adr/028-example.md": adr("ADR-028", "응답", "ADR-028 의 결정이다. ADR-042 를 본다.\n"),
+      "docs/adr/042-other.md": adr("ADR-042", "캐시"),
+      "docs/pitfalls/example.md": "---\ntriggers: [ADR-042]\nsource: ADR-028\n---\nADR-042 를 본다.\n---\nADR-028 도 본다.\n",
+    });
+    const r = run(root, "check", "--scope", "docs");
+    assert.equal(r.code, 1);
+    assert.deepEqual(r.out, [
+      "docs/adr/028-example.md:4: ADR_UNLINKED ADR-042 → 후보: docs/adr/042-other.md",
+      "docs/pitfalls/example.md:5: ADR_UNLINKED ADR-042 → 후보: docs/adr/042-other.md",
+      "docs/pitfalls/example.md:7: ADR_UNLINKED ADR-028 → 후보: docs/adr/028-example.md",
+    ]);
+  });
+
+  test("닫히지 않은 머리말은 본문을 숨기지 않는다", () => {
+    const root = repo({ "docs/adr/001-a.md": adr("ADR-001", "가"), "docs/note.md": "---\nADR-001\n" });
+    assert.deepEqual(run(root, "check").out, ["docs/note.md:2: ADR_UNLINKED ADR-001 → 후보: docs/adr/001-a.md"]);
+  });
+
+  test("ADR 밖의 같은 번호와 날짜 ADR 의 다른 문서는 계속 검사한다", () => {
+    const root = repo({
+      "docs/adr/ADR-20261007-alpha.md": adr("ADR-20261007 / alpha", "가", "ADR-20261007 / alpha 와 ADR-20261007 / beta\n"),
+      "docs/adr/ADR-20261007-beta.md": adr("ADR-20261007 / beta", "나"),
+      "docs/028-note.md": "ADR-20261007 / alpha\n",
+    });
+    const r = run(root, "check");
+    assert.equal(r.code, 1);
+    assert.equal(r.out.length, 2);
+    assert.match(r.out[0], /docs\/028-note.md:1: ADR_UNLINKED/);
+    assert.match(r.out[1], /ADR_UNLINKED ADR-20261007 \/ beta/);
+  });
+});
