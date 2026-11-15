@@ -636,6 +636,7 @@ function checkUnlinked(repo: Repo, path: string, lines: string[], pattern: strin
         .filter((a) => matchesId(a, id))
         .map((a) => a.path)
         .sort((a, b) => commonDepth(docDir, posix.dirname(b)) - commonDepth(docDir, posix.dirname(a)) || (a < b ? -1 : 1));
+      // 후보가 자기 하나뿐인 경우만 제외한다. 폴더별로 같은 번호를 쓰면 링크가 필요하다.
       if (candidates.length === 1 && candidates[0] === path) continue;
       const hint = candidates.length ? `→ 후보: ${candidates.join(", ")}` : "→ 후보 없음";
       out.push({ path, line: i + 1, code: "ADR_UNLINKED", message: `${id} ${hint}` });

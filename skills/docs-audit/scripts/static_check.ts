@@ -38,14 +38,15 @@ const TABLE_ROW = new RegExp(`^${SPACE}*\\|`)
 //   요구한다. 코드 스팬을 지우면 백틱 안의 맨 파이프가 만드는 진짜 어긋남을 놓친다.
 const ESCAPE = /\\./g
 
-// 문서가 `tasks/` 의 계획서를 번호로 가리키는 자리를 찾는다.
+// 문서가 계획서를 번호로 가리키는 자리를 찾는다.
+//   plan 접두사 없는 숫자-종류-슬러그 이름은 plan: 필드나 tasks/ 경로에서만 찾는다.
 //   계획서는 구현이 끝나면 제거되므로, 번호로 가리킨 자리는 그때 깨진 참조가 된다.
 //   앞에 단어 문자가 붙은 것은 제외한다. `test_plan032_error_classify.py` 처럼
 //   식별자의 일부인 것은 참조가 아니라 이름이고, 바꾸면 그 이름을 부르는 쪽도 함께 깨진다.
 //   자리 표시자(`plan{N}`, `plan###`)에는 숫자가 없어 걸리지 않는다.
 //   Python 의 \d 는 유니코드 숫자라 \p{Nd} 로 옮긴다.
 const PLAN_REF = /(?<![A-Za-z0-9_])plan[-_]?\p{Nd}{2,}/gu
-// 접두사 없는 이름은 plan: 필드나 tasks/ 경로에서만 찾는다. ADR 파일 이름은 제외한다.
+// 접두사 없는 이름은 목록·인용의 plan: 필드도 찾는다. ADR 파일 이름은 제외한다.
 const PLAN_NAME = /(?<![A-Za-z0-9_.-])\p{Nd}{3,}-(?:feat|fix|refactor|docs|test|chore|perf|build|ci|style)-[A-Za-z0-9][A-Za-z0-9_-]*(?![A-Za-z0-9_.-])/gu
 // 계획서 디렉터리 이름. 모노레포는 `fe-plan027-login` 처럼 하위 프로젝트 접두사를 붙인다.
 const PLAN_DIR = /^(?:[A-Za-z0-9]+-)?plan[-_]?\p{Nd}{2,}(?:-.*)?$/u
@@ -131,9 +132,8 @@ export function checkMarkdown(path: string, lines: string[]): string[] {
   return out
 }
 
-// 그 파일이 계획서 디렉터리 안에 있는가.
-//
-// 계획서 안에서 자기 plan 번호를 부르는 것은 참조가 아니다. 파일과 함께 사라진다.
+// 기존 plan 접두사 규칙의 제외 범위다. 경로 조각이 PLAN_DIR 에 맞으면 검사하지 않는다.
+// 접두사 없는 이름의 제외 범위는 별도로 tasks/ 아래 자기 폴더 이름에만 적용한다.
 function inPlanDir(path: string): boolean {
   return path.split('/').some((part) => PLAN_DIR.test(part))
 }
@@ -141,7 +141,8 @@ function inPlanDir(path: string): boolean {
 // 문서가 계획서를 번호로 가리키는가.
 //
 // 코드 스팬은 제외하지 않는다. 계획서 경로는 대개 백틱 안에 적혀,
-// 제외하면 가장 흔한 형태를 놓친다. 코드 블록의 예시만 제외한다.
+// 제외하면 가장 흔한 형태를 놓친다. 코드 블록의 예시는 제외한다.
+// tasks/ 아래라도 다른 계획서 이름과 기존 plan 번호는 계속 검사한다.
 export function checkPlanRef(path: string, lines: string[]): string[] {
   if (inPlanDir(path)) return []
   const out: string[] = []
