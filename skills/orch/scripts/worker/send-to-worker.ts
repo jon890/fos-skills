@@ -13,8 +13,10 @@
 // 이 경로는 후속 Task 가 되지만 지시서가 없어 띄우기 기록을 남기지 못한다는 경고를 stderr 에 낸다.
 //
 // 사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG | --no-reply] [--spec FILE] [--run RUN]
-//         send-to-worker.ts --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]
+//         send-to-worker.ts --dispatch ENDED_ID --spec FILE [--note TEXT] [--run RUN] [--agent A --model M --effort E]
 // --spec 은 끝난 dispatch 의 후속 지시서다. 본문이 함께 있으면 질문 답으로 먼저 쓰고 나머지는 무시한다.
+// --note 는 --spec 의 한 줄 지시 끝에 붙는 글이다. 같은 지시서를 다시 읽히되 왜 다시 맡기는지 알릴 때 쓴다
+// (머지 전에 worker_done 을 보낸 worker 를 이어 맡길 때. lib/continue-worker.ts). --spec 없이는 쓰지 못한다(종료 코드 2).
 // --agent/--model/--effort 는 send 거절 뒤 새로 띄우는 복구 경로에서만 실행 설정을 바꾼다.
 // ORCA, LAUNCH_WORKER 환경 변수로 실행 파일을 바꾼다. --full 조회는 lib/orca.ts 가 붙인다.
 // 짧은 출력은 REPLIED, SENT, DELIVERED, FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>,
@@ -48,7 +50,7 @@ import { senderOf, threadOf } from '../core/message-fields.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
-  '        send-to-worker.ts --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]',
+  '        send-to-worker.ts --dispatch ENDED_ID --spec FILE [--note TEXT] [--run RUN] [--agent A --model M --effort E]',
 ].join('\n')
 const LAUNCH_WORKER = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
 // 이 상태의 dispatch 는 reply 를 받는다. 나머지(completed, failed 같은 것)는 끝난 것이다
@@ -291,7 +293,7 @@ async function passThrough(argv: string[], timeoutMs: number): Promise<number> {
 }
 
 // 후속 지시서는 새 Task 가 생기기 전에 검사한다. spec-line 과 같은 한 줄을 만든다.
-function followUpSpec(file: string, repo: string): { text: string; line: string; title: string } {
+function followUpSpec(file: string, repo: string, note = ''): { text: string; line: string; title: string } {
   const text = readFileSync(file, 'utf8')
   autoStepNumberOf(text)
   const permissions = permissionsOf(text)
@@ -300,7 +302,7 @@ function followUpSpec(file: string, repo: string): { text: string; line: string;
   if (errors.length) throw new Error(errors.join('; '))
   return {
     text,
-    line: [`지시서 ${real(file)} 를 끝까지 읽고 수행한다.`, ...permissions, '못 읽으면 escalation 으로 알린다.'].join(' '),
+    line: [`지시서 ${real(file)} 를 끝까지 읽고 수행한다.`, ...permissions, '못 읽으면 escalation 으로 알린다.', ...(note ? [note] : [])].join(' '),
     title: /^#\s+(.+)$/m.exec(text)?.[1] ?? '코디네이터 후속 지시',
   }
 }
@@ -372,6 +374,7 @@ type Args = {
   replyTo?: string
   noReply?: boolean
   spec?: string
+  note?: string
   run?: string
   agent?: string
   model?: string
@@ -379,7 +382,7 @@ type Args = {
 }
 
 function parse(argv: string[]): Args | 'help' | null {
-  const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'run', ...SETTING_KEYS]
+  const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'note', 'run', ...SETTING_KEYS]
   const options = { ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), 'no-reply': { type: 'boolean' as const }, help: { type: 'boolean' as const, short: 'h' } }
   let values
   try {
@@ -398,6 +401,10 @@ function parse(argv: string[]): Args | 'help' | null {
     err(`${USAGE}\nsend-to-worker: --dispatch 가 필요하다`)
     return null
   }
+  if (values.note && !values.spec) {
+    err('send-to-worker: --note 는 --spec 과 함께 준다. 지시서 없이 보내는 글은 --body 다')
+    return null
+  }
   const text = (name: string) => values[name] as string | undefined
   return {
     dispatch: text('dispatch') as string,
@@ -406,6 +413,7 @@ function parse(argv: string[]): Args | 'help' | null {
     replyTo: text('reply-to'),
     noReply: values['no-reply'] === true,
     spec: text('spec'),
+    note: text('note'),
     run: text('run'),
     agent: text('agent'),
     model: text('model'),
@@ -476,7 +484,7 @@ async function main(argv: string[]): Promise<number> {
       return 0
     }
     if (a.spec) {
-      try { spec = followUpSpec(a.spec, described.worktree || process.cwd()) }
+      try { spec = followUpSpec(a.spec, described.worktree || process.cwd(), a.note?.trim()) }
       catch (e) { err(`send-to-worker: ${(e as Error).message}`); return 2 }
     }
     // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다

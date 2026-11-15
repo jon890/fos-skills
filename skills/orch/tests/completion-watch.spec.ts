@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { test, beforeEach, afterEach } from 'node:test'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
@@ -153,4 +153,79 @@ for (const urlOnly of [false, true]) test(`준비 보고의 PR 제목 번호를 
   await watchCompletions(repo, 'R', 'main')
   const row = JSON.parse(readFileSync(join(repo, 'chosen.json'), 'utf8')).items[0]
   assert.equal(row.pr, 7); assert.equal(row['task-ref'], urlOnly ? undefined : 'P/458')
+})
+
+// 머지 전 완료 보고: PR 이 열린 채 온 worker_done 은 알리기 전에 같은 워크트리의 worker 에게 되돌린다
+function bounceSetup(options: { sendCode?: number; open?: boolean; dispatch?: string } = {}) {
+  const dispatch = options.dispatch ?? 'd1'
+  const spec = join(repo, 'spec-x.md'); writeFileSync(spec, '# 작업\n\n브랜치: `feat/x`\n허락: PR 생성까지 허락했다.\n')
+  const launch = { dispatch, terminal: 'worker', worktree: repo, run: 'R', spec, branch: 'feat/x', task: 'task' }
+  recordLaunch(repo, launch)
+  recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify(options.open === false ? [] : [{ number: 7, title: '제목', url: 'https://x/7', headRefName: 'feat/x' }]) }])
+  process.env.GH = gh.path
+  const send = join(repo, 'send.ts')
+  writeFileSync(send, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(join(repo, 'send.log'))}, JSON.stringify(process.argv.slice(2)) + '\\n')\nconsole.log('FOLLOW-UP d1 d2 task2')\nprocess.exitCode = ${options.sendCode ?? 0}\n`)
+  process.env.SEND_TO_WORKER = send
+  return () => existsSync(join(repo, 'send.log')) ? readFileSync(join(repo, 'send.log'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]) : []
+}
+function bounceRules(dones: unknown[], statuses: unknown[] = [], status = 'completed') {
+  bin.setRules([
+    { args: ['check', 'worker_done'], stdout: envelope(dones) }, { args: ['check', 'status'], stdout: envelope(statuses) },
+    { args: ['inbox'], stdout: envelope([]) },
+    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: 'd1', status } } }) },
+    { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
+  ])
+}
+const kinds = () => notices().map(c => c.argv[c.argv.indexOf('--subject') + 1].split(' ')[0])
+
+test('PR 이 열린 채 온 근거 없는 완료는 worker 에게 되돌리고 DONE-SUSPECT 대신 DONE-RETURNED 를 알린다', async () => {
+  const sent = bounceSetup()
+  bounceRules([done('d1')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), ['DONE-RETURNED'])
+  const [args] = sent()
+  assert.deepEqual(args.slice(0, 4), ['--dispatch', 'd1', '--spec', join(repo, 'spec-x.md')])
+  assert.match(args[args.indexOf('--note') + 1], /PR #7 이 아직 열려 있다.*머지될 때까지 이 worker 가 맡는다/)
+  assert.deepEqual(args.slice(-2), ['--run', 'R'])
+  assert.deepEqual(state().returned, ['d1', 'pr:7']); assert.deepEqual(state().suspects, [])
+  assert.match(notices()[0].argv.join(' '), /새 dispatch d2/)
+})
+test('같은 PR 은 한 번만 되돌리고 이어 맡은 worker 가 또 일찍 끝내면 DONE-SUSPECT 로 알린다', async () => {
+  const sent = bounceSetup()
+  bounceRules([done('d1')]); await watchCompletions(repo, 'R', 'main')
+  bounceSetup({ dispatch: 'd2' })
+  bounceRules([done('d1'), { ...done('m2', 'd2', '2026-11-10T00:03:00Z') }]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), ['DONE-RETURNED', 'DONE-SUSPECT'])
+  assert.match(notices()[1].argv.join(' '), /이미 한 번 되돌렸다/)
+  assert.equal(sent().length, 1, '두 번째 완료는 보내지 않는다')
+})
+test('열린 PR 이 없으면 되돌리지 않고 DONE-SUSPECT 만 알린다', async () => {
+  const sent = bounceSetup({ open: false })
+  bounceRules([done('d1')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), ['DONE-SUSPECT']); assert.deepEqual(sent(), [])
+})
+test('아직 살아 있는 dispatch 는 되돌리지 않는다', async () => {
+  const sent = bounceSetup()
+  bounceRules([done('d1')], [], 'running'); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), ['DONE-SUSPECT']); assert.deepEqual(sent(), [])
+})
+test('보내기가 실패하면 이유와 orch worker continue 명령을 DONE-SUSPECT 에 적는다', async () => {
+  bounceSetup({ sendCode: 1 })
+  bounceRules([done('d1')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), ['DONE-SUSPECT'])
+  assert.match(notices()[0].argv.join(' '), /이어 맡기지 못했다.*orch worker continue --dispatch d1/)
+  assert.equal(state().returned, undefined); assert.deepEqual(state().suspects, ['d1'])
+})
+test('준비됨 뒤에도 PR 이 열려 있으면 되돌리고 머지된 PR 이면 그대로 둔다', async () => {
+  const sha = 'c'.repeat(40)
+  const ready = { id: 'r1', type: 'status', run_id: 'R', task_id: 'task', dispatch_id: 'd1', from_handle: 'worker', body: `준비됨 #7, head ${sha}`, created_at: '2026-11-10T00:00:30Z' }
+  const sent = bounceSetup()
+  for (const state of ['MERGED', 'OPEN']) {
+    const view = fakeBin(repo, 'gh', [{ args: ['view'], stdout: JSON.stringify({ number: 7, headRefName: 'feat/x', headRefOid: sha, title: '제목', url: 'u', state }) },
+      { args: ['list'], stdout: JSON.stringify([{ number: 7, title: '제목', url: 'u', headRefName: 'feat/x' }]) }])
+    process.env.GH = view.path
+    bounceRules([done(`done-${state}`, 'd1', state === 'MERGED' ? '2026-11-10T00:01:00Z' : '2026-11-10T00:02:00Z')], [ready]); await watchCompletions(repo, 'R', 'main')
+    if (state === 'MERGED') assert.deepEqual(sent(), [])
+  }
+  assert.equal(sent().length, 1); assert.deepEqual(kinds(), ['DONE-RETURNED'])
 })

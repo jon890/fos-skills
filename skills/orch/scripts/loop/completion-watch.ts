@@ -2,6 +2,10 @@
 // 보낸 알림 기록: DONE-SUSPECT 는 state/done-seen/<runKey>.json 의 suspects(dispatch id 목록)에 남긴다. 키는 dispatch 이고 같은 dispatch 의
 //   worker_done 이 또 와도 다시 보내지 않는다. 파일이 디스크에 있어 루프를 다시 띄워도 이어진다. WORKER-LOST 는 lib/lost-workers.ts 가
 //   state/wait-important-lost.json 의 <Run>.<dispatch> 로 같은 방식으로 막는다. 전송이 성공한 뒤에만 기록해 실패는 다음 틱이 다시 보낸다.
+// 머지 전 완료 보고: PR 이 열린 채 온 worker_done(근거 없는 보고, 또는 준비됨 뒤 아직 열린 PR)은 DONE-SUSPECT 로 알리기 전에
+//   그 worker 를 같은 워크트리에서 이어 맡긴다(lib/continue-worker.ts). 이어 맡기면 DONE-RETURNED 를 알리고 DONE-SUSPECT 는 보내지 않는다.
+//   dispatch 는 이미 completed 로 닫혀 send 는 ENDED, resume 은 RESUME-FAIL 이었다. 같은 PR 은 한 번만 되돌린다(state 의 returned: dispatch 와 `pr:<번호>`).
+//   이어 맡기지 못하면 이유와 `orch worker continue --dispatch <id>` 를 DONE-SUSPECT 에 적는다. 전송 기록은 되돌린 직후에 남겨 다음 틱이 다시 보내지 않는다.
 // 리뷰 dispatch 는 띄우기 기록이 지워져도 영구 이력의 spec 으로 알아본다(lib/review.ts).
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,9 +23,10 @@ import { launchHistory } from '../lib/launch-history.ts'
 import { git, mainCheckout } from '../lib/git.ts'
 import { fire } from '../lib/events.ts'
 import { notifyRun } from '../lib/run-notice.ts'
+import { continueWorker } from '../lib/continue-worker.ts'
 
 type Json = Record<string, any>
-type Seen = { ids: string[]; last: string; suspects: string[]; events: string[] }
+type Seen = { ids: string[]; last: string; suspects: string[]; events: string[]; returned?: string[] }
 function messages(args: string[]): Json[] {
   const got = orcaJson<Json>(['orchestration', ...args])
   if (!got.ok) throw new Error(got.error)
@@ -96,22 +101,40 @@ export async function watchCompletions(repo: string, run: string, base: string, 
     const verified = message.completionVerification as Json | undefined
     if (launch?.completion !== 'none' && (verified?.status === 'ready' || verified?.status === 'suspicious')) {
       let pr: Json | null = null
+      let prState: string | null = null
       if (verified.status === 'ready' && typeof verified.pr === 'number') {
-        const got = ghJson<Json>(['pr', 'view', String(verified.pr), '--json', 'number,title,headRefName,headRefOid,author,isDraft,url'], { cwd: repo })
+        const got = ghJson<Json>(['pr', 'view', String(verified.pr), '--json', 'number,title,headRefName,headRefOid,author,isDraft,url,state'], { cwd: repo })
         // 이 저장소가 띄우지 않은 dispatch(기록 없음)의 PR 번호는 다른 저장소의 것일 수 있다. 여러 저장소의 루프가 한 Run 에 있으면
         // 남의 PR 번호로 조회가 실패하므로, 그 dispatch 는 건너뛰고 띄운 저장소의 루프가 맡는다
         if (!got.ok && !launch) { seen.ids.push(id); if (time(message) > seen.last) seen.last = time(message); save(); continue }
         if (!got.ok) throw new Error(got.error)
         const v = got.data
         pr = { number: v.number, title: v.title, branch: v.headRefName, head: v.headRefOid, author: v.author?.login ?? null, draft: v.isDraft, url: v.url }
+        prState = typeof v.state === 'string' ? v.state : null
         if (existsSync(boardPath(repo)) && typeof pr.branch === 'string') linkBoardPr(boardPath(repo), String(pr.number), pr.branch, prTaskRef(repo, String(pr.title ?? '')))
       }
       if (!seen.events.includes(id)) {
         await fire('worker-done', { worker: { task, dispatch, terminal: senderOf(message) || null, worktree: null, spec: null }, outcome: message.outcome ?? payload(message).outcome ?? null, evidence: verified.status, pr }, { repo, run, base })
         seen.events.push(id); save()
       }
-      if (verified.status === 'suspicious' && !seen.suspects.includes(dispatch)) {
-        const sent = notifyRun(run, 'DONE-SUSPECT', `${dispatch} ${String(verified.reason)}`)
+      // PR 이 열린 채 온 완료 보고는 알리기 전에 그 worker 에게 되돌려 이어 맡긴다. notice 는 알릴 글이고 없으면 알리지 않는다
+      let notice = verified.status === 'suspicious' ? String(verified.reason) : ''
+      if ((verified.status === 'suspicious' || prState === 'OPEN') && !seen.suspects.includes(dispatch) && !seen.returned?.includes(dispatch)) {
+        const exclude = (seen.returned ?? []).flatMap(key => /^pr:(\d+)$/.exec(key)?.[1] ?? []).map(Number)
+        const back = await continueWorker(repo, dispatch, { run, knownPr: typeof pr?.number === 'number' ? pr.number : null, exclude })
+        if (back.kind === 'ok') {
+          (seen.returned ??= []).push(dispatch, `pr:${back.target.pr.number}`); save()
+          notice = ''
+          const sent = notifyRun(run, 'DONE-RETURNED', `${dispatch} PR #${back.target.pr.number} 이 아직 열려 있어 같은 워크트리의 worker 에게 되돌렸다(새 dispatch ${back.dispatch || '-'}). 머지될 때까지 맡는다`)
+          if (!sent.ok) console.error(`NOTICE-FAIL DONE-RETURNED ${sent.error}`)
+        } else if (back.kind === 'fail') {
+          notice = `${notice || 'PR 이 열린 채 완료 보고가 왔다'} (이어 맡기지 못했다: ${back.reason}. 고친 뒤 orch worker continue --dispatch ${dispatch})`
+        } else if (notice && back.reason.includes('이미 한 번 되돌렸다')) {
+          notice = `${notice} (${back.reason})`
+        }
+      }
+      if (notice && !seen.suspects.includes(dispatch) && !seen.returned?.includes(dispatch)) {
+        const sent = notifyRun(run, 'DONE-SUSPECT', `${dispatch} ${notice}`)
         if (!sent.ok) throw new Error(`NOTICE-FAIL DONE-SUSPECT ${sent.error}`)
         seen.suspects.push(dispatch)
       }

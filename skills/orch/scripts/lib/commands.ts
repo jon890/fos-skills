@@ -117,6 +117,8 @@ const ROWS: Row[] = [
   },
   // Run 은 옛 dispatch 의 runId 를 쓴다. 문맥이 지금 Run 을 채우면 다른 Run 의 worker 를 엉뚱한 Run 으로 잇는다
   { group: 'worker', verb: 'resume', script: 'worker/resume-worker.ts', context: ['repo'], usage: 'orch worker resume --dispatch <id>' },
+  // Run 은 띄우기 기록의 Run 이다. 문맥이 지금 Run 을 채우면 다른 Run 의 worker 에 후속 Task 를 잘못 붙인다
+  { group: 'worker', verb: 'continue', script: 'worker/continue-worker.ts', context: ['repo'], usage: 'orch worker continue --dispatch <id>' },
   {
     group: 'worker', verb: 'worktree', script: 'worker/make-worktree.ts', positional: { flag: '--repo', repeat: false, context: 'repo' }, context: ['repo'], forbid: ['--check'],
     legacy: { name: 'make-worktree', flags: [] }, usage: 'orch worker worktree [<저장소>] --name <이름>',

@@ -214,6 +214,7 @@ orch worker send --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE"
 
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
 - 후속 지시서를 보내도 종료 코드 3 이면 안내를 읽고 코디네이터에게 알린다
+- **PR 이 열려 있는데 worker 가 `worker_done` 을 보내 닫힌 경우**에는 `orch worker continue --dispatch "$DISPATCH_ID"` 로 같은 지시서에 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 붙여 이어 맡긴다. 상주 루프가 먼저 같은 일을 하므로(DONE-RETURNED) 직접 부르는 것은 루프가 못 했을 때다. 출력은 `CONTINUED`(이어 맡김), `CONTINUE-SKIP`(대상이 아님: PR 이 없거나 머지됐다, 리뷰 worker 다, 아직 살아 있다), `CONTINUE-FAIL`(조회나 전송 실패, 같은 명령을 다시)이다. 원본은 `scripts/worker/continue-worker.ts` 머리 주석이다
 - 리뷰 반영 지시서에는 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
 - 위 「새 worker 로 이어받는 순서」 나 [`launch.md`](launch.md) 의 새 worker 띄우기와 어긋나면 충돌과 리뷰 반영에는 이 절이 우선한다
 
