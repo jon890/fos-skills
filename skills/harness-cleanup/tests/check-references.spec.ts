@@ -317,12 +317,12 @@ describe('「제목」 참조', () => {
     assert.equal(done.stdout.split('[절 제목]').length - 1, 1)
   })
 
-  test('굵은 라벨은 두 번째 이후 제목에서만 인정한다', () => {
+  test('굵은 라벨은 첫 제목에서도 인정한다', () => {
     const c = guide()
     c.claude('`AGENTS.md` 「용어」 의 「코드 주석은 한국어로 쓴다」 를 따른다.\n')
     ok(c.check())
     c.claude('`AGENTS.md` 「코드 주석은 한국어로 쓴다」 를 따른다.\n')
-    broken(c.check())
+    ok(c.check())
   })
 
   test('파일 표기 없는 「」 와 자리표시자와 못 찾는 파일은 건너뛴다', () => {
@@ -531,4 +531,61 @@ test('PATH 에 git 이 없으면 한 줄 안내와 종료 코드 2 를 낸다', 
   assert.equal(done.code, 2)
   assert.equal(done.stderr, 'git 실행 파일을 찾을 수 없다. PATH 를 확인한다.\n')
   assert.equal(done.stdout, '')
+})
+
+
+describe('오버레이의 번들 경로', () => {
+  for (const location of ['repo', 'claude', 'codex', 'local']) {
+    test(`${location} 스킬에서 파일을 찾고 없는 파일은 보고한다`, () => {
+      const c = new Case()
+      const rel = 'skills/implementation'
+      if (location === 'repo') c.repoSkill(rel, 'references/role-executor.md')
+      else {
+        const base = location === 'local' ? '.codex/skills/implementation' : `.${location}/plugins/cache/example/bundle/1/skills/implementation`
+        write(join(c.home, base, 'SKILL.md'), '# 스킬\n')
+        write(join(c.home, base, 'references/role-executor.md'), '# 역할\n')
+      }
+      c.doc('.claude/implementation-overlay.md', '`references/role-executor.md` 를 읽는다.\n[역할](references/role-executor.md)\n')
+      ok(c.check())
+      c.doc('.claude/implementation-overlay.md', '`references/missing.md` 를 읽는다.\n')
+      const done = c.check()
+      broken(done)
+      assert.match(done.stdout, /\[경로\] references\/missing.md/)
+    })
+  }
+
+  test('다른 스킬의 같은 파일과 일반 지침은 대신 인정하지 않는다', () => {
+    const c = new Case()
+    c.repoSkill('skills/another', 'references/role-executor.md')
+    c.doc('.claude/implementation-overlay.md', '`references/role-executor.md` 를 읽는다.\n')
+    broken(c.check())
+    c.repoSkill('skills/implementation', 'references/role-executor.md')
+    c.doc('.claude/implementation-overlay.md', '# 설정\n')
+    c.claude('`references/role-executor.md` 를 읽는다.\n')
+    broken(c.check())
+  })
+
+  test('과거 문구를 인용해도 자동 제외하지 않는다', () => {
+    const c = new Case(true)
+    c.claude('# 새 규칙\n')
+    c.doc('docs/features/sample/spec.md', 'CLAUDE.md 「옛 규칙」 을 「새 규칙」 으로 고친다.\n')
+    c.repo.commitAll()
+    const done = c.check()
+    broken(done)
+    assert.match(done.stdout, /「옛 규칙」/)
+    assert.doesNotMatch(done.stdout, /→ 「새 규칙」/)
+  })
+})
+
+
+test('코드 주석이 굵은 항목을 첫 제목으로 가리킨다', () => {
+  const c = new Case(true)
+  c.claude('# 출력 규칙\n\n- **무시되는 옵션**: 경고를 출력한다.\n')
+  c.doc('src/commands/sample/get.ts', '// CLAUDE.md 「무시되는 옵션」 을 따른다.\n')
+  c.repo.commitAll()
+  ok(c.check())
+  c.claude('# 출력 규칙\n\n- **다른 옵션**: 경고를 출력한다.\n')
+  const done = c.check()
+  broken(done)
+  assert.match(done.stdout, /src\/commands\/sample\/get.ts:1.*「무시되는 옵션」/)
 })
