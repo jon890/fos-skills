@@ -1,3 +1,0 @@
-- PR 이 열린 채 `worker_done` 이 오면 루프가 DONE-SUSPECT 로 알리기 전에 그 worker 에게 「PR 이 아직 열려 있다. 머지될 때까지 맡는다」 를 되돌려 같은 워크트리에서 이어 맡게 하고 DONE-RETURNED 로 알린다. 같은 PR 은 한 번만 되돌린다.
-- `orch worker continue --dispatch <id>` 가 같은 이어 맡기를 직접 한다. 이어 맡기지 못한 DONE-SUSPECT 는 이유와 이 명령을 알린다.
-- `orch worker send --spec` 에 `--note` 가 생겨 후속 지시 줄 끝에 다시 맡기는 이유를 붙인다.

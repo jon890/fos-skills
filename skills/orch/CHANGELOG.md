@@ -1,5 +1,16 @@
 # CHANGELOG: orch
 
+## 7.57.0 (2026-11-15)
+
+- `orch spec review <PR>` 이 리뷰 worker 지시서를 PR 번호, 제목, 구현 worker 와 다른 제공자의 `worker 선택:` 줄로 채워 만든다. 「배경」 과 「특히 볼 것」 은 코디네이터가 채운다.
+- `spec-lint` 가 지시서에 남은 `{{채울 것: …}}` 자리표시를 `채움` 경고로 알린다.
+
+## 7.56.0 (2026-11-15)
+
+- PR 이 열린 채 `worker_done` 이 오면 루프가 DONE-SUSPECT 로 알리기 전에 그 worker 에게 「PR 이 아직 열려 있다. 머지될 때까지 맡는다」 를 되돌려 같은 워크트리에서 이어 맡게 하고 DONE-RETURNED 로 알린다. 같은 PR 은 한 번만 되돌린다.
+- `orch worker continue --dispatch <id>` 가 같은 이어 맡기를 직접 한다. 이어 맡기지 못한 DONE-SUSPECT 는 이유와 이 명령을 알린다.
+- `orch worker send --spec` 에 `--note` 가 생겨 후속 지시 줄 끝에 다시 맡기는 이유를 붙인다.
+
 ## 7.55.3 (2026-11-15)
 
 - 리뷰 worker 틀이 `--human-reviewed` 없이 등록하게 지시한다. 사람이 보지 않고 올리는 자동 리뷰에 「사람이 확인했습니다」 가 붙지 않는다.
