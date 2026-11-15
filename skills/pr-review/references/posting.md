@@ -71,6 +71,11 @@ zsh 의 `noclobber` 는 기존 payload 파일 덮어쓰기를 `file exists` 한 
 뒤이은 `gh api` 는 그대로 성공해 이전 payload 를 다시 등록한다.
 스크립트는 매번 새 임시 파일을 쓰고 등록 직전에 본문을 검증한다.
 
+**사용자가 미리보기를 보고 등록을 확인한 등록에는 `--human-reviewed` 를 맨 앞에 붙인다.**
+예: `node "$SKILL_DIR/scripts/gh-review-post.ts" --human-reviewed --batch <인자>`
+붙이면 끝 안내가 「등록 전에 사람이 확인했습니다」 가 되고, 빼면 「AI 가 작성했습니다」 만 남는다.
+사람이 보지 않은 자동 등록(orch 리뷰 worker)에는 붙이지 않는다. 사실과 다른 확인 표기가 공개 PR 에 남는다.
+
 ## 등록 뒤 확인
 
 `gh-review-post.ts` 가 등록 뒤에 붙은 위치와 첫 줄을 조회해 출력한다.
