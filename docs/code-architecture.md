@@ -284,7 +284,7 @@ work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worke
 | 머지 순서 | `state/order.json` | 없음 |
 | 마이그레이션 번호 예약 | `reserve-migration.ts`, `lib/reservations.ts` | `migrations.dirs` |
 | ADR 번호 예약 | `orch queue reserve --kind adr`, `lib/reservations.ts` | `adr.dirs` |
-| 자동 머지 | 루프의 틱(`lib/auto-merge.ts`) | `queue.auto_merge`, `queue.auto_review`, `migrations.*`, 지시서와 보드의 `머지 보류` 줄 |
+| 자동 머지 | 루프의 틱(`lib/auto-merge.ts`) | `queue.auto_merge`, `queue.auto_review`, `migrations.*`, 지시서, PR 본문, 보드의 `머지 보류` 줄 |
 | 바로 머지 판정 | 머지 큐의 단위 겹침 판정 | `queue.*` |
 | 문서 PR 바로 머지 | 루프 | `pipeline.docs_merge`, `queue.docs_glob` |
 | 원격 브랜치 삭제, 쌓인 PR 의 base 옮기기 | `after-merge` 코어 동작, 틱 | 없음 |

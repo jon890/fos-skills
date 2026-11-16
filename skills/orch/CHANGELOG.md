@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.57.1 (2026-11-16)
+
+- PR 본문의 `- 머지 보류: <이유>` 줄도 자동 머지, `queue gate`, `queue merge` 가 지시서 보류처럼 지킨다.
+
 ## 7.57.0 (2026-11-15)
 
 - `orch spec review <PR>` 이 리뷰 worker 지시서를 PR 번호, 제목, 구현 worker 와 다른 제공자의 `worker 선택:` 줄로 채워 만든다. 「배경」 과 「특히 볼 것」 은 코디네이터가 채운다.

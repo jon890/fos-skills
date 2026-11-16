@@ -128,6 +128,30 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     })
   }
 
+  test('PR 본문에만 보류 줄이 있어도 gate 는 안내하고 merge 는 거절한다', async (t) => {
+    const c = setup(t)
+    const body = `${BLOCK}\n\n- 머지 보류: 본문의 배포 대기\n`
+    const g = await gate(c, { '1': pr({ body }) }, 0)
+    assert.equal(g.code, 0, both(g))
+    assert.match(g.stdout, /^GATE-OK 1$/m)
+    assert.match(g.stdout, /^HOLD 본문의 배포 대기$/m)
+    const q = await queue(c, { '1': pr({ body }) }, 0)
+    assert.equal(q.code, 1, both(q))
+    assert.match(q.stdout, /GATE-HOLD 본문의 배포 대기/)
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+  })
+
+  test('지시서 보류가 본문 보류보다 먼저고 둘 다 없으면 보류 줄이 없다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 지시서 이유\n')
+    const both2 = await gate(c, { '1': pr({ body: `${BLOCK}\n- 머지 보류: 본문 이유\n` }) }, 0)
+    assert.match(both2.stdout, /^HOLD 지시서 이유$/m)
+    assert.doesNotMatch(both2.stdout, /본문 이유/)
+    const c2 = setup(t)
+    const none = await gate(c2, { '1': pr() }, 0)
+    assert.doesNotMatch(none.stdout, /^HOLD /m)
+  })
+
   test('앞 Run 의 지시서 보류를 gate 와 merge 가 함께 따른다', async (t) => {
     const c = setup(t)
     const state = join(c.tmp, '.orch', 'state', 'loop-runs')
