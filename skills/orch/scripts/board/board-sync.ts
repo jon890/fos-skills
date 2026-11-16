@@ -92,7 +92,7 @@ import type { BoardDetail as Detail } from '../lib/board.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import type { DeployVerdict, RunRow } from '../lib/deploy.ts'
 import { git } from '../lib/git.ts'
-import { closeUnjudged, judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
+import { closeUnjudged, hasActiveWorker, judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
 import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { BoardSettings } from '../lib/milestones.ts'
 import { pidFileAlive } from '../lib/process.ts'
@@ -527,7 +527,7 @@ function main(argv: string[]): number {
               const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
               const got = mergedCommands({ ...item, details }, steps, own, num, reached, { last, doneAfter, note, kinds })
               if (verdict?.last === null) {
-                const activeWorker = rows.some((row) => row.status === 'working')
+                const activeWorker = hasActiveWorker(rows)
                 const hasRemainingWork = details.some((detail) => textOf(detail).startsWith(NOTE))
                 const allStepsWillBeDone = steps.length > 0 && steps.every((step) => step.done || got.cmds.some((cmd) => cmd[0] === 'step' && cmd[1] === id && Number(cmd[2]) === step.number))
                 if (closeUnjudged(verdict, { rulesUnreadable, openPrs: openNumbers.length, activeWorker, remainingNote: hasRemainingWork, reachedDone: got.done, allStepsDone: allStepsWillBeDone })) {

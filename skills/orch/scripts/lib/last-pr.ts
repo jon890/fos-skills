@@ -18,8 +18,11 @@
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
+import { objectOr } from '../core/json.ts'
+import { LIVE_DISPATCH } from '../core/workers.ts'
 import { isFile } from './fs.ts'
 import { ghJson } from './gh.ts'
+import { orcaJson } from './orca.ts'
 import { pyRegExp, pyStr } from './py.ts'
 import { branchesOf } from './spec.ts'
 
@@ -135,7 +138,7 @@ export function judgeLastPr(repo: string, pr: MergedPr, rules: LastPrRules): Las
 // 판정 규칙이 없어도(task_pattern 이 없다) 항목의 상태가 일이 끝났음을 보이면 닫는다. 아래를 모두 만족할 때만이다. 하나라도 아니면 닫지 않는다.
 //   - 판정 규칙을 읽지 못한 것이 아니다(rulesUnreadable)
 //   - 열린 PR 이 없다(openPrs)
-//   - 작업 중 worker 가 없다(activeWorker)
+//   - 작업 중 worker 가 없다(activeWorker, hasActiveWorker 가 정한다)
 //   - 남은 일 줄이 없다(remainingNote)
 //   - 이 머지가 done 지점에 닿는다(reachedDone)
 //   - 이 머지를 반영하면 모든 단계가 끝난다(allStepsDone)
@@ -152,4 +155,24 @@ export type UnjudgedClose = {
 export function closeUnjudged(verdict: Pick<LastPrVerdict, 'last' | 'retry'> | null, state: UnjudgedClose): boolean {
   if (verdict === null || verdict.last !== null || verdict.retry) return false
   return !state.rulesUnreadable && state.openPrs === 0 && !state.activeWorker && !state.remainingNote && state.reachedDone && state.allStepsDone
+}
+
+// 보드 줄이 working 이어도 Orca 의 dispatch 가 끝났으면(LIVE_DISPATCH 가 아닌 상태) 작업 중이 아니다.
+// 루프는 자기 Run 의 worker_done 만 보드에 반영하므로 다른 Run 이 띄운 worker 의 끝난 줄이 working 으로 남는다(2026-11-16, #515).
+// 조회가 실패하거나 상태를 모르면 끝났다고 보지 않는다. 잘못 끝났다고 보면 살아 있는 worker 의 항목을 닫기 때문이다
+export function dispatchEnded(dispatch: string): boolean {
+  const shown = orcaJson<{ dispatch?: unknown }>(['orchestration', 'worker-show', '--dispatch', dispatch])
+  if (!shown.ok) return false
+  const status = objectOr(objectOr(shown.data).dispatch).status
+  return typeof status === 'string' && status !== '' && !LIVE_DISPATCH.has(status)
+}
+
+// 작업 중 worker 가 있는지. skip 은 마무리가 종료를 확인한 줄처럼 이미 끝난 것을 아는 줄이다.
+// 보드가 working 이라고 한 줄 가운데 dispatch id 가 있는 것은 Orca 로 실제 상태를 확인한다. id 가 없으면 확인할 수 없어 작업 중이다
+export function hasActiveWorker<T extends { status: string; dispatch?: string | null }>(rows: readonly T[], skip: (row: T) => boolean = () => false): boolean {
+  return rows.some((row) => {
+    if (row.status !== 'working' || skip(row)) return false
+    const dispatch = typeof row.dispatch === 'string' ? row.dispatch.trim() : ''
+    return !(dispatch && dispatchEnded(dispatch))
+  })
 }

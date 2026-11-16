@@ -60,12 +60,19 @@ if (process.env.FAKE_ARGV) fs.appendFileSync(process.env.FAKE_ARGV, JSON.stringi
 say(1, 'done ' + args.join(' '))
 process.exit(Number(process.env.FAKE_EXIT_TASK_CLI || '0'))
 `
-// orca orchestration worker-list, task-list. 상태의 orca 칸(workers, tasks, fails)으로 답한다
+// orca orchestration worker-list, task-list, worker-show. 상태의 orca 칸(workers, tasks, dispatches, fails)으로 답한다.
+// worker-show 는 dispatches 에 {dispatch id: 상태} 로 적은 것만 안다. 없는 dispatch 는 조회 실패다
 const FAKE_ORCA = `${LOG}fs.appendFileSync(process.env.FAKE_LOG, 'orca ' + args.join(' ') + '\\n')
 const orca = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8')).orca || {}
 if (orca.fails) process.exit(1)
 if (args.includes('worker-list')) say(1, JSON.stringify({ ok: true, result: { workers: orca.workers || [], scope: { source: 'all' } } }))
 else if (args.includes('task-list')) say(1, JSON.stringify({ ok: true, result: { tasks: orca.tasks || [] } }))
+else if (args.includes('worker-show')) {
+  const id = args[args.indexOf('--dispatch') + 1]
+  const status = (orca.dispatches || {})[id]
+  if (status === undefined) { say(1, JSON.stringify({ ok: false, error: { code: 'dispatch_not_found', message: 'Dispatch ' + id + ' was not found.' } })); process.exit(1) }
+  say(1, JSON.stringify({ ok: true, result: { dispatch: { id, status } } }))
+}
 else process.exit(3)
 `
 const FAKE_SWEEP = `import os, subprocess, sys
@@ -1041,6 +1048,38 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
   const UNJUDGED_STEPS = JSON.stringify([{ number: 1, done: false, text: '1. PR' }, { number: 2, done: false, text: '2. 머지' }])
   const unjudged = (extra: Json = {}): Json => ({ id: 'm', status: 'doing', branch: 'feat/x', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }], ...extra })
   const workerRow = (role: string, extra: Json = {}): Json => ({ role, dispatch: 'd1', worktree: 'other', branch: 'feat/other', pr: null, at: '2026-01-01', status: 'working', endedAt: null, ...extra })
+
+  // 루프가 다른 Run 에 묶여 보드 줄이 working 으로 남은 리뷰 worker 다. Orca 의 dispatch 상태는 따로 정한다
+  const staleReview = (c: Ctx, dispatches: Record<string, string> | undefined) => {
+    if (dispatches) c.state.orca = { dispatches }
+    return board(c, [unjudged({ workers: [workerRow('review', { dispatch: 'ctx_review', worktree: 'wr', branch: 'feat/r', pr: 77 })] })])
+  }
+
+  test('판정하지 못한 PR 이어도 다른 Run 의 끝난 리뷰 worker 줄이 working 으로 남았을 뿐이면 닫는다', async (t) => {
+    for (const status of ['completed', 'failed', 'abandoned']) {
+      const c = setup(t)
+      const bin = staleReview(c, { ctx_review: status })
+      const r = await c.finish([...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+      assert.equal(r.code, 0, `${status}: ${both(r)}`)
+      assert.equal(starting(c.calls(), 'board set m done').length, 1, `${status}: ${c.calls().join('\n')}`)
+      has(starting(c.calls(), 'orca ').join('\n'), 'worker-show --dispatch ctx_review')
+    }
+  })
+
+  test('판정하지 못한 PR 이면 살아 있는 worker 줄이나 조회에 실패한 줄이 있을 때 닫지 않는다', async (t) => {
+    const cases: [string, Record<string, string> | undefined][] = [
+      ['살아 있는 worker', { ctx_review: 'running' }],
+      ['조회 실패', undefined],
+      ['상태를 모름', { ctx_review: '' }],
+    ]
+    for (const [name, dispatches] of cases) {
+      const c = setup(t)
+      const bin = staleReview(c, dispatches)
+      const r = await c.finish([...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+      assert.equal(r.code, 0, `${name}: ${both(r)}`)
+      assert.equal(starting(c.calls(), 'board set m done').length, 0, `${name}: ${c.calls().join('\n')}`)
+    }
+  })
 
   test('마일스톤 항목은 판정하지 못한 PR 이어도 모든 단계가 끝나고 열린 PR 과 작업 중 worker 와 남은 일 줄이 없으면 done 으로 바꾼다', async (t) => {
     const c = setup(t)

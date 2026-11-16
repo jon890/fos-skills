@@ -139,7 +139,7 @@ import { conflictSpecFiles } from '../lib/conflicts.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import { boardSettings, eventKinds, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { StageKind, Stages } from '../lib/milestones.ts'
-import { closeUnjudged, judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
+import { closeUnjudged, hasActiveWorker, judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { eventTimeoutSec, fire, handlerFile } from '../lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from '../lib/finish-options.ts'
@@ -640,7 +640,7 @@ function closeUnjudgedItem(
     {
       rulesUnreadable: false,
       openPrs: remaining.length,
-      activeWorker: boardWorkerRows(row).some((w) => w.status === 'working' && !mine(w)),
+      activeWorker: hasActiveWorker(boardWorkerRows(row), mine),
       remainingNote: details.some((d) => detailText(d).startsWith(NOTE)),
       reachedDone,
       allStepsDone,
