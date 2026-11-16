@@ -132,7 +132,7 @@ describe('block-broken-commit-subject', () => {
 
   test('제목의 연속된 글자 줄바꿈과 코드 시작을 막는다', () => {
     for (const subject of ['fix: x\\n\\n본문', 'cat <<EOF', 'cat <<EOF\n본문', 'python3 script.py', 'python script.py', 'gh pr create', 'EOF']) {
-      for (const flag of ['-m ', '--message=', '-m', '-am ']) {
+      for (const flag of ['-m ', '--message=', '-m', '-am ', '-em ']) {
         const v = verdict(HOOK, `git commit ${flag}${quote(subject)}`)
         assert.equal(v.decision, 'deny', `${flag}${subject}`)
         assert.match(v.reason, /git commit -F/)
@@ -148,6 +148,7 @@ describe('block-broken-commit-subject', () => {
       `git commit -m ${quote('fix(orch): 글자 \\n 검사를 더한다')}`,
       `git commit -m ${quote('fix: 제목\n\ncat <<EOF\npython3 x\ngh pr create\nEOF\n글자 \\n\\n')}`,
       "git commit -m 'fix: 제목' -m 'gh pr create'",
+      "git commit -em 'fix: 정상 제목'",
       "echo git commit -m 'EOF'",
       "echo 'git push; git commit -m EOF'",
       "cat <<'END'\ngit commit -m EOF\nEND",

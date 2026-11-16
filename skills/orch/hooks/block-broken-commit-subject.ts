@@ -155,8 +155,8 @@ function rejection(command: string, initialCwd: string): string | null {
         i++ // 다른 옵션의 값에 든 -m 이나 -F 는 메시지 옵션이 아니다.
         continue
       }
-      if (flag === '-m' || flag === '--message' || flag?.startsWith('--message=') || /^-[aAnqsv]*m/.test(flag ?? '')) {
-        const attached = flag!.startsWith('--message=') ? flag!.slice(10) : /^-[aAnqsv]*m([\s\S]+)$/.exec(flag!)?.[1]
+      if (flag === '-m' || flag === '--message' || flag?.startsWith('--message=') || /^-[aAenqsv]*m/.test(flag ?? '')) {
+        const attached = flag!.startsWith('--message=') ? flag!.slice(10) : /^-[aAenqsv]*m([\s\S]+)$/.exec(flag!)?.[1]
         const message = attached ?? args[i + 1]
         if (message != null && broken(literals.get(message) ?? message)) return commitReason
         break // 첫 -m 만 제목이다. 뒤 -m 은 본문이다.
