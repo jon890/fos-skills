@@ -17,12 +17,13 @@
 //         · 열린 PR 목록을 읽지 못하면 아무것도 옮기지 않는다
 //         · 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서가 아니다. 그 판정과 옮기기는 lib/spec.ts 의 deleteSpecs 한 곳이 맡는다.
 //           살아 있는 지시서 목록(liveSpecPaths)을 읽지 못하면 지시서마다 판정하지 않고 아무것도 옮기지 않는다.
+//           Run 없는 task-list 가 거절되면 모든 Run 의 Task 목록을 모은다. 일부라도 읽지 못하면 남기고 --run 재실행 명령을 알린다.
 //           브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 옮긴 일이 있었다
 //     - <orch>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <orch>/.keep 에도 없는 폴더
-//       (bin, queue, specs, state 는 건드리지 않는다)
+//       (lib/paths.ts 에 정의한 orch 폴더는 건드리지 않는다)
 //     - <previews>/<폴더나 파일>: --previews 를 줄 때만 본다. 조건은 위와 같고 남길 이름은 <previews>/.keep 에 적는다.
 //       미리보기는 content-preview 의 산출물이라 기본으로는 보지 않는다
-//     - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. bin 폴더 안은 뺀다
+//     - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. orch 관리 폴더 안은 뺀다
 //       (DB 에서 뽑은 원본은 쓰고 나서 지운다)
 //
 // Run 범위(--run 을 줄 때. ADR-012):
@@ -75,8 +76,10 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
-import { orchDir, requireMigrated } from '../lib/paths.ts'
+import { FILES, NAMES, orchDir, requireMigrated } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
+import { orchWord } from '../lib/commands.ts'
+import { shQuote } from '../lib/py.ts'
 import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, runSpecPaths, specCandidates } from '../lib/spec.ts'
 import { emit } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
@@ -84,7 +87,7 @@ import type { Rule } from '../lib/output.ts'
 const USAGE = '사용법: handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [--gh-host HOST] [--run RUN] [--orch-dir DIR] [--previews DIR] [--board FILE] [--trash DIR] [--queue-days N] [--folder-days N] [--data-days N] [--data-ext LIST]'
 const QUEUE_DONE = /QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL/m
 const BOARD_ID_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?보드 항목 id(?:\*\*)?:(?:\*\*)?\s*`([^`]+)`/m
-const RESERVED = new Set(['bin', 'queue', 'specs', 'state'])
+const RESERVED = new Set(Object.entries(NAMES).filter(([name]) => !FILES.has(name)).map(([, dir]) => dir.split('/')[0]))
 const DAY = 86400
 const RUN_TIMEOUT_MS = 120_000
 
@@ -289,8 +292,8 @@ function mtimeSec(target: string): number {
   return statSync(target).mtimeMs / 1000
 }
 
-// 확장자가 dataExt 에 드는 파일. bin 폴더 안은 들어가지 않는다.
-function dataFiles(dir: string, dataExt: Set<string>): string[] {
+// 확장자가 dataExt 에 드는 파일. 최상위 orch 관리 폴더와 모든 깊이의 bin 폴더 안은 들어가지 않는다.
+function dataFiles(dir: string, dataExt: Set<string>, topLevel = true): string[] {
   const found: string[] = []
   for (const name of listDir(dir)) {
     const target = join(dir, name)
@@ -301,7 +304,7 @@ function dataFiles(dir: string, dataExt: Set<string>): string[] {
       continue
     }
     if (entry.isDirectory()) {
-      if (name !== 'bin') found.push(...dataFiles(target, dataExt))
+      if (name !== 'bin' && (!topLevel || !RESERVED.has(name))) found.push(...dataFiles(target, dataExt, false))
     } else if (isFile(target)) {
       const dot = name.lastIndexOf('.')
       if (dot > 0 && dataExt.has(name.slice(dot + 1).toLowerCase())) found.push(target)
@@ -320,6 +323,11 @@ const OUT_OF_RUN = '--run 을 주면 그 Run 의 지시서와 PR 본문만 옮�
 function prBodiesOf(spec: string, text: string): string[] {
   const name = basename(spec, '.md').replace(/^spec-/, '')
   return specCandidates({ specsDir: dirname(spec), name, branch: branchesOf(text)[0] }).prBodies
+}
+
+function specRetry(repo: string, run: string | null): string {
+  const scope = run === null ? '<RUN_ID>' : shQuote(run)
+  return `다시 실행: ${orchWord()} cleanup handoff --repo ${shQuote(repo)} --run ${scope}; Run 선택: orca orchestration run-list 의 id 로 RUN_ID 를 바꾼다`
 }
 
 function candidates(args: Args, repo: string, orch: string, previews: string | null, board: string, now: number): Found {
@@ -352,8 +360,9 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
   let live: Set<string> | null = new Set()
   let mine: Set<string> | null = null
   if (specFiles.length > 0 && args.run !== null) {
-    mine = runSpecPaths(args.run)
-    if (mine === null) err(`orca 로 Run ${args.run} 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다`)
+    let reason = ''
+    mine = runSpecPaths(args.run, (message) => { reason = message.replace(/\s+/g, ' ') })
+    if (mine === null) err(`orca 로 Run ${args.run} 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다: ${reason}; ${specRetry(repo, args.run)}`)
   }
   const ownSpecs = mine === null ? [] : specFiles.filter((spec) => {
     if ((mine as Set<string>).has(realPath(spec))) return true
@@ -366,9 +375,10 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
     if (heads === null) {
       err('gh 로 열린 PR 을 읽지 못해 지시서는 옮기지 않는다')
     } else {
-      live = liveSpecPaths(args.run)
+      let reason = 'Task 또는 worker 목록의 범위를 확인하지 못했다'
+      live = liveSpecPaths(args.run, undefined, (message) => { reason = message.replace(/\s+/g, ' ') })
       if (live === null) {
-        err('orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다')
+        err(`orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다: ${reason}; ${specRetry(repo, args.run)}`)
       } else {
         const worktrees = runOut([gitBin(), 'worktree', 'list'], repo).out
         // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다
