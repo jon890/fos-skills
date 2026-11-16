@@ -157,15 +157,14 @@ export function closeUnjudged(verdict: Pick<LastPrVerdict, 'last' | 'retry'> | n
   return !state.rulesUnreadable && state.openPrs === 0 && !state.activeWorker && !state.remainingNote && state.reachedDone && state.allStepsDone
 }
 
-// 보드 줄이 working 이어도 Orca 의 dispatch 가 끝났으면 작업 중이 아니다. 끝난 상태는 lib/worker-state.ts 의 FINISHED_DISPATCH 와
-// 중단한 worker 의 abandoned 뿐이다(core/board-workers.ts 의 workerEnds 도 abandoned 를 끝으로 본다). 그 밖의 값과 빈 값은 모르는 상태다.
-// 루프는 자기 Run 의 worker_done 만 보드에 반영하므로 다른 Run 이 띄운 worker 의 끝난 줄이 working 으로 남는다(2026-11-16, #515).
+// 보드 줄이 working 이어도 Orca 의 dispatch 가 끝났으면 작업 중이 아니다. 끝난 상태는 lib/worker-state.ts 의 FINISHED_DISPATCH 뿐이다.
+// abandoned 는 배정만 포기한 것이라 에이전트가 같은 워크트리에서 아직 돌 수 있어 끝으로 보지 않는다(references/launch.md). 그 밖의 값과 빈 값은 모르는 상태다.
 // 조회가 실패하거나 상태를 모르면 끝났다고 보지 않는다(허용 목록 밖은 모두 작업 중이다). 잘못 끝났다고 보면 살아 있는 worker 의 항목을 닫기 때문이다
 export function dispatchEnded(dispatch: string): boolean {
   const shown = orcaJson<{ dispatch?: unknown }>(['orchestration', 'worker-show', '--dispatch', dispatch])
   if (!shown.ok) return false
   const status = objectOr(objectOr(shown.data).dispatch).status
-  return typeof status === 'string' && (FINISHED_DISPATCH.has(status) || status === 'abandoned')
+  return typeof status === 'string' && FINISHED_DISPATCH.has(status)
 }
 
 // 작업 중 worker 가 있는지. skip 은 마무리가 종료를 확인한 줄처럼 이미 끝난 것을 아는 줄이다.

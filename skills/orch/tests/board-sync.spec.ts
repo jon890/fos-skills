@@ -641,8 +641,8 @@ describe('board-sync 마일스톤 항목', () => {
 
   test('판정하지 못한 PR 은 살아 있거나 조회하지 못한 worker 줄이 있으면 done 으로 바꾸지 않는다', () => {
     states['7'] = 'MERGED'
-    states.dispatches = { live: 'running', empty: '', odd: 'unknown' }
-    for (const dispatch of ['live', 'empty', 'odd', 'missing']) {
+    states.dispatches = { live: 'running', empty: '', odd: 'unknown', gone: 'abandoned' }
+    for (const dispatch of ['live', 'empty', 'odd', 'gone', 'missing']) {
       const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)], workers: [worker('review', 'r', dispatch, { pr: 7 })] }])
       assert.equal(r.code, 0, r.result.stderr)
       assert.equal(r.board.a.status, 'doing', dispatch)
