@@ -44,6 +44,8 @@
 //   step-edit, set 으로 stages 가 가리키는 단계 줄의 글이 바뀌면 stderr 로 경고한다.
 //   step-edit, step-add 의 글에 「#번호」 와 머지·배포·릴리스 낱말이 있는데 --event 도 꼬리표도 없으면 stderr 로 경고한다(자동으로 끝나지 않는다).
 //   board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>] (번호 뒤의 자동 진행 표시만 바꾼다. plain 은 지운다)
+//   step-edit, step-add, detail-edit, detail-add 는 줄 규칙(hooks/line-rules.js)을 어기는 글을 거절한다: 본문 80자 초과, 확인·경과 기록 줄, 기다림 조건의 이유·계획. step-mark wait 의 조건도 같다.
+//   `남은 일:`, `중간 과정:` 줄과 set --detail, --next 의 통째 저장은 검사하지 않는다.
 //   step-mark 는 사건 단계(줄 앞 [merge] 따위, stages 칸이 가리키는 줄)를 거절한다. 줄 끝 꼬리표와 끝냄 상태는 그대로 둔다.
 //   표시의 꼴은 hooks/step-marks.js 가 소유한다. 조건은 wait 에만 줄 수 있다.
 // status: decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
@@ -78,6 +80,7 @@ import { LockTimeout, withFileLock, type Lock } from './file-lock.ts'
 export { parseEventTag } from '../hooks/event-tags.js'
 import { STEP, parseEventTag, stageTag, withEventTag } from '../hooks/event-tags.js'
 import { withStepMark } from '../hooks/step-marks.js'
+import { lineProblem, waitConditionProblem } from '../hooks/line-rules.js'
 
 const STATUSES = ['decide', 'doing', 'wait', 'done']
 const DONE_MARKS = ['✓', '[x]', '[X]']
@@ -172,6 +175,12 @@ export function defaultBoardPath(cwd: string): string {
 }
 
 class Refused extends Error {}
+
+// 줄 규칙(hooks/line-rules.js)을 어기면 거절한다. set --detail, --next 는 스크립트의 통째 저장 경로라 검사하지 않는다
+function refuseLine(text: string): void {
+  const problem = lineProblem(text)
+  if (problem) throw new Refused(problem)
+}
 
 // 옛 문자열을 {text, done} 으로 바꾼다. 객체의 done 값이 앞 표시보다 우선한다.
 function normalizeLine(line: unknown): Line {
@@ -720,6 +729,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       const { source, lines, index } = findStep(item, id, number)
       const fresh = normalizeLine(a.text)
       if (parseStep(fresh)?.[0] !== number) throw new Refused(`새 글은 ${number} 번으로 시작해야 한다: ${fresh.text}`)
+      refuseLine(a.text)
       if (event) fresh.text = withEventTag(fresh.text, event[1], event[2])
       const old = lines[index]
       if ((stageTag(old.text) && !stageTag(fresh.text)) || (parseEventTag(old.text) && !parseEventTag(fresh.text))) {
@@ -737,6 +747,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       const key = source ?? 'details'
       const numbers = lines.flatMap((line) => { const step = parseStep(line); return step ? [step[0]] : [] })
       const fresh = normalizeLine(a.status)
+      refuseLine(a.status)
       const explicit = parseStep(fresh)?.[0]
       number = explicit ?? Math.max(0, ...numbers) + 1
       if (numbers.includes(number)) throw new Refused(`${number} 번 단계가 이미 있다. 있는 번호: ${numbers.join(' ')}`)
@@ -762,6 +773,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
       throw new Refused(`${number} 번 줄은 사건 단계라 표시를 바꾸지 않는다: ${id}. 사건 단계는 머지와 배포 같은 사건이 끝낸다`)
     }
     const mark = a.text === 'plain' ? null : (a.text as 'auto' | 'ask' | 'wait')
+    if (mark === 'wait') { const problem = waitConditionProblem(a.condition ?? null); if (problem) throw new Refused(problem) }
     const text = withStepMark(old.text, mark, a.condition ?? null)
     if (text === null) {
       throw new Refused(mark === 'wait'
@@ -791,6 +803,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     if (a.cmd === 'detail-add') {
       const text = a.status
       if (!text?.trim()) throw new Refused('detail-add 에는 더할 글이 필요하다: board.ts detail-add <id> <글>')
+      refuseLine(text)
       item.details = [...details, normalizeLine(text)]
       return true
     }
@@ -801,6 +814,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     const at = line ? details.indexOf(line) : -1
     if (number < 1 || at < 0) throw new Refused(`list 의 ${number} 번 줄이 details 에 없다. board.ts list 로 번호를 본다`)
     if (!a.text?.trim()) throw new Refused('detail-edit 에는 새 글이 필요하다: board.ts detail-edit <id> <n> <글>')
+    refuseLine(a.text)
     // 앞 표시가 없으면 끝냄 표시는 그대로 둔다. 글이 바뀌어도 같은 줄이므로 짝짓기로 찾지 않는다
     const fresh = normalizeLine(a.text)
     details[at] = LEAD_MARK.test(a.text) ? fresh : { text: fresh.text, done: line.done }

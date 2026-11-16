@@ -11,6 +11,7 @@
     "githooks/pre-commit",
     "extensions/work-board/hooks/event-tags.js",
     "extensions/work-board/hooks/step-marks.js",
+    "extensions/work-board/hooks/line-rules.js",
     "extensions/work-board/hooks/network-poll.js",
     "extensions/work-board/hooks/register.js",
     "skills/orch/scripts/lib/guard/gh",
