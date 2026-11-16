@@ -156,3 +156,11 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 막히면 stderr 에 이유를 내고 종료 코드 126 으로 끝난다. 판정의 원본은 `scripts/lib/guard/guard.ts` 머리 주석이다.
 worker 에게 보내는 코어 명령은 `orch worker send` 다. 터미널 직접 입력은 사용하지 않는다.
 가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다. 근거는 [ADR-013](../../../docs/adr/013-orch-worker-stalled.md) 이 소유한다.
+
+## Claude 커밋 제목 검사
+
+플러그인의 `hooks/hooks.json` 에 등록한 `block-broken-commit-subject.ts` 는 Claude 의 Bash 호출에서 커밋과 push 전에 제목 첫 줄을 검사한다. 글자 `\n\n`, `cat <<`, `python3 `, `python `, `gh ` 로 시작하는 코드와 `EOF` 만 있는 제목을 막는다. 낱개 `\n` 과 본문의 코드 예시는 통과한다.
+
+`git commit` 의 첫 `-m` 이나 `-F` 파일을 읽고, push 때는 upstream 이후의 커밋을 읽는다. upstream 이 없으면 `origin/HEAD` 가 가리키는 기준 브랜치 이후를 읽는다. 기준 브랜치나 커밋을 조회하지 못하면 push 를 허용한다. 막혔으면 메시지를 파일로 써서 다시 커밋하고, 이미 만든 커밋은 amend 나 rebase 로 고친다.
+
+셸 확장으로 만든 메시지, stdin 으로 넘기는 메시지와 호출 중 생성하는 파일은 실행 전에 알 수 없어 commit 검사에서 건너뛴다. push 검사는 실제 커밋을 확인한다. 이 훅은 Claude 플러그인에만 등록되며 Codex worker 에는 적용되지 않는다.
