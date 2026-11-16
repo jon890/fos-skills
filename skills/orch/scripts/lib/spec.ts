@@ -213,9 +213,7 @@ function readAll<K extends string>(args: string[], key: K, onFailure: (reason: s
     if (first) source = got.data.scope?.source
     const list = got.data[key]
     if (!Array.isArray(list)) { onFailure(`${args.join(' ')} 의 ${key} 목록이 배열이 아니다`); return null }
-    if (Array.isArray(list)) {
-      for (const row of list) if (typeof row === 'object' && row !== null) rows.push(row as Record<string, unknown>)
-    }
+    for (const row of list) if (typeof row === 'object' && row !== null) rows.push(row as Record<string, unknown>)
     const next = got.data.page?.nextCursor
     cursor = typeof next === 'string' && next ? next : null
     if (cursor !== null) {
