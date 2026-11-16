@@ -99,8 +99,10 @@ test('실제 진입점은 기본 diff 만 내고 --apply 일 때만 쓰며 오�
 })
 
 
-test('중복 표지와 겹친 항목은 원문을 잘못 덮지 않도록 거부한다', () => {
-  assert.throws(() => syncCommon(rule('a', '하나') + rule('a', '둘'), rule('a', '새것'), repo), /같은 표지 a 가 둘 이상 있다: 1, 2줄/)
+test('중복 표지는 수동 확인으로 남기고 겹친 항목은 원문을 잘못 덮지 않도록 거부한다', () => {
+  const duplicate = syncCommon(rule('a', '하나') + rule('a', '둘'), rule('a', '새것'), repo)
+  assert.equal(duplicate.manual, true)
+  assert.match(duplicate.output.join('\n'), /SYNC-MANUAL 사본: 같은 표지 a 가 둘 이상 있다: 1, 2줄/)
   for (const keep of ['', ' keep']) {
     assert.throws(() => syncCommon(`- 옛것 <!-- orch-rule: a${keep} --> <!-- orch-rule: b -->\n`, rule('a', '새것') + rule('b', '다른 것'), repo), /범위가 겹친다/)
   }
@@ -195,4 +197,110 @@ test('옛 틀(명령 블록마다 경로 풀기 한 줄)을 현재 틀로 맞춰
   assert.equal(result.manual, false)
   assert.equal(syncCommon(result.text, template, repo).text, result.text)
   assert.deepEqual(syncCommon(result.text, template, repo).output, [])
+})
+
+
+test('표지 없던 feedback-add 블록을 갱신하고 명령 블록은 한 번만 남긴다', () => {
+  const template = readFileSync(TEMPLATE, 'utf8')
+  // cfda7fe8 의 옛 틀처럼 설명을 별도 목록 항목으로 두고 표지는 뺀다.
+  const copy = template.replace(' <!-- orch-rule: feedback-add -->', '')
+    .replace('  `SLUG` 는', '- `SLUG` 는')
+  assert.notEqual(copy, template)
+  const result = syncCommon(copy, template, repo)
+  assert.equal(result.text, template)
+  assert.equal(result.text.match(/^  orch feedback add /gm)?.length, 1)
+  assert.match(result.output.join('\n'), /SYNC-UPDATE feedback-add/)
+  assert.deepEqual(syncCommon(result.text, template, repo).output, [])
+})
+
+test('이미 중복된 사본은 표지 항목을 남기고 표지 없는 쪽의 제거 diff 를 낸다', () => {
+  // 인접한 보드 규칙, 떨어진 질문 블록, 목록 기호 차이, 여러 중복이 섞인 사본을 본뜬다.
+  for (const copy of [
+    '- 같은 항목\n' + rule('a', '같은 항목'),
+    '- 같은 항목\n  ```bash\n  old command\n  ```\n- 저장소 규칙\n' + rule('a', '같은 항목'),
+    rule('a', '같은 항목') + '7. 같은 항목\n',
+    '- 같은 항목\n' + rule('a', '같은 항목') + '- 다른 항목\n' + rule('b', '다른 항목'),
+  ]) {
+    const template = rule('a', '같은 항목') + rule('b', '다른 항목')
+    const result = syncCommon(copy, template, repo)
+    assert.equal(result.manual, false)
+    assert.equal(result.text.match(/같은 항목/g)?.length, 1)
+    assert.equal(result.text.match(/다른 항목/g)?.length, 1)
+    assert.ok(!result.text.includes('old command'))
+    assert.match(result.output.join('\n'), /SYNC-UPDATE a: 중복된 표지 없는 사본 항목 제거\n@@ -/)
+    assert.equal(syncCommon(result.text, template, repo).text, result.text)
+  }
+})
+
+test('모호한 중복은 수동 확인으로 남기고 다른 안전한 규칙은 계속 갱신한다', () => {
+  for (const ambiguous of [
+    '- 같은 항목\n- 같은 항목\n',
+    rule('a', '같은 항목') + rule('b', '같은 항목'),
+    rule('a', '하나') + rule('a', '둘'),
+    '- 같은 항목\n  - 저장소 하위 항목\n' + rule('a', '같은 항목'),
+  ]) {
+    const copy = ambiguous + rule('safe', '옛것')
+    const result = syncCommon(copy, rule('a', '같은 항목') + rule('safe', '새것'), repo)
+    assert.equal(result.text, ambiguous + rule('safe', '새것'))
+    assert.equal(result.manual, true)
+    assert.match(result.output.join('\n'), /SYNC-MANUAL/)
+    assert.match(result.output.join('\n'), /SYNC-UPDATE safe/)
+  }
+})
+
+
+test('갱신으로 다른 항목과 머리 줄이 같아지면 결과를 거부한다', () => {
+  assert.throws(() => syncCommon(rule('a', '옛 항목') + '- 새 항목\n', rule('a', '새 항목'), repo), /같은 머리 줄/)
+})
+
+
+test('옛 항목 옆의 다른 저장소 항목과 코드 예시의 같은 머리 줄은 건드리지 않는다', () => {
+  const template = rule('a', '공통 항목')
+  const example = '```md\n- 공통 항목\n```\n'
+  const copy = example + '- 공통 항목\n- 저장소 항목\n  ```text\n  keep me\n  ```\n'
+  const result = syncCommon(copy, template, repo)
+  assert.equal(result.text, example + template + '- 저장소 항목\n  ```text\n  keep me\n  ```\n')
+})
+
+
+test('실제 적용은 모호한 중복을 보존하고 안전한 항목을 쓰며 코드 1 로 끝난다', () => {
+  const file = join(repo, '.orch', 'specs', 'spec-common.md')
+  const template = join(repo, 'template.md')
+  const ambiguous = '- 같은 항목\n- 같은 항목\n'
+  writeFileSync(file, ambiguous + rule('safe', '옛것'))
+  writeFileSync(template, rule('a', '같은 항목') + rule('safe', '새것'))
+  const entry = fileURLToPath(new URL('../scripts/spec/sync-common.ts', import.meta.url))
+  const result = spawnSync(process.execPath, [entry, '--repo', repo, '--apply'], {
+    encoding: 'utf8', env: { ...process.env, ORCH_DIR: join(repo, '.orch'), SPEC_TEMPLATE: template },
+  })
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stdout, /SYNC-MANUAL 사본: 중복 머리 줄/)
+  assert.match(result.stdout, /SYNC-APPLIED/)
+  assert.equal(readFileSync(file, 'utf8'), ambiguous + rule('safe', '새것'))
+})
+
+
+test('중복을 정리해도 keep 본문과 혼합 줄바꿈을 보존한다', () => {
+  const kept = rule('a', '같은 항목', true) + '  저장소가 정한 본문\r\n'
+  const copy = '- 같은 항목\r\n  옛 본문\r\n' + kept
+  const result = syncCommon(copy, rule('a', '같은 항목') + '  틀 본문\n', repo)
+  assert.equal(result.text, kept)
+  assert.equal(result.manual, false)
+  assert.match(result.output.join('\n'), /SYNC-KEEP a/)
+})
+
+
+test('오류와 중복 안내는 줄 번호가 사본과 틀 중 어디에 속하는지 밝힌다', () => {
+  assert.throws(() => syncCommon(rule('a', '사본'), rule('a', '중복') + rule('b', '중복'), repo), /틀: 같은 머리 줄/)
+  assert.throws(() => syncCommon('- 규칙 <!-- orch-rule: a unknown -->\n', rule('a', '새것'), repo), /사본: 표지 a:1 의 뒤꼬리/)
+  const result = syncCommon('- 중복\n- 중복\n', rule('a', '중복'), repo)
+  assert.match(result.output.join('\n'), /SYNC-MANUAL 사본: 중복 머리 줄 1, 2줄/)
+})
+
+
+test('표지 없는 옛 항목을 덮는 diff 에 keep 으로 보존하는 방법을 안내한다', () => {
+  const result = syncCommon('- 같은 첫 줄\n  저장소 본문\n', rule('a', '같은 첫 줄') + '  틀 본문\n', repo)
+  assert.match(result.output.join('\n'), /SYNC-UPDATE a: 저장소가 일부러 바꾼 항목이면 <!-- orch-rule: a keep --> 을 붙인다\n@@/)
+  const kept = '- 같은 첫 줄 <!-- orch-rule: a keep -->\n  저장소 본문\n'
+  assert.equal(syncCommon(kept, rule('a', '같은 첫 줄') + '  틀 본문\n', repo).text, kept)
 })

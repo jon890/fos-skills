@@ -25,9 +25,9 @@ const FAKE_QUEUE_SH = `echo "queue $*" >> "$FAKE_LOG"
 exit "\${FAKE_QUEUE_EXIT:-0}"
 `
 const FAKE_FINISH = `import os, sys, time
-open(os.environ["FAKE_LOG"], "a").write("finish " + " ".join(sys.argv[1:]) + "\\n")
 pid = sys.argv[sys.argv.index("--pid-file") + 1]
 open(pid, "w").write(str(os.getpid()))
+open(os.environ["FAKE_LOG"], "a").write("finish " + " ".join(sys.argv[1:]) + "\\n")
 time.sleep(float(os.environ.get("FAKE_FINISH_SLEEP", "0")))
 `
 
