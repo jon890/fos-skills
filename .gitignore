@@ -1,9 +1,8 @@
 # OMC 세션 상태
 .omc/
 
-# orch 작업 폴더 — 저장소 오버레이만 추적한다
-/.orch/*
-!/.orch/overlay.md
+# orch 작업 폴더 — 오버레이까지 각자의 PC 에만 둔다(orch 는 main 체크아웃의 것을 읽는다)
+/.orch/
 
 # Python 바이트코드 캐시 — 테스트 실행 부산물
 __pycache__/
