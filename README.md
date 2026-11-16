@@ -170,7 +170,7 @@ fos-skills 는 소프트웨어 개발의 각 단계를 연결하는 종합 스�
 | 경로 | 책임 |
 | --- | --- |
 | `skills/<이름>/` | 설치해서 쓰는 스킬. 절차·참조·양식·스크립트·테스트를 함께 둬요 |
-| `export-only-skills/<이름>/` | 팀 저장소로 내보내는 원본. 기본 스킬 탐색에는 넣지 않아요 |
+| `export-only-skills/<이름>/` | 팀 저장소로 내보내는 원본. 플러그인 스킬로도 등록해요 |
 | `extensions/work-board/` | 작업 현황 창과 보드 명령 |
 | `tools/` | 여러 스킬이 사용하는 공용 도구 |
 | `scripts/` | 저장소 검사·설치·내보내기·버전 관리 |
@@ -213,10 +213,11 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`presentation`](skills/presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고, 장 수와 노트, 금지어, 세로 넘침을 검사해요 |
 | [`report`](skills/report/README.md) | 있는 내용을 결론이 먼저 보이는 HTML 보고서 한 파일로 만들어 브라우저로 띄워요 |
 | [`browser`](skills/browser/README.md) | CLI 나 API 로 안 되는 웹 작업을 `browser-driver` 로 브라우저를 조작해 끝내요. 로그인과 되돌리기 어려운 버튼만 사람이 확인해요 |
+| [`content-preview`](export-only-skills/content-preview/README.md) | 외부에 올릴 글을 게시될 곳과 비슷한 HTML 로 띄워 보여 주고, 확인받은 뒤에 등록해요 |
+| [`korean-check`](export-only-skills/korean-check/README.md) | 한국어 문서와 응답이 자연스러운지 검사기와 기준으로 점검해요 |
 
 플러그인은 위 표의 스킬과 `/board` 창을 함께 넣어요.
-[`content-preview`](export-only-skills/content-preview/README.md) 와 [`korean-check`](export-only-skills/korean-check/README.md) 의 원본도 여기 있지만, 스킬로는 팀 저장소의 플러그인으로 받아요.
-그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않아요.
+`content-preview` 와 `korean-check` 는 팀 저장소로도 내보내요. 그 플러그인도 설치했으면 같은 스킬이 접두사만 다르게 두 번 보여요.
 
 ## 처음 써 보기
 
@@ -344,7 +345,6 @@ ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loo
 - 팀에도 내보낼 스킬이면 `scripts/export-to-team.ts` 의 `SHARED_SKILLS`
 
 두 `skills` 배열 가운데 하나라도 빠뜨리면 `node scripts/run-tests.ts scripts/tests` 가 실패해요.
-내보내기 전용 원본은 [`scripts/export-only-skills.json`](scripts/export-only-skills.json) 에 적고 배열에서 빼요.
 
 ### 코어와 오버레이
 
