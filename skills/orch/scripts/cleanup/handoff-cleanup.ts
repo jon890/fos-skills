@@ -325,6 +325,11 @@ function prBodiesOf(spec: string, text: string): string[] {
   return specCandidates({ specsDir: dirname(spec), name, branch: branchesOf(text)[0] }).prBodies
 }
 
+function specRetry(repo: string, run: string | null): string {
+  const scope = run === null ? '<RUN_ID>' : shQuote(run)
+  return `다시 실행: ${orchWord()} cleanup handoff --repo ${shQuote(repo)} --run ${scope}; Run 선택: orca orchestration run-list 의 id 로 RUN_ID 를 바꾼다`
+}
+
 function candidates(args: Args, repo: string, orch: string, previews: string | null, board: string, now: number): Found {
   const found: string[] = []
   // --run 이면 Run 에 묶을 수 없는 후보를 옮기지 않고 까닭을 낸다(머리 주석의 「Run 범위」)
@@ -355,8 +360,9 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
   let live: Set<string> | null = new Set()
   let mine: Set<string> | null = null
   if (specFiles.length > 0 && args.run !== null) {
-    mine = runSpecPaths(args.run)
-    if (mine === null) err(`orca 로 Run ${args.run} 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다`)
+    let reason = ''
+    mine = runSpecPaths(args.run, (message) => { reason = message.replace(/\s+/g, ' ') })
+    if (mine === null) err(`orca 로 Run ${args.run} 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다: ${reason}; ${specRetry(repo, args.run)}`)
   }
   const ownSpecs = mine === null ? [] : specFiles.filter((spec) => {
     if ((mine as Set<string>).has(realPath(spec))) return true
@@ -370,9 +376,9 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
       err('gh 로 열린 PR 을 읽지 못해 지시서는 옮기지 않는다')
     } else {
       let reason = 'Task 또는 worker 목록의 범위를 확인하지 못했다'
-      live = liveSpecPaths(args.run, undefined, (message) => { reason = message })
+      live = liveSpecPaths(args.run, undefined, (message) => { reason = message.replace(/\s+/g, ' ') })
       if (live === null) {
-        err(`orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다: ${reason}; 다시 실행: ${orchWord()} cleanup handoff --repo ${shQuote(repo)} --run ${shQuote(args.run ?? 'RUN_ID')}`)
+        err(`orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다: ${reason}; ${specRetry(repo, args.run)}`)
       } else {
         const worktrees = runOut([gitBin(), 'worktree', 'list'], repo).out
         // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다

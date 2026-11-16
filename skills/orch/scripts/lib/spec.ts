@@ -201,24 +201,25 @@ type Page<K extends string> = { [P in K]?: unknown } & { page?: { nextCursor?: u
 
 // 한 조회를 page.nextCursor 가 없을 때까지 이어 읽는다. 한 페이지라도 실패하면 null 이다.
 // 같은 cursor 가 다시 오면 끝나지 않는 조회라 실패로 본다.
-function readAll<K extends string>(args: string[], key: K): { rows: Record<string, unknown>[]; source: unknown } | null {
+function readAll<K extends string>(args: string[], key: K, onFailure: (reason: string) => void = () => {}): { rows: Record<string, unknown>[]; source: unknown } | null {
   const rows: Record<string, unknown>[] = []
   const seen = new Set<string>()
   let source: unknown = undefined
   let cursor: string | null = null
   for (let first = true; first || cursor !== null; first = false) {
     const got = orcaJson<Page<K>>(cursor === null ? args : [...args, '--cursor', cursor])
-    if (!got.ok || typeof got.data !== 'object' || got.data === null) return null
+    if (!got.ok) { onFailure(got.error); return null }
+    if (typeof got.data !== 'object' || got.data === null) { onFailure(`${args.join(' ')} 의 응답이 객체가 아니다`); return null }
     if (first) source = got.data.scope?.source
     const list = got.data[key]
-    if (!Array.isArray(list)) return null
+    if (!Array.isArray(list)) { onFailure(`${args.join(' ')} 의 ${key} 목록이 배열이 아니다`); return null }
     if (Array.isArray(list)) {
       for (const row of list) if (typeof row === 'object' && row !== null) rows.push(row as Record<string, unknown>)
     }
     const next = got.data.page?.nextCursor
     cursor = typeof next === 'string' && next ? next : null
     if (cursor !== null) {
-      if (seen.has(cursor)) return null
+      if (seen.has(cursor)) { onFailure(`${args.join(' ')} 의 cursor 가 반복된다`); return null }
       seen.add(cursor)
     }
   }
@@ -247,20 +248,28 @@ function readAll<K extends string>(args: string[], key: K): { rows: Record<strin
 // 조회가 하나라도 실패하면(중간 페이지 실패 포함) null 이다.
 export function liveSpecPaths(run: string | null, knownWorkers?: Record<string, unknown>[], onFailure: (reason: string) => void = () => {}): Set<string> | null {
   const scope = run === null ? [] : ['--run', run]
-  const workers = knownWorkers && run ? { rows: knownWorkers, source: 'flag' } : readAll(['orchestration', 'worker-list', ...scope, '--limit', PAGE_LIMIT], 'workers')
+  const workers = knownWorkers && run ? { rows: knownWorkers, source: 'flag' } : readAll(['orchestration', 'worker-list', ...scope, '--limit', PAGE_LIMIT], 'workers', onFailure)
   if (workers === null) return null
-  if (run === null && workers.source !== 'all') return null
-  const tasks = readAll(['orchestration', 'task-list', ...scope], 'tasks')
+  if (run === null && workers.source !== 'all') {
+    onFailure(`worker-list 가 전체 Run 범위가 아니다(scope.source=${String(workers.source)})`)
+    return null
+  }
+  const tasks = readAll(['orchestration', 'task-list', ...scope], 'tasks', onFailure)
   if (tasks === null) {
     if (run === null) return scanAllRuns(workers.rows, onFailure)
-    onFailure(`Run ${run} 의 Task 목록을 읽지 못했다`)
     return null
   }
   const activeTasks = new Set(workers.rows.filter((w) => ACTIVE.has(String(w.dispatchStatus))).map((w) => w.taskId))
   if (run === null) {
-    if (tasks.source !== undefined && tasks.source !== 'all') return null
+    if (tasks.source !== undefined && tasks.source !== 'all') {
+      onFailure(`task-list 가 전체 Run 범위가 아니다(scope.source=${String(tasks.source)})`)
+      return null
+    }
     const known = new Set(tasks.rows.map((task) => task.id))
-    for (const id of activeTasks) if (!known.has(id)) return null
+    for (const id of activeTasks) if (!known.has(id)) {
+      onFailure(`살아 있는 dispatch 의 Task ${String(id)} 가 task-list 에 없다`)
+      return null
+    }
   }
   const paths = new Set<string>()
   for (const task of tasks.rows) {
@@ -316,17 +325,22 @@ function scanAllRuns(knownWorkers?: Record<string, unknown>[], onFailure: (reaso
   let cursor: string | null = null
   for (;;) {
     const got = orcaJson<{ runs?: unknown; nextCursor?: unknown }>(['orchestration', 'run-list', '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
-    if (!got.ok || typeof got.data !== 'object' || got.data === null || !Array.isArray(got.data.runs)) {
-      onFailure('Run 목록을 읽지 못했다')
+    if (!got.ok) { onFailure(got.error); return null }
+    if (typeof got.data !== 'object' || got.data === null || !Array.isArray(got.data.runs)) {
+      onFailure('run-list 의 runs 목록이 배열이 아니다')
       return null
     }
     for (const row of got.data.runs) {
-      if (typeof row !== 'object' || row === null || typeof (row as { id?: unknown }).id !== 'string') return null
+      if (typeof row !== 'object' || row === null || typeof (row as { id?: unknown }).id !== 'string') {
+        onFailure('run-list 의 Run id 가 문자열이 아니다')
+        return null
+      }
       ids.push((row as { id: string }).id)
     }
     const next = got.data.nextCursor
     if (next === undefined || next === null || next === '') break
-    if (typeof next !== 'string' || seen.has(next)) return null
+    if (typeof next !== 'string') { onFailure('run-list 의 cursor 가 문자열이 아니다'); return null }
+    if (seen.has(next)) { onFailure('run-list 의 cursor 가 반복된다'); return null }
     seen.add(next)
     cursor = next
   }
@@ -336,9 +350,10 @@ function scanAllRuns(knownWorkers?: Record<string, unknown>[], onFailure: (reaso
   }
   const paths = new Set<string>()
   for (const id of new Set(ids)) {
-    const workers = knownWorkers ? { rows: knownWorkers.filter((row) => row.runId === id) } : readAll(['orchestration', 'worker-list', '--run', id, '--limit', PAGE_LIMIT], 'workers')
-    const tasks = workers === null ? null : readAll(['orchestration', 'task-list', '--run', id], 'tasks')
-    const live = tasks === null || workers === null ? null : liveOf(workers.rows, tasks.rows)
+    const workers = knownWorkers ? { rows: knownWorkers.filter((row) => row.runId === id) } : readAll(['orchestration', 'worker-list', '--run', id, '--limit', PAGE_LIMIT], 'workers', onFailure)
+    const tasks = workers === null ? null : readAll(['orchestration', 'task-list', '--run', id], 'tasks', (reason) => onFailure(`Run ${id}: ${reason}`))
+    if (tasks === null || workers === null) return null
+    const live = liveOf(workers.rows, tasks.rows)
     if (live === null) {
       onFailure(`Run ${id} 의 Task 또는 worker 목록을 읽거나 살아 있는 dispatch 의 Task 를 확인하지 못했다`)
       return null
@@ -350,8 +365,8 @@ function scanAllRuns(knownWorkers?: Record<string, unknown>[], onFailure: (reaso
 
 // 그 Run 의 Task 가 쓴 지시서의 실경로 집합. 상태와 상관없이 그 Run 의 모든 Task 를 본다. 조회가 실패하면 null 이다.
 // handoff-cleanup --run 이 그 Run 의 지시서만 옮기는 데 쓴다(ADR-012).
-export function runSpecPaths(run: string): Set<string> | null {
-  const tasks = readAll(['orchestration', 'task-list', '--run', run], 'tasks')
+export function runSpecPaths(run: string, onFailure: (reason: string) => void = () => {}): Set<string> | null {
+  const tasks = readAll(['orchestration', 'task-list', '--run', run], 'tasks', onFailure)
   if (tasks === null) return null
   const paths = new Set<string>()
   for (const task of tasks.rows) {

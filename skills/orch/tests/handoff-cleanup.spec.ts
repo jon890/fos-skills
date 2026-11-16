@@ -568,7 +568,7 @@ describe('handoff-cleanup', () => {
       assert.equal(existsSync(mine), true)
       assert.equal(existsSync(theirs), true)
       assert.doesNotMatch(r.stdout, /지시서 옮김/)
-      assert.match(r.stderr, /Run B.*다시 실행: .*cleanup handoff --repo .* --run/)
+      assert.match(r.stderr, /Run B.*다시 실행: .*cleanup handoff --repo .* --run <RUN_ID>; Run 선택: orca orchestration run-list/)
     })
 
     test('--run 이 없으면 저장소 전체를 보고 경고 한 줄을 낸다', () => {

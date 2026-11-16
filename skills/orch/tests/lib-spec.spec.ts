@@ -414,6 +414,25 @@ describe('liveSpecPaths', () => {
     assert.equal(liveSpecPaths(null), null)
   })
 
+  test('조회 범위와 Run 응답이 잘못되면 실제 실패 이유를 알린다', () => {
+    const validWorkers = { args: ['worker-list'], stdout: envelope({ workers: [], scope: { source: 'all' } }) }
+    const noUnscopedTasks = { args: ['task-list'], code: 1, stderr: 'run_required' }
+    const cases: { list: FakeRule[]; reason: RegExp }[] = [
+      { list: [{ args: ['worker-list'], code: 1, stderr: 'worker 조회 실패' }], reason: /worker 조회 실패/ },
+      { list: [{ args: ['worker-list'], stdout: envelope({ workers: [], scope: { source: 'bound' } }) }], reason: /worker-list.*bound/ },
+      { list: [validWorkers, { args: ['task-list'], stdout: envelope({ tasks: [], scope: { source: 'bound' } }) }], reason: /task-list.*bound/ },
+      { list: [validWorkers, noUnscopedTasks, { args: ['run-list'], stdout: envelope({ runs: [{ id: 9 }] }) }], reason: /Run id.*문자열/ },
+      { list: [validWorkers, noUnscopedTasks, { args: ['run-list'], stdout: envelope({ runs: [], nextCursor: 'same' }) }], reason: /run-list.*반복/ },
+      { list: [validWorkers, noUnscopedTasks, { args: ['run-list'], stdout: envelope({ runs: [], nextCursor: 9 }) }], reason: /cursor.*문자열/ },
+    ]
+    for (const { list, reason } of cases) {
+      const errors: string[] = []
+      rules(...list)
+      assert.equal(liveSpecPaths(null, undefined, (message) => errors.push(message)), null)
+      assert.match(errors.at(-1) ?? '', reason)
+    }
+  })
+
   test('지시서 경로를 실경로로 바꾼다', () => {
     const spec = join(base, 'specs-real', 'spec-x.md')
     mkdirSync(join(spec, '..'), { recursive: true })
