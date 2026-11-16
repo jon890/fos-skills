@@ -1,0 +1,1 @@
+- 보드 명령(step-add, step-edit, detail-add, detail-edit, step wait)이 줄 규칙을 어기면 거절한다: 본문 80자 초과, 확인·경과 기록 줄, `[wait: 누구/무엇]` 꼴이 아닌 기다림.
