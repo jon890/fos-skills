@@ -43,13 +43,8 @@ function git(cwd: string, prefix: string[], args: string[]): string | null {
 }
 
 function unpushedBroken(cwd: string, prefix: string[]): boolean {
-  let base = git(cwd, prefix, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])?.trim()
-  if (!base) {
-    base = git(cwd, prefix, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])?.trim()
-    // 기준 브랜치를 확인하지 못하면 다른 브랜치로 추측하지 않는다.
-    if (!base) return false
-  }
-  const log = git(cwd, prefix, ['log', '--format=%H%x00%B%x00', `${base}..HEAD`, '--'])
+  // merge/rebase 로 들어온 main 의 옛 제목도 어느 원격에 이미 있으면 검사에서 뺀다.
+  const log = git(cwd, prefix, ['log', '--format=%H%x00%B%x00', 'HEAD', '--not', '--remotes', '--'])
   if (log === null) return false
   const fields = log.split('\0')
   for (let i = 1; i < fields.length; i += 2) if (broken(fields[i])) return true

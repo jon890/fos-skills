@@ -216,15 +216,31 @@ describe('block-broken-commit-subject', () => {
     assert.equal(decide(HOOK, push), 'deny')
   })
 
-  test('기준 브랜치를 읽지 못하거나 Git 조회가 실패해도 push 는 통과한다', () => {
-    const r = repo()
-    r.git('symbolic-ref', '--delete', 'refs/remotes/origin/HEAD')
-    r.git('commit', '--allow-empty', '-m', 'EOF')
-    assert.equal(decide(HOOK, `git -C ${quote(r.dir)} push`), 'pass')
+  test('main 에 이미 있는 깨진 제목은 merge 나 rebase 뒤에도 push 를 막지 않는다', () => {
+    for (const action of ['merge', 'rebase']) {
+      const r = repo()
+      r.git('remote', 'add', 'origin', '/not/contacted')
+      r.git('checkout', '-b', 'topic')
+      r.git('commit', '--allow-empty', '-m', 'fix: 내 작업')
+      r.git('update-ref', 'refs/remotes/origin/topic', 'HEAD')
+      r.git('branch', '--set-upstream-to=origin/topic')
+      r.git('checkout', 'main')
+      r.git('commit', '--allow-empty', '-m', 'fix: 과거 제목\\n\\n본문')
+      r.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+      r.git('checkout', 'topic')
+      r.git(action, ...(action === 'merge' ? ['--no-edit'] : []), 'main')
+      const push = `git -C ${quote(r.dir)} push`
+      assert.equal(decide(HOOK, push), 'pass', action)
+      r.git('commit', '--allow-empty', '-m', 'fix: 새 제목\\n\\n본문')
+      assert.equal(decide(HOOK, push), 'deny', action)
+      r.git('update-ref', 'refs/remotes/another/known', 'HEAD')
+      assert.equal(decide(HOOK, push), 'pass', `${action}: 다른 원격에 이미 있는 커밋`)
+    }
+  })
+
+  test('Git 조회가 실패해도 push 는 통과한다', () => {
     assert.equal(decide(HOOK, 'git -C /no/such/repository push'), 'pass')
     const fake = fakeBin(mkdtempSync(join(root, 'git-fail-')), 'git', [{ args: [], code: 1 }])
-    assert.equal(decide(HOOK, 'git push', { PATH: `${dirname(process.execPath)}${delimiter}${dirname(fake.path)}` }), 'pass')
-    fake.setRules([{ args: ['rev-parse'], stdout: 'origin/topic\n' }, { args: ['log'], code: 1 }])
     assert.equal(decide(HOOK, 'git push', { PATH: `${dirname(process.execPath)}${delimiter}${dirname(fake.path)}` }), 'pass')
   })
 
