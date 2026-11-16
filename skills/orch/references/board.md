@@ -140,7 +140,7 @@ orch board del --done
 orch board release --release "$RELEASE_PR"
 ```
 
-**PR 머지 반영과 목표 진행률은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
+**PR 머지 반영은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
 결정과 다음 할 일처럼 사람만 아는 단계는 코디네이터가 직접 쓴다. 부르는 시점은 아래 「갱신 담당」 표의 「틱마다」 행에 있다.
 
 ## 직접 작성한 사건 단계
@@ -204,7 +204,7 @@ orch board release --release "$RELEASE_PR"
 
 `orch board sync`, `orch board release`는 바꾼 항목마다 `BOARD <id> …`와 끝 줄 `BOARD-SYNC <수>`, `BOARD-RELEASE <수>`를 낸다. 설명 줄과 세부 줄은 `--full`로 본다.
 
-옛 보드 파일의 `goal` 상태는 내용을 보존해 `doing`으로 읽는다. 다음 저장부터 `doing`으로 남기고, 새 상태로 `goal`을 쓰면 허용 상태를 알리며 거절한다. 목표 진행률 집계 명령은 더 이상 제공하지 않는다.
+옛 보드 파일의 `goal` 상태는 내용을 보존해 `doing`으로 읽는다. 다음 저장에서 `doing`으로 남긴다. 진행률도 단계도 없던 항목은 고칠 때 `--progress` 나 단계 줄을 함께 줘야 한다. 새 상태로 `goal`을 쓰면 허용 상태를 알리며 거절한다. 이제 이 항목도 PR 연결, 단계 완료, `done` 전환 대상이다. 목표 진행률 집계 명령은 더 이상 제공하지 않는다.
 
 ## 못 맞춘 머지와 남은 수동 단계
 
