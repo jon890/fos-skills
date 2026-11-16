@@ -19,7 +19,6 @@ import { queuedNotices } from './fixtures/queued-notices.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
-const HOOKS_DOC = fileURLToPath(new URL('../references/hooks.md', import.meta.url))
 
 // 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
 const FAKE_ORCA = `#!/usr/bin/env node
@@ -110,7 +109,7 @@ beforeEach(() => {
   env = {
     ...process.env,
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
-    // hooks.md 의 핸들러 예시가 ORCH_BIN 진입점을 부른다. 이 머신의 설치본으로 넘기지 않고 이 체크아웃을 쓴다
+    // 이 머신의 설치본으로 넘기지 않고 이 체크아웃을 쓴다
     ORCH_SCRIPTS_DIR: fileURLToPath(new URL('../scripts', import.meta.url)),
     ORCA: join(binDir, 'orca'),
     GH: gh.path,
@@ -124,6 +123,8 @@ beforeEach(() => {
   delete env.ORCH_REAL_ORCA
   delete env.NODE_OPTIONS
   loopRepo(repo)
+  // 기본은 코어 다시 진행시키기를 끈다. 알림 동작을 보는 테스트가 보내기에 가려지지 않게 한다. 보내는 테스트는 coreRetryOn 으로 켠다
+  write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_error_retries: 0 } }))
 })
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
@@ -131,6 +132,11 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 function write(file: string, text: string): void {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, text)
+}
+
+// 코어 다시 진행시키기를 기본값(3번)으로 켠다
+function coreRetryOn(config: Json = {}): void {
+  write(orchFile('config.json'), JSON.stringify({ pipeline: config }))
 }
 
 function orchFile(...parts: string[]): string {
@@ -190,15 +196,6 @@ function sends(): string[][] {
   return jsonl(join(tmp, 'orca-calls.jsonl'))
     .map((argv) => argv as unknown as string[])
     .filter((argv) => argv[0] === 'orchestration' && argv[1] === 'send' && argv.includes('--to') && !String(argv[argv.indexOf('--to') + 1]).startsWith('run:'))
-}
-
-// references/hooks.md 「멈춘 worker 다시 시도시키기」 의 핸들러 예시
-function retryExample(): string {
-  const doc = readFileSync(HOOKS_DOC, 'utf8')
-  const section = doc.slice(doc.indexOf('### 멈춘 worker 다시 시도시키기'))
-  const found = /```ts\n([\s\S]*?)```/u.exec(section)
-  assert.ok(found, 'hooks.md 에 핸들러 예시가 없다')
-  return found[1]
 }
 
 function screenReads(): string[] {
@@ -283,7 +280,6 @@ describe('error 멈춤', () => {
   })
 
   test('사람이 Esc 로 끊은 화면은 멈춤으로 세지 않고 핸들러도 부르지 않는다', () => {
-    write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_INTERRUPTED } })
     for (let i = 0; i < 4; i++) assert.deepEqual(tick().stalls, {})
     assert.deepEqual(stalledEvents('A'), [])
@@ -348,8 +344,8 @@ describe('error 멈춤', () => {
     assert.deepEqual(received('worker-stalled.env'), [{ ORCH_SCRIPTS: dirname(dirname(SCRIPT)) }])
   })
 
-  test('hooks.md 예시 핸들러는 같은 오류 화면에 상한까지 다시 시도시키고, 상한에서 10 으로 넘겨 WORKER-STALLED 를 한 번 쓴다', () => {
-    write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
+  test('핸들러가 없으면 코어가 같은 오류 화면에 상한까지 다시 시도시키고, 상한에서 WORKER-STALLED 를 한 번 쓴다', () => {
+    coreRetryOn()
     // 다시 시도한 worker 가 같은 오류로 바로 끝나 화면이 그대로인 경우다
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
     // 2틱마다 핸들러가 불린다. 세 번 입력하고, 네 번째 호출은 상한이라 코디네이터에게 넘긴다
@@ -368,15 +364,10 @@ describe('error 멈춤', () => {
     tick()
     assert.equal(sends().length, 3)
     assert.equal(stalledEvents('A').length, 1, '같은 멈춤을 다시 알렸다')
-    const rejected = jsonl(orchFile('state', 'hooks.jsonl')).filter((row) => row.event === 'worker-stalled' && row.result === 'reject')
-    assert.deepEqual(
-      rejected.map((row) => row.reason),
-      ['다시 시도 3번에 닿았다'],
-    )
   })
 
-  test('hooks.md 예시 핸들러는 횟수를 멈춤(since)마다 센다', () => {
-    write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
+  test('코어 기본은 횟수를 멈춤(since)마다 센다', () => {
+    coreRetryOn()
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
     for (let i = 0; i < 8; i++) tick()
     assert.equal(sends().length, 3)
@@ -388,6 +379,62 @@ describe('error 멈춤', () => {
     for (let i = 0; i < 6; i++) tick()
     assert.equal(sends().length, 6)
     assert.equal(stalledEvents('A').length, 1)
+  })
+
+  test('저장소 핸들러가 있으면 코어 기본은 보내지 않는다', () => {
+    coreRetryOn()
+    handler('worker-stalled')
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    for (let i = 0; i < 6; i++) tick()
+    assert.equal(received('worker-stalled').length, 3)
+    assert.deepEqual(sends(), [])
+  })
+
+  test('핸들러가 10 으로 넘기면 코어 기본이 아니라 코디네이터에게 알린다', () => {
+    coreRetryOn()
+    handler('worker-stalled', 10)
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    tick()
+    tick()
+    assert.deepEqual(sends(), [])
+    assert.equal(stalledEvents('A').length, 1)
+  })
+
+  test('pipeline.stall_error_retries 가 0 이면 바로 코디네이터에게 알린다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_error_retries: 0 } }))
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    tick()
+    tick()
+    assert.deepEqual(sends(), [])
+    assert.equal(stalledEvents('A').length, 1)
+  })
+
+  test('pipeline.stall_error_retries 가 횟수 상한이다', () => {
+    coreRetryOn({ stall_error_retries: 1 })
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    for (let i = 0; i < 6; i++) tick()
+    assert.equal(sends().length, 1)
+    assert.equal(stalledEvents('A').length, 1)
+  })
+
+  test('error 가 아닌 멈춤(idle)은 보내지 않고 코디네이터에게 알린다', () => {
+    coreRetryOn({ stall_ticks: { idle: 2 } })
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CLAUDE_IDLE } })
+    tick()
+    tick()
+    assert.deepEqual(sends(), [])
+    assert.equal(stalledEvents('A').length, 1)
+  })
+
+  test('pipeline.stall_error_retries 의 음수나 정수가 아닌 값은 설정 오류다', () => {
+    register('A', '2026-01-01T00:00:00Z')
+    orca({})
+    for (const value of [-1, 1.5, 'x']) {
+      write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_error_retries: value } }))
+      const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8' })
+      assert.equal(done.status, 2, `${JSON.stringify(value)}: ${done.stdout}${done.stderr}`)
+      assert.match(done.stderr, /pipeline\.stall_error_retries/)
+    }
   })
 
   test('핸들러가 실패하면 알림 파일에 쓴다', () => {

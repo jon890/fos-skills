@@ -76,44 +76,22 @@ if (live.length >= LIMIT) {
 
 ### 멈춘 worker 다시 시도시키기
 
-상주 루프는 멈춘 worker 를 알리기만 하고 입력하지 않는다. 다시 시도시킬지와 몇 번까지 할지는 저장소의 `worker-stalled` 핸들러가 정한다.
+**저장소에 `worker-stalled` 핸들러가 없으면 코어가 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 「계속 진행해」 를 보낸다.** 별도 파일은 필요 없다.
 판정 기준과 틱 수는 `scripts/loop/steps/stalls.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
 
-아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 세 번까지 「계속 진행해」 메시지를 보내는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
+- **횟수는 `pipeline.stall_error_retries` 다.** 기본 3이고 0 이면 끈다. `orch config set pipeline.stall_error_retries 5 --json` 으로 바꾼다.
+- **상한에 닿았거나 `error` 가 아닌 멈춤이면 코디네이터에게 `WORKER-STALLED` 로 알린다.** 보내기가 실패해도 알린다.
+- **횟수는 멈춤마다 센다.** 같은 상태가 이어지는 동안 `since` 가 그대로이고, 작업 중 화면을 거쳐 다시 멈추면 `since` 가 바뀐다. 기록은 `<orch 루트>/state/stall-retries.json` 에 dispatch 별로 둔다.
+- **지시는 `orch worker send` 로 보낸다.** Orca 가 worker 를 깨운다.
+- **다시 보낸 worker 의 화면이 그대로면 같은 화면이 기준 틱 수만큼 더 이어질 때 다시 보낸다.** 상한까지 같다.
+- **사람이 Esc 로 끊은 화면(`interrupted`)은 멈춤으로 세지 않는다.** 사람이 일부러 멈춘 작업을 다시 돌리지 않는다.
 
-```ts
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-const LIMIT = 3
-const input = JSON.parse(readFileSync(0, 'utf8'))
-
-// 10 은 넘김이다. 마지막 줄이 HOOK-REJECT 줄의 이유가 된다
-function handOff(reason: string): never {
-  console.log(reason)
-  process.exit(10)
-}
-
-if (input.state !== 'error') handOff(`${input.state} 멈춤은 코디네이터가 본다`)
-
-// 같은 상태가 이어지는 동안 since 가 그대로다. since 가 바뀌면 새 멈춤이라 처음부터 센다
-const file = join(process.env.ORCH_DIR!, 'state', 'stall-retries.json')
-const retries: Record<string, { since: string; tries: number }> = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
-const dispatch = input.worker.dispatch
-const tries = retries[dispatch]?.since === input.since ? retries[dispatch].tries : 0
-if (tries >= LIMIT) handOff(`다시 시도 ${LIMIT}번에 닿았다`)
-retries[dispatch] = { since: input.since, tries: tries + 1 }
-// 쓰는 도중에 끝나도 앞 내용이 남게 임시 파일에 쓰고 이름을 바꾼다
-writeFileSync(`${file}.tmp`, JSON.stringify(retries))
-renameSync(`${file}.tmp`, file)
-
-// ORCH_BIN 은 orch 진입점 절대경로다. 핸들러의 PATH 앞에는 가드 폴더가 있어 PATH 의 orch 를 믿지 않는다
-execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_BIN!, 'worker', 'send', '--dispatch', input.worker.dispatch, '--body', '계속 진행해'], { stdio: 'inherit' })
-```
+**핸들러가 있으면 핸들러가 먼저 돌고 코어 기본은 돌지 않는다.** 다시 시도시킬지와 횟수, 보내는 말을 저장소가 달리 정할 때만 `.orch/hooks/worker-stalled.ts` 를 둔다.
+옛 저장소가 예전 문서의 예시를 그대로 두었다면 코어와 같은 일이라 지워도 된다. `orch doctor` 가 `STALL-RETRY-HANDLER` 로 알린다.
+핸들러가 코어와 다르게 하려면 아래 규칙을 따른다.
 
 - **0 으로 끝나면 코디네이터를 깨우지 않는다.** 0 이 아니면 루프가 그 Run 에 `WORKER-STALLED` 메시지를 보내 코디네이터가 깨어난다.
-- **넘길 때는 10 으로 끝낸다.** 루프 로그에 `HOOK-REJECT worker-stalled <이유>` 가 남는다. 다른 0 아닌 값도 넘기지만 `HOOK-FAIL worker-stalled <종료 코드>` 로 남아 핸들러의 결함과 구분되지 않는다. 위 예시는 상한에 닿았거나 `error` 가 아닌 멈춤이면 10 으로 넘긴다.
+- **넘길 때는 10 으로 끝낸다.** 루프 로그에 `HOOK-REJECT worker-stalled <이유>` 가 남는다. 다른 0 아닌 값도 넘기지만 `HOOK-FAIL worker-stalled <종료 코드>` 로 남아 핸들러의 결함과 구분되지 않는다. 
 - **횟수는 멈춤마다 센다.** 같은 상태가 이어지는 동안 입력의 `since` 가 그대로이고, 작업 중 화면을 거쳐 다시 멈추면 `since` 가 바뀐다. dispatch 수명 전체로 세면 앞 멈춤에서 쓴 횟수 때문에 다음 멈춤을 다시 시도시키지 못한다.
 - **0 으로 끝나면 같은 화면이 기준 틱 수만큼 더 이어질 때 다시 불린다.** 다시 시도한 worker 의 화면이 그대로일 수 있어서다. 화면에 오류 줄이 늘어도 다시 불린다. 0 이 아니면 그 화면에는 다시 불리지 않는다.
 - **사람이 Esc 로 끊은 화면(`interrupted`)에는 불리지 않는다.** 사람이 일부러 멈춘 작업을 다시 돌리지 않는다.

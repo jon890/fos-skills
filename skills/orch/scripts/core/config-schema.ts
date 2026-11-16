@@ -235,6 +235,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
         return asProblem('pipeline.stall_ticks', e)
       }
     } },
+    stall_error_retries: zodCheck(z.number().int().min(0)),
     idle_min: zodCheck(z.number().min(0)),
     idle_exited: zodCheck(bool),
     refresh_slots: zodCheck(z.number().int().min(0)),

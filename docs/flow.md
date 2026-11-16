@@ -201,7 +201,7 @@ flowchart TD
 | `decision-pending` | `orch-loop` | 새 사용자 결정 질문이나 보드의 미완료 결정 줄을 찾을 때 | 아니오 | `DECISION-PENDING`, 현재 코디네이터에게 묻기 요청 | 저장소의 결정 요청 전달 |
 | `worker-done` | `orch-loop` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
 | `worker-lost` | `orch-loop` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER-LOST` 메시지과 상태 기록 | runner 호스트 상태 확인 |
-| `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 입력하지 않는다. 핸들러가 없거나 0 이 아니면(거부는 넘김) 그 Run 에 `WORKER-STALLED` 메시지 | `orch worker send` 로 다시 시도시키고 횟수 상한에서 코디네이터에게 넘긴다 |
+| `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 핸들러가 없으면 `error` 멈춤마다 `pipeline.stall_error_retries` 번까지 `orch worker send` 로 「계속 진행해」 를 보낸다. 상한에 닿았거나 `error` 가 아니거나 핸들러가 0 이 아니면(거부는 넘김) 그 Run 에 `WORKER-STALLED` 메시지 | 핸들러가 있으면 핸들러가 먼저 돌고 코어 기본은 돌지 않는다. 핸들러는 다시 시도시킬지와 횟수를 달리 정한다 |
 | `before-ready` | `ci-ready`, `orch-loop` | draft 를 ready 로 바꾸기 전 | 예 | 겹침과 충돌 보류, ready 슬롯 | 이 저장소에서 CI 를 돌릴 수 없는 시간대 거부 |
 | `pr-ready` | `ci-ready`, `orch-loop` | ready 로 바꾼 뒤 | 아니오 | 없음 | 리뷰 요청 |
 | `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
@@ -227,7 +227,7 @@ flowchart TD
 | 원격 브랜치가 쌓인다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 브랜치가 남는다 | `after-merge`, `tick` | 머지를 확인한 자리에서 원격 브랜치를 지운다. 틱마다 내 PR 가운데 MERGED 이거나, CLOSED 이고 head 커밋이 base 에 들어간 PR 의 원격 브랜치를 지운다 |
 | 같은 저장소의 여러 Run 을 관리한다 | `orch loop start` | 루프는 저장소마다 하나이고 Run 별 질문 확인·정리·tick 을 실행한다. 알림도 해당 Run 메일함으로 보낸다([ADR-012](adr/012-orch-loop-multi-run.md), [ADR-027](adr/027-orca-message-wake.md)) |
 | 정리가 다른 세션의 산출물을 옮긴다 | `cleanup-sweep --run`, `handoff-cleanup --run` | `--run` 을 주면 그 Run 의 worker 와 Task 가 쓴 것만 정리한다. Run 에 묶을 수 없는 산출물(큐 로그, 폴더, csv)은 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다 |
-| worker 가 모델 오류 화면에서 멈춰 사람이 터미널을 봐야 안다 | `tick`, `worker-stalled` | 틱마다 등록된 Run 이 띄운 살아 있는 worker 의 화면을 판정해 같은 멈춤이 이어지면 이벤트를 낸다. 다시 시도시키는 일은 저장소 핸들러가 맡고, 맡지 못하면 그 Run 의 코디네이터가 `WORKER-STALLED` 로 깨어난다([ADR-013](adr/013-orch-worker-stalled.md)) |
+| worker 가 모델 오류 화면에서 멈춰 사람이 터미널을 봐야 안다 | `tick`, `worker-stalled` | 틱마다 등록된 Run 이 띄운 살아 있는 worker 의 화면을 판정해 같은 멈춤이 이어지면 이벤트를 낸다. `error` 멈춤은 핸들러가 없으면 코어가 정한 횟수까지 다시 진행시키고, 핸들러가 있으면 핸들러가 맡는다. 상한에 닿았거나 맡지 못하면 그 Run 의 코디네이터가 `WORKER-STALLED` 로 깨어난다([ADR-013](adr/013-orch-worker-stalled.md)) |
 | 머지된 줄 모르는 worker 의 dispatch 가 살아 있어 정리가 그 워크트리를 「살아 있는 worker」 로 계속 건너뛴다 | `finish-pr`, `send-to-worker` | 마무리가 정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지와 머지 커밋을 알리고, `finish.worker_done_timeout` 동안 dispatch 가 끝나기를 기다린다. 답할 메시지가 없으면 `send-to-worker` 가 새 메시지로 보낸다 |
 | 코디네이터가 `!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남는다 | `finish-pr`, `board-sync` | 표시가 없는 PR 은 마무리가 배포 확인 뒤, 보드 동기화가 머지를 본 틱에 업무의 마지막 PR 인지 판정한다([ADR-014](adr/014-orch-auto-last-pr.md)). 판정하지 못하면 중간 PR 이다 |
 | 보드 항목의 `pr` 필드가 비어 머지 뒤에도 항목이 진행 중으로 남는다 | `launch-worker`, `orch-loop`, `board-sync`, `finish-pr` | 띄울 때 같은 워크트리의 항목을 이어 쓰고, 준비됨 `worker_done` 과 틱이 브랜치로 `pr` 필드를 채우고, 마무리가 `pr` 필드가 빈 항목을 브랜치나 워크트리 이름으로 찾는다 |

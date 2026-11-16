@@ -768,7 +768,11 @@ async function executeMain(argv: string[]): Promise<number> {
   if (existsSync(hookDir)) {
     for (const name of readdirSync(hookDir)) {
       const file = join(hookDir, name)
-      if (isFile(file) && /(?:worker[\s'",]+nudge|nudge-worker)/.test(readFileSync(file, 'utf8'))) repoLines.push(`NUDGE-HANDLER ${file}: orch worker send 로 바꾼다`)
+      if (!isFile(file)) continue
+      const text = readFileSync(file, 'utf8')
+      if (/(?:worker[\s'",]+nudge|nudge-worker)/.test(text)) repoLines.push(`NUDGE-HANDLER ${file}: orch worker send 로 바꾼다`)
+      // 옛 문서의 예시 핸들러는 코어 기본(pipeline.stall_error_retries)과 같은 일만 한다
+      if (name.startsWith('worker-stalled.') && text.includes('stall-retries.json')) repoLines.push(`STALL-RETRY-HANDLER ${file}: 코어 기본과 같은 일만 하면 지워도 된다(pipeline.stall_error_retries). 달리 하는 일이 있으면 둔다`)
     }
   }
   if (runId) for (const pid of waiterPids(runId)) repoLines.push(`WAITER-LEFT ${pid}: 옛 대기를 직접 종료한다: kill ${pid}`)
