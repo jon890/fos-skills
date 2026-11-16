@@ -79,12 +79,27 @@ function readEnvelope(args: string[], opts?: RunOptions): { done: RunResult; env
   catch { return { done, envelope: null, parsed: false } }
 }
 
+// 실패 출력을 한 줄로 만든다. Orca 의 오류 봉투({ ok: false, error: { code, message } })면 `code: message` 이고,
+// stderr 가 message 에 없는 말을 하면 뒤에 붙인다. 봉투가 아니면 stdout 과 stderr 를 한 줄로 합친다. 300자까지다.
+// 줄바꿈으로 잘린 `{` 만 보이지 않게 하려는 것이다(2026-11-16 send-to-worker 의 「orca orchestration send 실패: {」)
+export function failureDetail(stdout: string, stderr: string): string {
+  const flat = (text: string) => text.replace(/\s+/g, ' ').trim()
+  let error: Record<string, unknown> = {}
+  try { error = objectOr(objectOr(JSON.parse(stdout)).error) } catch { /* 봉투가 아니다 */ }
+  const code = typeof error.code === 'string' ? error.code : ''
+  const message = typeof error.message === 'string' ? flat(error.message) : ''
+  const head = [code, message].filter(Boolean).join(': ')
+  const extra = flat(stderr)
+  const text = !head ? flat(stdout + stderr) : extra && !(message && extra.includes(message)) ? `${head} ${extra}` : head
+  return Array.from(text).slice(0, 300).join('')
+}
+
 // send-to-worker 가 쓰던 엄격한 ok 검사와 오류 본문을 보존한다.
 export function orcaJsonOrThrow(args: string[], options: { failure?: (message: string, structured: boolean) => Error; run?: RunOptions } = {}): Record<string, any> {
   const { done, envelope } = readEnvelope(args, options.run)
   const body = objectOr(envelope)
   if (done.code !== 0 || !isObject(envelope) || !body.ok) {
-    const detail = Array.from((done.stdout + done.stderr).trim()).slice(0, 300).join('')
+    const detail = failureDetail(done.stdout, done.stderr)
     const message = `orca ${args.slice(0, 2).join(' ')} 실패: ${detail}`
     throw options.failure ? options.failure(message, body.ok === false && !!objectOr(body.error).code) : new Error(message)
   }

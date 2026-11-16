@@ -46,7 +46,11 @@ if (is('orchestration', 'worker-show')) {
   if (!d) out({}, 1)
   out({ dispatch: d.dispatch, worker: d.worker || {}, resource: d.resource || {}, terminalResource: d.terminalResource || {} })
 }
+if (is('orchestration', 'run-current')) out({ runId: state.current_run ?? null })
 if (is('orchestration', 'inbox')) out({ messages: state.inbox || [] })
+if (is('orchestration', 'check') && state.check_fenced) {
+  print(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'This caller is not bound to Run ' + opt('--run') + '. Nothing changed.' } }), 1)
+}
 if (is('orchestration', 'check')) out({ messages: args.includes('--types') ? state.questions || state.inbox || [] : state.inbox || [] })
 if (is('orchestration', 'reply')) {
   if (state.no_pane || (state.no_pane_scoped && (args.includes('--run') || args.includes('--from')))) {
@@ -64,6 +68,7 @@ if (is('orchestration', 'reply')) {
   out({ message: { id: 'msg_new' } })
 }
 if (is('orchestration', 'send')) {
+  if (state.send_error) print(JSON.stringify({ ok: false, error: { code: 'dispatch_run_mismatch', message: 'Dispatch ctx_1 belongs to Run run_x, not run_y.' } }, null, 2), 1)
   if (state.send_rejected && (opt('--body') || '').startsWith('지시서 ')) print(JSON.stringify({ ok: false, error: { code: 'dispatch_inactive', message: 'remote finished worker refuses follow-up' } }), 1)
   if (state.send_ambiguous) print('connection lost', 1)
   if (state.fenced && args.includes('--from')) {
@@ -1074,5 +1079,51 @@ describe('짧은 출력', () => {
     const r = send('--body', 'x')
     assert.equal(r.code, 3, both(r))
     assert.equal(r.stdout.trim(), 'ENDED ctx_1 completed no-terminal')
+  })
+})
+
+describe('다른 Run 의 dispatch', () => {
+  // 코디네이터는 run_mine 에 묶여 있고 worker 는 run_x 가 띄웠다
+  const foreign = (extra: Json = {}) => state({ dispatches: worker('dispatched'), inbox: [], current_run: 'run_mine', ...extra })
+
+  test('dispatch 의 Run 으로 보내고 --from 은 붙이지 않는다', () => {
+    foreign()
+    const r = send('--body', 'x', '--no-reply')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration send'), ['orca orchestration send --run run_x --to dispatch:ctx_1 --subject x --body x'])
+    assert.match(r.stdout, /^note: ctx_1 는 다른 Run run_x 의 worker 다\(이 코디네이터는 run_mine\)/m)
+    assert.match(r.stdout, /^sent: .*\(msg_sent\)$/m)
+  })
+
+  test('--run 을 다른 값으로 줘도 dispatch 가 속한 Run 으로 보낸다', () => {
+    foreign()
+    const r = send('--body', 'x', '--no-reply', '--run', 'run_mine')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration send'), ['orca orchestration send --run run_x --to dispatch:ctx_1 --subject x --body x'])
+    assert.match(r.stdout, /^note: --run run_mine 이 아니라 ctx_1 가 속한 Run run_x 로 보낸다/m)
+  })
+
+  test('후보를 찾을 때 check --run 을 부르지 않고 그 Run 의 메일함을 읽는다', () => {
+    foreign({ inbox: [{ ...message('m_q', 'term_w', 'question'), run_id: 'run_x' }] })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration check'), [])
+    assert.ok(lines('orca orchestration inbox').includes('orca orchestration inbox --terminal run:run_x --limit 200'), logText())
+    assert.match(lines('orca orchestration reply')[0], /^orca orchestration reply --id m_q --body x --run run_x$/)
+  })
+
+  test('코디네이터 Run 을 모르는 채 check --run 이 consumer_fenced 로 막혀도 inbox 로 이어 간다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'term_w', 'question')], check_fenced: true })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^note: check --run run_x 이 막혀 inbox 로 읽는다: .*consumer_fenced/m)
+    assert.match(r.stdout, /^replied: m_q 에 답했다/m)
+  })
+
+  test('Orca 오류는 code 와 message 를 한 줄로 낸다', () => {
+    foreign({ send_error: true })
+    const r = send('--body', 'x', '--no-reply')
+    assert.equal(r.code, 5, both(r))
+    assert.match(r.stdout, /^send-to-worker: orca orchestration send 실패: dispatch_run_mismatch: Dispatch ctx_1 belongs to Run run_x, not run_y\.$/m)
   })
 })
