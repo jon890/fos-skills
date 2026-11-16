@@ -23,7 +23,7 @@
 //       (lib/paths.ts 에 정의한 orch 폴더는 건드리지 않는다)
 //     - <previews>/<폴더나 파일>: --previews 를 줄 때만 본다. 조건은 위와 같고 남길 이름은 <previews>/.keep 에 적는다.
 //       미리보기는 content-preview 의 산출물이라 기본으로는 보지 않는다
-//     - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. bin 폴더 안은 뺀다
+//     - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. orch 관리 폴더 안은 뺀다
 //       (DB 에서 뽑은 원본은 쓰고 나서 지운다)
 //
 // Run 범위(--run 을 줄 때. ADR-012):
@@ -292,8 +292,8 @@ function mtimeSec(target: string): number {
   return statSync(target).mtimeMs / 1000
 }
 
-// 확장자가 dataExt 에 드는 파일. bin 폴더 안은 들어가지 않는다.
-function dataFiles(dir: string, dataExt: Set<string>): string[] {
+// 확장자가 dataExt 에 드는 파일. 최상위 orch 관리 폴더와 모든 깊이의 bin 폴더 안은 들어가지 않는다.
+function dataFiles(dir: string, dataExt: Set<string>, topLevel = true): string[] {
   const found: string[] = []
   for (const name of listDir(dir)) {
     const target = join(dir, name)
@@ -304,7 +304,7 @@ function dataFiles(dir: string, dataExt: Set<string>): string[] {
       continue
     }
     if (entry.isDirectory()) {
-      if (name !== 'bin') found.push(...dataFiles(target, dataExt))
+      if (name !== 'bin' && (!topLevel || !RESERVED.has(name))) found.push(...dataFiles(target, dataExt, false))
     } else if (isFile(target)) {
       const dot = name.lastIndexOf('.')
       if (dot > 0 && dataExt.has(name.slice(dot + 1).toLowerCase())) found.push(target)

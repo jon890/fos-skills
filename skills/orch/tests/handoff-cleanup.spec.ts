@@ -402,6 +402,18 @@ describe('handoff-cleanup', () => {
     for (const rel of ['.orch/scratch/new.csv', '.orch/bin/lookup.csv', '.orch/scratch/notes.txt']) assert.equal(existsSync(join(repo, rel)), true, rel)
   })
 
+  test('관리 폴더 안의 오래된 csv 는 남기고 일반 폴더의 csv 는 옮긴다', () => {
+    const protectedFiles = ['study', 'feedback', 'state', 'hooks', 'queue', 'specs', 'bin'].map((name) =>
+      make(`.orch/${name}/old.csv`, '후보 데이터', 9))
+    const ordinary = make('.orch/scratch/study/old.csv', '추출 데이터', 9)
+    const dry = ok(['--folder-days', '100'])
+    assert.match(dry.stdout, /후보 \.orch\/scratch\/study\/old.csv/)
+    for (const file of protectedFiles) assert.equal(dry.stdout.includes(file.slice(repo.length + 1)), false)
+    ok(['--apply', '--folder-days', '100'])
+    for (const file of protectedFiles) assert.equal(existsSync(file), true, file)
+    assert.equal(existsSync(ordinary), false)
+  })
+
   test('옮길 폴더 안의 파일은 따로 세지 않고 폴더만 한 번 낸다', () => {
     make('previews/old-dir/data.csv', 'a,b\n', 5)
     age(join(previews, 'old-dir'), 5)
