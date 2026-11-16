@@ -3,12 +3,15 @@
 import { parseStepMark } from './step-marks.js'
 
 export const MAX_BODY = 80
-export const MAX_WAIT = 20
+export const MAX_WAIT = 40
 // 스크립트가 쓰고 바꾸는 줄은 규칙 밖이다
 const SCRIPT_LINE = /^\s*(?:(?:✓|\[[xX ]\]|▶|◇)\s*)?(?:남은 일|중간 과정):/
-// 근거와 사건 꼬리표, 워크트리 이름처럼 줄 끝의 괄호 묶음은 글자 수에서 뺀다. 글이 아니라 참조다
-const TRAILING_REFS = /(?:\s*\([^()]*\))+\s*$/
-const LOG_LINE = /^\s*(?:확인|지금)[(（]|^\s*끝난 것\s*:/
+// 줄 끝의 참조는 글자 수에서 뺀다: 사건 꼬리표 (#N 사건), 근거 (스펙|계획|앞 사건: …), 공백 없는 낱말 하나(워크트리 이름).
+// 그 밖의 괄호 글은 본문으로 센다. 괄호로 80자를 피하지 못하게 하려는 것이다
+const REF = String.raw`\((?:#[1-9]\d* (?:pr|merge|deploy|release)|(?:스펙|계획|앞 사건)\s*:[^()]*|[^()\s]{1,60})\)`
+const TRAILING_REFS = new RegExp(String.raw`(?:\s*${REF})+\s*$`)
+const LOG_LINE = /^\s*(?:확인|지금)\s*[(（]|^\s*끝난 것\s*:/
+const EVENT_OR_BASIS = /(?:\s*\((?:#[1-9]\d* (?:pr|merge|deploy|release)|(?:스펙|계획|앞 사건)\s*:[^()]*)\))+\s*$/
 const WAIT_PROSE = /기다리는 중|기다림|대기 중/
 
 // 번호·자동 진행 표시·줄 끝 괄호 묶음을 뺀 본문
@@ -32,7 +35,7 @@ export function waitConditionProblem(condition) {
 export function lineProblem(text) {
   if (typeof text !== 'string' || SCRIPT_LINE.test(text)) return null
   const raw = text.replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, '')
-  if (raw.includes('✓') || LOG_LINE.test(bodyOf(text))) {
+  if (raw.includes('✓') || LOG_LINE.test(bodyOf(text).replace(EVENT_OR_BASIS, ''))) {
     return `한 일을 적는 줄(「확인(…)」, 「지금(…)」, 「끝난 것:」, 줄 안의 ✓)은 쓰지 않는다. 끝난 단계는 완료 표시만 하고, 근거와 결과는 업무 댓글이나 PR 에 둔다: ${text.trim()}`
   }
   const body = lineBody(text)
