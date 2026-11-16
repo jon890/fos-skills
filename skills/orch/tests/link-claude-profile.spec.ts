@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { missingItems, pickSource, selectedProfile, selectedReadiness, stamp } from '../scripts/lib/claude-profile.ts'
+import { COPY_FILES, missingItems, pickSource, selectedProfile, selectedReadiness, stamp } from '../scripts/lib/claude-profile.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/link-claude-profile.ts', import.meta.url))
 
@@ -146,5 +146,8 @@ describe('연결', () => {
 
   test('백업 이름의 시각은 YYYYMMDDHHMMSS 다', () => {
     assert.equal(stamp(new Date(2026, 9, 30, 7, 5, 9)), '20261030070509')
+  })
+  test('실제 홈을 읽는 browser.config.json 과 mac-cleanup 오버레이는 프로필로 복사하지 않는다', () => {
+    for (const name of ['browser.config.json', 'mac-cleanup-overlay.md', 'mac-cleanup.md']) assert.ok(!COPY_FILES.includes(name), name)
   })
 })

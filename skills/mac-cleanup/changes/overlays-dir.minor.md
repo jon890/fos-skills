@@ -1,0 +1,1 @@
+- 개인 오버레이를 `~/.claude/overlays/mac-cleanup.md` 에서 읽는다. 파일이 없으면 옛 자리 `~/.claude/mac-cleanup-overlay.md` 를 읽는다.

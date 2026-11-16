@@ -17,8 +17,9 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { inside, isFile } from './fs.ts'
 
-// 계정마다 같아도 되는 설정 파일. 로그인 정보와 세션 상태는 넣지 않는다
-export const COPY_FILES = ['settings.json', 'settings.local.json', 'CLAUDE.md', 'CLAUDE-omc.md', 'keybindings.json', 'browser.config.json', 'mac-cleanup-overlay.md']
+// 계정마다 같아도 되는 설정 파일. 로그인 정보와 세션 상태는 넣지 않는다.
+// browser.config.json 과 mac-cleanup 오버레이는 넣지 않는다. 둘 다 프로필이 아니라 실제 홈(~/.claude, ~/.config)을 읽어 복사본이 쓰이지 않는다
+export const COPY_FILES = ['settings.json', 'settings.local.json', 'CLAUDE.md', 'CLAUDE-omc.md', 'keybindings.json']
 export const STATE_ITEMS = ['projects', 'history.jsonl', 'session-env', 'shell-snapshots', 'file-history']
 
 export type Step = { kind: 'link' | 'copy'; name: string; origin: string; replaces: boolean }
