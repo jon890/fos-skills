@@ -35,7 +35,11 @@ export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../..
 export function readBoard(file: string): BoardItem[] {
   const raw = JSON.parse(readFileSync(file, 'utf8')).items
   if (!raw || typeof raw !== 'object') throw new Error('보드 items 가 목록이나 객체가 아니다')
-  return Array.isArray(raw) ? raw : Object.values(raw)
+  const items: BoardItem[] = Array.isArray(raw) ? raw : Object.values(raw)
+  for (const item of items) {
+    if (item?.status === 'goal') item.status = 'doing'
+  }
+  return items
 }
 
 // 지시서 머리의 `중간 과정:` 줄은 lib/spec.ts 의 interimOf 가 읽는다. spec-lint 도 같은 판정을 써서 그쪽에 둔다
@@ -67,7 +71,7 @@ function targetItem(items: BoardItem[], opts: { repo: string; worktree: string; 
   if (same || opts.freshOnly) return same
   const explicit = items.find((item) => item.id === opts.explicit)
   if (explicit) return explicit
-  const eligible = items.filter((item) => !['decide', 'goal'].includes(String(item.status)))
+  const eligible = items.filter((item) => item.status !== 'decide')
   const open = eligible.filter((item) => item.status !== 'done')
   const byBranch = (branch: string) => branch ? latest(open.filter((item) => item.branch === branch || boardWorkerRows(item).some((row) => row.branch === branch))) : undefined
   if (opts.reviewPr) {
@@ -150,8 +154,8 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   }
   const interim = interimOf(text)
   if (interim && !reviewRole) {
-    // 결정 항목과 목표 항목은 업무 항목이 아니라 중간 과정을 붙이지 않는다
-    const open = items.filter((row) => !['done', 'decide', 'goal'].includes(String(row.status)) && typeof row.id === 'string')
+    // 결정 항목은 업무 항목이 아니라 중간 과정을 붙이지 않는다
+    const open = items.filter((row) => !['done', 'decide'].includes(String(row.status)) && typeof row.id === 'string')
     let found = interim.pr ? open.filter((row) => prNumbers(row.pr).has(interim.pr as string)) : []
     // CI 고침 worker 의 항목은 대개 pr 칸이 차 있어, pr 칸이 빈 항목만 보는 findBoardItems 를 쓰지 않는다
     if (found.length === 0) found = open.filter((row) => row.worktree === basename(worktree) || (branch && row.branch === branch))
@@ -174,7 +178,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   // 지시서가 id 를 정하지 않았으면 같은 워크트리나 브랜치의 끝나지 않은 항목을 이어 쓴다.
   // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않게 한다
   // 그다음은 같은 업무 번호의 항목이다. 한 업무의 다음 PR 이나 확인 작업을 다른 워크트리에서 띄워도 진행률이 한 항목에 모인다
-  const open = items.filter((row) => !['done', 'decide', 'goal'].includes(String(row.status)) && typeof row.id === 'string')
+  const open = items.filter((row) => !['done', 'decide'].includes(String(row.status)) && typeof row.id === 'string')
   const latest = (rows: BoardItem[]) => rows.map((row, index) => ({ row, index })).sort((a, b) => String(a.row.stepAt ?? '').localeCompare(String(b.row.stepAt ?? '')) || a.index - b.index).at(-1)?.row
   const same = explicit
     ? undefined

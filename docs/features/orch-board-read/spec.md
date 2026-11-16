@@ -13,7 +13,7 @@
 
 | 대상 | 사실 | 근거 |
 | --- | --- | --- |
-| 지금 `orch board` | `set`, `step`, `add-step`, `show` 와 `approval`, `sync`, `release`, `auto-check`, `goal` 이 있다. 읽기·지우기 동작은 `show` 뿐이다 | `skills/orch/scripts/lib/commands.ts` 의 board 묶음 |
+| 지금 `orch board` | `set`, `step`, `add-step`, `show` 와 `approval`, `sync`, `release`, `auto-check` 가 있다. 읽기·지우기 동작은 `show` 뿐이다 | `skills/orch/scripts/lib/commands.ts` 의 board 묶음 |
 | `show` 의 출력 | 머리 `BOARD <항목> <상태> <끝낸>/<전체>`, 아직 안 풀린 `BOARD-UNMATCHED <항목> PR #<번호>` 줄, 미완료 단계를 낸다. 브랜치, PR, 워크트리 칸은 내지 않는다. `--json` 옵션은 받지 않아 사용법 오류(종료 코드 2)다 | `skills/orch/scripts/board/board-edit.ts` 의 `OPTIONS`, `main` |
 | `board.ts view` | 읽기 전용 JSON 한 줄(`id`, `status`, `was`, `progress`, `rev`, `lines`)을 낸다. 칸 값(제목, 브랜치, PR, 워크트리, 업무 주소)은 넣지 않는다. `show` 가 이것을 부른다 | `extensions/work-board/bin/board.ts` 의 `itemView` |
 | `board.ts list` | 항목마다 `<상태> <id> <제목>   <진행률 n/m (p%)>` 한 줄과 그 아래 모든 줄(mark 번호, ✓)을 낸다. 필터가 없고 JSON 이 없다 | `board.ts` 의 `apply` 의 `list` 분기 |

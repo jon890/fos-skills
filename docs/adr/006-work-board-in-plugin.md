@@ -27,3 +27,7 @@
   `local-mods` marketplace 에 다른 mod 가 없으면 `claude plugin marketplace remove local-mods` 로 함께 지운다.
   board.json 의 위치와 형식은 바뀌지 않는다.
 - **적용 범위**: 창의 동작과 보드 명령은 [`work-board/references/behavior.md`](../../extensions/work-board/references/behavior.md) 가 소유한다. 처음 쓰는 방법은 [`work-board/README.md`](../../extensions/work-board/README.md) 에 있다.
+
+## 뒤에 바뀐 것
+
+- 2026-11-16: 목표 상태와 목표 진행률 집계를 없앴다. 옛 파일의 `goal`은 `doing`으로 읽어 내용을 보존한다. 창과 orch의 변경을 한 PR로 반영하는 배치는 유지한다. 현재 상태와 명령은 [보드 명령 안내](../../skills/orch/references/board.md)가 소유한다.

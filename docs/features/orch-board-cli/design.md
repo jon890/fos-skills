@@ -163,7 +163,7 @@ flowchart TD
 - 묶음의 나머지 명령(`step`, 칸만 바꾸는 `set`)은 줄 하나나 칸 하나를 고치므로 잠금만으로 앞 수정을 지우지 않는다.
 - `board-sync` 가 지문 거절에서 틱 전체를 멈추지 않는 까닭: 보드는 틱의 처음에 한 번 읽고 항목마다 gh 조회 뒤에 쓰므로 읽기와 쓰기 사이가 수 초에서 수십 초다. 코디네이터가 그 사이 새 명령으로 고치는 일은 정상이고, 그때마다 다른 항목의 반영까지 한 틱 늦출 까닭이 없다.
 - 남는 틈: 묶음 끝의 `set <id> done` 은 앞서 읽은 단계 목록으로 정한다. 그 사이 `add-step` 이 줄을 더하면 끝나지 않은 줄이 있는 채 `done` 이 될 수 있다. 통째 저장이 아니라 이번 지문 거절의 대상이 아니고, 스펙도 다루지 않아 그대로 둔다.
-- 대상이 아닌 통째 저장: `goal-progress.ts` 의 `--details` 옵션은 목표 항목의 줄을 다른 항목의 제목으로 새로 만든다. 자기 줄을 읽어 고치는 저장이 아니라 붙이지 않는다. 새 항목을 만드는 `registerBoard` 의 첫 저장도 읽은 줄이 없어 붙이지 않는다. `finish-pr.ts` 의 `done` 처리(`--next ''`)는 읽은 목록 없이 칸을 비우는 호출이라 그대로다.
+- 대상이 아닌 통째 저장: 새 항목을 만드는 `registerBoard` 의 첫 저장도 읽은 줄이 없어 붙이지 않는다. `finish-pr.ts` 의 `done` 처리(`--next ''`)는 읽은 목록 없이 칸을 비우는 호출이라 그대로다.
 
 ### 보드 파일 찾기 (PR2)
 
@@ -183,7 +183,6 @@ flowchart TD
 | --- | --- | --- |
 | `board/board-sync.ts`(`--board` 없을 때) | 기본 위치만 | `finish.board` 를 읽는다 |
 | `board/board-release.ts`(`--board` 없을 때) | 기본 위치만 | 같다 |
-| `board/goal-progress.ts`(`--board` 없을 때) | 기본 위치만 | 같다 |
 | `loop/steps/board.ts`(동기화를 돌릴지 정하는 파일 확인) | 기본 위치만 | 같다. 지정 보드만 있는 저장소에서 동기화를 건너뛰지 않게 된다 |
 | `loop/steps/auto-merge.ts`(자동 머지의 보드 읽기) | 기본 위치만 | 같다 |
 | `loop/completion-watch.ts`(준비됨 뒤 `pr` 필드 채우기) | 기본 위치만 | 같다 |
@@ -193,7 +192,7 @@ flowchart TD
 | `status/orch-status.ts`, `paths/orch_paths.ts`(`orch paths board`) | 기본 위치만 | 같다 |
 | `queue/finish-pr.ts`, `cleanup/handoff-cleanup.ts` | 자기 옵션과 설정에서 읽은 값을 넘긴다 | import 자리만 바뀐다. `handoff-cleanup` 은 자기 값이 없을 때 `finish.board` 를 쓰게 된다 |
 
-- 바꾸지 않는 것: `board-sync.ts` 와 `board-release.ts` 의 `--board` 는 지금처럼 부른 폴더 기준으로 푼다. `goal-progress.ts` 는 `--repo` 가 없어 부른 폴더로 찾는다(`finish.board` 가 없는 저장소의 워크트리에서 `orch board goal` 을 부르면 그 워크트리의 보드다). `handoff-cleanup.ts` 는 자기 설정(`cleanup.board`)을 먼저 본다. 기존 스크립트의 인자 뜻을 이 기능에서 바꾸지 않고 이 예외를 `board.md` 에 적는다.
+- 바꾸지 않는 것: `board-sync.ts` 와 `board-release.ts` 의 `--board` 는 지금처럼 부른 폴더 기준으로 푼다. `handoff-cleanup.ts` 는 자기 설정(`cleanup.board`)을 먼저 본다. 기존 스크립트의 인자 뜻을 이 기능에서 바꾸지 않고 이 예외를 `board.md` 에 적는다.
 - 범위 밖으로 남는 것: 보드 창(`hooks/register.js` 의 `BOARD_PATHS`)과 `board.ts` 를 직접 부르는 호출은 `finish.board` 를 읽지 않는다. `finish.board` 를 기본 위치와 다르게 둔 저장소에서는 창이 다른 파일을 보인다. 스펙의 범위가 orch 쪽 호출자라 이번에 고치지 않고 `board.md` 에 이 한계를 적는다.
 
 ### 새 명령 (PR3)
@@ -313,7 +312,7 @@ orch board show <항목>
 | REQ3~REQ7, REQ13 | `extensions/work-board/tests/` 의 새 테스트 파일이 임시 보드 파일로 `board.ts` 를 실행한다. 거절한 호출 뒤 보드 파일 바이트가 같은지 본다. 기존 `board.spec.ts` 는 고치지 않은 채 통과해야 하므로 새 사례를 그 파일에 더하지 않는다 |
 | REQ11 잠금 | 같은 폴더의 새 테스트 파일. 여러 프로세스가 서로 다른 항목을 함께 고친 뒤 모두 남는지, 잠금이 풀리기를 기다린 쓰기가 그 사이의 변경을 읽고 쓰는지, 잠금 파일을 미리 두고 기다림이 종료 코드 1 로 끝나는지(`BOARD_LOCK_WAIT_MS` 로 줄인다), 나이를 30초 넘게 옮긴 잠금을 넘겨받는지 본다. `file-lock.ts` 는 함수 단위로도 본다. 넘겨받기는 두 경쟁자의 단계를 리뷰가 든 순서로 끼워 실행해 하나만 들어가는지 본다 |
 | REQ11 낡은 목록 | PR1 은 `set --if-rev` 의 통과와 거절, PR2 는 스펙의 재현(글을 바꾼 뒤 옛 목록으로 동기화)이 거절되고 바꾼 글이 남는지를 `board-sync.spec.ts`, `lib-board.spec.ts`, `finish-pr.spec.ts` 에서 본다 |
-| REQ2 | `finish.board` 를 다른 파일로 둔 임시 저장소에서 `sync`, `release`, `goal`, 루프의 보드 단계, 상태 조회, 마무리가 그 파일만 고치는지, 기본 보드가 없어도 루프가 동기화를 도는지 본다. 워크트리에서 부른 새 명령이 주 checkout 의 보드를 고치는지는 PR3 에서 진입점을 거쳐 본다 |
+| REQ2 | `finish.board` 를 다른 파일로 둔 임시 저장소에서 `sync`, `release`, 루프의 보드 단계, 상태 조회, 마무리가 그 파일만 고치는지, 기본 보드가 없어도 루프가 동기화를 도는지 본다. 워크트리에서 부른 새 명령이 주 checkout 의 보드를 고치는지는 PR3 에서 진입점을 거쳐 본다 |
 | REQ1, REQ8, REQ9 | 새 `board-edit.spec.ts` 가 스크립트를 실행해 출력 한 줄, 종료 코드, `--full`, 사용법 오류를 본다. 명령 표 테스트(`lib-commands.spec.ts`)와 `orch board --help` 가 새 동작을 보이는지 본다 |
 | REQ12, REQ15 | 순수 판정은 값만으로(`core-values.spec.ts` 방식), 기록과 알림은 `board-sync.spec.ts`, `finish-pr.spec.ts`, 루프 단계 테스트에서 본다. 같은 PR 로 두 번 보내지 않는지, 꼬리표로 줄이 끝난 항목에는 기록이 없는지, 기록이 풀리면 지워지는지, 마일스톤 항목의 둘째 PR 에는 기록이 없는지, 사건 표시 없는 단계 정의로 띄운 항목이 마지막 PR 뒤 `doing` 으로 남는지 본다 |
 | REQ14 | 문서 계약 테스트(`docs-contract.spec.ts`)와 doctor 의 문서 판정이 새 명령 꼴을 명령 표로 확인한다 |

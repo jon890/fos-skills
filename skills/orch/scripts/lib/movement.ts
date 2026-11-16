@@ -22,7 +22,7 @@
 //   4. 움직임을 하나도 모르면(워크트리가 없고 화면 기록도 없다) 멈춤이 아니다. 모르는 것을 멈춤으로 알리지 않는다
 //   5. 움직임에서 idleMin 분이 지났으면 idle
 // 멈춘 단계(stalledStages): 표시 없는 줄은 아래 규칙을 따른다. 단계는 details 에서 done 이 아닌 첫 줄이다.
-//   - status 가 doing 이다. todo, wait, done, decide, goal 은 보지 않는다(wait 는 일부러 기다리는 항목이다)
+//   - status 가 doing 이다. todo, wait, done, decide 는 보지 않는다(wait 는 일부러 기다리는 항목이다)
 //   - 끝나지 않은 단계가 있다
 //   - worktree 나 branch 칸이 있다. 둘 다 없는 항목은 worker 를 띄운 적이 없는, 코디네이터나 사용자가 맡은 일이다
 //   - 그 worktree(이름이나 경로의 끝 이름)나 branch 의 워크트리에 살아 있는 dispatch 가 없다

@@ -64,7 +64,7 @@
 | `cleanup` | `orch cleanup sweep` | `cleanup-sweep` | `--repo`, `--run`, `--specs-dir` 를 문맥에서 읽는다 |
 | | `orch cleanup worktree <워크트리>` | `remove-worktree` | 없음 |
 | | `orch cleanup handoff` | `handoff-cleanup` | 없음 |
-| `board` | `orch board sync`, `release`, `goal <id>` | `board-sync`, `board-release`, `goal-progress` | 없음 |
+| `board` | `orch board sync`, `release` | `board-sync`, `board-release` | 없음 |
 | `board` | `orch board auto-check <항목>` | `auto-check` | `--repo`, `--run` 을 문맥에서 읽는다 |
 | `study` | `orch study list`, `add`, `set`, `migrate` | `study-candidates <동작>` | 없음 |
 | `spec` | `orch spec lint`, `orch spec line <지시서>` | `spec-lint`, `spec-line` | 없음 |
@@ -87,7 +87,7 @@
 
 | 읽는 쪽 | 무엇을 읽나 | 새 꼴 출력이 바뀌면 |
 | --- | --- | --- |
-| 스크립트가 다른 스크립트를 부르는 자리 | `launch-worker` → `make-worktree`(경로 한 줄), `spec-line`, `spec-lint`. `send-to-worker` → `launch-worker`(`LAUNCHED`), `nudge-worker`(첫 낱말). `lib/conflicts.ts`, `lib/tell-worker.ts`, `finish-pr` → `send-to-worker`(종료 코드, `LAUNCHED`). `merge-with-finish` → `finish-pr`, `merge_queue`. `merge_queue` → `overlap_units`(`바로 머지`, 종료 코드), `cleanup-sweep`. `orch-loop` → `board-sync`, `cleanup-sweep`, `merge-with-finish`(큐 로그 끝 줄 `QUEUE-DONE`, `QUEUE-HELD`, `STOP`), `nudge-worker`, `send-to-worker`, `user-active`. `cleanup-sweep` → `remove-worktree`, `launch-worker`. `heavy-slot` → `mem-gate`. `board-sync` → `goal-progress`. `orch-doctor` → `orch-loop --status`, `spec-line`. `handlers/decision-pending.ts`, `lib/decisions.ts`, `lib/machine.ts` → `user-active`, `nudge-worker` | 스크립트 파일을 경로로 직접 실행해 `orch` 진입점을 거치지 않으므로 지금 출력 그대로다. 고치지 않는다 |
+| 스크립트가 다른 스크립트를 부르는 자리 | `launch-worker` → `make-worktree`(경로 한 줄), `spec-line`, `spec-lint`. `send-to-worker` → `launch-worker`(`LAUNCHED`), `nudge-worker`(첫 낱말). `lib/conflicts.ts`, `lib/tell-worker.ts`, `finish-pr` → `send-to-worker`(종료 코드, `LAUNCHED`). `merge-with-finish` → `finish-pr`, `merge_queue`. `merge_queue` → `overlap_units`(`바로 머지`, 종료 코드), `cleanup-sweep`. `orch-loop` → `board-sync`, `cleanup-sweep`, `merge-with-finish`(큐 로그 끝 줄 `QUEUE-DONE`, `QUEUE-HELD`, `STOP`), `nudge-worker`, `send-to-worker`, `user-active`. `cleanup-sweep` → `remove-worktree`, `launch-worker`. `heavy-slot` → `mem-gate`. `orch-doctor` → `orch-loop --status`, `spec-line`. `handlers/decision-pending.ts`, `lib/decisions.ts`, `lib/machine.ts` → `user-active`, `nudge-worker` | 스크립트 파일을 경로로 직접 실행해 `orch` 진입점을 거치지 않으므로 지금 출력 그대로다. 고치지 않는다 |
 | work-board 요청문 | `extensions/work-board/hooks/register.js` 가 코디네이터에게 `skills/orch/scripts/send-to-worker.ts` 직접 경로를 지시한다 | 요청문을 `orch worker send` 로 바꾼다(PR1). 테스트는 문자열 포함만 보므로 PR3 뒤 경로가 깨져도 통과한다 |
 | 훅 | `block-background-wait.ts` 가 명령 문자열의 `wait-important` 를 본다. `block-worker-terminal-send.ts` 가 `send-to-worker`, `nudge-worker`, `adopt-sessions` 를 안내한다. `require-spec-line.ts` 가 `spec-line` 을 본다 | 새 꼴(`orch wait`, `orch worker send` 같은 것)도 알아보게 고친다 |
 | 코디네이터가 읽는 문서 | `skills/orch/SKILL.md`, `references/` 의 `waiting.md`(`LAST_DELIVERY`, `NEXT_WAIT`, `LOOP-EVENT`, 종료 코드), `launch.md`(`LAUNCHED`), `cleanup.md`(`QUEUE-DONE`, `FINISH-DONE`, `FINISH-FAIL`), `replying.md`, `verification.md`(`일치`, `불일치`), `board.md`, `heavy-checks.md`, `hooks.md`, `overlay.md`, `spec-writing.md`, `study-candidates.md`, `gh-call-budget.md`, `agent-selection.md`, `feature-loop.md`. `templates/spec-common.md` 의 `worker-ask`, `study-candidates` 블록. `docs/flow.md`, `docs/code-architecture.md`, `docs/data-schema.md` | 호출을 새 꼴로 바꾸고, 읽으라고 적은 줄을 새 기본 출력에 맞춘다 |

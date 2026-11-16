@@ -72,9 +72,9 @@ test('- 로 시작하는 글은 번호를 붙여 다시 쓸 수 있게 안내한
 
 test('set 은 상태만 바꾸고 없는 항목과 진행률 없는 doing 을 거절한다', () => {
   save([item(), item({ id: 'empty', status: 'wait', details: [] })])
-  for (const state of ['goal', 'decide', 'wait', 'done', 'doing']) ok(['set', 'x', state], `BOARD-SET x ${state}`)
-  refused(['set', 'x', 'bad'], /goal.*decide.*doing.*wait.*done/)
-  refused(['set', 'x', ''], /goal.*decide.*doing.*wait.*done/)
+  for (const state of ['decide', 'wait', 'done', 'doing']) ok(['set', 'x', state], `BOARD-SET x ${state}`)
+  refused(['set', 'x', 'bad'], /decide.*doing.*wait.*done/)
+  refused(['set', 'x', ''], /decide.*doing.*wait.*done/)
   refused(['set', 'missing', 'wait'], /항목이 없다/)
   refused(['set', '99', 'wait'], /항목이 없다/)
   refused(['set', 'empty', 'doing'], /진행률|단계/)
@@ -187,8 +187,8 @@ test('워크트리 기본은 주 checkout, 명시 repo 는 그 작업 트리, �
   ok(['set', 'x', 'done', '--repo', wt], 'BOARD-SET x done', wt)
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, 'wait')
   save([item()], join(repo, 'explicit.json'))
-  ok(['set', 'x', 'goal', '--board', 'explicit.json'], 'BOARD-SET x goal', wt)
-  assert.equal(JSON.parse(readFileSync(join(repo, 'explicit.json'), 'utf8')).items[0].status, 'goal')
+  ok(['set', 'x', 'wait', '--board', 'explicit.json'], 'BOARD-SET x wait', wt)
+  assert.equal(JSON.parse(readFileSync(join(repo, 'explicit.json'), 'utf8')).items[0].status, 'wait')
   config('chosen.json')
   save([item()], join(repo, 'chosen.json'))
   ok(['set', 'x', 'decide'], 'BOARD-SET x decide', wt)

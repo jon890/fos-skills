@@ -191,9 +191,9 @@ test('다시 연 리뷰 항목은 지난 끝남과 지난 완료 보고로 닫�
 test('시각 wait 는 첫 단계가 아니어도 지난 줄만 끝내며 항목 상태는 유지한다', () => {
   const details = ['참고: 설명', '1. 아직 앞 단계', '2. [wait: 2020-01-01 00:00] 지난 시각',
     '3. [wait: 2099-01-01 00:00] 미래', '4. [wait: 2026-02-30 00:00] 잘못된 날짜', '5. [wait: 내일 아침] 글', '6. [wait] 조건']
-  const result = sync(['doing', 'wait', 'todo', 'goal', 'done'].map(status => ({ id: status, status, details })))
+  const result = sync(['doing', 'wait', 'todo', 'done'].map(status => ({ id: status, status, details })))
   assert.equal(result.code, 0, result.result.stderr)
-  for (const status of ['doing', 'wait', 'todo', 'goal', 'done']) {
+  for (const status of ['doing', 'wait', 'todo', 'done']) {
     const item = result.board[status]
     assert.equal(item.status, status)
     const rows = item.details as Array<Json | string>
@@ -338,9 +338,9 @@ describe('board-sync', () => {
     assert.deepEqual(again.board, r.board)
   })
 
-  test('done 과 goal 항목, 조회에 실패한 PR 은 건너뛴다', () => {
+  test('done 항목, 조회에 실패한 PR 은 건너뛴다', () => {
     states['7'] = 'MERGED'
-    const items = [{ id: 'g', status: 'goal' }, { id: 'd', status: 'done', pr: '7' }, { id: 'x', status: 'doing', pr: '99', details: ['1. 구현'] }]
+    const items = [{ id: 'd', status: 'done', pr: '7' }, { id: 'x', status: 'doing', pr: '99', details: ['1. 구현'] }]
     const before = JSON.stringify({ items })
     const r = sync(items)
     assert.equal(r.code, 0, r.result.stderr)
@@ -366,30 +366,6 @@ describe('board-sync', () => {
     assert.equal(r.code, 1)
     assert.equal(r.board.a.status, 'doing')
     assert.match(r.result.stderr, /단계 목록을 읽지 못했다: a/)
-  })
-
-  test('--goal 은 동기화 뒤 목표 진행률을 추적 항목으로 센다', () => {
-    writeFileSync(join(tmp, 'items.txt'), 'a\n')
-    states['7'] = 'MERGED'
-    const r = sync([{ id: 'goal', status: 'goal' }, { id: 'a', status: 'doing', pr: '7', next: '1. 구현 #7' }], ['--goal', 'goal', '--goal-items', join(tmp, 'items.txt')])
-    assert.equal(r.code, 0, r.result.stderr)
-    assert.equal(r.board.goal.progress, '1/1')
-  })
-
-  test('--goal 만 주면 목표 항목의 단계 줄을 센다', () => {
-    states['7'] = 'MERGED'
-    const r = sync(
-      [{ id: 'g', status: 'goal', details: ['✓ 1. a', '2. b'] }, { id: 'a', status: 'doing', pr: '7', details: ['1. 구현'] }],
-      ['--goal', 'g'],
-    )
-    assert.equal(r.code, 0, r.result.stderr)
-    assert.equal(r.board.g.progress, '1/2')
-  })
-
-  test('--goal-items 는 --goal 과 함께 줘야 한다', () => {
-    const r = run(['--board', board, '--goal-items', 'x'])
-    assert.equal(r.code, 2)
-    assert.match(r.stderr, /--goal-items 는 --goal 과 함께 준다/)
   })
 
   test('보드를 읽지 못하면 1 이다', () => {
@@ -537,7 +513,7 @@ describe('board-sync 마지막 PR 판정', () => {
     assert.match(r.result.stdout, /PR 번호의 단계만 끝냄\(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다/)
   })
 
-  test('done 과 goal 이 아닌 항목이면 wait 이어도 같은 브랜치의 열린 PR 을 연결한다', () => {
+  test('done 이 아닌 항목이면 wait 이어도 같은 브랜치의 열린 PR 을 연결한다', () => {
     states['9'] = 'OPEN'
     const r = sync([{ id: 'a', status: 'wait', branch: 'feat/a' }], ['--open-prs', JSON.stringify([{ number: 9, headRefName: 'feat/a' }])])
     assert.equal(r.code, 0, r.result.stderr)
@@ -739,12 +715,12 @@ describe('단계를 모두 끝낸 doing 항목', () => {
 
 describe('손으로 쓴 사건 단계', () => {
   const details = () => ['1. PR (#7 pr)', '2. 머지 (#7 merge)', '3. 배포 (#7 deploy)', '4. 반영 (#7 release)', '5. 사람이 확인'].map((text) => step(text, false))
-  test('항목의 PR 과 무관하게 꼬리표의 PR 을 읽고 goal 과 next 도 처리한다', () => {
+  test('항목의 PR 과 무관하게 꼬리표의 PR 을 읽고 수동 항목의 next 도 처리한다', () => {
     states['7'] = 'MERGED'
     states['8'] = 'OPEN'
     const r = sync([
       { id: 'a', status: 'doing', pr: 8, details: details() },
-      { id: 'g', status: 'goal', next: details() },
+      { id: 'g', status: 'doing', next: details() },
       { id: 'other', status: 'doing', details: [step('1. 머지 (#8 merge)', false)] },
     ])
     assert.equal(r.code, 0, r.result.stderr)
@@ -752,14 +728,14 @@ describe('손으로 쓴 사건 단계', () => {
       assert.deepEqual(r.board[id][key], details().map((d, i) => ({ ...d, done: i < 2 })))
     }
     assert.equal(r.board.a.status, 'doing')
-    assert.equal(r.board.g.status, 'goal')
+    assert.equal(r.board.g.status, 'doing')
     assert.deepEqual(r.board.other.details, [step('1. 머지 (#8 merge)', false)])
   })
   test('조회 실패와 dry-run 은 완료 값을 바꾸지 않는다', () => {
-    let r = sync([{ id: 'g', status: 'goal', details: details() }])
+    let r = sync([{ id: 'g', status: 'doing', details: details() }])
     assert.deepEqual(r.board.g.details, details())
     states['7'] = 'MERGED'
-    r = sync([{ id: 'g', status: 'goal', details: details() }], ['--dry-run'])
+    r = sync([{ id: 'g', status: 'doing', details: details() }], ['--dry-run'])
     assert.equal(r.code, 0, r.result.stderr)
     assert.deepEqual(r.board.g.details, details())
     assert.match(r.result.stdout, /step g 2/)
@@ -779,7 +755,7 @@ describe('손으로 쓴 사건 단계', () => {
     states['merge:7'] = sha
     for (const conclusion of ['failure', 'success']) {
       states.runs = [{ headSha: sha, status: 'completed', conclusion }]
-      const r = sync([{ id: 'g', status: 'goal', details: details() }])
+      const r = sync([{ id: 'g', status: 'doing', details: details() }])
       assert.equal(r.code, 0, r.result.stderr)
       assert.deepEqual(r.board.g.details, details().map((d, i) => ({ ...d, done: i < (conclusion === 'success' ? 3 : 2) })))
     }
@@ -1075,4 +1051,19 @@ describe('board-sync 동시에 열린 PR', () => {
     assert.equal(r.code, 0, r.result.stderr)
     assert.doesNotMatch(r.result.stdout, /갱신 필요/)
   })
+})
+
+test('옛 목표 항목도 진행 중처럼 PR 머지를 반영한다', () => {
+  states['7'] = 'MERGED'
+  const r = sync([{ id: 'old', status: 'goal', pr: 7, details: ['1. 구현 #7'] }])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.old.status, 'done')
+  assert.equal(r.board.old.details[0].done, true)
+})
+
+test('지운 목표 집계 옵션은 사용법 오류로 거절한다', () => {
+  for (const flag of ['--goal', '--goal-items']) {
+    const result = run([flag, 'x'])
+    assert.equal(result.code, 2)
+  }
 })
