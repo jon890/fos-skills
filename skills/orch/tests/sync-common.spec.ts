@@ -296,3 +296,11 @@ test('오류와 중복 안내는 줄 번호가 사본과 틀 중 어디에 속�
   const result = syncCommon('- 중복\n- 중복\n', rule('a', '중복'), repo)
   assert.match(result.output.join('\n'), /SYNC-MANUAL 사본: 중복 머리 줄 1, 2줄/)
 })
+
+
+test('표지 없는 옛 항목을 덮는 diff 에 keep 으로 보존하는 방법을 안내한다', () => {
+  const result = syncCommon('- 같은 첫 줄\n  저장소 본문\n', rule('a', '같은 첫 줄') + '  틀 본문\n', repo)
+  assert.match(result.output.join('\n'), /SYNC-UPDATE a: 저장소가 일부러 바꾼 항목이면 <!-- orch-rule: a keep --> 을 붙인다\n@@/)
+  const kept = '- 같은 첫 줄 <!-- orch-rule: a keep -->\n  저장소 본문\n'
+  assert.equal(syncCommon(kept, rule('a', '같은 첫 줄') + '  틀 본문\n', repo).text, kept)
+})

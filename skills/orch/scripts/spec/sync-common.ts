@@ -173,7 +173,7 @@ function syncUniqueCommon(copy: string, template: string, repo: string, blockedH
       replacement.push(...Array(Math.max(0, trailing)).fill(''))
     } else replacement.push('')
     edits.push({ head, end, lines: replacement })
-    output.push(`SYNC-${mine ? 'UPDATE' : 'ADD'} ${name}`, `@@ -${head === end ? head : head + 1},${end - head} +${head + 1},${replacement.length} @@`)
+    output.push(`SYNC-${mine ? 'UPDATE' : 'ADD'} ${name}${legacy ? `: 저장소가 일부러 바꾼 항목이면 <!-- orch-rule: ${name} keep --> 을 붙인다` : ''}`, `@@ -${head === end ? head : head + 1},${end - head} +${head + 1},${replacement.length} @@`)
     if (mine) output.push(...lines.slice(head, end).map((line) => `-${line}`))
     output.push(...replacement.map((line) => `+${line}`))
   }
