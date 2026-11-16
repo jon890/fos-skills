@@ -163,13 +163,13 @@ describe('block-broken-commit-subject', () => {
   })
 
   test('도구 이름으로 시작하는 일반 제목은 허용하고 실제 명령과 사고 제목은 막는다', () => {
-    for (const subject of ['gh 인증 안내를 고친다', 'gh 명령 실패를 고친다', 'python 훅을 고친다', 'python3 설치 방법을 쓴다']) {
+    for (const subject of ['gh 인증 안내를 고친다', 'gh 명령 실패를 고친다', 'python 훅을 고친다', 'python3 설치 방법을 쓴다', 'gh pr create 안내를 고친다', 'gh auth login 안내를 고친다', 'gh api 호출에 -v 옵션을 더한다', 'python3 -m venv 안내를 고친다']) {
       assert.equal(decide(HOOK, `git commit -m ${quote(subject)}`), 'pass', subject)
     }
     for (const subject of [
       'python3 -c "print(1)"', 'python -m json.tool', 'python script.py',
       'gh api repos/owner/repo', 'gh pr create', 'gh auth login', 'gh command --help',
-      'gh $(cat command.txt)', 'python 입력 | cat', 'gh 출력 > result.txt',
+      'gh $(cat command.txt)', 'python input | cat', 'gh output > result.txt',
       // 실제 사고 bfcb7a2a 와 70d82f60 의 제목 형태도 계속 거부한다.
       'chore(browser): 스킬을 3.0.0 으로 올린다\\n\\n옛 이름 진입을 지운다',
       'chore(browser): 옛 이름 진입 browser_driver.py 를 지운다\\n\\n옛 링크를 지운다',

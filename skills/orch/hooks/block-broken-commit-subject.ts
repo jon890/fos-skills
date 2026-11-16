@@ -13,6 +13,7 @@ function broken(message: string): boolean {
   const subject = message.split(/\r?\n/, 1)[0].trimStart()
   if (subject.includes('\\n\\n') || /^(?:cat\s+<<|EOF\s*$)/.test(subject)) return true
   if (!/^(?:python3?|gh)\s/.test(subject)) return false
+  if (/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(subject)) return false
   // 도구 이름만으로는 코드가 아니다. 셸 문법, Python 파일, gh 의 하위 명령을 본다.
   return /<<|\$\(|[|<>]|\s--?[A-Za-z]/.test(subject) ||
     /^python3?\s+\S+\.py(?:\s|$)/.test(subject) ||
