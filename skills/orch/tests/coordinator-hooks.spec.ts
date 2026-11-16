@@ -176,6 +176,23 @@ describe('block-broken-commit-subject', () => {
     ]) assert.equal(decide(HOOK, `git commit -m ${quote(subject)}`), 'deny', subject)
   })
 
+  test('따옴표 구분자의 cat heredoc 메시지만 실행 전에 읽는다', () => {
+    const heredoc = (message: string, delimiter: string) => `"$(cat <<${delimiter}\n${message}\nEND\n)"`
+    for (const delimiter of ["'END'", '"END"']) {
+      for (const flag of ['-m ', '--message=', '-m']) {
+        for (const subject of ['fix: x\\n\\n본문', 'EOF', 'python script.py']) {
+          assert.equal(decide(HOOK, `git commit ${flag}${heredoc(subject, delimiter)}`), 'deny', `${flag}${delimiter}: ${subject}`)
+        }
+        const normal = 'fix: 제목\n\n"인용" 후\norca orchestration check --wait &\ncd x; git push\n글자 \\n\\n'
+        assert.equal(decide(HOOK, `git commit ${flag}${heredoc(normal, delimiter)}`), 'pass', delimiter)
+      }
+    }
+    assert.equal(decide(HOOK, `git commit -m ${heredoc('fix: x\\n\\n본문', 'END')}`), 'pass')
+    assert.equal(decide(HOOK, 'git commit -m "$(cat message.txt)"'), 'pass')
+    // 작은따옴표 문자열 안에 쓴 명령 설명은 실제 치환이 아니다.
+    assert.equal(decide(HOOK, `echo '${heredoc('EOF', '"END"')}'`), 'pass')
+  })
+
   test('-F 파일과 -C, cd 기준의 상대 경로를 읽는다', () => {
     const dir = mkdtempSync(join(root, 'messages-'))
     const file = join(dir, 'message file.txt')

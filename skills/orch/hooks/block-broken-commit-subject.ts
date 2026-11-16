@@ -1,7 +1,8 @@
 // PreToolUse(Bash): commit 메시지와 push 전 미전송 커밋의 첫 줄만 검사한다.
 // 글자 \n\n 과 코드로 시작하는 제목을 거부한다. 본문의 코드와 낱개 \n 은 허용한다.
 // shell-text 로 인용·주석·heredoc 을 가려 명령을 찾고 원문에서 인자를 읽는다.
-// 셸 확장·stdin 메시지는 실행 전 알 수 없어 건너뛴다. push 조회가 실패해도 통과한다.
+// 인용 구분자의 cat heredoc 은 본문을 읽고, 그 밖의 셸 확장·stdin 메시지는 건너뛴다.
+// push 조회가 실패해도 통과한다.
 // Git 조회 전체에 2초를 쓰며 eval 이나 셸 실행으로 인자를 풀지 않는다.
 
 import { spawnSync } from 'node:child_process'
@@ -91,18 +92,28 @@ function unpushedBroken(cwd: string, prefix: string[], sources: string[]): boole
   return false
 }
 
-function messageText(command: string): string {
+function messageText(command: string): { text: string; literals: Map<string, string> } {
+  const literals = new Map<string, string>()
+  const quoteStarts = new Set([...command.matchAll(QUOTED)].filter(match => match[0][0] === '"').map(match => match.index))
+  // -m 값 하나가 따옴표 구분자의 cat heredoc 이면 셸 확장 없이 메시지를 알 수 있다.
+  const knownHeredocs = command.replace(/"\$\([ \t]*cat[ \t]+<<[ \t]*(['"])([^'"\r\n]+)\1[ \t]*\r?\n([\s\S]*?)^\2\r?\n[ \t]*\)"/gm,
+    (all, _quote: string, delimiter: string, body: string, index: number) => {
+      if (!quoteStarts.has(index) || body.split(/\r?\n/).includes(delimiter)) return all
+      const marker = `\0heredoc${literals.size}\0`
+      literals.set(marker, body.replace(/\n+$/, ''))
+      return marker
+    })
   // 리터럴 메시지 안의 << 만 잠시 가린다. $(cat <<EOF ...) 는 기존 도우미가 처리한다.
   // NUL 은 실제 셸 인자에 쓸 수 없어 임시 표지로 쓰고, 도우미를 지난 뒤 원문으로 돌린다.
-  const protectedText = command.replace(QUOTED, quoted => {
+  const protectedText = knownHeredocs.replace(QUOTED, quoted => {
     if (quoted[0] === '"' && /(?<!\\)[$`]/.test(quoted)) return quoted
     return quoted.replaceAll('<<', '\0\0')
   })
-  return stripHeredocs(protectedText).replaceAll('\0\0', '<<')
+  return { text: stripHeredocs(protectedText).replaceAll('\0\0', '<<'), literals }
 }
 
 function rejection(command: string, initialCwd: string): string | null {
-  const text = messageText(command)
+  const { text, literals } = messageText(command)
   const masked = mask(text)
   let cwd: string | null = initialCwd
   for (const { start, end } of pieces(masked)) {
@@ -146,7 +157,7 @@ function rejection(command: string, initialCwd: string): string | null {
       if (flag === '-m' || flag === '--message' || flag?.startsWith('--message=') || /^-[aAnqsv]*m/.test(flag ?? '')) {
         const attached = flag!.startsWith('--message=') ? flag!.slice(10) : /^-[aAnqsv]*m([\s\S]+)$/.exec(flag!)?.[1]
         const message = attached ?? args[i + 1]
-        if (message != null && broken(message)) return commitReason
+        if (message != null && broken(literals.get(message) ?? message)) return commitReason
         break // 첫 -m 만 제목이다. 뒤 -m 은 본문이다.
       }
       if (flag === '-F' || flag === '--file' || flag?.startsWith('--file=') || flag?.startsWith('-F')) {
