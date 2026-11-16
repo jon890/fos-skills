@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText } from '../scripts/adapters/dooray.ts'
+import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText, TASK_OVERLAP_MS } from '../scripts/adapters/dooray.ts'
 import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
 
 const ME = '4567890123456789012'
@@ -161,7 +161,11 @@ describe('받기', () => {
     // 지난 받기가 있으면 그 뒤만 읽는다
     calls = []
     adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
-    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', '2026-11-02T05:55:00.000Z'])
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', new Date(Date.parse('2026-11-02T05:55:00.000Z') - TASK_OVERLAP_MS).toISOString()])
+    // 커서가 기간 시작에 가까우면 기간 시작보다 앞서지 않는다
+    calls = []
+    adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-10-26T12:00:00.000Z' } })
+    assert.equal(calls.find((argv) => argv[2] === 'stream')?.[5], SINCE)
     // 업무 정보는 업무마다 한 번만 읽는다
     assert.equal(calls.filter((argv) => argv[2] === 'post' && argv[3] === 'get' && argv[5] === 'p81').length, 1)
   })
@@ -406,6 +410,18 @@ describe('시각 없는 댓글 event (웹 방식 stream)', () => {
     const items = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} }).items
     assert.deepEqual(items.map((row) => row.at), ['2026-11-02T06:00:00.000Z', '2026-11-02T06:00:00.000Z'])
     assert.equal(commentListCalls().length, 1)
+  })
+
+  test('커서 뒤에 온 시각 없는 댓글 event 도 항목이 된다 (CLI 가 since 걸친 페이지의 event 를 뺀다)', () => {
+    // 실제 CLI 는 since 가 걸친 페이지의 시각 없는 event 를 뺀다. 그래서 커서보다 앞에서 받아야 한다
+    const cursor = '2026-11-02T05:55:00.000Z'
+    stream = [noTime('c1', 'p81')]
+    comments = [{ id: 'c1', createdAt: '2026-11-02T14:58:00+09:00' }]
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: cursor } })
+    const stamp = calls.find((argv) => argv[2] === 'stream')![5]
+    assert.ok(Date.parse(stamp) < Date.parse(cursor) - 60 * 60 * 1000, '커서보다 한참 앞에서 받는다')
+    assert.equal(result.items.length, 1)
+    assert.equal(result.items[0].at, '2026-11-02T05:58:00.000Z')
   })
 
   test('시각이 있는 event 는 댓글 목록을 읽지 않는다', () => {

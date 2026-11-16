@@ -1,7 +1,7 @@
 // 두레이 adapter. 모든 두레이 호출은 dooray CLI 로 한다. 토큰은 CLI 설정에만 있고 이 파일은 읽지 않는다(D3).
 //
 // 출처:
-//   task       `dooray --json stream list --since <지난 받기 또는 기간 시작> --all` (공식 GET /common/v1/streams, jon890/dooray-cli #248 로 더한 명령).
+//   task       `dooray --json stream list --since <지난 받기보다 하루 앞 또는 기간 시작> --all` (공식 GET /common/v1/streams, jon890/dooray-cli #248 로 더한 명령).
 //              --json 은 API 원소를 그대로 낸다. 429 는 CLI 종료 코드 6 이고 다른 실패와 같이 task 오류로 남는다.
 //              원소 하나의 업무 조회가 실패하면 그 원소만 빼고 오류 한 줄에 수를 남긴다
 //              event(type comment) 본문에 내 멤버 링크가 있으면 mention, post 의 담당(to)·참조(cc)에 내가 있으면 assigned·cc
@@ -32,6 +32,10 @@ import type { Adapter, AdapterConfig, AdapterDeps, Context, FetchRequest, FetchR
 export const MAX_CHANNELS = 20
 export const LOG_COUNT = 50
 export const MORE_LOG_COUNT = 300
+// stream 받기를 커서보다 이만큼 앞에서 시작한다. dooray CLI 는 시각 없는 event 를 「페이지 커서가 since 이후인 페이지」 에서만 남긴다.
+// since 가 걸친 페이지의 댓글 event 는 그 뒤의 것까지 빠져서, 커서 그대로 since 로 쓰면 멘션 댓글을 놓친다(실측 2026-11-16).
+// 걸친 페이지는 since 근처에 있으므로, since 를 넉넉히 앞당기면 그 페이지가 커서보다 한참 옛 것이 된다. 겹쳐 받은 항목은 id 로 합쳐진다
+export const TASK_OVERLAP_MS = 24 * 60 * 60 * 1000
 const SKIP_CHANNEL_TYPES = new Set(['bot', 'me'])
 const EXCERPT = 80
 
@@ -184,9 +188,16 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     return null
   }
 
+  // 지난 받기 커서보다 TASK_OVERLAP_MS 앞에서 받되, 기간 시작(request.since)보다 앞서지는 않는다
+  function taskSince(request: FetchRequest): string {
+    const cursor = Date.parse(request.cursors.task ?? '')
+    if (!Number.isFinite(cursor)) return request.since
+    return new Date(Math.max(cursor - TASK_OVERLAP_MS, Date.parse(request.since) || 0)).toISOString()
+  }
+
   function fetchTasks(request: FetchRequest, self: Me, now: string): { items: InboxItem[]; failures: string[] } {
     // 피드는 2주에 수천 건이라, 지난 받기가 있으면 그 뒤만 읽는다. 앞서 받은 항목은 캐시에 남아 있다
-    const elements = json(['stream', 'list', '--since', request.cursors.task ?? request.since, '--all'])
+    const elements = json(['stream', 'list', '--since', taskSince(request), '--all'])
     if (!Array.isArray(elements)) throw new Error('dooray stream list 출력이 목록이 아니다')
     unreadablePosts.clear()
     const items: InboxItem[] = []
