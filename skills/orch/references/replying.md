@@ -28,6 +28,8 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 작업 중인 worker 의 입력란에 글이 섞이고, 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다.
 스크립트가 dispatch 상태를 보고 경로를 고른다. 상태별 경로, 종료 코드, 판정 줄(`REPLIED`, `SENT`, `ENDED` 같은 것), 세션 재시작 뒤 `reply` 거부(`stable_pane_required`)의 우회, `consumer_fenced` 재전송은 스크립트 머리 주석이 소유한다. 종료 코드 3 이면 `ENDED` 줄이고 다음에 할 명령은 `--full` 의 안내 줄에 있다. `orca orchestration send` 와 `nudge-worker` 를 직접 잇지 않는다.
 
+**다른 세션이 띄운 worker(다른 Run 의 dispatch)에게도 같은 명령으로 보낸다.** 스크립트가 `worker-show` 로 dispatch 가 속한 Run 을 읽어 그 Run 으로 보낸다. `--run` 을 다르게 줘도 dispatch 의 Run 이 우선이다(Orca 는 다른 Run 이면 `dispatch_run_mismatch` 로 거절한다). 이 코디네이터의 Run 과 다르면 `--from run:<Run>` 을 붙이지 않고, 그 Run 에 묶여야 읽는 `check --run` 대신 그 Run 의 메일함(`inbox --terminal run:<Run>`)에서 답할 질문을 찾는다. 어떤 실패든 Orca 오류는 `code: message` 한 줄로 나온다. 직접 `orca orchestration send --run` 으로 테스트하지 않는다. 테스트 본문이 worker 에게 그대로 간다.
+
 **끝난 dispatch 의 질문은 보드에서 제외한다.** 닫는 근거(PR 종료 상태와 워크트리 대조)와 닫은 질문 처리는 `lib/questions.ts` 의 「닫은 질문」 과 `send-to-worker.ts` 머리 주석이 소유한다([ADR-015](../../../docs/adr/015-board-decide-clear.md)). 살아 있는 dispatch 의 질문은 이 근거로 닫지 않고, 닫으려고 같은 답을 반복하지 않는다. 실제 후속 일이 있으면 `send-to-worker --spec` 으로 이어 쓴다. 세션이 바뀐 뒤 reply 가 계속 거부되면 사용자에게 알린다.
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$MSG_ID` 는 원래 질문이나 막힘의 메시지 ID, `$BODY` 는 답이다.

@@ -40,6 +40,19 @@ else if (args[1] === 'list') say(state.list || [])
 else process.exit(1)
 `
 
+// worker-show 는 state.dispatches 의 {dispatch id: 상태} 로 답한다. 없는 dispatch 는 조회 실패다
+const FAKE_ORCA = `const fs = require('node:fs')
+const state = JSON.parse(fs.readFileSync('state.json', 'utf8'))
+const args = process.argv.slice(2)
+const say = (value) => fs.writeSync(1, JSON.stringify(value) + '\\n')
+if (args.includes('worker-show')) {
+  const id = args[args.indexOf('--dispatch') + 1]
+  const status = (state.dispatches || {})[id]
+  if (status === undefined) { say({ ok: false, error: { code: 'dispatch_not_found', message: 'Dispatch ' + id + ' was not found.' } }); process.exit(1) }
+  say({ ok: true, result: { dispatch: { id, status } } })
+} else process.exit(3)
+`
+
 type Json = Record<string, unknown>
 type Result = { code: number | null; stdout: string; stderr: string }
 
@@ -47,6 +60,7 @@ let bindir: string
 before(() => {
   bindir = realpathSync(mkdtempSync(join(tmpdir(), 'board-sync-bin-')))
   writeNodeBin(bindir, 'gh', FAKE_GH)
+  writeNodeBin(bindir, 'orca', FAKE_ORCA)
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 
@@ -62,7 +76,7 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 function run(args: string[], opts: { env?: Record<string, string> } = {}): Result {
   // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH ?? ''].join(delimiter), GH: join(bindir, 'gh'), ...opts.env }
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH ?? ''].join(delimiter), GH: join(bindir, 'gh'), ORCA: join(bindir, 'orca'), ...opts.env }
   if (!opts.env?.BOARD_BIN) delete env.BOARD_BIN
   const argv = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
   const done = spawnSync(argv[0], [...argv.slice(1), ...args], { env, cwd: tmp, encoding: 'utf8' })
@@ -614,6 +628,25 @@ describe('board-sync 마일스톤 항목', () => {
     assert.deepEqual(r.board.open.details, [step('1. PR', true), step('2. 머지', true)])
     assert.equal(String(r.board.open.pr), '8')
     assert.equal(String(r.board.open['merged-pr']), '7')
+  })
+
+  test('판정하지 못한 PR 은 다른 Run 의 끝난 리뷰 worker 줄이 working 으로 남았을 뿐이면 done 으로 바꾼다', () => {
+    states['7'] = 'MERGED'
+    states.dispatches = { d1: 'completed' }
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)], workers: [worker('review', 'r', 'd1', { pr: 7 })] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true)])
+  })
+
+  test('판정하지 못한 PR 은 살아 있거나 조회하지 못한 worker 줄이 있으면 done 으로 바꾸지 않는다', () => {
+    states['7'] = 'MERGED'
+    states.dispatches = { live: 'running', empty: '', odd: 'unknown', gone: 'abandoned' }
+    for (const dispatch of ['live', 'empty', 'odd', 'gone', 'missing']) {
+      const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)], workers: [worker('review', 'r', dispatch, { pr: 7 })] }])
+      assert.equal(r.code, 0, r.result.stderr)
+      assert.equal(r.board.a.status, 'doing', dispatch)
+    }
   })
 
   test('배포 워크플로가 머지 커밋을 성공으로 배포했으면 [deploy] 단계까지 끝낸다', () => {

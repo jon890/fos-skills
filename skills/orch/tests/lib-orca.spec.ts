@@ -149,6 +149,13 @@ test('예외형 JSON 읽기는 stdout 과 stderr 및 구조화된 오류 여부�
   fake.setRules([{ stdout: '{"result":{}}' }])
   assert.throws(() => orcaJsonOrThrow(['missing-ok']), /실패/)
 })
+test('실패 출력은 Orca 오류의 code 와 message 를 한 줄로 만든다', () => {
+  const pretty = JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'not bound\nto Run run_x' } }, null, 2)
+  fake.setRules([{ stdout: pretty, stderr: 'error: consumer_fenced: not bound\nto Run run_x', code: 1 }])
+  assert.throws(() => orcaJsonOrThrow(['orchestration', 'check']), (e: Error) => e.message === 'orca orchestration check 실패: consumer_fenced: not bound to Run run_x')
+  fake.setRules([{ stdout: '{\n  "ok": false', code: 1 }])
+  assert.throws(() => orcaJsonOrThrow(['orchestration', 'check']), (e: Error) => e.message === 'orca orchestration check 실패: { "ok": false')
+})
 test('터미널 닫기는 호출자가 쓰던 응답 검사 기준을 유지한다', () => {
   fake.setRules([{ stdout: 'broken', code: 0 }])
   assert.equal(closeTerminal('t'), false)

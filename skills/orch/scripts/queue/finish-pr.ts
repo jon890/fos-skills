@@ -13,6 +13,8 @@
 //        `send-to-worker --dispatch <id> --body "PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). ..." [--run <run>]` 으로 머지를 알린다.
 //        머지된 줄 모르고 기다리는 worker 의 dispatch 가 살아 있으면 정리가 그 워크트리를 「살아 있는 worker」 로 건너뛴다.
 //        보낸 뒤 --worker-done-timeout 동안 --poll-interval 마다 worker-list 로 그 dispatch 가 끝났는지 본다.
+//        끝났다는 판정은 lib/last-pr.ts 의 dispatchFinished(completed, failed, canceled)뿐이다. 살아 있지 않아도 abandoned 나 모르는 상태이면
+//        `<dispatch> 의 상태(...)가 끝남이 아니라 종료를 확인하지 못했다` 를 남기고 기다리지 않는다(항목을 닫는 근거로 쓰지 않는다).
 //        끝나면 `worker 끝남: <dispatch> (<상태>)`, 시간이 지나면 `worker 남음: <dispatch> 가 아직 살아 있다 ...` 를 남기고 정리로 넘어간다.
 //        보내지 못했으면(send-to-worker 의 3, 5 같은 것) 기다리지 않는다. worker 목록을 읽지 못하면 알리지 않고 그 사실을 남긴다.
 //        출력 줄은 `notify: ` 로 시작한다
@@ -139,7 +141,7 @@ import { conflictSpecFiles } from '../lib/conflicts.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import { boardSettings, eventKinds, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { StageKind, Stages } from '../lib/milestones.ts'
-import { closeUnjudged, judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
+import { closeUnjudged, dispatchFinished, hasActiveWorker, judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { eventTimeoutSec, fire, handlerFile } from '../lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from '../lib/finish-options.ts'
@@ -429,7 +431,12 @@ async function tellMerged(args: Args, runId: string, worktree: string, merge: st
   }
   const row = workerFor(found.rows, worktree)
   if (!row) return null
-  if (!LIVE_DISPATCH.has(String(row.dispatchStatus))) return String(row.dispatchId)
+  if (!LIVE_DISPATCH.has(String(row.dispatchStatus))) {
+    // 살아 있지 않아도 끝난 상태(FINISHED_DISPATCH)가 아니면 종료를 확인한 것이 아니다. abandoned 나 모르는 상태는 id 를 내지 않는다
+    if (dispatchFinished(row.dispatchStatus)) return String(row.dispatchId)
+    log(`notify: ${String(row.dispatchId)} 의 상태(${String(row.dispatchStatus || '비어 있음')})가 끝남이 아니라 종료를 확인하지 못했다`)
+    return null
+  }
   const dispatch = String(row.dispatchId)
   const body = mergeNotice(args.pr, merge)
   const send = process.env.SEND_TO_WORKER || scriptPath('send-to-worker')
@@ -451,8 +458,12 @@ async function tellMerged(args: Args, runId: string, worktree: string, merge: st
     const rows = workerRows(runId)
     const status = rows.ok ? String(rows.rows.find((r) => String(r.dispatchId) === dispatch)?.dispatchStatus ?? '') : null
     if (status !== null && !LIVE_DISPATCH.has(status)) {
-      log(`notify: worker 끝남: ${dispatch} (${status || '목록에 없음'})`)
-      return dispatch
+      if (dispatchFinished(status)) {
+        log(`notify: worker 끝남: ${dispatch} (${status})`)
+        return dispatch
+      }
+      log(`notify: ${dispatch} 의 상태(${status || '목록에 없음'})가 끝남이 아니라 종료를 확인하지 못했다`)
+      return null
     }
     if (Date.now() >= deadline) {
       log(`notify: worker 남음: ${dispatch} 가 아직 살아 있다. 정리가 그 워크트리를 살아 있는 worker 로 건너뛸 수 있다`)
@@ -640,7 +651,7 @@ function closeUnjudgedItem(
     {
       rulesUnreadable: false,
       openPrs: remaining.length,
-      activeWorker: boardWorkerRows(row).some((w) => w.status === 'working' && !mine(w)),
+      activeWorker: hasActiveWorker(boardWorkerRows(row), mine),
       remainingNote: details.some((d) => detailText(d).startsWith(NOTE)),
       reachedDone,
       allStepsDone,

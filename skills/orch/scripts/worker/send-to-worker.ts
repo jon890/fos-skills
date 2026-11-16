@@ -11,6 +11,10 @@
 // send 거절 때만 launch-worker 로 내려간다. 재사용 터미널의 agent_unconfigured 는 소유 확인 뒤 새 터미널로 복구한다.
 // --spec 없이 끝난 dispatch 에 보내는 본문은 질문 답이 아니면 작업 중인 화면에만 send 한다.
 // 이 경로는 후속 Task 가 되지만 지시서가 없어 띄우기 기록을 남기지 못한다는 경고를 stderr 에 낸다.
+// 보낼 Run 은 worker-show 가 알려 준 dispatch 의 Run 이다. --run 과 다르면 dispatch 의 Run 으로 보내고 알린다(Orca 는 다른 Run 이면 dispatch_run_mismatch 로 거절한다).
+// 코디네이터의 Run(run-current)이 dispatch 의 Run 과 다르면 다른 세션의 worker 다. 이때는 `--from run:<run>` 을 붙이지 않고,
+// 그 Run 에 묶여야 읽는 `check --run` 대신 inbox 로 후보를 읽는다. check 가 consumer_fenced 로 막혀도 같은 방법으로 내려간다.
+// Orca 오류는 `code: message` 한 줄로 낸다(lib/orca.ts 의 orcaJsonOrThrow).
 //
 // 사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG | --no-reply] [--spec FILE] [--run RUN]
 //         send-to-worker.ts --dispatch ENDED_ID --spec FILE [--note TEXT] [--run RUN] [--agent A --model M --effort E]
@@ -23,7 +27,7 @@
 // RESUMED, RESTARTED, ENDED, NOTE, FAIL 이다. 복구 자식에는 짧은 출력 신호를 넘긴다.
 // 종료 코드: 0 전달됨, 1 다시 띄우기 실패, 2 사용법/지시서 오류, 3 끝나서 보낼 수 없음, 5 Orca/영수증 오류.
 
-import { orcaJsonOrThrow, closeTerminal } from '../lib/orca.ts'
+import { orcaJson, orcaJsonOrThrow, closeTerminal } from '../lib/orca.ts'
 import { objectOr } from '../core/json.ts'
 import { readFileSync } from 'node:fs'
 import { real } from '../lib/fs.ts'
@@ -62,6 +66,8 @@ const ANSWER_CONFLICT = 'answer_conflict'
 const INACTIVE = 'dispatch_inactive'
 // Orca 터미널 안에서 `--from run:<run>` 을 붙이면 orca 가 이 코드로 거부한다
 const FENCED = 'consumer_fenced'
+// 코디네이터가 아닌 터미널이 `check --run` 을 부르면 이 코드로 거부된다. worker 가 자기 Run 을 읽을 때도 거부된다
+const CHECK_BLOCKED = [FENCED, 'worker_cannot_coordinate_own_run']
 // 코디네이터 터미널의 pane 신원이 없을 때 reply 가 이 코드나 문구로 거부된다
 const NO_PANE = ['stable_pane_required', 'no stable pane identity']
 // 끝난 dispatch 에서 답할 후보로 보는 메시지 종류
@@ -106,11 +112,22 @@ function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
 
+// 코디네이터의 Run 이 dispatch 의 Run 과 다르다(다른 세션이 띄운 worker). main 이 worker-show 와 run-current 로 정한다
+let crossRun = false
+let noted = false
+
 function rows(value: unknown): Json[] {
   return Array.isArray(value) ? value.map(value => objectOr(value)) : []
 }
 function workerOrcaJson(args: string[]): Json {
   return orcaJsonOrThrow(args, { failure: (message, structured) => new OrcaFailed(message, structured) })
+}
+
+// 이 터미널이 코디네이터로 묶인 Run. 묶이지 않았거나 읽지 못하면 null 이다
+function coordinatorRun(): string | null {
+  const current = orcaJson<{ runId?: unknown }>(['orchestration', 'run-current'])
+  const id = current.ok ? objectOr(current.data).runId : null
+  return typeof id === 'string' && id ? id : null
 }
 
 type Described = { status: unknown; handle: string; worktree: string; runId: string; settings: Settings }
@@ -131,14 +148,37 @@ function describe(dispatchId: string): Described {
   return { status: dispatch.status, handle, worktree, runId: String(dispatch.runId || ''), settings }
 }
 
+// 그 Run 의 메시지. check --run 은 그 Run 의 코디네이터만 읽는다. 다른 Run 의 dispatch 거나 check 가 막히면
+// 그 Run 의 메일함(inbox --terminal run:<run>)과 전체 inbox 를 읽는다. 호출한 쪽이 run_id 로 한 번 더 가린다
+function runMessages(run: string, checks: string[][]): Json[] {
+  if (!crossRun) {
+    try {
+      return checks.flatMap((args) => rows(workerOrcaJson(args).messages))
+    } catch (e) {
+      if (!(e instanceof OrcaFailed) || !CHECK_BLOCKED.some((code) => e.message.includes(code))) throw e
+      noteOnce(`check --run ${run} 이 막혀 inbox 로 읽는다: ${oneLine(e.message)}`)
+    }
+  }
+  return [
+    ...rows(workerOrcaJson(['orchestration', 'inbox', '--terminal', `run:${run}`, '--limit', '200']).messages),
+    ...rows(workerOrcaJson(['orchestration', 'inbox', '--limit', '200']).messages),
+  ]
+}
+
+function noteOnce(text: string): void {
+  if (noted) return
+  noted = true
+  out(`note: ${text}`)
+}
+
 // reply 할 후보 메시지 id. 앞이 우선이다. heartbeat 는 뒤로 미루고, 답이 보이는 question 은 뺀다.
 function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run?: string): string[] {
   // 질문은 status/heartbeat 에 밀리지 않게 따로 읽는다. 전역 inbox 를 읽지 않는다.
-  const history = run ? [
-    ...rows(workerOrcaJson(['orchestration', 'check', '--run', run, '--all']).messages),
-    ...rows(workerOrcaJson(['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation']).messages),
-    ...rows(workerOrcaJson(['orchestration', 'check', '--run', run, '--peek', '--types', 'question,escalation']).messages),
-  ] : rows(workerOrcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
+  const history = run ? runMessages(run, [
+    ['orchestration', 'check', '--run', run, '--all'],
+    ['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation'],
+    ['orchestration', 'check', '--run', run, '--peek', '--types', 'question,escalation'],
+  ]) : rows(workerOrcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
   const replies = [...new Set([`dispatch:${dispatchId}`, handle].filter(Boolean))].flatMap((terminal) =>
     rows(workerOrcaJson(['orchestration', 'inbox', '--terminal', terminal, '--limit', '200']).messages))
   const messages = [...new Map([...history, ...replies].filter((m) => !run || !m.run_id || m.run_id === run).map((m) => [m.id, m])).values()]
@@ -180,7 +220,7 @@ function liveHandles(): Set<string> {
 function sendAsResult(base: string[], run: string): Json {
   let result: Json
   try {
-    result = workerOrcaJson([...base, ...(run ? ['--from', `run:${run}`] : [])])
+    result = workerOrcaJson([...base, ...(run && !crossRun ? ['--from', `run:${run}`] : [])])
   } catch (e) {
     if (!run || !(e instanceof OrcaFailed) || !e.message.includes(FENCED)) throw e
     out(`retry: --from run:${run} 이 ${FENCED} 로 거부돼 --from 없이 다시 보낸다`)
@@ -196,8 +236,8 @@ function sendAs(base: string[], run: string): string {
 
 // inbox 에서 본 그 메시지의 종류. 못 찾으면 빈 문자열이다
 function typeOf(msgId: string, run: string): string {
-  const args = run ? ['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation'] : ['orchestration', 'inbox', '--limit', '200']
-  const row = rows(workerOrcaJson(args).messages).find((m) => m.id === msgId)
+  const messages = run ? runMessages(run, [['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation']]) : rows(workerOrcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
+  const row = messages.find((m) => m.id === msgId)
   return String(row?.type ?? '')
 }
 
@@ -453,7 +493,11 @@ async function main(argv: string[]): Promise<number> {
   try {
     described = describe(a.dispatch)
     const { status, handle } = described
-    run = a.run || described.runId
+    run = described.runId || a.run || ''
+    if (a.run && described.runId && a.run !== described.runId) out(`note: --run ${a.run} 이 아니라 ${a.dispatch} 가 속한 Run ${described.runId} 로 보낸다`)
+    const own = coordinatorRun()
+    crossRun = !!run && !!own && own !== run
+    if (crossRun) out(`note: ${a.dispatch} 는 다른 Run ${run} 의 worker 다(이 코디네이터는 ${own}). 그 Run 으로 보내고 --from 은 붙이지 않는다`)
     if (ACTIVE.has(String(status))) {
       if (!body) {
         err(
