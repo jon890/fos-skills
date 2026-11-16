@@ -10,7 +10,7 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { expandArgs } from '../lib/args.ts'
 import { bundleRoot } from '../lib/bundle.ts'
-import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody } from '../lib/common-rules.ts'
+import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, ruleMarks, sameBody } from '../lib/common-rules.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 
 // 목록 기호와 표지를 제외한 첫 줄로 옛 항목과 중복을 찾는다. 코드 예시는 제외한다.
@@ -18,22 +18,81 @@ function ruleHead(line: string): string {
   return line.replace(/^(?:[-*]|\d+\.)\s+/, '').replace(/<!--\s*orch-rule:[^>]*-->/g, '').trimEnd()
 }
 
-export function duplicateRuleHeads(text: string): { no: number; message: string }[] {
+function ruleHeadRows(text: string): Map<string, number[]> {
   const heads = new Map<string, number[]>()
   outsideFences(text.split(/\r\n|[\n\r\u2028\u2029]/)).forEach((line, index) => {
     if (!/^(?:[-*]|\d+\.)\s+/.test(line)) return
     const head = ruleHead(line)
     heads.set(head, [...(heads.get(head) ?? []), index + 1])
   })
-  return [...heads.entries()].filter(([, rows]) => rows.length > 1)
+  return heads
+}
+
+export function duplicateRuleHeads(text: string): { no: number; message: string }[] {
+  return [...ruleHeadRows(text).entries()].filter(([, rows]) => rows.length > 1)
     .map(([head, rows]) => ({ no: rows[0], message: `같은 머리 줄의 항목이 둘 이상 있다: ${rows.join(', ')}줄 (${head})` }))
 }
 
-export function syncCommon(copy: string, template: string, repo: string): { text: string; output: string[]; manual: boolean } {
-  for (const text of [copy, template]) {
-    const issues = [...ruleIssues(text), ...duplicateRuleHeads(text)]
-    if (issues.length) throw new Error(issues.map((issue) => issue.message).join('; '))
+// 옛 틀에서 설명을 별도 목록으로 나눈 경우까지 기존 파서로 범위를 구한다.
+function legacyItem(lines: string[], head: number, name: string, templateRaw = '') {
+  const marked = [...lines]
+  marked[head] += ` <!-- orch-rule: ${name} -->`
+  const mine = ruleBodies(marked.join('\n')).get(name)!
+  const next = mine.end
+  const continuation = templateRaw.split('\n').slice(1).find((line) => line.trim())
+  if (continuation && /^(?:[-*]|\d+\.)\s+/.test(lines[next] ?? '')
+    && !/<!--\s*orch-rule:/.test(lines[next]) && ruleHead(lines[next]) === continuation.trim()) {
+    const tail = [...lines]
+    tail[next] += ` <!-- orch-rule: ${name} -->`
+    const span = ruleBodies(tail.join('\n')).get(name)!
+    mine.end = span.end
+    mine.unsafe ||= span.unsafe
   }
+  mine.raw = lines.slice(mine.head, mine.end).join('\n')
+  return mine
+}
+
+export function syncCommon(copy: string, template: string, repo: string): { text: string; output: string[]; manual: boolean } {
+  const templateIssues = [...ruleIssues(template), ...duplicateRuleHeads(template)]
+  if (templateIssues.length) throw new Error(templateIssues.map((issue) => issue.message).join('; '))
+  const marks = ruleMarks(copy)
+  const invalid = marks.filter((mark) => mark.error)
+  if (invalid.length) throw new Error(invalid.map((mark) => mark.error).join('; '))
+  const blockedNames = new Set(marks.filter((mark) => marks.filter((other) => other.name === mark.name).length > 1).map((mark) => mark.name))
+  const blockedHeads = new Set<string>()
+  const output: string[] = []
+  for (const issue of ruleIssues(copy)) output.push(`SYNC-MANUAL ${issue.message}`)
+  const lines = copy.split(/\r\n|[\n\r\u2028\u2029]/)
+  const offsets = [0, ...[...copy.matchAll(/\r\n|[\n\r\u2028\u2029]/g)].map((match) => match.index! + match[0].length)]
+  const deletions: { head: number; end: number }[] = []
+  const wanted = ruleBodies(template)
+  for (const [head, rows] of ruleHeadRows(copy)) {
+    if (rows.length < 2) continue
+    const marked = rows.filter((no) => ruleMarks(lines[no - 1]).length > 0)
+    if (rows.length === 2 && marked.length === 1) {
+      const name = ruleMarks(lines[marked[0] - 1])[0].name
+      const unmarked = rows.find((no) => no !== marked[0])! - 1
+      const mine = legacyItem(lines, unmarked, '__orch_legacy_candidate', wanted.get(name)?.raw)
+      if (!blockedNames.has(name) && !mine.unsafe) {
+        deletions.push({ head: mine.head, end: mine.end })
+        output.push(`SYNC-UPDATE ${name}: 중복된 표지 없는 사본 항목 제거`,
+          `@@ -${mine.head + 1},${mine.end - mine.head} +${mine.head},0 @@`,
+          ...lines.slice(mine.head, mine.end).map((line) => `-${line}`))
+        continue
+      }
+    }
+    blockedHeads.add(head)
+    output.push(`SYNC-MANUAL 중복 머리 줄 ${rows.join(', ')}줄: 어느 항목을 남길지 직접 확인한다`)
+  }
+  let cleaned = copy
+  for (const span of deletions.sort((a, b) => b.head - a.head)) {
+    cleaned = cleaned.slice(0, offsets[span.head]) + cleaned.slice(offsets[span.end] ?? copy.length)
+  }
+  const result = syncUniqueCommon(cleaned, template, repo, blockedHeads, blockedNames)
+  return { text: result.text, output: [...output, ...result.output], manual: result.manual || blockedHeads.size > 0 || blockedNames.size > 0 }
+}
+
+function syncUniqueCommon(copy: string, template: string, repo: string, blockedHeads: Set<string>, blockedNames: Set<string>): { text: string; output: string[]; manual: boolean } {
   const wanted = ruleBodies(template)
   const existing = ruleBodies(copy)
   // 한 항목에 표지가 여럿이면 keep 항목까지 함께 교체할 수 있어 쓰기 전에 거부한다.
@@ -55,28 +114,14 @@ export function syncCommon(copy: string, template: string, repo: string): { text
   const addedSections = new Set<string>()
   for (const [name, want] of wanted) {
     let mine = existing.get(name)
+    if (blockedNames.has(name) || blockedHeads.has(ruleHead(want.raw.split('\n')[0]))
+      || (mine && blockedHeads.has(ruleHead(mine.raw.split('\n')[0])))) continue
     let legacy = false
     if (!mine) {
       const head = outsideFences(lines).findIndex((line) => /^(?:[-*]|\d+\.)\s+/.test(line)
         && !/<!--\s*orch-rule:/.test(line) && ruleHead(line) === ruleHead(want.raw.split('\n')[0]))
       if (head >= 0) {
-        // 범위와 하위 목록의 안전 검사는 기존 표지 항목 파서를 그대로 쓴다.
-        const marked = [...lines]
-        marked[head] += ` <!-- orch-rule: ${name} -->`
-        mine = ruleBodies(marked.join('\n')).get(name)!
-        // 옛 틀은 설명과 명령 블록을 바로 다음 목록 항목으로 나누기도 했다.
-        // 틀의 첫 설명 줄과 같은 표지 없는 항목만 함께 교체한다.
-        const next = mine.end
-        const continuation = want.raw.split('\n').slice(1).find((line) => line.trim())
-        if (continuation && /^(?:[-*]|\d+\.)\s+/.test(lines[next] ?? '')
-          && !/<!--\s*orch-rule:/.test(lines[next]) && ruleHead(lines[next]) === continuation.trim()) {
-          const tail = [...lines]
-          tail[next] += ` <!-- orch-rule: ${name} -->`
-          const span = ruleBodies(tail.join('\n')).get(name)!
-          mine.end = span.end
-          mine.unsafe ||= span.unsafe
-        }
-        mine.raw = lines.slice(mine.head, mine.end).join('\n')
+        mine = legacyItem(lines, head, name, want.raw)
         legacy = true
       }
     }
@@ -143,7 +188,10 @@ export function syncCommon(copy: string, template: string, repo: string): { text
     if (edit.head === edit.end && start === copy.length && copy.length && !/[\r\n\u2028\u2029]$/.test(copy)) replacement = eol + replacement
     text = text.slice(0, start) + replacement + text.slice(end)
   }
-  const issues = [...ruleIssues(text), ...duplicateRuleHeads(text)]
+  const issues = [
+    ...ruleIssues(text).filter((issue) => !blockedNames.has(/^같은 표지 (\S+) 가/.exec(issue.message)?.[1] ?? '')),
+    ...duplicateRuleHeads(text).filter((issue) => !blockedHeads.has(ruleHead(text.split(/\r\n|[\n\r\u2028\u2029]/)[issue.no - 1]))),
+  ]
   if (issues.length) throw new Error(issues.map((issue) => issue.message).join('; '))
   return { text, output, manual }
 }
