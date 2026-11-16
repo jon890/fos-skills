@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "PR 로 나눠줘", "스펙 구현 계획", "리팩토링 계획", "plan" 요청에 쓴다.
   "이 기능 설계해 보자" 처럼 요구사항은 spec, 구조와 경계 설계는 technical-design 이 맡는다. 구현은 implementation 가 맡는다.
 metadata:
-  version: "8.0.6"
+  version: "8.0.7"
 ---
 # plan
 
@@ -79,7 +79,7 @@ verification_plan 은 index.json 의 부모 기준 상대경로이고, spec/desi
 기능 계획이면 이 검사가 스펙의 확인 줄과 요구사항 연결도 함께 본다.
 아래 명령은 새 기능 계획용이다. PR 하나라도 기능 계획과 인수 검증 계획을 남긴다. 기능 없는 작업과 기존 계획 재개는 --require-verification 을 빼고 실행한다.
 
-생성 파일은 plan 오버레이의 `생성 파일` 행에 저장소 루트 기준 glob 을 인라인 코드로 적는다. 계약 변경에 필요한 명령은 `계약 검증 규칙` 행에 JSON 파일 경로를, 통합 테스트를 구분하는 표지는 `통합 테스트 표지` 행에 적는다. 값이 없으면 해당 검사를 하지 않는다. [설정 형식과 예시](references/monorepo.md#계획-검사의-저장소별-규칙)를 따른다.
+생성 파일은 plan 오버레이의 `생성 파일` 행에 저장소 루트 기준 glob 을 인라인 코드로 적는다. 계약 변경에 필요한 명령은 `계약 검증 규칙` 행에 JSON 파일 경로를, 통합 테스트를 구분하는 표지는 `통합 테스트 표지` 행에 적는다. 이 값들이 없으면 해당 검사를 하지 않는다. 중간 phase 에서 실행을 미룰 테스트 범위는 `느린 e2e` 행에 적고, 없으면 기본 glob 을 쓴다. [설정 형식과 예시](references/monorepo.md#계획-검사의-저장소별-규칙)를 따른다.
 
 ```bash
 node "$SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "$TASKS_DIR" --require-verification

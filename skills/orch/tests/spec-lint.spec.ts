@@ -752,3 +752,10 @@ test('새 항목 요청과 항목 id 를 함께 쓰면 보드 오류다', () => 
   assert.equal(good.code, 0)
   assert.doesNotMatch(good.stdout, /보드:/)
 })
+
+
+test('공통 지시서에서 표지 없는 항목과 표지 항목의 같은 머리 줄을 경고한다', () => {
+  write(join(specs, 'spec-common.md'), '- 같은 항목\n- 같은 항목 <!-- orch-rule: example -->\n')
+  const result = lint([spec('duplicate-head', '담당: `src/net/client.ts`')])
+  assert.match(result.stdout, /공통: 같은 머리 줄의 항목이 둘 이상 있다: 1, 2줄/)
+})

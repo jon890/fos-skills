@@ -382,6 +382,57 @@ describe('liveSpecPaths', () => {
     assert.deepEqual(liveSpecPaths(null), new Set(['/s/one.md', '/s/common.md', '/s/three.md']))
   })
 
+  test('Run 없는 task-list 가 거절되면 worker 없는 Run 도 모아 살아 있는 지시서를 찾는다', () => {
+    rules(
+      { args: ['task-list', '--run', 'A', '--cursor', 't2'], stdout: envelope({ tasks: [{ id: 't1', status: 'completed', spec: '/s/active.md' }] }) },
+      { args: ['task-list', '--run', 'A'], stdout: envelope({ tasks: [], page: { nextCursor: 't2' } }) },
+      { args: ['task-list', '--run', 'B'], stdout: envelope({ tasks: [{ id: 't2', status: 'pending', spec: '/s/pending.md' }] }) },
+      { args: ['task-list'], code: 1, stderr: 'run_required' },
+      { args: ['run-list', '--cursor', 'r2'], stdout: envelope({ runs: [{ id: 'B' }], nextCursor: null }) },
+      { args: ['run-list'], stdout: envelope({ runs: [{ id: 'A' }], nextCursor: 'r2' }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [{ runId: 'A', taskId: 't1', dispatchStatus: 'running' }], scope: { source: 'all' } }) },
+    )
+    const from = fake.calls().length
+    assert.deepEqual(liveSpecPaths(null), new Set(['/s/active.md', '/s/pending.md']))
+    assert.ok(lastCalls(from).some((args) => args.includes('task-list') && args.includes('B')))
+  })
+
+  test('Run 일부를 못 읽거나 살아 있는 worker 의 Run 또는 Task 가 빠지면 전체 판정을 멈춘다', () => {
+    const base: FakeRule[] = [
+      { args: ['task-list', '--run', 'A'], stdout: envelope({ tasks: [{ id: 't1', status: 'running', spec: '/s/active.md' }] }) },
+      { args: ['task-list'], code: 1, stderr: 'run_required' },
+      { args: ['run-list'], stdout: envelope({ runs: [{ id: 'A' }, { id: 'B' }] }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [{ runId: 'A', taskId: 't1', dispatchStatus: 'running' }], scope: { source: 'all' } }) },
+    ]
+    const errors: string[] = []
+    rules(...base)
+    assert.equal(liveSpecPaths(null, undefined, (message) => errors.push(message)), null)
+    assert.match(errors.join(' '), /Run B/)
+    rules({ args: ['run-list'], stdout: envelope({ runs: [] }) }, ...base)
+    assert.equal(liveSpecPaths(null), null)
+    rules({ args: ['task-list', '--run', 'A'], stdout: envelope({ tasks: [] }) }, ...base)
+    assert.equal(liveSpecPaths(null), null)
+  })
+
+  test('조회 범위와 Run 응답이 잘못되면 실제 실패 이유를 알린다', () => {
+    const validWorkers = { args: ['worker-list'], stdout: envelope({ workers: [], scope: { source: 'all' } }) }
+    const noUnscopedTasks = { args: ['task-list'], code: 1, stderr: 'run_required' }
+    const cases: { list: FakeRule[]; reason: RegExp }[] = [
+      { list: [{ args: ['worker-list'], code: 1, stderr: 'worker 조회 실패' }], reason: /worker 조회 실패/ },
+      { list: [{ args: ['worker-list'], stdout: envelope({ workers: [], scope: { source: 'bound' } }) }], reason: /worker-list.*bound/ },
+      { list: [validWorkers, { args: ['task-list'], stdout: envelope({ tasks: [], scope: { source: 'bound' } }) }], reason: /task-list.*bound/ },
+      { list: [validWorkers, noUnscopedTasks, { args: ['run-list'], stdout: envelope({ runs: [{ id: 9 }] }) }], reason: /Run id.*문자열/ },
+      { list: [validWorkers, noUnscopedTasks, { args: ['run-list'], stdout: envelope({ runs: [], nextCursor: 'same' }) }], reason: /run-list.*반복/ },
+      { list: [validWorkers, noUnscopedTasks, { args: ['run-list'], stdout: envelope({ runs: [], nextCursor: 9 }) }], reason: /cursor.*문자열/ },
+    ]
+    for (const { list, reason } of cases) {
+      const errors: string[] = []
+      rules(...list)
+      assert.equal(liveSpecPaths(null, undefined, (message) => errors.push(message)), null)
+      assert.match(errors.at(-1) ?? '', reason)
+    }
+  })
+
   test('지시서 경로를 실경로로 바꾼다', () => {
     const spec = join(base, 'specs-real', 'spec-x.md')
     mkdirSync(join(spec, '..'), { recursive: true })

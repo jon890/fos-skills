@@ -139,3 +139,114 @@ process.exit(result.status ?? 1);
   assert.ok(enabled.stdout.includes('통합 테스트 표지'), enabled.stdout)
   assert.equal(readFileSync(counter, 'utf8'), 'listed\n')
 })
+
+// 느린 e2e 도 같은 phase 에 작성하되 실행 명령 대조만 마지막 phase 까지 미룬다.
+for (const [label, rel, files] of [
+  ['오버레이 없음', 'web/e2e/login.spec.ts', {}],
+  ['기본 파일 이름', 'tests/test_login.e2e.ts', {}],
+  ['기본 test 파일', 'web/e2e/login.test.ts', {}],
+  ['기본 playwright test 파일', 'web/playwright/login.test.ts', {}],
+  ['기본 playwright 폴더', 'web/playwright/login.spec.ts', {}],
+  ['루트 설정', 'tests/service_test.py', { '.claude/plan-overlay.md': '| 느린 e2e | `tests/service_test.py` |' }],
+  ['하위 설정', 'web/browser/login.spec.ts', {
+    '.claude/plan-overlay.md': '| 느린 e2e | `tests/service_test.py` |',
+    'web/.claude/plan-overlay.md': '| 느린 e2e | `web/browser/**/*.spec.ts` |',
+  }],
+] as [string, string, Record<string, string>][]) {
+  test(`느린 e2e 실행 대조는 중간 phase 에서 제외하고 마지막 phase 에서는 유지한다: ${label}`, () => {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    for (const [name, body] of Object.entries(files)) repo.file(name, body)
+    const phase = {
+      work: `### 1. 테스트 수정\n\`${rel}\` 와 \`tests/test_fast.py\` 를 고친다.`,
+      entries: [[rel, '수정'], ['tests/test_fast.py', '수정']] as [string, string][],
+      command: 'pytest tests/test_fast.py',
+    }
+    const dir = writePlan(repo, 'plan1-x', [phase, phase])
+    const result = verify(repo, ['plan1-x', '--audit'])
+    assert.deepEqual(result.violations, [
+      `${repo.root}/${dir}/phase-02.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: ${rel}`,
+    ], result.stdout + result.stderr)
+    // 느린 테스트를 제외해도 같은 중간 phase 의 일반 테스트 누락은 막는다.
+    writePlan(repo, 'plan1-x', [{ ...phase, command: 'pytest tests/test_other.py' }, phase])
+    assert.ok(verify(repo, ['plan1-x', '--audit']).violations.some((line) => line.includes('phase-01.md') && line.endsWith('tests/test_fast.py')))
+  })
+}
+
+test('느린 e2e 설정은 기본값을 대체하며 다른 하위 프로젝트에는 퍼지지 않는다', () => {
+  const repo = new Repo()
+  repo.file('docs/flow.md')
+  repo.file('web/.claude/plan-overlay.md', '| 느린 e2e | `web/browser/**/*.spec.ts` |')
+  const rels = ['web/e2e/login.spec.ts', 'api/browser/login.spec.ts', 'web/browser/login.spec.ts']
+  const phase = {
+    work: `### 1. 테스트 수정\n${rels.map((rel) => `\`${rel}\``).join(' ')} 를 고친다.`,
+    entries: rels.map((rel) => [rel, '수정'] as [string, string]),
+    command: 'pytest tests/test_fast.py',
+  }
+  writePlan(repo, 'plan1-x', [phase, { command: 'pytest tests/test_fast.py', entries: [['docs/flow.md', '수정']] }])
+  const result = verify(repo, ['plan1-x', '--audit'])
+  assert.equal(result.violations.filter((line) => line.includes('phase-01.md')).length, 2, result.stdout + result.stderr)
+  for (const rel of rels.slice(0, 2)) assert.ok(result.violations.some((line) => line.endsWith(rel)), result.stdout)
+})
+
+for (const configured of [false, true]) {
+  test(`앞 phase 에서 미룬 느린 e2e 는 마지막 phase 에 다시 선언하지 않아도 실행해야 한다: 설정 ${configured}`, () => {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    const rel = configured ? 'web/browser/login.spec.ts' : 'web/e2e/login.spec.ts'
+    if (configured) repo.file('.claude/plan-overlay.md', '| 느린 e2e | `web/browser/**/*.spec.ts` |')
+    const first = {
+      work: `### 1. 테스트 수정\n\`${rel}\` 를 고친다.`,
+      entries: [[rel, '수정']] as [string, string][],
+      command: 'pytest tests/test_fast.py',
+    }
+    const last = { work: '### 1. 빠른 테스트 수정\n`tests/test_fast.py` 를 고친다.', entries: [['tests/test_fast.py', '수정']] as [string, string][], command: 'pytest tests/test_fast.py' }
+    const dir = writePlan(repo, 'plan1-x', [first, last])
+    assert.deepEqual(verify(repo, ['plan1-x', '--audit']).violations, [
+      `${repo.root}/${dir}/phase-02.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: ${rel}`,
+    ])
+    writePlan(repo, 'plan1-x', [first, { ...last, command: `pytest tests/test_fast.py\nnpx playwright test ${rel}` }])
+    const passed = verify(repo, ['plan1-x', '--audit'])
+    assert.equal(passed.code, 0, passed.stdout + passed.stderr)
+  })
+}
+
+for (const [label, rel, setting] of [
+  ['e2e 폴더의 일반 테스트', 'tests/e2e/test_mapper.py', ''],
+  ['e2e 폴더의 Java 테스트', 'src/test/java/com/x/e2e/OrderMapperTest.java', ''],
+  ['playwright 폴더의 일반 테스트', 'tests/playwright/test_config.py', ''],
+  ['기본값 끄기', 'web/e2e/login.spec.ts', '없음'],
+  ['인라인 코드로 기본값 끄기', 'web/e2e/login.spec.ts', '`없음`'],
+] as [string, string, string][]) {
+  test(`기본 glob 은 일반 테스트를 제외하지 않고 명시적으로 끌 수 있다: ${label}`, () => {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    if (setting) repo.file('.claude/plan-overlay.md', `| 느린 e2e | ${setting} |`)
+    const phase = { work: `### 1. 테스트 수정\n\`${rel}\` 를 고친다.`, entries: [[rel, '수정']] as [string, string][], command: 'pytest tests/test_fast.py' }
+    const dir = writePlan(repo, 'plan1-x', [phase, { ...phase, command: `pytest ${rel}` }])
+    const result = verify(repo, ['plan1-x', '--audit'])
+    assert.deepEqual(result.violations, [
+      `${repo.root}/${dir}/phase-01.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: ${rel}`,
+    ], result.stdout + result.stderr)
+    assert.equal(result.warnings.some((line) => line.includes('느린 e2e')), false, result.stdout)
+  })
+}
+
+test('느린 e2e 설정의 경로 표시 없는 조각은 경고하고 같은 설정은 한 번만 경고한다', () => {
+  for (const setting of ['잘못된값', '`잘못된값` `tests/slow/*.spec.ts`', '`없음` `tests/slow/*.spec.ts`']) {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    repo.file('.claude/plan-overlay.md', `| 느린 e2e | ${setting} |`)
+    const phase = {
+      work: '### 1. 테스트 수정\n`tests/test_fast.py` 와 `tests/test_other.py` 를 고친다.',
+      entries: [['tests/test_fast.py', '수정'], ['tests/test_other.py', '수정']] as [string, string][],
+      command: 'pytest tests/test_fast.py tests/test_other.py',
+    }
+    writePlan(repo, 'plan1-x', [phase, phase, phase])
+    const result = verify(repo, ['plan1-x', '--audit'])
+    assert.equal(result.code, 0, result.stdout + result.stderr)
+    const warnings = result.warnings.filter((line) => line.includes('느린 e2e 값'))
+    assert.equal(warnings.length, 1, result.stdout)
+    assert.ok(warnings[0].startsWith('.claude/plan-overlay.md — '), result.stdout)
+  }
+})
