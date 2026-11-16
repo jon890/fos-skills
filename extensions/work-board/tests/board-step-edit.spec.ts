@@ -149,17 +149,6 @@ test('글에 #번호 와 머지·배포·릴리스 낱말이 있는데 --event �
     assert.doesNotMatch(run(t.file, ['step-edit', 'a', '2', '2. #481 머지']).stderr, /--event 가 없어/)
   } finally { t.cleanup() }
 })
-test('goal 항목의 progress 는 하위 항목 집계값일 수 있어 단계 줄이 늘어도 지우지 않는다', () => {
-  const t = tempBoard()
-  try {
-    write(t.file, { id: 'g', status: 'goal', progress: '1/2', details: ['1. 하나', '2. 둘', '3. 셋'] })
-    let result = run(t.file, ['set', 'g', '--detail', '1. 하나', '--detail', '2. 둘', '--detail', '3. 셋 고침'])
-    assert.equal(result.code, 0); assert.equal(item(t.file, 'g').progress, '1/2'); assert.doesNotMatch(result.stderr, /지우고/)
-    result = run(t.file, ['step-add', 'g', '넷'])
-    assert.equal(result.code, 0); assert.equal(item(t.file, 'g').progress, '1/2')
-    assert.deepEqual(JSON.parse(result.stdout).progress, [1, 2])
-  } finally { t.cleanup() }
-})
 test('다른 낱말의 일부(나머지)는 머지로 읽지 않고 재배포와 붙여 쓴 머지는 읽는다', () => {
   const t = tempBoard()
   try {
@@ -168,5 +157,18 @@ test('다른 낱말의 일부(나머지)는 머지로 읽지 않고 재배포와
       const result = run(t.file, ['step-add', 'a', text])
       assert.equal(result.code, 0, result.stderr); assert.equal(/--event 가 없어/.test(result.stderr), warned, text)
     }
+  } finally { t.cleanup() }
+})
+
+test('옛 목표 항목도 단계 수가 progress 전체 값을 넘으면 단계 줄로 센다', () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'g', status: 'goal', progress: '1/2', details: ['1. 하나', '2. 둘'] })
+    const result = run(t.file, ['step-add', 'g', '셋'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(item(t.file, 'g').status, 'doing')
+    assert.equal(item(t.file, 'g').progress, undefined)
+    assert.deepEqual(JSON.parse(result.stdout).progress, [0, 3])
+    assert.match(result.stderr, /지우고/)
   } finally { t.cleanup() }
 })
