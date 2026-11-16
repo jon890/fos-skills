@@ -238,6 +238,21 @@ describe('block-broken-commit-subject', () => {
     }
   })
 
+  test('push 에 명시한 원본만 검사하고 삭제나 알 수 없는 대상은 통과한다', () => {
+    const r = repo()
+    r.git('branch', 'good')
+    r.git('commit', '--allow-empty', '-m', 'fix: x\\n\\n본문')
+    r.git('branch', 'bad')
+    const push = (args: string) => decide(HOOK, `git -C ${quote(r.dir)} push ${args}`)
+    for (const args of ['origin good', 'origin good:target', 'origin :old', 'origin --delete old', '--tags', '--all', '--mirror', 'origin tag v1', 'origin "$SOURCE"', 'origin refs/heads/*:refs/heads/*', '--unknown origin']) {
+      assert.equal(push(args), 'pass', args)
+    }
+    r.git('checkout', 'good')
+    for (const args of ['origin bad', 'origin bad:target', '-u origin +bad:target', 'origin good:one bad:two']) {
+      assert.equal(push(args), 'deny', args)
+    }
+  })
+
   test('Git 조회가 실패해도 push 는 통과한다', () => {
     assert.equal(decide(HOOK, 'git -C /no/such/repository push'), 'pass')
     const fake = fakeBin(mkdtempSync(join(root, 'git-fail-')), 'git', [{ args: [], code: 1 }])

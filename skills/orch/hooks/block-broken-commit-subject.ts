@@ -42,9 +42,42 @@ function git(cwd: string, prefix: string[], args: string[]): string | null {
   return result.status === 0 ? result.stdout : null
 }
 
-function unpushedBroken(cwd: string, prefix: string[]): boolean {
+// 삭제·태그 일괄 전송과 알 수 없는 옵션은 대상을 확정할 수 없어 검사하지 않는다.
+function pushSources(args: (string | null)[]): string[] | null {
+  const positional: string[] = []
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === null) return null
+    if (options && arg === '--') { options = false; continue }
+    if (options && arg.startsWith('-')) {
+      if (['--delete', '-d', '--tags', '--all', '--mirror', '--follow-tags', '--prune'].includes(arg)) return null
+      if (['-o', '--push-option', '--receive-pack', '--exec'].includes(arg)) {
+        if (args[++i] == null) return null
+        continue
+      }
+      if (/^(?:--push-option|--receive-pack|--exec)=/.test(arg)) continue
+      if (/^--force-with-lease(?:=|$)/.test(arg) || ['-u', '--set-upstream', '-f', '--force', '--atomic', '--dry-run', '-n', '--porcelain', '--verbose', '-v', '--quiet', '-q', '--no-verify', '--progress'].includes(arg)) continue
+      return null
+    }
+    positional.push(arg)
+  }
+  const refspecs = positional.slice(1) // 첫 위치 인자는 원격 이름이나 URL 이다.
+  if (!refspecs.length) return ['HEAD']
+  const sources: string[] = []
+  for (const refspec of refspecs) {
+    if (refspec === 'tag' || /[*?\[\]]/.test(refspec)) return null
+    const [source, , extra] = refspec.replace(/^\+/, '').split(':')
+    if (extra !== undefined || source.startsWith('-')) return null
+    if (source) sources.push(source) // :branch 는 삭제라 커밋을 보내지 않는다.
+  }
+  return sources
+}
+
+function unpushedBroken(cwd: string, prefix: string[], sources: string[]): boolean {
+  if (!sources.length) return false
   // merge/rebase 로 들어온 main 의 옛 제목도 어느 원격에 이미 있으면 검사에서 뺀다.
-  const log = git(cwd, prefix, ['log', '--format=%H%x00%B%x00', 'HEAD', '--not', '--remotes', '--'])
+  const log = git(cwd, prefix, ['log', '--format=%H%x00%B%x00', ...sources, '--not', '--remotes', '--'])
   if (log === null) return false
   const fields = log.split('\0')
   for (let i = 1; i < fields.length; i += 2) if (broken(fields[i])) return true
@@ -80,7 +113,8 @@ function rejection(command: string, initialCwd: string): string | null {
       else { gitCwd = null; break }
     }
     const action = args.shift()
-    if (action === 'push' && gitCwd && unpushedBroken(gitCwd, prefix)) {
+    const sources = action === 'push' ? pushSources(args) : null
+    if (sources && gitCwd && unpushedBroken(gitCwd, prefix, sources)) {
       return 'orch: 미전송 커밋의 제목에 글자 \\n\\n 이나 셸·파이썬 코드가 있다. ' +
         '메시지를 파일로 쓰고 `git commit --amend -F <파일>` 이나 `git rebase` 로 고친 뒤 push 한다.'
     }
