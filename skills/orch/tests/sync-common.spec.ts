@@ -196,3 +196,40 @@ test('옛 틀(명령 블록마다 경로 풀기 한 줄)을 현재 틀로 맞춰
   assert.equal(syncCommon(result.text, template, repo).text, result.text)
   assert.deepEqual(syncCommon(result.text, template, repo).output, [])
 })
+
+
+test('표지 없던 feedback-add 블록을 갱신하고 명령 블록은 한 번만 남긴다', () => {
+  const template = readFileSync(TEMPLATE, 'utf8')
+  // cfda7fe8 의 옛 틀처럼 설명을 별도 목록 항목으로 두고 표지는 뺀다.
+  const copy = template.replace(' <!-- orch-rule: feedback-add -->', '')
+    .replace('  `SLUG` 는', '- `SLUG` 는')
+  assert.notEqual(copy, template)
+  const result = syncCommon(copy, template, repo)
+  assert.equal(result.text, template)
+  assert.equal(result.text.match(/^  orch feedback add /gm)?.length, 1)
+  assert.match(result.output.join('\n'), /SYNC-UPDATE feedback-add/)
+  assert.deepEqual(syncCommon(result.text, template, repo).output, [])
+})
+
+test('표지 유무와 목록 기호가 달라도 같은 머리 줄의 중복은 적용 전에 거부한다', () => {
+  for (const second of ['- 같은 항목\n', rule('a', '같은 항목'), '7. 같은 항목\n']) {
+    assert.throws(() => syncCommon('- 같은 항목\n' + second, rule('a', '같은 항목'), repo), /같은 머리 줄.*1, 2줄/)
+  }
+  const copy = '- 같은 항목\n  - 저장소 하위 항목\n'
+  const result = syncCommon(copy, rule('a', '같은 항목'), repo)
+  assert.equal(result.text, copy)
+  assert.equal(result.manual, true)
+})
+
+test('갱신으로 다른 항목과 머리 줄이 같아지면 결과를 거부한다', () => {
+  assert.throws(() => syncCommon(rule('a', '옛 항목') + '- 새 항목\n', rule('a', '새 항목'), repo), /같은 머리 줄/)
+})
+
+
+test('옛 항목 옆의 다른 저장소 항목과 코드 예시의 같은 머리 줄은 건드리지 않는다', () => {
+  const template = rule('a', '공통 항목')
+  const example = '```md\n- 공통 항목\n```\n'
+  const copy = example + '- 공통 항목\n- 저장소 항목\n  ```text\n  keep me\n  ```\n'
+  const result = syncCommon(copy, template, repo)
+  assert.equal(result.text, example + template + '- 저장소 항목\n  ```text\n  keep me\n  ```\n')
+})

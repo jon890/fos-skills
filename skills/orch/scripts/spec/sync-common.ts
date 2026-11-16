@@ -1,6 +1,6 @@
 // 공통 지시서의 표지 항목을 설치된 틀에 맞춘다. 기본은 항목별 diff, --apply 만 파일을 쓴다.
 // 사용법: orch spec sync-common [--repo DIR] [--specs-dir DIR] [--apply]
-// 표지 없는 항목과 keep 표지는 보존한다. 자리표시자 값이 있는 낡은 항목은 추측하지 않고 수동 확인으로 남긴다.
+// 틀과 첫 줄이 같은 표지 없는 항목은 갱신하고, 나머지 항목과 keep 표지는 보존한다. 자리표시자 값이 있는 낡은 항목은 추측하지 않고 수동 확인으로 남긴다.
 // 출력: SYNC-ADD/UPDATE 뒤 항목 diff, SYNC-KEEP, SYNC-MANUAL, SYNC-PREVIEW/APPLIED/UNCHANGED.
 // 종료 코드: 0 성공(미리보기 포함), 1 수동 확인 필요(안전한 항목은 적용), 2 인자 또는 파일 오류.
 import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,9 +13,25 @@ import { bundleRoot } from '../lib/bundle.ts'
 import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody } from '../lib/common-rules.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 
+// 목록 기호와 표지를 제외한 첫 줄로 옛 항목과 중복을 찾는다. 코드 예시는 제외한다.
+function ruleHead(line: string): string {
+  return line.replace(/^(?:[-*]|\d+\.)\s+/, '').replace(/<!--\s*orch-rule:[^>]*-->/g, '').trimEnd()
+}
+
+export function duplicateRuleHeads(text: string): { no: number; message: string }[] {
+  const heads = new Map<string, number[]>()
+  outsideFences(text.split(/\r\n|[\n\r\u2028\u2029]/)).forEach((line, index) => {
+    if (!/^(?:[-*]|\d+\.)\s+/.test(line)) return
+    const head = ruleHead(line)
+    heads.set(head, [...(heads.get(head) ?? []), index + 1])
+  })
+  return [...heads.entries()].filter(([, rows]) => rows.length > 1)
+    .map(([head, rows]) => ({ no: rows[0], message: `같은 머리 줄의 항목이 둘 이상 있다: ${rows.join(', ')}줄 (${head})` }))
+}
+
 export function syncCommon(copy: string, template: string, repo: string): { text: string; output: string[]; manual: boolean } {
   for (const text of [copy, template]) {
-    const issues = ruleIssues(text)
+    const issues = [...ruleIssues(text), ...duplicateRuleHeads(text)]
     if (issues.length) throw new Error(issues.map((issue) => issue.message).join('; '))
   }
   const wanted = ruleBodies(template)
@@ -38,13 +54,38 @@ export function syncCommon(copy: string, template: string, repo: string): { text
   let manual = false
   const addedSections = new Set<string>()
   for (const [name, want] of wanted) {
-    const mine = existing.get(name)
+    let mine = existing.get(name)
+    let legacy = false
+    if (!mine) {
+      const head = outsideFences(lines).findIndex((line) => /^(?:[-*]|\d+\.)\s+/.test(line)
+        && !/<!--\s*orch-rule:/.test(line) && ruleHead(line) === ruleHead(want.raw.split('\n')[0]))
+      if (head >= 0) {
+        // 범위와 하위 목록의 안전 검사는 기존 표지 항목 파서를 그대로 쓴다.
+        const marked = [...lines]
+        marked[head] += ` <!-- orch-rule: ${name} -->`
+        mine = ruleBodies(marked.join('\n')).get(name)!
+        // 옛 틀은 설명과 명령 블록을 바로 다음 목록 항목으로 나누기도 했다.
+        // 틀의 첫 설명 줄과 같은 표지 없는 항목만 함께 교체한다.
+        const next = mine.end
+        const continuation = want.raw.split('\n').slice(1).find((line) => line.trim())
+        if (continuation && /^(?:[-*]|\d+\.)\s+/.test(lines[next] ?? '')
+          && !/<!--\s*orch-rule:/.test(lines[next]) && ruleHead(lines[next]) === continuation.trim()) {
+          const tail = [...lines]
+          tail[next] += ` <!-- orch-rule: ${name} -->`
+          const span = ruleBodies(tail.join('\n')).get(name)!
+          mine.end = span.end
+          mine.unsafe ||= span.unsafe
+        }
+        mine.raw = lines.slice(mine.head, mine.end).join('\n')
+        legacy = true
+      }
+    }
     if (!mine && Object.hasOwn(CONDITIONAL_RULES, name) && !CONDITIONAL_RULES[name](repo)) continue
     if (mine?.keep) {
       output.push(`SYNC-KEEP ${name}`)
       continue
     }
-    if (mine && sameBody(want.body, mine.body)) continue
+    if (mine && !legacy && sameBody(want.body, mine.body)) continue
     if (mine?.unsafe || want.unsafe) {
       output.push(`SYNC-MANUAL ${name}: 표지 없는 부모나 하위 목록이 교체 범위에 있다`)
       manual = true
@@ -102,6 +143,8 @@ export function syncCommon(copy: string, template: string, repo: string): { text
     if (edit.head === edit.end && start === copy.length && copy.length && !/[\r\n\u2028\u2029]$/.test(copy)) replacement = eol + replacement
     text = text.slice(0, start) + replacement + text.slice(end)
   }
+  const issues = [...ruleIssues(text), ...duplicateRuleHeads(text)]
+  if (issues.length) throw new Error(issues.map((issue) => issue.message).join('; '))
   return { text, output, manual }
 }
 

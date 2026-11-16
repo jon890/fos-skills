@@ -101,6 +101,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
+import { duplicateRuleHeads } from './sync-common.ts'
 import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
 import { specHold } from '../lib/auto-merge.ts'
 import { taskFirstLine } from '../lib/spec.ts'
@@ -438,7 +439,7 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
     const common = join(dir, COMMON)
     if (!isFile(common)) continue
     const text = readFileSync(common, 'utf8')
-    for (const issue of ruleIssues(text)) found.push(`${common}:${issue.no}: 공통: ${issue.message}`)
+    for (const issue of [...ruleIssues(text), ...duplicateRuleHeads(text)]) found.push(`${common}:${issue.no}: 공통: ${issue.message}`)
     const has = ruleBodies(text)
     const missing = required.filter((name) => !has.has(name))
     if (missing.length > 0) {
