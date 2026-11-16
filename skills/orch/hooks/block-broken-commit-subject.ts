@@ -98,7 +98,7 @@ function rejection(command: string, initialCwd: string): string | null {
         continue
       }
       if (flag === '-m' || flag === '--message' || flag?.startsWith('--message=') || /^-[aAnqsv]*m/.test(flag ?? '')) {
-        const attached = flag!.startsWith('--message=') ? flag!.slice(10) : /^-[aAnqsv]*m(.+)$/.exec(flag!)?.[1]
+        const attached = flag!.startsWith('--message=') ? flag!.slice(10) : /^-[aAnqsv]*m([\s\S]+)$/.exec(flag!)?.[1]
         const message = attached ?? args[i + 1]
         if (message != null && broken(message)) return commitReason
         break // 첫 -m 만 제목이다. 뒤 -m 은 본문이다.

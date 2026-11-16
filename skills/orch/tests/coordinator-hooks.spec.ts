@@ -125,7 +125,7 @@ describe('block-broken-commit-subject', () => {
   const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'"
 
   test('제목의 연속된 글자 줄바꿈과 코드 시작을 막는다', () => {
-    for (const subject of ['fix: x\\n\\n본문', 'cat <<EOF', 'python3 script.py', 'python script.py', 'gh pr create', 'EOF']) {
+    for (const subject of ['fix: x\\n\\n본문', 'cat <<EOF', 'cat <<EOF\n본문', 'python3 script.py', 'python script.py', 'gh pr create', 'EOF']) {
       for (const flag of ['-m ', '--message=', '-m', '-am ']) {
         const v = verdict(HOOK, `git commit ${flag}${quote(subject)}`)
         assert.equal(v.decision, 'deny', `${flag}${subject}`)

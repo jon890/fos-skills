@@ -27,14 +27,27 @@ export type Piece = { join: string | null; start: number; end: number }
 export function stripHeredocs(command: string): string {
   const out: string[] = []
   let end: string | null = null
+  let quote: string | null = null
   for (const line of command.replaceAll('\\\n', ' ').split('\n')) {
     if (end !== null) {
       if (line.trim() === end) end = null
       continue
     }
     out.push(line)
-    const m = HEREDOC.exec(line)
-    if (m) end = m[2]
+    // 여러 줄 인용 메시지의 `cat <<EOF` 는 heredoc 이 아니다. 닫는 인용까지 보존한다.
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (ch === '\\' && quote !== "'") { i++; continue }
+      if (quote !== null) {
+        if (ch === quote) quote = null
+        continue
+      }
+      if (ch === "'" || ch === '"') { quote = ch; continue }
+      if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) break
+      if (ch !== '<' || (i > 0 && /[<\w]/.test(line[i - 1]))) continue
+      const m = HEREDOC.exec(line.slice(i))
+      if (m?.index === 0) { end = m[2]; break }
+    }
   }
   return out.join('\n')
 }
