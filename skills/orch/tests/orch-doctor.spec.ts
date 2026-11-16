@@ -581,6 +581,12 @@ describe('저장소 판정', () => {
     assert.match(r.stdout, /WAITER-LEFT 123/)
   })
 
+  test('옛 문서의 다시 시도 핸들러는 코어 기본과 같다고 알린다', () => {
+    write(join(tmp, '.orch', 'hooks', 'worker-stalled.ts'), "const file = join(process.env.ORCH_DIR, 'state', 'stall-retries.json')")
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.match(r.stdout, /STALL-RETRY-HANDLER .*worker-stalled\.ts/)
+  })
+
   test('이벤트 이름이 아닌 핸들러 파일은 UNKNOWN-HOOK 이고 종료 코드 0 이다', () => {
     write(join(tmp, '.orch', 'hooks', 'befor-merge.ts'), '')
     write(join(tmp, '.orch', 'hooks', 'before-merge.ts'), '')
