@@ -1037,12 +1037,34 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(starting(c.calls(), 'board ').length, 0, c.calls().join('\n'))
   })
 
-  test('마일스톤 항목은 판정하지 못한 PR 을 중간 PR 로 보고 done 으로 바꾸지 않는다', async (t) => {
+  // task_pattern 이 없어 마지막 PR 을 판정하지 못하는 저장소(업무 번호 규칙이 없는 저장소)의 마일스톤 항목
+  const UNJUDGED_STEPS = JSON.stringify([{ number: 1, done: false, text: '1. PR' }, { number: 2, done: false, text: '2. 머지' }])
+  const unjudged = (extra: Json = {}): Json => ({ id: 'm', status: 'doing', branch: 'feat/x', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }], ...extra })
+  const workerRow = (role: string, extra: Json = {}): Json => ({ role, dispatch: 'd1', worktree: 'other', branch: 'feat/other', pr: null, at: '2026-01-01', status: 'working', endedAt: null, ...extra })
+
+  test('마일스톤 항목은 판정하지 못한 PR 이어도 모든 단계가 끝나고 열린 PR 과 작업 중 worker 와 남은 일 줄이 없으면 done 으로 바꾼다', async (t) => {
     const c = setup(t)
     const file = join(c.repo, '.omc', 'board.json')
-    const bin = board(c, [{ id: 'm', status: 'doing', branch: 'feat/x', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }] }])
-    const steps = JSON.stringify([{ number: 1, done: false, text: '1. PR' }, { number: 2, done: false, text: '2. 머지' }])
+    const bin = board(c, [unjudged()])
     // --task-pattern 이 없어 판정하지 못한다
+    const r = await c.finish([...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps m --file ${file}`,
+      `board step m 1 --file ${file}`,
+      `board step m 2 --file ${file}`,
+      `board set m done --worktree  --file ${file}`,
+      `board set m --merged-pr 77 --file ${file}`,
+    ])
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: task_pattern 이 없다)')
+    has(r.stdout, '보드 m done(브랜치로 찾았다)(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)')
+  })
+
+  test('마일스톤 항목은 판정하지 못한 PR 이면 끝나지 않은 단계가 남을 때 done 으로 바꾸지 않는다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [unjudged({ details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }, { text: '3. 추가 확인', done: false }] })])
+    const steps = JSON.stringify([{ number: 1, done: false, text: '1. PR' }, { number: 2, done: false, text: '2. 머지' }, { number: 3, done: false, text: '3. 추가 확인' }])
     const r = await c.finish([...bin], { FAKE_STEPS: steps })
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(starting(c.calls(), 'board '), [
@@ -1053,6 +1075,55 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     ])
     has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: task_pattern 이 없다)')
     has(r.stdout, '보드 m 는 마지막 PR 인지 판정하지 못해 단계만 끝내고 PR 77 를 merged-pr 에 적었다')
+  })
+
+  test('마일스톤 항목은 판정하지 못한 PR 이면 열린 PR, 다른 작업 중 worker, 남은 일 줄이 있을 때 done 으로 바꾸지 않는다', async (t) => {
+    const cases: [string, Json][] = [
+      ['열린 PR', unjudged({ pr: '77, 78' })],
+      ['작업 중 worker', unjudged({ workers: [workerRow('review')] })],
+      ['남은 일 줄', unjudged({ details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }, '남은 일: PR #78'] })],
+    ]
+    for (const [name, item] of cases) {
+      const c = setup(t)
+      const bin = board(c, [item])
+      const r = await c.finish([...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+      assert.equal(r.code, 0, `${name}: ${both(r)}`)
+      assert.equal(starting(c.calls(), 'board set m done').length, 0, `${name}: ${c.calls().join('\n')}`)
+      has(r.stdout, '보드 m 는 마지막 PR 인지 판정하지 못해 단계만 끝내고')
+    }
+  })
+
+  test('판정하지 못한 PR 이어도 그 PR 의 구현 worker 줄이 working 으로 남았을 뿐이면 닫는다', async (t) => {
+    const c = setup(t)
+    const bin = board(c, [unjudged({ workers: [workerRow('impl', { worktree: 'wt', branch: 'feat/x' })] })])
+    const r = await c.finish([...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+    assert.equal(r.code, 0, both(r))
+    assert.equal(starting(c.calls(), 'board set m done').length, 1, c.calls().join('\n'))
+  })
+
+  test('판정하지 못한 레거시 항목도 모든 단계가 끝나면 done 으로 바꾸고 단계가 남으면 doing 으로 둔다', async (t) => {
+    const done = setup(t)
+    const doneBin = board(done, [{ id: 'task-x', status: 'doing', branch: 'feat/x', details: [{ text: '1. PR #77', done: false }] }])
+    const r = await done.finish([...doneBin], { FAKE_STEPS: JSON.stringify([{ number: 1, done: false, text: '1. PR #77' }]) })
+    assert.equal(r.code, 0, both(r))
+    assert.equal(starting(done.calls(), 'board set task-x done').length, 1, done.calls().join('\n'))
+    has(r.stdout, '보드 task-x done(브랜치로 찾았다)(마지막 PR 을 판정하지 못했지만')
+
+    const left = setup(t)
+    const leftBin = board(left, [{ id: 'task-x', status: 'doing', branch: 'feat/x', details: [{ text: '1. PR #77', done: false }, { text: '2. 확인', done: false }] }])
+    const again = await left.finish([...leftBin], { FAKE_STEPS: JSON.stringify([{ number: 1, done: false, text: '1. PR #77' }, { number: 2, done: false, text: '2. 확인' }]) })
+    assert.equal(again.code, 0, both(again))
+    assert.equal(starting(left.calls(), 'board set task-x done').length, 0, left.calls().join('\n'))
+    has(again.stdout, '보드 task-x 는 마지막 PR 인지 판정하지 못했거나 끝나지 않은 단계가 남아 done 으로 바꾸지 않고 PR 77 를 merged-pr 에 적었다')
+  })
+
+  test('열린 PR 을 읽지 못해 판정을 다시 봐야 하면 마일스톤 항목도 닫지 않는다', async (t) => {
+    const c = setup(t)
+    c.state.listFails = true
+    const bin = board(c, [unjudged()])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+    assert.equal(r.code, 0, both(r))
+    assert.equal(starting(c.calls(), 'board set m done').length, 0, c.calls().join('\n'))
   })
 
   test('마일스톤 항목은 마지막 PR 이어도 done 지점 뒤에 끝나지 않은 수동 단계가 남으면 done 으로 바꾸지 않는다', async (t) => {

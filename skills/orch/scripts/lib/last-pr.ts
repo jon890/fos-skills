@@ -10,6 +10,8 @@
 // 판정하지 못하면 last 는 null 이다. taskPattern 이 없다, 제목에서 업무 번호를 찾지 못했다, specsDir 는 있는데 specTaskPattern 이 없다,
 // gh 조회가 실패했다가 여기 든다. 부르는 쪽이 null 을 어떻게 다룰지 정한다. gh 조회 실패는 다시 보면 풀릴 수 있어 retry 가 true 다.
 //
+// 판정하지 못한 PR 의 보드 항목을 닫아도 되는지는 closeUnjudged 가 정한다. board-sync.ts 와 finish-pr.ts 가 같은 조건을 쓴다
+//
 // 설정: config.json 의 finish 절 task_pattern, spec_task_pattern, specs_dir 다(rulesFrom). 정규식은 Python 정규식이고(lib/py.ts 의 pyRegExp)
 // 업무 번호를 담을 그룹이 하나 이상 있어야 한다. 업무 번호는 영문, 숫자, `._/-` 만 받는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다(lib/gh.ts 의 ghBin).
@@ -127,4 +129,27 @@ export function judgeLastPr(repo: string, pr: MergedPr, rules: LastPrRules): Las
   }
   const specPart = rules.specsDir ? `남은 지시서 ${specs.join(' ') || '없음'}` : '지시서는 보지 않음(specs_dir 없음)'
   return { last: prs.length === 0 && specs.length === 0, retry: false, number, prs, specs, reason: `업무 ${number}, 남은 PR ${prs.join(' ') || '없음'}, ${specPart}` }
+}
+
+// 판정하지 못한 PR(last 가 null, gh 조회 실패는 retry 라 제외)의 마일스톤·단계 항목을 done 으로 닫아도 되는지.
+// 판정 규칙이 없어도(task_pattern 이 없다) 항목의 상태가 일이 끝났음을 보이면 닫는다. 아래를 모두 만족할 때만이다. 하나라도 아니면 닫지 않는다.
+//   - 판정 규칙을 읽지 못한 것이 아니다(rulesUnreadable)
+//   - 열린 PR 이 없다(openPrs)
+//   - 작업 중 worker 가 없다(activeWorker)
+//   - 남은 일 줄이 없다(remainingNote)
+//   - 이 머지가 done 지점에 닿는다(reachedDone)
+//   - 이 머지를 반영하면 모든 단계가 끝난다(allStepsDone)
+// 잘못 닫으면 업무 완료로 번지므로 조건을 더 느슨하게 하지 않는다
+export type UnjudgedClose = {
+  rulesUnreadable: boolean
+  openPrs: number
+  activeWorker: boolean
+  remainingNote: boolean
+  reachedDone: boolean
+  allStepsDone: boolean
+}
+
+export function closeUnjudged(verdict: Pick<LastPrVerdict, 'last' | 'retry'> | null, state: UnjudgedClose): boolean {
+  if (verdict === null || verdict.last !== null || verdict.retry) return false
+  return !state.rulesUnreadable && state.openPrs === 0 && !state.activeWorker && !state.remainingNote && state.reachedDone && state.allStepsDone
 }

@@ -50,6 +50,9 @@
 //     --complete(merge-with-finish 의 `PR!`)면 마지막, --intermediate(`PR~`)면 중간이다. 둘 다 없으면 lib/last-pr.ts 의 judgeLastPr 로
 //     판정한다. 규칙은 --task-pattern, --spec-task-pattern, --specs-dir 이고 조건은 그 모듈의 머리 주석이 소유한다.
 //     판정하지 못하면 중간 PR 로 본다. 업무를 일찍 완료하는 것이 늦게 완료하는 것보다 되돌리기 어렵다.
+//     단 보드 항목은 판정하지 못했어도(gh 조회 실패는 제외) lib/last-pr.ts 의 closeUnjudged 조건을 모두 만족하면 마지막 PR 로 닫는다.
+//     board-sync.ts 와 같은 조건이다. 업무 번호 규칙이 없는 저장소의 PR 하나짜리 일이 머지 뒤에도 doing 으로 남지 않게 한다.
+//     이 PR 의 구현·후속 worker 줄은 tellMerged 가 끝나기를 기다린 뒤라 작업 중으로 세지 않는다
 //     근거 줄의 예: `마지막 PR 판정: 중간(업무 PROJ-12, 남은 PR #31 #33, 남은 지시서 spec-b.md)`
 //
 // 보드 항목:
@@ -128,14 +131,15 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { markFinishStarted } from '../lib/finish-marks.ts'
 import { recordUnmatched } from '../lib/board-unmatched.ts'
-import { prNumbers, prSteps } from '../core/board.ts'
+import { prNumbers, prSteps, NOTE, detailText } from '../core/board.ts'
+import { boardWorkerRows } from '../core/board-workers.ts'
 import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
 import type { BoardDetail, BoardStep } from '../lib/board.ts'
 import { conflictSpecFiles } from '../lib/conflicts.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import { boardSettings, eventKinds, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { StageKind, Stages } from '../lib/milestones.ts'
-import { judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
+import { closeUnjudged, judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { eventTimeoutSec, fire, handlerFile } from '../lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from '../lib/finish-options.ts'
@@ -482,12 +486,14 @@ function deleteConflictSpecs(args: Args, repo: string): void {
 // 머리 주석의 「마지막 PR 판정」. 판정하지 못하면 중간 PR 이다. reason 은 근거 줄의 괄호 안이다
 // prs 와 specs 는 남은 PR 과 지시서다. 보드의 남은 일 줄에 쓴다
 // known 은 판정했는지다. 판정하지 못해 중간으로 본 것이면 false 다
-function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; known: boolean; reason: string; prs: string[]; specs: string[] } {
-  if (args.complete) return { last: true, known: true, reason: '--complete 로 지정', prs: [], specs: [] }
-  if (args.intermediate) return { last: false, known: true, reason: '--intermediate 로 지정', prs: [], specs: [] }
+// retry 는 gh 조회가 실패해 다시 보면 풀릴 수 있다는 뜻이다. 이때는 보드 항목을 닫지 않는다
+type Verdict = { last: boolean; known: boolean; retry: boolean; reason: string; prs: string[]; specs: string[] }
+function judgeLast(args: Args, repo: string, merged: Merged): Verdict {
+  if (args.complete) return { last: true, known: true, retry: false, reason: '--complete 로 지정', prs: [], specs: [] }
+  if (args.intermediate) return { last: false, known: true, retry: false, reason: '--intermediate 로 지정', prs: [], specs: [] }
   const rules = { taskPattern: args.taskPattern, specTaskPattern: args.specTaskPattern, specsDir: args.specsDir ? specsDirOf(args, repo) : null }
   const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch }, rules)
-  return { last: verdict.last === true, known: verdict.last !== null, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
+  return { last: verdict.last === true, known: verdict.last !== null, retry: verdict.retry, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 
 // 머리 주석의 단계 5. note 는 lib/deploy.ts 의 판정 근거다. 바뀔 때마다 `배포 판정: <근거>` 한 줄을 남긴다
@@ -611,12 +617,48 @@ function boardRow(args: Args, repo: string, item: string): { row: Record<string,
   return { row, steps: parsed as BoardStep[] }
 }
 
+// 이 PR 밖에 남은 PR(pr 칸에 있고, merged-pr 에 없고, CLOSED 가 아니다)
+function otherPrs(repo: string, row: Record<string, unknown>, pr: string): string[] {
+  const known = prNumbers(row['merged-pr'])
+  return [...prNumbers(row.pr)].filter((other) => other !== pr && !known.has(other) && prState(repo, other) !== 'CLOSED')
+}
+
+// 판정하지 못한 PR 의 항목을 닫아도 되는지(lib/last-pr.ts 의 closeUnjudged, board-sync.ts 와 같은 조건).
+// 이 PR 의 worker(줄의 pr, 브랜치, 워크트리가 이 PR 과 같은 구현·후속 줄)는 tellMerged 가 끝나기를 기다린 뒤라 작업 중으로 세지 않는다.
+// 보드 줄은 루프가 worker_done 을 반영해야 done 이 되는데, 루프가 다른 Run 에 묶여 있으면 끝난 worker 의 줄이 working 으로 남는다
+function closeUnjudgedItem(
+  args: Args, verdict: Verdict, row: Record<string, unknown>, own: Own, remaining: string[], reachedDone: boolean, allStepsDone: boolean,
+): boolean {
+  const mine = (w: ReturnType<typeof boardWorkerRows>[number]) =>
+    (w.role === 'impl' || w.role === 'follow') && (w.pr === Number(args.pr) || (own.branch !== '' && w.branch === own.branch) || (own.worktree !== '' && w.worktree === own.worktree))
+  const details = (Array.isArray(row.details) ? row.details : []) as BoardDetail[]
+  return closeUnjudged(
+    { last: verdict.known ? verdict.last : null, retry: verdict.retry },
+    {
+      rulesUnreadable: false,
+      openPrs: remaining.length,
+      activeWorker: boardWorkerRows(row).some((w) => w.status === 'working' && !mine(w)),
+      remainingNote: details.some((d) => detailText(d).startsWith(NOTE)),
+      reachedDone,
+      allStepsDone,
+    },
+  )
+}
+
+// 이 머지를 낸 worker 를 가리키는 값. 보드 줄의 브랜치와 워크트리 이름이다
+type Own = { branch: string; worktree: string }
+
 // 마지막 PR 이어도 그 PR 줄만 끝내고, 남은 수동 단계는 보존한다.
-function setBoardLegacy(args: Args, repo: string, item: string, last: boolean, note: string | null): 'done' | 'doing' | false {
+// 판정하지 못했어도 closeUnjudgedItem 이 닫아도 된다고 하면 마지막 PR 로 본다
+function setBoardLegacy(args: Args, repo: string, item: string, verdict: Verdict, own: Own): 'done' | 'doing' | false {
   return updateBoardRows(args, repo, item, (row, steps) => {
     const matched = prSteps(steps, args.pr)
-    const done = last && steps.every((step) => step.done || matched.includes(step.number))
-    const cmds = intermediateCommands(item, (Array.isArray(row.details) ? row.details : []) as BoardDetail[], steps, args.pr, note, row['merged-pr'])
+    const stepsDone = steps.every((step) => step.done || matched.includes(step.number))
+    const unjudged = !verdict.known && !verdict.retry
+    const closing = unjudged && stepsDone && closeUnjudgedItem(args, verdict, row, own, otherPrs(repo, row, args.pr), true, true)
+    const last = verdict.last || closing
+    const done = last && stepsDone
+    const cmds = intermediateCommands(item, (Array.isArray(row.details) ? row.details : []) as BoardDetail[], steps, args.pr, last ? null : noteLine(verdict.prs, verdict.specs), row['merged-pr'])
     if (done) cmds.push(['set', item, 'done', '--worktree', ''])
     else cmds.push(['set', item, 'doing'])
     return { cmds, value: done ? 'done' as const : 'doing' as const }
@@ -627,7 +669,8 @@ function setBoardLegacy(args: Args, repo: string, item: string, last: boolean, n
 // 마지막 PR 이 done 지점에 닿았으면 done 이다. 결과는 done, doing, 실패(false) 셋이다.
 // 항목 pr 칸에 이 PR 밖의 PR 이 남았으면(열려 있거나, 머지됐지만 아직 반영하지 않았거나, 상태를 읽지 못했다) 마지막 PR 이 아니다.
 // 그 PR 을 pr 칸에 남기고 이 PR 의 묶음(prStages)만 끝내며 배포 성공은 보지 않는다(core/milestones.ts 의 「PR 묶음」)
-function setBoardMilestone(args: Args, repo: string, item: string, stages: Stages, deploy: Deploy, last: boolean, note: string | null): 'done' | 'doing' | false {
+function setBoardMilestone(args: Args, repo: string, item: string, stages: Stages, deploy: Deploy, verdict: Verdict, own: Own): 'done' | 'doing' | false {
+  const last = verdict.last
   let doneAfter: StageKind | null
   try {
     doneAfter = boardSettings(repo).doneAfter
@@ -636,11 +679,18 @@ function setBoardMilestone(args: Args, repo: string, item: string, stages: Stage
     return false
   }
   return updateBoardRows(args, repo, item, (row, steps) => {
-    const known = prNumbers(row['merged-pr'])
-    const remaining = [...prNumbers(row.pr)].filter((other) => other !== args.pr && !known.has(other) && prState(repo, other) !== 'CLOSED')
+    const remaining = otherPrs(repo, row, args.pr)
     const final = last && remaining.length === 0
     if (last && remaining.length > 0) log(`pr 칸에 다른 PR ${remaining.join(', ')} 가 남아 마지막 PR 로 보지 않고 PR ${args.pr} 의 묶음만 끝낸다`)
-    const made = mergedCommands({ ...row, id: item }, steps, prStages(row, args.pr) ?? stages, args.pr, final && deploy === 'success' ? 'deploy' : 'merge', { last: final, doneAfter, note: final ? null : note, remaining, kinds: eventKinds(row) })
+    const ownStages = prStages(row, args.pr) ?? stages
+    const commands = (isLast: boolean) => mergedCommands({ ...row, id: item }, steps, ownStages, args.pr, isLast && deploy === 'success' ? 'deploy' : 'merge', { last: isLast, doneAfter, note: isLast || last ? null : noteLine(verdict.prs, verdict.specs), remaining, kinds: eventKinds(row) })
+    let made = commands(final)
+    if (!verdict.known && !verdict.retry) {
+      // 판정하지 못했다. 마지막 PR 로 봤을 때 모든 단계가 끝나고 닫아도 되는 상태면 닫는다
+      const closing = commands(true)
+      const willBeDone = (step: BoardStep) => step.done || closing.cmds.some((cmd) => cmd[0] === 'step' && cmd[1] === item && Number(cmd[2]) === step.number)
+      if (steps.length > 0 && closeUnjudgedItem(args, verdict, row, own, remaining, closing.done, steps.every(willBeDone))) made = closing
+    }
     return { cmds: made.cmds, value: made.done ? 'done' as const : 'doing' as const }
   })
 }
@@ -736,16 +786,16 @@ async function finish(args: Args, repo: string): Promise<number> {
     } else {
       // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
       // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
-      const result = setBoardMilestone(args, repo, item.id, stages, deploy, last, last ? null : noteLine(verdict.prs, verdict.specs))
+      const result = setBoardMilestone(args, repo, item.id, stages, deploy, verdict, { branch, worktree: worktree ? basename(worktree) : '' })
       const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
-      if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
+      if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
       else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
       else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
     }
   } else if (item) {
-    const result = setBoardLegacy(args, repo, item.id, last, last ? null : noteLine(verdict.prs, verdict.specs))
-    if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
-    else if (result === 'doing') log(`보드 ${item.id} 는 ${last ? '끝나지 않은 단계가 남아' : '중간 PR 이라'} done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
+    const result = setBoardLegacy(args, repo, item.id, verdict, { branch, worktree: worktree ? basename(worktree) : '' })
+    if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
+    else if (result === 'doing') log(`보드 ${item.id} 는 ${!verdict.known ? '마지막 PR 인지 판정하지 못했거나 끝나지 않은 단계가 남아' : last ? '끝나지 않은 단계가 남아' : '중간 PR 이라'} done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
   }
   if (problems.length > 0) return fail(problems.join('; '))
