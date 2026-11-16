@@ -22,7 +22,7 @@ function broken(message: string): boolean {
     /^gh\s+api\s+[A-Za-z0-9_./{}-]+(?:\s|$)/.test(subject)
 }
 
-// 따옴표 조각을 합치되 동적인 값은 null 로 둔다. 단일 인용의 $ 와 역슬래시는 그대로다.
+// 동적인 값은 제목 첫 줄의 글자 \n\n 만 읽는다. 단일 인용의 $ 와 역슬래시는 그대로다.
 function words(text: string): (string | null)[] {
   return (text.match(/(?:[^\s()"'\\]|\\[\s\S]|"(?:\\[\s\S]|[^"\\])*"|'[^']*')+/g) ?? []).map(raw => {
     let value = ''
@@ -38,7 +38,8 @@ function words(text: string): (string | null)[] {
         value += part[4]
       }
     }
-    return dynamic ? null : value
+    if (dynamic && !value.split(/\r?\n/, 1)[0].includes('\\n\\n')) return null
+    return value
   })
 }
 

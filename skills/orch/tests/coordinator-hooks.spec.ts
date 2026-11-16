@@ -193,6 +193,19 @@ describe('block-broken-commit-subject', () => {
     assert.equal(decide(HOOK, `echo '${heredoc('EOF', '"END"')}'`), 'pass')
   })
 
+  test('큰따옴표의 확장은 실행하지 않고 제목 첫 줄의 글자 줄바꿈만 검사한다', () => {
+    for (const command of [
+      'git commit -m "fix: `x` 고친다\\n\\n본문"',
+      'git commit -m "fix: $NAME 고친다\\n\\n본문"',
+    ]) assert.equal(decide(HOOK, command), 'deny', command)
+    for (const command of [
+      'git commit -m "fix: `x` 고친다"',
+      'git commit -m "fix: $NAME 고친다\\n"',
+      'git commit -m "fix: $NAME 고친다\n\n본문 \\n\\n"',
+      'git commit -m "$MESSAGE"',
+    ]) assert.equal(decide(HOOK, command), 'pass', command)
+  })
+
   test('-F 파일과 -C, cd 기준의 상대 경로를 읽는다', () => {
     const dir = mkdtempSync(join(root, 'messages-'))
     const file = join(dir, 'message file.txt')
