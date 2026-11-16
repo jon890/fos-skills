@@ -1056,7 +1056,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
   }
 
   test('판정하지 못한 PR 이어도 다른 Run 의 끝난 리뷰 worker 줄이 working 으로 남았을 뿐이면 닫는다', async (t) => {
-    for (const status of ['completed', 'failed', 'abandoned']) {
+    for (const status of ['completed', 'failed', 'canceled', 'abandoned']) {
       const c = setup(t)
       const bin = staleReview(c, { ctx_review: status })
       const r = await c.finish([...bin], { FAKE_STEPS: UNJUDGED_STEPS })
@@ -1070,7 +1070,8 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     const cases: [string, Record<string, string> | undefined][] = [
       ['살아 있는 worker', { ctx_review: 'running' }],
       ['조회 실패', undefined],
-      ['상태를 모름', { ctx_review: '' }],
+      ['빈 상태', { ctx_review: '' }],
+      ['알 수 없는 상태', { ctx_review: 'unknown' }],
     ]
     for (const [name, dispatches] of cases) {
       const c = setup(t)
