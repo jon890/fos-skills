@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
 import { recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
-import { fillReviewSpec, implementerOf, reviewerFor, unfilled } from '../scripts/lib/review-spec.ts'
+import { fillReviewSpec, implementerOf, reviewBranchFor, reviewerFor, unfilled } from '../scripts/lib/review-spec.ts'
 import { reviewPrOfSpec } from '../scripts/lib/review.ts'
 import { selectionsOf } from '../scripts/lib/spec.ts'
 
@@ -117,4 +117,53 @@ test('틀에 「특히 볼 것」 절이 이미 있으면 하나만 둔다', () 
   const template = readFileSync(TEMPLATE, 'utf8').replace('## 할 일', '## 특히 볼 것\n\n- {{채울 것: 이미 있는 자리}}\n\n## 할 일')
   const fill = { number: 1, title: 't', url: 'u', specsDir: '/s', implementer: { agent: 'codex', model: 'm', effort: 'high', dispatch: 'd' }, reviewer: reviewerFor('codex')! }
   assert.equal(fillReviewSpec(template, fill).match(/^## 특히 볼 것$/gm)?.length, 1)
+})
+
+const branchOf = (name: string) => /^브랜치: `(.*)`$/m.exec(readFileSync(join(specs, name), 'utf8'))?.[1]
+// 커밋이 하나 있는 저장소의 ref 를 만든다. 로컬 브랜치와 원격 추적 브랜치를 흉내 낸다
+function ref(name: string): void {
+  const identity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null' }
+  assert.equal(spawnSync('git', ['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'x'], { env: identity }).status, 0)
+  const sha = spawnSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
+  assert.equal(spawnSync('git', ['-C', repo, 'update-ref', name, sha]).status, 0)
+}
+
+test('같은 PR 의 두 번째와 세 번째 리뷰 지시서는 파일 이름의 꼬리로 서로 다른 브랜치를 쓴다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  for (const name of ['spec-review-pr-262.md', 'spec-review-pr-262-2.md', 'spec-review-pr-262-3.md']) {
+    const r = make('262', '--out', join(specs, name))
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+  }
+  assert.deepEqual(['spec-review-pr-262.md', 'spec-review-pr-262-2.md', 'spec-review-pr-262-3.md'].map(branchOf), ['review/pr-262', 'review/pr-262-2', 'review/pr-262-3'])
+  // 리뷰 지시서 이름 규칙(lib/review.ts)이 읽는 브랜치 꼴이다
+  assert.equal(reviewPrOfSpec(readFileSync(join(specs, 'spec-review-pr-262-3.md'), 'utf8')), 262)
+})
+test('꼬리 꼴이 아니거나 번호가 PR 과 다른 파일 이름은 기본 브랜치를 쓴다', () => {
+  assert.equal(reviewBranchFor(262, '/x/spec-review-pr-262.md'), 'review/pr-262')
+  assert.equal(reviewBranchFor(262, '/x/spec-review-pr-262-r2.md'), 'review/pr-262-r2')
+  assert.equal(reviewBranchFor(262, '/x/spec-review-pr-999-2.md'), 'review/pr-262')
+  assert.equal(reviewBranchFor(262, '/x/other.md'), 'review/pr-262')
+  assert.equal(reviewBranchFor(262, '/x/spec-review-pr-262-a..b.md'), 'review/pr-262')
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  assert.equal(make('262', '--out', join(specs, 'custom.md')).code, 0)
+  assert.equal(branchOf('custom.md'), 'review/pr-262')
+})
+test('같은 이름의 리뷰 브랜치가 로컬이나 원격 추적에 있으면 만들지 않고 다른 꼬리를 안내한다', () => {
+  recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
+  ref('refs/heads/review/pr-262')
+  const local = make('262')
+  assert.equal(local.code, 1, local.stdout)
+  assert.match(local.stdout, /^REVIEW-SPEC-FAIL 리뷰 브랜치 review\/pr-262 가 이미 있다\(로컬 브랜치\).*spec-review-pr-262-<꼬리>\.md/m)
+  assert.equal(existsSync(file()), false)
+  // 꼬리를 바꾸면 만든다
+  assert.equal(make('262', '--out', join(specs, 'spec-review-pr-262-2.md')).code, 0)
+  // 원격 추적 브랜치도 같다
+  spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://example.invalid/r.git'])
+  ref('refs/remotes/origin/review/pr-262-3')
+  const remote = make('262', '--out', join(specs, 'spec-review-pr-262-3.md'))
+  assert.equal(remote.code, 1, remote.stdout)
+  assert.match(remote.stdout, /^REVIEW-SPEC-FAIL 리뷰 브랜치 review\/pr-262-3 가 이미 있다\(원격 추적 브랜치 origin\/review\/pr-262-3\)/m)
+  // --force 는 같은 브랜치를 다시 쓰는 용도라 보지 않는다
+  assert.equal(make('262', '--force').code, 0)
+  assert.equal(branchOf('spec-review-pr-262.md'), 'review/pr-262')
 })

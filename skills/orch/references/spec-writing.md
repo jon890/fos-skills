@@ -129,7 +129,7 @@ orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 
 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서는 `orch spec review <PR>` 으로 만든다. 이 명령이 [`../templates/spec-review.md`](../templates/spec-review.md) 를 채워 지시서 폴더의 `spec-review-pr-<N>.md` 에 쓴다.
 채우는 값은 PR 번호, 제목, `리뷰 PR:` 과 `브랜치: review/pr-<N>` 줄, 그리고 `worker 선택:` 줄이다. 구현 worker 는 영구 이력에서 브랜치가 PR head 인 가장 늦은 행으로 찾고, 그 제공자와 다른 제공자(Claude 면 Codex `gpt-6.1-sol`, Codex 면 Claude Sonnet 5.5, 둘 다 `medium`)를 고른다.
-이력에 구현 worker 가 없으면(직접 띄운 PR) `--impl-agent claude|codex` 로 알려 준다. 있는 파일은 `--force` 없이 덮지 않는다. 같은 PR 을 다시 리뷰하면 `--out` 으로 `spec-review-pr-<N>-<꼬리>.md` 처럼 이름을 달리한다.
+이력에 구현 worker 가 없으면(직접 띄운 PR) `--impl-agent claude|codex` 로 알려 준다. 있는 파일은 `--force` 없이 덮지 않는다. 같은 PR 을 다시 리뷰하면 `--out` 으로 `spec-review-pr-<N>-<꼬리>.md` 처럼 이름을 달리한다. 이 꼴이면 `브랜치:` 줄도 `review/pr-<N>-<꼬리>` 로 채운다. 같은 이름의 브랜치가 이미 로컬이나 원격 추적에 있으면 만들지 않고 다른 꼬리를 안내한다(`--force` 는 같은 브랜치를 다시 쓰는 용도라 보지 않는다).
 **「배경」 첫 줄과 「특히 볼 것」 절의 `{{채울 것: …}}` 두 곳은 코디네이터가 채운다.** 남아 있으면 `spec-lint` 가 `채움` 경고를 낸다.
 틀이 `리뷰 PR:` 줄, 허락 줄, COMMENT 등록, 본문 머리 등급별 건수 표, 결과 status 첫 줄(`판정: 머지 가능|수정 필요, 차단 N건, 권장 N건`)을 정한다. 결과 status 가 `판정:`, `완료:`, `미완료:` 로 시작하지 않으면 `worker_done` 이 `DONE-SUSPECT` 로 분류된다(`lib/completion.ts`).
 틀을 쓰지 않아도 아래 두 줄은 첫 `##` 제목 앞에 둔다.
@@ -143,7 +143,7 @@ orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 지시서에는 「worker 는 fetch 하지 않고 준비된 HEAD 를 리뷰한다. 브랜치를 만들거나 `git fetch origin pull/N/head` 를 부르지 않는다」 를 적는다.
 worker 의 fetch 는 SSH 별칭 원격에서 인증으로 막히고, worker 가 만든 `pr-N` 브랜치는 정리가 PR 로 찾지 못해 쌓인다.
 PR head 를 받지 못해 멈추면 원인을 고친 뒤 같은 지시서로 `--worktree` 를 주어 다시 띄운다. 그때 다시 받아 옮긴다. 이미 PR head 에 놓인 워크트리면 준비 명령을 다시 돌리지 않는다.
-파일 이름은 `spec-review-pr-<N>.md` 로 하고, 같은 PR 을 다시 리뷰하면 `spec-review-pr-<N>-<꼬리>.md` 와 `review/pr-<N>-<꼬리>` 로 쓴다.
+파일 이름은 `spec-review-pr-<N>.md` 로 하고, 같은 PR 을 다시 리뷰하면 `spec-review-pr-<N>-<꼬리>.md` 와 `review/pr-<N>-<꼬리>` 로 쓴다. `orch spec review <PR>` 은 파일 이름의 꼬리로 브랜치를 채우므로 수동으로 고치지 않는다.
 
 **생성물이 있어야 테스트가 도는 저장소는 코디네이터가 `orch config set review.prepare "npm ci --ignore-scripts"` 처럼 준비 명령을 정한다.** `launch-worker` 가 PR head 를 꺼낸 뒤 그 워크트리에서 한 번 돌리고 `REVIEW-PREPARE <종료 코드>` 를 낸다.
 명령은 저장소마다 달라 스킬은 자리만 둔다. 무거운 생성이면 명령 안에서 `heavy-slot` 으로 감싼다. 감싸는 방법은 [`overlay.md`](overlay.md) 의 「저장소 스크립트에서 orch 부르기」 를 따른다.

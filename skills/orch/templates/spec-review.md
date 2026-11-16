@@ -1,13 +1,13 @@
 # {{PR 제목}} 리뷰 (PR #{{N}})
 
 <!-- `리뷰 PR:` 줄로 대상 PR 의 보드 항목에 리뷰 worker 로 붙는다. `보드 항목 id:` 는 적지 않는다. -->
-<!-- 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서 틀이다. `orch spec review <N>` 이 {{...}} 를 채워 spec-review-pr-<N>.md 를 만든다. 복사해 쓸 때도 같은 칸을 채운다. -->
+<!-- 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서 틀이다. `orch spec review <N>` 이 {{...}} 를 채워 spec-review-pr-<N>.md 를 만든다. 다시 리뷰하면 파일 이름의 꼬리(spec-review-pr-<N>-<꼬리>.md)로 브랜치 review/pr-<N>-<꼬리> 를 채운다. 복사해 쓸 때도 같은 칸을 채운다. -->
 <!-- 줄 형식의 원본은 skills/orch/references/spec-writing.md 의 「넣을 것」 과 「리뷰 worker 지시서」 다. 아래 꼴을 바꾸면 worker_done 이 DONE-SUSPECT 로 분류되거나 등급별 건수를 읽지 못한다. -->
 
 공통 지시서 `{{SPECS_DIR}}/spec-common.md` 를 먼저 읽는다.
 
 리뷰 PR: #{{N}}
-브랜치: `review/pr-{{N}}`
+브랜치: `{{리뷰 브랜치}}`
 허락: PR #{{N}} 에 COMMENT 리뷰를 등록하는 것은 사용자가 허락했다. 이 허락은 dispatch 머리말의 GitHub 게시 금지보다 앞선다. 승인(APPROVE)과 변경 요청(REQUEST_CHANGES)은 하지 않는다.
 worker 선택: `{{에이전트}}` `{{모델}}` effort `{{effort}}`. 행: review. 비교: {{다른 후보}}. 이유: {{구현한 제공자와 다른 제공자를 고른 이유}}.
 
