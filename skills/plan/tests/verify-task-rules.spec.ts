@@ -231,3 +231,22 @@ for (const [label, rel, setting] of [
     assert.equal(result.warnings.some((line) => line.includes('느린 e2e')), false, result.stdout)
   })
 }
+
+test('느린 e2e 설정의 경로 표시 없는 조각은 경고하고 같은 설정은 한 번만 경고한다', () => {
+  for (const setting of ['잘못된값', '`잘못된값` `tests/slow/*.spec.ts`', '`없음` `tests/slow/*.spec.ts`']) {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    repo.file('.claude/plan-overlay.md', `| 느린 e2e | ${setting} |`)
+    const phase = {
+      work: '### 1. 테스트 수정\n`tests/test_fast.py` 와 `tests/test_other.py` 를 고친다.',
+      entries: [['tests/test_fast.py', '수정'], ['tests/test_other.py', '수정']] as [string, string][],
+      command: 'pytest tests/test_fast.py tests/test_other.py',
+    }
+    writePlan(repo, 'plan1-x', [phase, phase, phase])
+    const result = verify(repo, ['plan1-x', '--audit'])
+    assert.equal(result.code, 0, result.stdout + result.stderr)
+    const warnings = result.warnings.filter((line) => line.includes('느린 e2e 값'))
+    assert.equal(warnings.length, 1, result.stdout)
+    assert.ok(warnings[0].startsWith('.claude/plan-overlay.md — '), result.stdout)
+  }
+})

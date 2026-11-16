@@ -1276,10 +1276,15 @@ export function iterProse(text: string): [number, string][] {
 // 브라우저·외부 서비스 테스트의 기본 경로다. 저장소 설정이 있으면 그 목록으로 대체한다.
 const DEFAULT_SLOW_E2E = ['**/e2e/**/*.spec.*', '**/e2e/**/*.test.*', '**/playwright/**/*.spec.*', '**/playwright/**/*.test.*', '**/*.e2e.*']
 
-function slowE2e(rel: string, repo: string): boolean {
-  const [value] = overlayValues.lookup(repo, ['plan'], '느린 e2e', overlayValues.targets(repo, [rel])[0])
+function slowE2e(rel: string, repo: string, warnings: string[]): boolean {
+  const [value, source] = overlayValues.lookup(repo, ['plan'], '느린 e2e', overlayValues.targets(repo, [rel])[0])
   const patterns = value ? overlayValues.codes(value) : DEFAULT_SLOW_E2E
   if (patterns.length === 1 && patterns[0] === '없음') return false
+  for (const pattern of patterns) {
+    if (/[/*]/.test(pattern)) continue
+    const warning = `${source} — 느린 e2e 값에 경로나 glob 표시(/, *)가 없다: ${pattern} (제외를 끄려면 없음만 적는다)`
+    if (!warnings.includes(warning)) warnings.push(warning)
+  }
   return patterns.some((pattern) => matches(rel.replace(/^\.\//, ''), pattern))
 }
 
@@ -1369,7 +1374,7 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
   // 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다
   const runnable = declaredTests.filter((rel) => {
     if (!runnableTest(rel)) return false
-    if (!isLastPhase && slowE2e(rel, repo)) {
+    if (!isLastPhase && slowE2e(rel, repo, warnings)) {
       deferredSlowE2e.add(rel)
       return false
     }
