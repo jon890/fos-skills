@@ -144,6 +144,8 @@ process.exit(result.status ?? 1);
 for (const [label, rel, files] of [
   ['오버레이 없음', 'web/e2e/login.spec.ts', {}],
   ['기본 파일 이름', 'tests/test_login.e2e.ts', {}],
+  ['기본 test 파일', 'web/e2e/login.test.ts', {}],
+  ['기본 playwright test 파일', 'web/playwright/login.test.ts', {}],
   ['기본 playwright 폴더', 'web/playwright/login.spec.ts', {}],
   ['루트 설정', 'tests/service_test.py', { '.claude/plan-overlay.md': '| 느린 e2e | `tests/service_test.py` |' }],
   ['하위 설정', 'web/browser/login.spec.ts', {
@@ -206,5 +208,26 @@ for (const configured of [false, true]) {
     writePlan(repo, 'plan1-x', [first, { ...last, command: `pytest tests/test_fast.py\nnpx playwright test ${rel}` }])
     const passed = verify(repo, ['plan1-x', '--audit'])
     assert.equal(passed.code, 0, passed.stdout + passed.stderr)
+  })
+}
+
+for (const [label, rel, setting] of [
+  ['e2e 폴더의 일반 테스트', 'tests/e2e/test_mapper.py', ''],
+  ['e2e 폴더의 Java 테스트', 'src/test/java/com/x/e2e/OrderMapperTest.java', ''],
+  ['playwright 폴더의 일반 테스트', 'tests/playwright/test_config.py', ''],
+  ['기본값 끄기', 'web/e2e/login.spec.ts', '없음'],
+  ['인라인 코드로 기본값 끄기', 'web/e2e/login.spec.ts', '`없음`'],
+] as [string, string, string][]) {
+  test(`기본 glob 은 일반 테스트를 제외하지 않고 명시적으로 끌 수 있다: ${label}`, () => {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    if (setting) repo.file('.claude/plan-overlay.md', `| 느린 e2e | ${setting} |`)
+    const phase = { work: `### 1. 테스트 수정\n\`${rel}\` 를 고친다.`, entries: [[rel, '수정']] as [string, string][], command: 'pytest tests/test_fast.py' }
+    const dir = writePlan(repo, 'plan1-x', [phase, { ...phase, command: `pytest ${rel}` }])
+    const result = verify(repo, ['plan1-x', '--audit'])
+    assert.deepEqual(result.violations, [
+      `${repo.root}/${dir}/phase-01.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: ${rel}`,
+    ], result.stdout + result.stderr)
+    assert.equal(result.warnings.some((line) => line.includes('느린 e2e')), false, result.stdout)
   })
 }

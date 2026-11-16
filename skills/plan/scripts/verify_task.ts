@@ -1274,11 +1274,12 @@ export function iterProse(text: string): [number, string][] {
 }
 
 // 브라우저·외부 서비스 테스트의 기본 경로다. 저장소 설정이 있으면 그 목록으로 대체한다.
-const DEFAULT_SLOW_E2E = ['**/e2e/**', '**/playwright/**', '**/*.e2e.*']
+const DEFAULT_SLOW_E2E = ['**/e2e/**/*.spec.*', '**/e2e/**/*.test.*', '**/playwright/**/*.spec.*', '**/playwright/**/*.test.*', '**/*.e2e.*']
 
 function slowE2e(rel: string, repo: string): boolean {
   const [value] = overlayValues.lookup(repo, ['plan'], '느린 e2e', overlayValues.targets(repo, [rel])[0])
   const patterns = value ? overlayValues.codes(value) : DEFAULT_SLOW_E2E
+  if (patterns.length === 1 && patterns[0] === '없음') return false
   return patterns.some((pattern) => matches(rel.replace(/^\.\//, ''), pattern))
 }
 
