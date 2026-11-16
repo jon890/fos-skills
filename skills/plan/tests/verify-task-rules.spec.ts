@@ -183,6 +183,28 @@ test('느린 e2e 설정은 기본값을 대체하며 다른 하위 프로젝트�
   }
   writePlan(repo, 'plan1-x', [phase, { command: 'pytest tests/test_fast.py', entries: [['docs/flow.md', '수정']] }])
   const result = verify(repo, ['plan1-x', '--audit'])
-  assert.equal(result.violations.length, 2, result.stdout + result.stderr)
+  assert.equal(result.violations.filter((line) => line.includes('phase-01.md')).length, 2, result.stdout + result.stderr)
   for (const rel of rels.slice(0, 2)) assert.ok(result.violations.some((line) => line.endsWith(rel)), result.stdout)
 })
+
+for (const configured of [false, true]) {
+  test(`앞 phase 에서 미룬 느린 e2e 는 마지막 phase 에 다시 선언하지 않아도 실행해야 한다: 설정 ${configured}`, () => {
+    const repo = new Repo()
+    repo.file('docs/flow.md')
+    const rel = configured ? 'web/browser/login.spec.ts' : 'web/e2e/login.spec.ts'
+    if (configured) repo.file('.claude/plan-overlay.md', '| 느린 e2e | `web/browser/**/*.spec.ts` |')
+    const first = {
+      work: `### 1. 테스트 수정\n\`${rel}\` 를 고친다.`,
+      entries: [[rel, '수정']] as [string, string][],
+      command: 'pytest tests/test_fast.py',
+    }
+    const last = { work: '### 1. 빠른 테스트 수정\n`tests/test_fast.py` 를 고친다.', entries: [['tests/test_fast.py', '수정']] as [string, string][], command: 'pytest tests/test_fast.py' }
+    const dir = writePlan(repo, 'plan1-x', [first, last])
+    assert.deepEqual(verify(repo, ['plan1-x', '--audit']).violations, [
+      `${repo.root}/${dir}/phase-02.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: ${rel}`,
+    ])
+    writePlan(repo, 'plan1-x', [first, { ...last, command: `pytest tests/test_fast.py\nnpx playwright test ${rel}` }])
+    const passed = verify(repo, ['plan1-x', '--audit'])
+    assert.equal(passed.code, 0, passed.stdout + passed.stderr)
+  })
+}
