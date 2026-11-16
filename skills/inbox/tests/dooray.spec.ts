@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText, TASK_OVERLAP_MS } from '../scripts/adapters/dooray.ts'
+import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText, TASK_FEED_SINCE } from '../scripts/adapters/dooray.ts'
 import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
 
 const ME = '4567890123456789012'
@@ -157,15 +157,11 @@ describe('받기', () => {
     assert.deepEqual(mention.target, { kind: 'task', postId: 'p81', commentId: 'c1' })
     assert.equal(byId['dooray:task:post:p342'].kind, 'assigned')
     assert.equal(byId['dooray:task:post:p77'].kind, 'cc')
-    assert.deepEqual(calls.find((argv) => argv[2] === 'stream'), ['dooray', '--json', 'stream', 'list', '--since', SINCE, '--all'])
-    // 지난 받기가 있으면 그 뒤만 읽는다
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream'), ['dooray', '--json', 'stream', 'list', '--since', TASK_FEED_SINCE, '--all'])
+    // 지난 받기 커서가 있어도 since 는 피드 전체다(커서로 좁히면 댓글 event 가 빠진다)
     calls = []
     adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
-    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', new Date(Date.parse('2026-11-02T05:55:00.000Z') - TASK_OVERLAP_MS).toISOString()])
-    // 커서가 기간 시작에 가까우면 기간 시작보다 앞서지 않는다
-    calls = []
-    adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-10-26T12:00:00.000Z' } })
-    assert.equal(calls.find((argv) => argv[2] === 'stream')?.[5], SINCE)
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', TASK_FEED_SINCE])
     // 업무 정보는 업무마다 한 번만 읽는다
     assert.equal(calls.filter((argv) => argv[2] === 'post' && argv[3] === 'get' && argv[5] === 'p81').length, 1)
   })
@@ -412,16 +408,26 @@ describe('시각 없는 댓글 event (웹 방식 stream)', () => {
     assert.equal(commentListCalls().length, 1)
   })
 
-  test('커서 뒤에 온 시각 없는 댓글 event 도 항목이 된다 (CLI 가 since 걸친 페이지의 event 를 뺀다)', () => {
-    // 실제 CLI 는 since 가 걸친 페이지의 시각 없는 event 를 뺀다. 그래서 커서보다 앞에서 받아야 한다
-    const cursor = '2026-11-02T05:55:00.000Z'
+  test('지난 받기 커서가 있어도 피드 전체를 받아 커서 뒤의 시각 없는 댓글 event 가 항목이 된다', () => {
+    // 실제 CLI 는 since 가 걸친 페이지의 시각 없는 event 를 뺀다. 페이지 폭은 피드 밀도에 달려 있어 since 를 피드보다 앞서게 둔다
     stream = [noTime('c1', 'p81')]
     comments = [{ id: 'c1', createdAt: '2026-11-02T14:58:00+09:00' }]
-    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: cursor } })
-    const stamp = calls.find((argv) => argv[2] === 'stream')![5]
-    assert.ok(Date.parse(stamp) < Date.parse(cursor) - 60 * 60 * 1000, '커서보다 한참 앞에서 받는다')
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
+    assert.equal(calls.find((argv) => argv[2] === 'stream')![5], TASK_FEED_SINCE)
     assert.equal(result.items.length, 1)
     assert.equal(result.items[0].at, '2026-11-02T05:58:00.000Z')
+  })
+
+  test('찾은 댓글 시각은 캐시해 다음 받기에서 댓글 목록을 다시 읽지 않는다', () => {
+    stream = [noTime('c1', 'p81')]
+    comments = [{ id: 'c1', createdAt: '2026-11-02T14:58:00+09:00' }]
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray', messenger: false }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    make().fetch({ since: SINCE, cursors: {} })
+    const before = commentListCalls().length
+    const again = make().fetch({ since: SINCE, cursors: {} })
+    assert.equal(commentListCalls().length, before)
+    assert.equal(again.items[0].at, '2026-11-02T05:58:00.000Z')
   })
 
   test('시각이 있는 event 는 댓글 목록을 읽지 않는다', () => {
