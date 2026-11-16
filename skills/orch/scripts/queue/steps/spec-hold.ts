@@ -1,6 +1,7 @@
 // 루프와 수동 큐가 같은 지시서에서 보류를 읽는다. 같은 브랜치는 앞 Run 의 첫 지시서가 정한다.
 import { isAbsolute, join } from 'node:path'
-import { specHold } from '../../lib/auto-merge.ts'
+import { prHold, specHold } from '../../lib/auto-merge.ts'
+import { gh } from '../../lib/gh.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { specFiles } from '../../lib/last-pr.ts'
 import { mainCheckout } from '../../lib/git.ts'
@@ -32,13 +33,23 @@ export function specTargets(repo: string, runs?: SpecRun[]): Map<string, { run: 
   return targets
 }
 
-export function mergeHold(state: StepState): string | null {
-  return specTargets(state.repoDir).get(state.p.branch)?.hold ?? null
+// PR 본문을 지금 읽는다. 열린 뒤에 본문만 고쳐 보류를 적을 수 있어서 캐시를 쓰지 않는다. 읽지 못하면 null 이다
+function prBody(state: StepState): string | null {
+  const got = gh(['pr', 'view', state.p.n, '--json', 'body', '--jq', '.body'], { cache: false })
+  return got.code === 0 ? got.stdout : null
+}
+
+// 지시서 보류가 먼저고, 없으면 PR 본문의 보류다. gate 는 본문을 읽지 못해도 보류 없음으로 두고, merge(refuseSpecHold)는 멈춘다
+export function mergeHold(state: StepState, body: string | null = prBody(state)): string | null {
+  const spec = state.pr?.branch ? specTargets(state.repoDir).get(state.p.branch)?.hold : null
+  return spec ?? (body === null ? null : prHold(body))
 }
 
 export function refuseSpecHold(state: StepState): void {
-  const hold = mergeHold(state)
+  const body = prBody(state)
+  if (body === null) stop(`${state.p.n} PR 본문을 읽지 못해 머지 보류 줄을 확인할 수 없다`)
+  const hold = mergeHold(state, body)
   if (hold === null) return
   out(`GATE-HOLD ${hold}`)
-  stop(`${state.p.n} 지시서 보류: ${hold}`)
+  stop(`${state.p.n} 머지 보류: ${hold}`)
 }

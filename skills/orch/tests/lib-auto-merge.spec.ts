@@ -17,6 +17,7 @@ import {
   reviewScope,
   reviewVerdict,
   scopedNotes,
+  prHold,
   specHold,
   sweepArgs,
 } from '../scripts/lib/auto-merge.ts'
@@ -103,6 +104,19 @@ describe('specHold', () => {
   test('줄 가운데의 머지 보류 문장은 보류 줄이 아니다', () => {
     assert.equal(specHold('이 PR 은 머지 보류: 없이 간다'), null)
     assert.equal(specHold(''), null)
+  })
+})
+
+describe('prHold', () => {
+  test('본문 가운데 줄 머리의 보류 줄에서 이유를 낸다', () => {
+    assert.equal(prHold('## 요약\n\n- 머지 보류: #12 real 배포 뒤\n\n## 결정'), '#12 real 배포 뒤')
+    assert.equal(prHold('- **머지 보류:** 배포 뒤'), '배포 뒤')
+  })
+
+  test('보류 줄이 없거나 줄 가운데에만 있으면 null 이다', () => {
+    assert.equal(prHold('## 요약\n보류 없음'), null)
+    assert.equal(prHold('이 PR 은 머지 보류: 없이 간다'), null)
+    assert.equal(prHold(''), null)
   })
 })
 

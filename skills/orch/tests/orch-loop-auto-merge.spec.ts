@@ -511,6 +511,21 @@ describe('보류 표시', () => {
     assert.deepEqual(events('AUTO-MERGE'), [])
   })
 
+  test('PR 본문에만 머지 보류 줄이 있어도 걸지 않는다', () => {
+    spec('specs', 'spec-a.md', ['feat-1'])
+    github([pr(1)], { views: { 1: { body: '## 요약\n\n- 머지 보류: 본문의 배포 대기\n' } } })
+    const output = once()
+    assert.match(output, /AUTO-MERGE-WAIT #1 PR 본문 보류: 본문의 배포 대기/)
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('지시서에도 보류가 있으면 지시서 이유가 먼저다', () => {
+    spec('specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: 지시서 이유'])
+    github([pr(1)], { views: { 1: { body: '- 머지 보류: 본문 이유' } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 지시서 보류: 지시서 이유/)
+  })
+
   test('워크트리에서 부른 루프도 상대경로 지시서는 주 checkout 에서 읽는다', async () => {
     config({ finish: { specs_dir: 'custom-specs' } })
     spec('custom-specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: 주 checkout 의 배포 확인 대기'])
