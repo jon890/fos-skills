@@ -1,0 +1,1 @@
+- `orch cleanup handoff` 가 오래된 study·feedback·hooks 폴더를 옮기지 않게 한다. 남길 폴더는 orch 경로 정의에서 가져온다.

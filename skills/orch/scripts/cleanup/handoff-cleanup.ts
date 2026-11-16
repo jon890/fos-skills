@@ -19,7 +19,7 @@
 //           살아 있는 지시서 목록(liveSpecPaths)을 읽지 못하면 지시서마다 판정하지 않고 아무것도 옮기지 않는다.
 //           브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 옮긴 일이 있었다
 //     - <orch>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <orch>/.keep 에도 없는 폴더
-//       (bin, queue, specs, state 는 건드리지 않는다)
+//       (lib/paths.ts 에 정의한 orch 폴더는 건드리지 않는다)
 //     - <previews>/<폴더나 파일>: --previews 를 줄 때만 본다. 조건은 위와 같고 남길 이름은 <previews>/.keep 에 적는다.
 //       미리보기는 content-preview 의 산출물이라 기본으로는 보지 않는다
 //     - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. bin 폴더 안은 뺀다
@@ -75,7 +75,7 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
-import { orchDir, requireMigrated } from '../lib/paths.ts'
+import { FILES, NAMES, orchDir, requireMigrated } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
 import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, runSpecPaths, specCandidates } from '../lib/spec.ts'
 import { emit } from '../lib/output.ts'
@@ -84,7 +84,7 @@ import type { Rule } from '../lib/output.ts'
 const USAGE = '사용법: handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [--gh-host HOST] [--run RUN] [--orch-dir DIR] [--previews DIR] [--board FILE] [--trash DIR] [--queue-days N] [--folder-days N] [--data-days N] [--data-ext LIST]'
 const QUEUE_DONE = /QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL/m
 const BOARD_ID_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?보드 항목 id(?:\*\*)?:(?:\*\*)?\s*`([^`]+)`/m
-const RESERVED = new Set(['bin', 'queue', 'specs', 'state'])
+const RESERVED = new Set(Object.entries(NAMES).filter(([name]) => !FILES.has(name)).map(([, dir]) => dir.split('/')[0]))
 const DAY = 86400
 const RUN_TIMEOUT_MS = 120_000
 

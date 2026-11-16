@@ -369,6 +369,20 @@ describe('handoff-cleanup', () => {
     }
   })
 
+  test('orch 가 쓰는 오래된 폴더와 그 안의 후보 문서는 남긴다', () => {
+    for (const name of ['study', 'feedback', 'hooks']) {
+      const file = make(`.orch/${name}/candidate.md`, '아직 고르지 않은 후보', 9)
+      age(join(orch, name), 9)
+      assert.equal(existsSync(file), true)
+    }
+    const dry = ok()
+    assert.equal(dry.stdout, '')
+    ok(['--apply'])
+    for (const name of ['study', 'feedback', 'hooks']) {
+      assert.equal(existsSync(join(orch, name, 'candidate.md')), true, name)
+    }
+  })
+
   test('--previews 가 없으면 미리보기 폴더는 보지 않는다', () => {
     make('previews/old.html', '<html>', 9)
     assert.equal(ok().stdout, '')
