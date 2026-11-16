@@ -54,14 +54,14 @@ function legacyItem(lines: string[], head: number, name: string, templateRaw = '
 
 export function syncCommon(copy: string, template: string, repo: string): { text: string; output: string[]; manual: boolean } {
   const templateIssues = [...ruleIssues(template), ...duplicateRuleHeads(template)]
-  if (templateIssues.length) throw new Error(templateIssues.map((issue) => issue.message).join('; '))
+  if (templateIssues.length) throw new Error('틀: ' + templateIssues.map((issue) => issue.message).join('; '))
   const marks = ruleMarks(copy)
   const invalid = marks.filter((mark) => mark.error)
-  if (invalid.length) throw new Error(invalid.map((mark) => mark.error).join('; '))
+  if (invalid.length) throw new Error('사본: ' + invalid.map((mark) => mark.error).join('; '))
   const blockedNames = new Set(marks.filter((mark) => marks.filter((other) => other.name === mark.name).length > 1).map((mark) => mark.name))
   const blockedHeads = new Set<string>()
   const output: string[] = []
-  for (const issue of ruleIssues(copy)) output.push(`SYNC-MANUAL ${issue.message}`)
+  for (const issue of ruleIssues(copy)) output.push(`SYNC-MANUAL 사본: ${issue.message}`)
   const lines = copy.split(/\r\n|[\n\r\u2028\u2029]/)
   const offsets = [0, ...[...copy.matchAll(/\r\n|[\n\r\u2028\u2029]/g)].map((match) => match.index! + match[0].length)]
   const deletions: { head: number; end: number }[] = []
@@ -82,7 +82,7 @@ export function syncCommon(copy: string, template: string, repo: string): { text
       }
     }
     blockedHeads.add(head)
-    output.push(`SYNC-MANUAL 중복 머리 줄 ${rows.join(', ')}줄: 어느 항목을 남길지 직접 확인한다`)
+    output.push(`SYNC-MANUAL 사본: 중복 머리 줄 ${rows.join(', ')}줄: 어느 항목을 남길지 직접 확인한다`)
   }
   let cleaned = copy
   for (const span of deletions.sort((a, b) => b.head - a.head)) {
@@ -96,9 +96,9 @@ function syncUniqueCommon(copy: string, template: string, repo: string, blockedH
   const wanted = ruleBodies(template)
   const existing = ruleBodies(copy)
   // 한 항목에 표지가 여럿이면 keep 항목까지 함께 교체할 수 있어 쓰기 전에 거부한다.
-  for (const rules of [wanted, existing]) {
+  for (const [source, rules] of [['틀', wanted], ['사본', existing]] as const) {
     const spans = [...rules.values()].sort((a, b) => a.head - b.head)
-    if (spans.some((span, i) => i > 0 && span.head < spans[i - 1].end)) throw new Error('표지 항목의 범위가 겹친다')
+    if (spans.some((span, i) => i > 0 && span.head < spans[i - 1].end)) throw new Error(`${source}: 표지 항목의 범위가 겹친다`)
   }
   const lines = copy.split(/\r\n|[\n\r\u2028\u2029]/)
   const separators = [...copy.matchAll(/\r\n|[\n\r\u2028\u2029]/g)].map((match) => match[0])
@@ -192,7 +192,7 @@ function syncUniqueCommon(copy: string, template: string, repo: string, blockedH
     ...ruleIssues(text).filter((issue) => !blockedNames.has(/^같은 표지 (\S+) 가/.exec(issue.message)?.[1] ?? '')),
     ...duplicateRuleHeads(text).filter((issue) => !blockedHeads.has(ruleHead(text.split(/\r\n|[\n\r\u2028\u2029]/)[issue.no - 1]))),
   ]
-  if (issues.length) throw new Error(issues.map((issue) => issue.message).join('; '))
+  if (issues.length) throw new Error('사본(적용 후): ' + issues.map((issue) => issue.message).join('; '))
   return { text, output, manual }
 }
 

@@ -102,7 +102,7 @@ test('실제 진입점은 기본 diff 만 내고 --apply 일 때만 쓰며 오�
 test('중복 표지는 수동 확인으로 남기고 겹친 항목은 원문을 잘못 덮지 않도록 거부한다', () => {
   const duplicate = syncCommon(rule('a', '하나') + rule('a', '둘'), rule('a', '새것'), repo)
   assert.equal(duplicate.manual, true)
-  assert.match(duplicate.output.join('\n'), /SYNC-MANUAL 같은 표지 a 가 둘 이상 있다: 1, 2줄/)
+  assert.match(duplicate.output.join('\n'), /SYNC-MANUAL 사본: 같은 표지 a 가 둘 이상 있다: 1, 2줄/)
   for (const keep of ['', ' keep']) {
     assert.throws(() => syncCommon(`- 옛것 <!-- orch-rule: a${keep} --> <!-- orch-rule: b -->\n`, rule('a', '새것') + rule('b', '다른 것'), repo), /범위가 겹친다/)
   }
@@ -274,7 +274,7 @@ test('실제 적용은 모호한 중복을 보존하고 안전한 항목을 쓰�
     encoding: 'utf8', env: { ...process.env, ORCH_DIR: join(repo, '.orch'), SPEC_TEMPLATE: template },
   })
   assert.equal(result.status, 1, result.stderr)
-  assert.match(result.stdout, /SYNC-MANUAL 중복 머리 줄/)
+  assert.match(result.stdout, /SYNC-MANUAL 사본: 중복 머리 줄/)
   assert.match(result.stdout, /SYNC-APPLIED/)
   assert.equal(readFileSync(file, 'utf8'), ambiguous + rule('safe', '새것'))
 })
@@ -287,4 +287,12 @@ test('중복을 정리해도 keep 본문과 혼합 줄바꿈을 보존한다', (
   assert.equal(result.text, kept)
   assert.equal(result.manual, false)
   assert.match(result.output.join('\n'), /SYNC-KEEP a/)
+})
+
+
+test('오류와 중복 안내는 줄 번호가 사본과 틀 중 어디에 속하는지 밝힌다', () => {
+  assert.throws(() => syncCommon(rule('a', '사본'), rule('a', '중복') + rule('b', '중복'), repo), /틀: 같은 머리 줄/)
+  assert.throws(() => syncCommon('- 규칙 <!-- orch-rule: a unknown -->\n', rule('a', '새것'), repo), /사본: 표지 a:1 의 뒤꼬리/)
+  const result = syncCommon('- 중복\n- 중복\n', rule('a', '중복'), repo)
+  assert.match(result.output.join('\n'), /SYNC-MANUAL 사본: 중복 머리 줄 1, 2줄/)
 })
