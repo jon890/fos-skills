@@ -52,7 +52,7 @@
 //     판정하지 못하면 중간 PR 로 본다. 업무를 일찍 완료하는 것이 늦게 완료하는 것보다 되돌리기 어렵다.
 //     단 보드 항목은 판정하지 못했어도(gh 조회 실패는 제외) lib/last-pr.ts 의 closeUnjudged 조건을 모두 만족하면 마지막 PR 로 닫는다.
 //     board-sync.ts 와 같은 조건이다. 업무 번호 규칙이 없는 저장소의 PR 하나짜리 일이 머지 뒤에도 doing 으로 남지 않게 한다.
-//     이 PR 의 구현·후속 worker 줄은 tellMerged 가 끝나기를 기다린 뒤라 작업 중으로 세지 않는다
+//     tellMerged 가 종료를 확인한 dispatch 의 구현·후속 줄만 작업 중으로 세지 않는다(그 줄의 pr 이 비었거나 이 PR 이다)
 //     근거 줄의 예: `마지막 PR 판정: 중간(업무 PROJ-12, 남은 PR #31 #33, 남은 지시서 spec-b.md)`
 //
 // 보드 항목:
@@ -419,15 +419,17 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
   return false
 }
 
-// 머리 주석의 단계 2. 그 워크트리의 살아 있는 worker 에게 머지를 알리고, dispatch 가 끝나기를 기다린다
-async function tellMerged(args: Args, runId: string, worktree: string, merge: string): Promise<void> {
+// 머리 주석의 단계 2. 그 워크트리의 살아 있는 worker 에게 머지를 알리고, dispatch 가 끝나기를 기다린다.
+// 끝난 것을 실제로 확인한 dispatch id 를 낸다(이미 끝나 있었던 것 포함). 알리지 못했거나 시간 안에 끝나지 않았거나 worker 를 찾지 못하면 null 이다
+async function tellMerged(args: Args, runId: string, worktree: string, merge: string): Promise<string | null> {
   const found = workerRows(runId)
   if (!found.ok) {
     log(`notify: worker 목록을 읽지 못해 머지를 알리지 않았다: ${found.error}`)
-    return
+    return null
   }
   const row = workerFor(found.rows, worktree)
-  if (!row || !LIVE_DISPATCH.has(String(row.dispatchStatus))) return
+  if (!row) return null
+  if (!LIVE_DISPATCH.has(String(row.dispatchStatus))) return String(row.dispatchId)
   const dispatch = String(row.dispatchId)
   const body = mergeNotice(args.pr, merge)
   const send = process.env.SEND_TO_WORKER || scriptPath('send-to-worker')
@@ -441,7 +443,7 @@ async function tellMerged(args: Args, runId: string, worktree: string, merge: st
   // 1 은 보냈지만 턴 시작을 보지 못했고, 4 는 보냈지만 깨우지 못했다. 둘 다 메시지는 갔다(send-to-worker 머리 주석)
   if (![0, 1, 4].includes(done.code)) {
     log(`notify: ${dispatch} 에 머지를 알리지 못했다(종료 코드 ${done.code}). 기다리지 않고 정리한다`)
-    return
+    return null
   }
   log(`notify: ${dispatch} 에 PR #${args.pr} 머지를 알렸다. ${args.workerDoneTimeout}분까지 끝나기를 기다린다`)
   const deadline = Date.now() + args.workerDoneTimeout * 60_000
@@ -450,11 +452,11 @@ async function tellMerged(args: Args, runId: string, worktree: string, merge: st
     const status = rows.ok ? String(rows.rows.find((r) => String(r.dispatchId) === dispatch)?.dispatchStatus ?? '') : null
     if (status !== null && !LIVE_DISPATCH.has(status)) {
       log(`notify: worker 끝남: ${dispatch} (${status || '목록에 없음'})`)
-      return
+      return dispatch
     }
     if (Date.now() >= deadline) {
       log(`notify: worker 남음: ${dispatch} 가 아직 살아 있다. 정리가 그 워크트리를 살아 있는 worker 로 건너뛸 수 있다`)
-      return
+      return null
     }
     await sleep(args.pollInterval * 1000)
   }
@@ -624,13 +626,14 @@ function otherPrs(repo: string, row: Record<string, unknown>, pr: string): strin
 }
 
 // 판정하지 못한 PR 의 항목을 닫아도 되는지(lib/last-pr.ts 의 closeUnjudged, board-sync.ts 와 같은 조건).
-// 이 PR 의 worker(줄의 pr, 브랜치, 워크트리가 이 PR 과 같은 구현·후속 줄)는 tellMerged 가 끝나기를 기다린 뒤라 작업 중으로 세지 않는다.
-// 보드 줄은 루프가 worker_done 을 반영해야 done 이 되는데, 루프가 다른 Run 에 묶여 있으면 끝난 worker 의 줄이 working 으로 남는다
+// 마무리가 종료를 실제로 확인한 dispatch(own.ended, tellMerged 의 결과)의 구현·후속 줄만 작업 중으로 세지 않는다. 그 줄의 pr 이 비었거나 이 PR 이어야 한다.
+// 보드 줄은 루프가 worker_done 을 반영해야 done 이 되는데, 루프가 다른 Run 에 묶여 있으면 끝난 worker 의 줄이 working 으로 남는다.
+// 알리지 못했거나 종료 대기 시간이 지났거나 --run 이 없으면 확인하지 못한 것이라 모든 줄을 작업 중으로 센다
 function closeUnjudgedItem(
   args: Args, verdict: Verdict, row: Record<string, unknown>, own: Own, remaining: string[], reachedDone: boolean, allStepsDone: boolean,
 ): boolean {
   const mine = (w: ReturnType<typeof boardWorkerRows>[number]) =>
-    (w.role === 'impl' || w.role === 'follow') && (w.pr === Number(args.pr) || (own.branch !== '' && w.branch === own.branch) || (own.worktree !== '' && w.worktree === own.worktree))
+    own.ended !== null && w.dispatch === own.ended && (w.role === 'impl' || w.role === 'follow') && (w.pr === null || w.pr === Number(args.pr))
   const details = (Array.isArray(row.details) ? row.details : []) as BoardDetail[]
   return closeUnjudged(
     { last: verdict.known ? verdict.last : null, retry: verdict.retry },
@@ -645,8 +648,8 @@ function closeUnjudgedItem(
   )
 }
 
-// 이 머지를 낸 worker 를 가리키는 값. 보드 줄의 브랜치와 워크트리 이름이다
-type Own = { branch: string; worktree: string }
+// ended 는 마무리가 종료를 확인한 worker 의 dispatch id 다. 확인하지 못했으면 null 이다
+type Own = { ended: string | null }
 
 // 마지막 PR 이어도 그 PR 줄만 끝내고, 남은 수동 단계는 보존한다.
 // 판정하지 못했어도 closeUnjudgedItem 이 닫아도 된다고 하면 마지막 PR 로 본다
@@ -655,7 +658,8 @@ function setBoardLegacy(args: Args, repo: string, item: string, verdict: Verdict
     const matched = prSteps(steps, args.pr)
     const stepsDone = steps.every((step) => step.done || matched.includes(step.number))
     const unjudged = !verdict.known && !verdict.retry
-    const closing = unjudged && stepsDone && closeUnjudgedItem(args, verdict, row, own, otherPrs(repo, row, args.pr), true, true)
+    // 단계가 없는 항목은 끝났다는 근거가 없다. board-sync 의 미판정 경로처럼 단계가 하나 이상일 때만 닫는다
+    const closing = unjudged && steps.length > 0 && closeUnjudgedItem(args, verdict, row, own, otherPrs(repo, row, args.pr), true, stepsDone)
     const last = verdict.last || closing
     const done = last && stepsDone
     const cmds = intermediateCommands(item, (Array.isArray(row.details) ? row.details : []) as BoardDetail[], steps, args.pr, last ? null : noteLine(verdict.prs, verdict.specs), row['merged-pr'])
@@ -709,7 +713,7 @@ async function finish(args: Args, repo: string): Promise<number> {
 
   // 보드 항목을 워크트리 이름으로도 찾는다. 정리가 워크트리를 지우므로 그 전에 읽는다
   const worktree = branch ? worktreePath(repo, branch) : null
-  if (worktree && args.run) await tellMerged(args, args.run, worktree, merge)
+  const ended = worktree && args.run ? await tellMerged(args, args.run, worktree, merge) : null
   await recordRouting(repo, Number(args.pr), 'merged')
   const feature = featureBranch(repo, branch, args.specsDir ?? undefined) || merged.body.includes(EVIDENCE_START)
   // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
@@ -786,14 +790,14 @@ async function finish(args: Args, repo: string): Promise<number> {
     } else {
       // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
       // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
-      const result = setBoardMilestone(args, repo, item.id, stages, deploy, verdict, { branch, worktree: worktree ? basename(worktree) : '' })
+      const result = setBoardMilestone(args, repo, item.id, stages, deploy, verdict, { ended })
       const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
       if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
       else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
       else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
     }
   } else if (item) {
-    const result = setBoardLegacy(args, repo, item.id, verdict, { branch, worktree: worktree ? basename(worktree) : '' })
+    const result = setBoardLegacy(args, repo, item.id, verdict, { ended })
     if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
     else if (result === 'doing') log(`보드 ${item.id} 는 ${!verdict.known ? '마지막 PR 인지 판정하지 못했거나 끝나지 않은 단계가 남아' : last ? '끝나지 않은 단계가 남아' : '중간 PR 이라'} done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
