@@ -1,4 +1,0 @@
-- 마지막 PR 을 판정하지 못한 항목을 닫을 때, 보드 줄이 working 인 worker 의 실제 상태를 `worker-show` 로 확인해 끝난 줄은 작업 중으로 세지 않는다.
-- 조회가 실패하거나 상태를 모르면 지금처럼 작업 중으로 센다.
-- `orch worker send` 가 다른 세션의 Run 이 띄운 worker 에게도 간다. dispatch 가 속한 Run 으로 보내고, 코디네이터의 Run 과 다르면 `--from` 을 붙이지 않고 `check --run` 대신 inbox 로 읽는다.
-- Orca 오류가 `{` 에서 잘리지 않고 `code: message` 한 줄로 나온다.
