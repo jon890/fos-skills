@@ -9,6 +9,8 @@
 //                      queue.auto_review.require 의 모르는 조건 이름만은 ConfigError 가 아니라 review.unknown 에 둔다.
 //                      루프가 멈추지 않고 PR 만 걸지 않으며, orch-doctor 가 INVALID-CONFIG 로 알린다
 //   - specHold         지시서의 첫 `머지 보류:` 줄의 이유. 줄 꼴은 lib/spec.ts 의 BRANCH_LINE 과 같다(목록 기호, 굵은 글씨)
+//   - prHold           PR 본문의 첫 `머지 보류:` 줄의 이유. 줄 꼴과 이유 규칙은 specHold 와 같고 본문 어디에 있어도 줄 머리면 읽는다.
+//                      worker 가 PR 을 연 뒤 본문에만 적은 보류도 자동 머지·gate·merge 가 지시서 보류와 같게 지키게 하려는 것이다
 //   - boardHold        보드 항목의 next 와 details 가운데 끝나지 않은 줄이 `머지 보류` 로 시작하면 그 줄. 옛 문자열 줄은 끝나지 않은 줄이다
 //   - reviewVerdict    리뷰와 댓글을 늦은 것부터 보고 pass 나 block 에 맞는 첫 본문으로 정한다. 둘 다 맞으면 block 이다
 //   - judgeReview      queue.auto_review.require 의 조건을 적은 순서대로 보고 처음 막힌 조건의 대기 이유를 낸다. 적지 않으면 verdict-on-head 하나다.
@@ -182,6 +184,11 @@ export function specHold(text: string): string | null {
     if (m) return m[1].trim() || '이유 없음'
   }
   return null
+}
+
+// PR 본문의 보류(머리 주석의 「prHold」). 지시서와 같은 줄 꼴이라 같은 규칙으로 읽는다
+export function prHold(body: string): string | null {
+  return specHold(body)
 }
 
 // next 와 details 의 끝나지 않은 줄. 목록이 아닌 문자열(옛 형식)은 줄마다 끝나지 않은 줄이다
