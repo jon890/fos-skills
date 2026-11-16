@@ -82,7 +82,7 @@ if os.environ.get("EXPECT_ROUTING") == "1":
     repo = sys.argv[sys.argv.index("--repo") + 1]
     row = json.loads(open(os.path.join(repo, ".orch/state/routing-log.jsonl")).readline())
     assert row["outcome"] == "merged"
-    assert all(w["dispatchStatus"] == "succeeded" for w in json.load(open(os.environ["FAKE_STATE"]))["orca"]["workers"])
+    assert all(w["dispatchStatus"] == "completed" for w in json.load(open(os.environ["FAKE_STATE"]))["orca"]["workers"])
     open(os.environ["FAKE_LOG"], "a").write("routing-before-cleanup\\n")
 if os.environ.get("FAKE_SWEEP_REMOVES") == "1":
     wt = os.environ["FAKE_WORKTREE"]
@@ -90,12 +90,12 @@ if os.environ.get("FAKE_SWEEP_REMOVES") == "1":
     subprocess.run(["git", "-C", repo, "worktree", "remove", "--force", wt], check=True, capture_output=True)
     subprocess.run(["git", "-C", repo, "branch", "-D", os.environ["FAKE_BRANCH"]], check=True, capture_output=True)
 `
-// worker 에게 보내는 명령. 받은 인자를 적고, FAKE_SEND_ENDS 면 상태의 worker 를 끝난 것(succeeded)으로 바꾼 뒤 FAKE_SEND_EXIT 로 끝난다
+// worker 에게 보내는 명령. 받은 인자를 적고, FAKE_SEND_ENDS 면 상태의 worker 를 끝난 것(1 이면 completed, 다른 값이면 그 값)으로 바꾼 뒤 FAKE_SEND_EXIT 로 끝난다
 const FAKE_SEND = `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 appendFileSync(process.env.FAKE_LOG, 'send-to-worker ' + process.argv.slice(2).join(' ') + '\\n')
-if (process.env.FAKE_SEND_ENDS === '1') {
+if (process.env.FAKE_SEND_ENDS) {
   const state = JSON.parse(readFileSync(process.env.FAKE_STATE, 'utf8'))
-  for (const row of state.orca.workers) row.dispatchStatus = 'succeeded'
+  for (const row of state.orca.workers) row.dispatchStatus = process.env.FAKE_SEND_ENDS === '1' ? 'completed' : process.env.FAKE_SEND_ENDS
   writeFileSync(process.env.FAKE_STATE, JSON.stringify(state))
 }
 console.log('replied: m_1 에 답했다 (msg_new)')
@@ -1144,7 +1144,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     const bin = board(c, [unjudged({ workers: [own()] })])
     const r = await c.finish(['--run', 'run_1', ...bin], { FAKE_STEPS: UNJUDGED_STEPS, FAKE_SEND_ENDS: '1' })
     assert.equal(r.code, 0, both(r))
-    has(r.stdout, 'notify: worker 끝남: ctx_w (succeeded)')
+    has(r.stdout, 'notify: worker 끝남: ctx_w (completed)')
     assert.equal(starting(c.calls(), 'board set m done').length, 1, c.calls().join('\n'))
   })
 
@@ -1177,6 +1177,42 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     const named = await sameName.finish(['--run', 'run_1', ...sameBin], { FAKE_STEPS: UNJUDGED_STEPS, FAKE_SEND_ENDS: '1' })
     assert.equal(named.code, 0, both(named))
     assert.equal(starting(sameName.calls(), 'board set m done').length, 0, sameName.calls().join('\n'))
+  })
+
+  // 머지 알림 전에 이미 살아 있지 않은 dispatch 의 상태가 worker-list 에 어떻게 적혔는가
+  const stoppedWorker = (c: Ctx, status: string) => { c.state.orca = { workers: [{ dispatchId: 'ctx_w', dispatchStatus: status, resource: { worktreeId: `repo::${c.wt}` } }] } }
+
+  test('머지 알림 전에 이미 끝난 dispatch(completed, failed, canceled)의 구현 줄은 작업 중으로 세지 않아 닫는다', async (t) => {
+    for (const status of ['completed', 'failed', 'canceled']) {
+      const c = setup(t)
+      stoppedWorker(c, status)
+      const bin = board(c, [unjudged({ workers: [own()] })])
+      const r = await c.finish(['--run', 'run_1', ...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+      assert.equal(r.code, 0, `${status}: ${both(r)}`)
+      assert.equal(starting(c.calls(), 'board set m done').length, 1, `${status}: ${c.calls().join('\n')}`)
+    }
+  })
+
+  test('살아 있지 않아도 끝난 상태가 아닌 dispatch(abandoned, unknown, 빈 값)는 종료를 확인한 것이 아니라 작업 중으로 세어 닫지 않는다', async (t) => {
+    for (const status of ['abandoned', 'unknown', '']) {
+      const c = setup(t)
+      stoppedWorker(c, status)
+      const bin = board(c, [unjudged({ workers: [own()] })])
+      const r = await c.finish(['--run', 'run_1', ...bin], { FAKE_STEPS: UNJUDGED_STEPS })
+      assert.equal(r.code, 0, `${status}: ${both(r)}`)
+      has(r.stdout, '종료를 확인하지 못했다')
+      assert.equal(starting(c.calls(), 'board set m done').length, 0, `${status}: ${c.calls().join('\n')}`)
+    }
+  })
+
+  test('알린 뒤 worker 가 abandoned 나 알 수 없는 상태가 되면 기다리지 않고 종료를 확인하지 못한 것으로 둔다', async (t) => {
+    const c = setup(t)
+    liveWorker(c)
+    const bin = board(c, [unjudged({ workers: [own()] })])
+    const r = await c.finish(['--run', 'run_1', ...bin], { FAKE_STEPS: UNJUDGED_STEPS, FAKE_SEND_ENDS: 'abandoned' })
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'notify: ctx_w 의 상태(abandoned)가 끝남이 아니라 종료를 확인하지 못했다')
+    assert.equal(starting(c.calls(), 'board set m done').length, 0, c.calls().join('\n'))
   })
 
   test('판정하지 못한 레거시 항목도 모든 단계가 끝나면 done 으로 바꾸고 단계가 남으면 doing 으로 둔다', async (t) => {
@@ -1423,7 +1459,7 @@ describe('finish-pr 머지 알림', { concurrency: 4 }, () => {
     // 알림이 정리보다 먼저다
     assert.ok(sent < calls.findIndex((line) => line.startsWith('sweep ')), calls.join('\n'))
     has(r.stdout, 'notify: replied: m_1 에 답했다 (msg_new)')
-    has(r.stdout, 'notify: worker 끝남: ctx_w (succeeded)')
+    has(r.stdout, 'notify: worker 끝남: ctx_w (completed)')
     assert.equal(existsSync(c.wt), false)
   })
 
@@ -1447,7 +1483,7 @@ describe('finish-pr 머지 알림', { concurrency: 4 }, () => {
 
   test('살아 있는 worker 가 없으면 알리지 않는다', async (t) => {
     const c = setup(t)
-    live(c, 'succeeded')
+    live(c, 'completed')
     const r = await c.finish(['--run', 'run_1', '--complete'])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(starting(c.calls(), 'send-to-worker '), [])
