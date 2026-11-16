@@ -78,6 +78,7 @@ let calls: string[][]
 let failing: Set<string>
 let comments: unknown[]
 let stream: unknown[]
+let streamFor: ((since: string) => unknown[]) | null
 let sent: { argv: string[]; body: string }[]
 let dir: string
 
@@ -101,7 +102,7 @@ function runner(argv: string[]): RunResult {
     const names: Record<string, string> = { [KIM]: '김철수', [LEE]: '이영희' }
     return names[args[2]] ? ok({ id: args[2], name: names[args[2]] }) : { code: 1, stdout: '', stderr: '멤버 없음' }
   }
-  if (key === 'stream list') return ok(stream)
+  if (key === 'stream list') return ok(streamFor ? streamFor(args[3]) : stream)
   if (key === 'post get') return ok(POSTS[args[3]])
   if (key === 'post comment') return ok(comments)
   if (key === 'messenger channels') return ok(CHANNELS)
@@ -119,6 +120,7 @@ beforeEach(() => {
   failing = new Set()
   comments = []
   stream = STREAM
+  streamFor = null
   sent = []
   dir = mkdtempSync(join(tmpdir(), 'dooray-spec-'))
 })
@@ -416,6 +418,22 @@ describe('시각 없는 댓글 event (웹 방식 stream)', () => {
     assert.equal(calls.find((argv) => argv[2] === 'stream')![5], TASK_FEED_SINCE)
     assert.equal(result.items.length, 1)
     assert.equal(result.items[0].at, '2026-11-02T05:58:00.000Z')
+  })
+
+  test('한 페이지가 며칠을 담아도 새 댓글 멘션을 놓치지 않는다 (실제 CLI 의 페이지 필터를 흉내)', () => {
+    // 지난 받기 11-02 05:55Z, 새 댓글 05:58Z. 활동이 적어 마지막 페이지의 커서는 10-31 06:00Z 까지 내려간다.
+    // CLI 는 since 가 그 커서보다 뒤면 그 페이지의 시각 없는 event 를 모두 뺀다. prev-15d 는 커서보다 앞서 남긴다
+    const pageCursor = Date.parse('2026-10-31T06:00:00.000Z')
+    streamFor = (since) => {
+      const sinceMs = since.startsWith('prev-') ? -Infinity : Date.parse(since)
+      return pageCursor >= sinceMs ? [noTime('c1', 'p81')] : []
+    }
+    comments = [{ id: 'c1', createdAt: '2026-11-02T14:58:00+09:00' }]
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
+    assert.equal(result.items.length, 1)
+    assert.equal(result.items[0].at, '2026-11-02T05:58:00.000Z')
+    // 반대로 지난 커서 하루 앞(11-01 05:55Z)을 since 로 주면 이 시나리오는 빠진다 — 옛 고침이 부족했던 이유
+    assert.deepEqual(streamFor('2026-11-01T05:55:00.000Z'), [])
   })
 
   test('찾은 댓글 시각은 캐시해 다음 받기에서 댓글 목록을 다시 읽지 않는다', () => {
