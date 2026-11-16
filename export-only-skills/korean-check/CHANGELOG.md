@@ -2,6 +2,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.1 (2026-11-16)
+
+- 길이를 재다의 보다 활용형(「재」 로 시작하는 보지, 봤, 본다 꼴)을 금지어로 막고 「측정해 보다」 로 바꾸라고 알린다. 재보험, 재보고 같은 합성어는 막지 않는다.
+
 ## 3.0.0 (2026-11-13)
 
 - 호환성: 옛 이름 진입 korean-style-check.py, check-readability.py 를 지웠다. 훅은 node <스킬>/scripts/korean-style-check.ts --hook 과 check-readability.ts --hook 으로 부른다
