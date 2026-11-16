@@ -1273,8 +1273,17 @@ export function iterProse(text: string): [number, string][] {
   return out
 }
 
+// 브라우저·외부 서비스 테스트의 기본 경로다. 저장소 설정이 있으면 그 목록으로 대체한다.
+const DEFAULT_SLOW_E2E = ['**/e2e/**', '**/playwright/**', '**/*.e2e.*']
+
+function slowE2e(rel: string, repo: string): boolean {
+  const [value] = overlayValues.lookup(repo, ['plan'], '느린 e2e', overlayValues.targets(repo, [rel])[0])
+  const patterns = value ? overlayValues.codes(value) : DEFAULT_SLOW_E2E
+  return patterns.some((pattern) => matches(rel.replace(/^\.\//, ''), pattern))
+}
+
 // 같은 phase 의 테스트 작업과 실행 지시를 본다. 작업 순서는 강제하지 않는다
-export function checkPhasePrompt(path: string, text: string, out: string[], entries: Entry[] = [], repo: string = process.cwd(), warnings: string[] = []): void {
+export function checkPhasePrompt(path: string, text: string, out: string[], entries: Entry[] = [], repo: string = process.cwd(), warnings: string[] = [], isLastPhase = true): void {
   const context = section(text, '컨텍스트') || text
   const evidence = pyre(/\*\*근거 문서\*\*\s*:([\s\S]*?)(?=\n\s*\n|$)/).exec(context)
   const docs = evidence ? [...evidence[1].matchAll(DOC_PATH)].map((m) => m[1]) : []
@@ -1357,7 +1366,7 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
     if (directory !== null && !directory.startsWith('/')) pluginDirs.push(posixNormpath(posixJoin(cwds[i], directory)))
   })
   // 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다
-  const runnable = declaredTests.filter(runnableTest)
+  const runnable = declaredTests.filter((rel) => runnableTest(rel) && (isLastPhase || !slowE2e(rel, repo)))
   if (runnable.length && (targeted.length || directories.length || pluginDirs.length) && !runners.some((command) => ['gradle', 'gradlew', 'mvn', 'mvnw'].includes(pathName(command[0])))) {
     for (const rel of runnable) {
       if (
@@ -1725,7 +1734,7 @@ export function main(argv: string[]): number {
         checkCodeSed(path, text, out)
         checkRelativeLinks(path, text, repo, out)
         checkHumanVerification(path, text, out)
-        checkPhasePrompt(path, text, out, entries, repo, warnings)
+        checkPhasePrompt(path, text, out, entries, repo, warnings, path === phases.at(-1))
         phaseEntries.push([path, section(text, '작업 항목'), entries])
       }
       const testSink = isRecord(index) && typeof index.created_at === 'string' && pyStrCompare(index.created_at, PR_SCOPE_FROM) >= 0 ? out : warnings
