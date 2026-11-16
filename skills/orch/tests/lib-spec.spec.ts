@@ -382,6 +382,38 @@ describe('liveSpecPaths', () => {
     assert.deepEqual(liveSpecPaths(null), new Set(['/s/one.md', '/s/common.md', '/s/three.md']))
   })
 
+  test('Run 없는 task-list 가 거절되면 worker 없는 Run 도 모아 살아 있는 지시서를 찾는다', () => {
+    rules(
+      { args: ['task-list', '--run', 'A', '--cursor', 't2'], stdout: envelope({ tasks: [{ id: 't1', status: 'completed', spec: '/s/active.md' }] }) },
+      { args: ['task-list', '--run', 'A'], stdout: envelope({ tasks: [], page: { nextCursor: 't2' } }) },
+      { args: ['task-list', '--run', 'B'], stdout: envelope({ tasks: [{ id: 't2', status: 'pending', spec: '/s/pending.md' }] }) },
+      { args: ['task-list'], code: 1, stderr: 'run_required' },
+      { args: ['run-list', '--cursor', 'r2'], stdout: envelope({ runs: [{ id: 'B' }], nextCursor: null }) },
+      { args: ['run-list'], stdout: envelope({ runs: [{ id: 'A' }], nextCursor: 'r2' }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [{ runId: 'A', taskId: 't1', dispatchStatus: 'running' }], scope: { source: 'all' } }) },
+    )
+    const from = fake.calls().length
+    assert.deepEqual(liveSpecPaths(null), new Set(['/s/active.md', '/s/pending.md']))
+    assert.ok(lastCalls(from).some((args) => args.includes('task-list') && args.includes('B')))
+  })
+
+  test('Run 일부를 못 읽거나 살아 있는 worker 의 Run 또는 Task 가 빠지면 전체 판정을 멈춘다', () => {
+    const base: FakeRule[] = [
+      { args: ['task-list', '--run', 'A'], stdout: envelope({ tasks: [{ id: 't1', status: 'running', spec: '/s/active.md' }] }) },
+      { args: ['task-list'], code: 1, stderr: 'run_required' },
+      { args: ['run-list'], stdout: envelope({ runs: [{ id: 'A' }, { id: 'B' }] }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [{ runId: 'A', taskId: 't1', dispatchStatus: 'running' }], scope: { source: 'all' } }) },
+    ]
+    const errors: string[] = []
+    rules(...base)
+    assert.equal(liveSpecPaths(null, undefined, (message) => errors.push(message)), null)
+    assert.match(errors.join(' '), /Run B/)
+    rules({ args: ['run-list'], stdout: envelope({ runs: [] }) }, ...base)
+    assert.equal(liveSpecPaths(null), null)
+    rules({ args: ['task-list', '--run', 'A'], stdout: envelope({ tasks: [] }) }, ...base)
+    assert.equal(liveSpecPaths(null), null)
+  })
+
   test('지시서 경로를 실경로로 바꾼다', () => {
     const spec = join(base, 'specs-real', 'spec-x.md')
     mkdirSync(join(spec, '..'), { recursive: true })

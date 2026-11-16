@@ -44,9 +44,11 @@ if (process.env.FAKE_ORCA_FAILS === '1') process.exit(1)
 const args = process.argv.slice(2)
 const say = (value) => fs.writeSync(1, JSON.stringify({ ok: true, result: value }) + '\\n')
 const run = args.includes('--run') ? args[args.indexOf('--run') + 1] : null
-if (args.includes('task-list') && run && process.env.FAKE_RUN_TASKS) say({ tasks: JSON.parse(process.env.FAKE_RUN_TASKS)[run] || [] })
+if (args.includes('task-list') && (!run && process.env.FAKE_RUN_REQUIRED === '1' || run === process.env.FAKE_FAILED_RUN)) process.exit(1)
+if (args.includes('run-list')) say({ runs: Object.keys(JSON.parse(process.env.FAKE_RUN_TASKS || '{}')).map(id => ({ id })) })
+else if (args.includes('task-list') && run && process.env.FAKE_RUN_TASKS) say({ tasks: JSON.parse(process.env.FAKE_RUN_TASKS)[run] || [] })
 else if (args.includes('task-list')) say({ tasks: JSON.parse(process.env.FAKE_TASKS || '[]') })
-else say({ workers: [], scope: { source: 'all' } })
+else say({ workers: JSON.parse(process.env.FAKE_WORKERS || '[]'), scope: { source: 'all' } })
 `
 
 let bindir: string
@@ -86,7 +88,7 @@ beforeEach(() => {
     GH: join(bindir, 'gh'),
     ORCA: join(bindir, 'orca'),
   }
-  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_RUN_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE']) delete env[key]
+  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_RUN_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE', 'FAKE_WORKERS', 'FAKE_RUN_REQUIRED', 'FAKE_FAILED_RUN']) delete env[key]
   const origin = join(tmp, 'origin.git')
   repo = join(tmp, 'repo')
   sh('git', 'init', '-q', '--bare', '-b', 'main', origin)
@@ -535,6 +537,26 @@ describe('handoff-cleanup', () => {
       const r = ok(['--apply', '--run', 'A'], { FAKE_ORCA_FAILS: '1' })
       assert.equal(existsSync(mine), true)
       assert.match(r.stderr, /Run A 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다/)
+    })
+
+    test('Run 없는 조회가 거절되어도 살아 있는 지시서는 남기고 끝난 것은 옮긴다', () => {
+      const { mine, theirs, runTasks } = twoRuns()
+      const r = ok(['--apply'], {
+        FAKE_RUN_REQUIRED: '1', FAKE_RUN_TASKS: runTasks,
+        FAKE_WORKERS: JSON.stringify([{ runId: 'A', taskId: 't1', dispatchStatus: 'running' }]),
+      })
+      assert.equal(existsSync(mine), true)
+      assert.equal(existsSync(theirs), false)
+      assert.doesNotMatch(r.stderr, /읽지 못해/)
+    })
+
+    test('Run 일부를 못 읽으면 끝난 지시서도 모두 남기고 이유와 재실행 명령을 알린다', () => {
+      const { mine, theirs, runTasks } = twoRuns()
+      const r = ok(['--apply'], { FAKE_RUN_REQUIRED: '1', FAKE_RUN_TASKS: runTasks, FAKE_FAILED_RUN: 'B' })
+      assert.equal(existsSync(mine), true)
+      assert.equal(existsSync(theirs), true)
+      assert.doesNotMatch(r.stdout, /지시서 옮김/)
+      assert.match(r.stderr, /Run B.*다시 실행: .*cleanup handoff --repo .* --run/)
     })
 
     test('--run 이 없으면 저장소 전체를 보고 경고 한 줄을 낸다', () => {

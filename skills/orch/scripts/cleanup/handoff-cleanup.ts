@@ -17,6 +17,7 @@
 //         · 열린 PR 목록을 읽지 못하면 아무것도 옮기지 않는다
 //         · 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서가 아니다. 그 판정과 옮기기는 lib/spec.ts 의 deleteSpecs 한 곳이 맡는다.
 //           살아 있는 지시서 목록(liveSpecPaths)을 읽지 못하면 지시서마다 판정하지 않고 아무것도 옮기지 않는다.
+//           Run 없는 task-list 가 거절되면 모든 Run 의 Task 목록을 모은다. 일부라도 읽지 못하면 남기고 --run 재실행 명령을 알린다.
 //           브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 옮긴 일이 있었다
 //     - <orch>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <orch>/.keep 에도 없는 폴더
 //       (lib/paths.ts 에 정의한 orch 폴더는 건드리지 않는다)
@@ -77,6 +78,8 @@ import { ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { FILES, NAMES, orchDir, requireMigrated } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
+import { orchWord } from '../lib/commands.ts'
+import { shQuote } from '../lib/py.ts'
 import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, runSpecPaths, specCandidates } from '../lib/spec.ts'
 import { emit } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
@@ -366,9 +369,10 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
     if (heads === null) {
       err('gh 로 열린 PR 을 읽지 못해 지시서는 옮기지 않는다')
     } else {
-      live = liveSpecPaths(args.run)
+      let reason = 'Task 또는 worker 목록의 범위를 확인하지 못했다'
+      live = liveSpecPaths(args.run, undefined, (message) => { reason = message })
       if (live === null) {
-        err('orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다')
+        err(`orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다: ${reason}; 다시 실행: ${orchWord()} cleanup handoff --repo ${shQuote(repo)} --run ${shQuote(args.run ?? 'RUN_ID')}`)
       } else {
         const worktrees = runOut([gitBin(), 'worktree', 'list'], repo).out
         // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다

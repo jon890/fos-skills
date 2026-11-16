@@ -211,6 +211,7 @@ function readAll<K extends string>(args: string[], key: K): { rows: Record<strin
     if (!got.ok || typeof got.data !== 'object' || got.data === null) return null
     if (first) source = got.data.scope?.source
     const list = got.data[key]
+    if (!Array.isArray(list)) return null
     if (Array.isArray(list)) {
       for (const row of list) if (typeof row === 'object' && row !== null) rows.push(row as Record<string, unknown>)
     }
@@ -233,7 +234,9 @@ function readAll<K extends string>(args: string[], key: K): { rows: Record<strin
 //
 // worker-list 는 100행씩 나뉘므로 --limit 100 과 --cursor 로 끝까지 읽는다(lib/orca.ts 머리 주석). task-list 도
 // 응답에 page.nextCursor 가 있으면 같은 방식으로 읽는다.
-// run 이 null 이면 범위 없이 부르고, 아래 가운데 하나라도 맞으면 null 이다. 지시서 폴더는 저장소마다 하나라,
+// run 이 null 이면 먼저 범위 없이 부른다. task-list 가 Run 을 요구하면 run-list 의 모든 Run 을 읽어 합친다.
+// worker 가 아직 없는 pending Task 도 지키려고 worker 의 runId 만으로 범위를 정하지 않는다.
+// 아래 가운데 하나라도 맞으면 null 이다. 지시서 폴더는 저장소마다 하나라,
 // 부른 터미널에 묶인 Run 만 본 결과로는 다른 Run 의 살아 있는 지시서를 지켜 주지 못한다.
 //   - worker-list 의 scope.source 가 all 이 아니다
 //   - task-list 응답에 scope.source 가 있는데 all 이 아니다
@@ -242,13 +245,17 @@ function readAll<K extends string>(args: string[], key: K): { rows: Record<strin
 // run 을 주면 그 Run 만 본다. 그 run 이 옛 Run 을 가리키면 새 Run 의 worker 가 쓰는 지시서가 이 목록에 없어 지워질 수 있다.
 // 옮기기 전 live_specs.py 도 같았다.
 // 조회가 하나라도 실패하면(중간 페이지 실패 포함) null 이다.
-export function liveSpecPaths(run: string | null, knownWorkers?: Record<string, unknown>[]): Set<string> | null {
+export function liveSpecPaths(run: string | null, knownWorkers?: Record<string, unknown>[], onFailure: (reason: string) => void = () => {}): Set<string> | null {
   const scope = run === null ? [] : ['--run', run]
   const workers = knownWorkers && run ? { rows: knownWorkers, source: 'flag' } : readAll(['orchestration', 'worker-list', ...scope, '--limit', PAGE_LIMIT], 'workers')
   if (workers === null) return null
   if (run === null && workers.source !== 'all') return null
   const tasks = readAll(['orchestration', 'task-list', ...scope], 'tasks')
-  if (tasks === null) return null
+  if (tasks === null) {
+    if (run === null) return scanAllRuns(workers.rows, onFailure)
+    onFailure(`Run ${run} 의 Task 목록을 읽지 못했다`)
+    return null
+  }
   const activeTasks = new Set(workers.rows.filter((w) => ACTIVE.has(String(w.dispatchStatus))).map((w) => w.taskId))
   if (run === null) {
     if (tasks.source !== undefined && tasks.source !== 'all') return null
@@ -299,12 +306,20 @@ export function allLiveSpecPaths(known?: { runs: string[]; workers: Record<strin
   }
   const direct = liveSpecPaths(null)
   if (direct !== null) return direct
+  return scanAllRuns()
+}
+
+// worker-list 전체를 이미 읽었으면 재사용하고, Run 목록은 worker 가 없는 Task 도 포함하게 따로 읽는다.
+function scanAllRuns(knownWorkers?: Record<string, unknown>[], onFailure: (reason: string) => void = () => {}): Set<string> | null {
   const ids: string[] = []
   const seen = new Set<string>()
   let cursor: string | null = null
   for (;;) {
     const got = orcaJson<{ runs?: unknown; nextCursor?: unknown }>(['orchestration', 'run-list', '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
-    if (!got.ok || typeof got.data !== 'object' || got.data === null || !Array.isArray(got.data.runs)) return null
+    if (!got.ok || typeof got.data !== 'object' || got.data === null || !Array.isArray(got.data.runs)) {
+      onFailure('Run 목록을 읽지 못했다')
+      return null
+    }
     for (const row of got.data.runs) {
       if (typeof row !== 'object' || row === null || typeof (row as { id?: unknown }).id !== 'string') return null
       ids.push((row as { id: string }).id)
@@ -315,12 +330,19 @@ export function allLiveSpecPaths(known?: { runs: string[]; workers: Record<strin
     seen.add(next)
     cursor = next
   }
+  if (knownWorkers?.some((row) => !ids.includes(String(row.runId)))) {
+    onFailure('worker 의 Run 이 Run 목록에 없다')
+    return null
+  }
   const paths = new Set<string>()
-  for (const id of ids) {
-    const workers = readAll(['orchestration', 'worker-list', '--run', id, '--limit', PAGE_LIMIT], 'workers')
+  for (const id of new Set(ids)) {
+    const workers = knownWorkers ? { rows: knownWorkers.filter((row) => row.runId === id) } : readAll(['orchestration', 'worker-list', '--run', id, '--limit', PAGE_LIMIT], 'workers')
     const tasks = workers === null ? null : readAll(['orchestration', 'task-list', '--run', id], 'tasks')
     const live = tasks === null || workers === null ? null : liveOf(workers.rows, tasks.rows)
-    if (live === null) return null
+    if (live === null) {
+      onFailure(`Run ${id} 의 Task 또는 worker 목록을 읽거나 살아 있는 dispatch 의 Task 를 확인하지 못했다`)
+      return null
+    }
     for (const path of live) paths.add(path)
   }
   return paths

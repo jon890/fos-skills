@@ -1,1 +1,2 @@
 - `orch cleanup handoff` 가 오래된 study·feedback·hooks 폴더를 옮기지 않게 한다. 남길 폴더는 orch 경로 정의에서 가져온다.
+- Run 에 묶이지 않은 세션에서도 모든 Run 의 살아 있는 지시서를 확인한다. 일부 조회가 실패하면 모두 남기고 이유와 재실행 명령을 알린다.
