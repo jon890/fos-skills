@@ -107,6 +107,12 @@ describe('block-git-after-cd', () => {
     }
   })
 
+  test('명령 치환 heredoc 본문의 인용·cd·push 문구는 명령이 아니다', () => {
+    const command = 'git commit -m "$(cat <<\'EOF\'\n제목\n\n"인용" 후\norca orchestration check --wait &\ncd x; git push\nEOF\n)"'
+    assert.equal(decide(HOOK, command), 'pass')
+    assert.equal(decide('block-broken-commit-subject.ts', command), 'pass')
+  })
+
   test('here-string 과 시프트는 뒤 명령을 가리지 않는다', () => {
     for (const command of ['echo $((1<<2))\ncd /r; git push', 'grep x <<< word\ncd /r; git push']) {
       assert.equal(decide(HOOK, command), 'deny', command)

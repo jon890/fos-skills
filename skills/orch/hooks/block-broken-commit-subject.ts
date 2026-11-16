@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { mask, pieces, stripHeredocs } from './shell-text.ts'
+import { QUOTED, mask, pieces, stripHeredocs } from './shell-text.ts'
 
 function broken(message: string): boolean {
   const subject = message.split(/\r?\n/, 1)[0].trimStart()
@@ -90,8 +90,18 @@ function unpushedBroken(cwd: string, prefix: string[], sources: string[]): boole
   return false
 }
 
+function messageText(command: string): string {
+  // 리터럴 메시지 안의 << 만 잠시 가린다. $(cat <<EOF ...) 는 기존 도우미가 처리한다.
+  // NUL 은 실제 셸 인자에 쓸 수 없어 임시 표지로 쓰고, 도우미를 지난 뒤 원문으로 돌린다.
+  const protectedText = command.replace(QUOTED, quoted => {
+    if (quoted[0] === '"' && /(?<!\\)[$`]/.test(quoted)) return quoted
+    return quoted.replaceAll('<<', '\0\0')
+  })
+  return stripHeredocs(protectedText).replaceAll('\0\0', '<<')
+}
+
 function rejection(command: string, initialCwd: string): string | null {
-  const text = stripHeredocs(command)
+  const text = messageText(command)
   const masked = mask(text)
   let cwd: string | null = initialCwd
   for (const { start, end } of pieces(masked)) {
