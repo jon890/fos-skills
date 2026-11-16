@@ -1,1 +1,0 @@
-- Orca 계정 프로필로 복사하는 파일 목록에서 `browser.config.json` 과 `mac-cleanup-overlay.md` 를 뺀다. 둘 다 프로필이 아닌 실제 홈을 읽어 복사본이 쓰이지 않았다.

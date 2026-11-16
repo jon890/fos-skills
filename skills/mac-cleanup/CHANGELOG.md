@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.2.0 (2026-11-16)
+
+- 개인 오버레이를 `~/.claude/overlays/mac-cleanup.md` 에서 읽는다. 파일이 없으면 옛 자리 `~/.claude/mac-cleanup-overlay.md` 를 읽는다.
+
 ## 2.1.1 (2026-11-12)
 
 - 정리 후보 문서에서 표본 수치와 사고 기록을 지우고 도구 동작만 남겼다.
