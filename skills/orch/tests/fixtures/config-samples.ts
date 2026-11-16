@@ -51,6 +51,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     ci_missing_after_sec: { good: [0, 1.5, 600], bad: [-1, '1'] },
     authors: { good: [[], ['someone']], bad: [[''], 'a', [1]] },
     stall_ticks: { good: [{}, { error: 3, idle: 0 }], bad: [{ error: -1 }, 'x', { error: 1.5 }, { other: 1 }] },
+    stall_error_retries: { good: [0, 3], bad: [-1, 1.5, '1'] },
     idle_min: { good: [0, 30.5], bad: [-1, '30'] },
     refresh_slots: { good: [0, 2], bad: [-1, 1.5, '1'] },
     refresh_worker_paths: { good: ['^a/', ['^a/', '^b/']], bad: ['(', '', 5, []] },

@@ -1,0 +1,2 @@
+- worker-stalled 핸들러가 없으면 루프가 모델 오류로 멈춘 worker 에게 `pipeline.stall_error_retries`(기본 3, 0 이면 끔)번까지 「계속 진행해」 를 보낸다.
+- 핸들러가 있으면 핸들러가 먼저 돌고 코어 기본은 돌지 않는다. 코어와 같은 일만 하는 옛 예시 핸들러는 doctor 가 `STALL-RETRY-HANDLER` 로 알린다.

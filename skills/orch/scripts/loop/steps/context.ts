@@ -4,6 +4,7 @@
 // 틱의 Run: 틱 자식은 등록을 다시 읽는다. 등록이 없으면 --run(또는 finish.run) 하나를, 그것도 없으면 Run 없는 한 칸을 맡는다.
 //
 // 설정: pipeline.tick_sec(양수, 기본 300), pipeline.digest_sec(양수, 기본 1800), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. stalls.ts 머리 주석의 「멈춤 확인」),
+//     pipeline.stall_error_retries(0 이상의 정수, 기본 3. lib/stall-retry.ts),
 //     pipeline.idle_min, pipeline.idle_exited(movement.ts 머리 주석의 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
 //     queue.auto_merge, queue.auto_review, migrations.dirs, migrations.before, migrations.blocked_after_sec(lib/auto-merge.ts 의 autoMergeConfig 가 읽는다.
 //     auto-merge.ts 머리 주석의 「자동 머지」), queue.sweep_args(자동 머지가 큐에 --sweep-arg 로 넘긴다),
@@ -24,6 +25,7 @@ import { movementSettings } from '../../lib/movement.ts'
 import type { MovementSettings } from '../../lib/movement.ts'
 import { DEFAULT_DIGEST_SEC } from '../../lib/notice-digest.ts'
 import { poll } from '../../lib/questions.ts'
+import { DEFAULT_STALL_ERROR_RETRIES } from '../../lib/stall-retry.ts'
 import { refreshSettings } from '../../lib/refresh.ts'
 import type { RefreshSettings } from '../../lib/refresh.ts'
 import type { CiEntry, Lookup, Prs, Stall, StallState, TickRun, Waiting } from './shared.ts'
@@ -40,6 +42,8 @@ export type Context = {
   digestSec: number
   skippedIsMissing: boolean
   stallTicks: Record<StallState, number>
+  // pipeline.stall_error_retries. 저장소 핸들러가 없을 때 error 멈춤마다 다시 진행시키는 최대 횟수(lib/stall-retry.ts)
+  stallErrorRetries: number
   // pipeline.idle_min, pipeline.idle_exited(movement.ts 머리 주석의 「움직임 확인」)
   autoAdvance: boolean
   movement: MovementSettings
@@ -66,7 +70,7 @@ function optionalString(value: unknown, key: string): string | null {
 
 export function context(repo: string, run: string | undefined, specsDir: string | undefined): Context {
   const config = loadConfig(repo)
-  const pipeline = section<{ tick_sec?: unknown; stall_ticks?: unknown; digest_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
+  const pipeline = section<{ tick_sec?: unknown; stall_ticks?: unknown; stall_error_retries?: unknown; digest_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
   const finish = section<{ run?: unknown; specs_dir?: unknown }>(config, 'finish', FINISH_KEYS)
   const queue = section<{ skipped_is_missing?: unknown; sweep_args?: unknown }>(config, 'queue', QUEUE_KEYS)
   const skipped = queue.skipped_is_missing ?? false
@@ -79,6 +83,10 @@ export function context(repo: string, run: string | undefined, specsDir: string 
   if (typeof digestSec !== 'number' || !Number.isFinite(digestSec) || digestSec <= 0) {
     throw new ConfigError(`설정 파일의 pipeline.digest_sec 은 양수여야 한다: ${JSON.stringify(digestSec)}`)
   }
+  const stallErrorRetries = pipeline.stall_error_retries ?? DEFAULT_STALL_ERROR_RETRIES
+  if (typeof stallErrorRetries !== 'number' || !Number.isInteger(stallErrorRetries) || stallErrorRetries < 0) {
+    throw new ConfigError(`설정 파일의 pipeline.stall_error_retries 는 0 이상의 정수여야 한다: ${JSON.stringify(stallErrorRetries)}`)
+  }
   return {
     repo,
     digestSec,
@@ -87,6 +95,7 @@ export function context(repo: string, run: string | undefined, specsDir: string 
     tickSec,
     skippedIsMissing: skipped,
     stallTicks: stallTicks(pipeline.stall_ticks),
+    stallErrorRetries,
     autoAdvance: autoAdvanceOf(config),
     movement: movementSettings(repo),
     autoMerge: autoMergeConfig(config),

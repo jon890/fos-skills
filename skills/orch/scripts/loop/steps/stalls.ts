@@ -3,7 +3,9 @@
 //     구조화 worker(터미널 handle 이 structworker_ 로 시작하거나 startOptions.mode.mode 가 structured)는 화면이 없어 읽지 않는다.
 //     `orca orchestration worker-show` 의 worker.stage 와 worker.lastError 로 판정한다(lib/sessions.ts 의 structuredScreen).
 //     lastError 가 있으면 error 멈춤이고, 한도 문구면 사용 한도다. 움직임 확인에 넘길 화면은 없다. worker-show 를 읽지 못하면 화면을 읽지 못한 것과 같다.
-//     입력하지 않는다. 다시 시도시키는 일과 그 횟수 상한은 저장소의 worker-stalled 핸들러가 정한다(references/hooks.md, ADR-013).
+//     저장소에 worker-stalled 핸들러가 있으면 그것이 다시 시도시킬지와 횟수를 정한다(references/hooks.md, ADR-013). 핸들러가 없으면 코어 기본이 돈다:
+//     state=error 멈춤마다 pipeline.stall_error_retries(기본 3, 0 이면 끈다)번까지 `orch worker send` 로 「계속 진행해」 를 보낸다(lib/stall-retry.ts).
+//     상한에 닿았거나 error 가 아닌 멈춤이면 코디네이터에게 알린다.
 //     사용 한도 화면은 stall_ticks 와 무관하게 dispatch 마다 WORKER-LIMITED 알림을 한 번 쓴다. 터미널 worker 는 사용자에게 계정 전환을 요청한 뒤
 //     `orch worker resume --dispatch <id>` 를 부르고, 바꿀 계정이 없거나 resume 이 실패하면 agent-selection.md 의 한도 복구로 가라고 안내한다.
 //     구조화 worker 는 resume 대상이 아니라 agent-selection.md 의 한도 복구만 안내한다. 루프는 입력하지 않는다.
@@ -33,13 +35,16 @@
 //     같은 틱에 그 Run 의 질문 확인도 실패했으면 stalls@<Run> 은 로그에만 쓰고 비워 둔다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다.
 //     멈춤 확인 전체가 예외로 끝나면 주 Run 의 stalls 키에 이유를 둔다.
 
+import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
 import { orchWord } from '../../lib/commands.ts'
 import { fire } from '../../lib/events.ts'
 import { defaultBase } from '../../lib/git.ts'
 import { orcaJson } from '../../lib/orca.ts'
+import { run as runCommand } from '../../lib/proc.ts'
 import { shQuote } from '../../lib/py.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
+import { retryStalled } from '../../lib/stall-retry.ts'
 import { backgroundWork, readScreen, screenLines, screenTail, stallHash } from '../../lib/screen.ts'
 import { isStructured, limitedScreen, structuredScreen } from '../../lib/sessions.ts'
 import { recordWorkerLimited } from '../../lib/worker-limited.ts'
@@ -48,6 +53,8 @@ import type { Context, StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { iso, log, oneLine, rowsOf, stallEntries } from './shared.ts'
 import type { Lookup, Stall, StallState, Waiting } from './shared.ts'
+
+const ORCH_BIN = fileURLToPath(new URL('../../../bin/orch.ts', import.meta.url))
 
 // 머리 주석의 「멈춤 확인」. stalls 는 결과 줄에 담을 값, errors 는 Run 마다 errors 의 stalls@<Run> 에 둘 이유다
 async function watchStalls(
@@ -170,6 +177,19 @@ async function watchStalls(
   return { stalls, errors }
 }
 
+// 핸들러가 없을 때의 코어 기본(lib/stall-retry.ts). 다시 진행시켰으면 true 다. 보내지 못하면 알림으로 넘긴다
+function coreRetry(ctx: Context, dispatch: string, entry: Stall, runId: string): boolean {
+  try {
+    return retryStalled(ctx.repo, { dispatch, state: entry.state, since: entry.since }, ctx.stallErrorRetries, (id, body) => {
+      const done = runCommand([process.execPath, '--disable-warning=ExperimentalWarning', ORCH_BIN, 'worker', 'send', '--dispatch', id, '--body', body])
+      if (done.code !== 0) throw new Error(`worker send 가 ${done.code} 로 끝났다: ${oneLine(done.stderr || done.stdout)}`)
+    })
+  } catch (e) {
+    log(`orch-loop: ${runId} ${dispatch} 를 다시 진행시키지 못했다: ${oneLine(e)}`)
+    return false
+  }
+}
+
 // worker-stalled 를 내고, 핸들러가 0 으로 끝나지 않았으면 그 Run 에 Orca 메시지로 WORKER-STALLED 를 쓴다(머리 주석의 「멈춤 확인」).
 // 핸들러가 0 으로 끝났으면 true 다
 async function notifyStall(ctx: Context, run: string, row: Record<string, unknown>, entry: Stall, lines: string[], base: string): Promise<boolean | null> {
@@ -192,7 +212,8 @@ async function notifyStall(ctx: Context, run: string, row: Record<string, unknow
       },
       { repo: ctx.repo, base, run },
     )
-    handled = fired.result === 'pass'
+    // 'none' 은 핸들러가 없다는 뜻이다. 그때만 코어 기본이 다시 진행시킨다
+    handled = fired.result === 'pass' || (fired.result === 'none' && coreRetry(ctx, dispatch, entry, run))
   } catch (e) {
     log(`orch-loop: worker-stalled 를 내지 못했다: ${oneLine(e)}`)
   }

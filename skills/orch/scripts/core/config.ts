@@ -49,6 +49,7 @@ export const PIPELINE_KEYS: readonly string[] = [
   'update_behind_drafts',
   'authors',
   'stall_ticks',
+  'stall_error_retries',
   'idle_min',
   'idle_exited',
   'refresh_slots',
