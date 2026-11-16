@@ -149,7 +149,7 @@ orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
 - `taskOf(text, pattern)` 는 `{ number, title, line }` 을 돌려준다. `line` 은 `number` 묶음이 든 줄 전체다. 맞은 자리의 시작(`index`)으로 자르면 안 된다. 기본 정규식의 `^\s*` 가 앞 빈 줄의 줄바꿈까지 먹어 빈 줄을 고른다.
 - `taskArgs = ['--fill', '--task-ref', normalizeRef(adapter, number), ...(url ? ['--task', url] : [])]`. `url` 은 `urlFromLine(adapter, line)` 이다. 사용자 정의 `task_line` 이 공백 든 번호를 뽑으면 `taskArgs` 를 비우고 stderr 에 한 줄 남긴다. 보드 등록 전체가 거절되지 않게 한다.
 - 네 길(중간 과정 줄, 다시 열기, 기존 항목, 새 항목)의 `write([...])` 에 `taskArgs` 를 붙인다. 새 항목은 칸이 비어 있어 그대로 들어간다.
-- 같은 업무 찾기: `open` 가운데 decide·goal 이 아닌 항목에서 `row['task-ref'] === ref` 를 먼저 찾고, 없으면 번호 칸(`task-ref`)이 빈 항목만 `hasTask(row.title, task.number)` 로 찾는다. 찾는 차례(지시서 id, 같은 워크트리·브랜치, 같은 업무, `--name`, 워크트리 이름)는 그대로다.
+- 같은 업무 찾기: `open` 가운데 decide 가 아닌 항목에서 `row['task-ref'] === ref` 를 먼저 찾고, 없으면 번호 칸(`task-ref`)이 빈 항목만 `hasTask(row.title, task.number)` 로 찾는다. 찾는 차례(지시서 id, 같은 워크트리·브랜치, 같은 업무, `--name`, 워크트리 이름)는 그대로다.
 - `specTitle` 의 끝 줄(번호를 앞에 붙이기)을 지운다. 고르는 순서 1~5 는 그대로다.
 
 ### PR 연결 때

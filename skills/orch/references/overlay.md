@@ -31,7 +31,7 @@
 | 지시서 폴더 | `orch cleanup sweep --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서를 지운다. PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 공부 후보 | 사용자가 고른 후보를 글로 쓸 스킬 이름과 글이 놓일 저장소. 없으면 글을 쓸 때 어디에 쓸지 묻는다. 절차는 [`study-candidates.md`](study-candidates.md) | - |
-| 진행 보드 | 보드 파일 위치, 목표 항목 id(`orch board sync --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
+| 진행 보드 | 보드 파일 위치 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
 | 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
 | Docker 자원 | 같은 파일의 `docker` 절. 검사 스크립트가 띄우는 임시 컨테이너의 표식과 이름, 해시 태그로 쌓이는 이미지 이름. 판정은 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 | 7 |

@@ -4,6 +4,42 @@ import { test } from 'node:test'
 import { GET_FIELDS } from '../bin/board.ts'
 import { run, tempBoard, write } from './board-run.ts'
 
+test('옛 goal 은 doing 으로 읽되 조회는 파일을 보존하고 새 goal 쓰기는 거절한다', () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'old', status: 'goal', title: '기존 항목', details: ['1. 구현'], progress: '0/1' }, { id: 'bare', status: 'goal', title: '목표만' })
+    const before = readFileSync(t.file, 'utf8')
+    for (const command of ['view', 'item']) {
+      const result = run(t.file, [command, 'old'])
+      assert.equal(result.code, 0, result.stderr)
+      assert.equal(JSON.parse(result.stdout).status, 'doing')
+    }
+    assert.equal(JSON.parse(run(t.file, ['get', 'old', 'status']).stdout).value, 'doing')
+    assert.equal(JSON.parse(run(t.file, ['items', 'doing']).stdout)[0].id, 'old')
+    assert.match(run(t.file, ['list']).stdout, /doing/)
+    const bare = JSON.parse(run(t.file, ['item', 'bare']).stdout)
+    assert.equal(bare.status, 'doing')
+    assert.equal(readFileSync(t.file, 'utf8'), before)
+    for (const args of [['set', 'old', 'goal'], ['set', 'new', 'goal'], ['items', 'goal']]) {
+      const result = run(t.file, args)
+      assert.equal(result.code, 1, result.stderr)
+      assert.match(result.stderr, /decide\|doing\|wait\|done/)
+      assert.equal(readFileSync(t.file, 'utf8'), before)
+    }
+    assert.equal(run(t.file, ['set', 'old', '--title', '수정한 제목']).code, 0)
+    const saved = JSON.parse(readFileSync(t.file, 'utf8')).items.find((row: { id: string }) => row.id === 'old')
+    assert.equal(saved.status, 'doing')
+    assert.equal(saved.progress, '0/1')
+    assert.deepEqual(saved.details, [{ text: '1. 구현', done: false }])
+    // 진행률도 단계도 없던 옛 항목은 다른 doing 항목처럼 진행률을 함께 줘야 고칠 수 있다
+    const refused = run(t.file, ['set', 'bare', '--title', '이름 수정'])
+    assert.equal(refused.code, 1)
+    assert.match(refused.stderr, /진행률이 필요하다/)
+    assert.equal(run(t.file, ['set', 'bare', '--title', '이름 수정', '--progress', '0/1']).code, 0)
+    assert.equal(JSON.parse(readFileSync(t.file, 'utf8')).items.find((row: { id: string }) => row.id === 'bare').title, '이름 수정')
+  } finally { t.cleanup() }
+})
+
 test('get, item, items 는 잠금 없이 저장된 값과 단계 값을 읽는다', () => {
   const t = tempBoard()
   try {

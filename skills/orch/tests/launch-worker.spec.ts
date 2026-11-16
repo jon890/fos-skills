@@ -1593,14 +1593,14 @@ describe('중간 과정과 다시 열기', () => {
     mkdirSync(dirname(file), { recursive: true })
     const target = { id: 'feat', title: '기능', status: 'doing', branch: 'feat/x', worktree: 'old-wt', details: [{ text: '1. 구현', done: false }] }
     const decide = { id: 'ask', title: '정할 것', status: 'decide', branch: 'feat/x', details: [{ text: '이름', done: false }] }
-    const goal = { id: 'goal', title: '목표', status: 'goal', branch: 'feat/x' }
-    writeFileSync(file, JSON.stringify({ items: [decide, goal, target] }))
+    const other = { id: 'other', title: '다른 항목', status: 'doing', branch: 'feat/other', details: [{ text: '1. 구현', done: false }] }
+    writeFileSync(file, JSON.stringify({ items: [decide, other, target] }))
     writeFileSync(spec, '# 리뷰 반영하기\n허락: push\n중간 과정: 리뷰 반영\n')
     const r = run()
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
     const after = items()
-    assert.deepEqual(after.slice(0, 2), [decide, goal])
+    assert.deepEqual(after.slice(0, 2), [decide, other])
     assert.deepEqual(after[2].details, [...target.details, { text: '중간 과정: 리뷰 반영하기', done: false }])
     assert.equal(after[2].status, 'doing')
   })

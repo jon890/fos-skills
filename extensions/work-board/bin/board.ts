@@ -40,13 +40,13 @@
 //   board.ts step-add <id> <글> [--event "PR 사건"] (번호가 없으면 가장 큰 번호 다음으로 더한다)
 //   step-edit 는 다른 번호나 사건 꼬리표를 지우는 글을 거절한다.
 //   step-add 는 이미 있는 번호와 done 항목을 거절한다. 두 동작은 결과 JSON 에 number 를 넣는다.
-//   step-add, set --detail, set --next 로 단계 줄이 progress 의 전체 값(N/M 의 M)보다 많아지면 progress 를 지우고 단계 줄로 센다(같은 set 이 --progress 를 주면 그 값을 따르고, goal 항목은 하위 항목 집계값일 수 있어 지우지 않는다).
+//   step-add, set --detail, set --next 로 단계 줄이 progress 의 전체 값(N/M 의 M)보다 많아지면 progress 를 지우고 단계 줄로 센다(같은 set 이 --progress 를 주면 그 값을 따른다).
 //   step-edit, set 으로 stages 가 가리키는 단계 줄의 글이 바뀌면 stderr 로 경고한다.
 //   step-edit, step-add 의 글에 「#번호」 와 머지·배포·릴리스 낱말이 있는데 --event 도 꼬리표도 없으면 stderr 로 경고한다(자동으로 끝나지 않는다).
 //   board.ts step-mark <id> <번호> <auto|ask|wait|plain> [<조건>] (번호 뒤의 자동 진행 표시만 바꾼다. plain 은 지운다)
 //   step-mark 는 사건 단계(줄 앞 [merge] 따위, stages 칸이 가리키는 줄)를 거절한다. 줄 끝 꼬리표와 끝냄 상태는 그대로 둔다.
 //   표시의 꼴은 hooks/step-marks.js 가 소유한다. 조건은 wait 에만 줄 수 있다.
-// status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
+// status: decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 // 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
 //   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
 //   줄 앞의 「✓」 나 「[x]」 는 끝낸 단계, 「[ ]」, 「▶」, 「◇」 는 끝나지 않은 단계다
@@ -79,7 +79,7 @@ export { parseEventTag } from '../hooks/event-tags.js'
 import { STEP, parseEventTag, stageTag, withEventTag } from '../hooks/event-tags.js'
 import { withStepMark } from '../hooks/step-marks.js'
 
-const STATUSES = ['goal', 'decide', 'doing', 'wait', 'done']
+const STATUSES = ['decide', 'doing', 'wait', 'done']
 const DONE_MARKS = ['✓', '[x]', '[X]']
 const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
@@ -144,7 +144,7 @@ const HELP = `${USAGE}
     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
   board.ts del <id> [--exact] | del-done <id> | del-done --all (엄격한 지우기는 결과와 사본을 남긴다)
   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
-status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
+status: decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 항목의 status, details, next 가 바뀐 쓰기는 그 항목의 stepAt 에 그 시각을 남긴다. 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다
 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
@@ -211,6 +211,8 @@ function inheritLines(texts: string[], old: Line[] | undefined): Line[] {
 }
 
 function normalizeItem(item: Item): void {
+  // 옛 목표 상태는 내용을 보존해 진행 중으로 읽고 다음 쓰기 때 저장한다.
+  if (item.status === 'goal') item.status = 'doing'
   for (const key of ['details', 'next']) {
     if (key in item) item[key] = normalizeLines(item[key])
   }
@@ -503,8 +505,6 @@ function stepCount(item: Item): number {
 
 // progress 의 전체 값(N/M 의 M)보다 단계 줄이 많으면 progress 를 지워 단계 줄로 세게 한다. 지웠으면 true
 function dropStaleProgress(item: Item, id: string): boolean {
-  // 목표(goal)의 progress 는 하위 항목을 집계한 값(goal-progress.ts)일 수 있어 단계 줄 수와 비교하지 않는다
-  if (item.status === 'goal') return false
   const m = PROGRESS.exec(String(item.progress || ''))
   const count = stepCount(item)
   if (!m || Number(m[2]) <= 0 || count <= Number(m[2])) return false

@@ -1,7 +1,7 @@
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // 리뷰 항목은 최초 띄우기 이력으로 정한다. 구현 이력·줄·PR 이 있는 항목은 리뷰 종료로 닫지 않는다.
-// 보드(board.json)에서 PR 이 머지된 항목을 done 으로 바꾸고 목표 진행률을 다시 센다.
+// 보드(board.json)에서 PR 이 머지된 항목의 단계와 상태를 맞춘다.
 //
 // 하위 줄은 코디네이터가 쓰는 번호 붙은 단계만 둔다. 이 스크립트는 상태 줄을 쓰지 않는다.
 // PR 상태나 커밋 같은 자동 줄은 읽기 어렵고 단계와 섞여 보드를 흐린다(사용자 요청).
@@ -24,7 +24,6 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     - 단계 줄 판정과 끝내기는 보드 명령에 맡긴다. `steps` 로 단계 목록을 받고 `step <id> <n>` 으로 끝낸다.
 //       단계 줄 판정은 이 스크립트에서 하지 않는다. 옛 자동 줄을 지울 때만 완료 값을 CLI 입력 표시로 전달한다
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
-//     - --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다
 //
 // 마일스톤 항목(stages 칸이 있는 항목, lib/milestones.ts, ADR-018)은 위 규칙 대신 사건으로 단계를 끝낸다:
 //     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
@@ -42,7 +41,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     - config.json 의 board 절이 틀리면 stderr 에 한 줄 남기고 마일스톤 항목의 머지 반영을 건너뛴다
 //
 // 수동 사건 단계: 줄 끝의 (#PR번호 pr|merge|deploy|release) 를 board.ts 와 같은 파서로 읽는다.
-//     꼬리표가 있는 항목은 goal 도 사건별 단계만 끝내고 항목 상태와 꼬리표 없는 줄은 그대로 둔다.
+//     꼬리표가 있는 항목은 사건별 단계만 끝내고 항목 상태와 꼬리표 없는 줄은 그대로 둔다.
 //     release 는 board-release.ts 에 맡긴다.
 //
 // 갱신 필요: 끝나지 않은 단계의 글에 이미 머지된 PR 번호(#N)가 있고 이 틱이 그 단계를 끝내지 않으면, 항목 id, 단계 번호, PR 번호를 알린다.
@@ -50,11 +49,11 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)과 done 항목은 알리지 않는다. 짧은 출력은 `BOARD <id> update-needed <단계> PR #<번호>` 다.
 //     같은 항목·단계·PR·글은 한 번만 알린다(lib/board-stale.ts 의 기록). 해결돼 목록에서 빠졌다가 다시 생기거나 단계 글이 바뀌면 다시 알린다
 //
-// 모든 항목(done, goal 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
+// 모든 항목(done 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
 // 창이 「worker 없음」 을 보이지 않게 한다. 워크트리 목록을 읽지 못하면 비우지 않는다
 //
 // 사용법:
-//     board-sync.ts [--board PATH] [--repo DIR] [--goal GOAL_ID --goal-items FILE] [--dry-run]
+//     board-sync.ts [--board PATH] [--repo DIR] [--dry-run]
 //
 //     --board       board.json. 기본은 work-board 의 board.ts 가 정한 위치
 //     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 extensions/work-board/bin/board.ts
@@ -64,13 +63,10 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     --completed-items 루프 내부용. worker_done 을 받은 dispatch 가 맡은 리뷰·검증 보드 항목 id JSON 목록. 그 항목만 끝낸다.
 //     --completed-reviews 루프 내부용. 지시서에 보드 항목 id 가 없는 dispatch 의 worker_done 을 받은 리뷰 PR 번호 JSON 목록. id 가 정확히 review-pr-N 인 항목만 끝낸다.
 //                   리뷰·검증 항목(그 id 의 가장 최근 지시서에 `리뷰 PR: #N` 이 있거나, 지시서를 못 읽으면 id 가 review-pr-N, verify-pr-N 꼴, 뒤에 -r2 같은 꼬리가 붙어도 된다)은 worker_done 을 받았거나 대상 PR 이 MERGED 면 남은 단계를 끝내고 done 으로 바꾼다.
-//     --goal, --goal-items
-//                   --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다.
-//                   --goal-items 가 없으면 목표 항목의 단계 줄을 센다
 //     --dry-run     보드를 고치지 않고 바뀔 항목과 부를 보드 명령만 낸다. 단계 목록은 읽는다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// done, goal 이 아닌 항목의 pr 칸이 비었으면 worktree 브랜치(없으면 저장한 branch)로 PR 을 연결한다.
+// done 이 아닌 항목의 pr 칸이 비었으면 worktree 브랜치(없으면 저장한 branch)로 PR 을 연결한다.
 // 후속 단계가 남아 비운 머지 PR 은 merged-pr 에 기록해 다시 연결하지 않는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
@@ -113,11 +109,10 @@ import { withoutEvidence } from '../core/evidence.ts'
 import { parseStepMark } from '../../../../extensions/work-board/hooks/step-marks.js'
 import { stageTag, parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { emit, short } from '../lib/output.ts'
-import { scriptPath } from '../lib/commands.ts'
 
-const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--goal GOAL_ID [--goal-items FILE]] [--dry-run]'
+const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--dry-run]'
 const LEGACY_AUTO = '자동: '
-const SKIP_STATUS = new Set(['done', 'goal'])
+const SKIP_STATUS = new Set(['done'])
 
 const OPTIONS = {
   'worker-ends': { type: 'string' },
@@ -127,8 +122,6 @@ const OPTIONS = {
   'open-prs': { type: 'string' },
   'completed-reviews': { type: 'string' },
   'completed-items': { type: 'string' },
-  goal: { type: 'string' },
-  'goal-items': { type: 'string' },
   'dry-run': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 } as const
@@ -242,10 +235,6 @@ function main(argv: string[]): number {
     out(USAGE)
     return 0
   }
-  if (values['goal-items'] && !values.goal) {
-    err('board-sync: --goal-items 는 --goal 과 함께 준다')
-    return 2
-  }
   const boardBin = values['board-bin'] || process.env.BOARD_BIN || BOARD_BIN
   let board: string
   try {
@@ -290,6 +279,9 @@ function main(argv: string[]): number {
     if (raw === undefined) throw new Error("'items'")
     const rows: unknown[] = Array.isArray(raw) ? raw : isRecord(raw) ? Object.values(raw) : []
     items = rows.filter(isRecord)
+    for (const item of items) {
+      if (item.status === 'goal') item.status = 'doing'
+    }
   } catch (e) {
     err(`board-sync: 보드를 읽지 못했다: ${board}: ${(e as Error).message}`)
     return 1
@@ -339,7 +331,7 @@ function main(argv: string[]): number {
     // 이번 틱에 머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)은 끝나지 않은 단계를 갱신 필요로 알리지 않는다
     let hold = false
     let reflected: { pr: string; steps: BoardStep[] } | null = null
-    // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 과 goal 항목도 본다
+    // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 항목도 본다
     const workerRows = boardWorkerRows(item)
     const missing = new Set<string>()
     for (const row of workerRows.filter((row) => row.status === 'working')) {
@@ -389,7 +381,7 @@ function main(argv: string[]): number {
     } else if (review) {
       // 리뷰 브랜치에는 구현 PR 을 연결하지 않는다. 리뷰 완료 보고나 대상 PR 머지로만 끝낸다.
     } else if (tagged.length > 0) {
-      // 꼬리표가 있는 수동 항목과 goal 은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
+      // 꼬리표가 있는 수동 항목은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
       for (const step of tagged.filter((step) => !step.done)) {
         const tag = parseEventTag(step.text)!
         if (tag.event === 'release') continue
@@ -669,12 +661,6 @@ function main(argv: string[]): number {
       }
       pruneUnmatched(repo, rows)
     }
-  }
-  if (values.goal && !dryRun) {
-    const cmd = [values.goal, '--board', board, '--board-bin', boardBin]
-    if (values['goal-items']) cmd.push('--items-file', values['goal-items'], '--details')
-    const done = run(scriptCommand(scriptPath('goal-progress'), cmd), { killSignal: 'SIGKILL' })
-    if (done.stderr) process.stderr.write(done.stderr)
   }
   if (short()) brief(`BOARD-SYNC ${changed.length}`)
   else out(`board-sync: ${changed.join(', ') || '바뀐 항목 없음'}`)

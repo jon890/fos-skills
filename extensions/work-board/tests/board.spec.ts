@@ -50,7 +50,7 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 describe('step 과 steps', () => {
   test('사건 꼬리표는 steps 출력과 단계 완료 뒤에도 남는다', () => {
     const text = '3. 배포 (#665 deploy)'
-    write({ id: 'g', status: 'goal', details: [text] })
+    write({ id: 'g', status: 'doing', details: [text] })
     let r = board('steps', 'g')
     assert.equal(r.code, 0, r.stderr)
     assert.deepEqual(JSON.parse(r.stdout), [{ number: 3, done: false, text }])
@@ -578,7 +578,7 @@ describe('set --detail 의 끝냄 표시 보존과 detail-edit, detail-add', () 
     write({ id: 'k', status: 'doing', details: rows(['1. a', true]) })
     assert.equal(board('detail-add', 'k', '2. b').code, 0)
     assert.deepEqual(item('k').details, rows(['1. a', true], ['2. b', false]))
-    write({ id: 'e', status: 'goal' })
+    write({ id: 'e', status: 'doing' })
     board('detail-add', 'e', '1. c')
     assert.deepEqual(item('e').details, rows(['1. c', false]))
   })

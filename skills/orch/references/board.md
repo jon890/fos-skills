@@ -4,7 +4,7 @@ work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 �
 보드 파일은 work-board 소유다. 기본 위치는 [`extensions/work-board/README.md`](../../../extensions/work-board/README.md) 가 정하고, 다른 곳이면 코디네이터가 `orch config set finish.board .omc/board.json` 으로 보드 파일을 정한다. 경로는 저장소에 맞게 바꾼다.
 
 orch 는 명령줄의 보드 파일, `finish.board`, 기본 위치 순서로 고른다. 설정의 상대경로는 주 checkout 기준이고, `finish.board` 가 빈 문자열이면 기본 위치를 쓴다. 설정이 깨졌거나 보드 값이 문자열이 아니면 한 줄 설명과 종료 코드 2 를 내고 기본 보드로 바꾸지 않는다. 루프에서는 `WATCH-ERROR` 로 알리고 뒤 단계와 다음 틱을 계속 실행한다.
-기존 `orch board sync`, `release`, `goal` 의 `--board` 상대경로는 명령을 부른 폴더 기준이다. `goal` 은 설정이 없으면 현재 작업 트리의 기본 보드를 쓰고, 정리 명령은 `cleanup.board` 를 먼저 쓴다.
+기존 `orch board sync`, `release` 의 `--board` 상대경로는 명령을 부른 폴더 기준이다. 정리 명령은 `cleanup.board` 를 먼저 쓴다.
 보기와 지우기는 `orch board list`, `orch board del` 을 쓴다. 보드 창과 `board.ts set`, `board.ts mark` 는 orch 설정을 읽지 않으므로 다른 위치를 쓰면 직접 명령에 `--file` 로 같은 파일을 준다.
 
 동기화와 마무리는 읽은 단계 목록을 통째로 저장할 때 줄 지문을 함께 보낸다. 그 사이 글이나 완료 값이 바뀌었으면 덮어쓰지 않는다. 동기화는 그 항목을 다음 틱에 다시 읽고, 릴리스 반영은 다른 항목을 처리한 뒤 종료 코드 1 을 내므로 다시 실행한다. worker 등록과 마무리는 다시 읽어 한 번 재시도한다.
@@ -48,7 +48,7 @@ worker 를 띄울 때 리뷰·검증은 대상 PR 의 항목(done 포함)에, �
 **`board.json` 은 직접 고치지 않는다.** 상태와 단계는 아래 명령으로 고친다. 새 항목을 만들거나 제목·PR·담당 워크트리 같은 칸을 고칠 때는 `board.ts set`, 번호 없는 줄을 끝낼 때는 `board.ts mark`, 항목을 지울 때는 아래 `orch board del` 을 쓴다.
 
 ```text
-orch board set <항목> <goal|decide|doing|wait|done>
+orch board set <항목> <decide|doing|wait|done>
 orch board step <항목> <번호> done|undo
 orch board step <항목> <번호> text "<번호를 포함한 줄 전체>" [--on "<PR> <사건>"]
 orch board step <항목> <번호> auto|ask|plain
@@ -140,12 +140,12 @@ orch board del --done
 orch board release --release "$RELEASE_PR"
 ```
 
-**PR 머지 반영과 목표 진행률은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
+**PR 머지 반영은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
 결정과 다음 할 일처럼 사람만 아는 단계는 코디네이터가 직접 쓴다. 부르는 시점은 아래 「갱신 담당」 표의 「틱마다」 행에 있다.
 
 ## 직접 작성한 사건 단계
 
-코디네이터가 직접 항목이나 goal 을 쓸 때는 자동으로 끝낼 단계의 줄 끝에 `(#665 merge)` 처럼 PR 번호와 사건을 붙인다.
+코디네이터가 직접 항목을 쓸 때는 자동으로 끝낼 단계의 줄 끝에 `(#665 merge)` 처럼 PR 번호와 사건을 붙인다.
 `pr`, `merge`, `deploy`, `release` 를 쓰며, `3. develop 머지 (#665 merge)`, `4. dev 배포 (#665 deploy)`, `5. real 반영 (#665 release)` 처럼 적는다.
 꼬리표가 있는 항목은 진행률을 세는 쪽의 사건 단계만 끝낸다. 꼬리표 없는 줄과 항목 상태는 코디네이터가 관리한다.
 `stages` 와 함께 있어도 줄 끝 꼬리표를 우선한다. `finish-pr.ts` 도 꼬리표 항목은 일괄 완료하지 않고 `board-sync.ts` 에 맡긴다. 창에서는 꼬리표를 숨기지만 원본과 `board.ts steps` 출력에는 남는다.
@@ -194,7 +194,7 @@ orch board release --release "$RELEASE_PR"
 | PR 머지 뒤 | `board-sync.ts` | 그 PR 의 마무리(`finish-pr.ts`)가 돌고 있으면 그 항목은 마무리에 맡긴다. 아니면 마지막 PR 인지 판정한다([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」). gh 조회 실패로 판정하지 못하면 다음 틱에 다시 판정한다. 마일스톤 항목은 `[merge]` 단계까지(배포가 이미 성공했으면 `[deploy]` 까지) 끝내고, 마지막 PR 이 done 지점에 닿았고 그 뒤에 끝나지 않은 수동 단계가 없으면 done 으로 바꾼다. 마지막 PR 을 판정하지 못한 경우에는 단계가 하나 이상이고 모두 끝났으며 열린 PR, 작업 중 worker, 남은 일 줄이 없을 때만 done 으로 바꾼다. 중간 PR 은 `pr` 필드를 비워 `merged-pr` 에 쌓고 `남은 일:` 줄을 둔다. 옛 항목의 규칙은 `board-sync.ts` 머리 주석이 소유한다 |
 | 배포 성공 뒤 | `board-sync.ts`, `finish-pr.ts` | 마일스톤 항목의 `[deploy]` 단계를 끝내고, 마지막 PR 이 done 지점에 닿았으면 done 으로 바꾼다. `finish-pr.ts` 는 마지막 PR 인지 판정하지 못하면 중간 PR 로 본다. `merged-pr` 의 PR 은 다시 판정하지 않는다 |
 | 릴리스 뒤 | `board-release.ts` | 저장소가 부른다. 릴리스에 든 PR 의 항목에서 `[release]` 단계까지 끝내고, done 지점에 닿았으면 done 으로 바꾼다 |
-| 사건 꼬리표 확인 | `board-sync.ts`, `board-release.ts` | done 을 제외한 goal 과 수동 항목도 줄 끝의 `(#PR번호 사건)` 을 읽어 그 줄만 끝낸다. 다른 줄과 항목 상태는 그대로 둔다 |
+| 사건 꼬리표 확인 | `board-sync.ts`, `board-release.ts` | done 을 제외한 수동 항목도 줄 끝의 `(#PR번호 사건)` 을 읽어 그 줄만 끝낸다. 다른 줄과 항목 상태는 그대로 둔다 |
 | 결정·수동 단계 변경 | 코디네이터 | decide·wait 상태와 꼬리표 없는 수동 단계의 완료를 `orch board set`, `orch board step` 으로 반영한다. 번호 없는 결정 줄은 `board.ts mark` 로 끝낸다. 자동 반영이 빠졌을 때만 사건 단계를 직접 고친다 |
 
 자동 연결의 근거와 `pr`·`merged-pr` 필드의 값 읽기는 `board-sync.ts` 와 `board.ts` 머리 주석이 소유한다. 수동 갱신은 자동 반영이 누락됐을 때만 쓴다.
@@ -202,18 +202,9 @@ orch board release --release "$RELEASE_PR"
 **DECISION-PENDING 을 받으면 코디네이터는 배경, 선택지, 권장안을 정리해 사용자에게 묻는다.** 이미 물어 답을 기다리는 결정은 다시 묻지 않는다.
 알림 기억과 기본 핸들러, 사용자 질문 절차는 [`waiting.md`](waiting.md) 와 [`replying.md`](replying.md) 가 소유한다.
 
-## 목표 진행 표시줄
+`orch board sync`, `orch board release`는 바꾼 항목마다 `BOARD <id> …`와 끝 줄 `BOARD-SYNC <수>`, `BOARD-RELEASE <수>`를 낸다. 설명 줄과 세부 줄은 `--full`로 본다.
 
-하루 목표처럼 여러 단계를 묶은 목표 항목은 `goal-progress.ts` 로 진행 표시줄을 다시 계산한다.
-`$GOAL_ID` 는 목표 항목 id 다. 무엇을 단계로 세는지는 스크립트 머리 주석이 소유한다.
-
-```bash
-orch board goal "$GOAL_ID"
-```
-
-기본 출력은 `GOAL <목표> <완료/전체>` 한 줄이다. `orch board sync`, `orch board release` 는 바꾼 항목마다 `BOARD <id> …` 와 끝 줄 `BOARD-SYNC <수>`, `BOARD-RELEASE <수>` 다. 설명 줄과 세부 줄은 `--full` 이다.
-
-보드 파일과 도구 위치, 추적 항목 목록(`--items-file`) 같은 하위 호환 옵션은 스크립트 머리 주석이 소유한다.
+옛 보드 파일의 `goal` 상태는 내용을 보존해 `doing`으로 읽는다. 다음 저장에서 `doing`으로 남긴다. 진행률도 단계도 없던 항목은 고칠 때 `--progress` 나 단계 줄을 함께 줘야 한다. 새 상태로 `goal`을 쓰면 허용 상태를 알리며 거절한다. 이제 이 항목도 PR 연결, 단계 완료, `done` 전환 대상이다. 목표 진행률 집계 명령은 더 이상 제공하지 않는다.
 
 ## 못 맞춘 머지와 남은 수동 단계
 

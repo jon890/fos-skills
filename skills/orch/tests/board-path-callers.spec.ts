@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { registerBoard } from '../scripts/lib/board.ts'
+import { readBoard, registerBoard } from '../scripts/lib/board.ts'
 import { collectStages, movementSettings } from '../scripts/lib/movement.ts'
 import { context, initialState } from '../scripts/loop/steps/context.ts'
 import type { StepContext } from '../scripts/loop/steps/context.ts'
@@ -46,7 +46,6 @@ function items() { return JSON.parse(readFileSync(chosen, 'utf8')).items }
 for (const [script, args, prefix] of [
   ['board/board-sync', ['--repo'], 'board-sync'],
   ['board/board-release', ['--repo', '--pr', '1'], 'board-release'],
-  ['board/goal-progress', ['goal'], 'goal-progress'],
   ['paths/orch_paths', ['--repo', 'board'], 'orch_paths'],
   ['cleanup/handoff-cleanup', ['--repo'], 'handoff-cleanup'],
 ] as const) {
@@ -66,7 +65,7 @@ for (const [script, args, prefix] of [
   }
 }
 
-test('sync, release, goal, paths 는 설정 보드만 읽거나 고친다', () => {
+test('sync, release, paths 는 설정 보드만 읽거나 고친다', () => {
   const original = readFileSync(fallback, 'utf8')
   board([{ id: 'sync', status: 'doing', pr: '#7', details: ['1. 구현 #7'] }])
   let done = cli('board/board-sync', ['--repo', repo])
@@ -76,10 +75,6 @@ test('sync, release, goal, paths 는 설정 보드만 읽거나 고친다', () =
   done = cli('board/board-release', ['--repo', repo, '--pr', '7'])
   assert.equal(done.status, 0, done.stderr)
   assert.equal(items()[0].status, 'done')
-  board([{ id: 'goal', status: 'goal', details: ['sync'] }, { id: 'sync', status: 'done' }])
-  done = cli('board/goal-progress', ['goal', 'sync'])
-  assert.equal(done.status, 0, done.stderr)
-  assert.equal(items()[0].progress, '1/1')
   done = cli('paths/orch_paths', ['--repo', repo, 'board'])
   assert.equal(done.status, 0, done.stderr)
   assert.equal(done.stdout.trim(), chosen)
@@ -210,3 +205,13 @@ for (const command of ['sync', 'release']) {
     assert.match(done.stdout, new RegExp(`BOARD-${command.toUpperCase()} 1`))
   })
 }
+
+test('공유 보드 읽기는 목록과 객체의 옛 목표 상태를 진행 중으로 읽고 파일은 보존한다', () => {
+  const old = { id: 'old', status: 'goal', progress: '1/2', details: ['1. 구현', '2. 리뷰'] }
+  for (const rows of [[old], { old }]) {
+    const source = JSON.stringify({ items: rows })
+    writeFileSync(chosen, source)
+    assert.deepEqual(readBoard(chosen), [{ ...old, status: 'doing' }])
+    assert.equal(readFileSync(chosen, 'utf8'), source)
+  }
+})

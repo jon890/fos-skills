@@ -194,7 +194,6 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `cleanup worktree` | `removed …`, `deleted branch …`, `남김:`, `없음:`, `거부:`, `대기:`, 유휴 셸 줄 | `REMOVED <경로>`, `REMOVED <브랜치>`, `KEPT <대상> <이유>`, `ABSENT <경로>`, `NOT-WORKTREE <경로>`, `REFUSED <이유>`, `CLOSED <터미널>` | `references/cleanup.md` |
 | `cleanup handoff` | `후보 …`, `옮김 …`, `휴지통 폴더: …` 와 지시서 지우기 줄 | `WOULD-TRASH <파일>`, `TRASHED <파일>`, `TRASH-DIR <폴더>` 와 `cleanup sweep` 과 같은 지시서 줄 | `references/cleanup.md` |
 | `board sync`, `board release` | `board-sync: …` 설명, 항목과 들여 쓴 board 명령, 끝 요약 | 항목마다 `BOARD <id> <바뀐 것>`(`done`, `updated`, 바꾸지 않은 이유 `pending-feature`, `finishing`), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 나 `BOARD-RELEASE <바뀐 항목 수>` | `references/board.md` |
-| `board goal` | `<목표> <값>`, `<목표> 단계 줄이 없어 …` | `GOAL <목표> <값>`, `GOAL-SKIP <목표>` | `references/board.md` |
 | `board auto-check` | 확인 결과와 단계·근거 설명 | `AUTO-OK <항목> <번호> <근거>`, `AUTO-REJECT <항목> <번호 또는 -> <이유>` | `references/replying.md` |
 | `study …` | 없음 | 지금 줄(`ADDED`, `SET`, `MIGRATED`, `TRASHED`, `list` 의 탭 줄)이 이미 판정 줄이나 데이터다 | `references/study-candidates.md` |
 | `spec review` | 없음 | `REVIEW-SPEC <파일>`, `REVIEW-SPEC-WORKER impl=<구현> review=<리뷰>`, `REVIEW-SPEC-FILL <설명>; <설명>`, `REVIEW-SPEC-WARN <이유>`, `REVIEW-SPEC-EXISTS <파일>`, `REVIEW-SPEC-FAIL <이유>` | `references/spec-writing.md` |

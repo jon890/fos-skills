@@ -776,3 +776,14 @@ test('workers 칸이 없는 옛 항목은 지금 그림과 같고 worker 가 없
   expect(await texts(ui, 'p')).toContain('w:⚙ worker 없음 (wp)')
   await ui.unmount()
 })
+
+test('옛 목표 항목은 진행 중에 그려 전체 진행률에 포함한다', async ($, on) => {
+  const old = JSON.stringify({ items: [{ id: 'old', title: '기존 항목', status: 'goal', details: ['✓ 1. 구현', '2. 리뷰'] }] })
+  await start($, on, undefined, old)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Box', key: 'item-old' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /진행 중/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /1\/2 \(50%\)/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /★|^목표/ })).toBeFalsy()
+  await ui.unmount()
+})

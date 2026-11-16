@@ -13,7 +13,7 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 //        끊김(lost) 줄은 접힌 보기에서도 한 줄씩 빨간 「⚠ 끊김 역할 워크트리」 로, 끝남(done) 줄은 접힌 보기에서 「✓ 끝난 worker N」 한 줄로 묶는다.
 //        펼친 보기(d)는 모든 줄을 at 순으로 그린다. 완료 항목은 두 보기 모두 작업 중 줄만 그린다. 작업 중 줄이 있으면 「worker 없음」 을 그리지 않는다.
 //        workers 칸이 없는 옛 항목은 worktree 칸의 worker 하나를 붙인다(workerRowsFor).
-//      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
+//      status: decide(결정 필요), doing(진행 중), wait(대기), done(완료)
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
 //      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
@@ -118,7 +118,6 @@ const REAL_ARM_MS = 10000 // real 대기의 「승인」 을 처음 누른 뒤 �
 const APPROVAL_OLD_MS = 24 * 60 * 60 * 1000
 const APPROVAL_KINDS = { post: '글 등록', spec: '스펙 확인', step: '단계 진행 허락', real: 'real 쓰기', command: '직접 실행' }
 const SECTIONS = [
-  { status: 'goal', label: '목표', color: 'magenta', mark: '★' },
   { status: 'decide', label: '결정 필요', color: 'red', mark: '◆' },
   { status: 'doing', label: '진행 중', color: 'yellow', mark: '▶' },
   { status: 'wait', label: '대기', color: 'cyan', mark: '◇' },
@@ -1294,6 +1293,9 @@ async function loadFile($) {
     raw = text
     try {
       board = JSON.parse(text)
+      for (const item of Array.isArray(board?.items) ? board.items : []) {
+        if (item.status === 'goal') item.status = 'doing'
+      }
     } catch (failure) {
       board = { items: [], error: String(failure && failure.message ? failure.message : failure) }
     }
@@ -1978,7 +1980,7 @@ export function register(on) {
         ...(questionError ? [dim('qe', '읽지 못했어요: ' + questionError)] : []),
         ...(live.questionsLimited ? [dim('ql', '최근 질문 100건과 읽지 않은 질문 최대 100건 기준이에요. 더 오래된 미답변은 빠질 수 있어요.')] : []),
         ...asked.map(questionView),
-        ...decideRows.map((item) => itemView(item, SECTIONS[1])),
+        ...decideRows.map((item) => itemView(item, SECTIONS[0])),
       ])]
 
     // 승인 대기: 모든 Run 이 올린 열린 대기. 누를 수 있는 창에만 「승인」, 「고쳐 달라」, 「명령 채우기」 를 그린다.
@@ -2311,13 +2313,12 @@ export function register(on) {
         }),
         ...(board && board.error ? [Text({ color: 'red', wrap: 'wrap', children: ['board.json 을 읽지 못했어요: ' + board.error] })] : []),
         ...(nothing ? [dim('none', '보여 줄 작업이 없어요. orca run 이나 열린 PR, ' + BOARD_PATHS[0] + ' 중 하나가 있어야 해요.')] : []),
-        ...manualView(SECTIONS[0]),
         ...approvalView,
         ...decideView,
         ...inboxView,
         ...workerView,
         ...prView,
-        ...SECTIONS.slice(2).flatMap(manualView),
+        ...SECTIONS.slice(1).flatMap(manualView),
       ],
     })
   })

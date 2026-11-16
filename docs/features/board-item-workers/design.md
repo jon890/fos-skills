@@ -138,7 +138,7 @@ board.ts worker-link <id> --worktree W --pr N         # PR2
 - `lost`: 그 밖에 끝난 dispatch. `dispatchStatus` 가 `failed`·`abandoned`·`completed` 거나, `workerState` 가 `abandoned`·`failed`·`stopped` 거나, `projection.outcome` 이 `cancelled`·`failed` 거나, `lostWorkers` 가 낸 dispatch(`terminal_missing`, `liveness_exited`)
 - 행은 `rowsOf(run, ctx.lookup)` 로 이번 틱의 Run 마다 한 번 읽은 것을 쓴다. 읽지 못한 Run 의 dispatch 는 넣지 않는다. 오래 움직이지 않는 것은 끝남이 아니다(스펙 DECISION14)
 
-보드 맞추기는 항목마다(done, goal 포함) `working` 줄 가운데 `dispatch` 가 이 목록에 있으면 그 값으로 `worker-end` 를 부른다. 워크트리 목록을 읽었고 줄의 `worktree` 가 목록에 없으면 `worker-end <id> lost --worktree W --clear` 를 부른다. 그 워크트리의 작업 중 줄이 있으면 325행의 `set --worktree ''` 는 내지 않는다. 줄 끝내기가 대표 칸을 다른 작업 중 줄로 바꾸거나 비운다. 틱 처음에 읽은 값으로 비우면 새 대표를 지운다. 줄 끝내기 명령은 그 항목의 다른 명령보다 앞에 둔다.
+보드 맞추기는 항목마다(done 포함) `working` 줄 가운데 `dispatch` 가 이 목록에 있으면 그 값으로 `worker-end` 를 부른다. 워크트리 목록을 읽었고 줄의 `worktree` 가 목록에 없으면 `worker-end <id> lost --worktree W --clear` 를 부른다. 그 워크트리의 작업 중 줄이 있으면 325행의 `set --worktree ''` 는 내지 않는다. 줄 끝내기가 대표 칸을 다른 작업 중 줄로 바꾸거나 비운다. 틱 처음에 읽은 값으로 비우면 새 대표를 지운다. 줄 끝내기 명령은 그 항목의 다른 명령보다 앞에 둔다.
 
 ### 리뷰 항목 판정
 

@@ -15,9 +15,9 @@
 //     --dry-run     보드를 고치지 않고 바뀔 항목과 부를 보드 명령만 낸다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// 줄 끝 사건 꼬리표가 있는 항목은 goal 도 포함해 릴리스에 든 PR 의 release 줄만 끝낸다.
+// 줄 끝 사건 꼬리표가 있는 항목은 릴리스에 든 PR 의 release 줄만 끝낸다.
 //     다른 줄과 항목 상태는 그대로 둔다. 꼬리표가 없으면 아래 마일스톤 규칙을 쓴다.
-// 대상 항목: done, goal 이 아니고, stages 칸에 release 가 있고, 그 단계가 끝나지 않은 항목이다.
+// 대상 항목: done 이 아니고, stages 칸에 release 가 있고, 그 단계가 끝나지 않은 항목이다.
 //     --release 로 찾을 때는 pr 칸의 PR 만 본다. 마일스톤 항목은 업무의 마지막 PR 을 pr 칸에 남긴다(board-sync.ts).
 //     pr 칸이 비었거나 그 PR 이 머지되지 않았으면 건너뛴다. 업무의 뒤 PR 이 아직 남은 항목이다
 // 끝내기: lib/milestones.ts 의 mergedCommands 를 마지막 PR 로 부른다. [release] 와 그 앞 사건 단계를 끝내고 남은 일 줄을 지우고,
@@ -43,7 +43,7 @@ import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tag
 import { emit, short } from '../lib/output.ts'
 
 const USAGE = '사용법: board-release.ts (--release PR | --pr N [--pr N ...]) [--repo DIR] [--board PATH] [--board-bin PATH] [--dry-run]'
-const SKIP_STATUS = new Set(['done', 'goal'])
+const SKIP_STATUS = new Set(['done'])
 
 const OPTIONS = {
   release: { type: 'string' },
@@ -138,6 +138,9 @@ function main(argv: string[]): number {
   try {
     const raw = (JSON.parse(readFileSync(board, 'utf8')) as { items?: unknown }).items
     items = (Array.isArray(raw) ? raw : isRecord(raw) ? Object.values(raw) : []).filter(isRecord)
+    for (const item of items) {
+      if (item.status === 'goal') item.status = 'doing'
+    }
   } catch (e) {
     err(`board-release: 보드를 읽지 못했다: ${board}: ${(e as Error).message}`)
     return 1

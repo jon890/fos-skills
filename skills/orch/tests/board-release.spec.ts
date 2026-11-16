@@ -77,7 +77,7 @@ describe('board-release', () => {
     states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
     const r = release([
       { id: 'a', status: 'doing', pr: 7, stages: STAGES, details: four(3) },
-      { id: 'b', status: 'goal', details: [step('1. 릴리스 (#7 release)', false)] },
+      { id: 'b', status: 'doing', details: [step('1. 릴리스 (#7 release)', false)] },
     ], ['--release', '100', '--dry-run'])
     assert.equal(r.code, 0, r.result.stderr)
     assert.match(r.result.stdout, /step a 4/)
@@ -202,27 +202,34 @@ describe('board-release', () => {
 
 describe('손으로 쓴 release 단계', () => {
   const details = [step('1. 반영 (#7 release)', false), step('2. 다른 반영 (#8 release)', false), step('3. 사람이 확인', false)]
-  test('--pr 은 goal 과 next 의 지정 PR 단계만 끝낸다', () => {
-    const r = release([{ id: 'g', status: 'goal', next: details }, { id: 'a', status: 'doing', pr: 9, details }], ['--pr', '7'])
+  test('--pr 은 수동 항목과 next 의 지정 PR 단계만 끝낸다', () => {
+    const r = release([{ id: 'g', status: 'doing', next: details }, { id: 'a', status: 'doing', pr: 9, details }], ['--pr', '7'])
     assert.equal(r.code, 0, r.result.stderr)
     const want = details.map((d, i) => ({ ...d, done: i === 0 }))
     assert.deepEqual(r.board.g.next, want)
     assert.deepEqual(r.board.a.details, want)
-    assert.equal(r.board.g.status, 'goal')
+    assert.equal(r.board.g.status, 'doing')
     assert.equal(r.board.a.status, 'doing')
   })
   test('--release 는 릴리스 커밋이 포함한 PR 의 단계만 끝낸다', () => {
     states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release } }
     states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
     states['8'] = { state: 'MERGED', mergeCommit: { oid: commits.later } }
-    const r = release([{ id: 'g', status: 'goal', details }], ['--release', '100'])
+    const r = release([{ id: 'g', status: 'doing', details }], ['--release', '100'])
     assert.equal(r.code, 0, r.result.stderr)
     assert.deepEqual(r.board.g.details, details.map((d, i) => ({ ...d, done: i === 0 })))
   })
   test('dry-run 은 보드를 바꾸지 않는다', () => {
-    const r = release([{ id: 'g', status: 'goal', details }], ['--pr', '7', '--dry-run'])
+    const r = release([{ id: 'g', status: 'doing', details }], ['--pr', '7', '--dry-run'])
     assert.equal(r.code, 0, r.result.stderr)
     assert.deepEqual(r.board.g.details, details)
     assert.match(r.result.stdout, /step g 1/)
   })
+})
+
+test('옛 목표 항목도 진행 중처럼 릴리스 단계를 끝낸다', () => {
+  const r = release([{ id: 'old', status: 'goal', pr: 7, stages: 'release=1', details: ['1. 릴리스'] }], ['--pr', '7'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.old.status, 'done')
+  assert.equal(r.board.old.details[0].done, true)
 })

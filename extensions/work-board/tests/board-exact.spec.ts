@@ -11,7 +11,7 @@ test('엄격 set 은 명시한 빈 상태를 거절하고 상태 생략과 기�
     const before = readFileSync(t.file, 'utf8')
     const refused = run(t.file, ['set', 'a', '', '--exact'])
     assert.equal(refused.code, 1)
-    assert.match(refused.stderr, /status 는 goal\|decide\|doing\|wait\|done 중 하나다/)
+    assert.match(refused.stderr, /status 는 decide\|doing\|wait\|done 중 하나다/)
     assert.equal(refused.stdout, '')
     assert.equal(readFileSync(t.file, 'utf8'), before)
     assert.equal(run(t.file, ['set', 'a', '--title', '바꾼 제목', '--exact']).code, 0)
@@ -28,11 +28,11 @@ test('엄격 set 은 없는 항목을 만들지 않고 기존 진행률 검사�
   const t = tempBoard()
   try {
     assert.equal(run(t.file, ['set', 'nope', 'doing', '--exact']).code, 1); assert.ok(!existsSync(t.file))
-    write(t.file, { id: 'a', status: 'goal' })
+    write(t.file, { id: 'a', status: 'wait' })
     const normal = run(t.file, ['set', 'a', 'doing']), exact = run(t.file, ['set', 'a', 'doing', '--exact'])
     assert.equal(normal.code, 1); assert.equal(exact.code, 1); assert.equal(exact.stderr, normal.stderr)
     const result = run(t.file, ['set', 'a', 'wait', '--exact'])
-    assert.equal(result.code, 0); assert.deepEqual(JSON.parse(result.stdout), { id: 'a', status: 'wait', was: 'goal', progress: null, rev: linesRev(undefined), lines: [] })
+    assert.equal(result.code, 0); assert.deepEqual(JSON.parse(result.stdout), { id: 'a', status: 'wait', was: 'wait', progress: null, rev: linesRev(undefined), lines: [] })
     assert.equal(result.stdout.trim().split('\n').length, 1)
     assert.equal(run(t.file, ['set', 'nope', 'wait']).stdout, ''); assert.ok(item(t.file, 'nope'))
   } finally { t.cleanup() }
