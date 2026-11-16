@@ -159,7 +159,7 @@ worker 에게 보내는 코어 명령은 `orch worker send` 다. 터미널 직�
 
 ## Claude 커밋 제목 검사
 
-플러그인의 `hooks/hooks.json` 에 등록한 `block-broken-commit-subject.ts` 는 Claude 의 Bash 호출에서 커밋과 push 전에 제목 첫 줄을 검사한다. 글자 `\n\n`, `cat <<`, `python3 `, `python `, `gh ` 로 시작하는 코드와 `EOF` 만 있는 제목을 막는다. 낱개 `\n` 과 본문의 코드 예시는 통과한다.
+플러그인의 `hooks/hooks.json` 에 등록한 `block-broken-commit-subject.ts` 는 Claude 의 Bash 호출에서 커밋과 push 전에 제목 첫 줄을 검사한다. 글자 `\n\n`, `cat <<` 로 시작하는 코드와 `EOF` 만 있는 제목을 막는다. `python`·`python3`·`gh` 로 시작하면 셸 문법 표지, Python 파일 경로, gh 하위 명령이 있는 경우만 막는다. `gh 인증 안내를 고친다` 같은 일반 제목은 허용한다. 낱개 `\n` 과 본문의 코드 예시는 통과한다.
 
 `git commit` 의 첫 `-m` 이나 `-F` 파일을 읽고, push 때는 어느 원격 추적 브랜치에도 없는 커밋만 읽는다. main 을 merge 나 rebase 하면서 들어온 과거 커밋도 이미 원격에 있으면 검사하지 않는다. 커밋을 조회하지 못하면 push 를 허용한다. 막혔으면 메시지를 파일로 써서 다시 커밋하고, 이미 만든 커밋은 amend 나 rebase 로 고친다.
 

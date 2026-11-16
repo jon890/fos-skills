@@ -10,8 +10,14 @@ import { resolve } from 'node:path'
 import { mask, pieces, stripHeredocs } from './shell-text.ts'
 
 function broken(message: string): boolean {
-  const subject = message.split(/\r?\n/, 1)[0]
-  return subject.includes('\\n\\n') || /^(?:cat\s+<<|python3?\s|gh\s|EOF\s*$)/.test(subject.trimStart())
+  const subject = message.split(/\r?\n/, 1)[0].trimStart()
+  if (subject.includes('\\n\\n') || /^(?:cat\s+<<|EOF\s*$)/.test(subject)) return true
+  if (!/^(?:python3?|gh)\s/.test(subject)) return false
+  // 도구 이름만으로는 코드가 아니다. 셸 문법, Python 파일, gh 의 하위 명령을 본다.
+  return /<<|\$\(|[|<>]|\s--?[A-Za-z]/.test(subject) ||
+    /^python3?\s+\S+\.py(?:\s|$)/.test(subject) ||
+    /^gh\s+(?:pr|issue|repo|auth|run|workflow|release|config)\s+[a-z][a-z-]*(?:\s|$)/.test(subject) ||
+    /^gh\s+api\s+[A-Za-z0-9_./{}-]+(?:\s|$)/.test(subject)
 }
 
 // 따옴표 조각을 합치되 동적인 값은 null 로 둔다. 단일 인용의 $ 와 역슬래시는 그대로다.
