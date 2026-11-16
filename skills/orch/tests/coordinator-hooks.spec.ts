@@ -107,6 +107,12 @@ describe('block-git-after-cd', () => {
     }
   })
 
+  test('명령 치환 heredoc 본문의 인용·cd·push 문구는 명령이 아니다', () => {
+    const command = 'git commit -m "$(cat <<\'EOF\'\n제목\n\n"인용" 후\norca orchestration check --wait &\ncd x; git push\nEOF\n)"'
+    assert.equal(decide(HOOK, command), 'pass')
+    assert.equal(decide('block-broken-commit-subject.ts', command), 'pass')
+  })
+
   test('here-string 과 시프트는 뒤 명령을 가리지 않는다', () => {
     for (const command of ['echo $((1<<2))\ncd /r; git push', 'grep x <<< word\ncd /r; git push']) {
       assert.equal(decide(HOOK, command), 'deny', command)
@@ -115,6 +121,197 @@ describe('block-git-after-cd', () => {
 
   test('다른 도구와 읽지 못한 입력은 통과한다', () => {
     assert.equal(decide(HOOK, 'cd x; git push', {}, 'Read'), 'pass')
+    const r = runHook(HOOK, 'not json')
+    assert.deepEqual({ code: r.code, stdout: r.stdout }, { code: 0, stdout: '' })
+  })
+})
+
+describe('block-broken-commit-subject', () => {
+  const HOOK = 'block-broken-commit-subject.ts'
+  const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'"
+
+  test('제목의 연속된 글자 줄바꿈과 코드 시작을 막는다', () => {
+    for (const subject of ['fix: x\\n\\n본문', 'cat <<EOF', 'cat <<EOF\n본문', 'python3 script.py', 'python script.py', 'gh pr create', 'EOF']) {
+      for (const flag of ['-m ', '--message=', '-m', '-am ', '-em ']) {
+        const v = verdict(HOOK, `git commit ${flag}${quote(subject)}`)
+        assert.equal(v.decision, 'deny', `${flag}${subject}`)
+        assert.match(v.reason, /git commit -F/)
+      }
+    }
+    assert.equal(decide(HOOK, 'git commit -m "fix: x\\n\\n본문"'), 'deny')
+    assert.equal(decide(HOOK, 'git -c core.editor=true commit -m "gh pr create"'), 'deny')
+    assert.equal(decide(HOOK, "git commit --author '-m' -m EOF"), 'deny')
+  })
+
+  test('제목 첫 줄만 보고 첫 -m 뒤의 본문과 명령이 아닌 글은 통과한다', () => {
+    for (const command of [
+      `git commit -m ${quote('fix(orch): 글자 \\n 검사를 더한다')}`,
+      `git commit -m ${quote('fix: 제목\n\ncat <<EOF\npython3 x\ngh pr create\nEOF\n글자 \\n\\n')}`,
+      "git commit -m 'fix: 제목' -m 'gh pr create'",
+      "git commit -em 'fix: 정상 제목'",
+      "echo git commit -m 'EOF'",
+      "echo 'git push; git commit -m EOF'",
+      "cat <<'END'\ngit commit -m EOF\nEND",
+      "git status # git commit -m EOF",
+      'git commit -m "$MESSAGE"',
+      'git commit -m "$(cat message.txt)"',
+      'git commit -F -',
+      'git commit -F /no/such/file',
+      'git commit -- --message=EOF',
+      'git commit # -m EOF',
+      "git commit --author '-m' EOF -m 'fix: 제목'",
+    ]) assert.equal(decide(HOOK, command), 'pass', command)
+  })
+
+  test('도구 이름으로 시작하는 일반 제목은 허용하고 실제 명령과 사고 제목은 막는다', () => {
+    for (const subject of ['gh 인증 안내를 고친다', 'gh 명령 실패를 고친다', 'python 훅을 고친다', 'python3 설치 방법을 쓴다', 'gh pr create 안내를 고친다', 'gh auth login 안내를 고친다', 'gh api 호출에 -v 옵션을 더한다', 'python3 -m venv 안내를 고친다']) {
+      assert.equal(decide(HOOK, `git commit -m ${quote(subject)}`), 'pass', subject)
+    }
+    for (const subject of [
+      'python3 -c "print(1)"', 'python -m json.tool', 'python script.py',
+      'gh api repos/owner/repo', 'gh pr create', 'gh auth login', 'gh command --help',
+      'gh $(cat command.txt)', 'python input | cat', 'gh output > result.txt',
+      // 실제 사고 bfcb7a2a 와 70d82f60 의 제목 형태도 계속 거부한다.
+      'chore(browser): 스킬을 3.0.0 으로 올린다\\n\\n옛 이름 진입을 지운다',
+      'chore(browser): 옛 이름 진입 browser_driver.py 를 지운다\\n\\n옛 링크를 지운다',
+    ]) assert.equal(decide(HOOK, `git commit -m ${quote(subject)}`), 'deny', subject)
+  })
+
+  test('따옴표 구분자의 cat heredoc 메시지만 실행 전에 읽는다', () => {
+    const heredoc = (message: string, delimiter: string) => `"$(cat <<${delimiter}\n${message}\nEND\n)"`
+    for (const delimiter of ["'END'", '"END"']) {
+      for (const flag of ['-m ', '--message=', '-m']) {
+        for (const subject of ['fix: x\\n\\n본문', 'EOF', 'python script.py']) {
+          assert.equal(decide(HOOK, `git commit ${flag}${heredoc(subject, delimiter)}`), 'deny', `${flag}${delimiter}: ${subject}`)
+        }
+        const normal = 'fix: 제목\n\n"인용" 후\norca orchestration check --wait &\ncd x; git push\n글자 \\n\\n'
+        assert.equal(decide(HOOK, `git commit ${flag}${heredoc(normal, delimiter)}`), 'pass', delimiter)
+      }
+    }
+    assert.equal(decide(HOOK, `git commit -m ${heredoc('fix: x\\n\\n본문', 'END')}`), 'pass')
+    assert.equal(decide(HOOK, 'git commit -m "$(cat message.txt)"'), 'pass')
+    // 작은따옴표 문자열 안에 쓴 명령 설명은 실제 치환이 아니다.
+    assert.equal(decide(HOOK, `echo '${heredoc('EOF', '"END"')}'`), 'pass')
+  })
+
+  test('큰따옴표의 확장은 실행하지 않고 제목 첫 줄의 글자 줄바꿈만 검사한다', () => {
+    for (const command of [
+      'git commit -m "fix: `x` 고친다\\n\\n본문"',
+      'git commit -m "fix: $NAME 고친다\\n\\n본문"',
+    ]) assert.equal(decide(HOOK, command), 'deny', command)
+    for (const command of [
+      'git commit -m "fix: `x` 고친다"',
+      'git commit -m "fix: $NAME 고친다\\n"',
+      'git commit -m "fix: $NAME 고친다\n\n본문 \\n\\n"',
+      'git commit -m "$MESSAGE"',
+    ]) assert.equal(decide(HOOK, command), 'pass', command)
+  })
+
+  test('-F 파일과 -C, cd 기준의 상대 경로를 읽는다', () => {
+    const dir = mkdtempSync(join(root, 'messages-'))
+    const file = join(dir, 'message file.txt')
+    writeFileSync(file, 'python3 script.py\n\n본문')
+    assert.equal(decide(HOOK, `git commit -F ${quote(file)}`), 'deny')
+    assert.equal(decide(HOOK, `git commit --file=${quote(file)}`), 'deny')
+    assert.equal(decide(HOOK, `git -C ${quote(dir)} commit -F 'message file.txt'`), 'deny')
+    assert.equal(decide(HOOK, `cd ${quote(dir)} && git commit -F 'message file.txt'`), 'deny')
+    const withCwd = runHook(HOOK, JSON.stringify({ tool_name: 'Bash', cwd: dir, tool_input: { command: "git commit -F 'message file.txt'" } }))
+    assert.equal(JSON.parse(withCwd.stdout).hookSpecificOutput.permissionDecision, 'deny')
+    writeFileSync(file, 'fix: 제목\n\ncat <<EOF\n글자 \\n\\n')
+    assert.equal(decide(HOOK, `git commit -F ${quote(file)}`), 'pass')
+  })
+
+  function repo(): { dir: string; git: (...args: string[]) => string } {
+    const dir = mkdtempSync(join(root, 'git-'))
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } })
+      assert.equal(result.status, 0, result.stderr)
+      return result.stdout.trim()
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.name', 'Test')
+    git('config', 'user.email', 'test@example.invalid')
+    git('config', 'core.hooksPath', '/dev/null')
+    git('commit', '--allow-empty', '-m', 'fix: base')
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    return { dir, git }
+  }
+
+  test('upstream 없는 push 는 origin 기준 이후의 실제 첫 줄을 검사한다', () => {
+    const r = repo()
+    const push = `git -C ${quote(r.dir)} push -u origin HEAD`
+    r.git('commit', '--allow-empty', '-m', 'fix: 제목\n\ncat <<EOF\n글자 \\n\\n')
+    assert.equal(decide(HOOK, push), 'pass')
+    // Git %s 는 빈 줄 없는 다음 줄을 합친다. 훅은 %B 의 물리적인 첫 줄만 검사한다.
+    r.git('commit', '--allow-empty', '-m', 'fix: 제목\n글자 \\n\\n')
+    assert.equal(decide(HOOK, push), 'pass')
+    r.git('commit', '--allow-empty', '-m', 'fix: x\\n\\n본문')
+    const v = verdict(HOOK, push)
+    assert.equal(v.decision, 'deny')
+    assert.match(v.reason, /--amend -F/)
+    assert.match(v.reason, /git rebase/)
+  })
+
+  test('upstream 이전의 잘못된 제목과 HEAD 뒤 본문은 검사하지 않는다', () => {
+    const r = repo()
+    r.git('remote', 'add', 'origin', '/not/contacted')
+    r.git('config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*')
+    r.git('commit', '--allow-empty', '-m', 'EOF')
+    r.git('update-ref', 'refs/remotes/origin/topic', 'HEAD')
+    r.git('branch', '--set-upstream-to=origin/topic')
+    r.git('commit', '--allow-empty', '-m', 'fix: 제목\n\npython3 x')
+    const push = `git -C ${quote(r.dir)} push`
+    assert.equal(decide(HOOK, push), 'pass')
+    r.git('commit', '--allow-empty', '-m', 'gh pr create')
+    assert.equal(decide(HOOK, push), 'deny')
+  })
+
+  test('main 에 이미 있는 깨진 제목은 merge 나 rebase 뒤에도 push 를 막지 않는다', () => {
+    for (const action of ['merge', 'rebase']) {
+      const r = repo()
+      r.git('remote', 'add', 'origin', '/not/contacted')
+      r.git('checkout', '-b', 'topic')
+      r.git('commit', '--allow-empty', '-m', 'fix: 내 작업')
+      r.git('update-ref', 'refs/remotes/origin/topic', 'HEAD')
+      r.git('branch', '--set-upstream-to=origin/topic')
+      r.git('checkout', 'main')
+      r.git('commit', '--allow-empty', '-m', 'fix: 과거 제목\\n\\n본문')
+      r.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+      r.git('checkout', 'topic')
+      r.git(action, ...(action === 'merge' ? ['--no-edit'] : []), 'main')
+      const push = `git -C ${quote(r.dir)} push`
+      assert.equal(decide(HOOK, push), 'pass', action)
+      r.git('commit', '--allow-empty', '-m', 'fix: 새 제목\\n\\n본문')
+      assert.equal(decide(HOOK, push), 'deny', action)
+      r.git('update-ref', 'refs/remotes/another/known', 'HEAD')
+      assert.equal(decide(HOOK, push), 'pass', `${action}: 다른 원격에 이미 있는 커밋`)
+    }
+  })
+
+  test('push 에 명시한 원본만 검사하고 삭제나 알 수 없는 대상은 통과한다', () => {
+    const r = repo()
+    r.git('branch', 'good')
+    r.git('commit', '--allow-empty', '-m', 'fix: x\\n\\n본문')
+    r.git('branch', 'bad')
+    const push = (args: string) => decide(HOOK, `git -C ${quote(r.dir)} push ${args}`)
+    for (const args of ['origin good', 'origin good:target', 'origin :old', 'origin --delete old', '--tags', '--all', '--mirror', 'origin tag v1', 'origin "$SOURCE"', 'origin refs/heads/*:refs/heads/*', '--unknown origin']) {
+      assert.equal(push(args), 'pass', args)
+    }
+    r.git('checkout', 'good')
+    for (const args of ['origin bad', 'origin bad:target', '-u origin +bad:target', 'origin good:one bad:two']) {
+      assert.equal(push(args), 'deny', args)
+    }
+  })
+
+  test('Git 조회가 실패해도 push 는 통과한다', () => {
+    assert.equal(decide(HOOK, 'git -C /no/such/repository push'), 'pass')
+    const fake = fakeBin(mkdtempSync(join(root, 'git-fail-')), 'git', [{ args: [], code: 1 }])
+    assert.equal(decide(HOOK, 'git push', { PATH: `${dirname(process.execPath)}${delimiter}${dirname(fake.path)}` }), 'pass')
+  })
+
+  test('다른 도구와 읽지 못한 입력은 통과한다', () => {
+    assert.equal(decide(HOOK, 'git commit -m EOF', {}, 'Read'), 'pass')
     const r = runHook(HOOK, 'not json')
     assert.deepEqual({ code: r.code, stdout: r.stdout }, { code: 0, stdout: '' })
   })

@@ -80,6 +80,11 @@ describe('block-background-wait', () => {
     }
   })
 
+  test('명령 치환 heredoc 본문의 큰따옴표와 대기·git 문구는 통과한다', () => {
+    const command = 'git commit -m "$(cat <<\'EOF\'\n제목\n\n"인용" 후\norca orchestration check --wait &\ncd x; git push\nEOF\n)"'
+    assert.equal(decide(command), 'pass')
+  })
+
   test('다른 도구와 읽지 못한 입력은 통과한다', () => {
     assert.equal(decide('orca orchestration check --wait &', 'Write'), 'pass')
     for (const input of ['not json', '']) {
