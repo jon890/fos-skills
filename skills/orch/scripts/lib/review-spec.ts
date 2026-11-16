@@ -6,11 +6,15 @@
 // 자리표시: `{{채울 것: <설명>}}`. 「배경」 의 첫 줄과 「특히 볼 것」 절에 하나씩 둔다. spec-lint 가 남은 자리표시를 `채움` 경고로 알린다.
 // 틀에 알 수 없는 `{{...}}` 가 남으면 틀이 이 코드보다 새것이라는 뜻이라 지시서를 만들지 않고 이름을 알린다.
 //
+// 리뷰 브랜치: 지시서의 `브랜치:` 줄이다. 기본은 `review/pr-<N>` 이고, 지시서 파일 이름이 `spec-review-pr-<N>-<꼬리>.md` 꼴이면(같은 PR 을
+//     다시 리뷰한다) `review/pr-<N>-<꼬리>` 다. 같은 이름의 브랜치가 있으면 launch 가 워크트리를 만들지 못해 띄우지 못한다(reviewBranchFor).
+//
 // 리뷰 제공자: 구현 worker 가 claude 면 codex, codex 면 claude 다. 둘 밖의 제공자는 고르지 않는다(--impl-agent 로 알려 준다).
 //     모델과 effort 는 agent-selection.md 의 `review` 행(구현한 쪽과 다른 제공자의 모델, medium)을 따른다.
 //     review 행은 모델 후보와 effort 상한을 검사하지 않아도(lib/selection.ts) 비교한 후보와 이유는 줄에 남긴다.
 // 구현 worker: 영구 이력(lib/launch-history.ts)에서 브랜치가 PR head 인 행 가운데 가장 늦은 것이다. 리뷰 브랜치(`review/pr-N`)는 뺀다.
 
+import { basename } from 'node:path'
 import type { LaunchHistory } from './launch-history.ts'
 import { reviewPrOfBranch } from './review.ts'
 
@@ -41,6 +45,14 @@ export function reviewerFor(agent: string): Reviewer | null {
   return null
 }
 
+const TAILED_SPEC = /^spec-review-pr-(\d+)-([A-Za-z0-9][A-Za-z0-9_-]*)\.md$/
+
+// 머리 주석의 「리뷰 브랜치」. file 은 만들 지시서 경로다. 이름의 번호가 PR 번호와 다르면 꼬리로 보지 않는다
+export function reviewBranchFor(number: number, file: string): string {
+  const m = TAILED_SPEC.exec(basename(file))
+  return m && Number(m[1]) === number ? `review/pr-${number}-${m[2]}` : `review/pr-${number}`
+}
+
 const BACKGROUND_LINE = /^- \{\{PR 이 하는 일 한 줄과 링크\}\}$/m
 const TASK_HEADING = /^## 할 일[ \t]*$/m
 const SEE_HEADING = /^## 특히 볼 것[ \t]*$/m
@@ -48,17 +60,19 @@ const COMMENT_LINE = /^<!--.*-->[ \t]*\n/gm
 
 export type Fill = {
   number: number; title: string; url: string; specsDir: string
+  branch?: string
   implementer: Implementer; reviewer: Reviewer
 }
 
 // 틀의 `{{...}}` 를 채운다. 알 수 없는 자리표시가 남으면 던진다
 export function fillReviewSpec(template: string, fill: Fill): string {
-  const { number, title, url, specsDir, implementer, reviewer } = fill
+  const { number, title, url, specsDir, implementer, reviewer, branch = `review/pr-${fill.number}` } = fill
   const built = `${implementer.agent}${implementer.model ? ` ${implementer.model}` : ''}${implementer.effort ? ` effort ${implementer.effort}` : ''}`
   const values: Record<string, string> = {
     'PR 제목': title.replace(/\s+/g, ' ').trim(),
     N: String(number),
     SPECS_DIR: specsDir,
+    '리뷰 브랜치': branch,
     에이전트: reviewer.agent,
     모델: reviewer.model,
     effort: reviewer.effort,

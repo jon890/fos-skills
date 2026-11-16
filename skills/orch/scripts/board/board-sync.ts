@@ -29,7 +29,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
 //     - 머지됐으면 위와 같이 마지막 PR 인지 판정하고 lib/milestones.ts 의 mergedCommands 로 [pr], [merge] 단계를 끝낸다.
 //       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 단, 판정 규칙이 없어 판정하지 못한 경우에는 모든 단계가 끝났고,
-//       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다. 그 밖에는 닫지 않고 판정 가능한 단계를 반영한다.
+//       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다(lib/last-pr.ts 의 closeUnjudged. finish-pr.ts 도 같은 조건을 쓴다). 그 밖에는 닫지 않고 판정 가능한 단계를 반영한다.
 //       pr 칸에 다른 열린 PR 이 있으면 같은 업무의 후속 PR 로 보고, 머지된 PR 의 단계와 열린 PR 의 [pr] 단계는 계속 반영한다.
 //       마일스톤 항목은 마지막 PR 이어도 done 지점 전이면 doing 으로 남아 잘못 본 값이 업무 완료로 번지지 않는다.
 //       마지막 PR 은 pr 칸에 두고 merged-pr 에도 적어 다음 틱에 다시 판정하지 않는다.
@@ -92,7 +92,7 @@ import type { BoardDetail as Detail } from '../lib/board.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import type { DeployVerdict, RunRow } from '../lib/deploy.ts'
 import { git } from '../lib/git.ts'
-import { judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
+import { closeUnjudged, judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
 import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { BoardSettings } from '../lib/milestones.ts'
 import { pidFileAlive } from '../lib/process.ts'
@@ -530,7 +530,7 @@ function main(argv: string[]): number {
                 const activeWorker = rows.some((row) => row.status === 'working')
                 const hasRemainingWork = details.some((detail) => textOf(detail).startsWith(NOTE))
                 const allStepsWillBeDone = steps.length > 0 && steps.every((step) => step.done || got.cmds.some((cmd) => cmd[0] === 'step' && cmd[1] === id && Number(cmd[2]) === step.number))
-                if (!rulesUnreadable && openNumbers.length === 0 && !activeWorker && !hasRemainingWork && got.done && allStepsWillBeDone) {
+                if (closeUnjudged(verdict, { rulesUnreadable, openPrs: openNumbers.length, activeWorker, remainingNote: hasRemainingWork, reachedDone: got.done, allStepsDone: allStepsWillBeDone })) {
                   out(`board-sync: ${id} 는 마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없어 done 으로 바꾼다`)
                   after.push(...got.cmds)
                   finish = got.done
