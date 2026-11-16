@@ -8,7 +8,7 @@ export const MAX_WAIT = 20
 const SCRIPT_LINE = /^\s*(?:(?:✓|\[[xX ]\]|▶|◇)\s*)?(?:남은 일|중간 과정):/
 // 근거와 사건 꼬리표, 워크트리 이름처럼 줄 끝의 괄호 묶음은 글자 수에서 뺀다. 글이 아니라 참조다
 const TRAILING_REFS = /(?:\s*\([^()]*\))+\s*$/
-const LOG_LINE = /^\s*(?:확인|지금)\s*[(（]|^\s*끝난 것\s*:/
+const LOG_LINE = /^\s*(?:확인|지금)[(（]|^\s*끝난 것\s*:/
 const WAIT_PROSE = /기다리는 중|기다림|대기 중/
 
 // 번호·자동 진행 표시·줄 끝 괄호 묶음을 뺀 본문

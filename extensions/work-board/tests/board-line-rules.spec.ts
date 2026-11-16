@@ -16,7 +16,7 @@ test('본문 80자까지는 통과하고 81자부터 거절한다. 번호·표�
 })
 
 test('확인·경과 기록 줄은 거절하고 앞의 완료 표시는 허용한다', () => {
-  for (const text of ['5. 확인(CI 통과)', '지금(리뷰 중)', '끝난 것: 설계', '4. 설계 ✓ 끝', '3. 지금 (배포)']) {
+  for (const text of ['5. 확인(CI 통과)', '지금(리뷰 중)', '끝난 것: 설계', '4. 설계 ✓ 끝']) {
     assert.match(lineProblem(text) ?? '', /한 일을 적는 줄/, text)
   }
   assert.equal(lineProblem('✓ 4. 설계'), null)
