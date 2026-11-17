@@ -147,7 +147,7 @@ export class EgoBackend extends Backend {
   // 스크립트가 끝까지 가지 못했다는 뜻이고, 여기서 실패로 판정한다.
   // ego 는 브라우저 서비스에 붙지 못할 때 종료 코드 0 으로 끝내므로 (실측)
   // 종료 코드만 보면 값을 내지 않는 명령의 실패가 드러나지 않는다.
-  private run(body: string): string {
+  private run(body: string, waitTimeout: bigint = READY_TIMEOUT_DEFAULT): string {
     const script =
       `const __mark = ${jd(MARKER)};\n` +
       'const __out = (v) => process.stdout.write(' +
@@ -155,7 +155,9 @@ export class EgoBackend extends Backend {
       body
     let out: string
     try {
-      out = run([this.binary, 'nodejs'], { stdinText: script, checkExit: true })
+      // 내부 API 가 응답하지 않아도 실행한 ego 만 제한 시간에 종료한다.
+      const timeoutMs = Math.min(Number(waitTimeout > 0n ? waitTimeout : READY_TIMEOUT_DEFAULT) + 5000, Number.MAX_SAFE_INTEGER)
+      out = run([this.binary, 'nodejs'], { stdinText: script, checkExit: true, timeoutMs })
     } catch (error) {
       if (!(error instanceof DriverError)) throw error
       // 사용자가 TaskSpace 의 제어권을 가져가면 그 공간의 모든 호출이 거절된다 (실측).
@@ -385,7 +387,7 @@ export class EgoBackend extends Backend {
         `await page.waitForLoadState('load', { timeout: ${timeout} });\n` +
         "__out(task.spaceId + ':' + page.label + '\\t' + prof.id + '\\t' + prof.name\n" +
         "  + '\\t' + spaceName);\n"
-      const stripped = pyStrip(this.run(body))
+      const stripped = pyStrip(this.run(body, timeout))
       const tab = stripped.indexOf('\t')
       const handle = tab < 0 ? stripped : stripped.slice(0, tab)
       const profile = tab < 0 ? '' : stripped.slice(tab + 1)
@@ -403,7 +405,7 @@ export class EgoBackend extends Backend {
 
     if (cmd === 'nav') {
       const timeout = args.length > 2 ? parsePyInt(args[2]) : READY_TIMEOUT_DEFAULT
-      this.run(this.page(args[0]) + `await page.goto(${jd(args[1])});\n` + `await page.waitForLoadState('load', { timeout: ${timeout} });\n` + "__out('');\n")
+      this.run(this.page(args[0]) + `await page.goto(${jd(args[1])});\n` + `await page.waitForLoadState('load', { timeout: ${timeout} });\n` + "__out('');\n", timeout)
       return null
     }
 
@@ -450,7 +452,7 @@ export class EgoBackend extends Backend {
       }
       let raw: string
       try {
-        raw = this.run(this.page(args[0]) + body + "__out(r.u ? '' : JSON.stringify(r.v));\n")
+        raw = this.run(this.page(args[0]) + body + "__out(r.u ? '' : JSON.stringify(r.v));\n", timeout ?? 15000n)
       } catch (error) {
         if (error instanceof DriverError) {
           if (timeout === null && error.message.includes('page.evaluate timed out')) {
@@ -499,13 +501,13 @@ export class EgoBackend extends Backend {
       const timeout = args.length > 2 ? parsePyInt(args[2]) : WAIT_TIMEOUT_DEFAULT
       // 폴링으로 대신하지 않고 ego 의 대기 API 를 쓴다. 인자 순서는 Playwright 와 같아
       // 페이지 인자가 없으면 undefined 를 먼저 넘긴다.
-      this.run(this.page(args[0]) + `await page.waitForFunction(${jd(args[1])}, undefined, ` + `{ timeout: ${timeout} });\n` + "__out('');\n")
+      this.run(this.page(args[0]) + `await page.waitForFunction(${jd(args[1])}, undefined, ` + `{ timeout: ${timeout} });\n` + "__out('');\n", timeout)
       return null
     }
 
     if (cmd === 'ready') {
       const timeout = args.length > 1 ? parsePyInt(args[1]) : READY_TIMEOUT_DEFAULT
-      this.run(this.page(args[0]) + `await page.waitForLoadState('load', { timeout: ${timeout} });\n` + "__out('');\n")
+      this.run(this.page(args[0]) + `await page.waitForLoadState('load', { timeout: ${timeout} });\n` + "__out('');\n", timeout)
       return null
     }
 

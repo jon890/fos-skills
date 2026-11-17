@@ -11,7 +11,7 @@ import { runtimeSpawnSync, runtimeEnv } from './runtime.ts'
 // check_marker 가 있으면 출력 줄머리에서 그 표식을 찾아 실패로 판정한다. 백엔드가 실패를 종료 코드로 알리지 않기 때문이다 (실측).
 // stdin_text 를 주면 그 문자열을 표준 입력으로 넘기고, 없으면 표준 입력을 물려준다.
 // check_exit 가 참이면 0 이 아닌 종료 코드를 실패로 판정한다.
-export function run(argv: string[], opts: { checkMarker?: string; stdinText?: string; checkExit?: boolean } = {}): string {
+export function run(argv: string[], opts: { checkMarker?: string; stdinText?: string; checkExit?: boolean; timeoutMs?: number } = {}): string {
   // subprocess 는 문자열이 아닌 인자를 TypeError 로 거절한다
   for (const arg of argv) if (typeof arg !== 'string') throw new TypeError(`expected str, bytes or os.PathLike object, not ${typeof arg}`)
   const done = runtimeSpawnSync(argv[0], argv.slice(1), {
@@ -19,8 +19,16 @@ export function run(argv: string[], opts: { checkMarker?: string; stdinText?: st
     stdio: [opts.stdinText === undefined ? 'inherit' : 'pipe', 'pipe', 'pipe'],
     maxBuffer: 1 << 30,
     env: runtimeEnv(),
+    timeout: opts.timeoutMs,
+    // SIGTERM 을 무시하는 자식도 동기 호출을 계속 붙잡지 못하게 한다.
+    killSignal: opts.timeoutMs === undefined ? undefined : 'SIGKILL',
   })
-  if (done.error) throw done.error
+  if (done.error) {
+    if ('code' in done.error && done.error.code === 'ETIMEDOUT') {
+      throw new DriverError(`${argv[0]} 프로세스가 ${opts.timeoutMs}ms 안에 끝나지 않아 실행한 자식 프로세스를 종료했다. 페이지 안에서는 계속 돌고 있을 수 있다`)
+    }
+    throw done.error
+  }
   // text=True: 로캘 인코딩(UTF-8)으로 엄격히 읽고 줄바꿈을 \n 으로 바꾼다
   const decode = (bytes: Buffer | null) => normalizeNewlines(pyDecode(bytes ?? Buffer.alloc(0)))
   const out = decode(done.stdout) + decode(done.stderr)
