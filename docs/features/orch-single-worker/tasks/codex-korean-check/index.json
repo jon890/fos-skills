@@ -1,0 +1,40 @@
+{
+  "name": "codex-korean-check",
+  "description": "worker 워크트리의 git 커밋 훅으로 한국어 문서의 금지어를 검사한다",
+  "pr_scope": "orch 가 띄우는 worker 워크트리에 korean-check 의 스테이징 검사를 git 커밋 훅으로 건다.",
+  "deferred": [
+    {
+      "what": "선택 표를 행마다 worker 하나로 바꾸고 「비교:」 칸, experiment 줄, 한국어 문서 기준을 없앤다(REQ2~REQ9)",
+      "why": "스펙 DECISION7 이 PR2 로 정했다. 문서 일을 Codex 로 넘기기 전에 검사가 먼저 있어야 한다",
+      "after": "이 계획의 PR(PR1)이 main 에 머지된 뒤"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-17",
+  "spec": "docs/features/orch-single-worker/spec.md",
+  "design": "docs/features/orch-single-worker/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1"
+  ],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ1"
+      ]
+    }
+  ]
+}

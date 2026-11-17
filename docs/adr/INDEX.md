@@ -37,6 +37,7 @@
 | [ADR-032](032-loop-bundle-handover.md) | 옛 번들의 상주 루프는 잠금 파일을 새 루프의 pid 로 바꿔 넘기고, 새 루프가 상태를 쓴 뒤에 끝난다 | accepted | - |
 | [ADR-033](033-board-item-worker-rows.md) | 보드 항목은 worker 줄 목록을 갖고, 후속 PR 의 사건 단계는 그 줄이 갖는다 | accepted | - |
 | [ADR-034](034-export-only-skills-registered.md) | 내보내기 원본 폴더의 두 스킬도 플러그인 스킬 목록에 등록한다 | accepted | - |
+| [ADR-036](036-worker-commit-korean-check.md) | worker 의 한국어 표기 검사는 워크트리에 건 git 커밋 훅으로 한다 | accepted | - |
 
 ## 대체됨
 
