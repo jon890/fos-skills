@@ -11,7 +11,7 @@
 ## 쓰기 명령이 막힐 때
 
 `NOT-MAIN main=<Run> caller=<Run> …` 이면 대상 저장소의 메인이 아닌 Run 에서 쓰기 명령을 불렀다. 함께 나온 `orch request send --to <저장소>` 로 일을 맡긴다. `--run` 에 메인 Run 을 써도 실제 호출 Run 은 바뀌지 않는다.
-조회 명령과 dry-run, Run 에 묶이지 않은 사람의 셸, `/board` 화면은 그대로 쓴다.
+조회 명령과 dry-run, Run 에 묶이지 않은 사람의 셸, `/board` 화면은 그대로 쓴다. Orca 조회가 실패해도 `ORCA_TERMINAL_HANDLE` 이 없는 사람 셸은 막지 않는다.
 
 직접 처리해야 할 이유가 있으면 쓰기 명령에 `--not-main "<이유>"` 를 붙인다. 빈 이유는 거절한다. 이유는 대상 저장소의 띄우기 기록 아래에 남고 메인에게 알림이 간다. 알림이나 기록이 실패하면 실제 쓰기를 하지 않는다. 우회 전용 기록은 `scripts/lib/main-guard.ts`, worker 기록의 표지와 이유는 `scripts/lib/launched.ts` 가 소유한다. 저장 필드는 [데이터 스키마](../../../docs/data-schema.md)를 따른다.
 

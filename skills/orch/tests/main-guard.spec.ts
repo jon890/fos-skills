@@ -31,7 +31,7 @@ else if (a[0] === 'terminal' && a[1] === 'list') result = { terminals: [{ handle
 else if (a[1] === 'run-current') result = { run: s.caller === null ? null : { id: s.caller } }
 else if (a[1] === 'send') result = { message: { id: 'notice' } }
 else if (a[1] === 'worker-show') result = { dispatch: { id: 'old', runId: 'other', status: 'running' }, worker: { worktreeId: s.worktree, agentTerminalHandle: 'tw' } }
-if (s.fail === a[1]) { fs.writeSync(1, JSON.stringify({ ok: false, error: 'fake failure' })); process.exit(1) }
+if (s.offline || s.fail === a[1]) { fs.writeSync(1, JSON.stringify({ ok: false, error: 'fake failure' })); process.exit(1) }
 fs.writeSync(1, JSON.stringify({ ok: true, result }))
 `)
 chmodSync(orca, 0o755)
@@ -49,6 +49,7 @@ beforeEach(() => {
   registerRun(repo, 'other', null, false, 'to', '2026-11-17T01:00:00Z')
   settings()
   writeFileSync(log, '')
+  process.env.ORCA_TERMINAL_HANDLE = 'bound-coordinator'
   process.env.ORCA = orca
   process.env.GUARD_STATE = state
   process.env.GUARD_LOG = log
@@ -89,6 +90,19 @@ test('Run 이 묶인 세션의 메인 조회 실패와 호출자 조회 실패�
   assert.equal(guardWrite(repo, 'board set', undefined).code, 1)
   settings({ fail: 'run-current' })
   assert.equal(guardWrite(repo, 'board set', undefined).code, 1)
+})
+
+test('Orca 가 꺼져도 터미널 handle 없는 사람 셸의 쓰기는 통과한다', () => {
+  delete process.env.ORCA_TERMINAL_HANDLE
+  settings({ offline: true })
+  assert.equal(guardWrite(repo, 'board set', undefined).code, 0)
+  assert.equal(guardWrite(repo, 'board set', '복구 작업').code, 0)
+  const board = join(repo, '.omc', 'board.json')
+  mkdirSync(dirname(board), { recursive: true })
+  writeFileSync(board, JSON.stringify({ items: [{ id: 'item', title: '일', status: 'wait', details: [], next: [] }] }))
+  const done = cli('board/board-edit.ts', ['set', 'item', 'done', '--repo', repo])
+  assert.equal(done.status, 0, done.stderr)
+  assert.equal(JSON.parse(readFileSync(board, 'utf8')).items[0].status, 'done')
 })
 
 test('공백 이유와 다음 옵션을 이유로 준 우회는 거절한다', () => {

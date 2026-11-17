@@ -47,14 +47,15 @@ export function dispatchRepo(repo: string, dispatch: string): string | null {
   return recorded && got.data?.dispatch?.id === dispatch && got.data.dispatch.runId === recorded.run ? mainCheckout(recorded.worktree) : null
 }
 
-// --run 은 대상 Run 이다. 호출자의 신원은 실제 run-current 로만 읽는다.
+// --run 은 대상 Run 이다. 호출자의 신원은 실제 run-current 로 읽는다.
+// 조회가 실패하고 ORCA_TERMINAL_HANDLE 도 없으면 Run 없는 사람 셸로 본다.
 export function callerRun(): Caller {
   const got = orcaJson<{ run?: { id?: unknown } | null; runId?: unknown }>(['orchestration', 'run-current'], { timeoutMs: 5_000 })
-  if (!got.ok) return { kind: 'unknown', error: got.error }
+  if (!got.ok) return process.env.ORCA_TERMINAL_HANDLE ? { kind: 'unknown', error: got.error } : { kind: 'caller', run: null }
   const value = got.data?.run?.id ?? got.data?.runId
   if (typeof value === 'string' && value) return { kind: 'caller', run: value }
   if (got.data?.run === null || got.data?.runId === null) return { kind: 'caller', run: null }
-  return { kind: 'unknown', error: 'run-current 에 Run 또는 명시적인 Run 없음이 없다' }
+  return process.env.ORCA_TERMINAL_HANDLE ? { kind: 'unknown', error: 'run-current 에 Run 또는 명시적인 Run 없음이 없다' } : { kind: 'caller', run: null }
 }
 
 export function callerIsMain(repo: string, readUnboundMain = true) {
@@ -119,7 +120,7 @@ export function guardWrite(repoArg: string, command: string, reason: unknown, ta
   const { main, allowed } = judged
   const caller = reason !== undefined && main.kind === 'none' ? callerRun() : judged.caller
   const stamp: MainGuardStamp = { version: 1, main: main.kind === 'main' ? main.run : null, caller_repo: mainCheckout(process.cwd()), target_repo: repo }
-  if (allowed && reason === undefined) return { code: 0, stamp }
+  if (allowed && (reason === undefined || main.kind === 'unknown' && caller.kind === 'caller' && caller.run === null)) return { code: 0, stamp }
   if (caller.kind === 'unknown') return reject(1, `MAIN-CALLER-UNKNOWN ${caller.error}`)
   if (main.kind === 'unknown') return reject(1, `MAIN-UNKNOWN ${main.error}`)
   if (!allowed && caller.run && reason === undefined) {
