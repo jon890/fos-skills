@@ -25,7 +25,7 @@ import { ensure } from './paths.ts'
 import { realPath } from './fs.ts'
 import { shQuote } from './py.ts'
 import { notifyRun } from './run-notice.ts'
-import { loopCaller } from './main-guard-context.ts'
+import { inheritOverride, loopCaller, newOverrideToken, overrideHash, shareOverride } from './main-guard-context.ts'
 
 export const MAIN_GUARD_OPTIONS = { 'not-main': { type: 'string' } } as const
 type Caller = { kind: 'caller'; run: string | null } | { kind: 'unknown'; error: string }
@@ -119,6 +119,8 @@ export function guardWrite(repoArg: string, command: string, reason: unknown, ta
   const reject = (code: 1 | 2, line: string): GuardResult => { process.stderr.write(`${line}\n`); return { code } }
   if (reason !== undefined && (typeof reason !== 'string' || !reason.trim() || reason.trim().startsWith('--'))) return reject(2, 'NOT-MAIN-REASON --not-main 에는 우회하는 이유가 필요하다')
   const repo = mainCheckout(repoArg)
+  const inherited = inheritOverride(repo, command, typeof reason === 'string' ? reason.trim() : reason)
+  if (inherited) return { code: 0, stamp: { version: 1, main: inherited.main, caller_repo: mainCheckout(process.cwd()), target_repo: repo }, reason: inherited.reason }
   const judged = callerIsMain(repo, command === 'worker launch' || reason !== undefined)
   const { main, allowed } = judged
   const caller = reason !== undefined && main.kind === 'none' ? callerRun() : judged.caller
@@ -133,7 +135,8 @@ export function guardWrite(repoArg: string, command: string, reason: unknown, ta
   }
   if (reason === undefined) return { code: 0, stamp }
   const text = String(reason).trim()
-  const record = { repo, caller_run: caller.run, main_run: stamp.main, command, reason: text, at: new Date().toISOString(), notified: false }
+  const token = newOverrideToken()
+  const record = { receipt_hash: overrideHash(token), repo, caller_run: caller.run, main_run: stamp.main, command, reason: text, at: new Date().toISOString(), notified: false }
   let file: string
   try {
     const dir = join(ensure('state', repo), 'launched-workers', 'not-main')
@@ -147,6 +150,7 @@ export function guardWrite(repoArg: string, command: string, reason: unknown, ta
     try { writeFileSync(file, JSON.stringify({ ...record, notified: true }) + '\n') }
     catch (e) { return reject(1, `NOT-MAIN-RECORD-FAIL ${(e as Error).message}`) }
   }
+  if (stamp.main) shareOverride(file, token, command)
   return { code: 0, stamp, reason: text }
 }
 

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { after, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { inheritOverride, overrideHash } from '../scripts/lib/main-guard-context.ts'
 import { guardWrite, mainDoctorLines } from '../scripts/lib/main-guard.ts'
 import { allLaunches, forgetLaunch, readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
 import { registerRun } from '../scripts/lib/loop.ts'
@@ -49,6 +50,7 @@ beforeEach(() => {
   registerRun(repo, 'other', null, false, 'to', '2026-11-17T01:00:00Z')
   settings()
   writeFileSync(log, '')
+  delete process.env.ORCH_MAIN_GUARD_RECEIPT
   delete process.env.ORCH_LOOP_CALLER
   process.env.ORCA_TERMINAL_HANDLE = 'bound-coordinator'
   process.env.ORCA = orca
@@ -118,7 +120,9 @@ test('우회는 가짜 dispatch 없이 이유를 저장하고 메인 Run 에 알
   const files = readdirSync(dir)
   assert.equal(files.length, 1)
   const saved = JSON.parse(readFileSync(join(dir, files[0]), 'utf8'))
-  assert.deepEqual({ ...saved, at: null }, { repo, caller_run: 'other', main_run: 'main', command: 'board set', reason: '긴급 복구', at: null, notified: true })
+  assert.match(saved.receipt_hash, /^[a-f0-9]{64}$/)
+  const { receipt_hash, ...event } = saved
+  assert.deepEqual({ ...event, at: null }, { repo, caller_run: 'other', main_run: 'main', command: 'board set', reason: '긴급 복구', at: null, notified: true })
   assert.ok(Number.isFinite(Date.parse(saved.at)))
   assert.deepEqual(allLaunches(repo), [])
   const sent = calls().find(a => a[1] === 'send')!
@@ -302,5 +306,59 @@ test('루프 밖에서 만든 표시는 등록된 메인이나 다른 Run 도 �
   for (const marker of [{ repo: root, run: 'main' }, { repo, run: 'missing' }, { repo, run: 'other' }, { repo, run: 'main', pid: process.pid, identity: 'forged orch-loop' }]) {
     process.env.ORCH_LOOP_CALLER = JSON.stringify(marker)
     assert.equal(guardWrite(repo, 'board set', undefined).code, 1)
+  }
+})
+
+
+test('머지 명령의 자식 체인은 바깥 우회 기록과 알림을 한 번만 남긴다', () => {
+  const script = join(root, 'override-chain.ts')
+  const module = new URL('../scripts/lib/main-guard.ts', import.meta.url).href
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { guardWrite } from ${JSON.stringify(module)}
+const n = Number(process.argv[2] ?? '0')
+const commands = ['queue merge', 'queue finish', 'cleanup sweep', 'cleanup worktree']
+const result = guardWrite(${JSON.stringify(repo)}, commands[n], n === 0 ? '긴급 복구' : undefined)
+appendFileSync(${JSON.stringify(join(root, 'override-chain-results.jsonl'))}, JSON.stringify({ command: commands[n], code: result.code }) + '\\n')
+if (result.code) process.exitCode = result.code
+else if (n + 1 < commands.length) process.exitCode = spawnSync(process.execPath, [process.argv[1], String(n + 1)], { stdio: 'inherit', env: process.env }).status ?? 1
+`)
+  const done = spawnSync(process.execPath, [script], { env: process.env, encoding: 'utf8', timeout: 20_000 })
+  assert.equal(done.status, 0, done.stdout + done.stderr)
+  const dir = join(pathOf('state', repo), 'launched-workers', 'not-main')
+  assert.equal(readdirSync(dir).length, 1)
+  assert.equal(calls().filter(args => args[1] === 'send').length, 1)
+  const results = readFileSync(join(root, 'override-chain-results.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.deepEqual(results.map(row => row.code), [0, 0, 0, 0])
+})
+
+test('자식 우회는 비밀값과 같은 저장소·이유·명령 체인이 맞아야 한다', () => {
+  const dir = join(pathOf('state', repo), 'launched-workers', 'not-main')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'receipt.json')
+  const token = 'a'.repeat(64)
+  const marker = { file, token, command: 'queue finish', pid: process.pid + 1 }
+  const row = { repo, main_run: 'main', caller_run: 'other', reason: '복구', notified: true,
+    receipt_hash: overrideHash(token), at: new Date().toISOString() }
+  const read = (target = repo, command = 'cleanup sweep', reason: unknown = undefined) => {
+    process.env.ORCH_MAIN_GUARD_RECEIPT = JSON.stringify(marker)
+    return inheritOverride(target, command, reason)
+  }
+  writeFileSync(file, JSON.stringify(row))
+  assert.deepEqual(read(), { main: 'main', reason: '복구' })
+  assert.equal(read(root), null)
+  assert.equal(read(repo, 'board set'), null)
+  assert.equal(read(repo, 'cleanup sweep', '다른 이유'), null)
+  for (const changed of [
+    { notified: false }, { receipt_hash: overrideHash('b'.repeat(64)) },
+  ]) {
+    writeFileSync(file, JSON.stringify({ ...row, ...changed }))
+    assert.equal(read(), null)
+  }
+  writeFileSync(file, JSON.stringify({ ...row, at: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString() }))
+  assert.deepEqual(read(), { main: 'main', reason: '복구' }) // 긴 CI·배포 대기 뒤에도 같은 체인은 이어진다.
+  for (const forged of [{ file, pid: process.pid + 1 }, { ...marker, token: 'b'.repeat(64) }, { ...marker, pid: process.pid }]) {
+    process.env.ORCH_MAIN_GUARD_RECEIPT = JSON.stringify(forged)
+    assert.equal(inheritOverride(repo, 'cleanup sweep', undefined), null)
   }
 })

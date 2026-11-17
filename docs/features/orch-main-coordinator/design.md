@@ -193,12 +193,14 @@ doctor 의 「다른 Run 이 띄운 남은 worker」, 「메인이 아닌 등록
 
 `Launch.main_guard` 는 처음 띄울 때 메인과 부른·대상 저장소를 남긴다. 표지가 없는 옛 기록과 메인이 없을 때 띄운 기록은 원래 Run 의 해당 worker 에만 예외다. 후속·재개는 그 예외를 보존한다. PR 일괄 작업은 모든 PR 의 브랜치 소유를 확인한다. 예외로 실행하는 정리는 해당 워크트리만 다루고 저장소 전체 fetch·prune·나머지 정리 단계와 after-cleanup 은 생략한다.
 
+같은 쓰기 명령이 띄운 자식은 `ORCH_MAIN_GUARD_RECEIPT` 로 성공한 우회 기록을 이어받는다. 비밀값은 자식 체인의 환경 변수에만 넘기고 기록에는 SHA-256 을 남긴다. 긴 CI·배포 대기에도 이 체인은 유지한다. 대상 저장소와 기록 위치, 알림 성공 여부와 이유, 허용된 명령 전이를 확인해 바깥 명령의 기록과 알림을 재사용한다. 같은 프로세스의 별도 명령과 다른 저장소에는 적용하지 않는다.
+
 ## 검증 전략
 
 | ID | 경계 | 확인 |
 | --- | --- | --- |
 | REQ11 | `main-guard.spec.ts` 의 실제 CLI·직접 명령 | 메인·비메인·Run 없는 셸, 조회·dry-run·잘못된 인자, 실제 dispatch·보드 저장소와 `--run` 사칭, Run 에 묶인 호출의 조회 실패 거절, handle 없는 사람 셸의 Orca 장애 중 쓰기 허용, 실제 루프 한 틱의 자식 허용과 위조 표시 거절 |
-| REQ12 | `main-guard.spec.ts`, `launch-worker.spec.ts` | 빈 이유 거절, 별도 우회 기록·메인 알림, 기록·알림 실패 시 쓰기 없음, dispatch 이유 보존 |
+| REQ12 | `main-guard.spec.ts`, `launch-worker.spec.ts` | 빈 이유 거절, 별도 우회 기록·메인 알림, 자식 체인에서 기록과 알림 1회 재사용, 비밀값 없는 재사용과 다른 명령·저장소의 표시 거절과 긴 대기 뒤 체인 유지, 허용된 호출의 이유 무시, 기록·알림 실패 시 쓰기 없음, dispatch 이유 보존 |
 | REQ13 | `main-guard.spec.ts`, `cleanup-sweep-launched.spec.ts` | 옛·메인 없을 때 worker 의 원래 Run 만 허용, 깨진 새 표지 거절, Run 옵션 없는 finish → 실제 sweep → 실제 worktree 정리, 다른 워크트리와 전역 단계 보존, doctor 알림과 정리 뒤 제외 |
 | REQ1 | `core` 단위 테스트, `orch status` 명령 테스트 | 판정 표(에이전트 있음·없음, 둘째 터미널, 등록 없음). 가짜 orca 로 `MAIN` 줄 |
 | REQ1, REQ2, REQ3 | `orch-loop` 명령 테스트(가짜 orca, 임시 저장소) | `MAIN-EXISTS` 6, `TAKEOVER-CONFIRM` 6, 메인 없음에서 넘겨받기 뒤 등록이 새 Run 하나, `MAIN-UNKNOWN` 1 |
