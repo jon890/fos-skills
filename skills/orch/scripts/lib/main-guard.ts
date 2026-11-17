@@ -111,7 +111,7 @@ function exception(repo: string, caller: string, target: GuardTarget): Set<strin
     }
     return paths
   }
-  if (target.sweepRun === caller && owned.length) return new Set(owned.map(l => realPath(l.worktree)))
+  if (Object.hasOwn(target, 'sweepRun') && (target.sweepRun ?? caller) === caller && owned.length) return new Set(owned.map(l => realPath(l.worktree)))
   return null
 }
 

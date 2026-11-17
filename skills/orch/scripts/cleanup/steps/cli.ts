@@ -129,7 +129,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     err('cleanup-sweep: --wait 는 0 이상, --poll-interval 은 0 초과의 유한한 수다')
     return { code: 2 }
   }
-  const run = values.run || null
+  let run = values.run || null
   if (values['close-own-taken-over'] && !run) {
     err('cleanup-sweep: --close-own-taken-over 는 --run 과 함께 쓴다')
     return { code: 2 }
@@ -145,6 +145,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     const gate = guardWrite(repo, 'cleanup sweep', values['not-main'], { sweepRun: values.run })
     if (gate.code !== 0) return { code: gate.code }
     if (gate.worktrees) guardWorktrees.set(repo, gate.worktrees)
+    if (gate.ownerRun && !values.run) run = gate.ownerRun
   }
   // 짧은 출력은 줄마다 sweepLine 으로 바꾸고 끝에 SWEEP 줄을 낸다(output.ts 파일 맨 위 설명의 「짧은 출력」)
   const brief = short()

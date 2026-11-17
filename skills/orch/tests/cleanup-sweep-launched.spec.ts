@@ -34,7 +34,7 @@ function ownTerminal(path: string, opts: Own = {}): void {
 }
 
 describe('launch-worker 가 기록한 user_owned 터미널', () => {
-  test('Run 옵션 없는 legacy finish 는 실제 sweep 으로 자기 worker 만 치우고 전역 단계는 생략한다', () => {
+  for (const command of ['finish', 'sweep']) test(`Run 옵션 없는 legacy ${command} 는 자기 worker 만 치우고 전역 단계는 생략한다`, () => {
     const owned = worktree('feat-legacy-owned')
     const head = squashMerge('feat-legacy-owned', owned)
     const foreign = worktree('feat-legacy-foreign')
@@ -74,10 +74,14 @@ else { const r = require('node:child_process').spawnSync(${JSON.stringify(origin
     writeFileSync(join(fx.repo, '.orch', 'hooks', 'after-cleanup.ts'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'called')`)
     save()
     const finish = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
-    const done = spawnSync(process.execPath, [finish, '1', '--repo', fx.repo, '--poll-interval', '0.01', '--merge-timeout', '0.005', '--deploy-timeout', '0.005'], { env: fx.env, encoding: 'utf8', timeout: 60_000 })
+    const sweep = fileURLToPath(new URL('../scripts/cleanup/cleanup-sweep.ts', import.meta.url))
+    const argv = command === 'finish'
+      ? [finish, '1', '--repo', fx.repo, '--poll-interval', '0.01', '--merge-timeout', '0.005', '--deploy-timeout', '0.005']
+      : [sweep, '--repo', fx.repo, '--apply', '--wait', '0', '--poll-interval', '0.01']
+    const done = spawnSync(process.execPath, argv, { env: fx.env, encoding: 'utf8', timeout: 60_000 })
     assert.equal(done.status, 0, done.stdout + done.stderr)
     const out = done.stdout
-    assert.match(out, /FINISH-DONE/)
+    if (command === 'finish') assert.match(out, /FINISH-DONE/)
     gone(owned, out)
     exists(foreign, out)
     assert.ok(branches().has('feat-legacy-foreign'))

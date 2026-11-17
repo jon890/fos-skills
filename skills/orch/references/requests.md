@@ -15,7 +15,7 @@
 
 직접 처리해야 할 이유가 있으면 쓰기 명령에 `--not-main "<이유>"` 를 붙인다. 빈 이유는 거절한다. 이미 허용된 메인이나 Run 없는 셸의 호출은 이 옵션이 있어도 우회 기록과 알림을 만들지 않는다. 이유는 대상 저장소의 띄우기 기록 아래에 남고 메인에게 알림이 간다. 알림이나 기록이 실패하면 실제 쓰기를 하지 않는다. 우회 전용 기록은 `scripts/lib/main-guard.ts`, worker 기록의 표지와 이유는 `scripts/lib/launched.ts` 가 소유한다. 저장 필드는 [데이터 스키마](../../../docs/data-schema.md)를 따른다.
 
-이 기능 전에 띄운 worker 와, 대상 저장소에 메인이 없을 때 띄운 worker 는 원래 Run 이 지시·머지·정리까지 맡는다. 예외는 해당 worker 에만 적용한다. 그 Run 의 `cleanup sweep --apply --run <원래 Run>` 은 해당 worker 워크트리를 치우고 저장소 전체 정리 단계는 건너뛴다.
+이 기능 전에 띄운 worker 와, 대상 저장소에 메인이 없을 때 띄운 worker 는 원래 Run 이 지시·머지·정리까지 맡는다. 예외는 해당 worker 에만 적용한다. 그 Run 의 `cleanup sweep --apply --run <원래 Run>` 은 해당 worker 워크트리를 치우고 저장소 전체 정리 단계는 건너뛴다. 이때 `--run` 을 생략하면 실제 호출 Run 을 쓴다.
 `orch doctor` 의 `NON-MAIN-RUN` 은 메인이 아닌 등록 Run, `FOREIGN-WORKER` 는 다른 Run 이나 다른 저장소에서 띄워 아직 기록이 남은 worker 다. 나온 worktree·spec 과 원래 Run 을 확인한다.
 
 ## `orch loop start` 가 막을 때

@@ -162,6 +162,9 @@ test('worker 예외는 보드 쓰기와 새 worker 생성 권한이 되지 않�
   assert.equal(gate.code, 0)
   if (gate.code === 0) assert.deepEqual([...gate.worktrees!], [repo])
   assert.equal(guardWrite(repo, 'cleanup sweep', undefined, { sweepRun: 'main' }).code, 1)
+  const implicit = guardWrite(repo, 'cleanup sweep', undefined, { sweepRun: undefined })
+  assert.equal(implicit.code, 0)
+  if (implicit.code === 0) assert.equal(implicit.ownerRun, 'other')
 })
 
 test('PR 예외는 지정한 모든 PR 의 브랜치가 원래 Run worker 여야 한다', async () => {

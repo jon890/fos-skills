@@ -201,7 +201,7 @@ doctor 의 「다른 Run 이 띄운 남은 worker」, 「메인이 아닌 등록
 | --- | --- | --- |
 | REQ11 | `main-guard.spec.ts` 의 실제 CLI·직접 명령 | 메인·비메인·Run 없는 셸, 조회·dry-run·잘못된 인자, 실제 dispatch·보드 저장소와 `--run` 사칭, Run 에 묶인 호출의 조회 실패 거절, handle 없는 사람 셸의 Orca 장애 중 쓰기 허용, 실제 루프 한 틱의 자식 허용과 위조 표시 거절 |
 | REQ12 | `main-guard.spec.ts`, `launch-worker.spec.ts` | 빈 이유 거절, 별도 우회 기록·메인 알림, 자식 체인에서 기록과 알림 1회 재사용, 비밀값 없는 재사용과 다른 명령·저장소의 표시 거절과 긴 대기 뒤 체인 유지, 허용된 호출의 이유 무시, 기록·알림 실패 시 쓰기 없음, dispatch 이유 보존 |
-| REQ13 | `main-guard.spec.ts`, `cleanup-sweep-launched.spec.ts` | 옛·메인 없을 때 worker 의 원래 Run 만 허용, 깨진 새 표지 거절, Run 옵션 없는 finish → 실제 sweep → 실제 worktree 정리, 다른 워크트리와 전역 단계 보존, doctor 알림과 정리 뒤 제외 |
+| REQ13 | `main-guard.spec.ts`, `cleanup-sweep-launched.spec.ts` | 옛·메인 없을 때 worker 의 원래 Run 만 허용, 깨진 새 표지 거절, Run 옵션 없는 finish 와 직접 sweep → 실제 worktree 정리, 다른 워크트리와 전역 단계 보존, doctor 알림과 정리 뒤 제외 |
 | REQ1 | `core` 단위 테스트, `orch status` 명령 테스트 | 판정 표(에이전트 있음·없음, 둘째 터미널, 등록 없음). 가짜 orca 로 `MAIN` 줄 |
 | REQ1, REQ2, REQ3 | `orch-loop` 명령 테스트(가짜 orca, 임시 저장소) | `MAIN-EXISTS` 6, `TAKEOVER-CONFIRM` 6, 메인 없음에서 넘겨받기 뒤 등록이 새 Run 하나, `MAIN-UNKNOWN` 1 |
 | REQ2 | `takeover` 단위 테스트(가짜 orca 호출 기록) | idle worker 는 abandon 뒤 worker-start, 작업 중이면 `WORKER-NOT-MOVED`, 다른 저장소 worker 는 건드리지 않음 |
