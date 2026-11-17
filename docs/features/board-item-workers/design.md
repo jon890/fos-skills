@@ -138,7 +138,7 @@ board.ts worker-link <id> --worktree W --pr N         # PR2
 - `lost`: 그 밖에 끝난 dispatch. `dispatchStatus` 가 `failed`·`abandoned`·`completed` 거나, `workerState` 가 `abandoned`·`failed`·`stopped` 거나, `projection.outcome` 이 `cancelled`·`failed` 거나, `lostWorkers` 가 낸 dispatch(`terminal_missing`, `liveness_exited`)
 - 행은 `rowsOf(run, ctx.lookup)` 로 이번 틱의 Run 마다 한 번 읽은 것을 쓴다. 읽지 못한 Run 의 dispatch 는 넣지 않는다. 오래 움직이지 않는 것은 끝남이 아니다(스펙 DECISION14)
 
-보드 맞추기는 항목마다(done 포함) `working` 줄 가운데 `dispatch` 가 이 목록에 있으면 그 값으로 `worker-end` 를 부른다. 워크트리 목록을 읽었고 줄의 `worktree` 가 목록에 없으면 `worker-end <id> lost --worktree W --clear` 를 부른다. 그 워크트리의 작업 중 줄이 있으면 325행의 `set --worktree ''` 는 내지 않는다. 줄 끝내기가 대표 칸을 다른 작업 중 줄로 바꾸거나 비운다. 틱 처음에 읽은 값으로 비우면 새 대표를 지운다. 줄 끝내기 명령은 그 항목의 다른 명령보다 앞에 둔다.
+보드 맞추기는 항목마다(done 포함) `working` 줄 가운데 `dispatch` 가 이 목록에 있으면 그 값으로 `worker-end` 를 부른다. 워크트리 목록을 읽었고 줄의 `worktree` 가 목록에 없으면 `worker-end <id> lost --worktree W --clear` 를 부른다. 단, 다른 저장소가 띄운 줄은 이 저장소의 git 목록에 워크트리가 없는 것이 당연하므로 이 판정에서 뺀다(「보드를 나눠 쓰는 저장소」). 그 워크트리의 작업 중 줄이 있으면 325행의 `set --worktree ''` 는 내지 않는다. 줄 끝내기가 대표 칸을 다른 작업 중 줄로 바꾸거나 비운다. 틱 처음에 읽은 값으로 비우면 새 대표를 지운다. 줄 끝내기 명령은 그 항목의 다른 명령보다 앞에 둔다.
 
 ### 끊김 줄의 되살림
 
@@ -151,6 +151,12 @@ board.ts worker-link <id> --worktree W --pr N         # PR2
 - 그 밖(`failed` 로 닫힘, 지금도 `liveness_exited`, 행 없음)은 넣지 않아 줄이 끊김으로 남는다
 
 보드 맞추기는 `lost` 줄 가운데 dispatch 가 이 목록에 있으면 `worker-add` 로 작업 중으로 되돌리고(`done` 이면 이어서 `worker-end done`) 이번 틱의 뒤 판정이 같은 값을 보게 한다. 줄의 워크트리가 git 목록에 없으면 `working` 으로는 되살리지 않는다. 머지 뒤 정리로 워크트리가 지워진 성공 줄은 `done` 으로 고친다. 닫힌 항목도 `done` 으로만 고친다. 되살린 줄의 `at` 은 되살린 시각으로 바뀐다. 이미 끊김으로 잘못 적힌 줄도 다음 틱의 같은 재판정이 고친다.
+
+### 보드를 나눠 쓰는 저장소
+
+저장소마다 설정의 `finish.board` 를 같은 파일로 두면(fos-assistant 의 보드를 fos-agents, fos-home-infra 가 함께 쓴다) 저장소마다 루프가 돌아 같은 보드를 차례로 맞춘다. 줄에는 저장소 정보가 없다. 띄운 저장소의 루프가 끊김 줄을 되살려도, 같은 틱에 보드만 나눠 쓰는 저장소의 루프가 그 줄의 워크트리를 자기 git 목록에서 찾지 못해 `worker-end lost --clear` 로 다시 끊김으로 썼다. 되살림은 매 틱 되풀이되고 줄은 끊김으로 남았다.
+
+`board-sync.ts` 는 이 저장소의 띄우기 이력(`lib/launch-history.ts`)에 없는 dispatch 의 줄을 다른 저장소의 것으로 본다. 그 줄의 워크트리는 사라졌다고 보지 않는다. 줄 끝내기, 되살림 막기, 대표 칸 비우기, 단계를 모두 끝낸 항목 닫기가 모두 같은 판정을 쓴다. dispatch 가 끝났는지는 Orca 행으로 정하므로 어느 저장소의 루프가 봐도 같은 결과다. 이 저장소의 이력이 비어 있으면 구분할 수 없어 모든 줄을 이 저장소의 것으로 본다. 같은 워크트리 이름에 이 저장소의 줄도 있으면 다른 저장소의 것으로 보지 않는다.
 
 ### 리뷰 항목 판정
 
