@@ -1,13 +1,14 @@
 # ADR-012: 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다
 
-- **status**: `accepted`
+- **status**: `superseded`
 - **결정**: 상주 루프(`orch-loop.ts`)는 저장소마다 하나만 돈다. 세션은 `--start --run <자기 Run>` 으로 자기 Run 을 그 루프에 등록하고 `--stop --run <자기 Run>` 으로 뺀다.
   틱은 등록된 Run 마다 질문 확인, 정리, `tick` 이벤트를 그 Run 범위로 돌린다. 열린 PR 조회, 보드 동기화, CI 감시, 충돌 처리, 원격 브랜치 정리는 저장소 공유 일이라 틱마다 한 번 돈다.
   알림 파일과 커서는 Run 마다 나뉘고, `wait-important --run <Run> --loop-repo` 는 자기 Run 의 알림에만 깨어난다.
   PR 에 붙는 알림(`CI-FAILED`, `CONFLICT-ORPHAN`)은 그 PR 워크트리의 worker 를 띄운 Run 에 가고, 주인을 모르는 알림은 주 Run(가장 먼저 등록한 Run)에 간다.
   마지막 Run 이 빠지면 루프가 끝난다. `handoff-cleanup --run` 은 그 Run 의 Task 가 쓴 지시서만 옮긴다.
   사용자 결정 2026-10-26: 코어는 특정 사례에 얽매이지 않고, 정리는 그 세션이 띄운 것만 한다.
-- **대체된 부분**: 깨우기와 터미널 입력 관련 부분은 [ADR-027](027-orca-message-wake.md)이 대체한다. 해당 부분의 옛 알림 파일·대기·직접 입력은 현재 사용하지 않는다.
+- **대체된 부분**: 여러 세션의 Run 이 루프 하나를 함께 쓰는 결정 전체를 [ADR-035](../035-orch-main-coordinator.md) 가 대체한다. 저장소마다 메인 Run 하나만 루프를 맡는다. 깨우기와 터미널 입력 관련 부분은 그 전에 [ADR-027](../027-orca-message-wake.md)이 대체했다.
+- 아래 본문은 2026-10-26 당시의 맥락이다.
 - **맥락**: 루프가 저장소마다 하나이고 Run 하나에 묶여 있었다. 같은 저장소를 쓰는 둘째 세션은 `--start` 가 `LOOP-RUNNING` 으로 끝나 자기 Run 의 질문 확인과 정리를 맡길 수 없었고, 첫 세션의 루프를 멈추면 첫 세션이 루프를 잃었다.
   2026-10-26 에는 첫 세션의 `after-cleanup` 핸들러가 부른 `handoff-cleanup --apply --run <A>` 가 다른 세션이 만든 끝난 지시서 4개와 큐 로그 1개를 휴지통 폴더로 옮겼다.
   `cleanup-sweep` 은 Run 범위를 지키는데 `handoff-cleanup` 의 판정(브랜치가 원격과 워크트리에 없고 열린 PR 이 없음)은 Run 을 보지 않았다.
@@ -25,4 +26,4 @@
   - 감당할 것: 새로 뜬 루프는 앞 루프가 마지막으로 살아 있던 때(`alive_at`)까지 쓴 다른 Run 의 등록을 지운다. 끝난 세션의 Run 을 계속 맡지 않게 하려는 것이다. 아직 살아 있는 세션은 대기가 미등록 `LOOP-DEAD` 로 깨어나 다시 등록한다.
     루프가 죽으면 여러 세션이 같은 `LOOP-DEAD` 로 함께 깨어나 동시에 `--start` 한다. 살아 있는 루프 없이 `--start` 하면 등록의 `registered_at` 을 새로 써서 서로의 등록을 지우지 않게 하고, 잠금에 진 쪽은 먼저 뜬 루프에 합류한다. 그 대신 다시 띄운 루프의 주 Run 은 먼저 `--start` 한 세션의 Run 으로 바뀔 수 있다.
   - 감당할 것: 이 결정 전에 띄운 루프는 Run 등록을 모른다. 새 `--start --run` 은 그 루프에 Run 을 더하지 못하고 `LOOP-RUNNING` 과 함께 옛 루프라는 안내 줄을 낸다. 그 루프를 띄운 세션이 다시 띄우면 새 방식이 된다.
-- **적용 범위**: 틱의 순서와 Run 별 일은 `orch/scripts/orch-loop.ts` 머리 주석, 상태 파일 형식은 [`../data-schema.md`](../data-schema.md) 의 「orch 루트에 더하는 파일」, 운영 흐름은 [`../flow.md`](../flow.md) 의 「orch 이벤트」 가 소유한다.
+- **적용 범위**: 틱의 순서와 Run 별 일은 `orch/scripts/orch-loop.ts` 머리 주석, 상태 파일 형식은 [`../../data-schema.md`](../../data-schema.md) 의 「orch 루트에 더하는 파일」, 운영 흐름은 [`../../flow.md`](../../flow.md) 의 「orch 이벤트」 가 소유한다.
