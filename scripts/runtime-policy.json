@@ -14,6 +14,7 @@
     "extensions/work-board/hooks/line-rules.js",
     "extensions/work-board/hooks/network-poll.js",
     "extensions/work-board/hooks/register.js",
+    "skills/orch/githooks/dispatch.mjs",
     "skills/orch/scripts/lib/guard/gh",
     "skills/orch/scripts/lib/guard/orca"
   ],

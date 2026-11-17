@@ -87,6 +87,7 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
 
 - `worker-start` 응답의 `launch.effective`(기본 출력의 `LAUNCH-EFFECTIVE` 줄)가 1단계에서 고른 모델, effort 와 같다. 기본 출력의 `LAUNCHED <dispatch> <터미널> <워크트리>` 에서 터미널을 읽는다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
+- 출력에 `COMMIT-CHECK-SKIP` 이나 `COMMIT-CHECK-FAIL` 이 없다. 있으면 아래 「한국어 커밋 검사」 를 따른다
 
 **사용자에게 띄웠다고 보고할 때, 「할 일」 첫 줄이 `루프 없이: <이유>` 인 worker 는 그 이유를 한 줄로 함께 적는다.** 예: 「`orch-log-typo` 를 루프 없이 띄웠다. 이유: 로그 오타만 고치는 버그 수정이다.」
 루프를 건너뛸지는 코디네이터가 정하고 스크립트는 이유가 타당한지 보지 않는다. 사용자가 보고에서 보고 바로잡게 하려는 것이다([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」).
@@ -102,6 +103,17 @@ worker 에게 push, PR 생성, 리뷰 회신과 resolve 를 맡기는 저장소�
 저장소를 한정하지 않으면 다른 저장소의 외부 쓰기까지 허용된다. 프로필 폴더는 `link-claude-profile.ts` 가 맞추는 곳이다.
 
 Orca 가 남기는 `.orca-worktree-trash` 는 Orca 가 관리하므로 지우지 않는다.
+
+### 한국어 커밋 검사
+
+`launch-worker` 는 worker 를 띄우기 전에 그 워크트리에만 걸리는 git 훅을 건다. 에이전트 종류와 대상 저장소를 보지 않는다.
+worker 가 금지어가 든 `.md` 를 커밋하면 git 이 발견 줄과 권장 표현을 보이고 커밋을 거절한다. 판정하는 것은 이번 커밋에서 더한 줄뿐이고, 경고는 보여 주기만 한다.
+저장소가 원래 쓰던 git 훅은 그대로 불린다. 훅 폴더의 구성과 걸지 않는 경우는 `scripts/lib/commit-check.ts` 머리 주석이, 선택 이유는 저장소의 `docs/adr/036-worker-commit-korean-check.md` 가 소유한다.
+
+- `COMMIT-CHECK-SKIP <이유>` 나 `COMMIT-CHECK-FAIL <이유>` 가 나오면 그 worker 의 커밋은 검사받지 않는다. worker 는 그대로 뜬다. 이유를 보고 조치한 뒤 `--worktree` 로 다시 띄우면 걸린다. 주 checkout 이나 원격 환경에 띄운 worker 는 늘 건너뛴다.
+- 이미 떠 있는 worker 의 워크트리에는 걸리지 않는다. 다시 띄울 때 걸린다. 그때 검사기 사본도 새로 만든다.
+- 금지어를 품은 고유명사 때문에 worker 가 막히면 그 저장소의 `.claude/korean-check-allow.txt` 에 적게 한다. 형식은 `korean-check` 스킬이 설치돼 있으면 그 `references/markdown-readability.md` 가 소유한다.
+- 한 워크트리에서 검사를 풀려면 그 워크트리에서 `git config --worktree --unset core.hooksPath` 를 한다.
 
 `worker-start` 가 0 이 아닌 코드로 끝나면 새로 띄우지 않고 아래 절에서 원인을 찾는다.
 
