@@ -1,5 +1,5 @@
 // check-readability 명령 경계 테스트. 옵션, stdout, 종료 코드, 훅 모드 JSON 의 바이트를 본다.
-// 검사마다 경고가 나는 표본과 나지 않는 표본을 함께 둔다. 이 검사기는 실패로 막지 않는다. 경고가 있어도 종료 코드는 0 이다.
+// 검사마다 경고가 나는 표본과 나지 않는 표본을 함께 둔다. TILDE 는 실패로 막고 나머지 경고는 종료 코드 0 이다.
 // 허용 예외(목록과 표의 이름-설명 엠대시, 이스케이프한 물결표)가 중심이다. 예외를 넓히는 변경은 조용히 통과하므로 표본으로 고정한다.
 // 명령 경로는 helpers.ts 의 READABILITY 상수 하나다.
 
@@ -19,7 +19,7 @@ const on = (text: string, name = 'a.md') => {
 const MSG = {
   NEST: '괄호 2겹 중첩: 별도 문장으로 나눈다',
   SECT: '§ 대신 섹션이나 장, 또는 번호를 쓴다',
-  TILDE: '한 단락에 물결표가 2개 이상이다: 취소선으로 렌더될 수 있어 이스케이프하거나 표현을 바꾼다',
+  TILDE: '한 단락에 물결표가 2개 이상이다: 범위는 「부터 … 까지」나 - 로 풀어 쓰거나 \\~ 로 이스케이프한다',
   DASH_HEAD: '제목의 엠대시: 부제를 떼고 한 문장으로 쓴다',
   DASH: '평문의 엠대시: 콜론이나 접속사로 바꾼다',
 }
@@ -27,10 +27,10 @@ const MSG = {
 // 표본마다 한 단락씩 담아 한 번에 검사한다. 표본 i 의 경고는 lineOf(i) 줄에 있다
 function batch(samples: string[], code: string, expectWarning: boolean) {
   const result = read([sampleFile(tempDir(), samples)])
-  assert.equal(result.code, 0, `경고가 실패로 올라갔다: ${result.stdout}`)
+  assert.equal(result.code, code === 'TILDE' && expectWarning ? 1 : 0, `경고가 실패로 올라갔다: ${result.stdout}`)
   const found = findingsByLine(result.stdout)
   samples.forEach((sample, i) => {
-    const has = (found.get(lineOf(i)) ?? []).some((row) => row.includes(`경고 [${code}]`))
+    const has = (found.get(lineOf(i)) ?? []).some((row) => row.includes(`${code === 'TILDE' ? '실패' : '경고'} [${code}]`))
     assert.equal(has, expectWarning, expectWarning ? `경고가 나야 하는 표본이 조용했다: ${JSON.stringify(sample)}` : `경고가 나면 안 되는 표본에서 경고가 났다: ${JSON.stringify(sample)}`)
   })
 }
@@ -39,8 +39,8 @@ const quiet = (samples: string[], code: string) => batch(samples, code, false)
 
 function assertCaught(text: string, code: string) {
   const done = on(text)
-  assert.equal(done.code, 0, done.stdout)
-  assert.ok(done.stdout.includes(`경고 [${code}]`), `경고가 나야 하는 표본이 조용했다: ${JSON.stringify(text)}`)
+  assert.equal(done.code, code === 'TILDE' ? 1 : 0, done.stdout)
+  assert.ok(done.stdout.includes(`${code === 'TILDE' ? '실패' : '경고'} [${code}]`), `경고가 나야 하는 표본이 조용했다: ${JSON.stringify(text)}`)
 }
 function assertPassed(text: string) {
   const done = on(text)
@@ -79,7 +79,7 @@ describe('TILDE', () => {
   test('단락이 다르면 따로 센다', () => quiet(['범위는 3~5 다.\n\n다른 것은 7~9 다.'], 'TILDE'))
   test('이어진 줄은 한 단락이고 경고는 단락의 첫 줄 번호로 낸다', () => {
     const done = on('# 제목\n\n범위는 3~5 이고\n다른 것은 7~9 다.\n')
-    assert.equal(done.stdout, `${done.path}:3  경고 [TILDE] ${MSG.TILDE}\n`)
+    assert.equal(done.stdout, `${done.path}:3  실패 [TILDE] ${MSG.TILDE}\n`)
   })
   test('홈 경로의 물결표는 범위 표기가 아니다: 경로 글자는 한글과 숫자를 포함한다', () => {
     quiet(['설정은 ~/.claude/scripts 에 있고 범위는 3~5 다.', '홈은 ~/문서/설정 이고 범위는 3~5 다.', '홈은 ~/자료2/파일_a 이고 범위는 3~5 다.'], 'TILDE')
@@ -88,6 +88,7 @@ describe('TILDE', () => {
   test('코드 스팬과 링크만 있는 줄은 빈 줄처럼 단락을 끊는다', () => {
     quiet(['범위는 3~5 다.\n`code`\n다른 것은 7~9 다.', '범위는 3~5 다.\n[링크](https://example.com)\n다른 것은 7~9 다.'], 'TILDE')
   })
+  test('인라인 코드의 물결표는 세지 않는다', () => assertPassed('범위는 `3~5` 와 `7~9` 다.\n'))
   test('코드 블록은 단락을 끊고 안의 물결표는 세지 않는다', () => {
     assertPassed('범위는 3~5 다.\n```\n7~9 와 1~2\n```\n다른 것은 7~9 다.\n')
   })
@@ -160,7 +161,11 @@ describe('문자열 모드', () => {
     assert.deepEqual(read(['--text', '']).code, 0)
   })
   test('옵션처럼 보이는 글도 문자열로 본다', () => assert.equal(read(['--text', '--bogus 값 (a (b))']).stdout, `(문자열)  경고 [NEST] ${MSG.NEST}\n`))
-  test('물결표는 문자열 안의 모든 줄을 한 단락으로 본다', () => assert.equal(read(['--text', '3~5 와 7~9']).stdout, `(문자열)  경고 [TILDE] ${MSG.TILDE}\n`))
+  test('문자열의 물결표 오류는 1 로 끝난다', () => {
+    const done = read(['--text', '3~5 와 7~9'])
+    assert.equal(done.code, 1)
+    assert.equal(done.stdout, `(문자열)  실패 [TILDE] ${MSG.TILDE}\n`)
+  })
 })
 
 describe('여러 파일과 종료 코드', () => {
@@ -203,7 +208,7 @@ describe('여러 파일과 종료 코드', () => {
 
 describe('훅 모드', () => {
   const hook = (payload: unknown) => read(['--hook'], { input: typeof payload === 'string' ? payload : JSON.stringify(payload) })
-  const intro = '마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. 문맥을 보고 고칠지 판단한다.\n'
+  const intro = '마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. TILDE 는 고치고, 나머지는 문맥을 보고 고칠지 판단한다.\n'
 
   test('경고가 있어도 0 이고 JSON 한 줄을 낸다', () => {
     const path = write(join(tempDir(), 'a.md'), '고쳤다 — 빠져 있었다.\n')
@@ -211,6 +216,12 @@ describe('훅 모드', () => {
     assert.equal(done.code, 0)
     const ctx = `${intro}${path}:1  경고 [DASH] ${MSG.DASH}`
     assert.equal(done.stdout, `{"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": ${JSON.stringify(ctx)}}}\n`)
+  })
+  test('편집 후 훅은 TILDE 를 실패로 알리고 종료 코드는 0 이다', () => {
+    const path = write(join(tempDir(), 'a.md'), '범위 1~2 와 3~4 다.\n')
+    const done = hook({ tool_input: { file_path: path } })
+    assert.equal(done.code, 0)
+    assert.ok(JSON.parse(done.stdout).hookSpecificOutput.additionalContext.includes(`실패 [TILDE] ${MSG.TILDE}`))
   })
   test('경고 여럿은 줄바꿈으로 잇는다', () => {
     const path = write(join(tempDir(), 'a.md'), '값 (a (b)).\n\n§ 자세히.\n')

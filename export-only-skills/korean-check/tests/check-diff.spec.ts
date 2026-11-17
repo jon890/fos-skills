@@ -26,6 +26,19 @@ const sections = (out: string) => {
 }
 
 describe('이번 변경과 기존 줄', () => {
+  test('더한 단락의 TILDE 는 실패이고 기존 단락의 TILDE 는 참고다', () => {
+    const root = initRepo(tempDir())
+    write(join(root, 'doc.md'), '기존 범위 1~2 와 3~4 다.\n')
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', 'init')
+    write(join(root, 'doc.md'), '기존 범위 1~2 와 3~4 다.\n\n새 문장이다.\n')
+    assert.equal(diff(root).code, 0)
+    write(join(root, 'doc.md'), '기존 범위 1~2 와 3~4 다.\n\n새 범위 5~6 와 7~8 이다.\n')
+    const done = diff(root)
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.ok(sections(done.stdout).every((part) => part.includes('실패 [TILDE]')))
+  })
+
   test('기존 줄의 발견은 실패로 올리지 않고 기존 줄 묶음에 둔다', () => {
     const root = makeRepo()
     write(join(root, 'doc.md'), OLD + '\n새로 더한 문장이다.\n')
@@ -225,6 +238,16 @@ function hashObject(root: string, text: string): string {
 }
 
 describe('--staged', () => {
+  test('스테이징한 TILDE 는 실패로 막고 작업 트리의 수정으로 통과하지 않는다', () => {
+    const root = initRepo(tempDir())
+    write(join(root, 'doc.md'), '범위 1~2 와 3~4 다.\n')
+    git(root, 'add', '.')
+    write(join(root, 'doc.md'), '범위 1-2 와 3-4 다.\n')
+    const done = run(DIFF, { cwd: root, env: GIT_ENV, args: ['--staged'] })
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.ok(done.stdout.includes('실패 [TILDE]'))
+  })
+
   const staged = (root: string, opts: { cwd?: string; env?: NodeJS.ProcessEnv; args?: string[] } = {}) =>
     run(DIFF, { cwd: opts.cwd ?? root, env: opts.env ?? GIT_ENV, args: ['--staged', ...(opts.args ?? [])] })
   const stage = (root: string, name: string, text: string) => {

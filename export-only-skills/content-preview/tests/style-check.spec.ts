@@ -37,6 +37,18 @@ process.exitCode = Number(process.env.FAKE_RC ?? 0)
 }
 
 describe('style-check', () => {
+  test('실제 검사기를 통해 본문과 제목의 물결표 오류를 막는다', (t) => {
+    const s = layout(t)
+    const checker = join(import.meta.dirname, '..', '..', 'korean-check')
+    const body = write(join(s.root, 'body.md'), '범위 1~2 와 3~4 다.\n')
+    for (const args of [[body], ['--text', '범위 1~2 와 3~4 다.']]) {
+      const done = s.exec(args, { KOREAN_CHECK: checker })
+      assert.equal(done.code, 1, done.stdout + done.stderr)
+      assert.ok(done.stdout.includes('실패 [TILDE]'))
+      assert.ok(!done.stdout.includes('표기 검사 통과'))
+    }
+  })
+
   test('인자가 없으면 2', (t) => {
     const s = layout(t)
     const done = s.exec([])
