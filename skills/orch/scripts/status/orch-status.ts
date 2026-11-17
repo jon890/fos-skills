@@ -12,6 +12,10 @@
 //     LOOP-ALIVE <pid> runs=<등록된 Run 을 쉼표로 또는 -> last_tick=<시각 또는 -> bundle=<버전 또는 ->   루프가 살았다
 //     LOOP-STALE <repo> <pid> <번들>                   살아 있지만 지금 세션의 user 설치본과 다른 번들이다(doctor 와 같은 판정)
 //     LOOP-DEAD <repo> <이유>                         루프가 없거나 죽었다(lib/loop.ts 의 loopStatus. 재확인을 기다리지 않는다)
+//     MAIN <Run> terminal=<터미널>                   저장소의 메인 코디네이터(lib/main-coordinator.ts 의 findMain, ADR-035)
+//     MAIN-NONE stale=<등록됐지만 살아 있지 않은 Run 을 쉼표로 또는 ->   메인이 없다. 다음 orch loop start 가 넘겨받는다
+//     MAIN-UNKNOWN <이유>                             메인을 판정하지 못했다(Orca 조회 실패)
+//     REQUESTS open=<끝나지 않은 받은 요청 수>         받은 요청이 하나라도 있을 때만 낸다. 목록은 orch request list --open
 //     RUN <id> workers=<이 저장소 워크트리의 열린 dispatch 수> stalled=<멈춘 수>   같은 Run 의 다른 저장소 worker 는 세지 않는다
 //     SKIP-WORKERS <Run> <이유>                       그 Run 의 worker 목록을 읽지 못했다
 //     BOARD doing=<수> decide=<수>                    보드 파일이 없으면 둘 다 0 이다
@@ -20,7 +24,7 @@
 //     STALLED …, STAGE …                              멈춘 worker 와 worker 없이 멈춘 보드 단계. 꼴은 stalled-workers 와 같다(lib/movement.ts 의 workerLine, stageLine)
 //
 // 짧은 출력과 --full 이 같다. 설명 줄이 없다.
-// 종료 코드: 0 읽었다(멈춘 것이 있어도 0), 1 worker 목록이나 보드를 하나라도 읽지 못했다, 2 사용법이나 설정 오류
+// 종료 코드: 0 읽었다(멈춘 것이 있어도 0. MAIN-UNKNOWN 도 0), 1 worker 목록이나 보드를 하나라도 읽지 못했다, 2 사용법이나 설정 오류
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { existsSync } from 'node:fs'
@@ -34,6 +38,8 @@ import { real } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { staleLoopBundles } from '../lib/loop-bundle.ts'
 import { loopStatus, registeredRuns } from '../lib/loop.ts'
+import { findMain } from '../lib/main-coordinator.ts'
+import { listRequests, openRequests } from '../lib/requests.ts'
 import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine, worktreeOf } from '../lib/movement.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { workerRows } from '../lib/workers.ts'
@@ -103,6 +109,14 @@ function main(argv: string[]): number {
     out(`LOOP-DEAD ${repo} ${loop.reason}`)
   }
   let failed = false
+  const main = findMain(repo)
+  if (main.kind === 'main') out(`MAIN ${main.run} terminal=${main.terminal}`)
+  else if (main.kind === 'none') out(`MAIN-NONE stale=${main.stale.join(',') || '-'}`)
+  else {
+    out(`MAIN-UNKNOWN ${main.error.replace(/\s+/g, ' ').slice(0, 200)}`)
+  }
+  const requests = listRequests(repo)
+  if (requests.length > 0) out(`REQUESTS open=${openRequests(repo).length}`)
   // 이 저장소의 워크트리에 있는 worker 만 센다(ownWorktree)
   const rowsOf = (run: string) => {
     const got = workerRows(run)

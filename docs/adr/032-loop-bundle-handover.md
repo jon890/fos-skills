@@ -5,7 +5,7 @@
 - **areas**: `operations`
 - **현재 규칙의 원본**: [루프 자동 재시작 기술 설계의 「다시 뜨는 차례」](../features/loop-self-update/design.md#다시-뜨는-차례), `skills/orch/scripts/loop/lifecycle.ts` 와 `loop/self-update.ts` 의 파일 맨 위 설명.
 - **결정**: 옛 번들로 도는 부모 루프는 틱 사이에 새 설치본의 `orch-loop.ts --foreground` 를 넘겨받기 모드(`ORCH_LOOP_HANDOVER`)로 띄우고, 잠금 파일(`state/loop.lock`)의 pid 를 새 루프의 pid 로 바꿔 넘긴다. 새 루프는 잠금이 자기 pid 가 될 때까지 기다리고, 등록된 Run 을 지우지 않고 이어받는다. 옛 루프는 생존 타이머를 멈춘 채 새 루프가 `loop.json` 에 자기 pid 를 쓴 것을 확인한 뒤 끝나고, 시작 대기 한도 안에 확인하지 못하면 새 루프를 끝내고 잠금을 되찾아 계속 돈다. 넘겨받기 환경 값, 새 번들 안의 `orch-loop.ts` 경로, 잠금 파일 내용(pid 한 줄)은 번들 사이의 계약이다.
-- **맥락**: 플러그인 갱신은 이미 도는 부모 루프의 코드를 바꾸지 않는다. 옛 번들 루프는 경고만 남기며 틱이 모두 실패해도 살아 있는 것으로 보였다([스펙](../features/loop-self-update/spec.md) 「목표」). 루프는 저장소마다 하나라는 규칙([ADR-012](012-orch-loop-multi-run.md))을 잠금 파일이 지키고, 지금 규칙은 살아 있는 루프가 잠금을 쥐면 새 `--foreground` 가 바로 끝나게 한다. 다시 뜨는 동안 루프가 죽은 것으로 보이면 안 되고(스펙 DECISION18), 맡던 Run 을 잃으면 안 된다(스펙 DECISION8).
+- **맥락**: 플러그인 갱신은 이미 도는 부모 루프의 코드를 바꾸지 않는다. 옛 번들 루프는 경고만 남기며 틱이 모두 실패해도 살아 있는 것으로 보였다([스펙](../features/loop-self-update/spec.md) 「목표」). 루프는 저장소마다 하나라는 규칙([ADR-012](superseded/012-orch-loop-multi-run.md))을 잠금 파일이 지키고, 지금 규칙은 살아 있는 루프가 잠금을 쥐면 새 `--foreground` 가 바로 끝나게 한다. 다시 뜨는 동안 루프가 죽은 것으로 보이면 안 되고(스펙 DECISION18), 맡던 Run 을 잃으면 안 된다(스펙 DECISION8).
 - **대안 기각**:
   - 옛 루프가 먼저 끝나고 새 루프가 보통 시작처럼 잠금을 얻는다: 그 사이 `loop.json` 의 pid 가 죽어 생존 판정이 죽음을 내고, 새 루프가 뜨지 못하면 루프가 하나도 남지 않는다.
   - 옛 루프가 `orch loop stop` 뒤 `orch loop start` 를 부른다: stop 이 등록을 빼고, start 는 명의 확인을 다시 하며 앞 루프의 등록을 지운다. 같은 루프를 잇는 동작이 아니다.

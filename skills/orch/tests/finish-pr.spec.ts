@@ -67,6 +67,12 @@ const orca = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8')).orca ||
 if (orca.fails) process.exit(1)
 if (args.includes('worker-list')) say(1, JSON.stringify({ ok: true, result: { workers: orca.workers || [], scope: { source: 'all' } } }))
 else if (args.includes('task-list')) say(1, JSON.stringify({ ok: true, result: { tasks: orca.tasks || [] } }))
+else if (args.includes('run-list')) say(1, JSON.stringify({ ok: true, result: { runs: orca.runs || [] } }))
+else if (args[0] === 'terminal' && args[1] === 'list') say(1, JSON.stringify({ ok: true, result: { terminals: orca.terminals || [] } }))
+else if (args[0] === 'orchestration' && args[1] === 'send') {
+  if (orca.send_fails) { say(1, JSON.stringify({ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } })); process.exit(1) }
+  say(1, JSON.stringify({ ok: true, result: { message: { id: 'msg_1' } } }))
+}
 else if (args.includes('worker-show')) {
   const id = args[args.indexOf('--dispatch') + 1]
   const status = (orca.dispatches || {})[id]
@@ -458,6 +464,78 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     const items = (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items
     assert.equal(items.find((item) => item.id === 'item-1')?.status, 'done', JSON.stringify(items))
     assert.equal(items.find((item) => item.id === 'item-2')?.status, 'wait', JSON.stringify(items))
+  })
+
+  // 받은 요청의 보드 항목(req-<n>)을 마무리한 마지막 PR 은 요청을 완료로 보낸다(ADR-035, 머리 주석의 「요청 완료」)
+  function requestScene(c: Ctx, state = 'accepted'): string {
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'req-1', status: 'wait', title: '요청 R1: 로그인', pr: '#77' }] }))
+    const record = join(c.repo, '.orch/state/requests/R1.json')
+    mkdirSync(join(record, '..'), { recursive: true })
+    const at = '2026-11-17T00:00:00.000Z'
+    writeFileSync(record, JSON.stringify({ id: 'R1', number: 1, repo: c.repo, title: '로그인', body: 'b', state, reason: null, from: { repo: c.repo, run: 'run_from', terminal: null },
+      to_run: 'run_main', created_at: at, updated_at: at, ack_notice_at: null, board: { to: 'req-1', from: null }, history: [{ at, state: 'sent', reason: null, run: 'run_from' }] }))
+    return record
+  }
+
+  test('요청 항목을 마무리한 마지막 PR 은 요청 완료를 보낸 Run 에 보낸다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    c.state.orca = { runs: [{ id: 'run_from', coordinator_handle: 'term_f' }], terminals: [{ handle: 'term_f', agentIdentity: 'claude', connected: true }] }
+    const r = await c.finish([...COMPLETE, '--board', join(c.tmp, 'board.json'), '--board-id', 'req-1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'REQUEST-DONE R1 to=run_from')
+    assert.equal(lastLine(r), 'FINISH-DONE')
+    assert.equal(JSON.parse(readFileSync(record, 'utf8')).state, 'done')
+    assert.ok(starting(c.calls(), 'orca orchestration send').some((line) => line.includes('--to run:run_from')), c.calls().join('\n'))
+  })
+
+  test('요청 완료를 보내지 못해도 마무리는 FINISH-DONE 이고 다시 보낼 표시를 남긴다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    c.state.orca = { runs: [{ id: 'run_from', coordinator_handle: 'term_f' }], terminals: [{ handle: 'term_f', agentIdentity: 'claude', connected: true }], send_fails: true }
+    const r = await c.finish([...COMPLETE, '--board', join(c.tmp, 'board.json'), '--board-id', 'req-1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'REQUEST-DONE-FAIL R1')
+    assert.equal(lastLine(r), 'FINISH-DONE')
+    const saved = JSON.parse(readFileSync(record, 'utf8'))
+    assert.equal(saved.state, 'accepted')
+    assert.ok(saved.pending_done, JSON.stringify(saved))
+  })
+
+  test('PR 로 찾은 요청 항목을 마지막 PR 이 닫으면 요청 완료를 보낸다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'req-1', status: 'doing', title: '요청 R1: 로그인', pr: '#77', details: ['1. PR #77'] }] }))
+    c.state.orca = { runs: [{ id: 'run_from', coordinator_handle: 'term_f' }], terminals: [{ handle: 'term_f', agentIdentity: 'claude', connected: true }] }
+    const r = await c.finish([...COMPLETE, '--board', file])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'REQUEST-DONE R1 to=run_from')
+    assert.equal(JSON.parse(readFileSync(record, 'utf8')).state, 'done')
+  })
+
+  test('요청 항목에 끝나지 않은 단계가 남으면 마지막 PR 이어도 요청을 완료로 보내지 않는다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'req-1', status: 'doing', title: '요청 R1: 로그인', pr: '#77', details: ['1. PR #77', '2. 다른 저장소 반영'] }] }))
+    c.state.orca = { runs: [{ id: 'run_from', coordinator_handle: 'term_f' }], terminals: [{ handle: 'term_f', agentIdentity: 'claude', connected: true }] }
+    const r = await c.finish([...COMPLETE, '--board', file])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'REQUEST-OPEN R1')
+    lacks(r.stdout, 'REQUEST-DONE')
+    assert.equal(JSON.parse(readFileSync(record, 'utf8')).state, 'accepted')
+    assert.equal(starting(c.calls(), 'orca orchestration send').length, 0, c.calls().join('\n'))
+  })
+
+  test('중간 PR 은 요청을 완료로 보내지 않는다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    const r = await c.finish(['--intermediate', '--board', join(c.tmp, 'board.json'), '--board-id', 'req-1'])
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stdout, 'REQUEST-DONE')
+    assert.equal(JSON.parse(readFileSync(record, 'utf8')).state, 'accepted')
   })
 
   test('정리 스크립트가 지우지 못한 워크트리는 알리고 흐름을 이어 간다', async (t) => {
