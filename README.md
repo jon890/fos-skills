@@ -315,7 +315,8 @@ CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `
 타입만 보고 싶으면 `node scripts/run-tests.ts --tsc-only` 로 tsc 만 돌려요. 테스트는 돌지 않고, 파일 인자와 함께 줄 수 없어요.
 기본 동시 수는 실행 가능한 CPU 수 이하이고 최대 8이에요. worker 여럿이 함께 검증하면 `--concurrency 4`처럼 낮출 수 있어요.
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
-저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
+PR 은 CI 의 `Tests` job 이 통과해야 머지해요.
+orch 를 쓰면 이 저장소의 고유 규칙은 각자의 `.orch/overlay.md` 에 둬요. git 이 추적하지 않고, 적는 법은 [orch 오버레이 문서](skills/orch/references/overlay.md)가 정해요.
 
 ### 고치는 동안
 
