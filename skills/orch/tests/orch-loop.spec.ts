@@ -144,6 +144,7 @@ beforeEach(() => {
     // 사용자 입력 기록과 닫은 질문(lib/machine.ts)을 이 머신의 폴더에서 읽지 않는다
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
   }
+  delete env.ORCA_PANE_KEY
   delete env.ORCH_DIR
   delete env.ORCH_LOOP_ALIVE_SEC
   delete env.NODE_OPTIONS

@@ -1,10 +1,11 @@
+import { fakeBin } from './fixtures/fake-bin.ts'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
-import { configureSshAgent, sshCommandFor } from '../scripts/lib/ssh-agent.ts'
+import { configureSshAgent, sshCommandFor, shellSshAgentLines } from '../scripts/lib/ssh-agent.ts'
 
 // 전역 설정과 작성자를 고정한다. 프로세스가 파일마다 나뉘어 다른 파일에 새지 않는다.
 const GIT_ENV: Record<string, string> = {
@@ -108,4 +109,23 @@ describe('configureSshAgent', () => {
     configureSshAgent(wt, '/tmp/agent.sock')
     assert.equal(g(other, 'config', '--get', 'core.sshCommand').status, 1)
   })
+})
+
+describe('shellSshAgentLines', () => {
+  test('git 설정이 있어도 셸에 소켓이 없으면 일반 ssh 실패를 알린다', () => {
+    configureSshAgent(wt, '/tmp/coordinator.sock')
+    const lines = shellSshAgentLines({ ...process.env, SSH_AUTH_SOCK: undefined })
+    assert.match(lines.join('\n'), /SSH-AGENT-MISSING/)
+    assert.match(lines.join('\n'), /core.sshCommand/)
+  })
+  for (const [code, marker] of [[0, ''], [1, 'SSH-AGENT-NO-KEY'], [2, 'SSH-AGENT-UNAVAILABLE']] as const) {
+    test(`ssh-add 종료 코드 ${code} 를 구분하고 키 정보는 내보내지 않는다`, () => {
+      const fake = fakeBin(tmp, 'ssh-add', [{ args: ['-l'], code, stdout: 'PRIVATE-KEY-DETAIL', stderr: 'PRIVATE-ERROR' }])
+      const lines = shellSshAgentLines({ ...process.env, PATH: `${tmp}:${process.env.PATH}`, SSH_AUTH_SOCK: '/tmp/test.sock' })
+      if (!marker) assert.deepEqual(lines, [])
+      else assert.match(lines.join('\n'), new RegExp(marker))
+      assert.doesNotMatch(lines.join('\n'), /PRIVATE-/)
+      assert.equal(fake.calls().length, 1)
+    })
+  }
 })

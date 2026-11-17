@@ -14,6 +14,8 @@
 // orchestration 명령에는 늘 withFull 로 --full 을 붙인다. 붙이지 않으면 값이 빈 채로 판정이 엇나간다
 // (띄운 worker 의 단계를 읽지 못해 abandon 하고 다시 띄우거나, 살아 있는 dispatch 를 끝난 것으로 본다).
 
+import { resolve, sep } from 'node:path'
+import { shQuote } from './py.ts'
 import { isObject, objectOr } from '../core/json.ts'
 import { run } from './proc.ts'
 import type { RunOptions, RunResult } from './proc.ts'
@@ -29,7 +31,41 @@ export function withFull(args: string[]): string[] {
 }
 
 export function orca(args: string[], opts?: RunOptions): RunResult {
-  return run([orcaBin(), ...withFull(args)], opts)
+  const current = args[0] === 'orchestration' && args[1] === 'run-current'
+  const preflight = current ? terminalHandleHint(opts, true) : ''
+  if (preflight) return { code: 1, stdout: '', stderr: preflight, timedOut: false }
+  const done = run([orcaBin(), ...withFull(args)], opts)
+  if (args[0] === 'orchestration' && /consumer_fenced/.test(done.stdout + done.stderr)) {
+    let failed = done.code !== 0
+    try { failed ||= objectOr(JSON.parse(done.stdout)).ok === false } catch { /* 일반 stderr 오류도 처리한다 */ }
+    const hint = failed ? terminalHandleHint(opts, false) : ''
+    if (hint) return { ...done, stderr: `${failureDetail(done.stdout, done.stderr)}\n${hint}` }
+  }
+  return done
+}
+
+// 셸 핸들을 자동으로 바꾸거나 실패한 쓰기를 다시 보내지 않는다. pane 이 일치할 때만 다른 창임을 확정한다.
+function terminalHandleHint(opts: RunOptions | undefined, exactOnly: boolean): string {
+  const env = { ...process.env, ...opts?.env }
+  const handle = env.ORCA_TERMINAL_HANDLE
+  if (!handle || (exactOnly && !env.ORCA_PANE_KEY)) return ''
+  const listed = run([orcaBin(), 'terminal', 'list', '--limit', '10000', '--json'], { ...opts, timeoutMs: 3_000 })
+  if (listed.code !== 0) return ''
+  let body: Record<string, unknown>
+  try { body = objectOr(JSON.parse(listed.stdout)) } catch { return '' }
+  const result = objectOr(body.result)
+  if (body.ok !== true || !Array.isArray(result.terminals) || result.truncated) return ''
+  const rows = result.terminals.filter(isObject).filter(r => typeof r.handle === 'string' && r.connected === true && r.orphaned !== true)
+  const exact = env.ORCA_PANE_KEY ? rows.filter(r => `${r.tabId}:${r.leafId}` === env.ORCA_PANE_KEY) : []
+  if (exact.length === 1) {
+    if (exact[0].handle === handle) return ''
+    return `TERMINAL-HANDLE-MISMATCH 셸 핸들 ${handle} 은 현재 창의 핸들이 아니다. 현재 창: ${exact[0].handle}. export ORCA_TERMINAL_HANDLE=${shQuote(String(exact[0].handle))} 로 고친 뒤 다시 실행한다`
+  }
+  if (exactOnly) return ''
+  const cwd = resolve(opts?.cwd ?? process.cwd())
+  const candidates = rows.filter(r => typeof r.worktreePath === 'string' && (cwd === resolve(r.worktreePath) || cwd.startsWith(resolve(r.worktreePath) + sep)))
+  if (!candidates.length) return 'TERMINAL-HANDLE-CHECK 셸 핸들과 현재 창의 연결을 확인하지 못했다. orca terminal list --limit 10000 --json 으로 현재 창의 핸들을 확인한다'
+  return `TERMINAL-HANDLE-CHECK 셸 핸들 ${handle} 과 현재 창이 다를 수 있다. 작업 폴더의 핸들 후보: ${candidates.map(r => r.handle).join(', ')}. orca terminal list --limit 10000 --json 으로 현재 창을 확인하고 ORCA_TERMINAL_HANDLE 을 고친다`
 }
 
 function brief(text: string): string {
@@ -50,7 +86,7 @@ export function orcaJson<T>(args: string[], opts?: RunOptions): { ok: true; data
     return { ok: false, error: `${command} 의 응답이 봉투 객체가 아니다` }
   }
   const body = envelope as { ok?: unknown; result?: unknown; error?: unknown }
-  if (body.ok === false) return { ok: false, error: `${command} 가 실패를 알렸다: ${brief(JSON.stringify(body.error ?? null))}` }
+  if (body.ok === false) return { ok: false, error: `${command} 가 실패를 알렸다: ${brief([JSON.stringify(body.error ?? null), done.stderr].filter(Boolean).join(' '))}` }
   if (!('result' in body)) return { ok: false, error: `${command} 의 응답에 result 가 없다` }
   return { ok: true, data: body.result as T }
 }

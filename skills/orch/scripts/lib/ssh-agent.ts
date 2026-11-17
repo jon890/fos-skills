@@ -12,6 +12,7 @@
 // 사용자가 이미 core.sshCommand 를 정했으면(어느 범위든) 덮지 않는다. 이 함수가 앞서 둔 값(`ssh -o IdentityAgent=` 로 시작)만 새 소켓으로 갱신한다.
 // core.bare 나 core.worktree 가 공유 설정에 있으면 extensions.worktreeConfig 를 켜지 않고 건너뛴다. 그 판정은 lib/worktree-config.ts 가 소유한다.
 
+import { run } from './proc.ts'
 import { git } from './git.ts'
 import { shQuote } from './py.ts'
 import { enableWorktreeConfig, setGitConfig } from './worktree-config.ts'
@@ -47,4 +48,15 @@ export function configureSshAgent(worktree: string, sock: string | undefined): S
   const done = setGitConfig(worktree, ['--worktree', 'core.sshCommand', command])
   if (done.code !== 0) return { status: 'failed', reason: `core.sshCommand 를 쓰지 못했다: ${done.stderr.trim()}` }
   return { status: 'set', command }
+}
+
+// doctor 를 실행한 셸에서 일반 ssh 가 쓰는 에이전트를 확인한다. git 의 core.sshCommand 는 이 검사에 영향을 주지 않는다.
+// ssh-add 출력에는 키 정보가 있으므로 출력하지 않고 종료 코드만 읽는다. 로그인이나 원격 접속은 하지 않는다.
+export function shellSshAgentLines(env: NodeJS.ProcessEnv = process.env): string[] {
+  const help = 'git 의 core.sshCommand 는 일반 ssh 에 적용되지 않는다. 코디네이터의 유효한 SSH_AUTH_SOCK 을 이 셸에 전달한 뒤 orch doctor 로 다시 확인한다. Access 로그인 만료로 단정하지 않는다'
+  if (!env.SSH_AUTH_SOCK) return [`SSH-AGENT-MISSING 이 셸에 SSH_AUTH_SOCK 이 없다. ${help}`]
+  const checked = run(['ssh-add', '-l'], { env, timeoutMs: 3_000 })
+  if (checked.code === 0) return []
+  if (checked.code === 1) return ['SSH-AGENT-NO-KEY 이 셸의 에이전트에 키가 없다. 필요한 키를 에이전트에 등록한 뒤 다시 확인한다']
+  return [`SSH-AGENT-UNAVAILABLE 이 셸에서 ssh-agent 연결을 확인하지 못했다(종료 코드 ${checked.code}). ${help}`]
 }
