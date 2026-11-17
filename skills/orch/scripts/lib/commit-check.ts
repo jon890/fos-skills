@@ -128,13 +128,19 @@ export function installCommitCheck(worktree: string, source: { checker?: string;
   return { status: 'set', hooks }
 }
 
-// 이 모듈이 건 훅을 푼다. 푼 것이 있으면 true 다. 사용자가 둔 core.hooksPath 와 주 checkout 은 건드리지 않는다
-export function removeCommitCheck(worktree: string): boolean {
+export type RemoveResult = { status: 'removed' } | { status: 'none' } | { status: 'failed'; reason: string }
+
+// 이 모듈이 건 훅을 푼다. 사용자가 둔 core.hooksPath 는 건드리지 않는다. 주 checkout 은 건 적이 없으므로 보지 않는다
+// (확장이 꺼진 단일 checkout 에서는 --worktree 가 공유 설정을 가리킨다)
+export function removeCommitCheck(worktree: string): RemoveResult {
+  const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir']).stdout.trim()
+  const common = git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir']).stdout.trim()
+  if (!gitDir || !common || real(gitDir) === real(common)) return { status: 'none' }
   const existing = git(worktree, ['config', '--worktree', '--get', 'core.hooksPath'])
   const current = existing.stdout.trim()
-  if (existing.code !== 0 || !current || !isOurs(current)) return false
-  if (setGitConfig(worktree, ['--worktree', '--unset', 'core.hooksPath']).code !== 0) return false
-  const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir']).stdout.trim()
-  if (gitDir) rmSync(join(gitDir, HOOKS_DIR), { recursive: true, force: true })
-  return true
+  if (existing.code !== 0 || !current || !isOurs(current)) return { status: 'none' }
+  const done = setGitConfig(worktree, ['--worktree', '--unset', 'core.hooksPath'])
+  if (done.code !== 0) return { status: 'failed', reason: done.stderr.trim() }
+  rmSync(join(gitDir, HOOKS_DIR), { recursive: true, force: true })
+  return { status: 'removed' }
 }

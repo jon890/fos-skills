@@ -325,20 +325,24 @@ function stagedLines(root: string, item: Staged): Set<number> | null {
 }
 
 // 해시 차례대로 blob 의 바이트를 낸다. `git cat-file --batch` 의 출력은 항목마다 「해시 SP 종류 SP 크기 LF 내용 LF」 다. 읽지 못하면 null
+// 해시는 CHUNK 개씩 나눠 넘긴다. 한 번에 받으면 내용의 합이 버퍼 상한을 넘을 수 있다
 function readBlobs(root: string, hashes: string[]): Buffer[] | null {
-  const done = spawnSync('git', ['cat-file', '--batch'], { cwd: root, input: hashes.map((hash) => `${hash}\n`).join(''), maxBuffer: MAX_BUFFER })
-  if (done.status !== 0) return null
-  const data = done.stdout as Buffer
   const blobs: Buffer[] = []
-  let at = 0
-  for (const hash of hashes) {
-    const end = data.indexOf(0x0a, at)
-    if (end < 0) return null
-    const [name, kind, size] = data.subarray(at, end).toString('utf8').split(' ')
-    if (name !== hash || kind !== 'blob' || !/^\d+$/.test(size ?? '')) return null
-    const start = end + 1
-    blobs.push(data.subarray(start, start + Number(size)))
-    at = start + Number(size) + 1
+  for (let from = 0; from < hashes.length; from += CHUNK) {
+    const part = hashes.slice(from, from + CHUNK)
+    const done = spawnSync('git', ['cat-file', '--batch'], { cwd: root, input: part.map((hash) => `${hash}\n`).join(''), maxBuffer: MAX_BUFFER })
+    if (done.status !== 0) return null
+    const data = done.stdout as Buffer
+    let at = 0
+    for (const hash of part) {
+      const end = data.indexOf(0x0a, at)
+      if (end < 0) return null
+      const [name, kind, size] = data.subarray(at, end).toString('utf8').split(' ')
+      if (name !== hash || kind !== 'blob' || !/^\d+$/.test(size ?? '')) return null
+      const start = end + 1
+      blobs.push(data.subarray(start, start + Number(size)))
+      at = start + Number(size) + 1
+    }
   }
   return blobs
 }

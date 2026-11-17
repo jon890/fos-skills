@@ -2458,6 +2458,15 @@ describe('한국어 커밋 검사 걸기', () => {
     assert.equal(lines('orca orchestration worker-start').length, 0)
   })
 
+  test('설정 오류는 새 워크트리를 만들기 전에 멈춘다', () => {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: 'no' } }))
+    const r = launch(['--repo', proj, '--name', 'fresh', '--', ...CODEX])
+    assert.equal(r.code, 2, both(r))
+    assert.doesNotMatch(both(r), /워크트리를 만들었다/)
+    assert.equal(lines('make ').length, 0)
+  })
+
   test('주 checkout 에 띄우면 걸지 않고 판정 줄로 알린다', () => {
     env.FAKE_WT_DEFAULT = `${proj}`
     const r = launch(['--worktree', proj, '--', ...CODEX])
