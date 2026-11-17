@@ -28,7 +28,7 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 | `scripts/core/main-coordinator.ts` | 메인 판정(`judgeMain`), 답 대상 판정(`replyTarget`), 요청 상태 전이(`nextRequestState`). 값만 받아 결과를 낸다 | 새로 |
 | `scripts/lib/main-coordinator.ts` | Orca 조회(`run-list` 전체 페이지, `terminal list`)와 `findMain`, `runAlive` | 새로 |
 | `scripts/lib/requests.ts` | 요청 기록 읽기와 쓰기, 번호 잡기(파일 잠금), 보드 항목 쓰기, 답 보내기 | 새로 |
-| `scripts/request/request.ts` | `orch request …` 명령 | 새로 |
+| `scripts/request/orch-request.ts` | `orch request …` 명령 | 새로 |
 | `scripts/loop/takeover.ts` | worker 옮기기, 옮길 Run 목록(`state/takeover.json`), 넘겨받은 뒤의 출력과 알림 | 새로 |
 | `scripts/loop/lifecycle.ts` | `start` 앞에 넘겨받기 잠금, 메인 판정, 넘겨받기 차례(루프 멈춤, 등록 지우기, 띄우기)를 넣는다. 나머지는 그대로 | 고침 |
 | `scripts/loop/steps/requests.ts` | 답 없음 알림과 자동 완료 다시 보내기. 틱의 마지막(13번) 단계이고 저장소마다 틱에 한 번 돈다 | 새로 |

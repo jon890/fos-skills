@@ -225,7 +225,7 @@ flowchart TD
 | 질문·보고를 놓친다 | Orca 메시지, 상주 루프, doctor | worker 메시지는 Orca 가 직접 깨운다. 루프는 알림을 Run 에 보내고 조회 실패도 WATCH-ERROR 로 알린다. doctor 와 status 가 LOOP-DEAD 를 보이며, 다시 시작한 루프가 멈췄던 시간을 LOOP-RESTARTED 로 보낸다 |
 | 미답변 질문이 쌓인다 | `tick`, `worker-question`, `decision-pending` | 600초 넘은 기술 질문 id 묶음이 바뀔 때 UNANSWERED 를 Run 에 보낸다. 사용자 결정은 decision-pending 이 맡는다. 대화 중에도 미루지 않고 실패하면 재시도한다. 닫힌 질문은 재알림에서 뺀다 |
 | 원격 브랜치가 쌓인다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 브랜치가 남는다 | `after-merge`, `tick` | 머지를 확인한 자리에서 원격 브랜치를 지운다. 틱마다 내 PR 가운데 MERGED 이거나, CLOSED 이고 head 커밋이 base 에 들어간 PR 의 원격 브랜치를 지운다 |
-| 같은 저장소의 여러 Run 을 관리한다 | `orch loop start` | 루프는 저장소마다 하나이고 Run 별 질문 확인·정리·tick 을 실행한다. 알림도 해당 Run 메일함으로 보낸다([ADR-012](adr/012-orch-loop-multi-run.md), [ADR-027](adr/027-orca-message-wake.md)) |
+| 저장소의 메인 코디네이터가 루프를 맡는다 | `orch loop start` | 루프는 저장소마다 하나이고 메인 Run 하나가 맡는다. 메인이 있으면 다른 Run 은 등록하지 않고 `orch request send` 로 요청을 보낸다. 메인이 없으면 부른 세션이 넘겨받는다([ADR-035](adr/035-orch-main-coordinator.md), [ADR-027](adr/027-orca-message-wake.md)) |
 | 정리가 다른 세션의 산출물을 옮긴다 | `cleanup-sweep --run`, `handoff-cleanup --run` | `--run` 을 주면 그 Run 의 worker 와 Task 가 쓴 것만 정리한다. Run 에 묶을 수 없는 산출물(큐 로그, 폴더, csv)은 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다 |
 | worker 가 모델 오류 화면에서 멈춰 사람이 터미널을 봐야 안다 | `tick`, `worker-stalled` | 틱마다 등록된 Run 이 띄운 살아 있는 worker 의 화면을 판정해 같은 멈춤이 이어지면 이벤트를 낸다. `error` 멈춤은 핸들러가 없으면 코어가 정한 횟수까지 다시 진행시키고, 핸들러가 있으면 핸들러가 맡는다. 상한에 닿았거나 맡지 못하면 그 Run 의 코디네이터가 `WORKER-STALLED` 로 깨어난다([ADR-013](adr/013-orch-worker-stalled.md)) |
 | 머지된 줄 모르는 worker 의 dispatch 가 살아 있어 정리가 그 워크트리를 「살아 있는 worker」 로 계속 건너뛴다 | `finish-pr`, `send-to-worker` | 마무리가 정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지와 머지 커밋을 알리고, `finish.worker_done_timeout` 동안 dispatch 가 끝나기를 기다린다. 답할 메시지가 없으면 `send-to-worker` 가 새 메시지로 보낸다 |

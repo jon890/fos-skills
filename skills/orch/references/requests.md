@@ -1,0 +1,55 @@
+# 메인 코디네이터와 요청
+
+저장소마다 메인 코디네이터 하나가 worker 띄우기, 지시, 머지, 정리, 보드 쓰기를 맡는다. 다른 세션은 그 메인에게 요청만 보낸다([ADR-035](../../../docs/adr/035-orch-main-coordinator.md)).
+메인 판정, 넘겨받기 차례, 출력 줄은 `scripts/loop/lifecycle.ts` 와 `scripts/loop/takeover.ts` 머리 주석이, 요청 명령의 출력 줄과 종료 코드는 `scripts/request/request.ts` 머리 주석이 소유한다.
+
+## 메인 확인
+
+`orch status` 의 `MAIN <Run> terminal=<터미널>` 이 그 저장소의 메인이다. `MAIN-NONE` 이면 메인이 없다.
+메인은 루프에 등록된 Run 가운데 코디네이터 터미널에서 에이전트가 실행 중인 첫 Run 이다. 셸만 남은 터미널은 메인이 아니다.
+
+## `orch loop start` 가 막을 때
+
+| 줄 | 뜻과 할 일 |
+| --- | --- |
+| `MAIN-EXISTS <Run> terminal=<터미널>` | 다른 세션이 메인이다. 그 저장소의 일은 아래 「요청 보내기」 로 맡긴다 |
+| `TAKEOVER-CONFIRM <Run> …` | `--take-over` 만 줬다. 메인 Run 이 살아 있다는 것과 넘기면 그 Run 이 루프에서 빠진다는 것을 사용자에게 묻고, 답을 `--confirmed "<사용자 답>"` 으로 준다. 코디네이터가 대신 답하지 않는다 |
+| `MAIN-UNKNOWN <이유>` | Orca 조회가 실패했다. 넘겨받지 않았다. Orca 가 응답하면 다시 부른다 |
+| `TAKEOVER-BUSY` | 다른 세션이 넘겨받는 중이다. 끝난 뒤 다시 부른다 |
+| `TAKEOVER-FAIL stop`, `TAKEOVER-FAIL start` | 안내 줄을 따른다. `start` 면 이 Run 이 이미 메인이라 같은 명령을 다시 부른다 |
+
+메인이 없으면 `loop start` 가 스스로 넘겨받고 `MAIN-TAKEN <Run> from=<앞 Run>` 을 낸다. 따로 할 일은 없다.
+`WORKER-NOT-MOVED` 줄의 worker 는 앞 Run 에 남았다. 이유가 「작업 중」 이면 그 worker 가 쉰 뒤 `orch loop start --take-over` 로 다시 옮긴다. `WORKER-MOVE-FAIL` 은 줄의 이어받기 파일로 `orch worker adopt` 를 쓴다.
+`REQUEST-OPEN` 줄은 앞 메인이 받아 두고 끝내지 않은 요청이다. 아래 「요청 받기」 대로 이어 맡는다.
+
+## 요청 보내기
+
+다른 저장소나 같은 저장소의 메인에게 맡길 일은 worker 를 직접 띄우지 않고 요청한다.
+
+```bash
+orch request send --to <저장소 경로> --title "<제목>" --body-file <본문 파일>
+```
+
+`REQUEST-SENT R<n> …` 이면 보냈다. 보낸 저장소 보드에 기다리는 항목이 생긴다. 답(받음, 보류, 거절, 완료, 실패)은 Orca 메시지로 온다. 받음·보류·거절 답이 30분(`pipeline.request_ack_sec`) 없으면 `REQUEST-NO-ACK` 가 한 번 온다. 다시 보낼지는 보낸 쪽이 정한다.
+`REQUEST-NO-MAIN` 이면 그 저장소에 메인이 없다. 지금처럼 worker 를 직접 띄운다.
+
+## 요청 받기
+
+`REQUEST` 메시지를 받으면 본문을 읽고 받음, 보류, 거절 가운데 하나를 바로 보낸다. 거절과 보류는 이유를 붙인다. 이 저장소의 사용자 결정과 다른 요청이면 사용자에게 먼저 묻는다.
+
+```bash
+orch request accept R<n>
+orch request hold R<n> --reason "<이유>"
+orch request reject R<n> --reason "<이유>"
+```
+
+받은 일로 worker 를 띄울 때는 지시서에 `보드 항목 id: req-<n>` 을 둔다. worker 가 그 요청 항목에 붙고, 마지막 PR 의 마무리가 `FINISH-DONE` 이면 orch 가 완료를 자동으로 보낸다.
+PR 없는 일, 메인이 직접 처리한 일, 마무리가 실패한 일은 직접 끝낸다.
+
+```bash
+orch request done R<n> [--reason "<이유>"]
+orch request fail R<n> --reason "<이유>"
+```
+
+요청으로 띄운 worker 의 사용자 결정 질문은 받은 메인이 자기 화면과 보드로 사용자에게 묻는다. 보낸 쪽에 넘기지 않는다.
+받은 요청 목록은 `orch request list --open` 이다.

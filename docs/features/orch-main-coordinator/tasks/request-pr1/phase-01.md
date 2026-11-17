@@ -33,7 +33,7 @@
 
 ### 3. 요청
 
-`scripts/lib/requests.ts`, `scripts/request/request.ts`, `scripts/lib/commands.ts` 의 request 묶음, `scripts/lib/run-notice.ts` 의 source 옵션.
+`scripts/lib/requests.ts`, `scripts/request/orch-request.ts`, `scripts/lib/commands.ts` 의 request 묶음, `scripts/lib/run-notice.ts` 의 source 옵션.
 
 ### 4. 알림과 자동 완료
 
