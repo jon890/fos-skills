@@ -38,7 +38,7 @@ export const SELECTION_FORMAT = 'worker 선택: `<에이전트>` `<모델>` effo
 
 export function selectionsOf(text: string): Selection[] {
   const found: Selection[] = []
-  lines(text).forEach((line, index) => {
+  outsideFences(lines(text)).forEach((line, index) => {
     const m = SELECTION.exec(line)
     if (!m) return
     const body = m[1]
@@ -47,7 +47,7 @@ export function selectionsOf(text: string): Selection[] {
     const values = [...rest.matchAll(TICK)].map((t) => t[1].trim())
     const row = /행:\s*([a-z][a-z0-9-]*)(?=\s|[.]|$)/.exec(body)?.[1] ?? null
     const problems: string[] = []
-    const outside = /후보 밖:(.*?)(?=\s+(?:행|비교|이유):|$)/.exec(body)
+    const outside = /후보 밖:(.*?)(?=\s+(?:행|이유):|$)/.exec(body)
     const outsideReason = outside?.[1].replace(/[.\s]+$/, '').trim() || null
     if (outside && !outsideReason) problems.push('후보 밖 이유')
     if (!row) problems.push('행')
@@ -81,7 +81,7 @@ export function skipsPrReady(text: string): boolean {
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
 
 export function experimentOf(text: string): Experiment | null {
-  const found = lines(text).flatMap((line, index) => {
+  const found = outsideFences(lines(text)).flatMap((line, index) => {
     const m = /^\s*(?:[-*]\s+)?experiment:\s*(.*)$/.exec(line)
     return m ? [{ no: index + 1, body: m[1] }] : []
   })

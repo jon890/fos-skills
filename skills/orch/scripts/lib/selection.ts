@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { bundleRoot } from './bundle.ts'
 import { selectionsOf, type Candidate } from './spec.ts'
 import type { CandidateOverride } from './launched.ts'
+import { outsideFences } from './common-rules.ts'
+import { LINE_BREAK } from '../core/text.ts'
 
 type ModelPolicy = { workers: Candidate[] }
 
@@ -65,8 +67,11 @@ export function selectionVerdict(text: string, _repo: string, options: { launch?
   // 이미 떠 있는 worker 의 같은 지시서·설정 이어하기는 옛 형식을 그대로 받는다.
   errors.push(...selection.problems.filter(p => !(options.continuation && p === '행')).map(p => `${p} 가 빠졌거나 형식이 틀렸다`))
   if (!options.continuation) {
-    if (/비교\s*:/.test(text.split(/\r?\n/)[selection.no - 1])) errors.push('새 지시서에는 `비교:` 칸을 쓰지 않는다')
-    if (/^\s*(?:[-*]\s+)?(?:\*\*)?experiment\s*:/m.test(text)) errors.push('새 지시서에는 `experiment:` 줄을 쓰지 않는다')
+    const visible = outsideFences(text.split(LINE_BREAK))
+    // 이유와 후보 밖 이유가 시작된 뒤의 「비교:」 는 설명의 일부다.
+    const head = visible[selection.no - 1].split(/(?:^|\s)(?:이유|후보 밖)\s*:/, 1)[0]
+    if (/(?:^|\s)비교\s*:/.test(head)) errors.push('새 지시서에는 `비교:` 칸을 쓰지 않는다')
+    if (visible.some(line => /^\s*(?:[-*]\s+)?(?:\*\*)?experiment\s*:/.test(line))) errors.push('새 지시서에는 `experiment:` 줄을 쓰지 않는다')
   }
   let rows: Map<string, ModelPolicy>
   try { rows = readModelPolicies(options.table) }

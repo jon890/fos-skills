@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
+import { selectionsOf } from '../scripts/lib/spec.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
 
@@ -185,7 +186,7 @@ const CODEX = ['--agent', 'codex', '--model', 'm']
 function fillSelection(args: string[]): void {
   if (!existsSync(spec)) return
   const text = readFileSync(spec, 'utf8')
-  if (text.includes('worker 선택')) return
+  if (selectionsOf(text).length) return
   const passthru = args.slice(args.indexOf('--') + 1)
   const value = (name: string) => (passthru.includes(name) ? passthru[passthru.indexOf(name) + 1] : null)
   const agent = value('--agent') ?? (value('--terminal') ? 'codex' : null)
@@ -486,7 +487,7 @@ describe('worker 선택 줄 대조', () => {
 
   for (const extra of [' 비교: Sonnet.', '\nexperiment: old']) {
     test(`새 지시서의 금지 형식은 ack 으로도 넘기지 못한다: ${extra}`, () => {
-      writeFileSync(spec, SELECTED.trimEnd() + extra + '\n')
+      writeFileSync(spec, extra.startsWith(' 비교:') ? SELECTED.replace('이유:', `${extra.trim()} 이유:`) : SELECTED.trimEnd() + extra + '\n')
       const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
       assert.equal(r.code, 1, both(r))
       assert.match(r.stderr, /쓰지 않는다/)

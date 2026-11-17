@@ -471,7 +471,7 @@ describe('지시서 검사', () => {
       [SELECTED.replace('행: impl-planned.', ''), '', /행/],
       [SELECTED.replace('impl-planned', 'missing-row'), '', /모델 표에 없다/],
       [opus, '', /후보 밖/],
-      [SELECTED + ' 비교: Sonnet.', '', /비교:/],
+      [SELECTED.replace('이유:', '비교: Sonnet. 이유:'), '', /비교:/],
       [SELECTED, 'experiment: broken.', /experiment/],
       [SELECTED, 'experiment: outside. 후보: `claude` `claude-sonnet-5-5` effort `medium` / `codex` `gpt-6-luna` effort `high`.', /experiment/],
     ] as const

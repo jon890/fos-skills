@@ -78,11 +78,29 @@ test('정리용 기록을 다시 읽어도 후보 밖 이유와 worker 가 보�
 })
 
 test('비교 칸과 experiment 는 새 지시서에서 금지하고 확인된 이어하기에서만 허용한다', () => {
-  for (const text of [`${sol} 비교: Sonnet.`, `${sol}\nexperiment: broken`, `${sol}\n- **experiment:** old`]) {
+  for (const text of [sol.replace('이유:', '비교: Sonnet. 이유:'), `${sol}\nexperiment: broken`, `${sol}\n- **experiment:** old`]) {
     assert.match(selectionVerdict(text, repo).join(), /쓰지 않는다/)
     assert.deepEqual(selectionVerdict(text, repo, { continuation: true }), [])
     assert.match(selectionVerdict(text, repo, { retry: true }).join(), /쓰지 않는다/)
   }
+})
+
+test('코드 블록·인용의 예시와 이유 문장 속 비교 낱말은 금지 항목이 아니다', () => {
+  for (const fence of ['```markdown', '~~~markdown']) {
+    const close = fence.startsWith('`') ? '```' : '~~~'
+    const text = [fence, `${sol} 비교: Sonnet.`, 'experiment: example', close, sol].join('\n')
+    assert.deepEqual(selectionVerdict(text, repo), [])
+    assert.deepEqual(selectionVerdict(text.replaceAll('\n', '\r\n'), repo), [])
+    assert.deepEqual(selectionVerdict(text.replaceAll('\n', '\u2028'), repo), [])
+    assert.equal(candidateOverrideOf(`${text} 후보 밖: 복사한 이유.`), null)
+  }
+  assert.deepEqual(selectionVerdict(`${sol}\n> experiment: quoted\n> worker 선택: 예시 비교: Sonnet.`, repo), [])
+  assert.deepEqual(selectionVerdict(sol.replace('이유: 계획서가 수정 위치를 정했다.', '이유: 문장의 비교: 낱말을 정리한다.'), repo), [])
+  assert.deepEqual(selectionVerdict(sol.replace('이유: 계획서가 수정 위치를 정했다.', '이유: 첫 문장이다. 비교: 두 번째 문장이다.'), repo), [])
+  assert.deepEqual(selectionVerdict(`${sol.replace('`low`', '`high`')} 후보 밖: 이유의 비교: 예시를 고친다.`, repo), [])
+  assert.match(selectionVerdict(sol.replace('이유:', '비교: Sonnet. 이유:'), repo).join(), /쓰지 않는다/)
+  assert.match(selectionVerdict(sol.replace('impl-planned.', 'impl-planned 비교: Sonnet.'), repo).join(), /쓰지 않는다/)
+  assert.equal(candidateOverrideOf(`${sol.replace('`low`', '`high`')} 후보 밖: 첫 문장이다. 비교: 두 번째 문장이다.`)?.reason, '첫 문장이다. 비교: 두 번째 문장이다')
 })
 
 test('누락·중복·알 수 없는 행·읽지 못한 표는 예외 이유로도 통과하지 않는다', () => {

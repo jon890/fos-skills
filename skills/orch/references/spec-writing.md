@@ -72,6 +72,7 @@
   예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 계획서가 수정 위치와 검증 명령을 정했다.」
   행과 worker 는 [`agent-selection.md`](agent-selection.md) 가 소유한다. 문서 수정의 내용과 난도로 행을 고르고 어려운 행은 그 까닭을 이유에 적는다.
   새 지시서에 `비교:` 항목이나 `experiment:` 줄을 쓰면 `spec-lint` 와 `launch-worker` 가 거절한다. 선택 오류는 `--lint-ack` 으로 넘기지 못한다.
+  코드 블록과 인용의 예시는 검사하지 않는다. 비교 항목은 선택 줄에서 이유·후보 밖 이유가 시작되기 전의 항목 머리만 검사하고 이유 문장 속 낱말은 허용한다.
 
 - PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 `pr-body-<워크트리 이름>.md` 처럼 작업 이름을 넣어 쓰고 PR 이 열릴 때까지 지우지 않는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 `spec-lint` 가 `본문` 경고로 알린다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열면 코디네이터가 그 경로의 파일로 연다. 저장소의 `.orch/` 에는 두지 않는다
 - PR 을 열게 하면 「PR 은 기준 브랜치를 base 로 따로 연다. 다른 PR 브랜치를 base 로 두지 않는다」 도 적는다.
