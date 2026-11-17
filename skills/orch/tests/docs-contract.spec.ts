@@ -32,7 +32,7 @@ test('보드 안내는 파일 직접 수정 대신 등록된 상태·단계 명�
     assert.ok(COMMANDS.some((row) => row.group === 'board' && row.verb === verb))
     assert.ok(doc.includes(`orch board ${verb}`))
   }
-  for (const verb of ['set', 'mark']) assert.ok(doc.includes(`board.ts ${verb}`))
+  for (const verb of ['set', 'mark', 'detail-edit']) assert.ok(doc.includes(`board.ts ${verb}`))
   assert.ok(!doc.includes('board.ts del'))
   assert.ok(!doc.includes('`board.ts set/step/mark`'))
 })
