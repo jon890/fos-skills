@@ -32,8 +32,7 @@ import { mainCheckout } from '../lib/git.ts'
 import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
 import {
-  allocateNumber, answerRequest, boardLines, forgetRequest, listRequests, newRecord, parseRequestId, repoName, requestNotice, syncBoards,
-  writeRequest,
+  allocateNumber, answerRequest, boardLines, listRequests, newRecord, openRequest, parseRequestId, repoName, requestNotice,
 } from '../lib/requests.ts'
 import type { RequestRecord } from '../lib/requests.ts'
 
@@ -100,15 +99,14 @@ function send(values: Record<string, unknown>): number {
   const now = new Date().toISOString()
   const number = allocateNumber(toRepo)
   const record = newRecord({ repo: toRepo, number, title: oneLine(title), body, from: { repo: fromRepo, run: fromRun, terminal: process.env.ORCA_TERMINAL_HANDLE || null }, toRun: main.run, now })
-  writeRequest(record)
-  const sent = requestNotice(main.run, 'REQUEST', record, requestText(record))
-  if (!sent.ok) {
-    forgetRequest(toRepo, number)
-    out(`REQUEST-SEND-FAIL ${record.id} ${oneLine(sent.error).slice(0, 200)}`)
+  // 기록, 메시지, 첫 보드 쓰기를 답 명령과 같은 요청 잠금 안에서 한다. 메인이 깨어나 곧바로 답해도 첫 보드 쓰기가 그 답을 덮지 않는다
+  const opened = openRequest(record, () => requestNotice(main.run, 'REQUEST', record, requestText(record)))
+  if (!opened.ok) {
+    out(`REQUEST-SEND-FAIL ${record.id} ${oneLine(opened.error).slice(0, 200)}`)
     return 1
   }
   out(`REQUEST-SENT ${record.id} repo=${toRepo} main=${main.run}`)
-  for (const line of boardLines(syncBoards(record, true))) out(line)
+  for (const line of boardLines(opened.boards)) out(line)
   return 0
 }
 

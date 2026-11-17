@@ -22,6 +22,13 @@ else if (argv[1] === 'send') {
   if (st.send_fails) { say({ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } }); process.exitCode = 1 }
   else {
     fs.appendFileSync(process.env.FAKE_DIR + '/sends.jsonl', JSON.stringify(argv) + '\\n')
+    // 메인이 깨어나 곧바로 거절하는 경우를 흉내 낸다. 보낸 쪽이 첫 보드를 쓰는 사이에 답이 들어온다
+    if (st.reject_on_request && argv.some((a) => a.startsWith('REQUEST '))) {
+      const { spawn } = require('node:child_process')
+      spawn(process.execPath, ['--disable-warning=ExperimentalWarning', process.env.REQUEST_SCRIPT, 'reject', '--id', 'R1', '--reason', '이미 하는 일', '--repo', st.reject_on_request], { detached: true, stdio: ['ignore', fs.openSync(process.env.FAKE_DIR + '/reject.out', 'a'), fs.openSync(process.env.FAKE_DIR + '/reject.out', 'a')], env: process.env }).unref()
+      // 메인의 답이 보낸 쪽의 첫 보드 쓰기보다 먼저 끝날 만큼 메시지 응답을 늦춘다
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000)
+    }
     say({ ok: true, result: { message: { id: 'msg_' + Date.now() } } })
   }
 } else { say({ ok: false, error: { code: 'unknown', message: argv.join(' ') } }); process.exitCode = 1 }
@@ -53,7 +60,7 @@ function orca(state: Json): void {
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'orch-request-')))
   writeFileSync(join(tmp, 'orca'), FAKE_ORCA, { mode: 0o755 })
-  env = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`, ORCA: join(tmp, 'orca'), FAKE_DIR: tmp, GIT_CEILING_DIRECTORIES: tmp }
+  env = { ...process.env, REQUEST_SCRIPT: SCRIPT, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`, ORCA: join(tmp, 'orca'), FAKE_DIR: tmp, GIT_CEILING_DIRECTORIES: tmp }
   for (const key of ['ORCH_DIR', 'NODE_OPTIONS', 'ORCH_OUTPUT', 'BOARD_BIN', 'ORCA_TERMINAL_HANDLE']) delete env[key]
   sender = join(tmp, 'sender')
   receiver = join(tmp, 'receiver')
@@ -105,6 +112,21 @@ test('다른 저장소의 메인에게 요청 번호를 붙여 보내고 양쪽 
   assert.deepEqual(theirs.map((item) => [item.id, item.status]), [['req-receiver-1', 'wait']])
   // 번호는 받는 저장소마다 이어진다
   assert.deepEqual(send().lines, [`REQUEST-SENT R2 repo=${receiver} main=rB`])
+})
+
+test('메인이 곧바로 거절해도 보낸 쪽의 첫 보드 쓰기가 그 답을 덮지 않는다', async () => {
+  orca({ runs: [{ id: 'rA', coordinator_handle: 'tA' }, { id: 'rB', coordinator_handle: 'tB' }], terminals: [{ handle: 'tA', agentIdentity: 'claude' }, { handle: 'tB', agentIdentity: 'claude' }], reject_on_request: receiver })
+  const r = send()
+  assert.equal(r.code, 0, r.lines.join('\n') + r.stderr)
+  const deadline = Date.now() + 30_000
+  // 거절은 기록을 쓴 뒤 보드를 고친다. 양쪽 보드가 바뀔 때까지 기다린다
+  while ((board(sender)[0]?.status !== 'done' || board(receiver)[0]?.status !== 'done') && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.equal(record(receiver, 'R1').state, 'rejected')
+  for (const repo of [receiver, sender]) {
+    const item = board(repo)[0]
+    assert.equal(item.status, 'done', JSON.stringify(item))
+    assert.ok(item.details.some((d: unknown) => /요청 거절: 이미 하는 일/.test(typeof d === 'string' ? d : (d as Json).text)), JSON.stringify(item))
+  }
 })
 
 test('같은 저장소 안의 요청은 보드 항목 하나만 만든다', () => {

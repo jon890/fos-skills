@@ -284,3 +284,18 @@ export function markAckNoticed(repo: string, number: number, at: string): void {
     if (record) writeRequest({ ...record, ack_notice_at: at })
   }, { waitMs: 60_000, staleMs: 180_000 })
 }
+
+// 새 요청을 연다(orch request send). 기록을 쓰고 notify 로 메인에게 보낸 뒤 첫 보드 항목을 만든다. 모두 R<n>.json.lock 안에서 한다.
+// 답 명령도 같은 잠금 안에서 최신 기록을 읽으므로, 메인의 답이 첫 보드 쓰기보다 먼저 쓰여 덮이는 일이 없다. 보내기가 실패하면 기록을 지운다
+export function openRequest(record: RequestRecord, notify: () => { ok: true } | { ok: false; error: string }): { ok: true; boards: BoardOutcome[] } | { ok: false; error: string } {
+  makeParent(recordFile(record.repo, record.number), record.repo)
+  return withFileLock(recordFile(record.repo, record.number), () => {
+    writeRequest(record)
+    const sent = notify()
+    if (!sent.ok) {
+      forgetRequest(record.repo, record.number)
+      return sent
+    }
+    return { ok: true as const, boards: syncBoards(record, true) }
+  }, { waitMs: 60_000, staleMs: 180_000 })
+}
