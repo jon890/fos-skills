@@ -812,13 +812,13 @@ async function finish(args: Args, repo: string): Promise<number> {
       const result = setBoardMilestone(args, repo, item.id, stages, deploy, verdict, { ended })
       const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
       closed ||= result === 'done'
-      closed ||= result === 'done'
-    if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
+      if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
       else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
       else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
     }
   } else if (item) {
     const result = setBoardLegacy(args, repo, item.id, verdict, { ended })
+    closed ||= result === 'done'
     if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
     else if (result === 'doing') log(`보드 ${item.id} 는 ${!verdict.known ? '마지막 PR 인지 판정하지 못했거나 끝나지 않은 단계가 남아' : last ? '끝나지 않은 단계가 남아' : '중간 PR 이라'} done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)

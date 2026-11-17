@@ -503,6 +503,32 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.ok(saved.pending_done, JSON.stringify(saved))
   })
 
+  test('PR 로 찾은 요청 항목을 마지막 PR 이 닫으면 요청 완료를 보낸다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'req-1', status: 'doing', title: '요청 R1: 로그인', pr: '#77', details: ['1. PR #77'] }] }))
+    c.state.orca = { runs: [{ id: 'run_from', coordinator_handle: 'term_f' }], terminals: [{ handle: 'term_f', agentIdentity: 'claude', connected: true }] }
+    const r = await c.finish([...COMPLETE, '--board', file])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'REQUEST-DONE R1 to=run_from')
+    assert.equal(JSON.parse(readFileSync(record, 'utf8')).state, 'done')
+  })
+
+  test('요청 항목에 끝나지 않은 단계가 남으면 마지막 PR 이어도 요청을 완료로 보내지 않는다', async (t) => {
+    const c = setup(t)
+    const record = requestScene(c)
+    const file = join(c.tmp, 'board.json')
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'req-1', status: 'doing', title: '요청 R1: 로그인', pr: '#77', details: ['1. PR #77', '2. 다른 저장소 반영'] }] }))
+    c.state.orca = { runs: [{ id: 'run_from', coordinator_handle: 'term_f' }], terminals: [{ handle: 'term_f', agentIdentity: 'claude', connected: true }] }
+    const r = await c.finish([...COMPLETE, '--board', file])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'REQUEST-OPEN R1')
+    lacks(r.stdout, 'REQUEST-DONE')
+    assert.equal(JSON.parse(readFileSync(record, 'utf8')).state, 'accepted')
+    assert.equal(starting(c.calls(), 'orca orchestration send').length, 0, c.calls().join('\n'))
+  })
+
   test('중간 PR 은 요청을 완료로 보내지 않는다', async (t) => {
     const c = setup(t)
     const record = requestScene(c)
