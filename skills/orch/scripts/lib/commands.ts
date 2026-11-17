@@ -77,7 +77,7 @@ const ROWS: Row[] = [
   // loop
   {
     group: 'loop', verb: 'start', script: 'loop/orch-loop.ts', prepend: ['--start'], context: ['repo', 'run', 'specs-dir'], forbid: LOOP_FORBID,
-    legacy: { name: 'orch-loop', flags: ['--start'] }, usage: 'orch loop start',
+    legacy: { name: 'orch-loop', flags: ['--start'] }, usage: 'orch loop start [--take-over [--confirmed <사용자 답>]]',
   },
   {
     group: 'loop', verb: 'stop', script: 'loop/orch-loop.ts', prepend: ['--stop'], context: ['repo', 'run'], forbid: LOOP_FORBID,
@@ -180,6 +180,17 @@ const ROWS: Row[] = [
   })),
   // routing
   { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--json | --full]' },
+  // request(ADR-035). 보낸 Run 과 답한 Run 은 지금 코디네이터의 Run 이다
+  {
+    group: 'request', verb: 'send', script: 'request/orch-request.ts', prepend: ['send'], context: ['repo', 'run'], required: ['run'], runFrom: 'run-current', legacy: null,
+    usage: 'orch request send --to <저장소> --title <제목> (--body <글> | --body-file <파일>)',
+  },
+  ...(['accept', 'hold', 'reject', 'done', 'fail'] as const).map((verb): Row => ({
+    group: 'request', verb, script: 'request/orch-request.ts', prepend: [verb], positional: { flag: '--id', repeat: false, required: true, what: '요청 번호' },
+    context: ['repo', 'run'], runFrom: 'run-current', legacy: null,
+    usage: `orch request ${verb} <번호>${verb === 'accept' || verb === 'done' ? ' [--reason <이유>]' : ' --reason <이유>'}`,
+  })),
+  { group: 'request', verb: 'list', script: 'request/orch-request.ts', prepend: ['list'], context: ['repo', 'run'], legacy: null, usage: 'orch request list [--open]' },
   // feedback
   ...['list', 'add', 'set', 'migrate'].map((verb): Row => ({
     group: 'feedback', verb, script: 'feedback/feedback-candidates.ts', prepend: [verb], context: ['repo'],

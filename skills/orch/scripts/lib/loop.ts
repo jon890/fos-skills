@@ -68,14 +68,15 @@ function readRunFile(file: string): RunEntry | null {
 }
 
 // 머리 주석의 「Run 등록」. 새로 등록했으면 true, 이미 등록돼 있었으면 false
-export function registerRun(repo: string, run: string, specsDir: string | null, renew = false, coordinatorTerminal?: string | null): boolean {
+// at 을 주면 registered_at 을 그 값으로 쓴다. 넘겨받기가 남길 Run 보다 앞에 서려고 쓴다(loop/lifecycle.ts 의 takeOver)
+export function registerRun(repo: string, run: string, specsDir: string | null, renew = false, coordinatorTerminal?: string | null, at?: string): boolean {
   const file = runFile(repo, run)
   const before = readRunFile(file)
-  const at = (!renew && before?.registered_at) || new Date().toISOString()
+  const when = at ?? ((!renew && before?.registered_at) || new Date().toISOString())
   const entry: RunEntry = {
     run,
     specs_dir: specsDir ?? before?.specs_dir ?? null,
-    registered_at: at,
+    registered_at: when,
     coordinator_terminal: coordinatorTerminal === undefined ? before?.coordinator_terminal ?? null : coordinatorTerminal,
   }
   replace(file, `${JSON.stringify(entry)}\n`, repo)

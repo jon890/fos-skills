@@ -42,6 +42,7 @@ export const PIPELINE_KEYS: readonly string[] = [
   'enabled',
   'tick_sec',
   'digest_sec',
+  'request_ack_sec',
   'ready_slots',
   'docs_merge',
   'after_queue_interval_sec',

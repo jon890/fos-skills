@@ -20,6 +20,8 @@ const st = JSON.parse(fs.readFileSync(process.env.FAKE_DIR + '/orca.json', 'utf8
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 const rows = (st.workers_by_run || {})[run]
 if (argv[1] === 'worker-list' && rows) process.stdout.write(JSON.stringify({ ok: true, result: { workers: rows, page: {} } }) + '\\n')
+else if (argv[1] === 'run-list' && st.runs) process.stdout.write(JSON.stringify({ ok: true, result: { runs: st.runs } }) + '\\n')
+else if (argv[0] === 'terminal' && argv[1] === 'list' && st.terminals) process.stdout.write(JSON.stringify({ ok: true, result: { terminals: st.terminals } }) + '\\n')
 else { process.stdout.write(JSON.stringify({ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } }) + '\\n'); process.exitCode = 1 }
 `
 
@@ -67,7 +69,8 @@ function scene(): void {
   write('.orch/state/loop.json', { pid: process.pid, run: 'r1', repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: now, ticks: 1, errors: {}, runs: ['r1', 'r2'] })
   for (const run of ['r1', 'r2']) write(`.orch/state/loop-runs/${run}.json`, { run, specs_dir: null, registered_at: now, coordinator_terminal: null })
   write('.omc/board.json', { items: [{ id: 'a', status: 'doing' }, { id: 'b', status: 'doing' }, { id: 'c', status: 'decide' }, { id: 'd', status: 'done' }] })
-  writeFileSync(join(tmp, 'orca.json'), JSON.stringify({ workers_by_run: { r1: [row('d1', worktree('wt-old', 45)), row('d2', worktree('wt-new', 2))], r2: [] } }))
+  writeFileSync(join(tmp, 'orca.json'), JSON.stringify({ workers_by_run: { r1: [row('d1', worktree('wt-old', 45)), row('d2', worktree('wt-new', 2))], r2: [] },
+    runs: [{ id: 'r1', coordinator_handle: 'term_c1' }, { id: 'r2', coordinator_handle: 'term_c2' }], terminals: [{ handle: 'term_c1', agentIdentity: 'claude', connected: true }, { handle: 'term_c2', connected: true }] }))
 }
 
 function status(args: string[] = []) {
@@ -98,7 +101,7 @@ describe('orch status', () => {
     const r = status()
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.match(r.lines[0], new RegExp(`^LOOP-ALIVE ${process.pid} runs=r1,r2 last_tick=\\S+ bundle=-$`))
-    assert.deepEqual(r.lines.slice(1), ['RUN r1 workers=2 stalled=1', 'RUN r2 workers=0 stalled=0', 'BOARD doing=2 decide=1', 'STALLED\td1\tidle\t45\twt-old\tr1'])
+    assert.deepEqual(r.lines.slice(1), ['MAIN r1 terminal=term_c1', 'RUN r1 workers=2 stalled=1', 'RUN r2 workers=0 stalled=0', 'BOARD doing=2 decide=1', 'STALLED\td1\tidle\t45\twt-old\tr1'])
     assert.deepEqual(snapshot(), before)
   })
 
@@ -170,7 +173,7 @@ describe('orch status', () => {
   test('루프가 없으면 LOOP-DEAD, Run 이 없으면 Run 줄 없이 보드만 낸다', () => {
     const r = status()
     assert.equal(r.code, 0, r.stderr)
-    assert.deepEqual(r.lines, [`LOOP-DEAD ${repo} 없음`, 'BOARD doing=0 decide=0'])
+    assert.deepEqual(r.lines, [`LOOP-DEAD ${repo} 없음`, 'MAIN-NONE stale=-', 'BOARD doing=0 decide=0'])
   })
 
   test('worker 목록을 읽지 못한 Run 은 SKIP-WORKERS 이고 1 이다', () => {

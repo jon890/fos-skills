@@ -45,6 +45,11 @@
 //
 //     실패 이유에는 출력의 원인 줄을 더하고, 숫자 묶음을 제외한 같은 원인이 연속 세 번째 틱이면 바로 한 번 알린다.
 //
+// 메인(ADR-035): --start 는 명의 확인 뒤, --run 이 아직 등록되지 않았으면 lib/main-coordinator.ts 의 findMain 으로 메인을 판정한다.
+//     메인이 다른 Run 이면 등록하지 않고 MAIN-EXISTS 와 6, --take-over 만 있으면 TAKEOVER-CONFIRM 과 6 이다.
+//     메인이 없거나(등록이 있었는데 살아 있는 Run 이 없다) --take-over --confirmed 면 takeover.ts 가 넘겨받는다. 판정하지 못하면 MAIN-UNKNOWN 과 1.
+//     이미 등록된 Run 과 등록이 없던 루프는 지금 흐름이다.
+//
 // 스스로 다시 뜨기: 틱 출력 전에 설치본을 보고 처음 바뀌었을 때 LOOP-STALE 을 쓴다.
 //     그 뒤 STALE-BUNDLE 줄은 옮기지 않고, 이 저장소의 마무리·머지 큐를 최대 60분 기다린다. 설정 오류는 기다리지 않는다.
 //     생존 타이머를 멈추고 새 루프를 넘겨받기 모드로 띄운 뒤 잠금을 넘긴다. 새 loop.json 확인 뒤 옛 루프가 끝난다.
@@ -77,6 +82,10 @@ import type { RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { sendNotice } from '../lib/run-notice.ts'
 import { waiterPids } from '../lib/waiters.ts'
+import { orchWord } from '../lib/commands.ts'
+import { findMain } from '../lib/main-coordinator.ts'
+import { shQuote } from '../lib/py.ts'
+import { announce, moveWorkers, pendingRuns, settlePending, writePending } from './takeover.ts'
 import { busyReason, decide, HANDOVER_ENV, handOver, heirEntry, newSelfUpdate, observe, pendingHeir } from './self-update.ts'
 import type { Context, TickResult } from './steps/context.ts'
 import { dropStaleErrors } from './steps/errors.ts'
@@ -315,7 +324,153 @@ async function loopBound(repo: string, pid: number): Promise<string | null> {
   }
 }
 
-export async function start(ctx: Context, entrypoint: string): Promise<number> {
+export type StartOptions = { takeOver: boolean; confirmed: string | null }
+
+// 넘겨받기 잠금(takeover.ts 머리 주석의 「잠금」)을 기다리는 한도
+const TAKEOVER_WAIT_MS = 60_000
+
+function takeoverLock(repo: string): string {
+  return join(pathOf('state', repo), 'takeover.lock')
+}
+
+// 잠금을 쥐고 work 를 돈다. 한도 안에 얻지 못하면 null, 얻었으면 work 의 결과를 value 에 담는다
+async function holdTakeover<T>(repo: string, work: () => Promise<T>): Promise<{ value: T } | null> {
+  const lock = takeoverLock(repo)
+  makeParent(lock, repo)
+  const deadline = Date.now() + TAKEOVER_WAIT_MS
+  while (!createLock(lock)) {
+    const seen = readText(lock)
+    if (seen !== null) {
+      const text = seen.trim()
+      const holder = /^\d+$/.test(text) ? Number(text) : Number.NaN
+      const stale = text === '' ? !freshEmpty(lock) : !Number.isFinite(holder) || !alive(holder)
+      if (stale) {
+        reclaim(lock, seen)
+        continue
+      }
+    }
+    if (Date.now() >= deadline) return null
+    await sleep(POLL_MS)
+  }
+  try {
+    return { value: await work() }
+  } finally {
+    releaseLock(lock)
+  }
+}
+
+// 메인 판정(ADR-035, takeover.ts 머리 주석). 지금 흐름으로 가면 null 이다
+async function mainGate(ctx: Context, entrypoint: string, options: StartOptions): Promise<number | null> {
+  // 등록이 없던 루프는 넘겨받을 것도 맞설 메인도 없다
+  if (!ctx.run || registeredRuns(ctx.repo).length === 0) return null
+  const held = await holdTakeover(ctx.repo, () => judgeAndTake(ctx, entrypoint, options))
+  if (held === null) {
+    log(`TAKEOVER-BUSY ${ctx.repo}`)
+    log(`안내: 다른 세션이 이 저장소의 메인을 넘겨받는 중이다(${takeoverLock(ctx.repo)}). 끝난 뒤 다시 --start 한다`)
+    return 1
+  }
+  return held.value
+}
+
+async function judgeAndTake(ctx: Context, entrypoint: string, options: StartOptions): Promise<number | null> {
+  const run = ctx.run as string
+  const main = findMain(ctx.repo)
+  if (main.kind === 'unknown') {
+    log(`MAIN-UNKNOWN ${oneLine(main.error).slice(0, 200)}`)
+    log('안내: 메인 코디네이터를 판정하지 못해 루프를 넘겨받지 않았다. Orca 가 응답하면 다시 --start 한다')
+    return 1
+  }
+  const registered = registeredRuns(ctx.repo).map((entry) => entry.run)
+  // 도는 루프가 다른 Run 의 명의로 묶였다. 이 Run 의 질문을 읽지 못하므로 이 Run 의 명의로 다시 띄워야 한다(lifecycle.ts 머리 주석의 「명의」)
+  const bound = readLoop(ctx.repo)?.bound_run
+  const misbound = loopStatus(ctx.repo, Date.now()).alive && typeof bound === 'string' && bound !== '' && bound !== run
+  if (main.kind === 'none') {
+    const drop = registered.filter((r) => r !== run)
+    return drop.length > 0 || misbound ? takeOver(ctx, entrypoint, drop, null, null) : null
+  }
+  if (main.run === run) {
+    if (options.takeOver || pendingRuns(ctx.repo).length > 0) {
+      const tried = pendingRuns(ctx.repo)
+      const moved = moveWorkers(ctx.repo, tried, run)
+      for (const line of moved.lines) log(line)
+      settlePending(ctx.repo, tried, moved.remaining)
+    }
+    // 메인은 이 Run 인데 루프가 다른 Run 의 명의로 묶였다(배포 전부터 등록된 앞 Run 이 죽었다). 이 Run 의 명의로 다시 띄운다
+    return misbound ? takeOver(ctx, entrypoint, registered.filter((r) => r !== run && !main.alive.includes(r)), null, null) : null
+  }
+  // 배포 전부터 등록된 Run 은 스스로 빠질 때까지 지금 흐름이다(스펙 DECISION24)
+  if (registered.includes(run)) return null
+  if (!options.takeOver) {
+    log(`MAIN-EXISTS ${main.run} terminal=${main.terminal}`)
+    log(`MAIN-REQUEST ${orchWord()} request send --to ${shQuote(ctx.repo)} --title <제목> --body <글>`)
+    log(`TAKEOVER-WITH ${orchWord()} loop start --take-over --confirmed "<사용자 답>"`)
+    log(`안내: 이 저장소의 메인은 Run ${main.run} 이다. 일은 MAIN-REQUEST 줄의 명령으로 요청한다. 사용자가 넘겨받기를 확인했을 때만 TAKEOVER-WITH 줄의 명령을 쓴다`)
+    return 6
+  }
+  if (options.confirmed === null) {
+    log(`TAKEOVER-CONFIRM ${main.run} terminal=${main.terminal}`)
+    log(`TAKEOVER-WITH ${orchWord()} loop start --take-over --confirmed "<사용자 답>"`)
+    log(`안내: 메인 Run ${main.run} 이 살아 있다. 넘겨받으면 그 Run 은 이 저장소 루프에서 빠진다. 사용자에게 묻고 답을 --confirmed "<사용자 답>" 으로 준다`)
+    return 6
+  }
+  const drop = registered.filter((r) => r !== run && (r === main.run || !main.alive.includes(r)))
+  return takeOver(ctx, entrypoint, drop, options.confirmed, main.run)
+}
+
+// takeover.ts 머리 주석의 「차례」
+async function takeOver(ctx: Context, entrypoint: string, drop: string[], confirmed: string | null, previousMain: string | null): Promise<number> {
+  const run = ctx.run as string
+  const stopped = await stopProcess(ctx.repo, null, true)
+  if (stopped !== 0) {
+    log('TAKEOVER-FAIL stop')
+    log('안내: 앞 루프를 멈추지 못해 등록을 건드리지 않았다. 위 줄의 pid 를 확인한 뒤 다시 --start 한다')
+    return stopped
+  }
+  // 지우기 전에 이 Run 을 먼저 등록한다. 등록이 비는 틈에 다른 세션이 판정 없이 등록하지 않게 한다.
+  // 남기는 Run(살아 있는 배포 전 등록)보다 앞에 서야 메인이다. 그래서 그 Run 들보다 이른 시각으로 쓴다
+  const kept = registeredRuns(ctx.repo).filter((entry) => entry.run !== run && !drop.includes(entry.run))
+  const first = kept.map((entry) => Date.parse(entry.registered_at)).filter(Number.isFinite).sort((a, b) => a - b)[0]
+  const at = first === undefined ? new Date().toISOString() : new Date(first - 1).toISOString()
+  registerRun(ctx.repo, run, ctx.specsDir, false, process.env.ORCA_TERMINAL_HANDLE, at)
+  for (const r of drop) unregisterRun(ctx.repo, r)
+  writePending(ctx.repo, [...pendingRuns(ctx.repo), ...drop])
+  for (const line of announce(ctx.repo, run, drop, confirmed, previousMain)) log(line)
+  // 새 루프가 시작할 때 앞 루프의 alive_at 이전 등록을 지우는데, 남기는 Run 은 지우지 않게 넘긴다(스펙 DECISION24)
+  process.env[KEEP_ENV] = JSON.stringify(kept.map((entry) => entry.run))
+  const code = await launch(ctx, entrypoint, false)
+  delete process.env[KEEP_ENV]
+  if (code !== 0) {
+    log('TAKEOVER-FAIL start')
+    log('안내: 앞 Run 등록은 지웠고 이 Run 이 메인이다. 같은 --start 를 다시 부르면 띄우고 남은 worker 를 옮긴다')
+    return code
+  }
+  const bound = readLoop(ctx.repo)?.bound_run
+  if (typeof bound === 'string' && bound !== '' && bound !== run) {
+    log(`TAKEOVER-RACE ${bound}`)
+    return 0
+  }
+  const tried = pendingRuns(ctx.repo)
+  const moved = moveWorkers(ctx.repo, tried, run)
+  for (const line of moved.lines) log(line)
+  settlePending(ctx.repo, tried, moved.remaining)
+  return 0
+}
+
+// 넘겨받기가 새 루프에 넘기는 남길 Run 목록(JSON 배열)
+const KEEP_ENV = 'ORCH_LOOP_KEEP_RUNS'
+
+function keptRuns(): Set<string> {
+  try {
+    const parsed = JSON.parse(process.env[KEEP_ENV] ?? '[]') as unknown
+    return new Set(Array.isArray(parsed) ? parsed.filter((r): r is string => typeof r === 'string') : [])
+  } catch {
+    return new Set()
+  } finally {
+    delete process.env[KEEP_ENV]
+  }
+}
+
+export async function start(ctx: Context, entrypoint: string, options: StartOptions = { takeOver: false, confirmed: null }): Promise<number> {
   if (ctx.run) {
     // 띄운 루프는 이 프로세스의 명의를 물려받는다. 이 Run 을 읽지 못하면 띄우지도 합류하지도 않는다(머리 주석의 「명의」)
     const bound = callerFenced(ctx.run)
@@ -330,10 +485,17 @@ export async function start(ctx: Context, entrypoint: string): Promise<number> {
       return 5
     }
   }
+  const gate = await mainGate(ctx, entrypoint, options)
+  if (gate !== null) return gate
+  return launch(ctx, entrypoint)
+}
+
+// 명의와 메인 판정을 지난 뒤의 지금 흐름. 도는 루프가 있으면 합류하고, 없으면 띄운다
+async function launch(ctx: Context, entrypoint: string, renew = true): Promise<number> {
   const found = running(ctx.repo)
   if (found) return joinLoop(ctx, found, false)
   // registered_at 을 새로 쓴다. 새로 뜬 루프는 앞 루프의 alive_at 뒤에 쓴 등록을 살아 있는 세션의 것으로 보고 남긴다(머리 주석의 「Run」)
-  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true, process.env.ORCA_TERMINAL_HANDLE)
+  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, renew, process.env.ORCA_TERMINAL_HANDLE)
   // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 시작 대기 한도를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)
   const bound = boundRun()
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', entrypoint, ...passArgs(ctx), '--foreground'], {
@@ -424,7 +586,7 @@ export async function stop(repo: string, run: string | null, all: boolean): Prom
 }
 
 // left 는 방금 등록을 뺀 Run 이다. 있으면 신호를 보내기 직전에 등록을 다시 본다. 마지막 Run 을 뺀 사이 다른 세션이 합류했으면 멈추지 않는다
-async function stopProcess(repo: string, left: string | null): Promise<number> {
+async function stopProcess(repo: string, left: string | null, quietIdle = false): Promise<number> {
   const joined = left !== null ? registeredRuns(repo) : []
   if (joined.length > 0) {
     log(`LOOP-LEFT ${readLoop(repo)?.pid ?? '-'} run=${left} runs=${joined.map((e) => e.run).join(',')}`)
@@ -440,7 +602,7 @@ async function stopProcess(repo: string, left: string | null): Promise<number> {
       log(`LOOP-STOP-UNKNOWN ${unknown.pid} ps 로 루프 프로세스인지 판정하지 못해 신호를 보내지 않았다`)
       return 1
     }
-    log('LOOP-NOT-RUNNING')
+    if (!quietIdle) log('LOOP-NOT-RUNNING')
     return 0
   }
   try {
@@ -543,8 +705,9 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       restartNotices[entry.run] ??= before!.alive_at
     }
   }
+  const keep = keptRuns()
   if (!handover) for (const entry of registeredRuns(ctx.repo)) {
-    if (entry.run === ctx.run || !Number.isFinite(cutoff)) continue
+    if (entry.run === ctx.run || keep.has(entry.run) || !Number.isFinite(cutoff)) continue
     const at = Date.parse(entry.registered_at)
     if (Number.isFinite(at) && at > cutoff) continue
     unregisterRun(ctx.repo, entry.run)
