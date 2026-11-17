@@ -74,7 +74,7 @@
 | `scripts/bump-plugin-version.ts` | main 트리의 변경 이력 조각을 적용해 스킬 버전을 올리고, push 범위의 스킬 CHANGELOG 와 조각으로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
 | `scripts/skill_changes.ts` | 변경 이력 조각(`<스킬>/changes/<슬러그>.<등급>.md`)의 형식 검사, 머지 순서 정렬, 스킬 버전과 CHANGELOG 절 적용 | `scripts/check-skill-docs.ts`, `scripts/bump-plugin-version.ts` |
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
-| `skills/orch/githooks/dispatch.mjs` | worker 워크트리에 거는 git 훅 본체. `scripts/lib/commit-check.ts` 가 워크트리의 git 관리 폴더에 복사해 건다. 금지어가 든 `.md` 커밋을 거절하고 저장소의 원래 훅을 이어 부른다. Claude 훅이 아니다([ADR-036](adr/036-worker-commit-korean-check.md)) | worker 워크트리의 git |
+| `skills/orch/githooks/dispatch.mjs` | worker 워크트리에 거는 git 훅 본체. `scripts/lib/commit-check.ts` 가 워크트리의 git 관리 폴더에 복사해 건다. 동작과 종료 코드는 머리 주석이 소유한다. Claude 훅이 아니다([ADR-036](adr/036-worker-commit-korean-check.md)) | worker 워크트리의 git |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/board-file.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
@@ -244,7 +244,7 @@ skills/orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 �
 skills/orch/scripts/lib/loop.ts          상주 루프의 파일·프로세스 조회와 기록. 값 판정은 core/loop.ts 의 judgeLoop 가 맡는다
 skills/orch/scripts/lib/workers.ts       브랜치의 워크트리와 그 worker 행 찾기 한 벌. 사용처는 머리 주석이 소유한다
 skills/orch/scripts/lib/commit-check.ts  worker 워크트리에 한국어 커밋 검사 훅을 건다. 훅 폴더의 구성과 걸지 않는 경우는 머리 주석이 소유한다
-skills/orch/scripts/lib/worktree-config.ts 워크트리 단위 git 설정을 켜는 판정과 잠금이 겹칠 때 다시 쓰기 한 벌. lib/ssh-agent.ts 와 lib/commit-check.ts 가 쓴다
+skills/orch/scripts/lib/worktree-config.ts 워크트리 단위 git 설정을 켜는 판정과 잠금이 겹칠 때 다시 쓰기 한 벌. 사용처는 머리 주석이 소유한다
 skills/orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
 skills/orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
 skills/orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경

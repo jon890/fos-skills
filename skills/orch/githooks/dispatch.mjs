@@ -22,6 +22,8 @@
 //          그런 값이 없으면 <공통 git 폴더>/hooks 다. 실행할 때마다 다시 읽으므로 워크트리를 만든 뒤 설치된 훅도 불린다.
 //        - 그 폴더가 이 훅 폴더 자신이거나, 훅 파일이 없거나 실행 권한이 없으면 부르지 않는다. git 도 실행 권한 없는 훅은 무시한다.
 //        - shebang 없는 훅(ENOEXEC)은 git 처럼 /bin/sh 로 한 번 더 부른다.
+//        - 원래 훅에는 환경 변수 ORCH_GITHOOK 에 「훅 폴더:훅 이름」 을 넣어 넘긴다. 같은 값을 받은 채 불리면 원래 훅이
+//          이 훅을 다시 부른 것이라 아무것도 하지 않고 0 으로 끝난다(`git rev-parse --git-path hooks` 로 다음 훅을 찾는 훅).
 //
 // 종료 코드: 0 이어 간다, 1 금지어가 있어 커밋을 거절했거나 원래 훅을 실행하지 못했다, 그 밖은 원래 훅의 종료 코드(신호면 128 + 신호 번호)
 
@@ -37,6 +39,7 @@ const ARGS = process.argv.slice(2)
 const BANNED_ROW = /: 금지어 "/
 const IN_PROGRESS = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply']
 const MAX_BUFFER = 256 * 1024 * 1024
+const MARK = `${HOOKS}:${NAME}`
 
 function say(text) {
   process.stderr.write(`${text}\n`)
@@ -122,8 +125,9 @@ function forward() {
   if (real === HOOKS) return 0
   const hook = join(dir, NAME)
   if (!isExecutableFile(hook)) return 0
-  let done = spawnSync(hook, ARGS, { stdio: 'inherit' })
-  if (done.error?.code === 'ENOEXEC') done = spawnSync('/bin/sh', [hook, ...ARGS], { stdio: 'inherit' })
+  const env = { ...process.env, ORCH_GITHOOK: MARK }
+  let done = spawnSync(hook, ARGS, { stdio: 'inherit', env })
+  if (done.error?.code === 'ENOEXEC') done = spawnSync('/bin/sh', [hook, ...ARGS], { stdio: 'inherit', env })
   if (done.error) {
     say(`orch 커밋 검사: 원래 훅을 실행하지 못했다: ${hook}: ${done.error.message}`)
     return 1
@@ -132,4 +136,4 @@ function forward() {
   return done.status ?? 1
 }
 
-process.exitCode = (NAME === 'pre-commit' ? koreanCheck() : 0) || forward()
+process.exitCode = process.env.ORCH_GITHOOK === MARK ? 0 : (NAME === 'pre-commit' ? koreanCheck() : 0) || forward()

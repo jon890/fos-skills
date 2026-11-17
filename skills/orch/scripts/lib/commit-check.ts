@@ -17,6 +17,7 @@
 // 걸지 않는 경우(skipped): quiet 가 true 면 부르는 쪽이 알리지 않는다.
 //     git 작업 트리가 아니다(quiet). 주 checkout 이다(사용자가 직접 하는 커밋을 바꾸지 않는다).
 //     검사기 번들이나 훅 본체가 없다. 워크트리 설정에 사용자가 둔 다른 core.hooksPath 가 있다(덮지 않는다).
+//     값이 훅 폴더 이름(orch-hooks)으로 끝나면 이 함수가 둔 값으로 보고 지금 경로로 바꾼다. 저장소를 옮기면 박아 둔 절대경로가 낡는다.
 //     공유 설정 때문에 워크트리 단위 설정을 켤 수 없다(lib/worktree-config.ts 의 enableWorktreeConfig).
 // 실패(failed): 폴더나 설정을 쓰지 못했다. 설정 파일 잠금이 겹치면 setGitConfig 가 다시 한 뒤의 실패다.
 //
@@ -29,7 +30,7 @@
 //     worker 워크트리에서 설치를 돌리면 링크를 덮을 수 있다. 다시 띄우면 훅 폴더를 새로 만든다.
 
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { isFile, real } from './fs.ts'
 import { git } from './git.ts'
 import { enableWorktreeConfig, setGitConfig } from './worktree-config.ts'
@@ -83,7 +84,8 @@ export function installCommitCheck(worktree: string, source: { checker?: string;
   // 확장이 꺼져 있으면 --worktree 읽기는 실패한다. 그때는 워크트리 단위 값이 없는 것이다
   const existing = git(worktree, ['config', '--worktree', '--get', 'core.hooksPath'])
   const current = existing.stdout.trim()
-  if (existing.code === 0 && current && current !== hooks) return skipped(`워크트리에 core.hooksPath 가 이미 있다: ${current}`)
+  // 이 함수가 둔 값은 훅 폴더 이름으로 끝난다. 저장소를 옮겨 경로가 달라진 옛 값이면 새 경로로 바꾼다
+  if (existing.code === 0 && current && current !== hooks && basename(current) !== HOOKS_DIR) return skipped(`워크트리에 core.hooksPath 가 이미 있다: ${current}`)
 
   const enabled = enableWorktreeConfig(worktree)
   if (!enabled.ok) return enabled.status === 'skipped' ? skipped(enabled.reason) : { status: 'failed', reason: enabled.reason }
@@ -99,13 +101,19 @@ export function installCommitCheck(worktree: string, source: { checker?: string;
     cpSync(join(checker, 'scripts'), join(fresh, 'korean-check', 'scripts'), { recursive: true })
     cpSync(join(checker, 'references'), join(fresh, 'korean-check', 'references'), { recursive: true })
     for (const name of HOOK_NAMES) symlinkSync('dispatch.mjs', join(fresh, name))
-    // 옛 폴더를 지우고 나서 바꾸면 그 사이에 훅 폴더가 없어 git 이 훅을 부르지 않는다. 옆 이름으로 옮긴 뒤 바꿔 넣는다
+    // 옛 폴더를 지우는 동안 훅 폴더가 없으면 git 이 훅을 부르지 않는다. 옆 이름으로 옮긴 뒤 바꿔 넣어 그 틈을 이름 바꾸기 두 번 사이로 줄인다
     rmSync(old, { recursive: true, force: true })
     if (existsSync(hooks)) renameSync(hooks, old)
     renameSync(fresh, hooks)
     rmSync(old, { recursive: true, force: true })
   } catch (e) {
     rmSync(fresh, { recursive: true, force: true })
+    // 바꿔 넣지 못했으면 옛 폴더를 되돌린다. 훅 폴더가 없는 채로 남으면 저장소의 원래 훅까지 불리지 않는다
+    try {
+      if (!existsSync(hooks) && existsSync(old)) renameSync(old, hooks)
+    } catch {
+      // 되돌리지 못해도 아래 실패 이유는 그대로 알린다
+    }
     return { status: 'failed', reason: `훅 폴더를 만들지 못했다: ${(e as Error).message}` }
   }
   const done = setGitConfig(worktree, ['--worktree', 'core.hooksPath', hooks])

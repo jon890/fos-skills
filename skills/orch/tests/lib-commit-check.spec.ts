@@ -171,6 +171,14 @@ describe('건너뜀과 실패', () => {
     assert.equal(g(wt, 'config', '--worktree', '--get', 'core.hooksPath').stdout.trim(), '/elsewhere')
   })
 
+  test('앞서 둔 값이 옛 경로를 가리키면 지금 훅 폴더로 바꾼다', () => {
+    g(proj, 'config', '--local', 'extensions.worktreeConfig', 'true')
+    g(wt, 'config', '--worktree', 'core.hooksPath', '/moved/away/.git/worktrees/wt/orch-hooks')
+    const hooks = join(gitDir(wt), 'orch-hooks')
+    assert.deepEqual(installCommitCheck(wt), { status: 'set', hooks })
+    assert.equal(g(wt, 'config', '--worktree', '--get', 'core.hooksPath').stdout.trim(), hooks)
+  })
+
   test('공유 설정의 잠금이 풀리지 않으면 실패로 알리고, 풀리면 걸린다', () => {
     const lock = join(proj, '.git', 'config.lock')
     writeFileSync(lock, '')
@@ -275,6 +283,13 @@ describe('검사기가 돌지 못할 때', () => {
     assert.match(r.stderr, /한국어 검사기가 돌지 못해 점검을 건너뛴다/)
     assert.doesNotMatch(r.stderr, /커밋하지 않았다/)
   })
+  test('검사기 안쪽이 예외로 죽어도 조용히 지나가지 않고 알린다', () => {
+    const style = join(gitDir(wt), 'orch-hooks', 'korean-check', 'scripts', 'korean-style-check.ts')
+    writeFileSync(style, `if (process.argv[1]?.endsWith('korean-style-check.ts')) throw new Error('boom')\n${readFileSync(style, 'utf8')}`)
+    const r = commit(wt, 'doc.md', BANNED, 'inner crash')
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stderr, /한국어 검사기가 돌지 못해 점검을 건너뛴다/)
+  })
 })
 
 describe('대상 저장소의 package.json', () => {
@@ -352,6 +367,24 @@ describe('원래 훅 이어 부르기', () => {
     put(join(proj, '.git', 'hooks', 'pre-commit'), `echo ran > '${ran}'\n`, 0o755)
     assert.equal(commit(wt, 'doc.md', CLEAN, 'plain').status, 0)
     assert.equal(readFileSync(ran, 'utf8'), 'ran\n')
+  })
+
+  test('pre-push 의 인자와 표준 입력이 원래 훅에 닿는다', () => {
+    assert.equal(installCommitCheck(wt).status, 'set')
+    const got = join(tmp, 'ran-pre-push')
+    put(join(proj, '.git', 'hooks', 'pre-push'), `#!/bin/sh\necho "$@" > '${got}'\ncat >> '${got}'\n`, 0o755)
+    const r = spawnSync(join(gitDir(wt), 'orch-hooks', 'pre-push'), ['origin', 'git@example.com:x/y.git'], { cwd: wt, input: 'refs/heads/a 1 refs/heads/a 0\n', encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(readFileSync(got, 'utf8'), 'origin git@example.com:x/y.git\nrefs/heads/a 1 refs/heads/a 0\n')
+  })
+
+  test('원래 훅이 이 훅을 다시 불러도 한 번만 돈다', () => {
+    assert.equal(installCommitCheck(wt).status, 'set')
+    const count = join(tmp, 'ran-count')
+    put(join(proj, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\necho x >> '${count}'\nexec "$(git rev-parse --git-path hooks)/pre-commit" "$@"\n`, 0o755)
+    const r = spawnSync('git', ['-C', wt, 'commit', '--allow-empty', '-m', 'chain'], { encoding: 'utf8', timeout: 30_000 })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(readFileSync(count, 'utf8'), 'x\n')
   })
 
   test('원래 훅 폴더가 이 훅 폴더 자신이면 다시 부르지 않고 끝난다', () => {
