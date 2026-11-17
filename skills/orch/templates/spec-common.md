@@ -79,6 +79,7 @@
   권장: 선택지 이름. 이유
   ```
 
+- **코디네이터에게 넘길 파일(요청 본문, 측정 결과, 게시가 막혀 넘기는 본문)은 세션 임시 폴더에 두지 않는다.** worker 와 코디네이터는 세션마다 임시 폴더가 달라, 코디네이터가 그 경로를 열지 못한다. `"$(orch paths root)/handoff/"` 아래에 두고 절대경로로 적는다. 그 폴더는 git 이 무시하고, 오래되면 `orch cleanup handoff` 가 휴지통으로 옮긴다. `orch worker ask` 는 질문 본문에 세션 임시 폴더 경로(`$TMPDIR` 값, `/var/folders/`, `/private/tmp/claude-`, `/tmp/claude-`)가 있으면 보내지 않고 2 로 끝난다. <!-- orch-rule: handoff-path -->
 - 기준 브랜치와 충돌하면 코디네이터가 후속 지시서를 보낸다. 그 지시대로 이 worker 가 푼다.
 
 ## 끝내기
