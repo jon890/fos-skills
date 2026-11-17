@@ -1,5 +1,5 @@
-// report 스킬의 공통 틀 부품과 SKILL.md 의 부르는 말, 다른 스킬과 나누는 문장을 잃지 않았는지 본다.
-// 스펙 R4(틀의 부품), R1(부르는 말), R8(다른 스킬과 나누는 문장)이다.
+// report 스킬의 공통 틀 컴포넌트와 SKILL.md 의 부르는 말, 다른 스킬과 나누는 문장을 잃지 않았는지 본다.
+// 스펙 R4(틀의 컴포넌트), R1(부르는 말), R8(다른 스킬과 나누는 문장)이다.
 
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
@@ -11,7 +11,7 @@ const R8 = '청중 앞에서 넘기며 말하는 발표는 `presentation`, 외�
 const squash = (text: string) => text.split(/\s+/).filter(Boolean).join(' ')
 
 describe('공통 틀', () => {
-  test('스펙 R4 의 부품이 모두 있다', () => {
+  test('스펙 R4 의 컴포넌트가 모두 있다', () => {
     const body = readFileSync(join(SKILL, 'assets', 'template.html'), 'utf8')
     for (const marker of [
       'class="toc"', 'class="top"', 'class="meta"', 'class="lead"', 'class="concl"', 'class="chip y"', 'class="chip p"', 'class="chip n"', 'class="chip x"',

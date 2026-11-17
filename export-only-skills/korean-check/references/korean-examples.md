@@ -97,3 +97,5 @@ PR 제목, 사용자 보고, 리뷰처럼 사람이 읽는 글의 예시다. 에
 | 틀      | template    | template    |
 | 시험     | test        | 테스트       |
 | 기계     | automated check | 자동 검사, CI |
+| 부품     | component   | 컴포넌트      |
+| 상류     | upstream    | upstream   |
