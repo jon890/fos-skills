@@ -78,6 +78,73 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
 // 이 경우 머지 조건은 지금 HEAD 의 CI 통과로 대신한다. 머지 큐와 자동 머지는 지금 HEAD 의 필수 체크 통과를 따로 본다.
 export const BASE_MERGE_LIMIT = 50
 
+// 검증 뒤 이 PR 계획 폴더만 삭제한 커밋을 받아들인다. 각 커밋은 삭제만 해야 하고,
+// 검증 시점 index.json 이 가리키는 tracked 파일 전체가 같은 폴더에서 제거되어야 한다.
+export function planDeletionOnly(repo: string, head: string, verified: string, base: string): boolean {
+  const line = (args: string[]): string | null => {
+    const done = git(repo, args)
+    return done.code === 0 ? done.stdout.trim() : null
+  }
+  const status = (from: string, to: string): string[] | null => {
+    const done = git(repo, ['-c', 'core.quotepath=false', 'diff', '--no-renames', '--name-status', from, to])
+    if (done.code !== 0) return null
+    return done.stdout.split('\n').filter(Boolean)
+  }
+  const basePoint = line(['merge-base', `refs/remotes/origin/${base}`, verified])
+  if (!basePoint) return false
+  const before = git(repo, ['-c', 'core.quotepath=false', 'diff', '--no-renames', '--name-status', basePoint, verified])
+  if (before.code !== 0) return false
+  const indexes = before.stdout.split('\n').filter((row) => row.startsWith('A\t') && row.endsWith('/index.json')).map((row) => row.slice(2))
+  const plans = indexes.filter((file) => {
+    const dir = file.slice(0, -'/index.json'.length)
+    const raw = line(['show', `${verified}:${file}`])
+    if (!raw) return false
+    try {
+      const data = JSON.parse(raw) as { name?: unknown; phases?: unknown }
+      return data.name === dir.slice(dir.lastIndexOf('/') + 1) && Array.isArray(data.phases) && data.phases.length > 0 &&
+        data.phases.every((phase) => phase && typeof phase === 'object' && typeof (phase as { file?: unknown }).file === 'string')
+    } catch { return false }
+  })
+  if (plans.length !== 1) return false
+  const expectedFolder = plans[0].slice(0, -'/index.json'.length)
+  let commit = head
+  const removed = new Set<string>()
+  let folder = ''
+  for (let i = 0; i < BASE_MERGE_LIMIT; i++) {
+    if (commit === verified) break
+    const parents = line(['rev-list', '--parents', '-n', '1', commit])?.split(/\s+/) ?? []
+    if (parents.length !== 2) return false
+    const [, parent] = parents
+    const changes = status(parent, commit)
+    if (!changes?.length) return false
+    for (const change of changes) {
+      const [kind, file] = change.split('\t')
+      if (kind !== 'D' || !file || !file.includes('/')) return false
+      const dir = file.slice(0, file.lastIndexOf('/'))
+      if (dir !== expectedFolder) return false
+      if (folder && folder !== dir) return false
+      folder = dir
+      removed.add(file)
+    }
+    commit = parent
+  }
+  if (commit !== verified || !folder || !removed.has(`${folder}/index.json`)) return false
+  if (folder !== expectedFolder) return false
+  const index = line(['show', `${verified}:${folder}/index.json`])
+  if (!index) return false
+  const record = JSON.parse(index) as { phases: { file: string }[] }
+  const tracked = line(['ls-tree', '-r', '--name-only', verified, '--', folder])?.split('\n').filter(Boolean) ?? []
+  if (!tracked.length || tracked.some((file) => !removed.has(file)) || [...removed].some((file) => !tracked.includes(file))) return false
+  return record.phases.every((phase) => tracked.includes(`${folder}/${(phase as { file: string }).file}`))
+}
+
+export function fetchedPlanDeletion(repo: string, head: string, verified: string, base: string): boolean {
+  if (!base) return false
+  git(repo, ['fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`])
+  if (git(repo, ['cat-file', '-e', `${head}^{commit}`]).code !== 0) git(repo, ['fetch', '-q', 'origin', head])
+  return planDeletionOnly(repo, head, verified, base)
+}
+
 // 충돌한 합친 tree 와 커밋 tree 사이에서 바뀐 파일과 충돌 파일이 모두 resolved 에 맞는지
 function resolvedOnly(repo: string, merged: string, tree: string, conflicted: string[], resolved: RegExp): boolean {
   if (conflicted.length === 0 || !conflicted.every((file) => resolved.test(file))) return false
@@ -115,6 +182,7 @@ export function featureEvidenceProblem(
   required = false,
   afterMerge = false,
   acceptVerified?: (verified: string) => boolean,
+  acceptPlanDeletion?: (verified: string) => boolean,
 ): string | null {
   const plain = withoutExamples(body)
   if (!required && !plain.includes(EVIDENCE_START)) return null // 기존 PR 은 읽기 호환
@@ -130,7 +198,7 @@ export function featureEvidenceProblem(
   }
   const verified = fields.get('검증 커밋') ?? ''
   if (!/^[a-f0-9]{40}$/i.test(head)) return '기능 완료 근거의 검증 커밋이 현재 PR HEAD 와 다르다'
-  if (verified !== head && !(/^[a-f0-9]{40}$/i.test(verified) && acceptVerified?.(verified))) {
+  if (verified !== head && !(/^[a-f0-9]{40}$/i.test(verified) && (acceptVerified?.(verified) || acceptPlanDeletion?.(verified)))) {
     return '기능 완료 근거의 검증 커밋이 현재 PR HEAD 와 다르다'
   }
   for (const key of ['인수 검증', '문서 대조', '독립 리뷰', '후속 검증']) {
@@ -157,7 +225,7 @@ export function featureCompletionProblem(repo: string, number: string, branch = 
   const accept = (verified: string): boolean => {
     const got = ghJson<{ baseRefName?: unknown }>(['pr', 'view', number, '--json', 'baseRefName'], { cwd: repo, cache: false })
     const base = got.ok && got.data && typeof got.data.baseRefName === 'string' ? got.data.baseRefName : ''
-    return fetchedBaseMerges(repo, head, verified, base)
+    return fetchedBaseMerges(repo, head, verified, base) || fetchedPlanDeletion(repo, head, verified, base)
   }
   return featureEvidenceProblem(body, head, true, true, accept)
 }

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { baseMergesOnly, featureBranch, featureEvidenceProblem, featureLoopRequested } from '../scripts/lib/feature-evidence.ts'
+import { baseMergesOnly, featureBranch, featureEvidenceProblem, featureLoopRequested, planDeletionOnly } from '../scripts/lib/feature-evidence.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 
 const HEAD = 'a'.repeat(40)
@@ -170,6 +170,14 @@ describe('baseMergesOnly', () => {
     git('merge', '-q', '--no-ff', '--no-edit', 'main')
     return git('rev-parse', 'HEAD')
   }
+  const addPlan = (name = 'plan1-a'): string => {
+    mkdirSync(join(tmp, `tasks/${name}`), { recursive: true })
+    writeFileSync(join(tmp, `tasks/${name}/index.json`), JSON.stringify({ name, phases: [{ file: 'phase-01.md' }] }))
+    writeFileSync(join(tmp, `tasks/${name}/phase-01.md`), 'plan\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'plan')
+    return git('rev-parse', 'HEAD')
+  }
 
   let verified = ''
   beforeEach(() => {
@@ -247,5 +255,41 @@ describe('baseMergesOnly', () => {
   test('HEAD 가 검증 커밋 자신이거나 모르는 커밋이면 false 다', () => {
     assert.equal(baseMergesOnly(tmp, verified, verified, 'main'), false)
     assert.equal(baseMergesOnly(tmp, 'f'.repeat(40), verified, 'main'), false)
+  })
+
+  test('검증 커밋 뒤 index 가 확인되는 계획 폴더를 통째로 삭제한 커밋은 받는다', () => {
+    const plan = addPlan()
+    git('rm', '-qr', 'tasks/plan1-a')
+    git('commit', '-q', '-m', 'remove completed plan')
+    const head = git('rev-parse', 'HEAD')
+    assert.equal(planDeletionOnly(tmp, head, plan, 'main'), true)
+    assert.equal(featureEvidenceProblem(BODY.replace(HEAD, plan), head, true, false, undefined, (v) => planDeletionOnly(tmp, head, v, 'main')), null)
+  })
+
+  test('다른 문서, 다른 계획, 일부 파일을 함께 지우면 계획 삭제 예외를 거부한다', () => {
+    const plan = addPlan()
+    git('rm', '-qr', 'tasks/plan1-a')
+    writeFileSync(join(tmp, 'docs.md'), 'outside plan\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'remove plan and add doc')
+    assert.equal(planDeletionOnly(tmp, git('rev-parse', 'HEAD'), plan, 'main'), false)
+
+    git('checkout', '-q', 'main')
+    mkdirSync(join(tmp, 'tasks/plan2-b'), { recursive: true })
+    writeFileSync(join(tmp, 'tasks/plan2-b/index.json'), JSON.stringify({ name: 'plan2-b', phases: [{ file: 'phase-01.md' }] }))
+    writeFileSync(join(tmp, 'tasks/plan2-b/phase-01.md'), 'other plan\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'base plan')
+    git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'))
+    git('checkout', '-q', '-b', 'feat-other-plan', 'main')
+    const withRequestedPlan = addPlan()
+    git('rm', '-qr', 'tasks/plan2-b')
+    git('commit', '-q', '-m', 'remove a different plan')
+    assert.equal(planDeletionOnly(tmp, git('rev-parse', 'HEAD'), withRequestedPlan, 'main'), false)
+
+    git('checkout', '-q', '--detach', plan)
+    git('rm', 'tasks/plan1-a/phase-01.md')
+    git('commit', '-q', '-m', 'remove part of plan')
+    assert.equal(planDeletionOnly(tmp, git('rev-parse', 'HEAD'), plan, 'main'), false)
   })
 })
