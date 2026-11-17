@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 마크다운 가독성 규칙 중 스크립트로 판정할 수 있는 축을 경고로 알린다.
+// 마크다운 가독성 규칙 중 물결표 오류는 실패로 막고, 나머지는 경고로 알린다.
 //
 // **이 파일이 검사 축의 단일 소스다.** references 파일을 읽지 않고 축을 코드에 담는다.
 // 사람이 보는 몫은 `references/` 가 소유한다.
@@ -10,11 +10,11 @@
 //     node check-readability.ts --text "<제목이나 커밋 메시지>"   파일이 아닌 문자열
 //     node check-readability.ts --hook                           PostToolUse 훅 모드 (stdin 으로 JSON)
 //
-// 경고 줄을 stdout 으로 출력한다. 경고가 있어도 종료 코드는 0 이다.
+// 발견 줄을 stdout 으로 출력한다. TILDE 는 종료 코드 1, 나머지 경고는 0 이다.
 // 사용법 오류이거나 넘긴 경로에 파일이 없으면 2 로 끝난다.
+// --hook 은 편집 후 알림이므로 종료 코드 0 으로 발견과 고칠 방법을 전달한다.
 //
-// **이 검사기는 실패로 막지 않는다.** 실패로 막는 것은 `korean-style-check.ts` 의 금지어뿐이다.
-// 아래 축은 지침이라, 걸린 줄을 보고 문맥에 맞으면 그대로 둔다.
+// TILDE 는 취소선 오작동을 막는다. 나머지 축은 문맥을 보고 고칠지 판단한다.
 //
 // 검사하는 축은 넷이다.
 //
@@ -60,6 +60,9 @@ const USAGE = `사용법:
     node check-readability.ts --hook          PostToolUse 훅 모드 (stdin 으로 JSON)
 `
 
+const level = (f: Finding) => (f.code === 'TILDE' ? '실패' : '경고')
+const status = (found: Finding[]) => (found.some((f) => f.code === 'TILDE') ? 1 : 0)
+
 export type Finding = { path: string; line: number; code: string; message: string }
 
 // 코드 스팬과 마크다운 링크를 지운다.
@@ -81,7 +84,7 @@ export function checkLines(path: string, lines: string[]): Finding[] {
     if (para.length) {
       const text = para.map(([, body]) => body).join(' ').replaceAll('\\~', '')
       const tildes = text.replace(HOME_PATH, '').split('~').length - 1
-      if (tildes >= 2) found.push({ path, line: para[0][0], code: 'TILDE', message: '한 단락에 물결표가 2개 이상이다: 취소선으로 렌더될 수 있어 이스케이프하거나 표현을 바꾼다' })
+      if (tildes >= 2) found.push({ path, line: para[0][0], code: 'TILDE', message: '한 단락에 물결표가 2개 이상이다: 범위는 「부터 … 까지」나 - 로 풀어 쓰거나 \\~ 로 이스케이프한다' })
     }
     para = []
   }
@@ -166,8 +169,8 @@ export function runHook(input: string): object | null {
   const found = check(target)
   if (!found.length) return null
 
-  const lines = found.map((f) => `${f.path}:${f.line}  경고 [${f.code}] ${f.message}`).join('\n')
-  const context = '마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. 문맥을 보고 고칠지 판단한다.\n' + lines
+  const lines = found.map((f) => `${f.path}:${f.line}  ${level(f)} [${f.code}] ${f.message}`).join('\n')
+  const context = '마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. TILDE 는 고치고, 나머지는 문맥을 보고 고칠지 판단한다.\n' + lines
   return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: context } }
 }
 
@@ -201,8 +204,9 @@ export async function main(argv: string[]): Promise<number> {
   // 파일이 아닌 문자열도 검사한다. 제목과 커밋 메시지가 이 경로로 들어온다.
   if (argv[0] === '--text') {
     const text = argv.slice(1).join(' ')
-    for (const f of checkLines('(문자열)', pySplitLines(normalizeNewlines(`${text}\n`)))) write(1, `(문자열)  경고 [${f.code}] ${f.message}\n`)
-    return 0
+    const found = checkLines('(문자열)', pySplitLines(normalizeNewlines(`${text}\n`)))
+    for (const f of found) write(1, `(문자열)  ${level(f)} [${f.code}] ${f.message}\n`)
+    return status(found)
   }
 
   const unknown = argv.filter((arg) => arg.startsWith('-'))
@@ -223,9 +227,9 @@ export async function main(argv: string[]): Promise<number> {
     found.push(...check(path))
   }
 
-  for (const f of found) write(1, `${f.path}:${f.line}  경고 [${f.code}] ${f.message}\n`)
+  for (const f of found) write(1, `${f.path}:${f.line}  ${level(f)} [${f.code}] ${f.message}\n`)
 
-  return missing ? 2 : 0
+  return missing ? 2 : status(found)
 }
 
 if (isMain(import.meta.url, import.meta.main)) process.exitCode = await main(process.argv.slice(2))
