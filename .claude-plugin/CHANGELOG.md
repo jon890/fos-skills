@@ -5,6 +5,10 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 18.38.1 (2026-11-17)
+
+- 바뀐 곳: .gitignore, .orch, README.md (#518)
+
 ## 18.38.0 (2026-11-17)
 
 - orch 7.60.0 (#517)
