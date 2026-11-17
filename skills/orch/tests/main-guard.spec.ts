@@ -362,3 +362,19 @@ test('자식 우회는 비밀값과 같은 저장소·이유·명령 체인이 �
     assert.equal(inheritOverride(repo, 'cleanup sweep', undefined), null)
   }
 })
+
+test('이미 허용된 호출의 이유는 우회 기록과 알림을 만들지 않는다', () => {
+  for (const caller of ['main', null]) {
+    settings({ caller })
+    const result = guardWrite(repo, 'board set', '복구')
+    assert.equal(result.code, 0)
+    if (result.code === 0) assert.equal(result.reason, undefined)
+  }
+  settings({ offline: true })
+  const empty = join(root, 'allowed-empty')
+  mkdirSync(empty, { recursive: true })
+  assert.equal(guardWrite(empty, 'board set', '복구').code, 0)
+  assert.equal(existsSync(join(pathOf('state', repo), 'launched-workers', 'not-main')), false)
+  assert.equal(existsSync(join(pathOf('state', empty), 'launched-workers', 'not-main')), false)
+  assert.equal(calls().some(args => args[1] === 'send'), false)
+})

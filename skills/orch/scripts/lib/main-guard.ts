@@ -123,9 +123,9 @@ export function guardWrite(repoArg: string, command: string, reason: unknown, ta
   if (inherited) return { code: 0, stamp: { version: 1, main: inherited.main, caller_repo: mainCheckout(process.cwd()), target_repo: repo }, reason: inherited.reason }
   const judged = callerIsMain(repo, command === 'worker launch' || reason !== undefined)
   const { main, allowed } = judged
-  const caller = reason !== undefined && main.kind === 'none' ? callerRun() : judged.caller
+  const caller = judged.caller
   const stamp: MainGuardStamp = { version: 1, main: main.kind === 'main' ? main.run : null, caller_repo: mainCheckout(process.cwd()), target_repo: repo }
-  if (allowed && (reason === undefined || main.kind === 'unknown' && caller.kind === 'caller' && caller.run === null)) return { code: 0, stamp }
+  if (allowed) return { code: 0, stamp }
   if (caller.kind === 'unknown') return reject(1, `MAIN-CALLER-UNKNOWN ${caller.error}`)
   if (main.kind === 'unknown') return reject(1, `MAIN-UNKNOWN ${main.error}`)
   if (!allowed && caller.run && reason === undefined) {
