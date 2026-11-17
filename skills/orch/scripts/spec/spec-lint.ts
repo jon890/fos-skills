@@ -119,6 +119,7 @@ import { autoStepNumberOf, boardIdOf, boardNewOf, boardIdOfLine, interimOf, SELE
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
+import { TEMP_PATH } from '../lib/temp-path.ts'
 
 const USAGE = [
   '사용법: spec-lint.ts --repo DIR [--overlay FILE] [--base BRANCH] [--spec-ref REF | --spec-root DIR] [--active FILE ...] SPEC [SPEC ...]',
@@ -137,8 +138,6 @@ const PATHLIKE = new RegExp(`^(?:[${W}.\\-]+/)*[${W}\\-]+(?:\\.[${W}\\-]+)*\\.[A
 // 저장소 공통 지시서가 따라야 할 틀. SPEC_TEMPLATE 은 테스트가 바꾼다
 const TEMPLATE = process.env.SPEC_TEMPLATE || join(bundleRoot(), 'templates', 'spec-common.md')
 const COMMON = 'spec-common.md'
-// 임시 폴더 아래 경로. 폴더 이름만 말한 것(「scratchpad 에 쓴다」)은 빼고 그 아래 파일이나 폴더를 가리킨 것만 잡는다
-const TEMP_PATH = /(?:^|[\s`'"(=])((?:\/private)?\/tmp\/[^\s`'"()]*|(?:\/private)?\/var\/folders\/[^\s`'"()]*|\$\{?TMPDIR\}?\/[^\s`'"()]*|[^\s`'"()]*\/scratchpad\/[^\s`'"()]*)/g
 // PR 본문 파일 이름이 작업 이름 없이 고정된 공용 이름. 세션 임시 폴더를 여럿이 나눠 쓰면 다른 PR 의 본문이 덮이거나 올라간다
 const BODY_NAME = /(?:^|[\s`'"(/=])((?:pr[-_]?body|pr[-_]?description|body)\.md)(?![\w-])/g
 const BODY_HINT = '고정된 공용 이름이라 다른 작업의 PR 본문과 섞인다. 파일 이름에 작업(워크트리) 이름을 넣는다(예: pr-body-<워크트리 이름>.md)'

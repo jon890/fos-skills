@@ -591,3 +591,51 @@ describe('짧은 출력', () => {
     assert.match(r.stdout, /^SENT-RUN \S+\n$/)
   })
 })
+
+describe('세션 임시 폴더 경로가 든 질문', () => {
+  const OK = '{"result":{"answer":"받았다","messageId":"m1"}}'
+
+  function rejected(r: Result, path: string): void {
+    assert.equal(r.code, 2, r.stderr)
+    assert.equal(r.stdout, '')
+    assert.ok(r.stderr.includes(path), r.stderr)
+    assert.match(r.stderr, /orch paths root/)
+    assert.equal(r.calls.length, 0, 'orca 를 부르지 않는다')
+  }
+
+  test('TMPDIR 값 아래 경로는 보내지 않고 2 로 끝난다', () => {
+    fake(OK, 0)
+    env.TMPDIR = join(tmp, 'session-tmp')
+    const path = join(env.TMPDIR, 'evalrun-base.json')
+    rejected(ask('--from', 'term_w', '--question', `본문은 ${path} 에 있다`), path)
+  })
+
+  test('/var/folders, /private/tmp/claude-, /tmp/claude- 경로는 거절한다', () => {
+    fake(OK, 0)
+    for (const path of ['/var/folders/ab/cd/T/x.json', '/private/tmp/claude-501/scratchpad/x.md', '/tmp/claude-501/x.md']) {
+      rejected(ask('--from', 'term_w', '--question', `파일: ${path}`), path)
+    }
+  })
+
+  test('글자 그대로의 $TMPDIR/ 경로도 거절한다', () => {
+    fake(OK, 0)
+    rejected(ask('--from', 'term_w', '--question', '파일 $TMPDIR/evalrun462-base.json 을 본다'), '$TMPDIR/evalrun462-base.json')
+  })
+
+  test('--question-file 본문의 경로도 거절한다', () => {
+    fake(OK, 0)
+    const file = join(tmp, 'q.txt')
+    writeFileSync(file, '평가 요청 본문: /var/folders/ab/cd/T/body.json\n')
+    rejected(ask('--from', 'term_w', '--question-file', file), '/var/folders/ab/cd/T/body.json')
+  })
+
+  test('공유 자리 경로와 경로 없는 본문은 그대로 보낸다', () => {
+    fake(OK, 0)
+    env.TMPDIR = join(tmp, 'session-tmp')
+    for (const question of ['요청 본문: /Users/nhn/personal/repo/.orch/handoff/req.json', '경로 없는 질문']) {
+      const r = ask('--from', 'term_w', '--question', question)
+      assert.equal(r.code, 0, r.stderr)
+      assert.equal(firstLine(r.stdout), 'answer: 받았다')
+    }
+  })
+})
