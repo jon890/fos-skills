@@ -680,6 +680,22 @@ describe('Orca 후속 일과 기록', () => {
     })
   }
 
+  test('같은 worker 의 후속 지시서는 옛 모델·effort·비교 항목을 그대로 이어 간다', () => {
+    follow()
+    const actual = { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }
+    const st = readState()
+    st.dispatches.ctx_1.worker.startOptions = { launch: { effective: actual } }
+    st.dispatches.ctx_new.worker.startOptions.launch.effective = actual
+    state(st)
+    writeFileSync(join(tmp, 'next.md'), '# 후속 작업\n허락: 로컬 검증.\nworker 선택: `claude` `claude-sonnet-5-5` effort `high`. 행: impl-planned. 비교: sol. 이유: 기존 작업을 이어 간다.\n')
+    const r = send('--spec', join(tmp, 'next.md'))
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /FOLLOW-UP ctx_1 ctx_new task_new/)
+    const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
+    assert.deepEqual(record.effective, actual)
+    assert.deepEqual(lines('launch'), [])
+  })
+
   test('--note 는 후속 지시 줄 끝에 붙고 지시서 없이는 쓰지 못한다', () => {
     follow()
     const r = send('--spec', join(tmp, 'next.md'), '--note', 'PR #7 이 아직 열려 있다. 머지될 때까지 맡는다.')

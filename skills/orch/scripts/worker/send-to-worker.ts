@@ -332,12 +332,12 @@ async function passThrough(argv: string[], timeoutMs: number): Promise<number> {
   return (await runInherit(argv, { timeoutMs, env: shortEnv() })).code
 }
 
-// 후속 지시서는 새 Task 가 생기기 전에 검사한다. spec-line 과 같은 한 줄을 만든다.
+// 후속 지시서는 같은 worker 의 설정을 이어 쓰므로 continuation 으로 검사한다. spec-line 과 같은 한 줄을 만든다.
 function followUpSpec(file: string, repo: string, note = ''): { text: string; line: string; title: string } {
   const text = readFileSync(file, 'utf8')
   autoStepNumberOf(text)
   const permissions = permissionsOf(text)
-  const errors = selectionVerdict(text, repo, { launch: true, retry: true, continuation: false })
+  const errors = selectionVerdict(text, repo, { launch: true, retry: true, continuation: true })
   if (!permissions.length) errors.unshift('지시서에 `허락:` 줄이 없다')
   if (errors.length) throw new Error(errors.join('; '))
   return {
