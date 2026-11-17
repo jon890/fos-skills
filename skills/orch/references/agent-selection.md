@@ -24,6 +24,7 @@
 | `security-review` | 공격 경로를 재현하는 보안 리뷰 | `claude` | `claude-sonnet-5-5` | `medium` |
 
 - `spec-lint` 와 `launch-worker` 는 에이전트·모델·effort 전체를 정확히 대조한다. 낮은 effort 로 바꾸는 경우도 후보 밖 이유가 필요하다.
+- Opus 의 high 이상에 별도 근거를 요구하지 않고 ultra 도 따로 금지하지 않는다. 행과 다르면 모두 후보 밖 이유 하나로 다룬다.
 - 기본 effort 는 `기본` 이라고 적고 실행 옵션 `--effort` 는 생략한다. 숫자 단계의 effort 와 같은 값으로 취급하지 않는다.
 - 이유가 있는 실제 예외는 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.candidateOverride` 에 행·에이전트·모델·effort·이유를 남긴다. effort 가 다르면 기존 키 `effortLimit` 에 행의 값을 남긴다.
 - 새 지시서에는 `비교:` 항목과 `experiment:` 줄을 쓰지 않는다. `--active` 지시서와 같은 지시서·설정으로 이어 가는 기존 worker 는 옛 형식을 허용한다. 새 지시서나 설정을 바꾼 재시도는 다시 검사한다.

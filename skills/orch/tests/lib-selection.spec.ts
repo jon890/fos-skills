@@ -51,6 +51,15 @@ test('기본 effort 는 명시한 단계와 다르고 낮은 effort 도 예외�
   assert.match(selectionVerdict(sol.replace('impl-planned', 'impl-explore'), repo).join(), /후보 밖/)
 })
 
+test('Opus 높은 effort 와 ultra 도 후보 밖 이유 하나로 허용한다', () => {
+  for (const effort of ['high', 'xhigh', 'max', 'ultra']) {
+    const text = `worker 선택: \`claude\` \`claude-opus-5-5\` effort \`${effort}\`. 행: hard-design. 이유: 사용자 지정.`
+    assert.match(selectionVerdict(text, repo).join(), /후보 밖/)
+    assert.deepEqual(selectionVerdict(`${text} 후보 밖: 한도 claude.`, repo), [])
+    assert.equal(candidateOverrideOf(`${text} 후보 밖: 한도 claude.`)?.effort, effort)
+  }
+})
+
 test('예외 기록은 실제 선택 전체와 이유, 다른 effort 의 행 값을 남긴다', () => {
   assert.deepEqual(candidateOverrideOf(`${sol.replace('`low`', '`medium`')} 후보 밖: 재현에 필요.`), {
     row: 'impl-planned', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', effortLimit: 'low', reason: '재현에 필요',

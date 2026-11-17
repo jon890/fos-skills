@@ -8,7 +8,7 @@
 
 | ID | 해결 방법 | PR |
 | --- | --- | --- |
-| REQ1 | `lib/spec.ts` 의 `selectionsOf` 가 `high 근거:` 조각을 읽는다. 판정은 새 공용 함수 `selectionVerdict`(`lib/selection.ts`) 하나가 한다. Opus 에 `high`, `xhigh`, `max` 면 근거를 요구하고, `medium 실패 <dispatch>` 는 띄우기 이력(`lib/launch-history.ts`)에서 그 dispatch 가 Opus `medium` 인지 대조한다. `spec-lint` 의 `선택` 발견과 `launch-worker` 의 차례 0(`selectionReject`)이 같은 함수를 부른다. 차례 0 은 `--lint-ack` 으로 넘길 수 없고, `--effort` 도 지시서와 대조한다 | PR-B |
+| REQ1 | 최초 도입의 Opus 별도 근거 검사는 [단일 worker 스펙](../orch-single-worker/spec.md) DECISION27 로 제거했다. 현재는 selectionVerdict 가 행과 다른 worker 에 후보 밖 이유를 요구한다 | PR-B |
 | REQ2 | `agent-selection.md` 의 모델 표에 행 id 열, Opus `high` 허용 조건, Codex 행 조건을 더하고, 근거 문서의 「비교 근거」 표에 `모델 id` 열을 두며, 「실측 기록」 절을 근거 링크와 측정일·표본 수로 고친다 | PR-A |
 | REQ3 | 공통 지시서 틀에 새 `orch-rule: no-reconfirm` 항목과, `status-only` 항목 뒤 새 `orch-rule: status-not-escalation` 항목을 더한다. `spec-lint` 의 `공통` 경고는 표지를 틀에서 읽으므로 코드 변경이 없다 | PR-A |
 | REQ4 | `lib/launched.ts` 의 `Launch` 에 `agent`, `model`, `effort`, `effective`, `experiment` 를 더한다. `launch-worker` 가 `recordLaunch` 와 같은 자리에서 이력에도 한 줄을 더한다 | PR-B |
@@ -22,7 +22,7 @@
 - **지침 문서가 값의 원본이다.** 행 id 는 `agent-selection.md` 모델 표의 첫 열 하나에만 둔다. 번들 루트는 깊이가 고정된 `lib/bundle.ts` 에 새 함수 `bundleRoot()` 로 풀고, `spec-lint` 의 `TEMPLATE` 과 표 경로를 모두 그 함수로 읽는다. 스크립트 폴더 이동(orch-cli PR3) 뒤 `scripts/<묶음>/` 깊이가 바뀌어도 맞는다. 코드에 id 목록을 복제하면 표와 어긋난다. 표를 읽지 못하면 `selectionVerdict` 가 「표를 읽지 못했다」 로 거부한다. `launch-worker` 는 `spec-lint` 의 종료 코드 2 를 경고로만 넘기므로(`launch-worker.ts` 의 `lintGate`), 차례 0 이 직접 거부해야 검사가 조용히 꺼지지 않는다.
 - **선택 검사는 ack 으로 넘기지 않는다.** `--lint-ack` 은 겹침처럼 의도한 발견을 넘기는 길이다(`references/launch.md`). 지금도 `worker 선택:` 대조(차례 0)는 ack 으로 넘기지 못한다. 새 검사를 그 자리에 두어 같은 성질을 갖게 한다. `--effort` 대조는 지시서 effort 와 `--effort` 가 다르면 거부한다. Haiku 행처럼 effort 를 지정하지 않는 지시서는 effort 를 `기본` 으로 적고 `--effort` 를 주지 않는다.
 - **다시 띄우기를 `launch-worker` 로 모은다.** 지금 지침은 같은 Task 를 다른 모델로 다시 띄울 때 `worker-start --task --retry-of` 를 직접 부른다(`references/launch.md` 「시작 직후 실패」, `waiting.md`, `replying.md`). 그 길은 이력도 선택 검사도 거치지 않아, medium 실패 뒤 high 로 올리는 바로 그 띄우기가 REQ1 밖에 있다. `launch-worker` 에 다시 띄우기 꼴(`--task <id> --retry-of <dispatch> --spec <지시서>`)을 더한다. 워크트리는 이력의 그 dispatch 의 것을 쓰고, 선택 검사와 이력 쓰기는 새 띄우기와 같다. 지침의 직접 호출은 이 꼴로 바꾸고, `hooks/require-spec-line.ts` 옆에 `worker-start --task` 직접 호출을 거부하는 hook 조건을 더한다. 바꾼 모델은 지시서의 `worker 선택:` 줄을 먼저 고친 뒤 띄운다(지금 「사용 한도에 걸렸을 때」 규칙과 같다).
-- **지시서 읽기는 `lib/spec.ts` 한 곳이다.** `worker 선택:` 줄의 새 조각(`행:`, `high 근거:`)과 `experiment:` 줄 해석을 여기 둔다. `spec-lint` 와 `launch-worker` 가 같은 함수를 쓴다(지금 `selectionsOf` 와 같다).
+- **지시서 읽기는 `lib/spec.ts` 한 곳이다.** `worker 선택:` 줄의 `행:` 과 후보 밖 이유, 옛 `experiment:` 줄 해석을 여기 둔다. `spec-lint` 와 `launch-worker` 가 같은 함수를 쓴다(지금 `selectionsOf` 와 같다).
 - **띄우기 이력은 새 `lib/launch-history.ts` 가 소유한다.** `<orch 루트>/state/launch-history.jsonl` 에 띄울 때마다 한 줄을 더하고 지우지 않는다. `LAUNCHED` 로 끝난 `launch-worker` 호출은 이력 한 줄이다. 시작 확인 시간이 넘으면 자동 abandon·재시도 없이 멈추고 성공 이력을 남기지 않는다(`launch-worker.ts` 머리 주석). `launched-workers/` 는 지금처럼 정리용 기록으로 남는다. 둘을 합치지 않는 이유: `launched-workers` 는 「정리가 지워야 끝난 것」 이라는 뜻을 이미 갖고 있다(`cleanup-sweep` 의 `forgetLaunch`). 오래 남길 기록을 같은 파일에 두면 그 뜻이 깨진다.
 - **routing 기록은 새 `lib/routing-log.ts` 가 소유한다.** 모으기(수집기 묶음)와 쓰기(PR 번호로 한 줄, 원자적 다시 쓰기)를 둔다. `finish-pr` 와 `cleanup-sweep` 은 PR 번호와 결과만 넘긴다. `cleanup-sweep` 은 머지 없이 닫힌 PR 과, 마무리가 빠진 머지 PR(`FINISH-MISSING`)을 쓴다. 두 쓰는 쪽이 같은 PR 에 두 번 써도 멱등이다. 쓰기 실패는 마무리와 정리를 막지 않는다. stderr 에 `ROUTING-LOG-FAIL <PR> <이유>` 한 줄을 남긴다. 기록은 판정이 아니라 관측이라, 기록 실패로 머지 뒤 정리가 멈추면 안 된다.
 - **수집기는 출처마다 나눈다.** 하나가 실패하면 그 키만 `null` 이고 나머지는 쓴다.
@@ -34,18 +34,9 @@
 
 ## 인터페이스와 데이터
 
-### `worker 선택:` 줄과 `experiment:` 줄
+### worker 선택 줄
 
-```text
-worker 선택: `claude` `claude-opus-5-5` effort `high`. 행: hard-design. high 근거: medium 실패 ctx_ab12cd34. 비교: gpt-6.1-sol high. 이유: ...
-worker 선택: `claude` `claude-opus-5-5` effort `high`. 행: hard-design. high 근거: 사용자 지정 2026-11-05. 비교: ... 이유: ...
-experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `medium` / `codex` `gpt-6.1-sol` effort `medium`.
-```
-
-- `Selection` 에 `row: string | null`, `highReason: { kind: 'dispatch', id } | { kind: 'user', date } | null` 을 더한다. `problems` 에 「행」 과 「high 근거」 를 더한다. 「행」 은 모든 새 지시서에 필수다(REQ8). 「high 근거」 는 모델이 `claude-opus-*` 이고 effort 가 `high`, `xhigh`, `max` 이며 실험 후보가 아닐 때만 필수다.
-- 백틱 값 해석은 지금과 같다(첫째 에이전트, 둘째 모델). `행:` 과 `high 근거:` 값은 백틱 밖 낱말이라 에이전트·모델 해석에 끼지 않는다.
-- `experimentOf(text)` 는 `{ no, name, candidates: {agent, model, effort}[], problems }` 를 낸다. 후보는 `/` 로 나누고 둘 이상이어야 한다. 지시서에 둘 이상이면 `선택` 발견이다.
-- `--active` 지시서는 지금처럼 선택 검사를 하지 않는다. 이미 떠 있는 worker 의 옛 지시서가 새 띄우기를 막지 않는다(스펙 REQ8).
+현재 선택 줄과 허용 조건은 [단일 worker 설계](../orch-single-worker/design.md) 를 따른다. `Selection` 은 행과 worker, 후보 밖 이유를 읽는다. Opus high 의 별도 근거 파싱은 제거했다. 옛 experiment 파서는 기존 지시서·기록을 읽기 위해 남긴다.
 
 ### 띄우기 이력 `state/launch-history.jsonl`
 

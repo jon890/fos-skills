@@ -627,7 +627,7 @@ describe('선택 정책과 영구 이력', () => {
     assert.equal(r.code, 0, both(r))
     const recorded = JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8'))
     assert.deepEqual([recorded.agent, recorded.model, recorded.effort], ['claude', 'claude-sonnet-5-5', 'medium'])
-    select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_1.')
+    select('claude', 'claude-opus-5-5', 'high')
     const raised = launch(['--repo', tmp, '--name', 'raised', '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high'], 'bash', false)
     assert.equal(raised.code, 1, both(raised))
     assert.match(raised.stderr, /후보 밖/)
