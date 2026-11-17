@@ -124,7 +124,7 @@
 - 우리 실측: Opus high 는 크기 C 에서 준비 1.6시간, 비용 $31.8 이었고 medium 은 0.7시간, $13.9 였다(표 3). 준비와 비용이 두 배 남짓인데 품질 개선 신호가 없었다.
 - 우리 실측 Sonnet medium: fos-skills 저장소의 2026-11-05 이후 Sonnet medium `impl-explore` 13건은 첫 리뷰 P2 평균 1.15 다. 같은 기간 sol medium 14건은 0.42 다(코디네이터 정리). 이 수치는 Sonnet 구현을 `high` 로 올리는 근거 가운데 하나다. 표본이 작아 방향만 본다.
 - 한계: 같은 계획을 medium 과 high 로 구현해 비교한 직접 측정은 찾지 못했다. effort 이름은 제공자와 세대마다 뜻이 달라 Opus medium 과 sol medium 은 같은 양이 아니다(OpenAI 모델 안내 https://learn.chatgpt.com/docs/models). 저장소 하나, 표본이 작다.
-- 결정: 계획을 마친 구현(`impl-planned`, `impl-explore`)에서 Opus 5.5 와 sol 은 `medium` 을 넘기지 않는다. Sonnet 5.5 는 `high` 가 기본이다. 실패하면 sol 과 Opus 는 effort 를 올리지 않고 모델을 바꾼다. Sonnet 의 medium 과 high 는 실측 기록(`routing-log.jsonl`)이 쌓이면 다시 본다. 집계 방법은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 의 「실측 기록」 절이다.
+- 결정: 계획을 마친 구현(`impl-planned`, `impl-explore`)에서 Opus 5.5 와 sol 은 `medium` 을 넘기지 않는다. Sonnet 5.5 는 `high` 가 기본이다. 실패하면 sol 과 Opus 는 effort 를 올리지 않고 모델을 바꾼다. Sonnet 의 medium 과 high 는 실측 기록(`routing-log.jsonl`)이 쌓이면 다시 본다. 집계 방법은 [실측 기록](../../../skills/orch/references/agent-selection.md#실측-기록) 절이다.
 
 ## 2026-11-10 Claude Fable 5.2 (실험 전 수치)
 
@@ -141,7 +141,7 @@
 
 ## 2026-11-12 Fable 5.2 실험 결과
 
-사용자 결정(2026-11-12): Fable 5.2 를 큰 구조 정리에만 후보로 둔다. 설계는 지금처럼 Opus·sol 이다. 선택 규칙은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 의 「큰 구조 정리의 Fable」 이 소유한다.
+2026-11-12 에는 Fable 5.2 를 큰 구조 정리에만 후보로 두고 설계는 Opus·sol 에 맡기기로 했다. 현재 선택 규칙은 [모델 표](../../../skills/orch/references/agent-selection.md#모델) 가 소유한다.
 
 다섯 건을 코디네이터가 보드와 PR 에서 모았다. 모두 `high` 다. 표본이 작아 방향만 본다.
 
@@ -165,7 +165,7 @@
 
 기존 모델 선택 지침에 있던 조사 기록을 보존한다. 현재 선택 규칙은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 가 소유한다.
 
-`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에 넣지 않는다. 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 2026-11-10 에 기본 후보에서 뺐다가 실험 뒤 큰 구조 정리에만 후보로 올렸다(사용자 결정 2026-11-12, [큰 구조 정리의 Fable](../../../skills/orch/references/agent-selection.md#큰-구조-정리의-fable)). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
+`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에 넣지 않는다. 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 2026-11-10 에 기본 후보에서 뺐다가 실험 뒤 큰 구조 정리에만 후보로 올렸다(사용자 결정 2026-11-12, [현재 Fable 선택](../../../skills/orch/references/agent-selection.md#모델)). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
 
 | 모델 | 입력 / 출력 ($/1M 토큰) | 비고 |
 | --- | --- | --- |

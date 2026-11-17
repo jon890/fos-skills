@@ -125,7 +125,7 @@ beforeEach(() => {
     // 닫은 질문 기록(lib/questions.ts)을 이 머신의 폴더에 쓰지 않게 한다
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
   }
-  writeFileSync(join(tmp, 'next.md'), '# 후속 작업\n브랜치: `feat/next`\n허락: 로컬 검증을 허락했다.\nworker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 비교: claude. 이유: 구현.\n')
+  writeFileSync(join(tmp, 'next.md'), '# 후속 작업\n브랜치: `feat/next`\n허락: 로컬 검증을 허락했다.\nworker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 이유: 구현.\n')
   delete env.FAKE_OUT
   delete env.FAKE_EXIT
 })

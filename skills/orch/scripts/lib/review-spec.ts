@@ -11,7 +11,7 @@
 //
 // 리뷰 제공자: 구현 worker 가 claude 면 codex, codex 면 claude 다. 둘 밖의 제공자는 고르지 않는다(--impl-agent 로 알려 준다).
 //     모델과 effort 는 agent-selection.md 의 `review` 행(구현한 쪽과 다른 제공자의 모델, medium)을 따른다.
-//     review 행은 모델 후보와 effort 상한을 검사하지 않아도(lib/selection.ts) 비교한 후보와 이유는 줄에 남긴다.
+//     review 행은 이 두 조합 가운데 하나인지 검사하고, 생성기는 다른 제공자를 고른 이유를 줄에 남긴다.
 // 구현 worker: 영구 이력(lib/launch-history.ts)에서 브랜치가 PR head 인 행 가운데 가장 늦은 것이다. 리뷰 브랜치(`review/pr-N`)는 뺀다.
 
 import { basename } from 'node:path'
@@ -19,7 +19,7 @@ import type { LaunchHistory } from './launch-history.ts'
 import { reviewPrOfBranch } from './review.ts'
 
 export type Implementer = { agent: string; model: string | null; effort: string | null; dispatch: string }
-export type Reviewer = { agent: string; model: string; effort: string; compare: string; reason: string }
+export type Reviewer = { agent: string; model: string; effort: string; reason: string }
 
 export const FILL = '채울 것'
 
@@ -37,10 +37,10 @@ export function implementerOf(history: LaunchHistory[], branch: string): { found
 // 구현 제공자와 다른 제공자의 리뷰 worker. 고를 수 없으면 null 이다
 export function reviewerFor(agent: string): Reviewer | null {
   if (agent === 'claude') {
-    return { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', compare: 'Claude Sonnet 5.5 medium', reason: '구현 worker 가 Claude 라 다른 제공자인 Codex 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다' }
+    return { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', reason: '구현 worker 가 Claude 라 다른 제공자인 Codex 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다' }
   }
   if (agent === 'codex') {
-    return { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', compare: '`gpt-6.1-sol` medium', reason: '구현 worker 가 Codex 라 다른 제공자인 Claude 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다' }
+    return { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', reason: '구현 worker 가 Codex 라 다른 제공자인 Claude 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다' }
   }
   return null
 }
@@ -76,7 +76,6 @@ export function fillReviewSpec(template: string, fill: Fill): string {
     에이전트: reviewer.agent,
     모델: reviewer.model,
     effort: reviewer.effort,
-    '다른 후보': reviewer.compare,
     '구현한 제공자와 다른 제공자를 고른 이유': reviewer.reason.replace(/[.\s]+$/, ''),
     '에이전트와 모델': built,
   }

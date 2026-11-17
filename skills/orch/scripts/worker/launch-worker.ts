@@ -28,7 +28,8 @@
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
 //
 // 차례:
-//     0. selectionVerdict 로 지시서의 행, 후보 모델과 effort 상한, 근거, 실험을 검사한다. 새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다
+//     0. selectionVerdict 로 지시서의 행별 worker 와 후보 밖 이유를 검사한다. 새 지시서의 비교 칸과 experiment 줄은 거절한다.
+//        새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다. 같은 지시서·설정의 이어하기는 옛 형식을 허용한다.
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
@@ -96,7 +97,8 @@
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
 //        짧은 출력(진입점의 orch worker launch, lib/output.ts)은 `LAUNCHED <dispatch id> <터미널 또는 -> <워크트리>` 이고, worker-start 가 성공할 때마다
 //        `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄 또는 ->` 를, 실패하면 receipt 전체를 `START-FAIL <receipt 한 줄>` 로 낸다. 거부는 `REFUSED <이유 첫 줄>`,
-//        모델이나 effort 의 후보 밖 이유가 있으면 전체 출력에서도 LAUNCH-EFFECTIVE 에 candidateOverride(행·모델·이유, effort 초과면 effort·effortLimit)를 더한다.
+//        행과 다른 worker 의 후보 밖 이유가 있으면 LAUNCH-EFFECTIVE 와 기록의 effective.candidateOverride 에 행·에이전트·모델·effort·이유를 남긴다.
+//        effort 가 다르면 effortLimit 에 행의 값을 남긴다.
 //        시작 확인 시간 초과는 `STALLED-START <dispatch> <단계 또는 -> <근거>` 다. 성공으로 알리지 않고 기록·이벤트 처리를 마친 뒤 1 로 끝난다.
 //        ack 줄과 REVIEW-*, SSH-AGENT, COMMIT-CHECK-* 판정 줄 밖의 진행 줄과 worker-start JSON 은 내지 않는다
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
@@ -145,7 +147,7 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
-import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
+import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Effective } from '../lib/launched.ts'
 import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
@@ -966,11 +968,12 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     // 짧은 출력은 터미널을 함께 낸다. 직접 실행(send-to-worker 가 읽는다)은 지금 꼴이다
     if (!stalled) out(short() ? `LAUNCHED ${dispatch} ${terminal || '-'} ${worktree}` : `LAUNCHED ${dispatch} ${worktree}`)
     const text = specText
-    let effective = null
+    let effective: Effective | null = null
     try {
       const value = JSON.parse(result.stdout)?.result?.launch?.effective
       if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
+    if (candidateOverride) effective = { ...effective, candidateOverride }
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {

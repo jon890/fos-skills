@@ -47,6 +47,8 @@ claude plugin test .
 | `skills/orch/templates/spec-verify.md` | 수정 |
 | `skills/orch/scripts/lib/launched.ts` | 수정 |
 | `docs/data-schema.md` | 수정 |
+| `docs/features/orch-routing/design.md` | 수정 |
+| `docs/features/orch-routing/evidence.md` | 수정 |
 | `skills/orch/tests/lib-spec.spec.ts` | 수정 |
 | `skills/orch/tests/lib-selection.spec.ts` | 수정 |
 | `skills/orch/tests/spec-lint.spec.ts` | 수정 |

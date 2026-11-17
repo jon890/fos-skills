@@ -24,7 +24,8 @@ import { join } from 'node:path'
 import { realPath } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
 
-export type Effective = { agent?: string | null; model?: string | null; effort?: string | null }
+export type CandidateOverride = { row: string | null; agent: string | null; model: string | null; effort: string | null; reason: string; effortLimit?: string | null }
+export type Effective = { agent?: string | null; model?: string | null; effort?: string | null; candidateOverride?: CandidateOverride }
 
 export type Launch = {
   // PR 준비 보고를 요구하지 않는 dispatch. --no-pr, 리뷰 행, 머지하지 않는 지시서에서 정한다.
@@ -61,7 +62,14 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
     const v = data as Record<string, unknown>
     if (v.dispatch !== dispatch || typeof v.worktree !== 'string') return null
     const text = (x: unknown) => (typeof x === 'string' && x ? x : null)
-    return { ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective: typeof v.effective === 'object' && v.effective !== null ? { agent: text((v.effective as Effective).agent), model: text((v.effective as Effective).model), effort: text((v.effective as Effective).effort) } : null, experiment: text(v.experiment) }
+    const raw = typeof v.effective === 'object' && v.effective !== null ? v.effective as Effective : null
+    const override = raw?.candidateOverride
+    const candidateOverride = override && typeof override === 'object' && typeof override.reason === 'string' && override.reason.trim()
+      ? { row: text(override.row), agent: text(override.agent), model: text(override.model), effort: text(override.effort), reason: override.reason,
+          ...(override.effortLimit !== undefined ? { effortLimit: text(override.effortLimit) } : {}) }
+      : null
+    const effective = raw ? { agent: text(raw.agent), model: text(raw.model), effort: text(raw.effort), ...(candidateOverride ? { candidateOverride } : {}) } : null
+    return { ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective, experiment: text(v.experiment) }
   } catch {
     return null
   }

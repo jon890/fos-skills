@@ -1,5 +1,5 @@
 // 실제 띄우기 기록과 완료 감시가 같은 지시서 표본을 검증한다.
-const review = 'worker 선택: `claude` `m` effort `기본`. 행: review. 비교: codex. 이유: 리뷰.'
+const review = 'worker 선택: `claude` `m` effort `기본`. 행: review. 이유: 리뷰. 후보 밖: 가짜 모델로 완료 경로를 검증한다.'
 export const prReadyCases = [
   { name: '리뷰 행', text: review, skip: true },
   { name: '머지하지 않는 지시', text: '5. 머지하지 않는다. PR 주소를 status 로 보낸다.', skip: true },

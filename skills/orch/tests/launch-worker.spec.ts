@@ -191,7 +191,7 @@ function fillSelection(args: string[]): void {
   const agent = value('--agent') ?? (value('--terminal') ? 'codex' : null)
   const model = value('--model') ?? (value('--terminal') ? 'm' : null)
   if (!args.includes('--') || !agent || !model) return
-  writeFileSync(spec, `${text}\nworker 선택: \`${agent}\` \`${model}\` effort \`${value('--effort') ?? '기본'}\`. 행: impl-planned. 비교: 다른 제공자. 이유: 테스트. 후보 밖: 실행 경로 테스트용 가짜 모델.\n`)
+  writeFileSync(spec, `${text}\nworker 선택: \`${agent}\` \`${model}\` effort \`${value('--effort') ?? '기본'}\`. 행: impl-planned. 이유: 테스트. 후보 밖: 실행 경로 테스트용 가짜 모델.\n`)
 }
 
 function launch(args: string[], shell = 'bash', fill = true, script = FUNCTION_RUNNER): Launch {
@@ -354,7 +354,7 @@ describe('거부와 사용법', () => {
 })
 
 describe('worker 선택 줄 대조', () => {
-  const SELECTED = '# 일\n허락: push\n- **worker 선택:** `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.\n'
+  const SELECTED = '# 일\n허락: push\n- **worker 선택:** `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: CI 리뷰가 Claude 다.\n'
 
   test('선택 줄이 없으면 orca 를 부르기 전에 형식과 함께 거부한다', () => {
     state({ next_ids: ['ctx_1'] })
@@ -365,21 +365,21 @@ describe('worker 선택 줄 대조', () => {
     assert.equal(existsSync(log), false)
   })
 
-  test('비교나 이유가 빠진 선택 줄은 거부하고 --lint-ack 으로도 넘기지 못한다', () => {
+  test('행이나 이유가 빠진 선택 줄은 거부하고 --lint-ack 으로도 넘기지 못한다', () => {
     writeFileSync(spec, '# 일\n허락: push\nworker 선택: `codex` `gpt-6.1-sol` effort `low`\n')
     state({ next_ids: ['ctx_1'] })
     const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol'], 'bash', false)
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stderr, /행 가 빠졌거나 형식이 틀렸다; 비교 가 빠졌거나 형식이 틀렸다; 이유 가 빠졌거나 형식이 틀렸다/)
+    assert.match(r.stderr, /행 가 빠졌거나 형식이 틀렸다; 이유 가 빠졌거나 형식이 틀렸다/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
   })
 
   test('--agent 나 --model 이 선택 줄과 다르면 둘 다 알리고 거부한다', () => {
     writeFileSync(spec, SELECTED)
     state({ next_ids: ['ctx_1'] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-sonnet-5-5'], 'bash', false)
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stderr, /--agent claude, 지시서 codex; --model claude-sonnet-5-5, 지시서 gpt-6\.1-sol/)
+    assert.match(r.stderr, /--agent claude, 지시서 codex; --model claude-fable-5-2, 지시서 gpt-6\.1-sol/)
     assert.equal(existsSync(log), false)
   })
 
@@ -397,28 +397,28 @@ describe('worker 선택 줄 대조', () => {
     ['impl-explore', 'medium', '', true],
     ['impl-explore', 'high', '', false],
     ['impl-explore', 'high', '후보 밖: 재현에 깊은 추론이 필요하다.', true],
-    ['hard-design', 'high', '', true],
+    ['hard-design', 'high', '', false],
   ] as const) {
-    test(`effort 상한을 실제 띄우기 전에 검사한다: ${row} ${effort} ${reason}`, () => {
+    test(`행의 worker 를 실제 띄우기 전에 검사한다: ${row} ${effort} ${reason}`, () => {
       writeFileSync(spec, SELECTED.replace('impl-planned', row).replace('effort `low`', `effort \`${effort}\``).trimEnd() + ` ${reason}\n`)
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', effort], 'bash', false)
+      const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', ...(effort === '기본' ? [] : ['--effort', effort])], 'bash', false)
       assert.equal(r.code, allowed ? 0 : 1, both(r))
       if (!allowed) {
-        assert.match(r.stderr, /effort 상한:/)
+        assert.match(r.stderr, /의 worker:/)
         assert.match(r.stderr, /후보 밖: <이유>/)
         assert.deepEqual(lines('orca orchestration worker-start'), [])
       } else if (reason) {
         const line = r.stdout.split('\n').find(line => line.startsWith('LAUNCH-EFFECTIVE '))!
-        assert.deepEqual(JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride, { row, model: 'gpt-6.1-sol', reason: '재현에 깊은 추론이 필요하다', effort: 'high', effortLimit: 'medium' })
+        assert.deepEqual(JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride, { row, agent: 'codex', model: 'gpt-6.1-sol', reason: '재현에 깊은 추론이 필요하다', effort: 'high', effortLimit: 'medium' })
       } else assert.match(r.stdout, /LAUNCHED ctx_1/)
     })
   }
 
-  test('Sonnet 기본 effort 는 옵션을 생략해도 표의 기본값으로 검사하고 띄운다', () => {
-    writeFileSync(spec, SELECTED.replace('`codex` `gpt-6.1-sol` effort `low`', '`claude` `claude-sonnet-5-5` effort `기본`'))
+  test('Fable 기본 effort 는 옵션을 생략하고 띄운다', () => {
+    writeFileSync(spec, SELECTED.replace('impl-planned', 'impl-hard').replace('`codex` `gpt-6.1-sol` effort `low`', '`claude` `claude-fable-5-2` effort `기본`'))
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-sonnet-5-5'], 'bash', false)
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
     assert.equal(r.code, 0, both(r))
     assert.match(r.stdout, /LAUNCHED ctx_1/)
   })
@@ -429,7 +429,7 @@ describe('worker 선택 줄 대조', () => {
       state({ next_ids: ['ctx_1'] })
       const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6-astra', '--effort', 'low'], 'bash', false)
       assert.equal(r.code, 1, both(r))
-      assert.match(r.stderr, /후보: gpt-6\.1-sol, gpt-6\.1-terra, claude-sonnet-5-5/)
+      assert.match(r.stderr, /worker: codex gpt-6\.1-sol effort low/)
       assert.match(r.stderr, /후보 밖: <이유>/)
       assert.deepEqual(lines('orca orchestration worker-start'), [])
     })
@@ -443,26 +443,28 @@ describe('worker 선택 줄 대조', () => {
       const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6-astra', '--effort', 'low'], 'bash', false)
       assert.equal(r.code, 0, both(r))
       const line = r.stdout.split('\n').find(line => line.startsWith('LAUNCH-EFFECTIVE '))!
-      assert.deepEqual(JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride, { row: 'impl-planned', model: 'gpt-6-astra', reason: '사용자 지정 비교 작업' })
+      assert.deepEqual(JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride, { row: 'impl-planned', agent: 'codex', effort: 'low', model: 'gpt-6-astra', reason: '사용자 지정 비교 작업' })
+      const history = readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+      assert.deepEqual(history.at(-1).effective.candidateOverride, JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride)
     })
   }
 
   for (const [model, row, marker, effort] of [
-    ['gpt-6-astra', 'review', '', 'high'],
-    ['gpt-6.1-terra', 'impl-planned', '', 'medium'],
-    ['claude-fable-5-2', 'impl-explore', '', 'high'],
+    ['gpt-6.1-sol', 'review', '', 'medium'],
+    ['gpt-6.1-terra', 'visual', '', 'low'],
+    ['claude-fable-5-2', 'impl-hard', '', '기본'],
   ]) {
     test(`리뷰와 후보 모델을 띄운다: ${model}`, () => {
       const agent = model.startsWith('claude-') ? 'claude' : 'codex'
-      writeFileSync(spec, `# 일\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${row}. 비교: 다른 제공자. 이유: 실험. ${marker}\n`)
+      writeFileSync(spec, `# 일\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${row}. 이유: 실험. ${marker}\n`)
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--', '--agent', agent, '--model', model, '--effort', effort], 'bash', false)
+      const r = launch(['--worktree', worktree, '--', '--agent', agent, '--model', model, ...(effort === '기본' ? [] : ['--effort', effort])], 'bash', false)
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
     })
   }
 
-  for (const row of ['impl-planned', 'review']) {
+  for (const row of ['impl-planned']) {
     test(`후보 밖 이유가 있어도 실제 예외가 아니면 기록하지 않는다: ${row}`, () => {
       writeFileSync(spec, SELECTED.replace('impl-planned', row).trimEnd() + ' 후보 밖: 선택 줄에서 복사한 이유.\n')
       env.ORCH_OUTPUT = 'short'
@@ -481,15 +483,25 @@ describe('worker 선택 줄 대조', () => {
     const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'], 'bash', false)
     assert.equal(r.code, 1, both(r))
   })
+
+  for (const extra of [' 비교: Sonnet.', '\nexperiment: old']) {
+    test(`새 지시서의 금지 형식은 ack 으로도 넘기지 못한다: ${extra}`, () => {
+      writeFileSync(spec, SELECTED.trimEnd() + extra + '\n')
+      const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+      assert.equal(r.code, 1, both(r))
+      assert.match(r.stderr, /쓰지 않는다/)
+      assert.deepEqual(lines('orca orchestration worker-start'), [])
+    })
+  }
 })
 
 describe('선택 정책과 영구 이력', () => {
   const select = (agent = 'codex', model = 'gpt-6.1-sol', effort = 'medium', extra = '') =>
-    writeFileSync(spec, `# 선택 검사\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${model.startsWith('claude-opus-') ? 'hard-design' : model.startsWith('claude-haiku-') ? 'small-fix' : 'impl-explore'}. ${extra} 비교: 다른 모델. 이유: 테스트.\n`)
+    writeFileSync(spec, `# 선택 검사\n허락: push\nworker 선택: \`${agent}\` \`${model}\` effort \`${effort}\`. 행: ${model.startsWith('claude-opus-') ? 'hard-design' : model.startsWith('claude-haiku-') ? 'simple-apply' : 'impl-explore'}. ${extra} 이유: 테스트.\n`)
   const history = () => readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
   const prior = (extra = {}) => ({ dispatch: 'ctx_old', task: 'task_1', terminal: 'term_old', worktree, branch: 'feat/a', run: null, at: '2026-11-05T00:00:00Z', title: '이전 작업', row: 'impl-explore', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', retry_of: null, ...extra })
 
-  test('행 누락, Opus 근거 누락과 effort 불일치는 ack 으로도 새 워크트리를 만들기 전에 거부한다', () => {
+  test('행 누락, 후보 밖 이유 누락과 effort 불일치는 ack 으로도 새 워크트리를 만들기 전에 거부한다', () => {
     for (const kind of ['row', 'high', 'effort']) {
       select(kind === 'high' ? 'claude' : 'codex', kind === 'high' ? 'claude-opus-5-5' : 'gpt-6.1-sol', kind === 'high' ? 'high' : 'medium')
       if (kind === 'row') writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-explore.', ''))
@@ -501,15 +513,14 @@ describe('선택 정책과 영구 이력', () => {
     }
   })
 
-  test('요청 값, effective, 실험 이름과 행이 정리용 기록과 영구 이력에 남는다', () => {
+  test('요청 값, effective 와 행이 정리용 기록과 영구 이력에 남는다', () => {
     select()
-    writeFileSync(spec, readFileSync(spec, 'utf8') + 'experiment: sample. 후보: `codex` `gpt-6.1-sol` effort `medium` / `claude` `claude-sonnet-5-5` effort `medium`.\n')
     const effective = { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' }
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, effective })
     const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
     assert.equal(r.code, 0, both(r))
     const record = JSON.parse(readFileSync(join(worktree, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
-    assert.deepEqual([record.agent, record.model, record.effort, record.effective, record.experiment], ['codex', 'gpt-6.1-sol', 'medium', effective, 'sample'])
+    assert.deepEqual([record.agent, record.model, record.effort, record.effective, record.experiment], ['codex', 'gpt-6.1-sol', 'medium', effective, null])
     assert.equal(history()[0].row, 'impl-explore')
     assert.equal(history()[0].title, '선택 검사')
     assert.equal(history()[0].retry_of, null)
@@ -524,10 +535,10 @@ describe('선택 정책과 영구 이력', () => {
     assert.equal(history()[0].effective, null)
   })
 
-  test('experiment terminal 이어 쓰기는 다음 후보를 요구하지 않고 배정 수에서 제외한다', () => {
+  test('옛 experiment 지시서는 같은 터미널에서 이어 쓰고 이전 이력을 보존한다', () => {
     select()
     writeFileSync(spec, readFileSync(spec, 'utf8') + 'experiment: continue-trial. 후보: `codex` `gpt-6.1-sol` effort `medium` / `claude` `claude-sonnet-5-5` effort `medium`.\n')
-    recordHistory(worktree, prior({ experiment: 'continue-trial' }))
+    recordHistory(worktree, prior({ spec, experiment: 'continue-trial' }))
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'], 'bash', false)
     assert.equal(r.code, 0, both(r))
@@ -608,7 +619,7 @@ describe('선택 정책과 영구 이력', () => {
     assert.equal(launch(args, 'bash', false).code, 0)
   })
 
-  test('resume NEXT 새 터미널은 이전 dispatch 의 모델을 물려받고 잘못된 high 근거가 되지 않는다', () => {
+  test('resume NEXT 새 터미널은 이전 모델을 물려받고 새 모델은 후보 밖 이유가 필요하다', () => {
     select('claude', 'claude-sonnet-5-5', 'medium')
     recordLaunch(tmp, prior({ agent: 'claude', model: 'claude-sonnet-5-5' }))
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_new', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
@@ -619,7 +630,7 @@ describe('선택 정책과 영구 이력', () => {
     select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_1.')
     const raised = launch(['--repo', tmp, '--name', 'raised', '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high'], 'bash', false)
     assert.equal(raised.code, 1, both(raised))
-    assert.match(raised.stderr, /Opus medium/)
+    assert.match(raised.stderr, /후보 밖/)
   })
 
   for (const mode of ['task-retry', 'resume-terminal', 'terminal'] as const) {
@@ -648,7 +659,7 @@ describe('선택 정책과 영구 이력', () => {
   }
 
   for (const mode of ['task-retry', 'resume-terminal', 'terminal'] as const) {
-    test(`이전 effort 그대로 ${mode} 하면 새 상한으로 기존 작업을 막지 않는다`, () => {
+    test(`이전 effort 그대로 ${mode} 하면 새 규칙으로 기존 작업을 막지 않는다`, () => {
       select()
       writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-explore.', '행: impl-planned.'))
       recordHistory(mode === 'terminal' ? worktree : tmp, prior({ spec }))
@@ -662,12 +673,12 @@ describe('선택 정책과 영구 이력', () => {
     })
   }
 
-  test('재시도에서 effort 를 바꾸면 행별 상한을 다시 검사한다', () => {
+  test('재시도에서 effort 를 바꾸면 행의 worker 와 다시 대조한다', () => {
     select('codex', 'gpt-6.1-sol', 'high')
     recordHistory(tmp, prior({ spec }))
     const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'high'], 'bash', false)
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stderr, /effort 상한: medium/)
+    assert.match(r.stderr, /의 worker: codex gpt-6\.1-sol effort medium/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
   })
 
@@ -694,7 +705,7 @@ describe('선택 정책과 영구 이력', () => {
   }
 
   test('이력의 마지막 손상 줄은 경고하고 정상 dispatch 로 다시 띄운다', () => {
-    select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
+    select('claude', 'claude-opus-5-5', 'high', '후보 밖: 사용자가 지정한 모델.')
     recordHistory(tmp, prior({ agent: 'claude', model: 'claude-opus-5-5' }))
     const file = join(tmp, '.orch/state/launch-history.jsonl')
     writeFileSync(file, readFileSync(file, 'utf8') + '{"dispatch":')
@@ -716,8 +727,8 @@ describe('선택 정책과 영구 이력', () => {
     assert.deepEqual(lines('orca orchestration worker-start'), [])
   })
 
-  test('모델 없는 옛 Launch 를 근거로 Opus high 를 띄울 수 있다', () => {
-    select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
+  test('모델 없는 옛 Launch 가 있어도 새 Opus 선택은 후보 밖 이유로 띄운다', () => {
+    select('claude', 'claude-opus-5-5', 'high', '후보 밖: 사용자가 지정한 모델.')
     recordLaunch(worktree, { dispatch: 'ctx_old', terminal: null, worktree, run: null })
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high'], 'bash', false)
@@ -920,7 +931,7 @@ describe('띄우기', () => {
         worktree,
         run: 'run_a',
         spec: resolve(spec),
-        agent: 'claude', model: 'm', effort: null, effective: {}, experiment: null,
+        agent: 'claude', model: 'm', effort: null, effective: { candidateOverride: { row: 'impl-planned', agent: 'claude', model: 'm', effort: '기본', reason: '실행 경로 테스트용 가짜 모델' } }, experiment: null,
       })
     })
 
@@ -1913,7 +1924,7 @@ describe('모델과 effort 검사', () => {
 
   test('--model 이 없으면 모델 검사 전에 선택 줄 대조가 거부한다', () => {
     env.CODEX_BIN = join(tmp, 'missing-codex')
-    writeFileSync(spec, '# 일\n허락: push\nworker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Sonnet. 이유: 테스트.\n')
+    writeFileSync(spec, '# 일\n허락: push\nworker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 테스트.\n')
     const r = launchCodex()
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /--model \(없음\), 지시서 gpt-6\.1-sol/)
@@ -2484,7 +2495,7 @@ describe('짧은 출력', () => {
     assert.equal(r.code, 0, both(r))
     const out = r.stdout.trim().split('\n')
     assert.equal(out.length, 2, r.stdout)
-    assert.deepEqual(JSON.parse(out[0].slice('LAUNCH-EFFECTIVE '.length)), { candidateOverride: { row: 'impl-planned', model: 'm', reason: '실행 경로 테스트용 가짜 모델' } })
+    assert.deepEqual(JSON.parse(out[0].slice('LAUNCH-EFFECTIVE '.length)), { candidateOverride: { row: 'impl-planned', agent: 'claude', model: 'm', effort: '기본', reason: '실행 경로 테스트용 가짜 모델' } })
     assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
   })
 

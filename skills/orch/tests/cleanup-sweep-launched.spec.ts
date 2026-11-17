@@ -51,7 +51,7 @@ describe('launch-worker 가 기록한 user_owned 터미널', () => {
     squashMerge('feat-reopened', path)
     ownTerminal(path, { record: false })
     const spec = join(fx.tmp, 'follow.md')
-    writeFileSync(spec, '# 후속 작업\n허락: 로컬 검증.\nworker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 비교: claude. 이유: 구현.\n')
+    writeFileSync(spec, '# 후속 작업\n허락: 로컬 검증.\nworker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 이유: 구현.\n')
     const fake = join(fx.tmp, 'follow-orca.js')
     writeFileSync(fake, `#!${process.execPath}
 const args = process.argv.slice(2)

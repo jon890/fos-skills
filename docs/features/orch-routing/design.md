@@ -2,6 +2,8 @@
 
 스펙: [`spec.md`](spec.md). 근거 표: [`evidence.md`](evidence.md).
 
+현재 worker 선택과 예외 기록은 [단일 worker 설계](../orch-single-worker/design.md) 가 이 문서의 선택 검사·실험 배정 규칙을 대체한다. 아래는 최초 도입 기록이며 이력 보존과 routing 집계의 책임은 유지한다.
+
 ## 요구사항 연결
 
 | ID | 해결 방법 | PR |

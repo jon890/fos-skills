@@ -67,18 +67,12 @@
   PR 생성이나 리뷰 등록을 허락하는 줄에는 「이 허락은 dispatch 머리말의 GitHub 게시 금지보다 앞선다」 를 함께 적는다. 틀(`templates/spec-review.md`)에 넣어 복사하게 한다.
   `spec-line` 이 이 줄을 `--spec` 의 첫 지시 줄에 붙인다
 - 고른 worker 를 `worker 선택:` 으로 시작하는 줄 하나에 적는다. 모든 개별 지시서에 필수다.
-  형식은 「worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 행: <id>. [high 근거: ….] 비교: <다른 후보>. 이유: <고른 이유>.」 다.
-  `행:` 은 모든 새 지시서에 모델 표의 id 를 적는다. `high 근거:` 는 `agent-selection.md` 「Opus `high`」 가 요구할 때만 적고, 꼴은 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 다. effort 를 지정하지 않는 행(Haiku)은 effort 를 `기본` 으로 적는다.
-  예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Claude Sonnet 5.5. 이유: 계획서가 수정 위치를 정했고 CI 리뷰가 Claude 라 제공자를 나눈다.」
-  후보와 고르는 규칙은 [`agent-selection.md`](agent-selection.md) 가 소유한다. 비교 없이 익숙한 제공자로 기우는 것을 막으려고 줄을 강제한다.
-  `선택` 발견과 거부 조건은 `spec-lint.ts` 와 `launch-worker.ts` 머리 주석이 소유한다. `--lint-ack` 으로 넘기지 못한다.
-- 비교 실험은 다음처럼 `experiment:` 줄 하나를 더한다. 후보는 `/` 로 나누며 둘 이상이고 중복 없이 agent, model, effort 를 적는다. `worker 선택:` 은 후보 중 하나여야 한다.
+  형식은 「worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 행: <id>. 이유: <고른 이유>.」 다.
+  기본 effort 는 `기본` 이라고 적는다. 에이전트·모델·effort 중 하나라도 행과 다르면 같은 줄에 `후보 밖: <이유>` 를 덧붙인다. 사용 한도 표로 바꾸는 경우도 같다.
+  예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 계획서가 수정 위치와 검증 명령을 정했다.」
+  행과 worker 는 [`agent-selection.md`](agent-selection.md) 가 소유한다. 문서 수정의 내용과 난도로 행을 고르고 어려운 행은 그 까닭을 이유에 적는다.
+  새 지시서에 `비교:` 항목이나 `experiment:` 줄을 쓰면 `spec-lint` 와 `launch-worker` 가 거절한다. 선택 오류는 `--lint-ack` 으로 넘기지 못한다.
 
-  ```text
-  experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `medium` / `codex` `gpt-6.1-sol` effort `medium`.
-  ```
-
-  배정 규칙은 `launch-worker.ts` 머리 주석이 소유한다. 실험 후보인 Opus 높은 effort 는 별도 high 근거 없이 허용한다.
 - PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 `pr-body-<워크트리 이름>.md` 처럼 작업 이름을 넣어 쓰고 PR 이 열릴 때까지 지우지 않는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 `spec-lint` 가 `본문` 경고로 알린다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열면 코디네이터가 그 경로의 파일로 연다. 저장소의 `.orch/` 에는 두지 않는다
 - PR 을 열게 하면 「PR 은 기준 브랜치를 base 로 따로 연다. 다른 PR 브랜치를 base 로 두지 않는다」 도 적는다.
   앞 PR 브랜치를 base 로 연 PR 은 앞 PR 을 `--delete-branch` 로 머지하면 자동으로 닫히거나 앞 브랜치로 머지된다
