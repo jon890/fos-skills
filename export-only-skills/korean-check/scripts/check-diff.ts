@@ -8,6 +8,7 @@
 //
 // 사용법 (cwd: 검사할 저장소 안):
 //     node check-diff.ts [--base <ref>] [<파일.md>...]
+//     node check-diff.ts --staged
 //
 //     --base   비교 기준. 기본값은 HEAD 라 커밋하지 않은 변경만 본다.
 //              브랜치 전체를 보려면 origin/main 처럼 기준 브랜치를 준다.
@@ -16,22 +17,38 @@
 //     파일     생략하면 그 범위에서 바뀐 .md 와 추적하지 않는 새 .md 를 모두 본다.
 //              추적하지 않는 파일은 모든 줄을 이번 변경으로 본다.
 //
+//     --staged 커밋 훅에서 쓴다. git 인덱스에 스테이징한 .md 에서 HEAD 보다 더하거나 바꾼 줄의 발견만 낸다.
+//              작업 트리 파일이 아니라 스테이징된 내용을 읽는다. 스테이징한 뒤 고친 내용은 보지 않고,
+//              `git commit -a` 처럼 git 이 임시 인덱스(GIT_INDEX_FILE)를 쓰는 커밋에서도 커밋될 내용을 본다.
+//              새 파일과 첫 커밋(HEAD 없음)은 모든 줄이 대상이다. 이름만 바꾼 파일은 바뀐 줄만 본다(--base 모드는 모든 줄을 본다).
+//              문서를 옮기는 커밋이 손대지 않은 줄의 금지어로 막히지 않게 하려는 것이다.
+//              심볼릭 링크와 서브모듈 항목, 매핑 표 파일 자신은 뺀다. --base 나 파일 인자와 함께 주면 사용법 오류(2)다.
+//              스테이징된 내용을 임시 폴더에 같은 상대 경로로 풀어 두 검사기를 돌린다. 예외 파일(.claude/korean-check-allow.txt)은
+//              대상 파일의 폴더에서 저장소 루트까지 있는 것을 임시 폴더의 같은 자리에 복사해 평소와 같은 규칙으로 읽힌다.
+//              git 은 저장소 루트에서만 부른다. 훅 환경에는 GIT_DIR 이 들어 있어 임시 폴더에서 부르면 실제 저장소에 닿는다.
+//
 // 옵션은 argparse 처럼 긴 옵션의 고유한 접두(--bas)와 `--base=값` 을 받는다. 모르는 옵션과 값 없는 --base 는 사용법 오류(2)다.
 //
 // 출력은 「이번 변경」 과 「기존 줄」 두 묶음이다. 기존 줄의 발견은 종료 코드에 넣지 않는다.
+// --staged 의 출력은 다르다. 더한 줄의 발견 줄만 내고(경로는 저장소 루트 기준), 그 뒤에 금지어마다
+// `권장 표현: "<금지어>" → <매핑 표의 권장 열>` 한 줄을 처음 나온 차례로 낸다. DB 문맥 패턴처럼 매핑 표에 행이 없는 발견은
+// 발견 줄에 고칠 말이 있어 권장 표현 줄이 없다. 발견이 없으면 아무것도 내지 않는다. 훅이 그대로 내보내도 조용하다.
 //
 // 종료 코드:
 //     0  이번 변경에 금지어가 없다. 경고와 기존 줄의 발견이 있어도 0 이다
 //     1  이번 변경의 줄에 매핑 표 금지어가 있다
 //     2  돌지 못함. git 저장소가 아니거나 기준을 찾지 못했거나, 검사기가 2 로 끝났다
+// --staged 도 같다. 다만 금지어 발견은 줄의 `: 금지어 "` 꼴로 알아본다. 경로에 그 낱말이 든 파일의 경고가 커밋 거절로 바뀌지 않게 한다.
 //
 // 한계: 가독성 검사기의 TILDE 경고는 단락의 첫 줄 번호로 나온다.
 // 단락 중간에 더한 줄 때문에 걸려도 첫 줄이 기존 줄이면 「기존 줄」 로 분류된다.
 
 import { spawnSync } from 'node:child_process'
-import { statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, relative } from 'node:path'
 import { isMain, write } from './io.ts'
+import { loadAdvice, rulesPath } from './korean-style-check.ts'
 import { pySplitLines, pyStrCompare, pyStrip } from './kit/py.ts'
 
 const STYLE = join(import.meta.dirname, 'korean-style-check.ts')
@@ -41,8 +58,12 @@ const HUNK = /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/
 // 두 검사기의 발견 줄은 「경로:줄번호:」 또는 「경로:줄번호  경고」 로 시작한다.
 const FINDING = /^(.+?):(\d+)[: ]/
 const BANNED = '금지어'
+// --staged 가 금지어 발견 줄을 알아보는 꼴. 낱말은 권장 표현 줄을 고르는 데 쓴다
+const BANNED_ROW = /: 금지어 "([^"]+)"/
+const ALLOW_FILE = join('.claude', 'korean-check-allow.txt')
+const MAX_BUFFER = 256 * 1024 * 1024
 
-const USAGE = 'usage: check-diff.ts [-h] [--base BASE] [files ...]\n'
+const USAGE = 'usage: check-diff.ts [-h] [--base BASE] [--staged] [files ...]\n'
 const HELP = `${USAGE}
 git diff 로 이번에 더한 줄의 발견만 판정하고, 기존 줄의 발견은 따로 알린다.
 
@@ -52,6 +73,7 @@ positional arguments:
 options:
   -h, --help   show this help message and exit
   --base BASE
+  --staged     스테이징한 .md 의 더한 줄만 본다(커밋 훅용)
 `
 
 function git(args: string[], cwd?: string) {
@@ -92,8 +114,8 @@ function changedMarkdown(root: string, mergeBase: string): string[] {
   return [...new Set(names.map((name) => relative(process.cwd(), join(root, name))))].sort(pyStrCompare)
 }
 
-function runChecker(script: string, paths: string[]) {
-  const done = spawnSync(process.execPath, [script, ...paths], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+function runChecker(script: string, paths: string[], cwd?: string) {
+  const done = spawnSync(process.execPath, [script, ...paths], { cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER })
   return { code: done.status ?? 1, out: pySplitLines((done.stdout ?? '').replace(/\r\n?/g, '\n')), err: done.stderr ?? '' }
 }
 
@@ -104,14 +126,16 @@ function looksLikeOption(token: string): boolean {
   return !token.includes(' ')
 }
 
-type Parsed = { help: true } | { error: string } | { base: string; files: string[] }
+type Parsed = { help: true } | { error: string } | { base: string; files: string[]; staged: boolean }
 
 // argparse 와 같은 뜻으로 인자를 읽는다. 긴 옵션의 고유 접두, `--base=값`, `--` 를 받는다
 function parseArgs(argv: string[]): Parsed {
   let base = 'HEAD'
+  let baseGiven = false
+  let staged = false
   const files: string[] = []
   const unrecognized: string[] = []
-  const longs = ['base', 'help']
+  const longs = ['base', 'help', 'staged']
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
     if (token === '--') {
@@ -139,12 +163,19 @@ function parseArgs(argv: string[]): Parsed {
       if (eq >= 0) return { error: 'argument -h/--help: ignored explicit argument' + ` '${token.slice(eq + 1)}'` }
       return { help: true }
     }
+    if (matches[0] === 'staged') {
+      if (eq >= 0) return { error: 'argument --staged: ignored explicit argument' + ` '${token.slice(eq + 1)}'` }
+      staged = true
+      continue
+    }
+    baseGiven = true
     if (eq >= 0) base = token.slice(eq + 1)
     else if (i + 1 < argv.length && !looksLikeOption(argv[i + 1])) base = argv[++i]
     else return { error: 'argument --base: expected one argument' }
   }
   if (unrecognized.length) return { error: `unrecognized arguments: ${unrecognized.join(' ')}` }
-  return { base, files }
+  if (staged && (baseGiven || files.length)) return { error: 'argument --staged: not allowed with --base or files' }
+  return { base, files, staged }
 }
 
 // 명령 본체. stdout 과 stderr 에 직접 쓰고 종료 코드를 돌려준다. argv 는 명령 이름 뒤의 인자다.
@@ -163,6 +194,7 @@ export async function main(argv: string[]): Promise<number> {
   const top = git(['rev-parse', '--show-toplevel'])
   if (top.status !== 0) return fail('git 저장소 안에서 돌린다')
   const root = pyStrip(top.stdout)
+  if (parsed.staged) return checkStaged(root)
 
   const mb = git(['merge-base', base, 'HEAD'])
   if (mb.status !== 0) return fail(`기준을 찾지 못했다: ${base}`)
@@ -211,6 +243,127 @@ export async function main(argv: string[]): Promise<number> {
 
   write(1, `## 이번 변경 (${base} 이후 더한 줄)\n${fresh.length ? fresh.join('\n') : '발견 없음'}\n\n## 기존 줄 (참고. 종료 코드에 넣지 않는다)\n${old.length ? old.join('\n') : '발견 없음'}\n`)
   return status
+}
+
+type Staged = { path: string; old: string | null; added: boolean }
+
+// 인덱스에 더했거나 바꿨거나 이름을 바꾼 .md. 경로는 저장소 루트 기준이다. 읽지 못하면 null
+function stagedMarkdown(root: string): Staged[] | null {
+  const done = spawnSync('git', ['diff', '--cached', '--name-status', '-z', '-M', '--diff-filter=AMR', '--', '*.md'], { cwd: root, encoding: 'utf8', maxBuffer: MAX_BUFFER })
+  if (done.status !== 0) return null
+  // -z 출력은 「상태\0경로\0」 이고, 이름을 바꾼 항목은 「R<점수>\0옛 경로\0새 경로\0」 다
+  const tokens = (done.stdout ?? '').split('\0')
+  const found: Staged[] = []
+  for (let i = 0; i < tokens.length; ) {
+    const status = tokens[i++]
+    if (!status) continue
+    const old = status.startsWith('R') ? tokens[i++] : null
+    const path = tokens[i++]
+    if (path) found.push({ path, old, added: status.startsWith('A') })
+  }
+  return found
+}
+
+// 일반 파일인가. 심볼릭 링크(120000)와 서브모듈(160000)의 내용은 문서가 아니다
+function isRegularEntry(root: string, path: string): boolean {
+  const done = git(['--literal-pathspecs', 'ls-files', '-s', '--', path], root)
+  return done.status === 0 && /^100(?:644|755) /.test(done.stdout)
+}
+
+// HEAD 와 인덱스 사이에서 더하거나 바꾼 줄 번호 집합. 이름을 바꾼 파일은 옛 경로와 함께 물어 바뀐 줄만 받는다
+function stagedLines(root: string, item: Staged): Set<number> | null {
+  const paths = item.old === null ? [item.path] : [item.old, item.path]
+  const done = git(['--literal-pathspecs', 'diff', '--cached', '-U0', '-M', '--no-color', '--no-ext-diff', '--', ...paths], root)
+  if (done.status !== 0) return null
+  const lines = new Set<number>()
+  for (const row of pySplitLines(done.stdout)) {
+    const m = HUNK.exec(row)
+    if (m) {
+      const start = Number(m[1])
+      const count = Number(m[2] ?? 1)
+      for (let i = start; i < start + count; i++) lines.add(i)
+    }
+  }
+  return lines
+}
+
+function sameFile(a: string, b: string): boolean {
+  try {
+    const x = statSync(a, { bigint: true })
+    const y = statSync(b, { bigint: true })
+    return x.dev === y.dev && x.ino === y.ino
+  } catch {
+    return false
+  }
+}
+
+// 대상 파일의 폴더에서 저장소 루트까지 있는 예외 파일을 임시 폴더의 같은 자리에 복사한다
+function copyAllowFiles(root: string, tmp: string, path: string, done: Set<string>): void {
+  for (let dir = dirname(path); ; dir = dirname(dir)) {
+    if (!done.has(dir)) {
+      done.add(dir)
+      const source = join(root, dir, ALLOW_FILE)
+      if (isFile(source)) {
+        mkdirSync(dirname(join(tmp, dir, ALLOW_FILE)), { recursive: true })
+        copyFileSync(source, join(tmp, dir, ALLOW_FILE))
+      }
+    }
+    if (dir === '.') return
+  }
+}
+
+// --staged 의 본체. 머리 주석의 「--staged」 가 동작을 소유한다
+function checkStaged(root: string): number {
+  const listed = stagedMarkdown(root)
+  if (listed === null) return fail('스테이징된 파일을 읽지 못했다')
+  const rules = rulesPath()
+  const items = listed.filter((item) => isRegularEntry(root, item.path) && !sameFile(join(root, item.path), rules))
+  if (!items.length) return 0
+
+  const added = new Map<string, Set<number> | null>()
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'korean-check-staged-')))
+  try {
+    // 예외 파일 찾기는 .git 이 있는 폴더에서 멈춘다. 임시 폴더 밖으로 올라가지 않게 표시만 둔다
+    mkdirSync(join(tmp, '.git'))
+    const copied = new Set<string>()
+    for (const item of items) {
+      if (item.added) added.set(item.path, null) // null 은 모든 줄이 이번 변경이라는 뜻이다
+      else {
+        const lines = stagedLines(root, item)
+        if (lines === null) return fail(`git diff 가 실패했다: ${item.path}`)
+        added.set(item.path, lines)
+      }
+      const blob = spawnSync('git', ['cat-file', 'blob', `:0:${item.path}`], { cwd: root, maxBuffer: MAX_BUFFER })
+      if (blob.status !== 0) return fail(`스테이징된 내용을 읽지 못했다: ${item.path}`)
+      mkdirSync(dirname(join(tmp, item.path)), { recursive: true })
+      writeFileSync(join(tmp, item.path), blob.stdout)
+      copyAllowFiles(root, tmp, item.path, copied)
+    }
+
+    const fresh: string[] = []
+    for (const script of [STYLE, READABILITY]) {
+      const { code, out, err } = runChecker(script, items.map((item) => item.path), tmp)
+      if (code === 2) {
+        write(2, err)
+        return 2
+      }
+      for (const row of out) {
+        const m = FINDING.exec(row)
+        if (!m || !added.has(m[1])) continue
+        const scope = added.get(m[1])
+        if (scope === null || (scope as Set<number>).has(Number(m[2]))) fresh.push(row)
+      }
+    }
+    if (!fresh.length) return 0
+
+    const terms = [...new Set(fresh.map((row) => BANNED_ROW.exec(row)?.[1]).filter((term): term is string => term !== undefined))]
+    const advice = terms.length ? loadAdvice(rules) : new Map<string, string>()
+    const hints = terms.filter((term) => advice.has(term)).map((term) => `권장 표현: "${term}" → ${advice.get(term)}`)
+    write(1, `${[...fresh, ...hints].join('\n')}\n`)
+    return fresh.some((row) => BANNED_ROW.test(row)) ? 1 : 0
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 function isFile(path: string): boolean {

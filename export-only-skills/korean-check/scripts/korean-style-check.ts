@@ -145,6 +145,13 @@ const isFile = (path: string): boolean => {
 // 둘째 열 이후는 읽지 않는다. 원어 열의 영어는 금지어가 아니다.
 export function loadTerms(rules: string): string[] {
   const terms = new Set<string>()
+  for (const row of tableRows(rules)) for (const term of row.terms) terms.add(term)
+  return [...terms].sort(pyStrCompare)
+}
+
+// 매핑 표의 행마다 첫 열의 금지어들과 셋째 열(권장)의 글을 낸다. loadTerms 와 loadAdvice 가 같은 표 읽기를 쓴다.
+function tableRows(rules: string): { terms: string[]; advice: string }[] {
+  const rows: { terms: string[]; advice: string }[] = []
   let inTable = false
   for (const line of pySplitLines(pyReadText(rules))) {
     if (line.startsWith(TABLE_HEADING)) {
@@ -155,10 +162,19 @@ export function loadTerms(rules: string): string[] {
     if (SECTION_HEADING.test(line)) break
     if (!TABLE_ROW.test(line)) continue
     if (TABLE_RULE_ROW.test(line) || TABLE_HEADER_ROW.test(line)) continue
-    const column = line.split('|')[1].replace(PARENTHESIZED, ' ')
-    for (const part of column.split('/')) if (pyStrip(part)) terms.add(pyStrip(part))
+    const cells = line.split('|')
+    const column = cells[1].replace(PARENTHESIZED, ' ')
+    rows.push({ terms: column.split('/').map((part) => pyStrip(part)).filter(Boolean), advice: pyStrip(cells[3] ?? '') })
   }
-  return [...terms].sort(pyStrCompare)
+  return rows
+}
+
+// 금지어마다 매핑 표의 권장 열 글을 잇는다. 권장 열이 빈 행의 금지어는 넣지 않는다.
+// check-diff 의 --staged 가 커밋을 거절할 때 금지어 옆에 보일 글이다. 발견 줄의 형식은 바꾸지 않는다.
+export function loadAdvice(rules: string): Map<string, string> {
+  const advice = new Map<string, string>()
+  for (const row of tableRows(rules)) if (row.advice) for (const term of row.terms) advice.set(term, row.advice)
+  return advice
 }
 
 // 금지어를 뽑고, 표 형태가 바뀌어 결과가 비면 stderr 로 알린다.

@@ -3,7 +3,8 @@
 // 명령 경로는 helpers.ts 의 DIFF 상수 하나다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { DIFF, GIT_ENV, cleanEnv, git, initRepo, run, tempDir, write } from './helpers.ts'
@@ -212,5 +213,160 @@ describe('옵션과 오류', () => {
     assert.equal(done.code, 2)
     assert.ok(done.stderr.includes('매핑 표를 찾지 못했다'), done.stderr)
     assert.equal(done.stdout, '')
+  })
+})
+
+describe('--staged', () => {
+  const staged = (root: string, opts: { cwd?: string; env?: NodeJS.ProcessEnv; args?: string[] } = {}) =>
+    run(DIFF, { cwd: opts.cwd ?? root, env: opts.env ?? GIT_ENV, args: ['--staged', ...(opts.args ?? [])] })
+  const stage = (root: string, name: string, text: string) => {
+    write(join(root, name), text)
+    git(root, 'add', '--', name)
+  }
+
+  test('더한 줄의 금지어는 1 이고 권장 표현을 붙인다. 기존 줄의 발견은 내지 않는다', () => {
+    const root = makeRepo()
+    stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    const rows = done.stdout.trimEnd().split('\n')
+    assert.equal(rows.length, 2, done.stdout)
+    assert.ok(rows[0].startsWith('doc.md:7: 금지어 "스윕"'), rows[0])
+    assert.ok(rows[1].startsWith('권장 표현: "스윕" → ') && rows[1].length > '권장 표현: "스윕" → '.length, rows[1])
+    assert.ok(!done.stdout.includes('트리아지'))
+  })
+  test('금지어가 같은 줄이 여럿이어도 권장 표현은 낱말마다 한 줄이다', () => {
+    const root = makeRepo()
+    stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n\n다시 스윕한다.\n\n장애를 트리아지한다.\n')
+    const hints = staged(root).stdout.split('\n').filter((row) => row.startsWith('권장 표현:'))
+    assert.deepEqual(hints.map((row) => /"([^"]+)"/.exec(row)?.[1]), ['스윕', '트리아지'])
+  })
+  test('더한 줄에 경고만 있으면 0 이고 경고 줄만 낸다', () => {
+    const root = makeRepo()
+    stage(root, 'doc.md', OLD + '\n배포 + 검증을 쓴다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 0, done.stdout + done.stderr)
+    assert.ok(done.stdout.includes('doc.md:7: 경고: 인라인 + 연결'), done.stdout)
+    assert.ok(!done.stdout.includes('권장 표현'))
+  })
+  test('발견이 없거나 스테이징한 .md 가 없으면 아무것도 내지 않는다', () => {
+    const root = makeRepo()
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+    stage(root, 'doc.md', OLD + '\n새로 더한 문장이다.\n')
+    stage(root, 'a.txt', '결과를 스윕한다.\n')
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+  })
+  test('작업 트리가 아니라 스테이징된 내용을 본다', () => {
+    const root = makeRepo()
+    stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
+    write(join(root, 'doc.md'), OLD + '\n결과를 검사한다.\n')
+    assert.equal(staged(root).code, 1)
+    const other = makeRepo()
+    stage(other, 'doc.md', OLD + '\n결과를 검사한다.\n')
+    write(join(other, 'doc.md'), OLD + '\n결과를 스윕한다.\n')
+    assert.deepEqual(Object.values(staged(other)), [0, '', ''])
+  })
+  test('GIT_INDEX_FILE 이 가리키는 인덱스를 본다', () => {
+    const root = makeRepo()
+    const index = join(tempDir(), 'index')
+    const env = { ...GIT_ENV, GIT_INDEX_FILE: index }
+    const run2 = (...args: string[]) => assert.equal(spawnSync('git', args, { cwd: root, env }).status, 0, args.join(' '))
+    run2('read-tree', 'HEAD')
+    write(join(root, 'doc.md'), OLD + '\n결과를 스윕한다.\n')
+    run2('add', 'doc.md')
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+    assert.equal(staged(root, { env }).code, 1)
+  })
+  test('새 파일은 모든 줄이 대상이고, 이름만 바꾼 파일은 막지 않는다', () => {
+    const root = makeRepo()
+    stage(root, 'new.md', '장애를 트리아지한다.\n')
+    const fresh = staged(root)
+    assert.equal(fresh.code, 1, fresh.stdout)
+    assert.ok(fresh.stdout.startsWith('new.md:1: 금지어'), fresh.stdout)
+
+    const moved = makeRepo()
+    mkdirSync(join(moved, 'docs'))
+    git(moved, 'mv', 'doc.md', 'docs/moved.md')
+    assert.deepEqual(Object.values(staged(moved)), [0, '', ''])
+    write(join(moved, 'docs', 'moved.md'), OLD + '\n결과를 스윕한다.\n')
+    git(moved, 'add', '.')
+    const done = staged(moved)
+    assert.equal(done.code, 1, done.stdout)
+    assert.ok(done.stdout.startsWith('docs/moved.md:7: 금지어 "스윕"'), done.stdout)
+    assert.ok(!done.stdout.includes('트리아지'))
+  })
+  test('커밋이 없는 저장소의 첫 커밋도 본다', () => {
+    const root = initRepo(tempDir())
+    stage(root, 'doc.md', '결과를 스윕한다.\n')
+    assert.equal(staged(root).code, 1)
+  })
+  test('코드 블록 여부는 파일 전체로 판정한다', () => {
+    const root = makeRepo()
+    const text = OLD + '\n```\n첫 줄\n```\n'
+    stage(root, 'doc.md', text)
+    git(root, 'commit', '-qm', 'fence')
+    stage(root, 'doc.md', text.replace('첫 줄', '첫 줄\n트리아지 예시'))
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+  })
+  test('예외 파일은 평소처럼 대상 파일에서 가장 가까운 것을 읽는다. 하위 폴더의 것은 그 아래에만 듣는다', () => {
+    const root = makeRepo()
+    write(join(root, '.claude', 'korean-check-allow.txt'), '스윕 작전\n')
+    write(join(root, 'sub', '.claude', 'korean-check-allow.txt'), '트리아지 센터\n')
+    stage(root, 'top.md', '스윕 작전을 본다.\n')
+    stage(root, 'sub/in.md', '트리아지 센터를 본다.\n')
+    stage(root, 'sub/deep/in.md', '트리아지 센터를 본다.\n')
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+    stage(root, 'top.md', '스윕 작전과 트리아지 센터를 본다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout)
+    assert.ok(done.stdout.startsWith('top.md:1: 금지어 "트리아지"'), done.stdout)
+  })
+  test('하위 폴더에서 돌려도 경로는 저장소 루트 기준이다', () => {
+    const root = makeRepo()
+    stage(root, 'docs/sub.md', '결과를 스윕한다.\n')
+    const done = staged(root, { cwd: join(root, 'docs') })
+    assert.equal(done.code, 1)
+    assert.ok(done.stdout.startsWith('docs/sub.md:1: 금지어'), done.stdout)
+  })
+  test('이름에 금지어라는 낱말이 든 파일의 경고는 실패가 아니다', () => {
+    const root = makeRepo()
+    stage(root, '금지어-목록.md', '배포 + 검증을 쓴다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 0, done.stdout)
+    assert.ok(done.stdout.includes('경고'), done.stdout)
+  })
+  test('DB 문맥 패턴은 1 이고 권장 표현 줄이 없다', () => {
+    const root = makeRepo()
+    stage(root, 'db.md', ['DB', '표를 만든다.'].join(' ') + '\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout)
+    assert.ok(!done.stdout.includes('권장 표현'), done.stdout)
+  })
+  test('이름에 glob 글자가 든 파일도 그 파일만 본다', () => {
+    const root = makeRepo()
+    stage(root, 'a[1].md', '문제 없는 문장이다.\n')
+    stage(root, 'a1.md', '문제 없는 문장이다.\n')
+    git(root, 'commit', '-qm', 'two')
+    stage(root, 'a[1].md', '문제 없는 문장이다.\n\n결과를 스윕한다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout)
+    assert.ok(done.stdout.startsWith('a[1].md:3: 금지어'), done.stdout)
+  })
+  test('임시 폴더를 남기지 않는다', () => {
+    const root = makeRepo()
+    const tmp = tempDir()
+    stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
+    assert.equal(staged(root, { env: { ...GIT_ENV, TMPDIR: tmp } }).code, 1)
+    assert.deepEqual(readdirSync(tmp), [])
+  })
+  test('--base 나 파일과 함께 주면 사용법 오류 2 이고, 저장소 밖도 2 다', () => {
+    const root = makeRepo()
+    for (const args of [['--base', 'main'], ['doc.md']]) {
+      const done = staged(root, { args })
+      assert.equal(done.code, 2, args.join(' '))
+      assert.ok(done.stderr.includes('argument --staged: not allowed with --base or files'), done.stderr)
+    }
+    const outside = run(DIFF, { cwd: tempDir(), env: cleanEnv({ GIT_CEILING_DIRECTORIES: tempDir() }), args: ['--staged'] })
+    assert.equal(outside.code, 2)
   })
 })

@@ -155,6 +155,16 @@ describe('--diff', () => {
     const outside = check(['--diff'], { cwd: tempDir(), env: cleanEnv({ GIT_CEILING_DIRECTORIES: tempDir() }) })
     assert.equal(outside.code, 2)
   })
+  test('--staged 는 스테이징한 내용의 더한 줄을 보고 check-diff 의 종료 코드와 출력을 그대로 낸다', () => {
+    const root = makeRepo()
+    assert.deepEqual(Object.values(check(['--staged'], { cwd: root, env: GIT_ENV })), [0, '', ''])
+    write(join(root, 'doc.md'), OLD + '\n결과를 스윕한다.\n')
+    git(root, 'add', '.')
+    const done = check(['--staged'], { cwd: root, env: GIT_ENV })
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.ok(done.stdout.startsWith('doc.md:7: 금지어 "스윕"') && done.stdout.includes('권장 표현: "스윕"'), done.stdout)
+    assert.equal(check(['--staged', '--base', 'main'], { cwd: root, env: GIT_ENV }).code, 2)
+  })
   test('--diff 는 첫 인자일 때만 이 모드다', () => {
     const path = file('문제 없다.\n')
     const done = check([path, '--diff'])

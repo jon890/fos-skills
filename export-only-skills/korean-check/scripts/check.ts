@@ -10,6 +10,8 @@
 //   node check.ts --diff [<기준>] [-- <파일.md>...]
 //                                          git diff 로 더한 줄의 발견만 판정한다.
 //                                          기준 기본값은 HEAD. 인자와 출력은 check-diff.ts 가 소유한다
+//   node check.ts --staged                 커밋 훅용. 스테이징한 .md 의 더한 줄만 판정하고 금지어마다 권장 표현을 붙인다.
+//                                          발견이 없으면 아무것도 내지 않는다. 동작과 출력은 check-diff.ts 가 소유한다
 //   node check.ts --where                  이 스킬 디렉터리 경로를 낸다
 //
 // 종료 코드:
@@ -62,6 +64,8 @@ export async function main(argv: string[]): Promise<number> {
     if (rest[0] === '--') rest.shift()
     return runScript(DIFF, ['--base', base, ...rest]).code
   }
+
+  if (argv[0] === '--staged') return runScript(DIFF, argv).code
 
   if (argv.length === 0) {
     write(2, '검사할 파일이나 --text 나 --diff 가 필요하다\n')
