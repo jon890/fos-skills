@@ -345,12 +345,12 @@ function main(argv: string[]): number {
     // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 항목도 본다
     const workerRows = boardWorkerRows(item)
     const missing = new Set<string>()
-    // 끊김으로 적힌 줄을 다시 판정한 결과로 고친다. 워크트리가 없어진 줄은 정말 끝난 것이라 되살리지 않는다.
+    // 끊김으로 적힌 줄을 다시 판정한 결과로 고친다. 워크트리가 없어진 줄은 작업 중으로 되살리지 않는다. 성공으로 끝난 줄은 머지 뒤 정리로 워크트리가 지워졌어도 done 으로 고친다.
     // 닫힌 항목에는 작업 중으로 되살리지 않고 성공으로 끝난 것만 고친다. 고친 줄은 이번 틱의 뒤 판정이 같은 값으로 보게 메모리 값도 바꾼다
     for (const row of workerRows.filter((row) => row.status === 'lost' && row.dispatch && Object.hasOwn(workerRevivals, row.dispatch))) {
       const revival = workerRevivals[row.dispatch!]
       if (revival === 'working' && item.status === 'done') continue
-      if (names !== null && !names.has(row.worktree)) continue
+      if (revival === 'working' && names !== null && !names.has(row.worktree)) continue
       cmds.push(['worker-add', id, row.role, '--worktree', row.worktree, '--dispatch', row.dispatch!])
       // worker-add 가 대표 칸을 이 줄의 워크트리로 되돌려 놓는다. 대표가 원래 비었거나 이 줄이었을 때만 끝낸 뒤 비운다
       if (revival === 'done') cmds.push(['worker-end', id, 'done', '--dispatch', row.dispatch!, ...(!item.worktree || item.worktree === row.worktree ? ['--clear'] : [])])
