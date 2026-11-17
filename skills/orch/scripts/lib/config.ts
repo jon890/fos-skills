@@ -11,7 +11,7 @@
 //     모르는 최상위 절도 막는 것은 절 이름의 오타(queu)가 조용히 무시되지 않게 하려는 것이다
 //   - section 은 known 에 없는 키가 있으면 ConfigError 다. known 은 그 절을 읽는 명령이 넘긴다.
 //     hooks 절은 HOOKS_KEYS, pipeline 절은 PIPELINE_KEYS, heavy 절은 HEAVY_KEYS, migrations 절은 MIGRATIONS_KEYS, queue 절은 QUEUE_KEYS,
-//     adr 절은 ADR_KEYS, contracts 절은 CONTRACTS_KEYS, board 절은 BOARD_KEYS, review 절은 REVIEW_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
+//     adr 절은 ADR_KEYS, contracts 절은 CONTRACTS_KEYS, board 절은 BOARD_KEYS, review 절은 REVIEW_KEYS, worker 절은 WORKER_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
 //     자기가 읽는 키만 넘기면 다른 명령의 키(pipeline.enabled 같은 것)를 둔 저장소에서 사용법 오류로 멈춘다
 // 명령은 ConfigError 를 사용법 오류(종료 코드 2)로 바꾼다.
 // readConfigFile 은 검사 없이 읽는다(파일 없음, 깨진 JSON 과 값을 구분해 돌려준다). orch doctor 가 쓴다.
@@ -90,5 +90,5 @@ export function updateConfig(repo: string, change: (value: unknown, exists: bool
   }, opts)
 }
 
-export { ConfigError, RemovedConfigError, CLEANUP_KEYS, DOCKER_KEYS, HOOK_EVENT_NAMES, HOOKS_KEYS, QUEUE_LOOP_KEYS, QUEUE_KEYS, PIPELINE_KEYS, HEAVY_KEYS, MIGRATIONS_KEYS, ADR_KEYS, CONTRACTS_KEYS, BOARD_KEYS, REVIEW_KEYS, ROUTING_KEYS, INBOX_KEYS, LEGACY_INBOX_FILTER, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'
+export { ConfigError, RemovedConfigError, CLEANUP_KEYS, DOCKER_KEYS, HOOK_EVENT_NAMES, HOOKS_KEYS, QUEUE_LOOP_KEYS, QUEUE_KEYS, PIPELINE_KEYS, HEAVY_KEYS, MIGRATIONS_KEYS, ADR_KEYS, CONTRACTS_KEYS, BOARD_KEYS, REVIEW_KEYS, ROUTING_KEYS, INBOX_KEYS, WORKER_KEYS, LEGACY_INBOX_FILTER, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'
 export type { Section, Config } from '../core/config.ts'

@@ -4,7 +4,7 @@
 - **decision-type**: `architecture`
 - **areas**: `orch, korean-check`
 - **현재 규칙의 원본**: `skills/orch/scripts/lib/commit-check.ts`, `skills/orch/githooks/dispatch.mjs`, `export-only-skills/korean-check/scripts/check-diff.ts` 의 머리 주석. 요구사항은 [orch 단일 worker 스펙](../features/orch-single-worker/spec.md)의 REQ1 이다.
-- **결정**: worker 가 커밋하는 한국어 문서의 금지어 검사는 에이전트의 hook 이 아니라 git 의 `pre-commit` 훅으로 한다. `launch-worker` 가 worker 를 띄울 때 그 워크트리에만 걸리는 `core.hooksPath` 를 두고, 훅은 korean-check 의 `check.ts --staged` 로 스테이징한 `.md` 의 더한 줄을 본다. Codex 매니페스트에는 계속 hook 을 넣지 않는다. [ADR-007](007-codex-manifest-without-hooks.md) 은 그대로 유효하다.
+- **결정**: worker 가 커밋하는 한국어 문서의 금지어 검사는 에이전트의 hook 이 아니라 git 의 `pre-commit` 훅으로 한다. `launch-worker` 가 worker 를 띄울 때 그 워크트리에만 걸리는 `core.hooksPath` 를 두고, 훅은 korean-check 의 `check.ts --staged` 로 스테이징한 `.md` 의 더한 줄을 본다. 저장소는 orch 설정 `worker.commit_check` 로 이 검사를 끌 수 있다. Codex 매니페스트에는 계속 hook 을 넣지 않는다. [ADR-007](007-codex-manifest-without-hooks.md) 은 그대로 유효하다.
 - **맥락**: 문서가 주 산출물인 일도 Codex worker 에게 맡기려면 Codex 가 쓴 한국어 문서도 금지어 검사를 받아야 한다(스펙 DECISION5).
   Claude worker 는 편집 직후 도는 hook 으로 검사받지만, Codex 는 [ADR-007](007-codex-manifest-without-hooks.md) 에서 hook 을 뺐다.
   2026-11-17 Codex 문서 기준으로 관리 정책이 아닌 hook 은 실행 전에 신뢰 확인을 받아야 하고, 플러그인 hook 은 정의가 같아도 번들의 스크립트가 바뀌면 다시 확인받는다.

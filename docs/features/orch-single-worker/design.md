@@ -104,7 +104,13 @@ node check.ts --staged        # cwd: 검사할 저장소 안
 | 주 checkout 이다, 원격 환경의 worker 다, 검사기 번들이 없다, 워크트리에 사용자가 둔 `core.hooksPath` 가 있다, 공유 설정에 `core.worktree` 가 있거나 `core.bare` 가 true 다 | stdout 에 `COMMIT-CHECK-SKIP <이유>` |
 | 폴더나 설정을 쓰지 못했다 | stdout 에 `COMMIT-CHECK-FAIL <이유>` |
 
-어느 결과든 worker 는 띄운다. 설정 키와 상태 파일은 더하지 않는다.
+어느 결과든 worker 는 띄운다. 상태 파일은 더하지 않는다.
+
+### 설정 `worker.commit_check`
+
+저장소의 `.orch/config.json` 에 `worker` 절을 더한다. `commit_check` 는 bool 이고 없으면 true 다.
+false 면 `launch-worker` 가 그 저장소의 worker 워크트리에 훅을 걸지 않고 진행 줄만 낸다. 앞서 건 훅이 있으면 `removeCommitCheck` 로 푼다. true 나 false 가 아니면 설정 오류로 멈춘다.
+값의 타입과 기본값은 `docs/data-schema.md` 의 「config.json 에 더하는 절」 이, 검사는 `core/config-schema.ts` 가 소유한다.
 
 ## 실패와 일관성
 
@@ -133,14 +139,14 @@ node check.ts --staged        # cwd: 검사할 저장소 안
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
 | DECISION1 | 검사를 거는 자리 | git 의 `pre-commit` 훅. Codex hook 은 쓰지 않는다 | 작성자 | [ADR-036](../../adr/036-worker-commit-korean-check.md). Codex 는 플러그인 hook 의 스크립트가 바뀔 때마다 신뢰 확인을 다시 받는다 |
-| DECISION2 | 훅을 거는 범위와 방법 | orch 가 띄우는 worker 의 연결된 워크트리마다 `git config --worktree core.hooksPath`. 에이전트 종류는 보지 않는다 | 작성자 | 스펙 DECISION5(검사가 제공자에 묶이지 않는다). 워크트리 단위 설정은 `lib/ssh-agent.ts` 의 선례가 있고, 주 checkout 의 커밋은 바꾸지 않는다 |
-| DECISION3 | 판정하는 줄 | 스테이징한 `.md` 의 더한 줄만. 스테이징된 내용을 읽는다 | 작성자 | 다른 저장소의 기존 문서에는 금지어가 남아 있어 파일 전체로 보면 손대지 않은 줄 때문에 커밋이 막힌다. korean-check 의 `--diff` 가 같은 기준이다. 스펙의 「한국어 파일」 을 `.md` 로 읽은 것은 Claude worker 의 편집 훅과 `check.ts` 가 보는 범위와 같게 한 것이다 |
+| DECISION2 | 훅을 거는 범위와 방법 | orch 가 띄우는 worker 의 연결된 워크트리마다 `git config --worktree core.hooksPath`. 에이전트 종류는 보지 않는다 | 작성자 | 범위는 스펙 DECISION22 가 정했다. 워크트리 단위 설정은 `lib/ssh-agent.ts` 의 선례가 있고, 주 checkout 의 커밋은 바꾸지 않는다 |
+| DECISION3 | 판정하는 줄 | 스테이징한 `.md` 의 더한 줄만. 스테이징된 내용을 읽는다 | 작성자 | 다른 저장소의 기존 문서에는 금지어가 남아 있어 파일 전체로 보면 손대지 않은 줄 때문에 커밋이 막힌다. korean-check 의 `--diff` 가 같은 기준이다. `.md` 한정은 스펙 DECISION23 이 정했다 |
 | DECISION4 | 검사기의 자리 | 워크트리 훅 폴더에 사본을 둔다 | 작성자 | 플러그인 설치 경로가 갱신마다 바뀐다. 실행할 때 번들을 다시 찾으려면 설치 기록 해석을 훅에 한 벌 더 둬야 한다 |
 | DECISION5 | 기존 훅과의 관계 | `dispatch.mjs` 가 원래 훅을 이어 부른다 | 작성자 | 이 저장소의 `commit-msg`, `pre-commit` 과 다른 저장소의 husky 훅이 worker 워크트리에서 꺼지면 안 된다 |
 | DECISION6 | 검사기가 돌지 못할 때 | 알리고 커밋한다. 거절은 금지어 발견 줄이 있을 때만 한다 | 작성자 | `githooks/commit-msg.ts` 의 기존 규칙. 도구 고장이 모든 커밋을 막지 않게 한다 |
 | DECISION7 | 권장 표현을 보이는 자리 | `--staged` 의 출력에 줄을 더한다. 기존 발견 줄 형식은 그대로 둔다 | 작성자 | 발견 줄은 `check-diff.ts` 와 편집 훅이 읽는 형식이라 바꾸면 출력 계약 변경이다 |
-| DECISION8 | 끄는 설정 | 두지 않는다 | 작성자 | 판정하는 것이 worker 가 더한 줄뿐이고, 고유명사는 저장소의 예외 파일로 뺀다. 필요하면 그 워크트리에서 `git config --worktree --unset core.hooksPath` 로 푼다 |
-| DECISION9 | 훅을 걸지 못했을 때 | 이유를 판정 줄로 알리고 worker 는 띄운다 | 작성자 | deny 규칙과 `core.sshCommand` 설정이 실패해도 띄우는 기존 규칙과 같다 |
+| DECISION8 | 끄는 설정의 자리 | 새 `worker` 절의 `commit_check`(bool, 기본 true) | 작성자 | 끄는 설정을 둔다는 것은 스펙 DECISION24 가 정했다. worker 를 띄울 때 읽는 값이고 기존 절(`review`, `pipeline`)의 뜻과 맞지 않아 새 절을 둔다 |
+| DECISION9 | 훅을 걸지 못했을 때 알리는 방법 | stdout 의 판정 줄 `COMMIT-CHECK-SKIP`, `COMMIT-CHECK-FAIL` | 작성자 | 알리고 띄운다는 것은 스펙 DECISION25 가 정했다. 짧은 출력에도 남는 줄이어야 코디네이터가 본다 |
 | DECISION10 | ADR | [ADR-036](../../adr/036-worker-commit-korean-check.md) 을 남긴다 | 작성자 | 스펙의 「결정 기록 연결」. [ADR-007](../../adr/007-codex-manifest-without-hooks.md) 은 그대로 유효하다 |
 
 | 결정 | 종류 | ADR 또는 필요 없음의 이유 | 현재 규칙의 원본 |

@@ -121,6 +121,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     data_days: days,
     apply: flag,
   },
+  worker: { commit_check: { good: [true, false], bad: ['false', 0, null] } },
   inbox: {
     enabled: { good: [true, false], bad: ['false', 0, null] },
     dooray: inboxAdapter,

@@ -2,6 +2,7 @@
 // 선택 이유는 docs/adr/036-worker-commit-korean-check.md, 훅이 하는 일은 skills/orch/githooks/dispatch.mjs 머리 주석이 소유한다.
 //
 //     installCommitCheck(worktree)   그 워크트리에만 걸리는 core.hooksPath 를 훅 폴더로 둔다. 몇 번을 불러도 결과가 같다
+//     removeCommitCheck(worktree)    앞서 건 것을 푼다. 저장소가 설정 worker.commit_check 를 false 로 둔 뒤 다시 띄울 때 쓴다
 //
 // 훅 폴더: <그 워크트리의 git 관리 폴더>/orch-hooks. 연결된 워크트리의 git 관리 폴더는 <공통 git 폴더>/worktrees/<id> 라서
 //     작업 트리에 추적하지 않는 파일이 생기지 않고, `git worktree remove` 가 폴더째 지운다.
@@ -25,7 +26,8 @@
 //     이 목록에 없는 훅은 worker 워크트리에서 불리지 않는다. reference-transaction, post-index-change, fsmonitor-watchman 은 넣지 않는다.
 //     ref 나 인덱스가 바뀔 때마다 불려 그때마다 node 가 뜬다.
 //
-// 푸는 법: 그 워크트리에서 `git config --worktree --unset core.hooksPath`. 저장소의 원래 훅 폴더로 돌아간다.
+// 푸는 법: 저장소 전체는 `orch config set worker.commit_check false --json`(launch-worker 가 읽는다. 기본은 켜짐이다).
+//     한 워크트리만은 그 워크트리에서 `git config --worktree --unset core.hooksPath`. 저장소의 원래 훅 폴더로 돌아간다.
 // 한계: `git commit --no-verify` 는 막지 못한다. `git rev-parse --git-path hooks` 가 이 훅 폴더를 가리키므로, 그 값으로 훅을 설치하는 도구가
 //     worker 워크트리에서 설치를 돌리면 링크를 덮을 수 있다. 다시 띄우면 훅 폴더를 새로 만든다.
 
@@ -124,4 +126,15 @@ export function installCommitCheck(worktree: string, source: { checker?: string;
   const done = setGitConfig(worktree, ['--worktree', 'core.hooksPath', hooks])
   if (done.code !== 0) return { status: 'failed', reason: `core.hooksPath 를 쓰지 못했다: ${done.stderr.trim()}` }
   return { status: 'set', hooks }
+}
+
+// 이 모듈이 건 훅을 푼다. 푼 것이 있으면 true 다. 사용자가 둔 core.hooksPath 와 주 checkout 은 건드리지 않는다
+export function removeCommitCheck(worktree: string): boolean {
+  const existing = git(worktree, ['config', '--worktree', '--get', 'core.hooksPath'])
+  const current = existing.stdout.trim()
+  if (existing.code !== 0 || !current || !isOurs(current)) return false
+  if (setGitConfig(worktree, ['--worktree', '--unset', 'core.hooksPath']).code !== 0) return false
+  const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir']).stdout.trim()
+  if (gitDir) rmSync(join(gitDir, HOOKS_DIR), { recursive: true, force: true })
+  return true
 }

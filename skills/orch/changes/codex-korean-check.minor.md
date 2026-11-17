@@ -1,2 +1,3 @@
 - worker 워크트리에 한국어 커밋 검사가 걸려, 금지어가 든 `.md` 를 커밋하면 권장 표현과 함께 거절된다. Codex worker 도 같다
 - 검사를 걸지 못하면 `orch worker launch` 가 `COMMIT-CHECK-SKIP`, `COMMIT-CHECK-FAIL` 줄로 알린다
+- 저장소의 `.orch/config.json` 에 `worker.commit_check: false` 를 두면 그 저장소의 worker 에는 커밋 검사를 걸지 않는다. 기본은 켜짐이다

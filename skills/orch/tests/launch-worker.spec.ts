@@ -2425,6 +2425,39 @@ describe('한국어 커밋 검사 걸기', () => {
     assert.match(r.stdout, /^LAUNCHED ctx_1 /m)
   })
 
+  test('저장소 설정 worker.commit_check 가 false 면 걸지 않고 진행 줄만 낸다', () => {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: false } }))
+    const r = launch(['--worktree', wt, '--', ...CODEX])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(gitOut(wt, 'config', '--get', 'core.hooksPath').status, 1)
+    assert.match(r.stdout, /^한국어 커밋 검사를 걸지 않는다: 설정 worker\.commit_check 가 false 다$/m)
+    assert.doesNotMatch(r.stdout, /COMMIT-CHECK-/)
+  })
+
+  test('켜진 채 띄운 워크트리를 끈 뒤 다시 띄우면 앞서 건 훅을 푼다', () => {
+    assert.equal(launch(['--worktree', wt, '--', ...CLAUDE]).code, 0)
+    const hooks = hooksPath()
+    assert.match(hooks, /\/orch-hooks$/)
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: false } }))
+    state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+    const r = launch(['--worktree', wt, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(gitOut(wt, 'config', '--get', 'core.hooksPath').status, 1)
+    assert.equal(existsSync(hooks), false)
+    assert.match(r.stdout, /앞서 건 훅을 풀었다/)
+  })
+
+  test('worker.commit_check 가 true 나 false 가 아니면 설정 오류로 멈춘다', () => {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: 'no' } }))
+    const r = launch(['--worktree', wt, '--', ...CODEX])
+    assert.equal(r.code, 2, both(r))
+    assert.match(r.stderr, /worker\.commit_check 는 true 나 false 여야 한다/)
+    assert.equal(lines('orca orchestration worker-start').length, 0)
+  })
+
   test('주 checkout 에 띄우면 걸지 않고 판정 줄로 알린다', () => {
     env.FAKE_WT_DEFAULT = `${proj}`
     const r = launch(['--worktree', proj, '--', ...CODEX])
