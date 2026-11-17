@@ -1,2 +1,0 @@
-- Dooray 미리보기의 mermaid 그림을 머리 설정이 없어도 손그림으로 그린다. 그림 머리의 `config` 가 있으면 그쪽이 이긴다.
-- 그림마다 머리 `config: look: handDrawn` 과 노드 종류별 `classDef` 를 넣으라는 지침을 render-traps 에 둔다.
