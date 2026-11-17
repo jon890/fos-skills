@@ -648,7 +648,7 @@ export function stepSummary(rows, progress) {
 }
 
 // 요약 줄을 눌러 펼칠 줄. 번호 있는 단계 줄만이고 참고 줄은 빠진다(d 로 펼친 보기에서만 보인다)
-// done 은 지금 단계 줄 위에, todo 는 그 아래에 적힌 순서대로 끼운다. 줄이 없으면 그 요약은 단추가 아니다
+// 위아래는 지금 단계 줄보다 앞에 적혔는지 뒤에 적혔는지로 정한다(foldedSteps). 줄이 없으면 그 요약은 단추가 아니다
 export function foldLists(rows) {
   return {
     done: rows.filter((row) => row.step && row.state === 'done'),
@@ -1888,28 +1888,34 @@ export function register(on) {
     }
 
     // 접힌 보기의 단계 한 줄: 지금 단계 뒤에 끝낸 단계와 남은 단계의 수를 붙인다
-    // 수는 줄이 있으면 단추다. 누르면 그 줄들을 지금 단계 줄 위(끝낸 단계)나 아래(남은 단계)에 적힌 순서대로 끼운다
-    // 줄이 없으면(수가 progress 값에서 났다) 지금처럼 글만 그린다
+    // 수는 줄이 있으면 단추다. 누르면 그 줄들을 적힌 순서대로 지금 단계 줄 위아래에 끼운다
+    // 지금 단계 줄보다 앞에 적힌 줄은 위, 뒤에 적힌 줄은 아래다. 단계를 순서와 다르게 끝내도 d 로 펼친 보기와 순서가 같다
+    // 줄이 없으면(수가 progress 값에서 났다) 지금처럼 글만 그린다. 진행 중과 대기 항목만 단추를 그린다
     const foldedSteps = (item, rows) => {
       const summary = stepSummary(rows, item.progress)
       const lists = foldLists(rows)
+      const pressable = checkable(item)
       const parts = [
         ...(summary.done ? [{ kind: 'done', text: '✓ ' + summary.done + '개' }] : []),
         ...(summary.todo ? [{ kind: 'todo', text: '남은 단계 ' + summary.todo + '개' }] : []),
       ].map((part) => {
-        if (lists[part.kind].length === 0) return Text({ dimColor: true, children: [nbsp(part.text)] })
+        if (!pressable || lists[part.kind].length === 0) return Text({ dimColor: true, children: [nbsp(part.text)] })
         shownFolds.add(item.id + ':' + part.kind)
         return foldButton(item, part.kind, nbsp(part.text), '\u00a0')
       })
-      const open = (kind) => folded.has(item.id + ':' + kind) && lists[kind].length > 0
-        ? lists[kind].map((row, i) => stepLine('f' + kind[0] + '-' + i, row)) : []
+      const nowAt = rows.findIndex((row) => row.state === 'now')
+      const opened = rows.flatMap((row, at) => {
+        const kind = row.step && row.state === 'done' ? 'done' : row.step && row.state === 'todo' ? 'todo' : null
+        return kind && pressable && folded.has(item.id + ':' + kind)
+          ? [{ at, line: stepLine('f' + kind[0] + '-' + lists[kind].indexOf(row), row) }] : []
+      })
       const nodes = parts.flatMap((part, i) => [...(i > 0 ? [Text({ dimColor: true, children: ['  ·  '] })] : []), part])
       const extra = nodes.length ? [Text({ children: ['  '] }), ...nodes] : []
       return [
-        ...open('done'),
+        ...opened.filter(({ at }) => nowAt < 0 || at < nowAt).map(({ line }) => line),
         ...(summary.now ? [stepLine('steps', summary.now, extra)]
           : nodes.length ? [indent('steps', 2 + STEP_MARK_WIDTH, Box({ key: 'counts', flexDirection: 'row', flexWrap: 'wrap', children: nodes }))] : []),
-        ...open('todo'),
+        ...opened.filter(({ at }) => nowAt >= 0 && at > nowAt).map(({ line }) => line),
       ]
     }
 
@@ -1967,10 +1973,14 @@ export function register(on) {
       }
       // 끝난 worker 는 요약 한 줄이고 단추다. 펼치면 그 줄 아래에 끝난 줄만 펼친 보기와 같은 모양으로 그린다(작업 중과 끊김 줄은 그대로다)
       const ended = allRows.filter((row) => row.status === 'done')
-      const endedOpen = folded.has(item.id + ':workers')
-      if (ended.length > 0 && !done && checkable(item)) shownFolds.add(item.id + ':workers')
+      const pressable = !done && checkable(item)
+      const endedOpen = pressable && folded.has(item.id + ':workers')
+      if (ended.length > 0 && pressable) shownFolds.add(item.id + ':workers')
+      const endedText = '✓ 끝난 worker ' + ended.length
       const endedViews = ended.length === 0 ? [] : [
-        indent('wd', 2, foldButton(item, 'workers', '✓ 끝난 worker ' + ended.length)),
+        indent('wd', 2, pressable
+          ? foldButton(item, 'workers', endedText)
+          : Text({ key: 'wd', dimColor: true, children: [endedText] })),
         ...(endedOpen ? ended.map((row, i) => rowView('wd-' + i, row)) : []),
       ]
       const workerViews = done

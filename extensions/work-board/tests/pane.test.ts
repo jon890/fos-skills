@@ -900,14 +900,33 @@ test('넘기기(x) 모드에서는 요약 단추를 눌러도 펼쳐지지 않�
   await ui.unmount()
 })
 
-test('완료 항목과 결정 항목에는 요약 단추가 없다', async ($, on) => {
+test('완료 항목과 결정 항목에는 접힌 보기에도 요약 단추가 없고 글만 보인다', async ($, on) => {
   await start($, on, liveWorkers, WORKER_BOARD([
     { id: 'd', title: '끝', status: 'done', details: [{ text: '1. 구현', done: true }] },
-    { id: 'q', title: '결정', status: 'decide', details: [{ text: '1. 고르기', done: false }, { text: '2. 정하기', done: false }] },
+    { id: 'q', title: '결정', status: 'decide', details: FOLD_STEPS, workers: FOLD_ROWS },
   ]))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await folds(ui)).toEqual([])
+  expect(await foldTexts(ui, 'q')).toEqual(['steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개', 'wd:✓ 끝난 worker 2'])
   await ui.press({ key: 'toggle-done' })
   expect(await folds(ui)).toEqual([])
+  await ui.unmount()
+})
+
+test('단계를 순서와 다르게 끝내도 펼친 줄은 적힌 자리대로 지금 단계 줄 위아래에 놓인다 (REQ6)', async ($, on) => {
+  await start($, on, liveWorkers, WORKER_BOARD([{ id: 'a', title: '첫째', status: 'doing', details: [
+    { text: '1. 구현', done: true }, { text: '2. 리뷰', done: false }, { text: '3. 머지', done: true }, { text: '4. 배포', done: false },
+  ] }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'fold-a-done' })
+  await ui.press({ key: 'fold-a-todo' })
+  const got = (await foldTexts(ui, 'a')).map((line) => line.split(':')[0])
+  expect(got).toEqual(['fd-0', 'steps', 'fd-1', 'ft-0'])
+  const third = stepParts(await ui.find({ type: 'Box', key: 'fd-1' }))
+  expect([third.markText, third.bodyText]).toEqual(['✓', '3. 머지'])
+  const last = stepParts(await ui.find({ type: 'Box', key: 'ft-0' }))
+  expect([last.markText, last.bodyText]).toEqual([' ', '4. 배포'])
+  expect(last.body.props ?? {}).toEqual({})
   await ui.unmount()
 })
 
