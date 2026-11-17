@@ -434,12 +434,14 @@ function checkStaged(root: string): number {
     const paths = items.map((item) => item.path).sort((a, b) => b.length - a.length)
     const fresh: string[] = []
     for (const script of [STYLE, READABILITY]) {
-      const { code, out: rows, err } = runChecker(script, items.map((item) => item.path), tmp)
+      // 경로 앞에 ./ 를 붙여 넘긴다. - 로 시작하는 이름을 자식 검사기가 옵션으로 읽으면 그 커밋의 검사가 통째로 빠진다.
+      // 발견 줄의 경로는 다시 저장소 루트 기준으로 되돌린다
+      const { code, out, err } = runChecker(script, items.map((item) => `./${item.path}`), tmp)
       if (code === 2) {
         write(2, err || `check-diff: 검사기가 돌지 못했다: ${script}\n`)
         return 2
       }
-      for (const row of rows) {
+      for (const row of out.map((line) => (line.startsWith('./') ? line.slice(2) : line))) {
         const found = findingOf(row, paths)
         if (!found) continue
         const scope = added.get(found.path)

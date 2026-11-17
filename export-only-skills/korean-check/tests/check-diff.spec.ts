@@ -408,6 +408,15 @@ describe('--staged', () => {
     assert.equal(done.code, 1, done.stdout + done.stderr)
     assert.ok(done.stdout.startsWith('conv.md:3: 금지어 "스윕"'), done.stdout)
   })
+  test('이름이 - 로 시작하는 파일도 옵션이 아니라 경로로 검사한다', () => {
+    const root = makeRepo()
+    stage(root, '-draft.md', '# 제목\n\n결과를 스윕한다.\n')
+    stage(root, 'plain.md', '다시 스윕한다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    const rows = done.stdout.split('\n').filter((row) => row.includes(': 금지어 "'))
+    assert.deepEqual(rows.map((row) => row.split(': 금지어')[0]), ['-draft.md:3', 'plain.md:1'])
+  })
   test('검사기가 돌지 못하면 2 다', () => {
     const root = makeRepo()
     stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
