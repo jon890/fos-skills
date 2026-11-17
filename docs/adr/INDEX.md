@@ -14,7 +14,6 @@
 | [ADR-009](009-orch-event-handlers.md) | orch 는 단계마다 이벤트를 내고, 저장소 고유 일은 저장소의 이벤트 핸들러가 맡는다 | accepted | - |
 | [ADR-010](010-orch-typescript.md) | orch 와 work-board 의 Python 스크립트를 빌드 없는 TypeScript 로 한 번에 옮긴다 | accepted | [ADR-011](011-node-24-minimum.md), [ADR-030](030-plugin-npm-dependencies.md) |
 | [ADR-011](011-node-24-minimum.md) | orch 와 work-board 의 최소 Node 를 24 로 올린다 | accepted | - |
-| [ADR-012](012-orch-loop-multi-run.md) | 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 | accepted | [ADR-027](027-orca-message-wake.md) |
 | [ADR-013](013-orch-worker-stalled.md) | 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 | accepted | [ADR-027](027-orca-message-wake.md) |
 | [ADR-014](014-orch-auto-last-pr.md) | 업무의 마지막 PR 은 마무리가 머지와 배포 뒤에 판정하고, 충돌한 PR 은 머지 큐를 멈추지 않는다 | accepted | - |
 | [ADR-015](015-board-decide-clear.md) | 보드의 결정 필요는 남은 줄과 남은 질문만 세고, 중간 과정은 보드 항목을 만들지 않는다 | accepted | - |
@@ -37,6 +36,7 @@
 | [ADR-032](032-loop-bundle-handover.md) | 옛 번들의 상주 루프는 잠금 파일을 새 루프의 pid 로 바꿔 넘기고, 새 루프가 상태를 쓴 뒤에 끝난다 | accepted | - |
 | [ADR-033](033-board-item-worker-rows.md) | 보드 항목은 worker 줄 목록을 갖고, 후속 PR 의 사건 단계는 그 줄이 갖는다 | accepted | - |
 | [ADR-034](034-export-only-skills-registered.md) | 내보내기 원본 폴더의 두 스킬도 플러그인 스킬 목록에 등록한다 | accepted | - |
+| [ADR-035](035-orch-main-coordinator.md) | 저장소마다 메인 코디네이터 Run 하나만 루프를 맡고, 다른 코디네이터는 요청을 보낸다 | accepted | - |
 | [ADR-036](036-worker-commit-korean-check.md) | worker 의 한국어 표기 검사는 워크트리에 건 git 커밋 훅으로 한다 | accepted | - |
 
 ## 대체됨
@@ -46,3 +46,4 @@
 | [ADR-001](superseded/001-plugin-from-repo-root.md) | 저장소 루트를 플러그인으로 삼고 스킬 디렉터리는 옮기지 않는다 | superseded | [ADR-021](021-skill-directory-layout.md) |
 | [ADR-002](superseded/002-plugin-version-is-commit-sha.md) | 플러그인 버전을 쓰지 않고 커밋 SHA 를 버전으로 삼는다 | superseded | [ADR-019](019-plugin-version-auto-bump.md) |
 | [ADR-003](superseded/003-export-only-skills.md) | 내보내기 전용 원본을 플러그인 스킬 목록에서 제외한다 | superseded | [ADR-034](034-export-only-skills-registered.md) |
+| [ADR-012](superseded/012-orch-loop-multi-run.md) | 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 | superseded | [ADR-035](035-orch-main-coordinator.md), [ADR-027](027-orca-message-wake.md) |

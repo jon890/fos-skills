@@ -88,6 +88,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | 양수, 타이머 상한 이하 | 300 | 틱 간격 |
 | `pipeline` | `digest_sec` | 양수, 타이머 상한 이하 | 1800 | 안내성 루프 알림(WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED)을 DIGEST 하나로 모아 보내는 주기(초) |
+| `pipeline` | `request_ack_sec` | 양수, 타이머 상한 이하 | 1800 | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 REQUEST-NO-ACK 를 한 번 보내기까지의 시간(초). 틱마다 다시 읽는다([ADR-035](adr/035-orch-main-coordinator.md)) |
 | `pipeline` | `ready_slots` | 1 이상의 정수 | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |
 | `pipeline` | `docs_merge` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 문서 PR 바로 머지는 하지 않는다 |
 | `pipeline` | `after_queue_interval_sec` | 0 이상의 유한한 수 | 0 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `after-queue` 는 묶이지 않는다 |
@@ -184,6 +185,10 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `state/movement.json` | 상주 루프의 움직임 확인 기록. `screens`(dispatch 에서 `{"hash", "changedAt"}` 로. 화면 끝 줄의 hash 와 그 hash 를 처음 본 시각(ms)), `workers`(dispatch 에서 알린 `{"run", "reason", "movedAt"}` 로), `stages`(보드 항목 id 에서 `{"step", "since", "fired"}` 로) | 틱 자식이 옆 파일에 쓴 뒤 rename 한다. 열린 dispatch 가 아닌 화면 기록과 지금 멈추지 않은 알림 기록은 그 틱에 지운다. `stalled-workers` 와 work-board 의 `bin/worker-marks.ts` 는 `screens` 만 읽는다. 형식은 `lib/movement.ts` 머리 주석이 소유한다 |
 | `specs/spec-conflict-<PR>.md` | 상주 루프와 `notify-conflicts` 가 끝난 dispatch 에 보내는 충돌 후속 지시서. `중간 과정: PR #<PR>` 줄을 담는다. PR 마다 하나이고 다시 알릴 때 덮어쓴다 | 그 PR 의 마무리(`finish-pr.ts`)가 머지 뒤 지운다. 살아 있는 dispatch 가 쓰는 지시서는 남긴다. 옛 이름 `spec-conflict-<PR>-<base SHA 앞 8자리>.md` 도 함께 지운다 |
 | `state/loop-runs/<Run>.json` | 루프에 등록된 Run 하나. `run`, `specs_dir`(정리에 넘길 지시서 폴더 또는 null), `registered_at`(ISO 8601 UTC), `coordinator_terminal`(`--start` 한 현재 코디네이터 터미널 또는 null) | `orch-loop --start --run` 이 옆 파일에 쓴 뒤 rename 으로 만들고 `--stop --run` 이 지운다. 루프는 틱마다 이 폴더를 읽는다. 살아 있는 루프 없이 `--start` 하거나, 잠금을 쥐었지만 아직 `loop.json` 을 쓰지 않은 뜨는 루프에 `--start` 로 합류하면 `registered_at` 을 지금으로 새로 쓴다. 새로 뜬 루프는 시작할 때 자기 Run 밖의 등록 가운데 `registered_at` 이 앞 `loop.json` 의 `alive_at` 이전인 것을 지운다. 스스로 다시 뜬 루프(넘겨받기 모드)는 앞 루프의 등록을 지우거나 다시 만들지 않는다. 주 Run 은 `registered_at` 이 가장 이른 Run 이다. 파일 이름의 Run 은 영문, 숫자, `_`, `.`, `-` 밖의 글자를 `_` 로 바꾼 것이다 |
+| `state/takeover.lock` | 넘겨받기 잠금. 쥔 프로세스의 pid | `orch loop start` 가 메인 판정부터 새 루프가 뜰 때까지 쥔다. 죽은 pid 의 잠금은 다음 `--start` 가 회수한다([ADR-035](adr/035-orch-main-coordinator.md)) |
+| `state/takeover.json` | `{"from": [<Run>…]}`. 넘겨받기에서 worker 를 다 옮기지 못한 앞 Run 목록 | 넘겨받기가 쓰고, 메인의 `orch loop start --take-over` 가 다시 옮긴 뒤 다 옮긴 Run 을 뺀다 |
+| `state/requests/seq.json` | `{"next": <다음 요청 번호>}` | `orch request send` 가 `seq.json.lock` 파일 잠금 안에서 읽고 올린다. 번호는 다시 쓰지 않는다 |
+| `state/requests/R<n>.json` | 이 저장소가 받은 요청 하나. `id`, `number`, `repo`(받는 저장소), `title`, `body`, `state`(sent, accepted, held, rejected, done, failed), `reason`, `from`(`repo`, `run`, `terminal`), `to_run`, `created_at`, `updated_at`, `ack_notice_at`, `board`(`to`, `from` 보드 항목 id), `history`(`at`, `state`, `reason`, `run`), `pending_done`(보내지 못한 자동 완료 또는 null) | `orch request` 명령, `finish-pr` 의 자동 완료, 루프의 답 없음 알림이 `R<n>.json.lock` 파일 잠금 안에서 다시 읽고 쓴다. 보낸 저장소에는 기록이 없고 보드 항목만 있다([ADR-035](adr/035-orch-main-coordinator.md)) |
 
 ## 머신 폴더에 두는 파일
 

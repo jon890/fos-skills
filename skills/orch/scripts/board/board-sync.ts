@@ -1,5 +1,6 @@
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
+// --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
 // 리뷰 항목은 최초 띄우기 이력으로 정한다. 구현 이력·줄·PR 이 있는 항목은 리뷰 종료로 닫지 않는다.
 // 보드(board.json)에서 PR 이 머지된 항목의 단계와 상태를 맞춘다.
 //
@@ -116,6 +117,7 @@ const SKIP_STATUS = new Set(['done'])
 
 const OPTIONS = {
   'worker-ends': { type: 'string' },
+  'worker-revivals': { type: 'string' },
   board: { type: 'string' },
   'board-bin': { type: 'string' },
   repo: { type: 'string' },
@@ -255,6 +257,15 @@ function main(argv: string[]): number {
     err(`board-sync: --worker-ends: ${(e as Error).message}`)
     return 2
   }
+  let workerRevivals: Record<string, 'working' | 'done'>
+  try {
+    const parsed: unknown = JSON.parse(values['worker-revivals'] ?? '{}')
+    if (!isRecord(parsed) || !Object.values(parsed).every((value) => value === 'working' || value === 'done')) throw new Error('dispatch 와 working|done 객체가 아니다')
+    workerRevivals = parsed as Record<string, 'working' | 'done'>
+  } catch (e) {
+    err(`board-sync: --worker-revivals: ${(e as Error).message}`)
+    return 2
+  }
   let completedReviews: number[] = []
   try {
     const parsed: unknown = JSON.parse(values['completed-reviews'] ?? '[]')
@@ -334,6 +345,18 @@ function main(argv: string[]): number {
     // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 항목도 본다
     const workerRows = boardWorkerRows(item)
     const missing = new Set<string>()
+    // 끊김으로 적힌 줄을 다시 판정한 결과로 고친다. 워크트리가 없어진 줄은 정말 끝난 것이라 되살리지 않는다.
+    // 닫힌 항목에는 작업 중으로 되살리지 않고 성공으로 끝난 것만 고친다. 고친 줄은 이번 틱의 뒤 판정이 같은 값으로 보게 메모리 값도 바꾼다
+    for (const row of workerRows.filter((row) => row.status === 'lost' && row.dispatch && Object.hasOwn(workerRevivals, row.dispatch))) {
+      const revival = workerRevivals[row.dispatch!]
+      if (revival === 'working' && item.status === 'done') continue
+      if (names !== null && !names.has(row.worktree)) continue
+      cmds.push(['worker-add', id, row.role, '--worktree', row.worktree, '--dispatch', row.dispatch!])
+      // worker-add 가 대표 칸을 이 줄의 워크트리로 되돌려 놓는다. 대표가 원래 비었거나 이 줄이었을 때만 끝낸 뒤 비운다
+      if (revival === 'done') cmds.push(['worker-end', id, 'done', '--dispatch', row.dispatch!, ...(!item.worktree || item.worktree === row.worktree ? ['--clear'] : [])])
+      row.status = revival
+      row.endedAt = revival === 'done' ? new Date().toISOString() : null
+    }
     for (const row of workerRows.filter((row) => row.status === 'working')) {
       const end = row.dispatch && Object.hasOwn(workerEnds, row.dispatch) ? workerEnds[row.dispatch] : null
       if (end) cmds.push(['worker-end', id, end, '--dispatch', row.dispatch!])

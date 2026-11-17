@@ -7,7 +7,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "7.60.1"
+  version: "7.61.0"
 ---
 
 # orch
@@ -132,6 +132,7 @@ Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비�
 ## 4. 기다리기
 
 저장소마다 `orch loop start` 로 루프를 등록한 뒤 턴을 끝낸다. worker 질문·보고와 루프 알림은 Orca 가 코디네이터를 깨운다. 깨어났을 때의 처리와 옛 대기 정리는 [`references/waiting.md`](references/waiting.md)를 따른다.
+저장소마다 메인 코디네이터 하나만 루프를 맡는다. `orch loop start` 가 `MAIN-EXISTS` 로 막으면 그 저장소의 일은 `orch request send` 로 메인에게 요청한다. 요청을 받거나 넘겨받기가 필요하면 [`references/requests.md`](references/requests.md) 를 따른다.
 사용자와 대화 중이면 사용자 답을 먼저 한다. decision-pending 은 남은 결정을 사용자에게 묻도록 요청하고, 이미 답을 기다리는 결정은 다시 묻지 않는다.
 압축 뒤에는 `orch status` 와 doctor 로 루프 생존을 확인하고 꺼진 것만 다시 시작한다.
 

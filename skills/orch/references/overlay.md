@@ -105,6 +105,7 @@ orch config unset contracts.merge_command contracts.paths
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 비지 않은 문자열 목록(빈 목록 허용). 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이며 타이머 상한 이하이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
+| `pipeline` | `request_ack_sec` | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 알리기까지의 시간(초)이다. 양수이며 타이머 상한 이하이고 기본 1800 이다. 루프가 틱마다 읽는다([`requests.md`](requests.md)) |
 | `pipeline` | `digest_sec` | 안내성 루프 알림을 DIGEST 하나로 모아 보내는 주기(초)다. 양수이며 타이머 상한 이하이고 기본 1800 이다. `orch-loop.ts` 가 읽는다 |
 | `pipeline` | `stall_error_retries` | 저장소에 `worker-stalled` 핸들러가 없을 때 상주 루프가 모델 오류로 멈춘 worker 에게 멈춤마다 「계속 진행해」 를 보내는 최대 횟수다. 0 이상의 정수이고 기본 3 이며 0 이면 끄고 바로 코디네이터에게 알린다. 아래 `references/hooks.md` 의 「멈춘 worker 다시 시도시키기」 |
 | `pipeline` | `refresh_slots`, `refresh_worker_paths` | 상주 루프가 머지 차례 전에 뒤처진 PR 에 base 를 미리 합치는 최신화. 아래 「뒤처진 PR 미리 최신화」 |

@@ -59,6 +59,8 @@ else if (sub === 'task-list') reply({ tasks: st.tasks || [] })
 else if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
 else if (sub === 'check') reply({ messages: [] })
 else if (sub === 'inbox') reply({ messages: (st.inbox || {})[argv[argv.indexOf('--terminal') + 1]] || [] })
+else if (sub === 'run-list') reply({ runs: st.runs || [] })
+else if (argv[0] === 'terminal' && sub === 'list') reply({ terminals: st.terminals || [] })
 else reply({})
 `
 
@@ -167,6 +169,16 @@ function pidAlive(pid: number): boolean {
 
 function orca(state: Json): void {
   writeFileSync(join(tmp, 'orca.json'), JSON.stringify(state))
+}
+
+// Run 마다 코디네이터 터미널을 두고 에이전트가 실행 중인 것으로 보이게 한다(메인 판정, ADR-035)
+function alive(...runs: string[]): Json {
+  return { runs: runs.map((id) => ({ id, coordinator_handle: `t_${id}` })), terminals: runs.map((id) => ({ handle: `t_${id}`, agentIdentity: 'claude', connected: true })) }
+}
+
+// 배포 전부터 등록돼 있던 Run(스펙 DECISION24). 새 등록은 메인이 막으므로 파일로 둔다
+function legacyRun(run: string, at = new Date().toISOString()): void {
+  write(orchFile('state', 'loop-runs', `${run}.json`), JSON.stringify({ run, specs_dir: null, registered_at: at }))
 }
 
 function fake(name: 'sweep' | 'board', state: Json): void {
@@ -842,10 +854,22 @@ describe('--start, --status, --stop', () => {
     const same = loop(['--run', 'r1', '--start'])
     assert.equal(same.code, 4, same.stdout + same.stderr)
     assert.equal(same.stdout.trim(), `LOOP-RUNNING ${pid} run=r1`)
-    const joined = loop(['--run', 'r2', '--start'])
-    assert.equal(joined.code, 0, joined.stdout + joined.stderr)
-    assert.equal(joined.stdout.trim(), `LOOP-JOINED ${pid} run=r2`)
-    assert.ok(existsSync(orchFile('state', 'loop-runs', 'r2.json')))
+    // 메인(r1)이 살아 있으면 다른 Run 은 등록하지 않고 요청 명령을 안내한다(ADR-035)
+    orca(alive('r1'))
+    const refused = loop(['--run', 'r2', '--start'])
+    assert.equal(refused.code, 6, refused.stdout + refused.stderr)
+    assert.match(refused.stdout, /^MAIN-EXISTS r1 terminal=t_r1$/m)
+    assert.match(refused.stdout, /request send --to/)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
+    // 짧은 출력(진입점)에서도 요청 명령과 넘겨받기 명령이 판정 줄로 남는다
+    const brief = loop(['--run', 'r2', '--start'], { ORCH_OUTPUT: 'short' })
+    assert.equal(brief.code, 6)
+    assert.deepEqual(brief.stdout.trim().split('\n').map((line) => line.split(' ')[0]), ['MAIN-EXISTS', 'MAIN-REQUEST', 'TAKEOVER-WITH'], brief.stdout)
+    const confirm = loop(['--run', 'r2', '--start', '--take-over'])
+    assert.equal(confirm.code, 6, confirm.stdout + confirm.stderr)
+    assert.match(confirm.stdout, /^TAKEOVER-CONFIRM r1 terminal=t_r1$/m)
+    assert.equal(pidAlive(pid), true)
+    legacyRun('r2')
     const shared = loop(['--stop'])
     assert.equal(shared.code, 1, shared.stdout + shared.stderr)
     assert.match(shared.stdout, new RegExp(`^LOOP-STOP-SHARED ${pid} runs=r1,r2$`, 'm'))
@@ -896,12 +920,12 @@ describe('--start, --status, --stop', () => {
     assert.equal(started.code, 0, started.stdout + started.stderr)
     const pid = Number(/^LOOP-STARTED (\d+) run=r1$/m.exec(started.stdout)?.[1])
     assert.equal(loopState()?.bound_run, 'r1')
-    // 부른 쪽은 묶이지 않았지만 루프는 r1 에 묶였다
-    orca({})
+    // 부른 쪽은 묶이지 않았지만 루프는 r1 에 묶였고 r1 이 메인이다
+    orca(alive('r1'))
     const joined = loop(['--run', 'r2', '--start'])
-    assert.equal(joined.code, 5, joined.stdout + joined.stderr)
-    assert.match(joined.stdout, /^LOOP-START-FENCED r2 r1$/m)
-    assert.match(joined.stdout, new RegExp(`^안내: 도는 루프\\(pid ${pid}\\)는 Run r1 에 묶여 Run r2 의 질문을 읽지 못한다`, 'm'))
+    assert.equal(joined.code, 6, joined.stdout + joined.stderr)
+    assert.match(joined.stdout, /^MAIN-EXISTS r1 /m)
+    assert.equal(pidAlive(pid), true)
     assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
     assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
   })
@@ -918,9 +942,9 @@ describe('--start, --status, --stop', () => {
     assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
   })
 
-  test('묶이지 않은 루프는 bound_run 이 null 이고 다른 Run 의 합류를 받는다', async () => {
+  test('묶이지 않은 루프는 bound_run 이 null 이고, 등록이 없으면 다른 Run 의 합류를 받는다', async () => {
     config({ pipeline: { tick_sec: 3600 } })
-    const started = loop(['--run', 'r1', '--start'])
+    const started = loop(['--start'])
     assert.equal(started.code, 0, started.stdout + started.stderr)
     assert.equal(loopState()?.bound_run, null)
     const joined = loop(['--run', 'r2', '--start'])
@@ -932,23 +956,92 @@ describe('--start, --status, --stop', () => {
   test('bound_run 이 없는 루프(명의를 모른다)에는 합류하지 않고 unknown 으로 알린다', async (t) => {
     const pid = await fakeLoop(t)
     const now = new Date().toISOString()
-    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: 'r1', runs: ['r1'], repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
-    write(orchFile('state', 'loop-runs', 'r1.json'), JSON.stringify({ run: 'r1', specs_dir: null, registered_at: now }))
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: null, runs: [], repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
     const joined = loop(['--run', 'r2', '--start'])
     assert.equal(joined.code, 5, joined.stdout + joined.stderr)
     assert.match(joined.stdout, /^LOOP-START-FENCED r2 unknown$/m)
     assert.match(joined.stdout, /명의를 알 수 없어/)
     assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
-    // 이미 등록된 Run 은 판정 없이 전처럼 LOOP-RUNNING 이다
+    // 이미 등록된 메인 Run 은 전처럼 LOOP-RUNNING 이다
+    write(orchFile('state', 'loop-runs', 'r1.json'), JSON.stringify({ run: 'r1', specs_dir: null, registered_at: now }))
+    orca(alive('r1'))
     const same = loop(['--run', 'r1', '--start'])
     assert.equal(same.code, 4, same.stdout + same.stderr)
+  })
+
+  test('메인이 끝난 루프는 새 세션이 넘겨받아 자기 명의로 다시 띄운다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'r1' })
+    const started = loop(['--run', 'r1', '--start'])
+    assert.equal(started.code, 0, started.stdout + started.stderr)
+    const old = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
+    // r1 의 코디네이터 터미널에는 셸만 남았다. 새 세션 r2 의 터미널은 r2 에 묶였다
+    orca({ bound: 'r2', runs: [{ id: 'r1', coordinator_handle: 't_r1' }], terminals: [{ handle: 't_r1', connected: true }] })
+    const taken = loop(['--run', 'r2', '--start'])
+    assert.equal(taken.code, 0, taken.stdout + taken.stderr)
+    assert.match(taken.stdout, /^LOOP-STARTED \d+ run=r2$/m)
+    assert.match(taken.stdout, /^MAIN-TAKEN r2 from=r1$/m)
+    assert.equal(pidAlive(old), false)
+    assert.equal(loopState()?.bound_run, 'r2')
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
+    assert.ok(existsSync(orchFile('state', 'loop-runs', 'r2.json')))
+    assert.equal(existsSync(orchFile('state', 'takeover.lock')), false)
+    // worker 를 옮기려고 앞 Run 의 worker 목록을 읽었다
+    assert.ok(jsonl(join(tmp, 'orca-calls.jsonl')).some((argv) => (argv as unknown as string[]).includes('worker-list') && (argv as unknown as string[]).includes('r1')))
+    assert.equal(loop(['--run', 'r2', '--stop']).code, 0)
+  })
+
+  test('살아 있는 메인은 사용자 답을 준 명시적 넘겨받기로만 넘기고 앞 메인에게 알린다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'r1' })
+    const old = Number(/^LOOP-STARTED (\d+)/m.exec(loop(['--run', 'r1', '--start']).stdout)?.[1])
+    orca({ bound: 'r2', ...alive('r1') })
+    assert.equal(loop(['--run', 'r2', '--start', '--confirmed', 'x']).code, 2)
+    const taken = loop(['--run', 'r2', '--start', '--take-over', '--confirmed', '사용자가 넘기라고 했다'])
+    assert.equal(taken.code, 0, taken.stdout + taken.stderr)
+    assert.match(taken.stdout, /^MAIN-TAKEN r2 from=r1$/m)
+    assert.equal(pidAlive(old), false)
+    const notice = jsonl(join(tmp, 'orca-calls.jsonl')).map((argv) => argv as unknown as string[]).find((argv) => argv[1] === 'send' && argv.includes('run:r1'))
+    assert.ok(notice, '앞 메인에게 알리지 않았다')
+    assert.match(notice[notice.indexOf('--body') + 1], /사용자가 넘기라고 했다/)
+    assert.equal(loop(['--run', 'r2', '--stop']).code, 0)
+  })
+
+  test('명시적 넘겨받기는 살아 있는 배포 전 등록 Run 을 남기고 새 Run 이 메인이 된다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'r1' })
+    const old = Number(/^LOOP-STARTED (\d+)/m.exec(loop(['--run', 'r1', '--start']).stdout)?.[1])
+    legacyRun('r3')
+    orca({ bound: 'r2', ...alive('r1', 'r3') })
+    const taken = loop(['--run', 'r2', '--start', '--take-over', '--confirmed', '넘겨라'])
+    assert.equal(taken.code, 0, taken.stdout + taken.stderr)
+    assert.match(taken.stdout, /^MAIN-TAKEN r2 from=r1$/m)
+    assert.doesNotMatch(taken.stdout, /LOOP-NOT-RUNNING/)
+    assert.equal(pidAlive(old), false)
+    assert.ok(existsSync(orchFile('state', 'loop-runs', 'r3.json')), 'r3 의 등록이 지워졌다')
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
+    // r2 가 r3 보다 앞에 등록돼 메인이다
+    const order = ['r2', 'r3'].map((r) => Date.parse(String((JSON.parse(readFileSync(orchFile('state', 'loop-runs', `${r}.json`), 'utf8')) as Json).registered_at)))
+    assert.ok(order[0] < order[1], JSON.stringify(order))
+    assert.equal(loop(['--stop', '--all']).code, 0)
+  })
+
+  test('메인을 판정하지 못하면 넘겨받지 않고 MAIN-UNKNOWN 과 1 이다', () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    legacyRun('r1')
+    orca({ fail: true })
+    const r = loop(['--run', 'r2', '--start'])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, /^MAIN-UNKNOWN /m)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
+    assert.ok(existsSync(orchFile('state', 'loop-runs', 'r1.json')))
   })
 
   test('--stop --all 은 등록된 Run 을 모두 빼고 멈춘다. --all 과 --run 을 함께 주면 2 다', async () => {
     config({ pipeline: { tick_sec: 3600 } })
     const started = loop(['--run', 'r1', '--start'])
     const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
-    assert.equal(loop(['--run', 'r2', '--start']).code, 0)
+    legacyRun('r2')
     assert.equal(loop(['--run', 'r1', '--stop', '--all']).code, 2)
     const stopped = loop(['--stop', '--all'])
     assert.equal(stopped.code, 0, stopped.stdout + stopped.stderr)
@@ -1186,6 +1279,8 @@ describe('여러 Run', () => {
 
   test('죽은 루프 뒤 두 세션이 거의 동시에 --start 하면 둘 다 0 이고 한 루프가 두 Run 을 맡는다', { timeout: 60_000 }, async () => {
     config({ pipeline: { tick_sec: 3600 } })
+    // 두 세션 모두 살아 있다. 메인은 먼저 등록한 A 이고 B 는 배포 전부터 등록된 Run 이다
+    orca(alive('A', 'B'))
     // 두 Run 모두 죽은 루프에 등록돼 있었다. 같은 LOOP-DEAD 로 깨어난 경우다
     write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
     register('A', '2026-01-01T00:00:00Z')
@@ -1233,7 +1328,7 @@ describe('여러 Run', () => {
     config({ pipeline: { tick_sec: 3600 } })
     const started = loop(['--run', 'r1', '--start'])
     const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
-    assert.equal(loop(['--run', 'r2', '--start']).code, 0)
+    legacyRun('r2')
     config({ pipeline: { tick_sec: 3600 }, finish: { run: 'r2' } })
     const left = loop(['--stop'])
     assert.equal(left.code, 0, left.stdout + left.stderr)

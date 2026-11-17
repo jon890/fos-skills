@@ -140,6 +140,18 @@ board.ts worker-link <id> --worktree W --pr N         # PR2
 
 보드 맞추기는 항목마다(done 포함) `working` 줄 가운데 `dispatch` 가 이 목록에 있으면 그 값으로 `worker-end` 를 부른다. 워크트리 목록을 읽었고 줄의 `worktree` 가 목록에 없으면 `worker-end <id> lost --worktree W --clear` 를 부른다. 그 워크트리의 작업 중 줄이 있으면 325행의 `set --worktree ''` 는 내지 않는다. 줄 끝내기가 대표 칸을 다른 작업 중 줄로 바꾸거나 비운다. 틱 처음에 읽은 값으로 비우면 새 대표를 지운다. 줄 끝내기 명령은 그 항목의 다른 명령보다 앞에 둔다.
 
+### 끊김 줄의 되살림
+
+띄운 직후 잠깐의 Orca 상태(`liveness_exited` 등)로 줄이 `lost` 로 적힌 뒤 같은 dispatch 가 다시 살아나거나 성공으로 끝나도 줄이 되돌아오지 않던 문제를 막는다. 한 번 본 순간 상태로 줄을 굳히지 않는다.
+
+`loop/steps/board.ts` 가 보드의 `lost` 줄의 dispatch 도 `lostDispatches` 로 모아 `core/board-workers.ts` 의 `workerRevivals(rows, reported, lost)` 에 넘기고, 결과를 `--worker-revivals '{"<dispatch>":"working"|"done"}'` 로 보드 맞추기에 더한다.
+
+- `done`: worker_done 을 보냈거나 Orca 행의 `projection.outcome` 이 `succeeded` 다
+- `working`: Orca 행의 `dispatchStatus` 가 열려 있고(`pending`·`dispatched`·`running`) `workerEnds` 가 끝으로 보지 않는다
+- 그 밖(`failed` 로 닫힘, 지금도 `liveness_exited`, 행 없음)은 넣지 않아 줄이 끊김으로 남는다
+
+보드 맞추기는 `lost` 줄 가운데 dispatch 가 이 목록에 있으면 `worker-add` 로 작업 중으로 되돌리고(`done` 이면 이어서 `worker-end done`) 이번 틱의 뒤 판정이 같은 값을 보게 한다. 줄의 워크트리가 git 목록에 없으면 되살리지 않고, 닫힌 항목은 `done` 으로만 고친다. 되살린 줄의 `at` 은 되살린 시각으로 바뀐다. 이미 끊김으로 잘못 적힌 줄도 다음 틱의 같은 재판정이 고친다.
+
 ### 리뷰 항목 판정
 
 core 의 `hasWorkRows`는 구현·후속 줄의 존재만 알려 준다. 항목의 생성 목적은 lib/review.ts 의 `reviewOriginsByItem`과 `isReviewItem`이 정하고 보드 동기화와 루프가 함께 쓴다([ADR-028](../../adr/028-orch-core-layer.md)).

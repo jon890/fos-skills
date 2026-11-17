@@ -73,6 +73,11 @@
 //
 //     업무 완료는 hooks/after-deploy.ts 가 이벤트의 last_of_task 와 deploy 를 보고 처리한다.
 //
+// 요청 완료(ADR-035): 찾은 보드 항목이 받은 요청의 항목(lib/requests.ts 의 requestOfItem, req-<n>)이고 마지막 PR 이면, FINISH-DONE 직전에
+//     이번 마무리가 그 항목을 done 으로 닫았을 때만(같은 요청의 다른 PR 이나 끝나지 않은 단계가 남으면 REQUEST-OPEN <번호> 줄만 낸다) 그 요청을 done 으로 바꾸고 답 대상에 REQUEST-DONE 을 보낸다(lib/requests.ts 의 answerRequest). REQUEST-DONE <번호> to=<Run> 을 낸다.
+//     이미 끝난 요청은 건드리지 않는다. 보내지 못하면 REQUEST-DONE-FAIL <번호> <이유> 를 내고 기록에 pending_done 을 남긴다.
+//     루프의 steps/requests.ts 가 다음 틱에 다시 보낸다. 마무리는 그대로 FINISH-DONE 이다
+//
 // 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
 //     last_of_task(마지막 PR 판정). base 는 PR 의 base, run 은 --run(없으면 null)이다.
 //     hooks.timeouts.after-deploy 는 머지와 배포를 기다리기 전에 검사한다.
@@ -154,12 +159,13 @@ import { boardPath } from '../lib/board-file.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
-import { pyStr } from '../lib/py.ts'
+import { pyStr, shQuote } from '../lib/py.ts'
+import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows } from '../lib/workers.ts'
 import { emit, oneLine, short } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
-import { scriptPath } from '../lib/commands.ts'
+import { orchWord, scriptPath } from '../lib/commands.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const CLEANUP_TRIES = 5
@@ -782,9 +788,11 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
 
   const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
+  // 이번 마무리가 항목을 done 으로 닫았는가. 요청 완료는 항목이 닫힐 때만 보낸다(머리 주석의 「요청 완료」)
+  let closed = false
   const stages = item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
   if (item?.by === 'id') {
-    if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done`)
+    if (setBoardDone(args, repo, item.id)) { closed = true; log(`보드 ${item.id} done`) }
     else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
   } else if (item && taggedBoardItem(args, repo, item.id)) {
     const got = boardRow(args, repo, item.id)
@@ -803,19 +811,45 @@ async function finish(args: Args, repo: string): Promise<number> {
       // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
       const result = setBoardMilestone(args, repo, item.id, stages, deploy, verdict, { ended })
       const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
+      closed ||= result === 'done'
       if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
       else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
       else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
     }
   } else if (item) {
     const result = setBoardLegacy(args, repo, item.id, verdict, { ended })
+    closed ||= result === 'done'
     if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}${verdict.known ? '' : '(마지막 PR 을 판정하지 못했지만 모든 단계가 끝났고 열린 PR, 작업 중 worker, 남은 일 줄이 없다)'}`)
     else if (result === 'doing') log(`보드 ${item.id} 는 ${!verdict.known ? '마지막 PR 인지 판정하지 못했거나 끝나지 않은 단계가 남아' : last ? '끝나지 않은 단계가 남아' : '중간 PR 이라'} done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
   }
   if (problems.length > 0) return fail(problems.join('; '))
+  if (item && last) completeRequest(repo, item.id, args.pr, args.run ?? null, closed)
   out('FINISH-DONE')
   return 0
+}
+
+// 요청의 자동 완료(머리 주석의 「요청 완료」). 실패해도 마무리는 FINISH-DONE 이다. 답을 직접 보낼 명령을 남긴다
+function completeRequest(repo: string, itemId: string, pr: number | string, run: string | null, closed: boolean): void {
+  let request
+  try { request = requestOfItem(repo, itemId) } catch (e) { out(`REQUEST-DONE-FAIL ${itemId} 요청 기록을 읽지 못했다: ${oneLine((e as Error).message)}`); return }
+  if (!request || ['rejected', 'done', 'failed'].includes(request.state)) return
+  if (!closed) {
+    out(`REQUEST-OPEN ${request.id} 보드 ${itemId} 가 끝나지 않아 완료를 보내지 않았다`)
+    return
+  }
+  let result
+  try { result = answerRequest(repo, request.number, 'done', `PR #${pr} 마무리 FINISH-DONE`, run, new Date().toISOString()) }
+  catch (e) { result = { ok: false as const, code: 1 as const, line: oneLine((e as Error).message) } }
+  if (result.ok) {
+    out(`REQUEST-DONE ${request.id} to=${result.target}`)
+    for (const line of boardLines(result.boards)) out(line)
+  } else {
+    out(`REQUEST-DONE-FAIL ${request.id} ${result.line}`)
+    try { markPendingDone(repo, request.number, `PR #${pr} 마무리 FINISH-DONE`, new Date().toISOString()) }
+    catch (e) { log(`요청 기록에 남기지 못했다: ${(e as Error).message}`) }
+    log(`요청 완료를 보내지 못했다. 루프가 다음 틱에 다시 보낸다. 바로 보내려면: ${orchWord()} request done ${request.id} --repo ${shQuote(repo)}`)
+  }
 }
 
 export function main(argv: string[], runner?: Runner): Promise<number> {

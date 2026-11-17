@@ -10,7 +10,7 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      workers 는 항목 아래 worker 줄 목록이다(docs/data-schema.md 「보드 항목의 worker 줄」). 창은 저장된 status 를 읽기만 하고 판정하지 않는다.
 //        작업 중(working) 줄은 한 줄씩 「⚙ 역할 워크트리  PR #N CI …  Orca 상태」 로 그린다(리뷰·검증 줄의 PR 은 줄의 pr, 곧 대상 PR).
-//        끊김(lost) 줄은 접힌 보기에서도 한 줄씩 빨간 「⚠ 끊김 역할 워크트리」 로, 끝남(done) 줄은 접힌 보기에서 「✓ 끝난 worker N」 한 줄로 묶는다.
+//        끊김(lost) 줄은 접힌 보기에서도 한 줄씩 빨간 「⚠ 끊김 역할 워크트리」 로, 끝남(done) 줄은 접힌 보기에서 「✓ 끝난 worker N」 한 줄로 묶는다. 그 줄은 단추라 누르면 끝남 줄만 그 아래에 펼친다.
 //        펼친 보기(d)는 모든 줄을 at 순으로 그린다. 완료 항목은 두 보기 모두 작업 중 줄만 그린다. 작업 중 줄이 있으면 「worker 없음」 을 그리지 않는다.
 //        workers 칸이 없는 옛 항목은 worktree 칸의 worker 하나를 붙인다(workerRowsFor).
 //      status: decide(결정 필요), doing(진행 중), wait(대기), done(완료)
@@ -18,7 +18,8 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 //      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
-//      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. d 로 펼치면 끝낸 줄을 취소선으로 보인다.
+//      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. 요약 줄(「✓ n개」, 「남은 단계 n개」, 「✓ 끝난 worker N」)을 누르면 그 항목의 그 목록만 펼친다.
+//      d 로 펼치면 모든 줄을 보이고 끝낸 줄을 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 //      결정 필요 상자에는 worker 의 question 과 worker 가 직접 보낸 escalation 만 넣는다. Orca 자동 알림(autoAlertKind)은 빼고,
 //      그 worker 의 줄에 상태로 붙인다(docs/features/board-decision-box/spec.md).
@@ -129,6 +130,7 @@ let boardPath = ''
 let raw = ''
 let now = 0
 let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
+let folded = new Set() // 접힌 보기에서 요약 줄을 눌러 펼친 목록. 「<항목 id>:<종류>」 (종류: done, todo, workers). 창 메모리에만 둔다
 let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈 값은 전체다
 
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
@@ -642,6 +644,15 @@ export function stepSummary(rows, progress) {
     now: current,
     done: rows.filter((row) => row.counted && row.step && row.state === 'done').length,
     todo: rows.filter((row) => row.counted === side && row.state === 'todo').length,
+  }
+}
+
+// 요약 줄을 눌러 펼칠 줄. 번호 있는 단계 줄만이고 참고 줄은 빠진다(d 로 펼친 보기에서만 보인다)
+// 위아래는 지금 단계 줄보다 앞에 적혔는지 뒤에 적혔는지로 정한다(foldedSteps). 줄이 없으면 그 요약은 단추가 아니다
+export function foldLists(rows) {
+  return {
+    done: rows.filter((row) => row.step && row.state === 'done'),
+    todo: rows.filter((row) => row.step && row.state === 'todo'),
   }
 }
 
@@ -1772,6 +1783,7 @@ export function register(on) {
 
   on('command.run', { command: 'board' }, async ($) => {
     dismissMode = false
+    folded.clear()
     await loadFile($)
     await loadApprovals($, true)
     networkPoll.input(await $.clock.now())
@@ -1835,35 +1847,76 @@ export function register(on) {
 
     // 단계 한 줄: 표시 칸(끝냄 ✓, 지금 ▶, 남음과 참고 줄은 빈칸)과 본문. 모든 줄의 번호와 본문이 같은 열에서 시작하고,
     // 본문이 줄바꿈되면 뒷줄도 본문 열에서 시작한다. 끝낸 줄은 취소선과 흐림, 지금 단계는 굵게, 참고 줄은 흐리게 그린다
-    // extra 는 본문 뒤에 흐리게 붙일 글이다(접힌 보기의 단계 수)
+    // extra 는 본문 뒤에 붙일 것이다. 글이면 흐리게 붙이고, 노드 배열이면(접힌 보기의 요약 단추) 본문과 가로로 늘어놓는다
     const stepLine = (key, row, extra) => {
       const look = row.state === 'done' ? { dimColor: true, strikethrough: true }
         : row.state === 'now' ? { bold: true }
           : row.state === 'note' ? { dimColor: true } : {}
+      const body = Text({ ...look, children: [stepBody(row.text)] })
       return Box({
         key,
         flexDirection: 'row',
         paddingLeft: 2,
         children: [
           Box({ width: STEP_MARK_WIDTH, flexShrink: 0, children: [Text({ ...look, children: [stepMark(row)] })] }),
-          Text({ wrap: 'wrap', children: [
-            Text({ ...look, children: [stepBody(row.text)] }),
-            ...(extra ? [Text({ dimColor: true, children: ['  ' + extra] })] : []),
-          ] }),
+          Array.isArray(extra)
+            ? Box({ flexDirection: 'row', flexWrap: 'wrap', children: [Text({ wrap: 'wrap', children: [body] }), ...extra] })
+            : Text({ wrap: 'wrap', children: [body, ...(extra ? [Text({ dimColor: true, children: ['  ' + extra] })] : [])] }),
         ],
       })
     }
 
-    // 접힌 보기의 단계 한 줄: 지금 단계 뒤에 끝낸 단계와 남은 단계의 수를 붙인다
+    // 요약 줄을 누르는 단추. 접힌 글은 요약 글 그대로고 펼친 글은 뒤에 「 접기」 를 붙인다
     // 수 하나(「✓ 2개」)가 두 줄로 갈리지 않도록 그 안의 띄어쓰기는 줄바꿈하지 않는 공백(U+00A0)으로 쓴다
-    const foldedSteps = (rows, progress) => {
-      const summary = stepSummary(rows, progress)
-      const counts = [
-        ...(summary.done ? ['✓ ' + summary.done + '개'] : []),
-        ...(summary.todo ? ['남은 단계 ' + summary.todo + '개'] : []),
-      ].map((part) => part.replace(/ /g, '\u00a0')).join('  ·  ')
-      if (summary.now) return [stepLine('steps', summary.now, counts)]
-      return counts ? [indent('steps', 2 + STEP_MARK_WIDTH, dim('counts', counts))] : []
+    // 넘기기(x) 모드에서는 누르지 않은 것과 같다
+    const shownFolds = new Set() // 이번 그림에서 단추로 그린 「<항목 id>:<종류>」
+    const nbsp = (text) => text.replace(/ /g, '\u00a0')
+    // text 의 띄어쓰기는 부르는 쪽이 정한다. glue 는 「접기」 앞에 둘 공백이다
+    const foldButton = (item, kind, text, glue = ' ') => {
+      const open = folded.has(item.id + ':' + kind)
+      return Button({
+        key: 'fold-' + item.id + '-' + kind,
+        plain: true,
+        onPress: () => {
+          if (dismissMode) return
+          const id = item.id + ':' + kind
+          if (!folded.delete(id)) folded.add(id)
+          $.ui.invalidate('ui.render')
+        },
+        children: [Text({ dimColor: true, children: [text + (open ? glue + '접기' : '')] })],
+      })
+    }
+
+    // 접힌 보기의 단계 한 줄: 지금 단계 뒤에 끝낸 단계와 남은 단계의 수를 붙인다
+    // 수는 줄이 있으면 단추다. 누르면 그 줄들을 적힌 순서대로 지금 단계 줄 위아래에 끼운다
+    // 지금 단계 줄보다 앞에 적힌 줄은 위, 뒤에 적힌 줄은 아래다. 단계를 순서와 다르게 끝내도 d 로 펼친 보기와 순서가 같다
+    // 줄이 없으면(수가 progress 값에서 났다) 지금처럼 글만 그린다. 진행 중과 대기 항목만 단추를 그린다
+    const foldedSteps = (item, rows) => {
+      const summary = stepSummary(rows, item.progress)
+      const lists = foldLists(rows)
+      const pressable = checkable(item)
+      const parts = [
+        ...(summary.done ? [{ kind: 'done', text: '✓ ' + summary.done + '개' }] : []),
+        ...(summary.todo ? [{ kind: 'todo', text: '남은 단계 ' + summary.todo + '개' }] : []),
+      ].map((part) => {
+        if (!pressable || lists[part.kind].length === 0) return Text({ dimColor: true, children: [nbsp(part.text)] })
+        shownFolds.add(item.id + ':' + part.kind)
+        return foldButton(item, part.kind, nbsp(part.text), '\u00a0')
+      })
+      const nowAt = rows.findIndex((row) => row.state === 'now')
+      const opened = rows.flatMap((row, at) => {
+        const kind = row.step && row.state === 'done' ? 'done' : row.step && row.state === 'todo' ? 'todo' : null
+        return kind && pressable && folded.has(item.id + ':' + kind)
+          ? [{ at, line: stepLine('f' + kind[0] + '-' + lists[kind].indexOf(row), row) }] : []
+      })
+      const nodes = parts.flatMap((part, i) => [...(i > 0 ? [Text({ dimColor: true, children: ['  ·  '] })] : []), part])
+      const extra = nodes.length ? [Text({ children: ['  '] }), ...nodes] : []
+      return [
+        ...opened.filter(({ at }) => nowAt < 0 || at < nowAt).map(({ line }) => line),
+        ...(summary.now ? [stepLine('steps', summary.now, extra)]
+          : nodes.length ? [indent('steps', 2 + STEP_MARK_WIDTH, Box({ key: 'counts', flexDirection: 'row', flexWrap: 'wrap', children: nodes }))] : []),
+        ...opened.filter(({ at }) => nowAt >= 0 && at > nowAt).map(({ line }) => line),
+      ]
     }
 
     // 머리 줄. 칩이 없으면 「표시 제목」 가로 한 줄이다.
@@ -1918,6 +1971,18 @@ export function register(on) {
         if (row.status === 'lost') return indent(key, 2, Text({ key, color: 'red', wrap: 'wrap', children: ['⚠ 끊김 ' + (ROLE_LABELS[row.role] || row.role) + ' ' + row.worktree] }))
         return indent(key, 2, Text({ key, dimColor: true, wrap: 'wrap', children: ['✓ ' + workerRowLine({ ...row, live: null }, live.prs)] }))
       }
+      // 끝난 worker 는 요약 한 줄이고 단추다. 펼치면 그 줄 아래에 끝난 줄만 펼친 보기와 같은 모양으로 그린다(작업 중과 끊김 줄은 그대로다)
+      const ended = allRows.filter((row) => row.status === 'done')
+      const pressable = !done && checkable(item)
+      const endedOpen = pressable && folded.has(item.id + ':workers')
+      if (ended.length > 0 && pressable) shownFolds.add(item.id + ':workers')
+      const endedText = '✓ 끝난 worker ' + ended.length
+      const endedViews = ended.length === 0 ? [] : [
+        indent('wd', 2, pressable
+          ? foldButton(item, 'workers', endedText)
+          : Text({ key: 'wd', dimColor: true, children: [endedText] })),
+        ...(endedOpen ? ended.map((row, i) => rowView('wd-' + i, row)) : []),
+      ]
       const workerViews = done
         ? working.map((row, i) => rowView('w-' + i, row))
         : expanded
@@ -1925,8 +1990,7 @@ export function register(on) {
           : [
             ...working.map((row, i) => rowView('w-' + i, row)),
             ...allRows.filter((row) => row.status === 'lost').map((row, i) => rowView('wl-' + i, row)),
-            ...(allRows.some((row) => row.status === 'done')
-              ? [indent('wd', 2, Text({ key: 'wd', dimColor: true, children: ['✓ 끝난 worker ' + allRows.filter((row) => row.status === 'done').length] }))] : []),
+            ...endedViews,
           ]
       return Box({
         key: 'item-' + item.id,
@@ -1940,7 +2004,7 @@ export function register(on) {
             ...(item.owner ? [item.owner] : []),
             ...prNumbers(item.pr).flatMap((n, i) => [...(item.owner || i > 0 ? ['  ·  '] : []), prLink(n)]),
           ] }))] : []),
-          ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
+          ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(item, rows)),
           ...workerViews,
           ...(!done && working.length === 0 && item.worktree ? [indent('w', 2, idleView(item, rows))] : []),
         ],
@@ -2195,6 +2259,11 @@ export function register(on) {
         collapsed ? [dim('fold', 'd 를 누르면 펼쳐요')] : rows.map((item) => itemView(item, section)))]
     }
 
+    // 접힌 보기에서 단추가 사라진 목록(줄이 비었거나 항목이 사라짐)은 펼침 상태를 버린다. 다시 생기면 접힌 채 나온다
+    // 펼친 보기(d)는 단추를 그리지 않으므로 지우지 않고, 보드를 읽지 못한 동안에도 지우지 않는다
+    const sectionViews = SECTIONS.slice(1).flatMap(manualView)
+    if (!expanded && board && !board.error) for (const id of [...folded]) if (!shownFolds.has(id)) folded.delete(id)
+
     // 전체 진행률: 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합
     const overall = overallProgress(items)
     const overallView = Box({
@@ -2318,7 +2387,7 @@ export function register(on) {
         ...inboxView,
         ...workerView,
         ...prView,
-        ...SECTIONS.slice(1).flatMap(manualView),
+        ...sectionViews,
       ],
     })
   })

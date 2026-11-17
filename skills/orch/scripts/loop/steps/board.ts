@@ -1,5 +1,5 @@
 // 보드 동기화(틱 3, 워크트리 정리 전): 보드 파일(lib/board-file.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
-// worker_done 과 이미 읽은 Orca 행에서 끝남을 모아 --worker-ends 로 넘긴다.
+// worker_done 과 이미 읽은 Orca 행에서 끝남을 모아 --worker-ends 로, 끊김 줄의 되살림을 --worker-revivals 로 넘긴다.
 //     결정이 남았을 때의 알림은 decisions.ts 가 맡는다.
 
 import { notifyUnmatched } from '../../lib/board-unmatched.ts'
@@ -14,7 +14,7 @@ import { readBoard } from '../../lib/board.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { oneLine, relay, rowsOf, SWEEP_TIMEOUT_MS } from './shared.ts'
-import { rowsReviewPr, workingDispatches, workerEnds } from '../../core/board-workers.ts'
+import { lostDispatches, rowsReviewPr, workingDispatches, workerEnds, workerRevivals } from '../../core/board-workers.ts'
 
 export async function syncBoard(ctx: StepContext, state: StepState): Promise<StepResult> {
   const { prs } = state
@@ -30,7 +30,9 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
       const origins = reviewOriginsByItem(ctx.repo, boardItems)
       const openItems = boardItems.filter((item) => item.status !== 'done' && isReviewItem(item, origins) && (rowsReviewPr(item) ?? reviewPrOfItem(String(item.id), byItem)) !== null).map((item) => String(item.id))
       const watched = workingDispatches(boardItems)
-      if (watched.size) {
+      // 끊김으로 적힌 줄도 틱마다 다시 본다. 그 사이 dispatch 가 다시 살아 있거나 성공으로 끝났으면 줄을 고친다
+      const lost = lostDispatches(boardItems)
+      if (watched.size || lost.size) {
         const rows = ctx.runs.flatMap((run) => {
           if (!run.run) return []
           const result = rowsOf(run.run, ctx.lookup)
@@ -42,6 +44,8 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
         }))
         const ends = workerEnds(rows, reported, watched)
         if (Object.keys(ends).length) args.push('--worker-ends', JSON.stringify(ends))
+        const revivals = workerRevivals(rows, reported, lost)
+        if (Object.keys(revivals).length) args.push('--worker-revivals', JSON.stringify(revivals))
       }
       const pending = new Set(openItems.flatMap((id) => /^review-pr-(\d+)$/.test(id) ? [Number(id.slice('review-pr-'.length))] : []))
       const items = new Set<string>()

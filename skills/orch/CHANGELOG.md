@@ -1,5 +1,19 @@
 # CHANGELOG: orch
 
+## 7.61.0 (2026-11-17)
+
+- 저장소마다 메인 코디네이터 하나만 루프를 맡는다. 메인이 있으면 다른 Run 의 `orch loop start` 는 등록하지 않고 `MAIN-EXISTS` 와 6 으로 끝난다([ADR-035](../../../docs/adr/035-orch-main-coordinator.md)).
+- 메인의 코디네이터 터미널에서 에이전트가 끝났으면 `orch loop start` 가 넘겨받는다. 옛 명의의 루프를 다시 띄우고 쉬는 worker 를 새 Run 으로 옮긴다.
+- 살아 있는 메인은 사용자 답을 담은 `orch loop start --take-over --confirmed` 로만 넘긴다.
+- 새 명령 `orch request send` 로 메인에게 번호 붙은 요청을 보내고, `orch request accept R1` 같은 답 명령으로 답한다. 양쪽 보드에 항목이 생기고 마지막 PR 마무리가 완료를 보낸다.
+- 받음 답이 `pipeline.request_ack_sec`(기본 1800초) 없으면 루프가 `REQUEST-NO-ACK` 를 한 번 보낸다. `orch status` 가 `MAIN` 줄을 낸다.
+
+## 7.60.2 (2026-11-17)
+
+- 띄운 직후 잠깐의 상태로 보드 worker 줄이 「끊김」 으로 굳던 문제를 고친다. 루프가 끊김으로 적힌 줄의 dispatch 를 틱마다 다시 보고, 열려 있으면 작업 중으로, 성공으로 끝났으면 done 으로 고쳐 쓴다.
+- 이미 끊김으로 잘못 적힌 줄도 다음 틱에 같은 방식으로 고쳐진다. 터미널이 닫혀 dispatch 가 failed 로 닫힌 worker 는 그대로 끊김이다.
+- `board-sync` 에 루프 내부용 `--worker-revivals` 옵션을 더한다.
+
 ## 7.60.1 (2026-11-17)
 
 - worker 가 코디네이터에게 넘길 파일을 세션 임시 폴더에 두지 않게 한다. 공통 지시서 틀에 `$(orch paths root)/handoff/` 에 두고 절대경로로 적는 규칙을 더했다.

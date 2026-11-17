@@ -1,10 +1,10 @@
-// 저장소마다 하나 도는 상주 루프다. 여러 세션의 Run 을 함께 맡는다(ADR-012, lifecycle.ts 머리 주석의 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 자동 머지, 충돌 PR 처리를 한다.
+// 저장소마다 하나 도는 상주 루프다. 저장소의 메인 코디네이터 Run 이 맡는다(ADR-035, lifecycle.ts 머리 주석의 「메인」, 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 자동 머지, 충돌 PR 처리를 한다.
 // 코디네이터를 깨워야 하는 일은 그 Run 에 Orca status 메시지로 보낸다. 전송은 lib/run-notice.ts 가 맡는다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
 // 상태 파일의 읽기, 생존 판정과 Run 등록은 lib/loop.ts 가 소유한다. 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이다.
 //
 // 사용법:
-//     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop [--all] | --status | --foreground) [--once]
+//     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start [--take-over [--confirmed TEXT]] | --stop [--all] | --status | --foreground) [--once]
 //     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N      (내부용. 부모가 띄운다)
 //
 //     --repo         대상 저장소. 주 checkout 으로 바꿔 쓴다
@@ -14,6 +14,13 @@
 //                    합류하지도 않고 LOOP-START-FENCED <Run> <묶인 Run> 과 `안내: …` 한 줄, 5 다.
 //                    터미널이 어떤 Run 에도 묶이지 않았으면(run-current 가 비었다) LOOP-START-UNBOUND <Run> 과 `orca orchestration run-use --id <Run>` 을
 //                    담은 `안내: …` 한 줄, 5 다.
+//                    그다음 --run 이 아직 등록되지 않았으면 메인을 판정한다(lifecycle.ts 머리 주석의 「메인」, takeover.ts 머리 주석).
+//                    메인이 다른 Run 이면 MAIN-EXISTS <Run> terminal=<터미널> 과 요청 명령을 담은 `안내: …` 한 줄, 6 이다.
+//                    --take-over 만 주면 TAKEOVER-CONFIRM <Run> terminal=<터미널> 과 `안내: …` 한 줄, 6 이다. --confirmed 를 함께 주면 넘겨받는다.
+//                    메인이 없으면(등록된 Run 가운데 에이전트가 실행 중인 코디네이터 터미널이 없다) 넘겨받는다. 판정하지 못하면 MAIN-UNKNOWN <이유> 와 1.
+//                    MAIN-EXISTS 뒤에는 MAIN-REQUEST <요청 명령> 과 TAKEOVER-WITH <넘겨받기 명령> 판정 줄이, TAKEOVER-CONFIRM 뒤에는 TAKEOVER-WITH 줄이 따른다.
+//                    넘겨받기는 도는 루프를 멈추고 이 Run 을 등록한 뒤 앞 Run 등록을 지우고 MAIN-TAKEN <Run> from=<앞 Run 목록>, REQUEST-OPEN <번호> <상태> <제목> 줄을 낸다.
+//                    그다음 아래처럼 띄우고, LOOP-STARTED 뒤에 WORKER-MOVED, WORKER-NOT-MOVED, WORKER-OTHER-REPO, WORKER-MOVE-FAIL, WORKER-LIST-FAIL 줄을 낸다.
 //                    그다음 등록한다(lib/loop.ts 의 registerRun). 살아 있는 루프가 없으면 자기 자신을 --foreground 로
 //                    분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에 자기 pid 를 쓸 때까지 10초까지 기다린다.
 //                    하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다.
@@ -48,6 +55,8 @@
 //                    128 + 신호 번호
 //     --once         --foreground 와 함께 틱 한 번만 돌고 0 으로 끝난다
 //     --all          --stop 과 함께, --run 없이 준다. 등록된 Run 을 모두 지우고 루프를 멈춘다
+//     --take-over    --start 와 함께. 메인이 살아 있어도 넘겨받는다. --confirmed 가 없으면 넘겨받지 않는다
+//     --confirmed    --take-over 와 함께. 사용자가 넘겨받기를 확인한 답. 앞 메인에게 가는 MAIN-TAKEN 알림에 그대로 담는다
 //     --tick, --tick-number N
 //                    틱 하나를 돌고 끝난다. --foreground 의 부모가 틱마다 띄운다. N 은 1 부터다.
 //                    stdout 마지막 줄에 {"tick_at": <ISO 8601 UTC>, "errors": {<출처>: <이유 또는 null>}, "open_prs": <번호 목록 또는 null>,
@@ -81,6 +90,7 @@
 //     10. 자리 보유 확인. steps/heavy-slot.ts
 //     11. 미답변 질문 확인. steps/unanswered.ts
 //     12. 모아 보내기와 완료 보고·끊긴 worker 확인. steps/reports.ts
+//     13. 답 없는 요청 알림. steps/requests.ts
 //     단계는 설정과 이번 틱의 Run(StepContext), 앞 단계가 낸 값(StepState)을 받아 바꿀 값과 오류 이유(StepResult)를 돌려준다(steps/context.ts).
 //     tick 이 결과를 차례로 합쳐 결과 줄을 낸다. 부모가 결과 줄을 loop.json 에 합치는 규칙은 lifecycle.ts 머리 주석의 「틱 자식」 이다.
 //
@@ -102,6 +112,7 @@
 //     2  사용법 오류와 설정 오류(ConfigError, ORCH_LOOP_ALIVE_SEC 가 양수가 아님)
 //     4  살아 있는 루프가 있다(LOOP-RUNNING)
 //     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED, LOOP-START-UNBOUND)
+//     6  --start 가 메인이 있어 등록하지 않았다(MAIN-EXISTS, TAKEOVER-CONFIRM)
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { existsSync, realpathSync } from 'node:fs'
@@ -138,9 +149,10 @@ import { notifyStepReady } from './steps/step-ready.ts'
 import { checkStalls } from './steps/stalls.ts'
 import { fireTick } from './steps/tick-event.ts'
 import { checkUnanswered } from './steps/unanswered.ts'
+import { notifyUnacked } from './steps/requests.ts'
 
 const USAGE = [
-  '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop [--all] | --status | --foreground) [--once]',
+  '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start [--take-over [--confirmed TEXT]] | --stop [--all] | --status | --foreground) [--once]',
   '        orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N',
 ].join('\n')
 
@@ -173,6 +185,7 @@ async function tick(config: Context, n: number): Promise<number> {
   collect(state, await checkHeavySlot(ctx, state))
   collect(state, await checkUnanswered(ctx, state))
   collect(state, await checkReports(ctx, state))
+  collect(state, await notifyUnacked(ctx, state))
   const { errors, ci, stalls } = state
   const result: TickResult = { tick_at: iso(), errors, open_prs: openNumbers(state.prs), ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }
   process.stdout.write(`${JSON.stringify(result)}\n`)
@@ -204,6 +217,8 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
       start: { type: 'boolean', default: false },
       stop: { type: 'boolean', default: false },
       all: { type: 'boolean', default: false },
+      'take-over': { type: 'boolean', default: false },
+      confirmed: { type: 'string' },
       status: { type: 'boolean', default: false },
       foreground: { type: 'boolean', default: false },
       once: { type: 'boolean', default: false },
@@ -222,6 +237,9 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
     if (!values.repo) throw new Usage('--repo 가 필요하다')
     if (values.once && mode !== 'foreground') throw new Usage('--once 는 --foreground 와 함께 준다')
     if (values.all && (mode !== 'stop' || values.run)) throw new Usage('--all 은 --run 없이 --stop 과 함께 준다')
+    if (values['take-over'] && mode !== 'start') throw new Usage('--take-over 는 --start 와 함께 준다')
+    if (values.confirmed !== undefined && !values['take-over']) throw new Usage('--confirmed 는 --take-over 와 함께 준다')
+    if (values.confirmed !== undefined && !values.confirmed.trim()) throw new Usage('--confirmed 에 사용자 답을 준다')
     if ((mode === 'tick') !== (values['tick-number'] !== undefined)) throw new Usage('--tick 과 --tick-number 는 함께 준다')
     if (mode === 'tick') {
       const raw = values['tick-number'] as string
@@ -258,7 +276,7 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
     return 2
   }
   setNoticeOwner(ctx.repo)
-  if (mode === 'start') return start(ctx, entrypoint)
+  if (mode === 'start') return start(ctx, entrypoint, { takeOver: values['take-over'] as boolean, confirmed: (values.confirmed as string | undefined)?.trim() ?? null })
   handleSignals()
   if (mode === 'tick') {
     watchParent()

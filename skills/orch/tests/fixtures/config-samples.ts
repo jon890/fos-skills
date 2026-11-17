@@ -46,6 +46,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     idle_exited: flag,
     tick_sec: timer,
     digest_sec: timer,
+    request_ack_sec: timer,
     ready_slots: { good: [1, 3], bad: [0, 1.5, '2', -1] },
     after_queue_interval_sec: { good: [0, 1.5, 600], bad: [-1, '1'] },
     ci_missing_after_sec: { good: [0, 1.5, 600], bad: [-1, '1'] },

@@ -221,6 +221,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     enabled: zodCheck(bool),
     tick_sec: zodCheck(timer),
     digest_sec: zodCheck(timer),
+    request_ack_sec: zodCheck(timer),
     ready_slots: zodCheck(z.number().int().min(1)),
     docs_merge: zodCheck(bool),
     after_queue_interval_sec: zodCheck(z.number().min(0)),

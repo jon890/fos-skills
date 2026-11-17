@@ -27,12 +27,13 @@ function claim(run: string, kind: string, text: string, owner: string, repo?: st
 
 type Json = Record<string, unknown>
 export type NoticeResult = { ok: true; id: string } | { ok: false; error: string }
-export function notifyRun(run: string, kind: string, text: string, pr: number | null = null, options: { subject?: string; repo?: string } = {}): NoticeResult {
+// options.source 는 payload 의 source 다. 기본 orch-loop 이고 요청 메시지(lib/requests.ts)는 orch-request 를 준다. options.extra 는 payload 에 더할 칸이다
+export function notifyRun(run: string, kind: string, text: string, pr: number | null = null, options: { subject?: string; repo?: string; source?: string; extra?: Record<string, unknown> } = {}): NoticeResult {
   const mine = noticeOwner ? claim(run, kind, text, noticeOwner, options.repo) : null
   if (mine?.peer) return { ok: true, id: 'peer' }
   const args = ['orchestration', 'send', '--to', `run:${run}`, '--type', 'status',
     '--subject', options.subject ?? `${kind} ${text.replace(/\s+/g, ' ').slice(0, 80)}`, '--body', text,
-    '--payload', JSON.stringify({ source: 'orch-loop', kind, pr, ...(options.repo ? { repo: options.repo } : {}) })]
+    '--payload', JSON.stringify({ source: options.source ?? 'orch-loop', kind, pr, ...(options.repo ? { repo: options.repo } : {}), ...(options.extra ?? {}) })]
   let sent = orcaJson<Json>([...args, '--from', `run:${run}`])
   if (!sent.ok && sent.error.includes('consumer_fenced')) sent = orcaJson<Json>(args)
   if (!sent.ok) { if (mine) rmSync(mine.file, { force: true }); return sent }
