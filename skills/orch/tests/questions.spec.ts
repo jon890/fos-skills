@@ -50,6 +50,7 @@ let tmp: string
 let env: NodeJS.ProcessEnv
 const savedOrca = process.env.ORCA
 const savedFakeDir = process.env.FAKE_DIR
+const savedPaneKey = process.env.ORCA_PANE_KEY
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'questions-bin-')))
@@ -57,6 +58,8 @@ before(() => {
   chmodSync(join(binDir, 'orca'), 0o755)
 })
 after(() => {
+  if (savedPaneKey === undefined) delete process.env.ORCA_PANE_KEY
+  else process.env.ORCA_PANE_KEY = savedPaneKey
   rmSync(binDir, { recursive: true, force: true })
   if (savedOrca === undefined) delete process.env.ORCA
   else process.env.ORCA = savedOrca
@@ -75,6 +78,8 @@ beforeEach(() => {
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: dirname(tmp),
   }
+  delete env.ORCA_PANE_KEY
+  delete process.env.ORCA_PANE_KEY
   delete env.ORCH_DIR
   delete env.ORCA_CLI_COMMAND
   // lib 를 이 프로세스에서 부르는 테스트도 같은 가짜를 쓴다

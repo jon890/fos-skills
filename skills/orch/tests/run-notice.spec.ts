@@ -34,14 +34,15 @@ test('Run 메시지와 환경을 유지하고 consumer_fenced 만 발신자 없�
   const bin = fakeBin(dir, 'orca', [{ args: ['--from'], stdout: JSON.stringify({ ok: false, error: { code: 'consumer_fenced' } }), code: 1 }, { stdout: ok }], { recordEnv: ['ORCA_TERMINAL_HANDLE'] })
   process.env.ORCA = bin.path; process.env.ORCA_TERMINAL_HANDLE = 'term_caller'
   assert.deepEqual(notifyRun('R', 'CI-FAILED', 'test failed', 3), { ok: true, id: 'm' })
-  assert.equal(bin.calls().length, 2)
-  const [first, retry] = bin.calls()
+  const sends = () => bin.calls().filter(call => call.argv[0] === 'orchestration' && call.argv[1] === 'send')
+  assert.equal(sends().length, 2)
+  const [first, retry] = sends()
   assert.ok(first.argv.includes('run:R')); assert.ok(first.argv.includes('--from'))
   assert.ok(!retry.argv.includes('--from')); assert.equal(retry.env.ORCA_TERMINAL_HANDLE, 'term_caller')
   assert.deepEqual(JSON.parse(first.argv[first.argv.indexOf('--payload') + 1]), { source: 'orch-loop', kind: 'CI-FAILED', pr: 3 })
   bin.setRules([{ code: 1, stderr: 'offline' }])
   assert.equal(notifyRun('B', 'ERROR', 'offline').ok, false)
-  assert.equal(bin.calls().length, 3)
+  assert.equal(sends().length, 3)
 })
 
 test('옛 알림은 DIGEST 에 쌓은 뒤 cursor 와 함께 휴지통으로 옮기고 바로 보내지 않는다', t => {
