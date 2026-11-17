@@ -150,7 +150,7 @@ board.ts worker-link <id> --worktree W --pr N         # PR2
 - `working`: Orca 행의 `dispatchStatus` 가 열려 있고(`pending`·`dispatched`·`running`) `workerEnds` 가 끝으로 보지 않는다
 - 그 밖(`failed` 로 닫힘, 지금도 `liveness_exited`, 행 없음)은 넣지 않아 줄이 끊김으로 남는다
 
-보드 맞추기는 `lost` 줄 가운데 dispatch 가 이 목록에 있으면 `worker-add` 로 작업 중으로 되돌리고(`done` 이면 이어서 `worker-end done`) 이번 틱의 뒤 판정이 같은 값을 보게 한다. 줄의 워크트리가 git 목록에 없으면 되살리지 않고, 닫힌 항목은 `done` 으로만 고친다. 되살린 줄의 `at` 은 되살린 시각으로 바뀐다. 이미 끊김으로 잘못 적힌 줄도 다음 틱의 같은 재판정이 고친다.
+보드 맞추기는 `lost` 줄 가운데 dispatch 가 이 목록에 있으면 `worker-add` 로 작업 중으로 되돌리고(`done` 이면 이어서 `worker-end done`) 이번 틱의 뒤 판정이 같은 값을 보게 한다. 줄의 워크트리가 git 목록에 없으면 `working` 으로는 되살리지 않는다. 머지 뒤 정리로 워크트리가 지워진 성공 줄은 `done` 으로 고친다. 닫힌 항목도 `done` 으로만 고친다. 되살린 줄의 `at` 은 되살린 시각으로 바뀐다. 이미 끊김으로 잘못 적힌 줄도 다음 틱의 같은 재판정이 고친다.
 
 ### 리뷰 항목 판정
 

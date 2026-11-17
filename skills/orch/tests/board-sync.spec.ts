@@ -168,7 +168,7 @@ test('끊김 줄을 되살린 리뷰 항목은 이번 틱에 닫지 않는다', 
   assert.equal((r.board['review-pr-7-a'].workers as Json[])[0].status, 'working')
 })
 
-test('워크트리가 없어진 끊김 줄은 되살림 결과가 와도 그대로 둔다', () => {
+test('워크트리가 없어진 끊김 줄은 working 으로 되살리지 않고 done 으로만 고친다', () => {
   const git = (...args: string[]) => {
     const r = spawnSync('git', ['-C', tmp, ...args], { encoding: 'utf8' })
     assert.equal(r.status, 0, r.stderr)
@@ -178,9 +178,10 @@ test('워크트리가 없어진 끊김 줄은 되살림 결과가 와도 그대�
   const r = sync([{ id: 'a', status: 'doing', details: ['1. 남음'], workers: [
     worker('impl', 'gone', 'd1', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
     worker('follow', basename(tmp), 'd2', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
-  ] }], ['--worker-revivals', '{"d1":"working","d2":"working"}'])
+    worker('impl', 'gone2', 'd3', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
+  ] }], ['--worker-revivals', '{"d1":"working","d2":"working","d3":"done"}'])
   assert.equal(r.code, 0, r.result.stderr)
-  assert.deepEqual((r.board.a.workers as Json[]).map((row) => row.status), ['lost', 'working'])
+  assert.deepEqual((r.board.a.workers as Json[]).map((row) => row.status), ['lost', 'working', 'done'])
 })
 
 test('--worker-revivals 는 dispatch 와 working|done 객체만 받는다', () => {
