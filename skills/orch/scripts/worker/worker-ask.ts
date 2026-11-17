@@ -16,6 +16,9 @@
 // (`--question` 이나 `--question-file`)을 함께 줘서 대조한다. 모두 있으면 `ANSWER-OK <블록 수>` 와 0, 빠졌으면 `MISSING D3,D4` 와 2 다.
 // 없어진 옵션: `--resume` 은 orca 를 부르지 않고 안내 한 줄과 2 로 끝난다. `--timeout-ms`, `--max-wait` 는 값을 보지 않고
 // 안내 한 줄만 내고 무시한다. 옛 규칙대로 도는 worker 가 어떤 값을 넘겨도 멈추지 않게 하려는 것이다.
+// 세션 임시 폴더 경로(`$TMPDIR` 값 아래, `/var/folders/`, `/private/tmp/claude-`, `/tmp/claude-`, 글자 그대로의 `$TMPDIR/`)가 질문 본문에 있으면
+// 보내지 않고 2 로 끝난다. 코디네이터는 세션 임시 폴더가 달라 그 파일을 열지 못한다. 판정은 lib/temp-path.ts 의 sessionTempPaths 다.
+// 안내는 stderr 에 낸다. 넘길 파일은 `$(orch paths root)/handoff/` 에 두고 절대경로로 적는다(공통 지시서 「파일 자리」).
 // 종료: 0 보냈다(`ASKED <질문 id>`) 또는 바로 답을 받았다(`answer: `), 2 사용법·실행 오류(--decision 형식 위반, --resume, 다시 불러도 바쁜 Orca,
 // 끝난 dispatch 가 아닌 ask 실패 포함), 3 Run 메일함으로 대신 보냄, 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
 // 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나, 시간 초과인데 질문 ID 가 없거나,
@@ -58,6 +61,7 @@ import { expandArgs } from '../lib/args.ts'
 import { orcaBin, withFull } from '../lib/orca.ts'
 import { run, runAsync } from '../lib/proc.ts'
 import { short } from '../lib/output.ts'
+import { sessionTempPaths } from '../lib/temp-path.ts'
 import { pyStr as text } from '../lib/py.ts'
 import { senderOf } from '../core/message-fields.ts'
 
@@ -322,6 +326,12 @@ async function main(argv: string[]): Promise<number> {
   const options = values.options as string
   if (!question) {
     err(`${USAGE}\nworker-ask: --question 이나 --question-file 이 필요하다`)
+    return 2
+  }
+  const temps = sessionTempPaths(question)
+  if (temps.length) {
+    for (const path of temps) err(`worker-ask: 질문에 세션 임시 폴더 경로가 있어 보내지 않았다: ${path}`)
+    err('worker-ask: 코디네이터는 세션 임시 폴더가 달라 그 파일을 열지 못한다. 파일을 "$(orch paths root)/handoff/" 로 옮기고 그 절대경로로 다시 보낸다')
     return 2
   }
   if (values.decision) {
