@@ -121,7 +121,9 @@ if (document.body.dataset.mode !== 'messenger') {
   (async function renderMermaid() {
     const blocks = document.querySelectorAll('#viewer .mermaid');
     if (!blocks.length || typeof mermaid === 'undefined') return;
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
+    // 손그림이 기본이다(사용자 결정). 그림 머리의 config 가 있으면 그쪽이 이긴다.
+    // 색은 그림마다 classDef 가 정하므로 theme 와 themeVariables 는 바꾸지 않는다.
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', look: 'handDrawn' });
     for (let i = 0; i < blocks.length; i++) {
       const el = blocks[i];
       const src = el.textContent;

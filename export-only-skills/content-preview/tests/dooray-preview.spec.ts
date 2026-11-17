@@ -376,4 +376,9 @@ describe('dooray-preview 옵션과 입력', () => {
     assert.ok(done.html.endsWith(template.slice(template.lastIndexOf('{{MD_BODY}}') + '{{MD_BODY}}'.length)))
     assert.ok(done.html.includes('<title>Dooray 미리보기 — T</title>'))
   })
+
+  test('mermaid 렌더러는 손그림을 기본값으로 초기화한다', () => {
+    const done = generate(COMMAND, ['--mode', 'comment', '--title', 'T', '--md-file', '-'], { input: 'x' })
+    assert.match(done.html, /mermaid\.initialize\(\{[^}]*look: 'handDrawn'/)
+  })
 })
