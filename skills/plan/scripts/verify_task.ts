@@ -484,6 +484,7 @@ export type Kind = 'test' | 'other' | 'unknown'
 export function classify(commandIn: Command, entries: Entry[], repo: string, cwd = '', depth = 0): Kind {
   const command = unwrap(commandIn)
   if (command.length === 0) return 'other'
+  if (repoRunner(command, entries, repo)) return 'test'
   const program = pathName(command[0])
   const args = command.slice(1)
   if (args.some((a) => ['--skipTests', '-DskipTests', '-Dmaven.test.skip=true', '--collect-only', '--help', '--dry-run'].includes(a) || (a.startsWith('-DskipTests=') && a !== '-DskipTests=false'))) return 'other'
@@ -545,6 +546,23 @@ function isFile(path: string): boolean {
 
 export const testCommand = (command: Command, entries: Entry[], repo: string, cwd = '') => classify(command, entries, repo, cwd) === 'test'
 
+// plan 오버레이에 선언한 저장소 실행기다. 접두 뒤 인자는 실행 범위(생략하면 전체)다.
+function repoRunner(command: Command, entries: Entry[], repo: string): { args: string[] } | null {
+  for (const [rel] of entries) {
+    const [value] = overlayValues.lookup(repo, ['plan'], '테스트 실행기', overlayValues.targets(repo, [rel])[0])
+    if (!value) continue
+    for (const prefixText of overlayValues.codes(value)) {
+      let prefix: string[]
+      try { prefix = shlexSplit(prefixText) } catch { continue }
+      prefix = slotInner(prefix) ?? prefix
+      if (prefix.length && command.length >= prefix.length && prefix.every((arg, i) => command[i] === arg)) {
+        return { args: command.slice(prefix.length) }
+      }
+    }
+  }
+  return null
+}
+
 // 디렉터리 인자를 하위 테스트 전체로 받는 실행기다. jest 와 vitest 의 위치 인자는 경로 패턴이라 디렉터리 아래를
 // 모두 실행하고, pytest 는 디렉터리를 재귀로 모은다. 패키지 관리자의 `test` 스크립트는 jest 나 vitest 를 부른다고 본다.
 // bun test 의 위치 인자는 경로 필터라 디렉터리 이름을 주면 그 아래 테스트를 모두 실행한다. 점 디렉터리는 checkBunDotPaths 가 따로 본다.
@@ -570,13 +588,14 @@ export function pluginTestDir(commandIn: Command): string | null {
   return rest.length ? rest[0] : '.'
 }
 
-export function recursiveDirectoryRunner(commandIn: Command): boolean {
+export function recursiveDirectoryRunner(commandIn: Command, entries: Entry[] = [], repo = process.cwd()): boolean {
   const command = unwrap(commandIn)
   if (command.length === 0) return false
   const program = pathName(command[0])
   const args = command.slice(1)
   if (program === 'bun') return positional('bun', args)[0] === 'test'
   if (repoTestRunnerArgs(command) !== null) return true
+  if (repoRunner(command, entries, repo)) return true
   return DIRECTORY_RUNNERS.has(program) || DIRECTORY_PACKAGE_MANAGERS.has(program) || ((program === 'python' || program === 'python3') && args[0] === '-m' && args[1] === 'pytest')
 }
 
@@ -586,7 +605,7 @@ const BUN_TEST_VALUE_OPTIONS = new Set(['-t', '--test-name-pattern', '--timeout'
 const GIT_GREP_VALUE_OPTIONS = new Set(['-e', '-f', '-A', '-B', '-C', '-m', '--max-count', '--max-depth', '--threads', '--open-files-in-pager', '-O'])
 
 // 디렉터리일 수 있는 인자를 낸다. `bun test src/profile` 의 `profile` 처럼 이름이 테스트처럼 보이지 않아도 경로 필터다
-export function directoryArgs(commandIn: Command): string[] {
+export function directoryArgs(commandIn: Command, entries: Entry[] = [], repo = process.cwd()): string[] {
   const command = unwrap(commandIn)
   if (command.length && DIRECTORY_PACKAGE_MANAGERS.has(pathName(command[0]))) {
     const program = pathName(command[0])
@@ -614,6 +633,8 @@ export function directoryArgs(commandIn: Command): string[] {
   }
   const runnerArgs = repoTestRunnerArgs(command)
   if (runnerArgs !== null) return runnerArgs
+  const configuredRunner = repoRunner(command, entries, repo)
+  if (configuredRunner) return configuredRunner.args
   return command.filter((arg) => isTest(arg))
 }
 
@@ -1362,8 +1383,8 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
   // 디렉터리 인자는 `cd <dir> &&` 를 반영한 저장소 루트 기준 경로로도 대조한다
   const directories: string[] = []
   commands.forEach((command, i) => {
-    if (testCommand(command, entries, repo) && recursiveDirectoryRunner(command)) {
-      for (const arg of directoryArgs(command)) if (!/^[/-]/.test(arg)) directories.push(posixNormpath(posixJoin(cwds[i], arg)))
+    if (testCommand(command, entries, repo) && recursiveDirectoryRunner(command, entries, repo)) {
+      for (const arg of directoryArgs(command, entries, repo)) if (!/^[/-]/.test(arg)) directories.push(posixNormpath(posixJoin(cwds[i], arg)))
     }
   })
   const pluginDirs: string[] = []
