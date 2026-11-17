@@ -4,9 +4,10 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { checkerCode } from '../scripts/check-diff.ts'
 import { DIFF, GIT_ENV, cleanEnv, git, initRepo, run, tempDir, write } from './helpers.ts'
 
 const OLD = '# 문서\n\n장애를 트리아지한다.\n\n둘째 단락이다.\n'
@@ -352,6 +353,40 @@ describe('--staged', () => {
     assert.equal(done.code, 1, done.stdout)
     assert.ok(done.stdout.startsWith('a[1].md:3: 금지어'), done.stdout)
   })
+  test('매핑 표를 가진 문서는 다른 경로의 사본이어도 검사하지 않는다', () => {
+    const root = makeRepo()
+    const table = ['# 규칙', '', '## 어색한 말 매핑 표', '', '| 금지 | 원어 | 권장 |', '| --- | --- | --- |', '| 가나다 | x | 라마 |', '', '## 다음 절', '', '결과를 스윕한다.', ''].join('\n')
+    stage(root, 'vendor/rules/korean-style.md', table)
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+    stage(root, 'plain.md', '결과를 스윕한다.\n')
+    assert.ok(staged(root).stdout.startsWith('plain.md:1: 금지어'))
+  })
+  test('심볼릭 링크는 보지 않고, 일반 파일로 바뀌면 모든 줄을 본다', () => {
+    const root = makeRepo()
+    symlinkSync('doc.md', join(root, 'link.md'))
+    git(root, 'add', 'link.md')
+    assert.deepEqual(Object.values(staged(root)), [0, '', ''])
+    git(root, 'commit', '-qm', 'link')
+    rmSync(join(root, 'link.md'))
+    stage(root, 'link.md', '결과를 스윕한다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout)
+    assert.ok(done.stdout.startsWith('link.md:1: 금지어'), done.stdout)
+  })
+  test('이름에 「:숫자 」 꼴이 든 파일의 발견도 그 파일의 것으로 읽는다', () => {
+    const root = makeRepo()
+    stage(root, 'a:1 b.md', '문제 없는 문장이다.\n\n결과를 스윕한다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout)
+    assert.ok(done.stdout.startsWith('a:1 b.md:3: 금지어'), done.stdout)
+  })
+  test('검사기가 돌지 못하면 2 다', () => {
+    const root = makeRepo()
+    stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
+    const done = staged(root, { env: { ...GIT_ENV, KOREAN_STYLE_RULES: join(tempDir(), 'none.md') } })
+    assert.equal(done.code, 2, done.stdout + done.stderr)
+    assert.equal(done.stdout, '')
+  })
   test('임시 폴더를 남기지 않는다', () => {
     const root = makeRepo()
     const tmp = tempDir()
@@ -368,5 +403,23 @@ describe('--staged', () => {
     }
     const outside = run(DIFF, { cwd: tempDir(), env: cleanEnv({ GIT_CEILING_DIRECTORIES: tempDir() }), args: ['--staged'] })
     assert.equal(outside.code, 2)
+  })
+})
+
+describe('checkerCode', () => {
+  const row = 'doc.md:1: 금지어 "가나" (열 1, 걸린 글자 "가나") — 설명'
+  test('0 과 금지어 발견 줄이 있는 1 은 그대로다', () => {
+    assert.equal(checkerCode({ status: 0, signal: null }, []), 0)
+    assert.equal(checkerCode({ status: 1, signal: null }, [row]), 1)
+  })
+  test('발견 줄 없이 1 로 죽은 검사기는 돌지 못한 것이다', () => {
+    assert.equal(checkerCode({ status: 1, signal: null }, []), 2)
+    assert.equal(checkerCode({ status: 1, signal: null }, ['doc.md:1  경고 [DASH] 설명']), 2)
+  })
+  test('띄우지 못했거나 신호로 끝났거나 다른 코드면 돌지 못한 것이다', () => {
+    assert.equal(checkerCode({ status: null, signal: null, error: new Error('E2BIG') }, []), 2)
+    assert.equal(checkerCode({ status: null, signal: 'SIGKILL' }, []), 2)
+    assert.equal(checkerCode({ status: 2, signal: null }, []), 2)
+    assert.equal(checkerCode({ status: 13, signal: null }, []), 2)
   })
 })
