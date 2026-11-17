@@ -133,6 +133,61 @@ test('루프 끝남은 해당 줄만 끝내고 done 항목의 줄도 끝낸다',
   for (const value of ['[]', 'null', '{"d":"other"}', '{broken']) assert.equal(run(['--board', board, '--repo', tmp, '--worker-ends', value]).code, 2)
 })
 
+test('끊김으로 적힌 줄은 되살림 결과대로 working 이나 done 으로 다시 쓰고 항목 상태는 건드리지 않는다', () => {
+  const lost = (worktree: string, dispatch: string) => worker('impl', worktree, dispatch, { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' })
+  const r = sync([
+    { id: 'a', status: 'doing', details: ['1. 남음'], workers: [lost('w1', 'd1'), lost('w2', 'd2'), lost('w3', 'd3')] },
+    { id: 'b', status: 'done', workers: [lost('w4', 'd4'), lost('w5', 'd5')] },
+  ], ['--worker-revivals', '{"d1":"working","d2":"done","d4":"working","d5":"done"}'])
+  assert.equal(r.code, 0, r.result.stderr)
+  const rows = (id: string) => r.board[id].workers as Json[]
+  assert.deepEqual(rows('a').map((row) => [row.status, row.endedAt === null]), [['working', true], ['done', false], ['lost', false]])
+  assert.equal(rows('a')[2].endedAt, '2026-01-01T00:10:00+09:00')
+  assert.equal(r.board.a.status, 'doing')
+  // 닫힌 항목은 작업 중으로 되살리지 않지만 성공으로 끝난 줄은 done 으로 고친다
+  assert.deepEqual(rows('b').map((row) => row.status), ['lost', 'done'])
+  assert.equal(r.board.b.status, 'done')
+})
+
+test('끊김 줄의 되살림은 같은 틱에 새로 끊긴 줄과 섞여도 줄마다 따로 적용한다', () => {
+  const r = sync([{ id: 'a', status: 'doing', details: ['1. 남음'], workers: [
+    worker('impl', 'w1', 'd1', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
+    worker('follow', 'w2', 'd2'),
+  ] }], ['--worker-revivals', '{"d1":"working"}', '--worker-ends', '{"d2":"lost"}'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.deepEqual((r.board.a.workers as Json[]).map((row) => row.status), ['working', 'lost'])
+})
+
+test('끊김 줄을 되살린 리뷰 항목은 이번 틱에 닫지 않는다', () => {
+  states = { '7': 'OPEN' }
+  const r = sync([{ id: 'review-pr-7-a', status: 'doing', stepAt: '2026-01-01T00:00:00Z', details: ['1. 리뷰'], workers: [
+    worker('review', 'r1', 'd1', { pr: 7, status: 'lost', endedAt: '2026-01-02T00:00:00Z' }),
+  ] }], ['--worker-revivals', '{"d1":"working"}'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board['review-pr-7-a'].status, 'doing')
+  assert.equal((r.board['review-pr-7-a'].workers as Json[])[0].status, 'working')
+})
+
+test('워크트리가 없어진 끊김 줄은 되살림 결과가 와도 그대로 둔다', () => {
+  const git = (...args: string[]) => {
+    const r = spawnSync('git', ['-C', tmp, ...args], { encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+  }
+  git('init', '-q')
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-qm', 'init')
+  const r = sync([{ id: 'a', status: 'doing', details: ['1. 남음'], workers: [
+    worker('impl', 'gone', 'd1', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
+    worker('follow', basename(tmp), 'd2', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
+  ] }], ['--worker-revivals', '{"d1":"working","d2":"working"}'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.deepEqual((r.board.a.workers as Json[]).map((row) => row.status), ['lost', 'working'])
+})
+
+test('--worker-revivals 는 dispatch 와 working|done 객체만 받는다', () => {
+  writeFileSync(board, JSON.stringify({ items: [] }))
+  for (const value of ['[]', 'null', '{"d":"lost"}', '{broken']) assert.equal(run(['--board', board, '--repo', tmp, '--worker-revivals', value]).code, 2)
+})
+
 test('사라진 대표 줄을 끝낸 뒤 남은 후속 줄로 대표를 바꾼다', () => {
   // 실제 git 워크트리 목록을 사용한다.
   const git = (...args: string[]) => {

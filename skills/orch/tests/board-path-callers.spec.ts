@@ -99,6 +99,32 @@ test('루프가 이미 읽은 dispatch 끝남을 보드 줄에 넘긴다', async
   assert.equal(items()[0].workers[0].status, 'done')
 })
 
+// 같은 보드로 틱을 이어서 돌린다. 줄은 임시 상태(liveness exited)에서 lost 로 적히고, 다음 틱의 Orca 행이 줄을 고친다
+test('루프가 띄운 직후 잠깐 끊김으로 적은 줄을 다음 틱에 되살리고 진짜 끊긴 줄은 끊김으로 둔다', async () => {
+  const workers = ['live', 'ok', 'dead'].map((name) => ({ role: 'impl', worktree: name, dispatch: `d-${name}`, status: 'working', at: '2026-01-01', pr: null }))
+  board([{ id: 'a', status: 'doing', details: ['1. 남음'], workers }])
+  const tick = async (rows: Record<string, unknown>[]) => {
+    const ctx: StepContext = { ...context(repo, undefined, undefined), tick: 1, runs: [{ run: 'run1' } as any], primary: null, loaded: null, previous: {}, lookup: { runs: [], rows: new Map([['run1', { ok: true, rows }]]) }, completions: new Map() }
+    assert.deepEqual((await syncBoard(ctx, initialState())).errors, { board: null })
+    return (items()[0].workers as Record<string, unknown>[]).map((row) => row.status)
+  }
+  const open = (name: string, verdict: string) => ({ dispatchId: `d-${name}`, dispatchStatus: 'dispatched', workerState: 'ready', projection: { outcome: 'in_progress', liveness: { verdict } } })
+  // 1틱: 띄운 직후 세 줄 모두 프로세스가 잠깐 exited 로 보여 lost 로 적힌다
+  assert.deepEqual(await tick(['live', 'ok', 'dead'].map((name) => open(name, 'exited'))), ['lost', 'lost', 'lost'])
+  // 2틱: 첫 줄은 live 로 돌아왔고, 둘째 줄은 succeeded 로 끝났고, 셋째 줄은 터미널이 닫혀 dispatch 가 failed 로 닫혔다
+  assert.deepEqual(await tick([
+    open('live', 'live'),
+    { dispatchId: 'd-ok', dispatchStatus: 'completed', workerState: 'succeeded', projection: { outcome: 'succeeded', liveness: { verdict: 'exited' } } },
+    { dispatchId: 'd-dead', dispatchStatus: 'failed', workerState: 'failed', projection: { outcome: 'failed', liveness: { verdict: 'exited' } } },
+  ]), ['working', 'done', 'lost'])
+  // 3틱: 다시 보아도 되살린 줄이 흔들리지 않고 진짜 끊긴 줄은 끊김으로 남는다
+  assert.deepEqual(await tick([
+    open('live', 'live'),
+    { dispatchId: 'd-ok', dispatchStatus: 'completed', workerState: 'succeeded', projection: { outcome: 'succeeded' } },
+    { dispatchId: 'd-dead', dispatchStatus: 'failed', workerState: 'failed', projection: { outcome: 'failed' } },
+  ]), ['working', 'done', 'lost'])
+})
+
 test('단계 멈춤 조회와 등록도 지정 보드를 쓰고 기본 보드 글은 보존한다', () => {
   const original = readFileSync(fallback, 'utf8')
   board([{ id: 'a', status: 'doing', branch: 'feat/x', details: [{ text: '1. 구현', done: false }] }])
