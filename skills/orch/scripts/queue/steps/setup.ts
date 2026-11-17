@@ -9,6 +9,7 @@ import { alive } from '../../lib/process.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { acquireQueueLock, releaseQueueLock } from '../../lib/queue-lock.ts'
 import { isQueueCommand, processes } from '../../lib/queue-process.ts'
+import { stopping } from '../../lib/proc.ts'
 import { readTurns } from '../../lib/queue-turn.ts'
 import { orderQueueMigrations } from './migrations.ts'
 import type { QueueEvent, StepContext, StepResult } from './model.ts'
@@ -148,17 +149,31 @@ export function dropCopy(stepContext: StepContext, state: StepState): void {
 export async function lockQueue(state: StepState): Promise<void> {
   const lock = join(pathOf('state', state.repoDir), 'merge-queue.lock')
   makeParent(lock, state.repoDir)
-  let token: string | null
-  try { token = acquireQueueLock(lock) }
-  catch (error) { throw new Usage(`QUEUE-CHECK-FAILED 큐 잠금을 확인하지 못했다: ${(error as Error).message}`) }
-  if (!token) throw new Usage('QUEUE-BUSY 같은 저장소의 머지 큐가 실행 중이다. 끝난 뒤 다시 건다')
-  state.queueLock = lock
-  state.queueLockToken = token
-  // 잠금 도입 전에 시작한 큐도 차례 기록과 명령줄로 확인한다. 래퍼인 부모 프로세스는 차례 기록이 없어 제외된다.
-  const list = processes()
-  if (!list) throw new Usage('QUEUE-CHECK-FAILED 프로세스 목록을 읽지 못해 다른 머지 큐가 있는지 확인할 수 없다')
-  const running = readTurns(state.repoDir, (pid) => pid !== process.pid && list.some((p) => p.pid === pid && isQueueCommand(p.command)))
-  if (running.length) throw new Usage(`QUEUE-BUSY 같은 저장소의 머지 큐(pid ${running[0].pid})가 실행 중이다. 끝난 뒤 다시 건다`)
+  let announced = false
+  for (;;) {
+    const signal = stopping()
+    if (signal) throw new Usage(`QUEUE-WAIT ${signal} 를 받아 큐 대기를 끝냈다`)
+    let token: string | null
+    try { token = acquireQueueLock(lock) }
+    catch (error) { throw new Usage(`QUEUE-CHECK-FAILED 큐 잠금을 확인하지 못했다: ${(error as Error).message}`) }
+    if (token) {
+      state.queueLock = lock
+      state.queueLockToken = token
+      // 잠금 도입 전에 시작한 큐도 차례 기록과 명령줄로 확인한다. 래퍼인 부모 프로세스는 차례 기록이 없어 제외된다.
+      const list = processes()
+      if (!list) throw new Usage('QUEUE-CHECK-FAILED 프로세스 목록을 읽지 못해 다른 머지 큐가 있는지 확인할 수 없다')
+      const running = readTurns(state.repoDir, (pid) => pid !== process.pid && list.some((p) => p.pid === pid && isQueueCommand(p.command)))
+      if (running.length === 0) return
+      releaseQueueLock(lock, token)
+      state.queueLock = ''
+      state.queueLockToken = ''
+    }
+    if (!announced) {
+      log('QUEUE-WAIT 같은 저장소의 머지 큐가 끝나기를 기다린다')
+      announced = true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
 }
 
 export function unlockQueue(state: StepState): void {

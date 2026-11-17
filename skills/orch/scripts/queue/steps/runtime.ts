@@ -13,6 +13,7 @@ import { Stop } from './model.ts'
 // 짧은 출력(진입점의 orch queue run, merge-with-finish 가 이어 준 신호)의 줄 규칙. 시각 붙은 진행 줄은 머지 결과만 남긴다.
 // 상주 루프는 이 스크립트를 경로로 불러 로그 끝 줄을 읽으므로 지금 출력 그대로다(lib/output.ts 머리 주석)
 const SHORT_RULES: Rule[] = [
+  [/^\d\d:\d\d (QUEUE-WAIT.*)/, (m) => m[1]],
   [/^\d\d:\d\d (\d+) (?:이미 )?MERGED$/, (m) => `MERGED ${m[1]}`],
   [/^\d\d:\d\d /, () => null],
   [/^경고: (.*)/, (m) => `WARN ${m[1]}`],

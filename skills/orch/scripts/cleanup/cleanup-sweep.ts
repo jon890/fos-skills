@@ -16,6 +16,7 @@ import { fire } from '../lib/events.ts'
 import { prepare } from './steps/prepare.ts'
 import { prepareSession } from './steps/cli.ts'
 import { withRun } from '../lib/proc.ts'
+import { allLaunches } from '../lib/launched.ts'
 
 export type { Host } from './steps/processes.ts'
 export { waitFree, stopHolders } from './steps/processes.ts'
@@ -24,7 +25,7 @@ export { sweepLine } from './steps/output.ts'
 
 async function sweepRepo(repo: string, args: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<number> {
   const ctx: StepContext = { repo, args, workers, terminals, log }
-  const state: StepState = { report: { removed: [], skipped: [] }, listed: [], remaining: new Set(), specsDir: null, owners: () => null, code: 0 }
+  const state: StepState = { report: { removed: [], skipped: [] }, listed: [], remaining: new Set(), specsDir: null, owners: () => null, workerBranches: new Set(allLaunches(repo).flatMap((launch) => launch.branch ? [launch.branch] : [])), code: 0 }
   Object.assign(state, await prepare(ctx, state))
   Object.assign(state, await cleanupWorktrees(ctx, state))
   if (ctx.args.guardWorktrees?.has(repo)) return state.code

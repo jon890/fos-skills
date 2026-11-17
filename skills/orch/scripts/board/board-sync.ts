@@ -207,13 +207,14 @@ function lastPrRules(repo: string): LastPrRules | null {
 // 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
 function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerdict | null {
   if (!rules?.taskPattern) return null
-  const got = ghJson<{ title?: unknown; headRefName?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName'], { cwd: repo, killSignal: 'SIGKILL' })
+  const got = ghJson<{ title?: unknown; headRefName?: unknown; headRefOid?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName,headRefOid'], { cwd: repo, killSignal: 'SIGKILL' })
   if (!got.ok || typeof got.data !== 'object' || got.data === null) {
     return { last: null, retry: true, number: null, prs: [], specs: [], reason: `PR ${num} 의 제목과 브랜치를 읽지 못했다` }
   }
   const title = typeof got.data.title === 'string' ? got.data.title : ''
   const branch = typeof got.data.headRefName === 'string' ? got.data.headRefName : ''
-  return judgeLastPr(repo, { number: num, title, branch }, rules)
+  const head = typeof got.data.headRefOid === 'string' ? got.data.headRefOid : undefined
+  return judgeLastPr(repo, { number: num, title, branch, head }, rules)
 }
 
 // 끝나지 않았는데 머지된 PR 번호(#N)를 가리키는 단계. 이 틱의 명령이 끝낼 단계, stages 가 가리키는 사건 단계,
@@ -431,7 +432,9 @@ function main(argv: string[]): number {
         const tag = parseEventTag(step.text)!
         if (tag.event === 'release') continue
         const state = stateFor(tag.pr)
-        if (state === 'MERGED' && featureCompletionProblem(repo, tag.pr, String(item.branch || ''))) continue
+        const completionProblem = tag.event === 'merge' && state === 'MERGED'
+          ? featureCompletionProblem(repo, tag.pr, String(item.branch || '')) : null
+        if (completionProblem) continue
         let reached = tag.event === 'pr' ? state === 'OPEN' || state === 'MERGED' : tag.event === 'merge' && state === 'MERGED'
         if (tag.event === 'deploy' && state === 'MERGED') {
           if (settings === undefined) {
@@ -444,7 +447,14 @@ function main(argv: string[]): number {
           reached = Boolean(settings?.deploy && deploymentFor(tag.pr, settings.deploy) === 'success')
         }
         if (reached) after.push(['step', id, String(step.number)])
+        else {
+          const why = state === null ? 'PR 상태 조회 실패' : state !== 'MERGED' ? `PR 상태 ${state}`
+            : completionProblem ? `기능 완료 근거가 아직 끝나지 않았다: ${completionProblem}` : '사건 조건 미충족'
+          brief(`BOARD ${id} event-skipped ${step.number} PR #${tag.pr} ${tag.event}: ${why}`)
+        }
       }
+      const remainingEvents = tagged.filter((step) => !step.done && parseEventTag(step.text)?.event !== 'release')
+      if (remainingEvents.length > 0) brief(`BOARD ${id} remaining-events ${remainingEvents.map((step) => `${step.number}: ${step.text}`).join(' | ')}`)
     } else if (!SKIP_STATUS.has(String(item.status))) {
       const stages = stagesOf(item)
       const repBranch = branches.get(String(item.worktree)) || String(item.branch || '')

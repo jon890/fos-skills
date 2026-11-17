@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { sweepLine } from '../scripts/cleanup/cleanup-sweep.ts'
+import { allLaunches, recordLaunch } from '../scripts/lib/launched.ts'
 import type { SweepContext } from '../scripts/cleanup/cleanup-sweep.ts'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
@@ -120,6 +121,28 @@ describe('머지 판정과 기본 정리', () => {
       has(out, 'spec-reused.md: 브랜치 reused-branch PR #2 MERGED')
       lacks(out, 'PR #1 MERGED')
     })
+  })
+
+  test('띄우기 기록에 연결된 검사용 로컬 브랜치는 patch 가 base 에 들어간 경우 sweep 한다', () => {
+    const branch = 'jon890/b87-items-clean'
+    git('-C', fx.repo, 'checkout', '-q', '-b', branch, 'origin/main')
+    writeFileSync(join(fx.repo, 'scratch.txt'), '검사용 변경\n')
+    git('-C', fx.repo, 'add', '-A')
+    git('-C', fx.repo, 'commit', '-q', '-m', '검사용 변경')
+    const scratchHead = git('-C', fx.repo, 'rev-parse', 'HEAD')
+    git('-C', fx.repo, 'checkout', '-q', 'main')
+    git('-C', fx.repo, 'push', '-q', 'origin', `${scratchHead}:refs/heads/main`)
+    const oldOrchDir = process.env.ORCH_DIR
+    process.env.ORCH_DIR = join(fx.repo, '.orch')
+    recordLaunch(fx.repo, { dispatch: 'scratch-owner', branch: 'jon890/b87-items', worktree: fx.repo, terminal: null, run: null })
+    assert.equal(allLaunches(fx.repo).some((launch) => launch.branch === 'jon890/b87-items'), true)
+    if (oldOrchDir === undefined) delete process.env.ORCH_DIR; else process.env.ORCH_DIR = oldOrchDir
+    const dry = runSweep()
+    has(dry, `브랜치를 지울 것 ${branch}`)
+    assert.ok(branches().has(branch))
+    const applied = runSweep(['--apply'])
+    has(applied, `브랜치 삭제 ${branch}`)
+    assert.ok(!branches().has(branch))
   })
 
   test('dry-run 은 아무것도 바꾸지 않는다', () => {
