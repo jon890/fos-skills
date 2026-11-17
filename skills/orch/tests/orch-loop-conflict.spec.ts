@@ -34,6 +34,7 @@ fs.appendFileSync(dir + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
+if (sub === 'run-current') { reply({ run: null }); process.exit(0) }
 if (sub === 'send') { reply({ message: { id: 'notice' } }); process.exit(0) }
 if (sub === 'worker-list' && st.workers_fail) {
   process.stderr.write('worker-list offline\\n')

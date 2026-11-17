@@ -5,6 +5,7 @@
 // 경고(stderr)는 board.ts 가 낸다: 단계 줄이 progress 의 전체 값을 넘으면 progress 를 지우고, 글에 #번호 와 머지 낱말이 있는데 --on 이 없으면 알린다.
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
 // 진입점의 --full 은 모든 줄도 낸다. 종료 코드: 0 성공, 1 거절, 2 사용법·설정 오류.
+import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { unmatchedRecords, unmatchedLine, unmatchedResolved } from '../lib/board-unmatched.ts'
 import { parseArgs } from 'node:util'
 import { taskAdapter } from '../lib/task-adapters.ts'
@@ -30,7 +31,7 @@ const USAGE = `사용법:
   orch board del --done
   공통: [--repo <폴더>] [--board <파일>] [--full]
   - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   task: { type: 'string' }, 'task-ref': { type: 'string' },
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
   json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' },
@@ -86,6 +87,10 @@ function main(argv: string[]): number {
   if (values.on !== undefined) command.push('--event', values.on)
   try { command.push('--file', boardPath(values.repo ?? process.cwd(), values.board)) }
   catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 2 }
+  if (!['show', 'get', 'list'].includes(verb)) {
+    const mainGuard = guardWrite(boardRepo(values.repo ?? process.cwd(), command[command.indexOf('--file') + 1]), 'board ' + verb, values['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   command.push(...trailing)
   const result = run(scriptCommand(process.env.BOARD_BIN || BOARD_BIN, command), { timeoutMs: NO_LIMIT_MS })
   process.stderr.write(result.stderr)

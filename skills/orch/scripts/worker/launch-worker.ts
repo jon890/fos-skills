@@ -133,6 +133,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -439,6 +440,7 @@ function uncommitted(worktree: string): string[] {
 }
 
 type Args = {
+  notMain?: string
   noPr: boolean
   spec: string
   task: string
@@ -518,7 +520,7 @@ async function remoteOrchProbe(
 function parse(argv: string[]): Args | 'help' {
   const split = argv.includes('--') ? argv.indexOf('--') : argv.length
   const passthru = argv.slice(split + 1)
-  const options = {
+  const options = { ...MAIN_GUARD_OPTIONS,
     'no-pr': { type: 'boolean', default: false },
     spec: { type: 'string' },
     task: { type: 'string', default: '' },
@@ -555,6 +557,7 @@ function parse(argv: string[]): Args | 'help' {
   if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
   if (!values.task && !values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
   return {
+    notMain: values['not-main'],
     noPr: values['no-pr'] as boolean,
     spec: values.spec,
     task: values.task as string,
@@ -684,6 +687,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     a.run ||= prior.run ?? ''
   }
   retryRepo = a.repo || mainCheckout(a.worktree.replace(/^path:/, '') || process.cwd())
+  const mainGuard = guardWrite(retryRepo, 'worker launch', a.notMain, a.worktree ? { worktree: a.worktree.replace(/^path:/, '') } : {})
+  if (mainGuard.code !== 0) return mainGuard.code
   const reusedTerminal = passValue(passthru, '--terminal')
   const terminalLaunch = reusedTerminal
     ? latestTerminal(retryRepo, reusedTerminal) ?? launchesAt(retryRepo, a.worktree.replace(/^path:/, '')).filter(row => row.terminal === reusedTerminal).at(-1) ?? null
@@ -768,6 +773,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   let worktree: string
   if (created) {
     const args = ['--repo', a.repo, '--spec', a.spec, '--name', a.name]
+    if (a.notMain !== undefined) args.push('--not-main', a.notMain)
     if (a.base) args.push('--base', a.base)
     if (a.resumeRemote) args.push('--resume-remote')
     const made = await execute(scriptCommand(process.env.MAKE_WORKTREE || scriptPath('make-worktree'), args), { timeoutMs: LONG_MS })
@@ -977,6 +983,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
+      main_guard: priorSelection?.main_guard ?? (priorSelection || mainGuard.worktrees ? { ...mainGuard.stamp, main: null } : mainGuard.stamp),
+      ...(mainGuard.reason ? { not_main: mainGuard.reason } : {}),
       ...(a.noPr || skipsPrReady(text) ? { completion: 'none' as const } : {}),
       dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch,
       run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,

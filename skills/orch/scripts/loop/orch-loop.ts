@@ -121,6 +121,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { ConfigError } from '../lib/config.ts'
+import { withLoopCaller } from '../lib/main-guard-context.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { DEFAULT_ALIVE_SEC } from '../lib/loop.ts'
 import { withRun } from '../lib/proc.ts'
@@ -165,31 +166,33 @@ type Mode = (typeof MODES)[number]
 // 틱 하나. 머리 주석의 「틱」 순서대로 단계를 부르고 결과를 합쳐 결과 줄을 낸다
 async function tick(config: Context, n: number): Promise<number> {
   const ctx = stepContext(config, n)
-  const state = initialState()
-  collect(state, await checkQuestions(ctx, state))
-  collect(state, await readOpenPrs(ctx, state))
-  collect(state, await syncBoard(ctx, state))
-  collect(state, await notifyPendingDecisions(ctx, state))
-  collect(state, await fillTaskLinks(ctx, state))
-  collect(state, await sweepRuns(ctx, state))
-  collect(state, await checkCi(ctx, state))
-  collect(state, await notifyMerged(ctx, state))
-  collect(state, await checkStalls(ctx, state))
-  collect(state, await checkMovement(ctx, state))
-  collect(state, await notifyStepReady(ctx, state))
-  collect(state, await fireTick(ctx, state))
-  collect(state, await runAutoMerge(ctx, state))
-  collect(state, await relayQueueTurns(ctx, state))
-  collect(state, await settleConflicts(ctx, state))
-  collect(state, await refreshPrs(ctx, state))
-  collect(state, await checkHeavySlot(ctx, state))
-  collect(state, await checkUnanswered(ctx, state))
-  collect(state, await checkReports(ctx, state))
-  collect(state, await notifyUnacked(ctx, state))
-  const { errors, ci, stalls } = state
-  const result: TickResult = { tick_at: iso(), errors, open_prs: openNumbers(state.prs), ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }
-  process.stdout.write(`${JSON.stringify(result)}\n`)
-  return 0
+  return withLoopCaller(ctx.repo, ctx.primary ?? ctx.run, async () => {
+    const state = initialState()
+    collect(state, await checkQuestions(ctx, state))
+    collect(state, await readOpenPrs(ctx, state))
+    collect(state, await syncBoard(ctx, state))
+    collect(state, await notifyPendingDecisions(ctx, state))
+    collect(state, await fillTaskLinks(ctx, state))
+    collect(state, await sweepRuns(ctx, state))
+    collect(state, await checkCi(ctx, state))
+    collect(state, await notifyMerged(ctx, state))
+    collect(state, await checkStalls(ctx, state))
+    collect(state, await checkMovement(ctx, state))
+    collect(state, await notifyStepReady(ctx, state))
+    collect(state, await fireTick(ctx, state))
+    collect(state, await runAutoMerge(ctx, state))
+    collect(state, await relayQueueTurns(ctx, state))
+    collect(state, await settleConflicts(ctx, state))
+    collect(state, await refreshPrs(ctx, state))
+    collect(state, await checkHeavySlot(ctx, state))
+    collect(state, await checkUnanswered(ctx, state))
+    collect(state, await checkReports(ctx, state))
+    collect(state, await notifyUnacked(ctx, state))
+    const { errors, ci, stalls } = state
+    const result: TickResult = { tick_at: iso(), errors, open_prs: openNumbers(state.prs), ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }
+    process.stdout.write(`${JSON.stringify(result)}\n`)
+    return 0
+  })
 }
 
 // 단계 결과를 합친다. 오류 이유는 출처마다 덧쓰고 나머지 칸은 통째로 바꾼다

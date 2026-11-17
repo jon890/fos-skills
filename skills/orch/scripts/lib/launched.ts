@@ -9,6 +9,8 @@
 // 다음 resume 이 이 값으로 같은 에이전트를 다시 띄운다.
 // branch 는 워크트리와 지시서가 정리된 뒤에도 질문의 PR 종료를 확인할 때 쓴다. 옛 기록에는 없을 수 있다.
 // lint_ack 은 spec-lint 가 막을 발견을 냈는데 `--lint-ack` 으로 넘기고 띄운 이유다.
+// main_guard 와 not_main 은 메인 확인 표지와 우회 이유다(REQ11~13). 처음 띄운 소유 예외는 후속/재개에도 보존한다.
+// state/launched-workers/not-main/ 은 우회 전용 기록이며 worker 목록에는 넣지 않는다.
 // 다시 띄우기(--retry-of)와 `--terminal` 이어 쓰기는 새 dispatch 를 만들어 새 파일이 생긴다. send-to-worker 의 후속 일도 Orca send 의 새 dispatch 로 기록한다.
 // 그래서 한 워크트리에 쓴 지시서(첫 지시서, 이어받기, 충돌 해소, 후속)는 그 워크트리를 가리키는 기록들의 spec 이다.
 //
@@ -26,8 +28,13 @@ import { ensure, pathOf } from './paths.ts'
 
 export type CandidateOverride = { row: string | null; agent: string | null; model: string | null; effort: string | null; reason: string; effortLimit?: string | null }
 export type Effective = { agent?: string | null; model?: string | null; effort?: string | null; candidateOverride?: CandidateOverride }
+export type MainGuardStamp = { version: 1; main: string | null; caller_repo: string; target_repo: string }
 
 export type Launch = {
+  // 파싱 결과 전용. 깨진 새 표지를 옛 worker 로 간주하지 않는다.
+  invalid_main_guard?: true
+  main_guard?: MainGuardStamp
+  not_main?: string | null
   // PR 준비 보고를 요구하지 않는 dispatch. --no-pr, 리뷰 행, 머지하지 않는 지시서에서 정한다.
   completion?: "none" | null
   branch?: string | null; dispatch: string; task?: string | null; terminal: string | null; worktree: string; run: string | null; spec?: string | null; lint_ack?: string | null
@@ -62,6 +69,9 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
     const v = data as Record<string, unknown>
     if (v.dispatch !== dispatch || typeof v.worktree !== 'string') return null
     const text = (x: unknown) => (typeof x === 'string' && x ? x : null)
+    const stamp = v.main_guard as MainGuardStamp | undefined
+    const invalidStamp = Object.hasOwn(v, 'main_guard') && (!stamp || typeof stamp !== 'object' || Array.isArray(stamp) || stamp.version !== 1 || !(stamp.main === null || typeof stamp.main === 'string') || typeof stamp.caller_repo !== 'string' || typeof stamp.target_repo !== 'string')
+    const extras = { ...(invalidStamp || v.invalid_main_guard === true ? { invalid_main_guard: true as const } : stamp ? { main_guard: stamp } : {}), ...(typeof v.not_main === 'string' ? { not_main: v.not_main } : {}) }
     const raw = typeof v.effective === 'object' && v.effective !== null ? v.effective as Effective : null
     const override = raw?.candidateOverride
     const candidateOverride = override && typeof override === 'object' && typeof override.reason === 'string' && override.reason.trim()
@@ -69,7 +79,7 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
           ...(override.effortLimit !== undefined ? { effortLimit: text(override.effortLimit) } : {}) }
       : null
     const effective = raw ? { agent: text(raw.agent), model: text(raw.model), effort: text(raw.effort), ...(candidateOverride ? { candidateOverride } : {}) } : null
-    return { ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective, experiment: text(v.experiment) }
+    return { ...extras, ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective, experiment: text(v.experiment) }
   } catch {
     return null
   }
@@ -108,4 +118,15 @@ export function latestTaskLaunch(repo: string, task: string): Launch | null {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw e
   }
+}
+
+// 저장소의 띄우기 기록만 최신순으로 읽는다. 우회 전용 하위 폴더는 worker 가 아니다.
+export function allLaunches(repo: string): Launch[] {
+  const dir = join(pathOf("state", repo), DIR)
+  let names: string[]
+  try { names = readdirSync(dir) } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return []; throw e }
+  return names.filter(name => name.endsWith(".json"))
+    .map(name => ({ launch: readLaunch(repo, name.slice(0, -5)), at: statSync(join(dir, name)).mtimeMs }))
+    .sort((a, b) => b.at - a.at)
+    .flatMap(row => row.launch ? [row.launch] : [])
 }

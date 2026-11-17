@@ -27,6 +27,7 @@
 // RESUMED, RESTARTED, ENDED, NOTE, FAIL 이다. 복구 자식에는 짧은 출력 신호를 넘긴다.
 // 종료 코드: 0 전달됨, 1 다시 띄우기 실패, 2 사용법/지시서 오류, 3 끝나서 보낼 수 없음, 5 Orca/영수증 오류.
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { orcaJson, orcaJsonOrThrow, closeTerminal } from '../lib/orca.ts'
 import { objectOr } from '../core/json.ts'
 import { readFileSync } from 'node:fs'
@@ -49,7 +50,7 @@ import type { Effective } from '../lib/launched.ts'
 import { recordHistory } from '../lib/launch-history.ts'
 import { registerBoard } from '../lib/board.ts'
 import { fire } from '../lib/events.ts'
-import { defaultBase } from '../lib/git.ts'
+import { defaultBase, mainCheckout } from '../lib/git.ts'
 import { senderOf, threadOf } from '../core/message-fields.ts'
 
 const USAGE = [
@@ -383,6 +384,8 @@ async function recordFollowUp(a: Args, prior: Described, run: string, receipt: J
     out(`note: 지시서의 worker 선택과 실제 실행 설정이 달라 실제 값으로 기록한다: ${JSON.stringify(actual)}`)
   }
   const launch = {
+    ...(inherited?.main_guard ? { main_guard: inherited.main_guard } : {}),
+    ...(a.notMain ? { not_main: a.notMain } : inherited?.not_main ? { not_main: inherited.not_main } : {}),
     dispatch, task, terminal, worktree: prior.worktree, run: run || null, spec: real(a.spec!),
     branch: branchesOf(spec.text)[0] ?? null,
     ...actual, effective: actual,
@@ -408,6 +411,7 @@ async function recordFollowUp(a: Args, prior: Described, run: string, receipt: J
 }
 
 type Args = {
+  notMain?: string
   dispatch: string
   body?: string
   bodyFile?: string
@@ -423,7 +427,7 @@ type Args = {
 
 function parse(argv: string[]): Args | 'help' | null {
   const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'note', 'run', ...SETTING_KEYS]
-  const options = { ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), 'no-reply': { type: 'boolean' as const }, help: { type: 'boolean' as const, short: 'h' } }
+  const options = { ...MAIN_GUARD_OPTIONS, ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), 'no-reply': { type: 'boolean' as const }, help: { type: 'boolean' as const, short: 'h' } }
   let values
   try {
     // `--body "-x"` 처럼 값이 - 로 시작해도 값으로 받는다
@@ -447,6 +451,7 @@ function parse(argv: string[]): Args | 'help' | null {
   }
   const text = (name: string) => values[name] as string | undefined
   return {
+    notMain: text('not-main'),
     dispatch: text('dispatch') as string,
     body: text('body'),
     bodyFile: text('body-file'),
@@ -492,6 +497,8 @@ async function main(argv: string[]): Promise<number> {
   let spec: ReturnType<typeof followUpSpec> | undefined
   try {
     described = describe(a.dispatch)
+    const mainGuard = guardWrite(mainCheckout(described.worktree || process.cwd()), 'worker send', a.notMain, { dispatch: a.dispatch, worktree: described.worktree })
+    if (mainGuard.code !== 0) return mainGuard.code
     const { status, handle } = described
     run = described.runId || a.run || ''
     if (a.run && described.runId && a.run !== described.runId) out(`note: --run ${a.run} 이 아니라 ${a.dispatch} 가 속한 Run ${described.runId} 로 보낸다`)
@@ -599,7 +606,7 @@ async function main(argv: string[]): Promise<number> {
   const runArgs = run ? ['--run', run] : []
   out(`relaunch: 끝난 ${a.dispatch} 의 터미널 ${handle} 에 새 Task 로 띄운다`)
   const code = await passThrough(
-    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
+    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
     LAUNCH_MS,
   )
   if (code !== 3) return code === 0 ? 0 : 1
@@ -648,7 +655,7 @@ async function main(argv: string[]): Promise<number> {
     out(`send-to-worker: ${e.message}`)
     return 5
   }
-  const fresh = ['--spec', a.spec, '--worktree', worktree, ...runArgs, '--']
+  const fresh = ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--']
   for (const key of SETTING_KEYS) if (settings[key]) fresh.push(`--${key}`, String(settings[key]))
   out(`restart: ${handle} 을 닫고 같은 워크트리에 새 worker 를 띄운다`)
   return (await passThrough(scriptCommand(LAUNCH_WORKER, fresh), LAUNCH_MS)) === 0 ? 0 : 1

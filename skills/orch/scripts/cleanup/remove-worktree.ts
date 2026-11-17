@@ -29,6 +29,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -215,7 +216,7 @@ export function main(argv: string[], runner?: Runner): Promise<number> {
 }
 
 async function executeMain(argv: string[]): Promise<number> {
-  const options = {
+  const options = { ...MAIN_GUARD_OPTIONS,
     'delete-branch': { type: 'boolean', default: false },
     'merged-head': { type: 'string', default: '' },
     wait: { type: 'string', default: '0' },
@@ -255,6 +256,8 @@ async function executeMain(argv: string[]): Promise<number> {
     return 1
   }
   const repo = dirname(common.stdout.trim())
+  const mainGuard = guardWrite(repo, 'cleanup worktree', values['not-main'], { worktree: target })
+  if (mainGuard.code !== 0) return mainGuard.code
   const branch = git(target, ['branch', '--show-current']).stdout.trim()
   // detached 워크트리를 만든 브랜치. reflog 는 워크트리를 지우면 사라지므로 먼저 읽는다
   const origin = values['delete-branch'] && !branch ? originBranch(target) : null
@@ -327,7 +330,7 @@ async function executeMain(argv: string[]): Promise<number> {
     err(removed.stderr)
     return 1
   }
-  git(repo, ['worktree', 'prune'])
+  if (!mainGuard.worktrees) git(repo, ['worktree', 'prune'])
   out(`removed ${target}`)
   if (values['delete-branch'] && branch && git(repo, ['branch', '-D', branch]).code === 0) out(`deleted branch ${branch}`)
   if (origin) {

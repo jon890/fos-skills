@@ -21,6 +21,7 @@
 // 종료 코드: 0 성공, 1 조회나 전송 실패, 2 사용법 오류, 3 보낼 수 없거나 받을 수 없는 요청
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -44,7 +45,7 @@ const USAGE = [
 
 class Usage extends Error {}
 
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   to: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' }, 'body-file': { type: 'string' },
   repo: { type: 'string' }, run: { type: 'string' }, id: { type: 'string' }, reason: { type: 'string' }, open: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -117,6 +118,8 @@ function answer(action: RequestAction, values: Record<string, unknown>): number 
   const reason = typeof values.reason === 'string' && oneLine(values.reason) ? oneLine(values.reason) : null
   if (needsReason(action) && !reason) throw new Usage(`${action} 에는 --reason 이 필요하다`)
   const repo = mainCheckout(resolve((values.repo as string | undefined) ?? process.cwd()))
+  const mainGuard = guardWrite(repo, 'request ' + action, values['not-main'])
+  if (mainGuard.code !== 0) return mainGuard.code
   const result = answerRequest(repo, number, action, reason, (values.run as string | undefined) ?? null, new Date().toISOString())
   if (!result.ok) {
     out(result.line)

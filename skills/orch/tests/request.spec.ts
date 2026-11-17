@@ -16,7 +16,8 @@ const fs = require('node:fs')
 const argv = process.argv.slice(2)
 const st = JSON.parse(fs.readFileSync(process.env.FAKE_DIR + '/orca.json', 'utf8'))
 const say = (v) => process.stdout.write(JSON.stringify(v) + '\\n')
-if (argv[1] === 'run-list') say({ ok: true, result: { runs: st.runs || [] } })
+if (argv[1] === 'run-current') say({ ok: true, result: { run: { id: 'rB' } } })
+else if (argv[1] === 'run-list') say({ ok: true, result: { runs: st.runs || [] } })
 else if (argv[0] === 'terminal' && argv[1] === 'list') say({ ok: true, result: { terminals: st.terminals || [] } })
 else if (argv[1] === 'send') {
   if (st.send_fails) { say({ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } }); process.exitCode = 1 }

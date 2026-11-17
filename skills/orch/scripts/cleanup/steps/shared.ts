@@ -21,6 +21,8 @@ export type Log = (line: string) => void
 export type Report = { removed: string[]; skipped: { path: string; reason: string }[] }
 
 export type Args = {
+  guardWorktrees?: Map<string, Set<string>>
+  notMain?: string
   base: string
   run: string | null
   specsDir: string | null

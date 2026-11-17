@@ -73,8 +73,12 @@ test('예외 기록은 실제 선택 전체와 이유, 다른 effort 의 행 값
 
 test('정리용 기록을 다시 읽어도 후보 밖 이유와 worker 가 보존된다', () => {
   const candidateOverride = candidateOverrideOf(`${sol.replace('`low`', '`medium`')} 후보 밖: 한도 Codex.`)!
-  recordLaunch(repo, { dispatch: 'ctx_override', terminal: null, worktree: repo, run: null, effective: { candidateOverride } })
-  assert.deepEqual(readLaunch(repo, 'ctx_override')?.effective?.candidateOverride, candidateOverride)
+  const main_guard = { version: 1 as const, main: 'run_main', caller_repo: repo, target_repo: repo }
+  recordLaunch(repo, { dispatch: 'ctx_override', terminal: null, worktree: repo, run: null, effective: { candidateOverride }, main_guard, not_main: '테스트 예외' })
+  const saved = readLaunch(repo, 'ctx_override')!
+  assert.deepEqual(saved.effective?.candidateOverride, candidateOverride)
+  assert.deepEqual(saved.main_guard, main_guard)
+  assert.equal(saved.not_main, '테스트 예외')
 })
 
 test('비교 칸과 experiment 는 새 지시서에서 금지하고 확인된 이어하기에서만 허용한다', () => {

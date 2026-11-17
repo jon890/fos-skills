@@ -199,6 +199,7 @@
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
+import { guardWrite } from '../lib/main-guard.ts'
 import { existsSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -269,6 +270,17 @@ async function mainImpl(argv: string[]): Promise<number> {
     const opts = parseArgs(argv)
     const repoProblem = repoArgProblem(opts.repo)
     if (repoProblem) throw new Usage(repoProblem)
+    const mainGuard = guardWrite(opts.repo, 'queue run', opts.notMain, { prs: opts.items.map(item => item.split(':')[0]) })
+    if (mainGuard.code !== 0) return mainGuard.code
+    if (mainGuard.ownerRun) {
+      const scoped: string[] = []
+      for (let i = 0; i < opts.sweepArgs.length; i++) {
+        if (opts.sweepArgs[i] === '--run') { i++; continue }
+        if (!opts.sweepArgs[i].startsWith('--run=')) scoped.push(opts.sweepArgs[i])
+      }
+      opts.sweepArgs = [...scoped, '--run', mainGuard.ownerRun]
+    }
+    if (opts.notMain !== undefined) opts.sweepArgs.push('--not-main', opts.notMain)
     queue = new StepState(opts)
     active = queue
     const prepared = await setup(stepContext, queue)

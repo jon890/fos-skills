@@ -1,3 +1,4 @@
+import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
@@ -103,6 +104,7 @@ import type { WorkerRow } from '../core/board-workers.ts'
 import { gh, ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { pathOf } from '../lib/paths.ts'
+import { launchHistory } from '../lib/launch-history.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
 import { waitTimeMs } from '../core/step-ready.ts'
@@ -115,7 +117,7 @@ const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--rep
 const LEGACY_AUTO = '자동: '
 const SKIP_STATUS = new Set(['done'])
 
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   'worker-ends': { type: 'string' },
   'worker-revivals': { type: 'string' },
   board: { type: 'string' },
@@ -163,6 +165,19 @@ function worktreeNames(repo: string): Set<string> | null {
   const done = git(repo, ['worktree', 'list', '--porcelain'])
   if (done.code !== 0) return null
   return new Set(done.stdout.split('\n').flatMap((line) => (line.startsWith('worktree ') ? [basename(line.slice('worktree '.length))] : [])))
+}
+
+// 다른 저장소의 루프와 보드를 나눠 쓰면(finish.board 를 같은 파일로 둔 저장소들) 그쪽에서 띄운 worker 의 줄도 보인다.
+// 그 워크트리는 이 저장소의 git 목록에 없으니 「워크트리가 사라졌다」 로 보면 살아 있는 줄을 매 틱 끊김으로 쓴다.
+// 이 저장소의 띄우기 이력에 없는 dispatch 의 줄만 남의 것으로 보고, 이력이 비었으면 구분하지 못해 모든 줄을 이 저장소의 것으로 본다
+function foreignWorktrees(repo: string, items: Record<string, unknown>[]): Set<string> {
+  let own: Set<string>
+  try { own = new Set(launchHistory(repo).map((row) => row.dispatch)) }
+  catch { return new Set() }
+  if (own.size === 0) return new Set()
+  const rows = items.flatMap((item) => boardWorkerRows(item))
+  const mine = new Set(rows.filter((row) => !row.dispatch || own.has(row.dispatch)).map((row) => row.worktree))
+  return new Set(rows.filter((row) => row.dispatch && !own.has(row.dispatch) && !mine.has(row.worktree)).map((row) => row.worktree))
 }
 
 // 머지 커밋이 배포됐는지(lib/deploy.ts). 배포 실행 목록은 한 번만 읽어 runs 에 둔다. 머지 커밋을 읽지 못하면 wait 이다
@@ -247,6 +262,10 @@ function main(argv: string[]): number {
     return 2
   }
   const repo = resolve(values.repo ?? '.')
+  if (!values['dry-run']) {
+    const mainGuard = guardWrite(boardRepo(repo, board), 'board sync', values['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   const dryRun = values['dry-run'] === true
   let workerEnds: Record<string, 'done' | 'lost'>
   try {
@@ -312,6 +331,9 @@ function main(argv: string[]): number {
   const reviewOrigins = reviewOriginsByItem(repo, items)
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
   const names = worktreeNames(repo)
+  const foreign = foreignWorktrees(repo, items)
+  // 워크트리가 사라졌는지. 목록을 읽지 못했거나 다른 저장소의 worker 면 사라졌다고 보지 않는다
+  const gone = (worktree: string): boolean => names !== null && !names.has(worktree) && !foreign.has(worktree)
   const liveBranches = new Set(branches.values())
   let rules: LastPrRules | null | undefined
   let reviewItems: Map<string, number | null> | undefined
@@ -350,7 +372,7 @@ function main(argv: string[]): number {
     for (const row of workerRows.filter((row) => row.status === 'lost' && row.dispatch && Object.hasOwn(workerRevivals, row.dispatch))) {
       const revival = workerRevivals[row.dispatch!]
       if (revival === 'working' && item.status === 'done') continue
-      if (revival === 'working' && names !== null && !names.has(row.worktree)) continue
+      if (revival === 'working' && gone(row.worktree)) continue
       cmds.push(['worker-add', id, row.role, '--worktree', row.worktree, '--dispatch', row.dispatch!])
       // worker-add 가 대표 칸을 이 줄의 워크트리로 되돌려 놓는다. 대표가 원래 비었거나 이 줄이었을 때만 끝낸 뒤 비운다
       if (revival === 'done') cmds.push(['worker-end', id, 'done', '--dispatch', row.dispatch!, ...(!item.worktree || item.worktree === row.worktree ? ['--clear'] : [])])
@@ -360,12 +382,12 @@ function main(argv: string[]): number {
     for (const row of workerRows.filter((row) => row.status === 'working')) {
       const end = row.dispatch && Object.hasOwn(workerEnds, row.dispatch) ? workerEnds[row.dispatch] : null
       if (end) cmds.push(['worker-end', id, end, '--dispatch', row.dispatch!])
-      else if (names !== null && !names.has(row.worktree) && !missing.has(row.worktree)) {
+      else if (gone(row.worktree) && !missing.has(row.worktree)) {
         missing.add(row.worktree)
         cmds.push(['worker-end', id, 'lost', '--worktree', row.worktree, '--clear'])
       }
     }
-    if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree) && !workerRows.some((row) => row.status === 'working' && row.worktree === item.worktree)) cmds.push(['set', id, '--worktree', ''])
+    if (typeof item.worktree === 'string' && item.worktree && gone(item.worktree) && !workerRows.some((row) => row.status === 'working' && row.worktree === item.worktree)) cmds.push(['set', id, '--worktree', ''])
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
     let details = old
     const tagged = item.status === 'done' ? [] : taggedBoardSteps(boardBin, id, board, item)
@@ -393,7 +415,7 @@ function main(argv: string[]): number {
     const endedAfterChange = typeof item.stepAt === 'string' && workerRows.some((row) =>
       typeof row.endedAt === 'string' && Date.parse(row.endedAt) > Date.parse(String(item.stepAt)))
     const rowsDone = reviewOnly && workerRows.length > 0 && (endedNow || endedAfterChange) &&
-      !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !(names !== null && !names.has(row.worktree)))
+      !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !gone(row.worktree))
     const reviewDone = !SKIP_STATUS.has(String(item.status)) && (rowsDone || (review &&
       ((!Array.isArray(item.workers) && (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)))) || stateFor(review[1]) === 'MERGED')))
     if (reviewDone) {
@@ -598,7 +620,7 @@ function main(argv: string[]): number {
       } else if (item.status === 'doing' && !stages && state !== 'OPEN' && (!num || state === 'CLOSED')) {
         // 머리 주석의 「단계를 모두 끝낸 doing 항목」
         const worktree = typeof item.worktree === 'string' ? item.worktree : ''
-        const working = (worktree !== '' && (names === null || names.has(worktree))) || (branch !== '' && liveBranches.has(branch))
+        const working = (worktree !== '' && !gone(worktree)) || (branch !== '' && liveBranches.has(branch))
         if (!working && !details.some((d) => textOf(d).startsWith(NOTE))) {
           const steps = boardSteps(boardBin, id, board)
           if (steps === null) {

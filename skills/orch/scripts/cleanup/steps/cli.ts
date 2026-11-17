@@ -47,6 +47,7 @@
 //        그 동작만 하지 않고 2 다
 //
 // 테스트가 waitFree, stopHolders 를
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../../lib/main-guard.ts'
 import type { Args, Log, Terminal } from './shared.ts'
 import { LookupError, runWorkers, workerSnapshot } from '../../lib/ownership.ts'
 import type { SweepContext } from './output.ts'
@@ -87,7 +88,7 @@ function trashDir(given: string | undefined): string {
 
 type Session = { repos: string[]; args: Args; workers: WorkerRow[]; terminals: Terminal[]; log: Log; brief: boolean; tally: { removed: number; kept: number } }
 export async function prepareSession(argv: string[]): Promise<Session | { code: number }> {
-  const options = {
+  const options = { ...MAIN_GUARD_OPTIONS,
     repo: { type: 'string', multiple: true },
     base: { type: 'string' },
     run: { type: 'string' },
@@ -128,7 +129,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     err('cleanup-sweep: --wait 는 0 이상, --poll-interval 은 0 초과의 유한한 수다')
     return { code: 2 }
   }
-  const run = values.run || null
+  let run = values.run || null
   if (values['close-own-taken-over'] && !run) {
     err('cleanup-sweep: --close-own-taken-over 는 --run 과 함께 쓴다')
     return { code: 2 }
@@ -139,6 +140,13 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     return { code: 2 }
   }
   const repos = [...new Set<string>(values.repo.map((repo) => realPath(repo)))]
+  const guardWorktrees = new Map<string, Set<string>>()
+  if (values.apply) for (const repo of repos) {
+    const gate = guardWrite(repo, 'cleanup sweep', values['not-main'], { sweepRun: values.run })
+    if (gate.code !== 0) return { code: gate.code }
+    if (gate.worktrees) guardWorktrees.set(repo, gate.worktrees)
+    if (gate.ownerRun && !values.run) run = gate.ownerRun
+  }
   // 짧은 출력은 줄마다 sweepLine 으로 바꾸고 끝에 SWEEP 줄을 낸다(output.ts 파일 맨 위 설명의 「짧은 출력」)
   const brief = short()
   const tally = { removed: 0, kept: 0 }
@@ -207,6 +215,8 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
   })()
   const args: Args = {
     base: values.base ?? '',
+    guardWorktrees,
+    notMain: values['not-main'],
     run,
     specsDir,
     killHolders: values['kill-holders'],

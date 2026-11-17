@@ -64,6 +64,7 @@
 //
 // 종료 코드: 0 충돌한 내 PR 이 없다, 1 충돌한 내 PR 이 있다(알렸든 못 알렸든), 2 사용법 오류(설정 파일 오류 포함)나 조회 실패
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
 import { resolve } from 'node:path'
@@ -89,10 +90,11 @@ function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
 
-type Args = { repo: string; base: string; run: string; state: string; dryRun: boolean }
+type Args = {
+  notMain?: string; repo: string; base: string; run: string; state: string; dryRun: boolean }
 
 function parse(argv: string[]): Args | 'help' | null {
-  const options = {
+  const options = { ...MAIN_GUARD_OPTIONS,
     repo: { type: 'string', default: '.' },
     base: { type: 'string', default: '' },
     run: { type: 'string', default: '' },
@@ -108,7 +110,7 @@ function parse(argv: string[]): Args | 'help' | null {
     return null
   }
   if (values.help) return 'help'
-  return { repo: values.repo, base: values.base, run: values.run, state: values.state, dryRun: values['dry-run'] }
+  return { notMain: values['not-main'], repo: values.repo, base: values.base, run: values.run, state: values.state, dryRun: values['dry-run'] }
 }
 
 export function main(argv: string[], runner?: Runner): Promise<number> {
@@ -123,6 +125,10 @@ async function executeMain(argv: string[]): Promise<number> {
     return 0
   }
   const repo = resolve(a.repo)
+  if (!a.dryRun) {
+    const mainGuard = guardWrite(repo, 'queue conflicts', a.notMain)
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   if (!a.state) warnLegacy(repo, 'notify-conflicts')
   // 작성자 목록을 읽기 전에 설정 파일의 오류를 먼저 사용법 오류로 알린다
   section(loadConfig(repo), 'pipeline', PIPELINE_KEYS)

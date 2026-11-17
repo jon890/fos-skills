@@ -47,6 +47,9 @@ if (joined.length) {
   fs.writeSync(1, 'Unknown flag ' + joined[0] + '\\n')
   process.exit(1)
 }
+if (state.main_guard && is('orchestration', 'run-list')) out({ runs: [{ id: 'main', coordinator_handle: 'tm' }] })
+if (state.main_guard && is('orchestration', 'run-current')) out({ run: { id: 'other' } })
+if (state.main_guard && is('orchestration', 'send')) out({ message: { id: 'notice' } })
 if (is('worktree', 'list')) {
   const lists = state.worktree_lists
   const paths = lists && lists.length ? lists.shift() : (process.env.FAKE_WT_DEFAULT || '').split(':').filter(Boolean)
@@ -924,7 +927,10 @@ describe('띄우기', () => {
       })
       const r = launch(['--worktree', worktree, '--run', 'run_a', '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
-      assert.deepEqual(JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8')), {
+      const { main_guard, ...saved } = JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8'))
+      assert.equal(main_guard.main, null)
+      assert.equal(main_guard.target_repo, worktree)
+      assert.deepEqual(saved, {
         dispatch: 'ctx_1',
         task: 'task_1',
         terminal: 'term_w',
@@ -2651,4 +2657,20 @@ describe('번호 미리 잡기', () => {
     assert.equal(launch(['--worktree', worktree, '--', ...CLAUDE]).code, 2)
     assert.equal(lines('orca orchestration worker-start').length, 0)
   })
+})
+
+
+test('메인이 아닌 Run 의 이유 있는 띄우기는 알림 뒤 dispatch 기록에도 이유를 남긴다', () => {
+  const entries = join(worktree, '.orch', 'state', 'loop-runs')
+  mkdirSync(entries, { recursive: true })
+  writeFileSync(join(entries, 'main.json'), JSON.stringify({ run: 'main', registered_at: '2026-11-17T00:00:00Z', coordinator_terminal: 'tm' }))
+  state({ main_guard: true, terminals: [{ handle: 'tm', agentIdentity: 'codex' }], next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const done = launch(['--worktree', worktree, '--run', 'other', '--not-main', '승인받은 긴급 수정', '--', ...CODEX])
+  assert.equal(done.code, 0, both(done))
+  const record = JSON.parse(readFileSync(join(worktree, '.orch', 'state', 'launched-workers', 'ctx_1.json'), 'utf8'))
+  assert.equal(record.not_main, '승인받은 긴급 수정')
+  assert.equal(record.main_guard.main, 'main')
+  assert.equal(record.main_guard.target_repo, worktree)
+  const called = readFileSync(log, 'utf8')
+  assert.ok(called.indexOf('orchestration send') < called.indexOf('orchestration worker-start'))
 })
