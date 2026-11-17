@@ -158,21 +158,27 @@ for (const entry of [[cli], [wrapper, '--no-finish']]) test(`${entry.length === 
   const hooks = join(c.dir, '.orch', 'hooks')
   mkdirSync(hooks)
   const started = join(c.dir, 'started')
-  writeFileSync(join(hooks, 'before-merge.ts'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(started)},''); setInterval(()=>{},1000)`)
-  const first = spawn(process.execPath, [...entry, ...c.args, '1'], { env: c.env, stdio: 'ignore' })
+  writeFileSync(join(hooks, 'before-merge.ts'), `import fs from 'node:fs'; if(process.env.FAKE_HOLD){fs.writeFileSync(${JSON.stringify(started)},''); setInterval(()=>{},1000)}`)
+  const first = spawn(process.execPath, [...entry, ...c.args, '1'], { env: { ...c.env, FAKE_HOLD: '1' }, stdio: 'ignore' })
   const ended = new Promise((resolve) => first.on('exit', resolve))
   t.after(() => first.kill('SIGKILL'))
   const deadline = Date.now() + 15_000
   while (!existsSync(started) && Date.now() < deadline) await sleep(50)
   assert.ok(existsSync(started), '첫 큐의 머지 전 핸들러가 시작돼야 한다')
-  const second = await c.run('1')
-  assert.equal(second.code, 2, second.stdout + second.stderr)
-  assert.match(second.stderr, /QUEUE-BUSY/)
+  const second = spawn(process.execPath, [...entry, ...c.args, '1'], { env: c.env, stdio: ['ignore', 'pipe', 'pipe'] })
+  let secondOutput = ''
+  second.stdout?.on('data', (data) => { secondOutput += String(data) })
+  second.stderr?.on('data', (data) => { secondOutput += String(data) })
+  const secondEnded = new Promise<number | null>((resolve) => second.on('exit', (code) => resolve(code)))
+  await sleep(100)
+  assert.equal(second.exitCode, null, '두 번째 큐는 첫 큐가 끝날 때까지 대기해야 한다')
   assert.doesNotMatch(c.log(), /^pr merge /m)
   const queuePid = JSON.parse(readFileSync(join(c.dir, '.orch', 'state', 'merge-queue.lock'), 'utf8')).pid
   process.kill(queuePid, 'SIGTERM')
   await ended
+  const secondCode = await secondEnded
+  assert.equal(secondCode, 0)
+  assert.match(c.log(), /^pr merge 1/m)
   assert.ok(!existsSync(join(c.dir, '.orch', 'state', 'merge-queue.lock')))
   rmSync(hooks, { recursive: true })
-  assert.equal((await c.run('1')).code, 0)
 })
