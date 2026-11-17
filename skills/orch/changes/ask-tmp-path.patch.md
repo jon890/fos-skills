@@ -1,3 +1,0 @@
-- worker 가 코디네이터에게 넘길 파일을 세션 임시 폴더에 두지 않게 한다. 공통 지시서 틀에 `$(orch paths root)/handoff/` 에 두고 절대경로로 적는 규칙을 더했다.
-- `orch worker ask` 는 질문에 세션 임시 폴더 경로가 있으면 보내지 않고 안내와 함께 2 로 끝난다.
-- 임시 폴더 경로 판정을 `lib/temp-path.ts` 로 옮겨 `spec-lint` 와 `worker-ask` 가 함께 쓴다.
