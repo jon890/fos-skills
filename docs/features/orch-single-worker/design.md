@@ -1,22 +1,26 @@
 # orch 단일 worker 기술 설계
 
-이 문서는 [스펙](spec.md)의 PR1(REQ1)을 설계한다. PR2(REQ2~REQ9)는 그 PR 을 맡는 worker 가 이 문서에 이어 쓴다.
+이 문서는 [스펙](spec.md)의 PR1(REQ1)과 PR2(REQ2~REQ9)를 설계한다.
 
 ## 요구사항 연결
 
 | ID | 해결 방법 |
 | --- | --- |
 | REQ1 | `launch-worker` 가 worker 를 띄우기 전에 그 워크트리에만 걸리는 git 훅 폴더를 만든다(`lib/commit-check.ts`). 훅 `pre-commit` 이 korean-check 의 새 모드 `check.ts --staged` 로 스테이징한 `.md` 의 더한 줄을 검사한다. 금지어가 있으면 발견 줄과 권장 표현을 내고 커밋을 거절하고, 경고만 있으면 보여 주고 커밋한다. Codex 매니페스트에는 hook 을 더하지 않아 신뢰 확인 화면이 뜨지 않는다([ADR-036](../../adr/036-worker-commit-korean-check.md)) |
-| REQ2 | PR2 에서 설계한다 |
-| REQ3 | PR2 에서 설계한다 |
-| REQ4 | PR2 에서 설계한다 |
-| REQ5 | PR2 에서 설계한다 |
-| REQ6 | PR2 에서 설계한다 |
-| REQ7 | PR2 에서 설계한다 |
-| REQ8 | PR2 에서 설계한다 |
-| REQ9 | PR2 에서 설계한다 |
+| REQ2 | `agent-selection.md` 의 모델 표를 행별 에이전트·모델·effort 원본으로 읽는다. `lib/selection.ts` 가 하나의 worker 와 정확히 대조한다 |
+| REQ3 | `lib/spec.ts` 는 비교 칸 없는 줄을 읽고, `selectionVerdict` 가 새 지시서의 비교 칸을 거절한다. spec-lint 와 launch 가 같은 검사를 쓴다 |
+| REQ4 | 에이전트·모델·effort 어느 값이 달라도 후보 밖 이유를 요구한다. `candidateOverrideOf` 가 실제 선택 전체와 이유를 내어 기존 LAUNCH-EFFECTIVE 와 launch-history 의 effective.candidateOverride 에 남긴다 |
+| REQ5 | 새 지시서의 experiment 줄을 거절한다. 기존 지시서와 옛 이력을 읽는 파서는 남기되 새 실행의 실험 배정은 없앤다 |
+| REQ6 | agent-selection 과 spec-writing, SKILL 과 템플릿에서 제공자 우선순위와 번갈아 배정하는 규칙을 없앤다 |
+| REQ7 | review-spec 의 다른 제공자 선택을 재사용한다. review 행은 그 결과인 sol medium 또는 Sonnet medium 만 받으며 보안 리뷰는 별도 고정 행을 따른다 |
+| REQ8 | PR2 머지 뒤 코디네이터가 스펙에 정한 대조 일을 보드에 만든다. worker 는 보드를 고치지 않는다 |
+| REQ9 | 행 선택 기준은 agent-selection 이 소유한다. 작업 난도와 이유의 타당성은 코디네이터가 판단하며 검사기는 문구로 난도를 추측하지 않는다 |
 
 ## 책임과 경계
+
+PR2 에서는 `lib/spec.ts` 의 줄 읽기와 `lib/selection.ts` 의 선택 검사를 재사용한다. 모델 표는 `id | Task 성격 | 에이전트 | 모델 | effort` 열을 쓰며 값은 백틱으로 감싼다. 각 행은 에이전트·모델·effort 를 명시하며, review 는 구현 제공자에 따른 두 경우를 명시한다. 기본 effort 는 숫자 단계로 바꾸지 않고 `기본` 그대로 비교한다.
+
+`spec-lint` 는 `--active` 지시서를 선택 검사에서 제외한다. `launch-worker` 가 같은 지시서와 실행 설정의 이어하기를 확인한 경우에도 새 규칙을 적용하지 않는다. 지시서나 실행 설정이 바뀐 재시도는 새 규칙을 따른다. 한도 표는 바꾸지 않으며 그 표로 바꾸는 경우도 후보 밖 이유를 요구한다.
 
 검사는 에이전트 종류를 보지 않는다. git 이 커밋할 때 훅을 부르므로 Codex, Claude, 그 밖의 에이전트가 같은 검사를 받는다.
 
@@ -38,6 +42,8 @@ git 훅은 Claude 실행 훅(`skills/orch/hooks/`)과 다른 폴더 `skills/orch
 걸리는 범위는 orch 가 이 머신에서 띄우는 worker 의 연결된 워크트리다. 주 checkout 에는 걸지 않는다. 사용자가 직접 하는 커밋의 동작을 바꾸지 않으려는 것이다. 원격 환경 옵션(`--on`, `--environment`, `--pairing-code`)으로 띄우는 worker 에는 걸지 않고 `COMMIT-CHECK-SKIP` 으로 알린다. 그 worker 는 다른 서버의 셸에서 떠서 이 머신의 경로를 박은 훅 폴더를 쓰지 못한다.
 
 ## 인터페이스와 데이터
+
+PR2 의 `candidateOverride` 는 기존 `row`, `model`, `reason` 을 유지하고 `agent`, `effort` 를 항상 기록한다. effort 가 다른 경우에는 기존 `effortLimit` 키에 행의 effort 를 남긴다. 이 객체는 출력과 정리용 기록, 영구 이력의 `effective.candidateOverride` 에 같은 값으로 둔다. 타입은 `lib/launched.ts` 의 Effective 에 더하고 `docs/data-schema.md` 에서 이 설계를 연결한다. 키를 더하는 방식이라 옛 이력을 읽는 쪽은 그대로 동작한다. review 의 원래 제공자는 `orch spec review` 가 PR 브랜치의 이력에서 찾으며, 일반 선택 검사에서는 구현 정보를 추측하지 않는다.
 
 ### `check.ts --staged`
 
@@ -114,6 +120,10 @@ false 면 `launch-worker` 가 그 저장소의 worker 워크트리에 훅을 걸
 
 ## 실패와 일관성
 
+- PR2 의 새 지시서에 비교 칸이나 experiment 줄이 있으면 lint 와 launch 에서 거절한다. 후보 밖 이유로 이 두 형식을 허용하지 않는다.
+- 표의 worker 를 읽지 못하면 새 실행을 막는다. 후보 밖 이유가 있어도 알 수 없는 행을 통과시키지 않는다.
+- 배포 순서: PR1 의 커밋 검사가 먼저 머지된 뒤 PR2 로 문서 일을 Codex 에 맡긴다. 기존 실행과 이력은 변경하지 않는다.
+
 - **검사기가 돌지 못하면 `.md` 를 스테이징한 커밋을 거절한다.** 검사기 사본이 없거나, node 가 최소 버전보다 낮거나, 검사기가 발견 줄 없이 끝난 경우다. 검사 없이 한국어 문서가 커밋되지 않게 하고, 거절 안내에 원인과 끄는 방법을 적어 고장이 드러나게 한다. `.md` 가 없는 커밋과 머지 중인 커밋은 막지 않는다. 고장이 길어지면 저장소 설정 `worker.commit_check` 로 끈다.
 - **저장소의 기존 훅은 그대로 돈다.** 훅 폴더를 바꾸면 git 은 원래 폴더를 보지 않으므로 `dispatch.mjs` 가 이어 부른다. 한국어 검사가 거절하면 원래 `pre-commit` 은 부르지 않는다.
 - **다시 걸어도 결과가 같다.** 훅 폴더는 옆 임시 폴더에 만든 뒤 바꿔 넣고, 바꿔 넣지 못하면 옛 폴더를 되돌린다. 워크트리 설정에 사용자가 둔 다른 `core.hooksPath` 가 있으면 덮지 않는다. 값이 훅 폴더 이름으로 끝나면 앞서 둔 값으로 보고 지금 경로로 바꾼다(저장소를 옮긴 경우).
@@ -129,6 +139,8 @@ false 면 `launch-worker` 가 그 저장소의 worker 워크트리에 훅을 걸
 
 | 대상 | 경계 | 확인하는 것 |
 | --- | --- | --- |
+| PR2 선택 검사 | 임시 저장소의 lib-selection 테스트 | 표와 스펙 일치, 각 값 하나만 다른 경우와 낮은 effort 도 거절, 기본 effort, 이유가 있는 예외, 비교·experiment 거절, 이어하기 허용 |
+| PR2 launch·lint·review | 가짜 Orca 와 gh 로 실제 CLI 실행 | 새 지시서 거절, active 허용, 예외 이유와 worker 의 출력·영구 기록, 리뷰 제공자와 새 템플릿 |
 | `check.ts --staged` | 임시 git 저장소에서 명령을 실행 | 더한 줄의 금지어는 1 과 권장 표현, 경고만이면 0, 기존 줄의 금지어는 내지 않음, 스테이징 뒤 고친 작업 트리 내용은 보지 않음, 이름만 바꾼 파일, 첫 커밋, 하위 폴더의 예외 파일 |
 | `installCommitCheck`, `dispatch.mjs` | 임시 저장소의 연결된 워크트리에서 실제 `git commit` | 금지어 커밋 거절과 메시지, 경고만 있는 커밋 통과, 원래 훅(공유 `hooks/` 와 local `core.hooksPath`) 이어 부르기와 인자 전달, 대상 저장소 `package.json` 의 `type` 이 `commonjs` 이거나 없을 때, 검사기가 죽었을 때 `.md` 커밋은 거절되고 다른 커밋은 됨, 머지 중 건너뜀, 주 checkout 과 다른 워크트리에 번지지 않음, 다시 걸기, 워크트리 삭제 뒤 폴더 없음 |
 | `launch-worker` | 가짜 orca 로 실행 | 연결된 워크트리면 에이전트와 상관없이 걸림, 건너뜀 줄 |

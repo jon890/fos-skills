@@ -1,0 +1,40 @@
+{
+  "name": "worker-table",
+  "description": "행마다 정해진 worker 선택과 예외 기록",
+  "pr_scope": "REQ2~REQ9 선택 표와 검사, 문서를 PR2 하나로 바꾼다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-17",
+  "spec": "docs/features/orch-single-worker/spec.md",
+  "design": "docs/features/orch-single-worker/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ7",
+    "REQ8",
+    "REQ9"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ2",
+        "REQ3",
+        "REQ4",
+        "REQ5",
+        "REQ6",
+        "REQ7",
+        "REQ8",
+        "REQ9"
+      ]
+    }
+  ]
+}
