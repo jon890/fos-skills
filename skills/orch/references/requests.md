@@ -43,7 +43,7 @@ orch request hold R<n> --reason "<이유>"
 orch request reject R<n> --reason "<이유>"
 ```
 
-받은 일로 worker 를 띄울 때는 지시서에 `보드 항목 id: req-<n>` 을 둔다. worker 가 그 요청 항목에 붙고, 마지막 PR 의 마무리가 `FINISH-DONE` 이면 orch 가 완료를 자동으로 보낸다.
+받은 일로 worker 를 띄울 때는 지시서에 `보드 항목 id: req-<n>` 을 둔다. worker 가 그 요청 항목에 붙고, 마지막 PR 의 마무리가 그 항목을 done 으로 닫고 `FINISH-DONE` 이면 orch 가 완료를 자동으로 보낸다. 다른 PR 이나 단계가 남으면 보내지 않는다(`REQUEST-OPEN` 줄).
 PR 없는 일, 메인이 직접 처리한 일, 마무리가 실패한 일은 직접 끝낸다.
 
 ```bash
