@@ -25,7 +25,7 @@
 | --- | --- |
 | `.claude-plugin/`, `.codex-plugin/` | 저장소 루트를 배포하는 하네스별 매니페스트 |
 | `skills/<이름>/` | 설치 스킬과 그 스킬의 references·templates·scripts·hooks·tests |
-| `export-only-skills/<이름>/` | 자동 로드하지 않는 팀 내보내기 원본 |
+| `export-only-skills/<이름>/` | 팀 내보내기 원본. 플러그인 스킬로도 등록한다 |
 | `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
 | `tools/` | 여러 스킬이 쓰는 공용 도구 |
 | `modules/` | 여러 영역의 테스트와 코드가 함께 쓰는 공용 모듈. 스킬이 아니다. 팀 저장소로 내보내지 않는다 |
@@ -62,7 +62,7 @@
 이 문서에 배열 사본을 두지 않는다. 두 매니페스트의 일치는 `scripts/tests/plugin-manifest.spec.ts` 가 확인한다.
 
 `skills` 배열은 이름순으로 둔다. 스킬을 더하거나 이름을 바꾸면 이 배열을 함께 고친다.
-[`../scripts/export-only-skills.json`](../scripts/export-only-skills.json) 에 명시한 내보내기 전용 원본만 배열에서 제외한다.
+`export-only-skills/` 아래 스킬도 배열에 등록한다([ADR-034](adr/034-export-only-skills-registered.md)).
 `version` 은 main 머지마다 workflow 가 올린다. 규칙과 근거는 [ADR-019](adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
 ## 모듈 책임

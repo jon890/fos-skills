@@ -8,6 +8,8 @@
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
+    "./export-only-skills/content-preview",
+    "./export-only-skills/korean-check",
     "./skills/browser",
     "./skills/docs-audit",
     "./skills/docs-consolidate",

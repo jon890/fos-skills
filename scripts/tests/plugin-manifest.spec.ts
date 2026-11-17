@@ -1,9 +1,9 @@
-// 내보내기 전용 원본을 제외한 스킬 디렉터리와 매니페스트를 대조하고 버전 자리를 본다.
+// 스킬 디렉터리와 매니페스트를 대조하고 버전 자리를 본다.
 // scripts/test-plugin-install.ts 가 설치 전에 이 파일 하나를 node --test 로 돌린다.
 
 import assert from 'node:assert/strict'
 import { accessSync, constants, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, join, relative } from 'node:path'
+import { join, relative } from 'node:path'
 import { describe, test } from 'node:test'
 import { tempDir } from '../../modules/testkit/temp.ts'
 import { skillDirs } from '../skill_paths.ts'
@@ -13,17 +13,14 @@ const PLUGIN = join(ROOT, '.claude-plugin/plugin.json')
 const MARKETPLACE = join(ROOT, '.claude-plugin/marketplace.json')
 const CODEX_PLUGIN = join(ROOT, '.codex-plugin/plugin.json')
 const CHANGELOG = join(ROOT, '.claude-plugin/CHANGELOG.md')
-const EXPORT_ONLY: string[] = JSON.parse(readFileSync(join(ROOT, 'scripts/export-only-skills.json'), 'utf8'))
 
 function load(path: string) {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-// 내보내기 전용 원본을 제외하고 array 와 비교해 [빠진 것, 남는 것] 을 돌려준다
+// 스킬 디렉터리와 array 를 비교해 [빠진 것, 남는 것] 을 돌려준다
 function skillDiff(array: string[], root: string): [string[], string[]] {
-  const found = [...skillDirs(root, true).values()].map((path) => `./${relative(root, path).split('\\').join('/')}`)
-  const exportNames = new Set(EXPORT_ONLY.map((path) => basename(path)))
-  const expected = new Set(found.filter((path) => !EXPORT_ONLY.includes(path) && !exportNames.has(basename(path))))
+  const expected = new Set([...skillDirs(root, true).values()].map((path) => `./${relative(root, path).split('\\').join('/')}`))
   const declared = new Set(array)
   return [[...expected].filter((p) => !declared.has(p)).sort(), [...declared].filter((p) => !expected.has(p)).sort()]
 }
@@ -45,19 +42,13 @@ describe('플러그인 매니페스트', () => {
     assert.deepEqual([...skills].sort(), skills)
   })
 
-  test('내보내기 전용 원본이 있고 등록되지 않았다', () => {
+  // content-preview 와 korean-check 는 export-only-skills/ 아래 원본이지만 플러그인 스킬로도 등록한다
+  test('내보내기 원본 폴더의 스킬도 등록돼 있다', () => {
     const skills: string[] = load(PLUGIN).skills
-    for (const skill of EXPORT_ONLY) {
+    for (const skill of ['./export-only-skills/content-preview', './export-only-skills/korean-check']) {
       accessSync(join(ROOT, skill, 'SKILL.md'))
-      assert.ok(!skills.includes(skill), skill)
+      assert.ok(skills.includes(skill), skill)
     }
-  })
-
-  test('내보내기 전용 원본은 배열에서 빠질 수 있다', (t) => {
-    const root = fakeRoot(t, ['a', 'content-preview', 'korean-check'])
-    assert.deepEqual(skillDiff(['./a'], root), [[], []])
-    assert.deepEqual(skillDiff([], root), [['./a'], []])
-    assert.deepEqual(skillDiff(['./a', './content-preview'], root), [[], ['./content-preview']])
   })
 
   test('빠진 스킬과 없는 항목을 낸다', (t) => {

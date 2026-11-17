@@ -162,12 +162,10 @@ function check(T: string): number {
   const skills: string[] = manifest.skills.map(strip).filter(Boolean)
   const expected = skills.length
 
-  // 내보내기 전용 원본만 배열에서 빠질 수 있다. 다른 스킬 누락은 설치 전에 잡는다
+  // 스킬 디렉터리와 매니페스트의 일치를 설치 전에 잡는다
   let r = run([process.execPath, '--test', join(src, 'scripts/tests/plugin-manifest.spec.ts')], { cwd: src, env })
-  if (r.rc === 0) ok('매니페스트 시험: 내보내기 전용 원본만 스킬 목록에서 제외된다')
+  if (r.rc === 0) ok('매니페스트 시험: 스킬 디렉터리와 매니페스트가 같다')
   else fail('매니페스트 시험이 실패했다', r.out)
-
-  const exportOnly: string[] = JSON.parse(readFileSync(join(src, 'scripts/export-only-skills.json'), 'utf8')).map(strip).filter(Boolean)
 
   // 검증: 매니페스트 오류와 경고가 없어야 한다
   r = run(['claude', 'plugin', 'validate', '.', '--json'], { cwd: src, env })
@@ -219,14 +217,6 @@ function check(T: string): number {
     // 캐시가 없으면 이후 검사는 의미가 없다
     fail('스킬 파일, 형제 참조, 검사기 탐색, 도구, 스크립트 실행, 링크 없음 검사를 할 수 없다')
   } else {
-    // 내보내기 전용 원본은 캐시에 남지만 스킬로 인식되면 안 된다
-    for (const name of exportOnly) {
-      if (existsSync(join(cache, name, 'SKILL.md'))) ok(`내보내기 전용 원본: ${name}/SKILL.md 가 캐시에 남는다`)
-      else fail(`내보내기 전용 원본: ${name}/SKILL.md 가 캐시에 없다`)
-      if (skillsLine.includes(basename(name))) fail(`내보내기 전용 원본: ${name} 이 스킬로 인식됐다`)
-      else ok(`내보내기 전용 원본: ${name} 이 스킬 목록에 없다`)
-    }
-
     // 스킬 파일
     const noSkillMd = skills.filter((name) => !existsSync(join(cache, name, 'SKILL.md')))
     if (noSkillMd.length === 0) ok(`스킬 파일: ${expected}개 모두 SKILL.md 가 있다`)
