@@ -92,6 +92,7 @@ function doctor(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; c
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'orch-doctor-bin-')))
   linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
+  linkBin(join(binDir, 'ssh-env'), 'ssh-add', 'process.exit(0)')
   // ps 는 FAKE_PS 파일의 내용을 낸다
   linkBin(binDir, 'ps', "const fs = require('node:fs'); try { fs.writeSync(1, fs.readFileSync(process.env.FAKE_PS)) } catch { process.exit(1) }")
 })
@@ -104,7 +105,8 @@ beforeEach(() => {
     ...GIT_ENV,
     // 가짜 orca 의 #! 줄이 이 테스트의 node 를 쓰게 한다. 안내 줄의 앞 낱말과 CLI 판정이 PATH 와 HOME 에 따라 바뀌므로
     // 사용자 PATH 를 물려받지 않고, HOME 에는 최신 ~/.local/bin/orch 를 깔아 둔 PATH 를 준다
-    PATH: [dirname(process.execPath), join(tmp, 'home', '.local', 'bin'), '/usr/bin', '/bin'].join(delimiter),
+    SSH_AUTH_SOCK: '/test-agent.sock',
+    PATH: [join(binDir, 'ssh-env'), dirname(process.execPath), join(tmp, 'home', '.local', 'bin'), '/usr/bin', '/bin'].join(delimiter),
     HOME: join(tmp, 'home'),
     ORCH_WORKER_SHELL: '/bin/zsh',
     // CLI 판정이 보는 worker 셸의 PATH 도 같은 값으로 고정한다(이 기계의 셸 설정에 기대지 않는다)
@@ -203,6 +205,13 @@ describe('설치본 판정', () => {
 
   test('마켓플레이스 clone 은 실제처럼 shallow 다', () => {
     assert.equal(git('-C', clone, 'rev-parse', '--is-shallow-repository'), 'true')
+  })
+
+  test('doctor 를 실행한 worker 셸의 소켓 누락은 경고만 남긴다', () => {
+    const r = doctor(['--skip-questions', '--skill-dir', skill], { env: { SSH_AUTH_SOCK: undefined } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^SSH-AGENT-MISSING /m)
+    assert.match(r.stdout, /core.sshCommand 는 일반 ssh 에 적용되지 않는다/)
   })
 
   test('같은 커밋이면 OK-VERSION 이다', () => {

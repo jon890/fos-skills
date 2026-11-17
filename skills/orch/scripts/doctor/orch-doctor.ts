@@ -130,6 +130,7 @@
 //     핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
 //
 // 출력 (한 줄에 하나):
+//     SSH-AGENT-MISSING/NO-KEY/UNAVAILABLE        실행된 셸의 일반 ssh 용 에이전트 경고. git 의 sshCommand 와 따로 보고 종료 코드는 바꾸지 않는다
 //     OK-VERSION <sha>                           설치본이 원본과 같거나 그 스킬이 바뀌지 않았다
 //     STALE <설치 sha> <원본 sha>                설치본이 낡았다. 다음 줄에 갱신 명령이 온다
 //     SKIP-VERSION <이유>                        비교하지 않았다
@@ -168,6 +169,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { shellSshAgentLines } from '../lib/ssh-agent.ts'
 import { mainDoctorLines } from '../lib/main-guard.ts'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { bundleRoot, installLayout, staleBundle, staleLoopBundles } from '../lib/loop-bundle.ts'
@@ -764,7 +766,7 @@ async function executeMain(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
   const { schema, problem: schemaProblem } = await loadSchema()
-  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...mainDoctorLines(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
+  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...shellSshAgentLines(), ...mainDoctorLines(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
   const hookDir = join(pathOf('hooks', repo))
   if (existsSync(hookDir)) {
     for (const name of readdirSync(hookDir)) {
