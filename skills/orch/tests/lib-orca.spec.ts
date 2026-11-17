@@ -10,7 +10,7 @@ import type { FakeBin } from './fixtures/fake-bin.ts'
 
 let dir: string
 let fake: FakeBin
-const saved = { ORCA: process.env.ORCA, ORCA_CLI_COMMAND: process.env.ORCA_CLI_COMMAND }
+const saved = { ORCA: process.env.ORCA, ORCA_CLI_COMMAND: process.env.ORCA_CLI_COMMAND, ORCA_PANE_KEY: process.env.ORCA_PANE_KEY }
 
 before(() => {
   dir = mkdtempSync(join(tmpdir(), 'lib-orca-'))
@@ -23,6 +23,7 @@ before(() => {
     { args: ['pretty'], stdout: JSON.stringify({ ok: true, result: { a: 1 } }, null, 2) },
   ])
   process.env.ORCA = fake.path
+  delete process.env.ORCA_PANE_KEY
   // ORCA_CLI_COMMAND 는 읽지 않는다. 엉뚱한 값을 두어 이 값이 쓰이지 않음을 본다.
   process.env.ORCA_CLI_COMMAND = join(dir, 'must-not-run')
 })
