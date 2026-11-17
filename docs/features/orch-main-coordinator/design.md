@@ -1,7 +1,7 @@
 # orch 메인 코디네이터 기술 설계
 
-스펙: [spec.md](spec.md). 구현 범위는 스펙 「PR 순서」 의 PR1(메인 판별, 교대와 넘겨받기, 요청 명령과 알림, 보드 항목)이다.
-PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 「PR2 와의 경계」 에서 자리만 정한다.
+스펙: [spec.md](spec.md). 스펙 「PR 순서」 의 PR1(메인 판별·넘겨받기·요청)과 PR2(쓰기 제한·우회·doctor 알림)를 다룬다.
+PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 「쓰기 명령 제한」 이 소유한다.
 
 ## 요구사항 연결
 
@@ -17,9 +17,9 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 | REQ8 | 답의 대상은 보낸 Run 의 코디네이터 터미널에 에이전트가 있으면 그 Run, 없으면 보낸 저장소의 지금 메인, 그것도 없으면 보낸 Run 이다. 요청 기록이 받는 저장소에 있으므로 메인이 바뀌어도 지금 메인이 `orch request list` 와 넘겨받기 출력으로 이어 맡는다 |
 | REQ9 | 새 루프 단계 `steps/requests.ts` 가 틱마다 받은 지 `pipeline.request_ack_sec`(기본 1800초)가 지난 `sent` 요청을 찾아 REQ8 의 대상에 `REQUEST-NO-ACK` 를 한 번 보낸다 |
 | REQ10 | 코드 변경 없음. 요청으로 띄운 worker 는 받은 메인의 Run 에 묶이므로 질문도 받은 메인에게 간다. `references/requests.md` 에 적는다 |
-| REQ11 | PR2. 아래 「PR2 와의 경계」 |
-| REQ12 | PR2. 아래 「PR2 와의 경계」 |
-| REQ13 | PR1 은 살아 있는 등록 Run 을 지우지 않는다(이미 등록된 Run 은 지금처럼 `LOOP-RUNNING`). 메인은 등록 순서로 첫 살아 있는 Run 이라 「가장 먼저 등록한 Run」 과 같다. doctor 알림은 PR2 |
+| REQ11 | 아래 「쓰기 명령 제한」 |
+| REQ12 | 아래 「쓰기 명령 제한」 |
+| REQ13 | PR1 은 살아 있는 등록 Run 을 지우지 않는다(이미 등록된 Run 은 지금처럼 `LOOP-RUNNING`). 메인은 등록 순서로 첫 살아 있는 Run 이라 「가장 먼저 등록한 Run」 과 같다. doctor 는 `lib/main-guard.ts` 의 기록 조회로 남은 소유를 알린다 |
 
 ## 책임과 경계
 
@@ -180,18 +180,26 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 - `orch status` 의 `MAIN-UNKNOWN` 은 종료 코드를 바꾸지 않는다. 기존 계약(worker 목록과 보드를 읽지 못할 때만 1)을 지킨다. `request send` 는 `MAIN-UNKNOWN` 이면 보내지 않고 1 이다.
 - 호환: 이미 등록된 Run 이 여럿인 루프는 그대로 돈다. 새 등록만 막는다(DECISION24). 옛 orch 로 띄운 루프(`runs` 없음)는 넘겨받기에서도 `stopProcess` 로 멈출 수 있다.
 
-## PR2 와의 경계
+## 쓰기 명령 제한
 
-PR2 는 `findMain` 을 그대로 써서 「명령을 부른 Run 이 대상 저장소의 메인인가」 를 묻는 판정 하나(`callerIsMain(repo)`)를 더하고, `worker launch`, `send-to-worker`, `queue merge`, 정리, 보드 쓰기 명령 앞에서 부른다.
-우회 옵션(`--not-main "<이유>"`)의 기록 위치는 띄우기 기록(`state/launched-workers/`)에 칸 하나를 더하는 것으로 둔다. 메인에게 가는 알림은 이 PR 의 `notifyRun` 을 쓴다.
-`request` 명령의 답 명령(accept 등)도 PR2 에서 같은 판정을 붙인다. PR1 은 막지 않는다.
+쓰기 명령은 `findMain` 을 그대로 써서 「명령을 부른 Run 이 대상 저장소의 메인인가」 를 묻는 판정 하나(`callerIsMain(repo)`)를 더하고, `worker launch`, `send-to-worker`, `queue merge`, 정리, 보드 쓰기 명령 앞에서 부른다.
+우회 옵션(`--not-main "<이유>"`)은 `state/launched-workers/not-main/<id>.json` 에 대상 저장소·부른 Run·메인 Run·명령·이유·시각을 기록한다(스펙 DECISION27). 가짜 dispatch 는 만들지 않는다. worker 를 띄우면 기존 dispatch 기록에도 `not_main` 칸으로 이유를 남긴다. 메인에게 가는 알림은 이 PR 의 `notifyRun` 을 쓴다.
+`request` 명령의 답 명령(accept 등)도 같은 검사를 거친다.
 막기는 명령 진입점에서 한다. 보드 쓰기 lib 층에 넣으면 `request send` 가 보낸 저장소 보드에 쓰는 일과 받는 쪽 답이 보낸 저장소 보드에 쓰는 일이 막힌다.
 doctor 의 「다른 Run 이 띄운 남은 worker」, 「메인이 아닌 등록된 Run」 알림(REQ13)도 PR2 다. 넘겨받기에서 옮기지 못하고 끝난 Run 에 남은 worker 의 워크트리와 지시서도 그 알림이 다룬다. 새 메인의 Run 별 정리는 그 Run 이 띄운 것만 치운다.
+
+
+`lib/main-guard.ts` 가 실제 `run-current` 로 호출자를 확인한다. 명령별 옵션을 파싱한 뒤 쓰기 전에 검사하므로 새 CLI·옛 이름·직접 스크립트 호출에 같은 규칙이 적용된다. dispatch 는 실제 `worker-show` 의 worktree, 보드는 명시·설정 파일의 실제 저장소를 확인한다. 조회 실패를 다른 저장소로 대체하지 않는다.
+
+`Launch.main_guard` 는 처음 띄울 때 메인과 부른·대상 저장소를 남긴다. 표지가 없는 옛 기록과 메인이 없을 때 띄운 기록은 원래 Run 의 해당 worker 에만 예외다. 후속·재개는 그 예외를 보존한다. PR 일괄 작업은 모든 PR 의 브랜치 소유를 확인한다. 예외로 실행하는 정리는 해당 워크트리만 다루고 저장소 전체 fetch·prune·나머지 정리 단계와 after-cleanup 은 생략한다.
 
 ## 검증 전략
 
 | ID | 경계 | 확인 |
 | --- | --- | --- |
+| REQ11 | `main-guard.spec.ts` 의 실제 CLI·직접 명령 | 메인·비메인·Run 없는 셸, 조회·dry-run·잘못된 인자, 실제 dispatch·보드 저장소와 `--run` 사칭, 조회 실패 거절 |
+| REQ12 | `main-guard.spec.ts`, `launch-worker.spec.ts` | 빈 이유 거절, 별도 우회 기록·메인 알림, 기록·알림 실패 시 쓰기 없음, dispatch 이유 보존 |
+| REQ13 | `main-guard.spec.ts`, `cleanup-sweep-launched.spec.ts` | 옛·메인 없을 때 worker 의 원래 Run 만 허용, 깨진 새 표지 거절, Run 옵션 없는 finish → 실제 sweep → 실제 worktree 정리, 다른 워크트리와 전역 단계 보존, doctor 알림과 정리 뒤 제외 |
 | REQ1 | `core` 단위 테스트, `orch status` 명령 테스트 | 판정 표(에이전트 있음·없음, 둘째 터미널, 등록 없음). 가짜 orca 로 `MAIN` 줄 |
 | REQ1, REQ2, REQ3 | `orch-loop` 명령 테스트(가짜 orca, 임시 저장소) | `MAIN-EXISTS` 6, `TAKEOVER-CONFIRM` 6, 메인 없음에서 넘겨받기 뒤 등록이 새 Run 하나, `MAIN-UNKNOWN` 1 |
 | REQ2 | `takeover` 단위 테스트(가짜 orca 호출 기록) | idle worker 는 abandon 뒤 worker-start, 작업 중이면 `WORKER-NOT-MOVED`, 다른 저장소 worker 는 건드리지 않음 |

@@ -65,6 +65,7 @@
 // 짧은 출력(진입점의 orch cleanup handoff, lib/output.ts): WOULD-TRASH <파일>(dry-run), TRASHED <파일>, TRASH-DIR <폴더> 다. 지시서 줄도 같은 낱말이다.
 // 종료 코드: 0 돌았다(후보가 없어도 0), 2 사용법 오류이거나 orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { gitBin } from '../lib/git.ts'
 import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -91,7 +92,7 @@ const RESERVED = new Set(Object.entries(NAMES).filter(([name]) => !FILES.has(nam
 const DAY = 86400
 const RUN_TIMEOUT_MS = 120_000
 
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   repo: { type: 'string' },
   config: { type: 'string' },
   'gh-host': { type: 'string' },
@@ -110,13 +111,14 @@ const OPTIONS = {
 
 // 설정 절의 키(core/config.ts 의 CLEANUP_KEYS)는 옵션 이름의 하이픈을 밑줄로 바꾼 것이고 config 와 help 는 뺀다. 두 벌이 어긋나면 시작할 때 던진다
 const OPTION_KEYS: readonly string[] = Object.keys(OPTIONS)
-  .filter((name) => name !== 'config' && name !== 'help')
+  .filter((name) => name !== 'config' && name !== 'help' && name !== 'not-main')
   .map((name) => name.replaceAll('-', '_'))
 if (OPTION_KEYS.join() !== CLEANUP_KEYS.join()) throw new Error('CLEANUP_KEYS 가 OPTIONS 와 다르다')
 
 class Usage extends Error {}
 
 type Args = {
+  notMain?: string
   repo: string
   config: string | null
   ghHost: string | null
@@ -452,6 +454,7 @@ function parse(argv: string[]): Args | null {
   const configApply = config.apply
   if (configApply !== undefined && typeof configApply !== 'boolean') throw new ConfigError('설정 파일의 cleanup.apply 는 true 나 false 여야 한다')
   return {
+    notMain: cli('not-main'),
     repo: text('repo') ?? '.',
     config: configFile,
     ghHost: text('gh-host'),
@@ -483,6 +486,10 @@ function main(argv: string[]): number {
   }
   if (!(args.config || args.orchDir) && !requireMigrated(args.repo, 'handoff-cleanup', '설정 파일을 --config 로 직접 주거나 --orch-dir 로 폴더를 준다')) return 2
   const repo = resolve(args.repo)
+  if (args.apply) {
+    const mainGuard = guardWrite(repo, 'cleanup handoff', args.notMain)
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   const mainRoot = mainCheckout(repo)
   const orch = args.orchDir ? realPath(resolve(mainRoot, expandUser(args.orchDir))) : orchDir(repo)
   const previews = args.previews ? realPath(resolve(mainRoot, expandUser(args.previews))) : null

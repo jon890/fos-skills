@@ -72,6 +72,7 @@
 // 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류나 삭제한 옵션 포함)이거나
 //           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -102,6 +103,7 @@ const PR_SPEC = /^(\d+)([!~]?)(:.*)?$/s
 class Usage extends Error {}
 
 type Wrapper = {
+  notMain?: string
   finishConfig: string | null
   finishArg: string[]
   logDir: string | null
@@ -214,6 +216,10 @@ function splitArgs(argv: string[]): { wrapper: Wrapper; queue: string[]; prs: Pr
       if (name === '--finish-arg') wrapper.finishArg.push(got)
       else if (name === '--finish-config') wrapper.finishConfig = got
       else wrapper.logDir = got
+    } else if (name === '--not-main') {
+      const got = value()
+      if (got === null) throw new Usage('--not-main 에 이유가 없다')
+      wrapper.notMain = got
     } else if (name === '--run') {
       const got = value()
       if (!got) throw new Usage('--run 에 값이 없다')
@@ -251,7 +257,7 @@ function configPath(wrapper: Wrapper): string {
 // 마무리 인자가 잘못됐으면 머지나 마무리를 시작하기 전에 멈춘다.
 function validateFinishArgs(wrapper: Wrapper): void {
   try {
-    parseArgs({ args: expandArgs(wrapper.finishArg, FINISH_OPTIONS), options: FINISH_OPTIONS, allowPositionals: true })
+    parseArgs({ args: expandArgs(wrapper.finishArg, { ...FINISH_OPTIONS, ...MAIN_GUARD_OPTIONS }), options: { ...FINISH_OPTIONS, ...MAIN_GUARD_OPTIONS }, allowPositionals: true })
   } catch (e) {
     throw new Usage(`--finish-arg: ${(e as Error).message}`)
   }
@@ -377,6 +383,12 @@ async function main(argv: string[]): Promise<number> {
     if (!(e instanceof Usage) && !(e instanceof ConfigError)) throw e
     process.stderr.write(`merge-with-finish: ${e.message}\n`)
     return 2
+  }
+  const mainGuard = guardWrite(wrapper.repo, 'queue merge', wrapper.notMain, { prs: prs.map(pr => pr.number) })
+  if (mainGuard.code !== 0) return mainGuard.code
+  if (wrapper.notMain !== undefined) {
+    wrapper.finishArg.push('--not-main', wrapper.notMain)
+    queue.push('--not-main', wrapper.notMain)
   }
   const admissionDir = mkdtempSync(join(tmpdir(), 'merge-queue-admission-'))
   const accepted = join(admissionDir, 'accepted')

@@ -27,6 +27,7 @@ async function sweepRepo(repo: string, args: Args, workers: WorkerRow[], termina
   const state: StepState = { report: { removed: [], skipped: [] }, listed: [], remaining: new Set(), specsDir: null, owners: () => null, code: 0 }
   Object.assign(state, await prepare(ctx, state))
   Object.assign(state, await cleanupWorktrees(ctx, state))
+  if (ctx.args.guardWorktrees?.has(repo)) return state.code
   Object.assign(state, await cleanupBranches(ctx, state))
   Object.assign(state, await cleanupReviews(ctx, state))
   Object.assign(state, await cleanupSpecs(ctx, state))

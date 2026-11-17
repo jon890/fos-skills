@@ -1,3 +1,4 @@
+import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
@@ -115,7 +116,7 @@ const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--rep
 const LEGACY_AUTO = '자동: '
 const SKIP_STATUS = new Set(['done'])
 
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   'worker-ends': { type: 'string' },
   'worker-revivals': { type: 'string' },
   board: { type: 'string' },
@@ -247,6 +248,10 @@ function main(argv: string[]): number {
     return 2
   }
   const repo = resolve(values.repo ?? '.')
+  if (!values['dry-run']) {
+    const mainGuard = guardWrite(boardRepo(repo, board), 'board sync', values['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   const dryRun = values['dry-run'] === true
   let workerEnds: Record<string, 'done' | 'lost'>
   try {

@@ -1,0 +1,15 @@
+{
+  "name": "write-guard",
+  "description": "메인이 아닌 Run 의 쓰기 제한과 예외 기록",
+  "pr_scope": "REQ11, REQ12 와 REQ13 의 기존 worker 호환 및 doctor 알림을 구현한다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-17",
+  "spec": "docs/features/orch-main-coordinator/spec.md",
+  "design": "docs/features/orch-main-coordinator/design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": ["REQ11", "REQ12", "REQ13"],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ11", "REQ12", "REQ13"]}]
+}

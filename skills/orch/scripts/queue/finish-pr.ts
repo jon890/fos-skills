@@ -127,6 +127,7 @@
 // 종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { gitBin } from '../lib/git.ts'
 import { mergeNotice } from '../core/merge-notice.ts'
 import { recordRouting } from '../lib/routing-log.ts'
@@ -149,7 +150,7 @@ import type { StageKind, Stages } from '../lib/milestones.ts'
 import { closeUnjudged, dispatchFinished, hasActiveWorker, judgeLastPr, numberPattern, specFiles } from '../lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { eventTimeoutSec, fire, handlerFile } from '../lib/events.ts'
-import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from '../lib/finish-options.ts'
+import { FINISH_KEYS, FINISH_OPTIONS } from '../lib/finish-options.ts'
 import { real, realPath } from '../lib/fs.ts'
 import { gh } from '../lib/gh.ts'
 import { repoArgProblem } from '../lib/git.ts'
@@ -176,7 +177,11 @@ const SWEEP_TIMEOUT_MS = 600_000
 const SEND_TIMEOUT_MS = 600_000
 const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName,body'
 
+const OPTIONS = { ...FINISH_OPTIONS, ...MAIN_GUARD_OPTIONS } as const
+
 type Args = {
+  guardScoped?: boolean
+  notMain?: string
   pr: string
   repo: string
   config: string | null
@@ -322,6 +327,7 @@ function parse(argv: string[]): Args | null {
     throw new ConfigError('설정 파일의 finish.intermediate 는 true 나 false 여야 한다')
   }
   const args: Args = {
+    notMain: cli('not-main'),
     pr: positionals[0],
     repo: pick('repo') ?? '.',
     config: configFile,
@@ -411,11 +417,12 @@ function localBranchExists(repo: string, branch: string): boolean {
 async function cleanupWorker(args: Args, repo: string, branch: string): Promise<boolean> {
   const sweep = process.env.CLEANUP_SWEEP || scriptPath('cleanup-sweep')
   const sweepArgs = ['--repo', repo, '--apply', '--kill-holders']
+  if (args.notMain !== undefined) sweepArgs.push('--not-main', args.notMain)
   if (args.run) sweepArgs.push('--run', args.run)
   if (args.baseBranch) sweepArgs.push('--base', args.baseBranch)
   sweepArgs.push(...args.sweepArg)
   for (let attempt = 1; attempt <= CLEANUP_TRIES; attempt++) {
-    git(repo, ['fetch', '--prune', '-q', 'origin'])
+    if (!args.guardScoped) git(repo, ['fetch', '--prune', '-q', 'origin'])
     const done = await runAsync(scriptCommand(sweep, sweepArgs), { cwd: repo, timeoutMs: SWEEP_TIMEOUT_MS })
     // 옛 명령과 같이 stdout 과 stderr 를 이어 붙인 뒤 줄로 나눈다
     for (const line of (done.stdout + done.stderr).split('\n')) {
@@ -869,6 +876,10 @@ async function executeMain(argv: string[]): Promise<number> {
     out(usageText())
     return 0
   }
+  const mainGuard = guardWrite(args.repo, 'queue finish', args.notMain, { prs: [args.pr] })
+  if (mainGuard.code !== 0) return mainGuard.code
+  args.guardScoped = !!mainGuard.worktrees
+  if (mainGuard.ownerRun) args.run = mainGuard.ownerRun
   if (!args.config && !requireMigrated(args.repo, 'finish-pr')) return 2
   try {
     // after-deploy 는 머지와 배포를 기다린 뒤에 난다. 시간 제한 값이 틀린 것을 그때 알면 정리와 배포가 이미 끝났다

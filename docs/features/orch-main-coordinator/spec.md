@@ -76,6 +76,7 @@ PR 순서: PR1 은 메인 판별, 메인 교대와 넘겨받기, 요청 명령�
 | DECISION23 | 막을 대상 | 메인과 다른 Run 에 묶인 코디네이터만. 대상 저장소는 명령이 다루는 저장소. Run 없는 셸과 `/board` 는 허용 | 사용자 2026-11-17 | 사람이 직접 하는 보드 정리는 막지 않는다 |
 | DECISION24 | 배포 때 이미 여러 Run 이 등록된 루프 | 가장 먼저 등록한 Run 이 메인, 나머지는 스스로 빠질 때까지 두고 새 등록만 막는다 | 사용자 2026-11-17 | 등록된 세션이 갑자기 알림을 잃지 않게 한다 |
 | DECISION25 | 메인이 없을 때 다른 저장소 메인이 띄운 worker | 띄운 쪽이 끝까지 맡고 doctor 가 알린다 | 사용자 2026-11-17 | DECISION11 과 같은 이유로 작업 중간에 맡은 사람을 바꾸지 않는다 |
+| DECISION27 | worker 와 연결되지 않는 명령의 우회 이유 | `state/launched-workers/not-main/<id>.json` 에 대상 저장소·부른 Run·메인 Run·명령·이유·시각을 남긴다. worker launch 는 dispatch 기록에도 이유를 남기고 가짜 dispatch 를 만들지 않는다 | 사용자 2026-11-17 | PR2 계획 검토 뒤 사용자 확인 |
 | DECISION26 | 같은 Run 에 묶인 다른 터미널 | 메인으로 본다 | 작성자 | 막는 기준이 Run 이라 같은 Run 은 같은 메인이다(DECISION23) |
 | DECISION16 | 메인 판별 근거 | 저장소 루프에 등록된 Run 과 Orca 의 Run 코디네이터 터미널(`run-list` 의 `coordinator_handle`)에서 에이전트가 실행 중인지(DECISION19) | 작성자 | Orca 의 Run 에는 저장소 정보가 없고, 루프 등록은 저장소마다 있다(`state/loop-runs/`) |
 | DECISION17 | 메인 사이 메시지 경로 | 기존 `orca orchestration send --to run:<Run>` | 작성자 | 루프 알림이 이미 쓰고 Orca 가 받는 쪽을 깨운다([ADR-027](../../adr/027-orca-message-wake.md)) |

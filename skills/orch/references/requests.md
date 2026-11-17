@@ -1,12 +1,22 @@
 # 메인 코디네이터와 요청
 
 저장소마다 메인 코디네이터 하나가 worker 띄우기, 지시, 머지, 정리, 보드 쓰기를 맡는다. 다른 세션은 그 메인에게 요청만 보낸다([ADR-035](../../../docs/adr/035-orch-main-coordinator.md)).
-메인 판정, 넘겨받기 차례, 출력 줄은 `scripts/loop/lifecycle.ts` 와 `scripts/loop/takeover.ts` 머리 주석이, 요청 명령의 출력 줄과 종료 코드는 `scripts/request/request.ts` 머리 주석이 소유한다.
+메인 판정과 넘겨받기는 `scripts/loop/lifecycle.ts` 와 `scripts/loop/takeover.ts`, 쓰기 제한은 `scripts/lib/main-guard.ts`, 요청 명령은 `scripts/request/orch-request.ts` 의 파일 맨 위 설명이 소유한다.
 
 ## 메인 확인
 
 `orch status` 의 `MAIN <Run> terminal=<터미널>` 이 그 저장소의 메인이다. `MAIN-NONE` 이면 메인이 없다.
 메인은 루프에 등록된 Run 가운데 코디네이터 터미널에서 에이전트가 실행 중인 첫 Run 이다. 셸만 남은 터미널은 메인이 아니다.
+
+## 쓰기 명령이 막힐 때
+
+`NOT-MAIN main=<Run> caller=<Run> …` 이면 대상 저장소의 메인이 아닌 Run 에서 쓰기 명령을 불렀다. 함께 나온 `orch request send --to <저장소>` 로 일을 맡긴다. `--run` 에 메인 Run 을 써도 실제 호출 Run 은 바뀌지 않는다.
+조회 명령과 dry-run, Run 에 묶이지 않은 사람의 셸, `/board` 화면은 그대로 쓴다.
+
+직접 처리해야 할 이유가 있으면 쓰기 명령에 `--not-main "<이유>"` 를 붙인다. 빈 이유는 거절한다. 이유는 대상 저장소의 띄우기 기록 아래에 남고 메인에게 알림이 간다. 알림이나 기록이 실패하면 실제 쓰기를 하지 않는다. 우회 전용 기록은 `scripts/lib/main-guard.ts`, worker 기록의 표지와 이유는 `scripts/lib/launched.ts` 가 소유한다. 저장 필드는 [데이터 스키마](../../../docs/data-schema.md)를 따른다.
+
+이 기능 전에 띄운 worker 와, 대상 저장소에 메인이 없을 때 띄운 worker 는 원래 Run 이 지시·머지·정리까지 맡는다. 예외는 해당 worker 에만 적용한다. 그 Run 의 `cleanup sweep --apply --run <원래 Run>` 은 해당 worker 워크트리를 치우고 저장소 전체 정리 단계는 건너뛴다.
+`orch doctor` 의 `NON-MAIN-RUN` 은 메인이 아닌 등록 Run, `FOREIGN-WORKER` 는 다른 Run 이나 다른 저장소에서 띄워 아직 기록이 남은 worker 다. 나온 worktree·spec 과 원래 Run 을 확인한다.
 
 ## `orch loop start` 가 막을 때
 

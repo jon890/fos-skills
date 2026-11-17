@@ -40,6 +40,7 @@
 // 짧은 출력(진입점의 orch queue ready, lib/output.ts): PR 마다 `READY <PR>`, `READY <PR> already`, `WOULD-READY <PR>`(dry-run), `HELD <PR> <이유>` 다.
 // 종료 코드: 0 모두 ready(이미 ready 포함), 1 보류한 PR 이 있다, 2 사용법 오류(설정 파일 오류 포함)나 조회 실패
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
@@ -193,8 +194,8 @@ function readySlots(repo: string): number {
   return value
 }
 
-function parse(argv: string[]): { repo: string; dryRun: boolean; prs: number[] } | 'help' | null {
-  const options = { repo: { type: 'string', default: '.' }, 'dry-run': { type: 'boolean', default: false }, help: { type: 'boolean', short: 'h' } } as const
+function parse(argv: string[]): { repo: string; dryRun: boolean; prs: number[]; notMain?: string } | 'help' | null {
+  const options = { ...MAIN_GUARD_OPTIONS, repo: { type: 'string', default: '.' }, 'dry-run': { type: 'boolean', default: false }, help: { type: 'boolean', short: 'h' } } as const
   let parsed
   try {
     parsed = parseArgs({ args: expandArgs(argv, options), options, allowPositionals: true })
@@ -208,7 +209,7 @@ function parse(argv: string[]): { repo: string; dryRun: boolean; prs: number[] }
     err(`${USAGE}\nci-ready: ${bad.length > 0 ? `PR 번호가 아니다: ${bad.join(' ')}` : 'PR 번호가 필요하다'}`)
     return null
   }
-  return { repo: resolve(parsed.values.repo), dryRun: parsed.values['dry-run'], prs: parsed.positionals.map((value) => Number(value)) }
+  return { notMain: parsed.values['not-main'], repo: resolve(parsed.values.repo), dryRun: parsed.values['dry-run'], prs: parsed.positionals.map((value) => Number(value)) }
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -217,6 +218,10 @@ async function main(argv: string[]): Promise<number> {
   if (a === 'help') {
     out(USAGE)
     return 0
+  }
+  if (!a.dryRun) {
+    const mainGuard = guardWrite(a.repo, 'queue ready', a.notMain, { prs: a.prs })
+    if (mainGuard.code !== 0) return mainGuard.code
   }
   const slots = readySlots(a.repo)
   const judge = new Judge(a.repo)

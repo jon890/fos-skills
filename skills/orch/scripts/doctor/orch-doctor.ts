@@ -168,6 +168,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { mainDoctorLines } from '../lib/main-guard.ts'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { bundleRoot, installLayout, staleBundle, staleLoopBundles } from '../lib/loop-bundle.ts'
 import { homedir, tmpdir } from 'node:os'
@@ -763,7 +764,7 @@ async function executeMain(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
   const { schema, problem: schemaProblem } = await loadSchema()
-  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
+  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...mainDoctorLines(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
   const hookDir = join(pathOf('hooks', repo))
   if (existsSync(hookDir)) {
     for (const name of readdirSync(hookDir)) {

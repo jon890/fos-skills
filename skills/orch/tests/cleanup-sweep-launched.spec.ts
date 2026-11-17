@@ -4,10 +4,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { type Row, branches, calls, exists, fx, git, gone, has, lacks, runSweep, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
+import { type Row, branches, calls, exists, fx, git, gone, has, lacks, runSweep, save, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
 
 type Own = { record?: boolean | Row; status?: string; state?: string; otherTerminal?: boolean }
 
@@ -34,6 +34,58 @@ function ownTerminal(path: string, opts: Own = {}): void {
 }
 
 describe('launch-worker 가 기록한 user_owned 터미널', () => {
+  test('Run 옵션 없는 legacy finish 는 실제 sweep 으로 자기 worker 만 치우고 전역 단계는 생략한다', () => {
+    const owned = worktree('feat-legacy-owned')
+    const head = squashMerge('feat-legacy-owned', owned)
+    const foreign = worktree('feat-legacy-foreign')
+    squashMerge('feat-legacy-foreign', foreign)
+    ownTerminal(owned, { record: { branch: 'feat-legacy-owned' } })
+    fx.terminals.push({ handle: 'tm', agentIdentity: 'codex' })
+    fx.runs = { main: [], run_x: fx.workers }
+    const entries = join(fx.repo, '.orch', 'state', 'loop-runs')
+    mkdirSync(entries, { recursive: true })
+    writeFileSync(join(entries, 'main.json'), JSON.stringify({ run: 'main', registered_at: '2026-11-17T00:00:00Z', coordinator_terminal: 'tm' }))
+    const original = fx.env.ORCA!
+    const wrapper = join(fx.tmp, 'guard-orca.js')
+    writeFileSync(wrapper, `#!${process.execPath}
+const a = process.argv.slice(2)
+const fs = require('node:fs')
+if (a[1] === 'run-current') fs.writeSync(1, JSON.stringify({ ok: true, result: { run: { id: 'run_x' } } }))
+else if (a[1] === 'run-list') fs.writeSync(1, JSON.stringify({ ok: true, result: { runs: [{ id: 'main', coordinator_handle: 'tm' }, { id: 'run_x' }] } }))
+else { const r = require('node:child_process').spawnSync(${JSON.stringify(original)}, a, { env: process.env, encoding: 'utf8' }); fs.writeSync(1, r.stdout || ''); fs.writeSync(2, r.stderr || ''); process.exitCode = r.status }
+`)
+    chmodSync(wrapper, 0o755)
+    fx.env.ORCA = wrapper
+    const originalGh = fx.env.GH!
+    const gh = join(fx.tmp, 'guard-gh.js')
+    const pr = { number: 1, state: 'MERGED', mergeCommit: { oid: head }, headRefName: 'feat-legacy-owned', headRefOid: head, baseRefName: 'main', title: 'legacy worker', body: '', author: { login: 'me' }, url: 'https://example.test/pr/1' }
+    writeFileSync(gh, `#!${process.execPath}
+const a = process.argv.slice(2)
+const fs = require('node:fs')
+if (a[0] === 'pr' && a[1] === 'view') fs.writeSync(1, JSON.stringify(${JSON.stringify(pr)}))
+else { const r = require('node:child_process').spawnSync(${JSON.stringify(originalGh)}, a, { env: process.env, encoding: 'utf8' }); fs.writeSync(1, r.stdout || ''); fs.writeSync(2, r.stderr || ''); process.exitCode = r.status }
+`)
+    chmodSync(gh, 0o755)
+    fx.env.GH = gh
+    const trace = join(fx.tmp, 'git-trace.log')
+    fx.env.GIT_TRACE = trace
+    const marker = join(fx.tmp, 'after-cleanup-called')
+    mkdirSync(join(fx.repo, '.orch', 'hooks'), { recursive: true })
+    writeFileSync(join(fx.repo, '.orch', 'hooks', 'after-cleanup.ts'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'called')`)
+    save()
+    const finish = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
+    const done = spawnSync(process.execPath, [finish, '1', '--repo', fx.repo, '--poll-interval', '0.01', '--merge-timeout', '0.005', '--deploy-timeout', '0.005'], { env: fx.env, encoding: 'utf8', timeout: 60_000 })
+    assert.equal(done.status, 0, done.stdout + done.stderr)
+    const out = done.stdout
+    assert.match(out, /FINISH-DONE/)
+    gone(owned, out)
+    exists(foreign, out)
+    assert.ok(branches().has('feat-legacy-foreign'))
+    assert.equal(existsSync(marker), false)
+    const traced = readFileSync(trace, 'utf8')
+    assert.doesNotMatch(traced, /built-in: git (?:fetch|worktree prune)/)
+  })
+
   test('끝난 dispatch 면 닫고 PR 상태로 정리한다', () => {
     const path = worktree('feat-l1')
     squashMerge('feat-l1', path)

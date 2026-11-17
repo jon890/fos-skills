@@ -49,26 +49,27 @@ export async function prepare(ctx: StepContext, state: StepState): Promise<StepR
     throw new RepoError(`${repo}: orch 작업 폴더를 옮기기 전이라 건너뛴다`)
   }
   const specsDir = args.specsDir ? (isAbsolute(args.specsDir) ? args.specsDir : join(repo, args.specsDir)) : null
-  git(repo, 'fetch', '-q', '--prune', 'origin')
+  const scoped = args.guardWorktrees?.get(repo)
+  if (!scoped) git(repo, 'fetch', '-q', '--prune', 'origin')
   log(`cleanup-sweep ${args.apply ? 'apply' : 'dry-run'}: ${repo} (base ${base})`)
-  followBase(repo, base, args.apply, log)
+  if (!scoped) followBase(repo, base, args.apply, log)
   // 폴더가 이미 없는 워크트리 등록을 먼저 지운다. 남으면 그 브랜치 삭제가 `used by worktree` 로 거절된다
   // -v 의 목록은 stderr 로 나온다
-  const pruned = git(repo, 'worktree', 'prune', '-v', ...(args.apply ? [] : ['-n'])).err
+  const pruned = scoped ? '' : git(repo, 'worktree', 'prune', '-v', ...(args.apply ? [] : ['-n'])).err
   for (const line of lines(pruned)) log(`prune: ${line}`)
   const report: Report = { removed: [], skipped: [] }
   const owners = ownersOf(repo, (why) => {
     err(`cleanup-sweep: ${repo}: 내 PR 의 작성자를 정하지 못해 원격 브랜치 정리와 CLOSED PR 의 터미널 정리를 하지 않는다: ${why}`)
     state.code = 2
   })
-  if (args.apply) await sweepRouting(repo)
-  const listed = worktrees(repo)
+  if (args.apply && !scoped) await sweepRouting(repo)
+  const listed = worktrees(repo).filter(([worktree]) => !scoped || scoped.has(worktree))
   // PR 을 찾을 브랜치(살아 있는 worker 의 워크트리를 뺀 것과 워크트리 없는 로컬 브랜치)의 이름을 한 번에 읽어 둔다(lib/pr-lookup.ts)
   const locals = lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)
   const checkedOut = new Set([...listed.map(([, branch]) => branch), git(repo, 'branch', '--show-current').out])
   prefetchPrs(repo, [
     ...listed.filter(([path, branch]) => branch && !workersAt(workers, path).some(isLive)).map(([, branch]) => branch),
-    ...locals.filter((branch) => !checkedOut.has(branch) && branch !== base && !branch.startsWith('release/')),
+    ...locals.filter((branch) => !scoped).filter((branch) => !checkedOut.has(branch) && branch !== base && !branch.startsWith('release/')),
   ])
   return { report, listed, specsDir, owners }
 }
