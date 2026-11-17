@@ -27,7 +27,7 @@ async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '
     ? { exitCode: 0, stdout: '/repo/.git\n', stderr: '' }
     : processResult(e.argv) }))
   on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
-  on('fs.read', () => ({ value: board }))
+  on('fs.read', () => ({ value: typeof board === 'function' ? board() : board }))
   on('clock.now', () => ({ value: now }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
@@ -100,7 +100,7 @@ test('접힌 보기는 제목 줄, 지금 단계 줄, worker 줄만 그리고 �
   const now = stepParts(await ui.find({ type: 'Box', key: 'steps' }))
   expect(now.markText).toBe('▶')
   expect(now.bodyText).toBe('2. 리뷰  ✓\u00a01개  ·  남은\u00a0단계\u00a01개')
-  expect(now.body.props.bold).toBe(true)
+  expect((now.body.children as Drawn[])[0].props.bold).toBe(true)
   expect(await ui.find({ type: 'Text', text: /구현/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /참고: 머지 뒤 갱신/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /worker 없음 \(wt-a\)/ })).toBeTruthy()
@@ -785,5 +785,160 @@ test('옛 목표 항목은 진행 중에 그려 전체 진행률에 포함한다
   expect(await ui.find({ type: 'Text', text: /진행 중/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /1\/2 \(50%\)/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /★|^목표/ })).toBeFalsy()
+  await ui.unmount()
+})
+
+// 접힌 보기의 요약 줄(「✓ n개」, 「남은 단계 n개」, 「✓ 끝난 worker N」)은 항목별로 펼치고 접는 단추다 (board-summary-toggle)
+const FOLD_ROWS = [
+  row(),
+  row({ role: 'follow', worktree: 'wf', dispatch: 'd3', status: 'done', at: '2026-11-13T03:00:00Z', endedAt: '2026-11-13T03:30:00Z' }),
+  row({ role: 'review', worktree: 'wg', dispatch: 'd4', status: 'done', pr: 7, at: '2026-11-13T04:00:00Z', endedAt: '2026-11-13T04:30:00Z' }),
+]
+const FOLD_STEPS = [
+  { text: '1. 구현', done: true }, { text: '2. 설계', done: true }, { text: '3. 리뷰', done: false },
+  { text: '4. 머지', done: false }, { text: '5. 배포', done: false }, { text: '참고: 메모', done: false },
+]
+const FOLD_BOARD = () => WORKER_BOARD([
+  { id: 'a', title: '첫째', status: 'doing', worktree: 'wa', details: FOLD_STEPS, workers: FOLD_ROWS },
+  { id: 'b', title: '둘째', status: 'doing', worktree: 'wa', details: FOLD_STEPS, workers: FOLD_ROWS },
+  { id: 'w', title: '대기', status: 'wait', details: FOLD_STEPS },
+])
+const folds = async (ui) => (await ui.findAll({ type: 'Button' })).map((b) => String(b.props.key)).filter((k) => k.startsWith('fold-'))
+const foldTexts = async (ui, id) => (await texts(ui, id)).filter((line) => /^(f[dt]-|steps:|wd)/.test(line))
+
+test('요약 줄은 단추이고 누른 항목의 그 목록만 펼쳐진다 (REQ1, REQ6, REQ7)', async ($, on) => {
+  await start($, on, liveWorkers, FOLD_BOARD())
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await folds(ui)).sort()).toEqual(['fold-a-done', 'fold-a-todo', 'fold-a-workers', 'fold-b-done', 'fold-b-todo', 'fold-b-workers', 'fold-w-done', 'fold-w-todo'])
+  const closed = await foldTexts(ui, 'a')
+  expect(closed).toEqual(['steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개', 'wd:✓ 끝난 worker 2'])
+
+  // 남은 단계: 지금 단계 줄 아래에 번호 있는 줄만 적힌 순서대로 끼운다. 참고 줄은 없다. 끝낸 단계는 접힌 채다
+  await ui.press({ key: 'fold-a-todo' })
+  expect(await foldTexts(ui, 'a')).toEqual([
+    'steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개\u00a0접기', 'ft-0: 4. 머지', 'ft-1: 5. 배포', 'wd:✓ 끝난 worker 2'])
+  expect(await ui.find({ type: 'Text', text: /참고: 메모/ })).toBeUndefined()
+  // 다른 항목과 같은 항목의 다른 목록은 그대로다
+  expect(await foldTexts(ui, 'b')).toEqual(closed)
+  expect(await foldTexts(ui, 'w')).toEqual(['steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개'])
+
+  // 끝낸 단계: 지금 단계 줄 위에 끼우고 취소선과 흐림을 쓴다
+  await ui.press({ key: 'fold-a-done' })
+  const got = await foldTexts(ui, 'a')
+  expect(got.map((line) => line.split(':')[0])).toEqual(['fd-0', 'fd-1', 'steps', 'ft-0', 'ft-1', 'wd'])
+  const first = stepParts(await ui.find({ type: 'Box', key: 'fd-0' }))
+  expect([first.markText, first.bodyText]).toEqual(['✓', '1. 구현'])
+  expect(first.body.props).toMatchObject({ strikethrough: true, dimColor: true })
+  await ui.unmount()
+})
+
+test('펼친 단추를 다시 누르면 접히고, 펼친 글에 「접기」 가 보인다 (REQ2)', async ($, on) => {
+  await start($, on, liveWorkers, FOLD_BOARD())
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const label = async (key) => textOf(await ui.find({ type: 'Button', key }) as Drawn)
+  expect(await label('fold-a-done')).toBe('✓\u00a02개')
+  await ui.press({ key: 'fold-a-done' })
+  expect(await label('fold-a-done')).toBe('✓\u00a02개\u00a0접기')
+  await ui.press({ key: 'fold-a-done' })
+  expect(await label('fold-a-done')).toBe('✓\u00a02개')
+  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd'])
+  await ui.unmount()
+})
+
+test('끝난 worker 를 펼치면 끝난 줄만 단추 아래에 생기고 작업 중과 끊김 줄 자리는 그대로다 (REQ8)', async ($, on) => {
+  const lost = row({ role: 'verify', worktree: 'wl', dispatch: 'd5', status: 'lost', pr: 7, at: '2026-11-13T05:00:00Z', endedAt: '2026-11-13T05:10:00Z' })
+  await start($, on, liveWorkers, WORKER_BOARD([{ id: 'a', title: 'w', status: 'doing', worktree: 'wa', details: FOLD_STEPS, workers: [...FOLD_ROWS, lost] }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const before = (await texts(ui, 'a')).filter((line) => /^w/.test(line))
+  expect(before).toEqual(['w-0:⚙ 구현 wa', 'wl-0:⚠ 끊김 검증 wl', 'wd:✓ 끝난 worker 2'])
+  await ui.press({ key: 'fold-a-workers' })
+  expect((await texts(ui, 'a')).filter((line) => /^w/.test(line))).toEqual([
+    'w-0:⚙ 구현 wa', 'wl-0:⚠ 끊김 검증 wl', 'wd:✓ 끝난 worker 2 접기',
+    'wd-0:✓ 후속 wf', 'wd-1:✓ 리뷰 wg  PR #7'])
+  await ui.press({ key: 'fold-a-workers' })
+  expect((await texts(ui, 'a')).filter((line) => /^w/.test(line))).toEqual(before)
+  await ui.unmount()
+})
+
+test('줄이 없는 요약은 단추가 아니고, 단계가 없는 항목에는 단추가 없다 (REQ7)', async ($, on) => {
+  await start($, on, liveWorkers, WORKER_BOARD([
+    { id: 'p', title: '진행률만', status: 'doing', progress: '7/10', next: '메모만' },
+    { id: 'n', title: '없음', status: 'doing' },
+  ]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await folds(ui)).toEqual([])
+  // 요약 수는 progress 값에서 나므로 글은 그대로 보인다
+  expect(await ui.find({ type: 'Text', text: /✓.7개/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('d 로 펼친 보기에는 요약 단추가 없고, 다시 접으면 항목별로 펼친 상태가 돌아온다 (REQ4)', async ($, on) => {
+  await start($, on, liveWorkers, FOLD_BOARD())
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'fold-a-todo' })
+  await ui.press({ key: 'fold-b-workers' })
+  await ui.press({ key: 'toggle-done' })
+  expect(await folds(ui)).toEqual([])
+  expect((await texts(ui, 'a')).filter((line) => /^s-/.test(line)).length).toBe(6)
+  await ui.press({ key: 'toggle-done' })
+  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps', 'ft-0', 'ft-1', 'wd'])
+  expect((await foldTexts(ui, 'b')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd', 'wd-0', 'wd-1'])
+  await ui.unmount()
+})
+
+test('넘기기(x) 모드에서는 요약 단추를 눌러도 펼쳐지지 않는다 (REQ5)', async ($, on) => {
+  on('prompt.fill', () => ({ isFilled: true }))
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on, (argv) => String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
+    ? { exitCode: 0, stderr: '', stdout: JSON.stringify({ enabled: true, fetchedAt: null, newCount: 2, unclassified: 0, isDefault: true, errors: {}, items: INBOX_ITEMS }) }
+    : liveWorkers(argv), FOLD_BOARD())
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'inbox-dismiss' })
+  await ui.press({ key: 'fold-a-todo' })
+  await ui.press({ key: 'fold-a-workers' })
+  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd'])
+  await ui.unmount()
+})
+
+test('완료 항목과 결정 항목에는 요약 단추가 없다', async ($, on) => {
+  await start($, on, liveWorkers, WORKER_BOARD([
+    { id: 'd', title: '끝', status: 'done', details: [{ text: '1. 구현', done: true }] },
+    { id: 'q', title: '결정', status: 'decide', details: [{ text: '1. 고르기', done: false }, { text: '2. 정하기', done: false }] },
+  ]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'toggle-done' })
+  expect(await folds(ui)).toEqual([])
+  await ui.unmount()
+})
+
+test('목록이 비어 단추가 사라지면 펼침 상태를 버려 다시 생겨도 접힌 채 나온다 (REQ3)', async ($, on) => {
+  const step = (n, done) => ({ text: n + '. 단계', done })
+  let details = [step(1, true), step(2, false), step(3, false)]
+  await start($, on, liveWorkers, () => WORKER_BOARD([{ id: 'a', title: '첫째', status: 'doing', details }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const reload = () => $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await ui.press({ key: 'fold-a-todo' })
+  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps', 'ft-0'])
+  // 남은 단계를 모두 끝내면 남은 단계 단추가 사라진다
+  details = [step(1, true), step(2, true), step(3, true)]
+  await reload()
+  expect(await ui.find({ type: 'Button', key: 'fold-a-todo' })).toBeUndefined()
+  // 새 단계가 생겨도 접힌 채 나온다
+  details = [step(1, true), step(2, true), step(3, true), step(4, false), step(5, false)]
+  await reload()
+  expect(await ui.find({ type: 'Button', key: 'fold-a-todo' })).toBeTruthy()
+  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps'])
+  await ui.unmount()
+})
+
+test('/board 를 새로 열면 펼쳐 둔 요약이 모두 접혀 있다 (REQ3)', async ($, on) => {
+  await start($, on, liveWorkers, FOLD_BOARD())
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'fold-a-todo' })
+  await ui.press({ key: 'fold-b-workers' })
+  expect((await foldTexts(ui, 'a')).length).toBe(4)
+  await $.command.run({ command: 'board' })
+  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd'])
+  expect((await foldTexts(ui, 'b')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd'])
   await ui.unmount()
 })
