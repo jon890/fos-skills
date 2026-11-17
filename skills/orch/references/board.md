@@ -135,7 +135,7 @@ orch board del --done
 3. [merge] 머지
 ```
 
-항목은 사건과 단계 번호의 짝을 `stages` 필드(`pr=1,merge=2`)에 둔다. 사건 꼬리표도 `stages` 도 없는 옛 항목의 규칙은 `board-sync.ts` 머리 주석이 소유한다.
+머지 사건 단계는 PR 상태가 MERGED 이고 기능 완료 근거도 끝난 경우에 끝난다. 끝내지 못한 사건 단계는 `BOARD <id> event-skipped ...` 와 `BOARD <id> remaining-events ...` 로 이유와 남은 단계를 출력한다. 항목은 사건과 단계 번호의 짝을 `stages` 필드(`pr=1,merge=2`)에 둔다. 사건 꼬리표도 `stages` 도 없는 옛 항목의 규칙은 `board-sync.ts` 머리 주석이 소유한다.
 
 **done 으로 바꾸는 때는 `board.done_after` 가 정한다.** 값은 `merge`, `deploy`, `release` 이고 기본은 `merge` 다.
 마지막 PR 이 그 사건 단계에 닿으면 그 번호까지의 남은 단계를 끝내고 done 으로 바꾼다. 항목에 그 사건 단계가 없으면 항목에 있는 가장 늦은 사건 단계에서 바꾼다.

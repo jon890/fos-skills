@@ -518,7 +518,7 @@ function judgeLast(args: Args, repo: string, merged: Merged): Verdict {
   if (args.complete) return { last: true, known: true, retry: false, reason: '--complete 로 지정', prs: [], specs: [] }
   if (args.intermediate) return { last: false, known: true, retry: false, reason: '--intermediate 로 지정', prs: [], specs: [] }
   const rules = { taskPattern: args.taskPattern, specTaskPattern: args.specTaskPattern, specsDir: args.specsDir ? specsDirOf(args, repo) : null }
-  const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch }, rules)
+  const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch, head: typeof merged.pr.head === 'string' ? merged.pr.head : undefined }, rules)
   return { last: verdict.last === true, known: verdict.last !== null, retry: verdict.retry, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 

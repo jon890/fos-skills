@@ -7,6 +7,7 @@
 //     지시서의 줄마다 맞춰 본다. 첫 그룹이 업무 번호다. `브랜치:` 줄이 이 PR 의 브랜치인 지시서와, `브랜치:` 줄의 브랜치가
 //     모두 MERGED PR 을 가진 지시서는 세지 않는다. 먼저 머지된 중간 PR 의 지시서가 남아 마지막 PR 을 막지 않게 하기 위해서다.
 //     specsDir 가 없으면 이 조건은 보지 않는다
+// 같은 브랜치의 지시서는 다음 PR 을 명시할 때만 남은 일로 센다. PR HEAD 뒤의 로컬 커밋도 남은 일이다.
 // 판정하지 못하면 last 는 null 이다. taskPattern 이 없다, 제목에서 업무 번호를 찾지 못했다, specsDir 는 있는데 specTaskPattern 이 없다,
 // gh 조회가 실패했다가 여기 든다. 부르는 쪽이 null 을 어떻게 다룰지 정한다. gh 조회 실패는 다시 보면 풀릴 수 있어 retry 가 true 다.
 //
@@ -25,12 +26,13 @@ import { orcaJson } from './orca.ts'
 import { FINISHED_DISPATCH } from './worker-state.ts'
 import { pyRegExp, pyStr } from './py.ts'
 import { branchesOf } from './spec.ts'
+import { git } from './git.ts'
 
 const NUMBER_OK = /^[A-Za-z0-9._/-]+$/
 
 export type LastPrRules = { taskPattern: RegExp | null; specTaskPattern: RegExp | null; specsDir: string | null }
 export type LastPrVerdict = { last: boolean | null; retry: boolean; number: string | null; prs: string[]; specs: string[]; reason: string }
-export type MergedPr = { number: string; title: string; branch: string }
+export type MergedPr = { number: string; title: string; branch: string; head?: string }
 
 // 정규식의 잡는 그룹 수. 빈 문자열에 늘 맞는 대안을 붙여 exec 결과의 길이로 센다
 export function groupCount(re: RegExp): number {
@@ -118,8 +120,13 @@ export function judgeLastPr(repo: string, pr: MergedPr, rules: LastPrRules): Las
     const specPattern = rules.specTaskPattern as RegExp
     for (const spec of specFiles(rules.specsDir)) {
       const branches = branchesOf(spec.text)
-      if (branches.includes(pr.branch)) continue
+      const sameBranchFollowUp = branches.includes(pr.branch) && /(?:다음|남은)\s*(?:PR|풀리퀘스트)|후속\s*PR/i.test(spec.text)
+      if (branches.includes(pr.branch) && !sameBranchFollowUp) continue
       if (!spec.text.split(/\r?\n/).some((line) => extractTaskNumber(line, specPattern) === number)) continue
+      if (sameBranchFollowUp) {
+        specs.push(basename(spec.path))
+        continue
+      }
       // 브랜치 줄이 없는 지시서는 아직 시작하지 않은 일이라 남은 것으로 센다
       let merged = branches.length > 0
       for (const branch of branches) {
@@ -130,6 +137,13 @@ export function judgeLastPr(repo: string, pr: MergedPr, rules: LastPrRules): Las
       if (!merged) specs.push(basename(spec.path))
     }
   }
+  const localRef = pr.branch ? git(repo, ['rev-parse', '--verify', '-q', `refs/heads/${pr.branch}`]) : null
+  const localAhead = pr.head && localRef?.code === 0
+    ? git(repo, ['rev-list', '--count', `${pr.head}..refs/heads/${pr.branch}`])
+    : null
+  const localCommits = localAhead?.code === 0 && /^\d+$/.test(localAhead.stdout.trim()) ? Number(localAhead.stdout.trim()) : 0
+  const localProblem = localAhead && localAhead.code !== 0 ? '로컬 브랜치의 남은 커밋 확인 실패' : localCommits > 0 ? `로컬 브랜치에 PR 뒤 커밋 ${localCommits} 개` : ''
+  if (localProblem) specs.push(localProblem)
   const specPart = rules.specsDir ? `남은 지시서 ${specs.join(' ') || '없음'}` : '지시서는 보지 않음(specs_dir 없음)'
   return { last: prs.length === 0 && specs.length === 0, retry: false, number, prs, specs, reason: `업무 ${number}, 남은 PR ${prs.join(' ') || '없음'}, ${specPart}` }
 }

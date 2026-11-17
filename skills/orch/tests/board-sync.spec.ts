@@ -30,7 +30,7 @@ else if (args[1] === 'view' && args.includes('body,headRefOid,headRefName')) {
 else if (args[1] === 'view' && args.includes('mergeCommit')) {
   if (!state['merge:' + args[2]]) process.exit(1)
   say(state['merge:' + args[2]])
-} else if (args[1] === 'view' && args.includes('title,headRefName')) {
+} else if (args[1] === 'view' && args.some((arg) => arg.startsWith('title,headRefName'))) {
   if (!state['info:' + args[2]]) process.exit(1)
   say(state['info:' + args[2]])
 } else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
@@ -873,8 +873,10 @@ describe('손으로 쓴 사건 단계', () => {
     assert.deepEqual(r.board.other.details, [step('1. 머지 (#8 merge)', false)])
   })
   test('조회 실패와 dry-run 은 완료 값을 바꾸지 않는다', () => {
-    let r = sync([{ id: 'g', status: 'doing', details: details() }])
+    let r = sync([{ id: 'g', status: 'doing', details: details() }], [], { env: { ORCH_OUTPUT: 'short' } })
     assert.deepEqual(r.board.g.details, details())
+    assert.match(r.result.stdout, /BOARD g event-skipped 2 PR #7 merge: PR 상태 조회 실패/)
+    assert.match(r.result.stdout, /BOARD g remaining-events/)
     states['7'] = 'MERGED'
     r = sync([{ id: 'g', status: 'doing', details: details() }], ['--dry-run'])
     assert.equal(r.code, 0, r.result.stderr)
