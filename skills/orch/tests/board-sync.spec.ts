@@ -184,6 +184,58 @@ test('워크트리가 없어진 끊김 줄은 working 으로 되살리지 않고
   assert.deepEqual((r.board.a.workers as Json[]).map((row) => row.status), ['lost', 'working', 'done'])
 })
 
+// 보드를 나눠 쓰는 두 저장소의 루프가 같은 틱에 차례로 돈다. 한쪽은 되살리고 다른 쪽은 자기 git 목록에 없는 워크트리를 보게 된다(2026-11-17 fos-assistant, fos-agents).
+// 저장소 둘은 각자 git 목록과 띄우기 이력을 갖는다. 이력은 ORCH_DIR 로 저장소마다 나눈다
+function repoWith(dir: string, own: string[], worktrees: string[] = []): { repo: string; env: Record<string, string> } {
+  mkdirSync(dir, { recursive: true })
+  const git = (...args: string[]) => {
+    const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+  }
+  git('init', '-q')
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-qm', 'init')
+  for (const name of worktrees) git('worktree', 'add', '-q', '-b', name, join(dir, 'wt', name))
+  const orch = join(dir, 'orch')
+  mkdirSync(join(orch, 'state'), { recursive: true })
+  writeFileSync(join(orch, 'state/launch-history.jsonl'), own.map((dispatch) => JSON.stringify({ at: '2026-01-01T00:00:00Z', dispatch, worktree: join(dir, 'wt', 'x'), spec: join(dir, 'x.md') })).join('\n'))
+  return { repo: dir, env: { ORCH_DIR: orch } }
+}
+
+test('다른 저장소가 띄운 살아 있는 worker 의 줄은 이 저장소의 루프가 끊김으로 쓰지 않아 되살린 줄이 다음 틱에도 working 이다', () => {
+  const owner = repoWith(join(tmp, 'owner'), ['d-theirs'], ['theirs'])
+  const sharer = repoWith(join(tmp, 'sharer'), ['d-mine'])
+  const tick = (who: { repo: string; env: Record<string, string> }, extra: string[] = []) =>
+    run(['--board', board, '--repo', who.repo, ...extra], { env: who.env })
+  writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
+  writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', worktree: 'theirs', details: ['1. 남음'], workers: [
+    worker('follow', 'theirs', 'd-theirs', { status: 'lost', endedAt: '2026-01-01T00:10:00+09:00' }),
+  ] }] }))
+  const state = () => {
+    const item = load().a
+    return { worktree: item.worktree, rows: (item.workers as Json[]).map((row) => [row.status, row.endedAt]) }
+  }
+  // 틱 1: 띄운 저장소의 루프가 되살리고, 보드만 나눠 쓰는 저장소의 루프가 이어서 같은 보드를 본다
+  assert.equal(tick(owner, ['--worker-revivals', '{"d-theirs":"working"}']).code, 0)
+  assert.deepEqual(state(), { worktree: 'theirs', rows: [['working', null]] })
+  assert.equal(tick(sharer).code, 0)
+  assert.deepEqual(state(), { worktree: 'theirs', rows: [['working', null]] })
+  // 틱 2: 이미 working 인 줄은 두 루프 모두 그대로 둔다
+  assert.equal(tick(owner, ['--worker-ends', '{}']).code, 0)
+  assert.equal(tick(sharer).code, 0)
+  assert.deepEqual(state(), { worktree: 'theirs', rows: [['working', null]] })
+})
+
+test('이 저장소가 띄운 worker 의 워크트리가 사라졌으면 띄우기 이력이 있어도 끊김으로 쓴다', () => {
+  const mine = repoWith(join(tmp, 'mine'), ['d-mine'])
+  writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
+  writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', worktree: 'gone', details: ['1. 남음'], workers: [
+    worker('impl', 'gone', 'd-mine'), worker('follow', 'theirs', 'd-theirs'),
+  ] }] }))
+  const r = run(['--board', board, '--repo', mine.repo], { env: mine.env })
+  assert.equal(r.code, 0, r.stderr)
+  assert.deepEqual((load().a.workers as Json[]).map((row) => row.status), ['lost', 'working'])
+})
+
 test('--worker-revivals 는 dispatch 와 working|done 객체만 받는다', () => {
   writeFileSync(board, JSON.stringify({ items: [] }))
   for (const value of ['[]', 'null', '{"d":"lost"}', '{broken']) assert.equal(run(['--board', board, '--repo', tmp, '--worker-revivals', value]).code, 2)
