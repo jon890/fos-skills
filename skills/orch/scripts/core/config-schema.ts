@@ -317,6 +317,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     data_days: zodCheck(numberLike('cleanup.data_days', 'nonnegative')),
     apply: zodCheck(bool),
   },
+  worker: { commit_check: zodCheck(bool) },
   inbox: {
     enabled: zodCheck(bool),
     dooray: zodCheck(inboxAdapter),

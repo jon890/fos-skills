@@ -1,10 +1,10 @@
 import { isObject } from './json.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox' | 'worker'
 
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox']
+export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox', 'worker']
 
 export class ConfigError extends Error {}
 
@@ -82,6 +82,10 @@ export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern
 // inbox 절의 아는 키. 알림 필터이고 inbox 스킬(skills/inbox/scripts/inbox.ts)이 읽는다. docs/data-schema.md 「config.json 에 더하는 절」 표의 inbox 행이다.
 // enabled 는 false 로 그 저장소의 알림을 끄고, 나머지는 adapter 이름이다. adapter 를 더하면 이 목록에도 더한다
 export const INBOX_KEYS: readonly string[] = ['enabled', 'dooray', 'slack']
+
+// worker 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 worker 행이다. launch-worker 가 worker 를 띄울 때 읽는다.
+// commit_check 가 false 면 그 저장소의 worker 워크트리에 한국어 커밋 검사를 걸지 않는다(lib/commit-check.ts)
+export const WORKER_KEYS: readonly string[] = ['commit_check']
 
 // docker 절의 아는 키. 값의 판정은 core/docker.ts 의 dockerRules 가 소유한다.
 export const DOCKER_KEYS: readonly string[] = ['containers', 'images']

@@ -37,6 +37,7 @@
 | [ADR-033](033-board-item-worker-rows.md) | 보드 항목은 worker 줄 목록을 갖고, 후속 PR 의 사건 단계는 그 줄이 갖는다 | accepted | - |
 | [ADR-034](034-export-only-skills-registered.md) | 내보내기 원본 폴더의 두 스킬도 플러그인 스킬 목록에 등록한다 | accepted | - |
 | [ADR-035](035-orch-main-coordinator.md) | 저장소마다 메인 코디네이터 Run 하나만 루프를 맡고, 다른 코디네이터는 요청을 보낸다 | accepted | - |
+| [ADR-036](036-worker-commit-korean-check.md) | worker 의 한국어 표기 검사는 워크트리에 건 git 커밋 훅으로 한다 | accepted | - |
 
 ## 대체됨
 

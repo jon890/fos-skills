@@ -3,8 +3,10 @@
 // 실제 규칙 파일의 금지어를 쓰지 않으려고 접두사와 금지어를 바꿔 넣는다.
 
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { buildMatchers } from '../scripts/korean-style-check.ts'
+import { buildMatchers, loadAdvice, loadTerms } from '../scripts/korean-style-check.ts'
+import { tempDir, write } from './helpers.ts'
 
 describe('buildMatchers', () => {
   const matchers = Object.fromEntries(buildMatchers(['가나', '다라', '마바'], ['가', '다']))
@@ -21,4 +23,24 @@ describe('buildMatchers', () => {
     assert.ok(search('x a.b(c y'))
     assert.equal(search('x aXb(c y'), null)
   })
+})
+
+describe('loadAdvice', () => {
+  const rules = write(
+    join(tempDir(), 'rules.md'),
+    ['# 규칙', '', '## 어색한 말 매핑 표', '', '| 금지 | 원어 | 권장 |', '| --- | --- | --- |', '| 가나 / 다라 | x | 첫째, 둘째 |', '| 마바 (용례) | | 셋째 |', '| 사아 | y | |', '', '## 다음 절', '', '| 자차 | z | 넷째 |', ''].join('\n'),
+  )
+
+  test('슬래시로 나눈 낱말마다 같은 권장 글을 잇고 괄호 안은 낱말에서 뺀다', () => {
+    const advice = loadAdvice(rules)
+    assert.equal(advice.get('가나'), '첫째, 둘째')
+    assert.equal(advice.get('다라'), '첫째, 둘째')
+    assert.equal(advice.get('마바'), '셋째')
+  })
+  test('권장 열이 빈 행과 표 밖의 행은 넣지 않는다', () => {
+    const advice = loadAdvice(rules)
+    assert.equal(advice.has('사아'), false)
+    assert.equal(advice.has('자차'), false)
+  })
+  test('loadTerms 는 권장 열과 상관없이 표의 금지어를 모두 낸다', () => assert.deepEqual(loadTerms(rules), ['가나', '다라', '마바', '사아']))
 })

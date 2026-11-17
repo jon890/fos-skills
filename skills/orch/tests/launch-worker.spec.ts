@@ -1984,6 +1984,8 @@ describe('worker 셸의 orch 판정', () => {
       assert.ok(create.includes(`--worktree path:${worktree}`) && create.includes('--environment macbook') && create.includes('command -v orch'), create)
       assert.ok(lines('orca terminal close')[0].includes('--terminal term_probe --environment macbook'))
       assert.ok(lines('orca terminal create').length === 1 && lines('orca orchestration worker-start').length === 1)
+      // 원격 worker 는 이 머신의 경로를 박은 훅 폴더를 쓰지 못해 한국어 커밋 검사를 걸지 않고 알린다
+      assert.match(r.stdout, /^COMMIT-CHECK-SKIP 원격 환경의 worker 라 걸지 않는다$/m)
     })
   }
 
@@ -2356,7 +2358,6 @@ describe('Codex worker 의 ssh-agent 설정', () => {
     const r = launch(['--worktree', wt, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.equal(gitOut(wt, 'config', '--get', 'core.sshCommand').status, 1)
-    assert.equal(gitOut(wt, 'config', '--local', '--get', 'extensions.worktreeConfig').status, 1)
   })
 
   test('SSH_AUTH_SOCK 이 없으면 codex 여도 설정하지 않는다', () => {
@@ -2373,6 +2374,105 @@ describe('Codex worker 의 ssh-agent 설정', () => {
     assert.equal(r.code, 0, both(r))
     assert.equal(gitOut(wt, 'config', '--get', 'core.sshCommand').stdout.trim(), 'ssh -i /my/key')
     assert.match(r.stderr, /SSH-AGENT 건너뜀/)
+  })
+})
+
+describe('한국어 커밋 검사 걸기', () => {
+  let proj: string
+  let wt: string
+
+  const gitOut = (cwd: string, ...args: string[]) => spawnSync('git', ['-C', cwd, ...args], { env, encoding: 'utf8' })
+  const hooksPath = () => gitOut(wt, 'config', '--worktree', '--get', 'core.hooksPath').stdout.trim()
+
+  // lib-commit-check.spec.ts 가 설치와 훅 동작을 따로 본다. 여기서는 launch-worker 가 에이전트와 상관없이 부르고 결과 줄을 내는지 본다.
+  beforeEach(() => {
+    proj = join(tmp, 'checkproj')
+    wt = join(tmp, 'checkwt')
+    assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', proj], { env }).status, 0)
+    assert.equal(gitOut(proj, 'commit', '-q', '--allow-empty', '-m', 'init').status, 0)
+    assert.equal(gitOut(proj, 'worktree', 'add', '-q', '-b', 'feature/check', wt).status, 0)
+    env.FAKE_WT_DEFAULT = `${wt}`
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  })
+
+  for (const [name, agent] of [['claude', CLAUDE], ['codex', CODEX]] as const) {
+    test(`${name} 로 띄워도 그 워크트리에만 훅 폴더를 걸고 진행 줄을 낸다`, () => {
+      const r = launch(['--worktree', wt, '--', ...agent])
+      assert.equal(r.code, 0, both(r))
+      assert.match(hooksPath(), /\/orch-hooks$/)
+      assert.equal(gitOut(proj, 'config', '--get', 'core.hooksPath').status, 1)
+      assert.match(r.stdout, /^한국어 커밋 검사를 걸었다: .*\/orch-hooks$/m)
+      assert.doesNotMatch(r.stdout, /COMMIT-CHECK-/)
+    })
+  }
+
+  test('짧은 출력에서는 걸었다는 진행 줄을 내지 않는다', () => {
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', wt, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(hooksPath(), /\/orch-hooks$/)
+    assert.doesNotMatch(r.stdout, /한국어 커밋 검사|COMMIT-CHECK-/)
+  })
+
+  test('워크트리에 사용자가 둔 core.hooksPath 가 있으면 덮지 않고 판정 줄로 알리며 띄운다', () => {
+    assert.equal(gitOut(proj, 'config', '--local', 'extensions.worktreeConfig', 'true').status, 0)
+    assert.equal(gitOut(wt, 'config', '--worktree', 'core.hooksPath', '/elsewhere').status, 0)
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', wt, '--', ...CODEX])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(hooksPath(), '/elsewhere')
+    assert.match(r.stdout, /^COMMIT-CHECK-SKIP 워크트리에 core\.hooksPath 가 이미 있다: \/elsewhere$/m)
+    assert.match(r.stdout, /^LAUNCHED ctx_1 /m)
+  })
+
+  test('저장소 설정 worker.commit_check 가 false 면 걸지 않고 진행 줄만 낸다', () => {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: false } }))
+    const r = launch(['--worktree', wt, '--', ...CODEX])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(gitOut(wt, 'config', '--get', 'core.hooksPath').status, 1)
+    assert.match(r.stdout, /^한국어 커밋 검사를 걸지 않는다: 설정 worker\.commit_check 가 false 다$/m)
+    assert.doesNotMatch(r.stdout, /COMMIT-CHECK-/)
+  })
+
+  test('켜진 채 띄운 워크트리를 끈 뒤 다시 띄우면 앞서 건 훅을 푼다', () => {
+    assert.equal(launch(['--worktree', wt, '--', ...CLAUDE]).code, 0)
+    const hooks = hooksPath()
+    assert.match(hooks, /\/orch-hooks$/)
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: false } }))
+    state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+    const r = launch(['--worktree', wt, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(gitOut(wt, 'config', '--get', 'core.hooksPath').status, 1)
+    assert.equal(existsSync(hooks), false)
+    assert.match(r.stdout, /앞서 건 훅을 풀었다/)
+  })
+
+  test('worker.commit_check 가 true 나 false 가 아니면 설정 오류로 멈춘다', () => {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: 'no' } }))
+    const r = launch(['--worktree', wt, '--', ...CODEX])
+    assert.equal(r.code, 2, both(r))
+    assert.match(r.stderr, /worker\.commit_check 는 true 나 false 여야 한다/)
+    assert.equal(lines('orca orchestration worker-start').length, 0)
+  })
+
+  test('설정 오류는 새 워크트리를 만들기 전에 멈춘다', () => {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify({ worker: { commit_check: 'no' } }))
+    const r = launch(['--repo', proj, '--name', 'fresh', '--', ...CODEX])
+    assert.equal(r.code, 2, both(r))
+    assert.doesNotMatch(both(r), /워크트리를 만들었다/)
+    assert.equal(lines('make ').length, 0)
+  })
+
+  test('주 checkout 에 띄우면 걸지 않고 판정 줄로 알린다', () => {
+    env.FAKE_WT_DEFAULT = `${proj}`
+    const r = launch(['--worktree', proj, '--', ...CODEX])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(gitOut(proj, 'config', '--get', 'core.hooksPath').status, 1)
+    assert.match(r.stdout, /^COMMIT-CHECK-SKIP 주 checkout 이라 걸지 않는다$/m)
   })
 })
 

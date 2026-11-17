@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, test } from 'node:test'
-import { ADR_KEYS, BOARD_KEYS, CLEANUP_KEYS, CONTRACTS_KEYS, DOCKER_KEYS, HEAVY_KEYS, HOOKS_KEYS, INBOX_KEYS, MIGRATIONS_KEYS, PIPELINE_KEYS, QUEUE_KEYS, REVIEW_KEYS, ROUTING_KEYS, SECTIONS } from '../scripts/core/config.ts'
+import { ADR_KEYS, BOARD_KEYS, CLEANUP_KEYS, CONTRACTS_KEYS, DOCKER_KEYS, HEAVY_KEYS, HOOKS_KEYS, INBOX_KEYS, MIGRATIONS_KEYS, PIPELINE_KEYS, QUEUE_KEYS, REVIEW_KEYS, ROUTING_KEYS, SECTIONS, WORKER_KEYS } from '../scripts/core/config.ts'
 import type { Section } from '../scripts/core/config.ts'
 import { KEYS, PAIRS, RESTART_KEYS, TIMER_MAX_SEC, knownPath, problems } from '../scripts/core/config-schema.ts'
 import type { Problem } from '../scripts/core/config-schema.ts'
@@ -27,6 +27,7 @@ const READER_KEYS: Record<Section, readonly string[]> = {
   docker: DOCKER_KEYS,
   routing: ROUTING_KEYS,
   inbox: INBOX_KEYS,
+  worker: WORKER_KEYS,
 }
 
 const under = (problem: Problem, section: string, key: string) => problem.path === `${section}.${key}` || problem.path.startsWith(`${section}.${key}.`) || problem.path.startsWith(`${section}.${key}[`)

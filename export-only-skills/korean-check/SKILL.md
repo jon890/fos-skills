@@ -65,6 +65,16 @@ node "$SKILL_DIR/scripts/check.ts" --diff "$BASE" -- "$FILE"
 
 기존 줄의 발견은 완료 보고에 범위 밖 발견으로 남긴다. 기준을 생략하면 커밋하지 않은 변경만 본다.
 
+**커밋 훅에서는 `--staged` 로 돌린다.**
+스테이징한 `.md` 에서 이번에 더한 줄만 판정하고, 금지어마다 매핑 표의 권장 표현을 한 줄씩 붙인다.
+작업 트리가 아니라 스테이징된 내용을 읽으므로 커밋될 내용과 검사 내용이 같다. 발견이 없으면 아무것도 내지 않는다.
+대상과 출력, 종료 코드는 `check-diff.ts` 의 머리말이 소유한다.
+
+```bash
+# cwd: 검사할 저장소 안
+node "$SKILL_DIR/scripts/check.ts" --staged
+```
+
 저장소 전체 테스트에서 외부 패키지 사본을 제외하는 `.claude/korean-check-exclude.txt` 는 `references/markdown-readability.md` 의 「표기」 가 소유한다.
 
 ## 검사기가 잡지 못하는 축을 본다

@@ -56,6 +56,13 @@
 //        잡은 번호는 지금 예약처럼 PR 이 머지되거나 브랜치가 없어지면(지시서 정리와 워크트리 정리가 지운다) 다음 예약의 정리가 푼다.
 //        RESERVE_MIGRATION 으로 예약 명령을 바꾼다
 //     2. 워크트리를 만들거나 확인한다
+//     2-0-1. 한국어 커밋 검사를 건다(lib/commit-check.ts). 에이전트를 보지 않는다. 그 워크트리에만 걸리는 git 설정 core.hooksPath 를
+//        워크트리 git 관리 폴더의 훅 폴더로 두고, 훅 pre-commit 이 금지어가 든 .md 커밋을 거절한다(docs/adr/036-worker-commit-korean-check.md).
+//        걸었으면 진행 줄 `한국어 커밋 검사를 걸었다: <훅 폴더>` 를 낸다. 걸지 않았으면 `COMMIT-CHECK-SKIP <이유>`(주 checkout, 원격 환경 옵션,
+//        검사기 번들 없음, 워크트리에 사용자가 둔 core.hooksPath, 켤 수 없는 공유 설정), 쓰지 못했으면 `COMMIT-CHECK-FAIL <이유>` 를 stdout 에 낸다.
+//        그 줄이 나온 worker 의 커밋은 검사받지 않는다. git 작업 트리가 아닌 폴더는 알리지 않는다. 어느 결과든 띄운다.
+//        config.json 의 worker.commit_check 가 false 면 걸지 않고, 앞서 건 훅이 있으면 푼 뒤 진행 줄만 낸다. 풀지 못하면 `COMMIT-CHECK-FAIL` 이다.
+//        그 값은 워크트리를 만들기 전에 읽고, true 나 false 가 아니면 설정 오류(2)로 멈춘다
 //     2-0. --agent codex 이고 코디네이터 환경에 SSH_AUTH_SOCK 이 있으면 그 워크트리에만 걸리는 git 설정 core.sshCommand 에
 //        `ssh -o IdentityAgent=<소켓>` 을 둔다(lib/ssh-agent.ts). Codex 의 `inherit = "core"` 가 SSH_AUTH_SOCK 을 빼 git 의 SSH 인증이
 //        막히는 것을 막는다. worker-start 에는 Codex 인자(-c)를 넘길 옵션이 없다. 이미 정한 core.sshCommand 는 덮지 않고, 설정이 실패해도 띄운다.
@@ -91,7 +98,7 @@
 //        `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄 또는 ->` 를, 실패하면 receipt 전체를 `START-FAIL <receipt 한 줄>` 로 낸다. 거부는 `REFUSED <이유 첫 줄>`,
 //        모델이나 effort 의 후보 밖 이유가 있으면 전체 출력에서도 LAUNCH-EFFECTIVE 에 candidateOverride(행·모델·이유, effort 초과면 effort·effortLimit)를 더한다.
 //        시작 확인 시간 초과는 `STALLED-START <dispatch> <단계 또는 -> <근거>` 다. 성공으로 알리지 않고 기록·이벤트 처리를 마친 뒤 1 로 끝난다.
-//        ack 줄과 REVIEW-*, SSH-AGENT 판정 줄 밖의 진행 줄과 worker-start JSON 은 내지 않는다
+//        ack 줄과 REVIEW-*, SSH-AGENT, COMMIT-CHECK-* 판정 줄 밖의 진행 줄과 worker-start JSON 은 내지 않는다
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
 //        기록 실패는 stderr 로만 알리고 LAUNCHED 와 종료 코드는 유지한다.
@@ -131,7 +138,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { registerBoard } from '../lib/board.ts'
 import { expandArgs } from '../lib/args.ts'
-import { ConfigError, loadConfig, REVIEW_KEYS, section } from '../lib/config.ts'
+import { ConfigError, loadConfig, REVIEW_KEYS, section, WORKER_KEYS } from '../lib/config.ts'
 import { fire } from '../lib/events.ts'
 import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
@@ -149,6 +156,7 @@ import { orchWord, scriptPath } from '../lib/commands.ts'
 import { shQuote } from '../lib/py.ts'
 import { emit, oneLine, short } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
+import { installCommitCheck, removeCommitCheck } from '../lib/commit-check.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
@@ -562,6 +570,14 @@ function parse(argv: string[]): Args | 'help' {
   }
 }
 
+// 저장소가 한국어 커밋 검사를 켜 두었는가. config.json 의 worker.commit_check 가 false 일 때만 끈다. 없으면 켜짐이다
+function commitCheckEnabled(repo: string): boolean {
+  const value = section<{ commit_check?: unknown }>(loadConfig(repo), 'worker', WORKER_KEYS).commit_check
+  if (value === undefined) return true
+  if (typeof value !== 'boolean') throw new ConfigError('설정 파일의 worker.commit_check 는 true 나 false 여야 한다')
+  return value
+}
+
 // 차례 2-1(머리 주석). 리뷰 PR head 를 받아 워크트리를 그 커밋에 두고 저장소의 생성물 준비 명령을 한 번 돌린다. 멈춰야 하면 종료 코드, 아니면 null 이다
 async function prepareReview(worktree: string, repo: string, pr: number, execute: typeof runAsync): Promise<number | null> {
   const ref = `refs/orch/review/pr-${pr}`
@@ -709,6 +725,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (rejected.length) throw new Stop(rejected.join('; '), 1)
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
+  // 설정은 워크트리를 만들고 번호를 잡기 전에 읽는다. 설정 오류(2)로 멈출 때 만들다 만 것이 남지 않는다
+  const commitCheck = commitCheckEnabled(retryRepo)
   // 새 터미널이면 worker 의 셸이 PATH 로 orch 를 찾아야 한다(지시서가 `orch …` 만 쓴다). 이어 쓰는 터미널은 이미 떠 있어 보지 않는다.
   // 원격 환경(--on, --environment, --pairing-code)의 worker 는 그 서버의 셸에서 뜨므로 이 머신의 PATH 로 판정하지 못한다.
   // 워크트리가 정해진 뒤 원격에서 짧은 확인 터미널을 열어 본다(아래 remoteOrchProbe).
@@ -782,6 +800,21 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (dirty.length > 0) out(`dirty-ack: ${a.dirtyAck}`)
   }
 
+  const repo = a.repo || mainCheckout(worktree)
+  // 원격 환경의 worker 는 다른 서버의 셸에서 떠서 이 머신의 경로를 박은 훅 폴더를 쓰지 못한다
+  if (remoteSelector) out('COMMIT-CHECK-SKIP 원격 환경의 worker 라 걸지 않는다')
+  else if (!commitCheck) {
+    // 저장소가 끈 것은 알릴 문제가 아니라 진행 줄로만 남긴다. 앞서 건 것이 있으면 푼다
+    const removed = removeCommitCheck(worktree)
+    if (removed.status === 'failed') out(`COMMIT-CHECK-FAIL 앞서 건 훅을 풀지 못했다: ${removed.reason}`)
+    else out(`한국어 커밋 검사를 걸지 않는다: 설정 worker.commit_check 가 false 다${removed.status === 'removed' ? '. 앞서 건 훅을 풀었다' : ''}`)
+  } else {
+    const check = installCommitCheck(worktree)
+    if (check.status === 'set') out(`한국어 커밋 검사를 걸었다: ${check.hooks}`)
+    else if (check.status === 'failed') out(`COMMIT-CHECK-FAIL ${check.reason}`)
+    else if (!check.quiet) out(`COMMIT-CHECK-SKIP ${check.reason}`)
+  }
+
   if (passValue(passthru, '--agent') === 'codex') {
     const ssh = configureSshAgent(worktree, process.env.SSH_AUTH_SOCK)
     if (ssh.status === 'set') out(`SSH-AGENT 워크트리 core.sshCommand 를 설정했다: ${ssh.command}`)
@@ -789,7 +822,6 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     else if (ssh.reason.startsWith('core.sshCommand')) err(`SSH-AGENT 건너뜀: ${ssh.reason}`)
   }
 
-  const repo = a.repo || mainCheckout(worktree)
   if (reviewPr !== null) {
     let stopped: number | null
     try {
