@@ -189,7 +189,7 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 doctor 의 「다른 Run 이 띄운 남은 worker」, 「메인이 아닌 등록된 Run」 알림(REQ13)도 PR2 다. 넘겨받기에서 옮기지 못하고 끝난 Run 에 남은 worker 의 워크트리와 지시서도 그 알림이 다룬다. 새 메인의 Run 별 정리는 그 Run 이 띄운 것만 치운다.
 
 
-`lib/main-guard.ts` 가 실제 `run-current` 로 호출자를 확인한다. 명령별 옵션을 파싱한 뒤 쓰기 전에 검사하므로 새 CLI·옛 이름·직접 스크립트 호출에 같은 규칙이 적용된다. dispatch 는 실제 `worker-show` 의 worktree, 보드는 명시·설정 파일의 실제 저장소를 확인한다. 조회 실패를 다른 저장소로 대체하지 않는다.
+`lib/main-guard.ts` 가 실제 `run-current` 로 호출자를 확인한다. 명령별 옵션을 파싱한 뒤 쓰기 전에 검사하므로 새 CLI·옛 이름·직접 스크립트 호출에 같은 규칙이 적용된다. dispatch 는 실제 `worker-show` 의 worktree, 보드는 명시·설정 파일의 실제 저장소를 확인한다. 조회 실패를 다른 저장소로 대체하지 않는다. 루프 한 틱은 자식에게 `ORCH_LOOP_CALLER` 로 자기 저장소와 등록 Run 을 넘긴다. 가드는 대상 저장소·첫 등록 Run·현재 루프 소유가 일치하고, PID 와 시작 시각·명령줄로 실제 루프의 자식임을 확인한 뒤 터미널 조회 없이 통과시켜, Orca 재시작이나 앞 터미널 종료가 자동 동작을 막지 않게 한다.
 
 `Launch.main_guard` 는 처음 띄울 때 메인과 부른·대상 저장소를 남긴다. 표지가 없는 옛 기록과 메인이 없을 때 띄운 기록은 원래 Run 의 해당 worker 에만 예외다. 후속·재개는 그 예외를 보존한다. PR 일괄 작업은 모든 PR 의 브랜치 소유를 확인한다. 예외로 실행하는 정리는 해당 워크트리만 다루고 저장소 전체 fetch·prune·나머지 정리 단계와 after-cleanup 은 생략한다.
 
@@ -197,7 +197,7 @@ doctor 의 「다른 Run 이 띄운 남은 worker」, 「메인이 아닌 등록
 
 | ID | 경계 | 확인 |
 | --- | --- | --- |
-| REQ11 | `main-guard.spec.ts` 의 실제 CLI·직접 명령 | 메인·비메인·Run 없는 셸, 조회·dry-run·잘못된 인자, 실제 dispatch·보드 저장소와 `--run` 사칭, 조회 실패 거절 |
+| REQ11 | `main-guard.spec.ts` 의 실제 CLI·직접 명령 | 메인·비메인·Run 없는 셸, 조회·dry-run·잘못된 인자, 실제 dispatch·보드 저장소와 `--run` 사칭, Run 에 묶인 호출의 조회 실패 거절, handle 없는 사람 셸의 Orca 장애 중 쓰기 허용, 실제 루프 한 틱의 자식 허용과 위조 표시 거절 |
 | REQ12 | `main-guard.spec.ts`, `launch-worker.spec.ts` | 빈 이유 거절, 별도 우회 기록·메인 알림, 기록·알림 실패 시 쓰기 없음, dispatch 이유 보존 |
 | REQ13 | `main-guard.spec.ts`, `cleanup-sweep-launched.spec.ts` | 옛·메인 없을 때 worker 의 원래 Run 만 허용, 깨진 새 표지 거절, Run 옵션 없는 finish → 실제 sweep → 실제 worktree 정리, 다른 워크트리와 전역 단계 보존, doctor 알림과 정리 뒤 제외 |
 | REQ1 | `core` 단위 테스트, `orch status` 명령 테스트 | 판정 표(에이전트 있음·없음, 둘째 터미널, 등록 없음). 가짜 orca 로 `MAIN` 줄 |

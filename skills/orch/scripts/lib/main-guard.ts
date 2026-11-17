@@ -25,6 +25,7 @@ import { ensure } from './paths.ts'
 import { realPath } from './fs.ts'
 import { shQuote } from './py.ts'
 import { notifyRun } from './run-notice.ts'
+import { loopCaller } from './main-guard-context.ts'
 
 export const MAIN_GUARD_OPTIONS = { 'not-main': { type: 'string' } } as const
 type Caller = { kind: 'caller'; run: string | null } | { kind: 'unknown'; error: string }
@@ -60,6 +61,8 @@ export function callerRun(): Caller {
 
 export function callerIsMain(repo: string, readUnboundMain = true) {
   const target = mainCheckout(repo)
+  const internalRun = loopCaller(target)
+  if (internalRun) return { main: { kind: 'main' as const, run: internalRun, terminal: 'loop', alive: [internalRun] }, caller: { kind: 'caller' as const, run: internalRun }, allowed: true }
   if (!registeredRuns(target).length) return { main: { kind: 'none' as const, stale: [] as string[] }, caller: { kind: 'caller', run: null } as Caller, allowed: true }
   const caller = callerRun()
   // Run 없는 셸의 단순 쓰기에는 메인을 조회할 필요가 없다. 띄우기 표지와 우회 알림은 실제 메인을 읽는다.

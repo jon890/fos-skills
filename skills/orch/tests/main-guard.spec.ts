@@ -49,6 +49,7 @@ beforeEach(() => {
   registerRun(repo, 'other', null, false, 'to', '2026-11-17T01:00:00Z')
   settings()
   writeFileSync(log, '')
+  delete process.env.ORCH_LOOP_CALLER
   process.env.ORCA_TERMINAL_HANDLE = 'bound-coordinator'
   process.env.ORCA = orca
   process.env.GUARD_STATE = state
@@ -293,4 +294,13 @@ test('띄우기 기록의 표지와 우회 이유는 다시 읽어도 보존된�
   recordLaunch(repo, { dispatch: 'd', run: 'other', terminal: null, worktree: repo, main_guard: stamp, not_main: '승인받은 복구' })
   assert.deepEqual(readLaunch(repo, 'd')?.main_guard, stamp)
   assert.equal(readLaunch(repo, 'd')?.not_main, '승인받은 복구')
+})
+
+
+test('루프 밖에서 만든 표시는 등록된 메인이나 다른 Run 도 신뢰하지 않는다', () => {
+  settings({ offline: true })
+  for (const marker of [{ repo: root, run: 'main' }, { repo, run: 'missing' }, { repo, run: 'other' }, { repo, run: 'main', pid: process.pid, identity: 'forged orch-loop' }]) {
+    process.env.ORCH_LOOP_CALLER = JSON.stringify(marker)
+    assert.equal(guardWrite(repo, 'board set', undefined).code, 1)
+  }
 })

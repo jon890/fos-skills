@@ -48,6 +48,7 @@ if (st.unbound_fenced && sub === 'check' && run) {
   process.exit(1)
 }
 if (sub === 'run-current') {
+  if (st.fail_run_current) { process.stderr.write('caller offline\\n'); process.exit(1) }
   if (st.slow_run_current) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.slow_run_current * 1000)
   reply({ run: st.bound ? { id: st.bound } : null })
   process.exit(0)
@@ -1424,4 +1425,26 @@ test('업무 CLI 실패 간격은 틱 프로세스를 다시 띄워도 이어진
   const log = readFileSync(orchFile('state/loop.log'), 'utf8')
   assert.equal((log.match(/TASK-LINK-FAIL a P\/1 dooray post get: offline/g) ?? []).length, 1)
   assert.equal(JSON.parse(readFileSync(join(repo, '.omc/board.json'), 'utf8')).items[0].task, undefined)
+})
+
+
+test('등록된 루프 한 틱의 자식은 닫힌 터미널의 run-current 없이 쓰기 가드를 통과한다', () => {
+  legacyRun('r')
+  orca({ ...alive('r'), fail_run_current: true })
+  const child = join(tmp, 'guarded-sweep.ts')
+  const guard = new URL('../scripts/lib/main-guard.ts', import.meta.url).href
+  const resultFile = join(tmp, 'guard-results.json')
+  writeFileSync(child, `import { writeFileSync } from 'node:fs'
+import { guardWrite } from ${JSON.stringify(guard)}
+const argv = process.argv.slice(2)
+const repo = argv[argv.indexOf('--repo') + 1]
+const codes = ['queue merge', 'queue run', 'queue finish', 'cleanup sweep', 'worker send', 'board sync'].map(command => guardWrite(repo, command, undefined).code)
+writeFileSync(${JSON.stringify(resultFile)}, JSON.stringify(codes))
+process.exitCode = codes.some(code => code !== 0) ? 1 : 0
+`)
+  const done = loop(['--run', 'r', '--foreground', '--once'], { CLEANUP_SWEEP: child, ORCA_TERMINAL_HANDLE: 'closed-terminal', ORCH_LOOP_BOUND: JSON.stringify({ run: 'r' }) })
+  assert.equal(done.code, 0, done.stdout + done.stderr)
+  assert.deepEqual(JSON.parse(readFileSync(resultFile, 'utf8')), [0, 0, 0, 0, 0, 0])
+  const queried = jsonl(join(tmp, 'orca-calls.jsonl')) as unknown as string[][]
+  assert.equal(queried.some(args => args.includes('run-current')), false)
 })
