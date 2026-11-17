@@ -310,7 +310,8 @@ function regularEntries(root: string, paths: string[]): Map<string, string> | nu
 // HEAD 와 인덱스 사이에서 더하거나 바꾼 줄 번호 집합. 이름을 바꾼 파일은 옛 경로와 함께 물어 바뀐 줄만 받는다
 function stagedLines(root: string, item: Staged): Set<number> | null {
   const paths = item.old === null ? [item.path] : [item.old, item.path]
-  const done = git(['--literal-pathspecs', 'diff', '--cached', '-U0', '-M', '--no-color', '--no-ext-diff', '--', ...paths], root)
+  // textconv 는 끈다. 변환한 글의 줄 번호는 검사기가 읽는 원문(readBlobs)의 줄 번호와 다르다
+  const done = git(['--literal-pathspecs', 'diff', '--cached', '-U0', '-M', '--no-color', '--no-ext-diff', '--no-textconv', '--', ...paths], root)
   if (done.status !== 0) return null
   const lines = new Set<number>()
   for (const row of pySplitLines(done.stdout)) {

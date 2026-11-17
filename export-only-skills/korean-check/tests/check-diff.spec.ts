@@ -397,6 +397,17 @@ describe('--staged', () => {
     assert.equal(done.code, 1, done.stdout + done.stderr)
     assert.ok(done.stdout.startsWith('enc.md:1: 금지어 "스윕"'), done.stdout)
   })
+  test('textconv 가 줄 수를 바꿔도 원문의 줄 번호로 더한 줄을 판정한다', () => {
+    const root = makeRepo()
+    write(join(root, '.gitattributes'), '*.md diff=markdown\n')
+    git(root, 'config', 'diff.markdown.textconv', 'sed 1d')
+    stage(root, 'conv.md', '# 제목\n\n본문이다.\n')
+    git(root, 'commit', '-qm', 'conv')
+    stage(root, 'conv.md', '# 제목\n\n결과를 스윕한다.\n')
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.ok(done.stdout.startsWith('conv.md:3: 금지어 "스윕"'), done.stdout)
+  })
   test('검사기가 돌지 못하면 2 다', () => {
     const root = makeRepo()
     stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
