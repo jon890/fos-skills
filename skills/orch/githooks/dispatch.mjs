@@ -10,9 +10,10 @@
 //     1. 훅 이름이 pre-commit 이면 한국어 검사를 한다. 옆의 korean-check/scripts/check.ts --staged 를 부른다.
 //        - 종료 코드가 1 이고 출력에 금지어 발견 줄(`: 금지어 "`)이 있으면 출력과 안내를 stderr 에 내고 1 로 끝난다. 원래 훅은 부르지 않는다.
 //        - 0 이면 출력(경고)이 있을 때만 stderr 에 내고 이어 간다.
-//        - 그 밖(2, 신호, 실행 실패, 발견 줄 없는 1)은 검사기가 돌지 못한 것이다. 알리고 이어 간다.
-//          node 는 잡지 않은 예외에도 1 을 내므로 종료 코드만으로 거절하지 않는다. 도구 고장이 모든 커밋을 막지 않게 한다.
-//        - 검사기 사본이 없거나 node 가 MIN_NODE 보다 낮아도 알리고 이어 간다.
+//        - 그 밖(2, 신호, 실행 실패, 발견 줄 없는 1)은 검사기가 돌지 못한 것이다. 검사기 사본이 없거나 node 가 MIN_NODE 보다 낮은 것도 같다.
+//          이때 .md 를 스테이징한 커밋이면 원인과 끄는 방법을 stderr 에 내고 1 로 거절한다. 검사 없이 한국어 문서가 커밋되지 않게 한다.
+//          스테이징한 .md 가 없으면 한 줄로 알리고 이어 간다. 스테이징한 파일을 읽지 못해도 거절한다.
+//          node 는 잡지 않은 예외에도 1 을 내므로 「금지어가 있다」 와 「돌지 못했다」 는 종료 코드가 아니라 발견 줄로 구분한다.
 //        - 머지, 리베이스, cherry-pick, revert 가 진행 중이면 검사하지 않는다. 그때 스테이징된 줄은 다른 브랜치에서 온 것이다.
 //        - 자식 환경에서 KOREAN_STYLE_RULES, KOREAN_CHECK_ALLOW 는 지운다. 사본의 규칙과 저장소의 예외 파일을 읽게 한다.
 //     2. 모든 훅 이름에서 저장소가 원래 쓰던 훅을 같은 인자와 표준 입출력으로 부르고 그 종료 코드로 끝난다.
@@ -26,7 +27,7 @@
 //          이 훅을 다시 부른 것이라 아무것도 하지 않고 0 으로 끝난다(`git rev-parse --git-path hooks` 로 다음 훅을 찾는 훅).
 //          표시는 원래 훅의 자식 프로세스에도 전달된다. 원래 pre-commit 이 같은 워크트리에서 git commit 을 다시 하면 그 안쪽 커밋은 검사하지 않는다.
 //
-// 종료 코드: 0 이어 간다, 1 금지어가 있어 커밋을 거절했거나 원래 훅을 실행하지 못했다, 그 밖은 원래 훅의 종료 코드(신호면 128 + 신호 번호)
+// 종료 코드: 0 이어 간다, 1 금지어가 있거나 검사기가 돌지 못해 커밋을 거절했거나 원래 훅을 실행하지 못했다, 그 밖은 원래 훅의 종료 코드(신호면 128 + 신호 번호)
 
 import { spawnSync } from 'node:child_process'
 import { accessSync, constants as fsConstants, existsSync, realpathSync, statSync } from 'node:fs'
@@ -56,19 +57,34 @@ function nodeTooOld() {
   return major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])
 }
 
-// 0 이어 간다, 1 금지어가 있어 거절한다
+// 스테이징한 .md 가 있는가. 읽지 못하면 null 이다
+function stagedMarkdown() {
+  const done = spawnSync('git', ['diff', '--cached', '--name-only', '-z', '--diff-filter=AMRT', '--', '*.md'], { encoding: 'utf8', maxBuffer: MAX_BUFFER })
+  return done.status === 0 ? done.stdout.split('\0').some(Boolean) : null
+}
+
+// 검사기가 돌지 못했다. .md 를 스테이징한 커밋이면 거절(1)하고, 없으면 알리기만 한다(0)
+function broken(reason, detail = '') {
+  const staged = stagedMarkdown()
+  if (staged === false) {
+    say(`orch 커밋 검사: ${reason}. 스테이징한 .md 가 없어 그대로 커밋한다`)
+    return 0
+  }
+  say(`orch 커밋 검사: ${reason}`)
+  if (detail) say(detail)
+  say(staged === null ? '스테이징한 파일을 읽지 못해 커밋하지 않았다.' : '한국어 검사 없이 .md 를 커밋할 수 없어 커밋하지 않았다.')
+  say('--no-verify 로 넘기지 않고 코디네이터에게 위 원인을 알린다.')
+  say('이 저장소에서 검사를 끄려면 코디네이터가 `orch config set worker.commit_check false --json` 을 한 뒤 worker 를 다시 띄운다.')
+  return 1
+}
+
+// 0 이어 간다, 1 금지어가 있거나 검사기가 돌지 못해 거절한다
 function koreanCheck() {
   const gitDir = git(['rev-parse', '--absolute-git-dir'])
   if (gitDir && IN_PROGRESS.some((name) => existsSync(join(gitDir, name)))) return 0
   const checker = join(HOOKS, 'korean-check', 'scripts', 'check.ts')
-  if (!existsSync(checker)) {
-    say('orch 커밋 검사: 한국어 검사기 사본이 없어 점검을 건너뛴다')
-    return 0
-  }
-  if (nodeTooOld()) {
-    say(`orch 커밋 검사: Node ${process.versions.node} 은 한국어 검사기를 돌리지 못해 점검을 건너뛴다`)
-    return 0
-  }
+  if (!existsSync(checker)) return broken('한국어 검사기 사본이 없다')
+  if (nodeTooOld()) return broken(`Node ${process.versions.node} 은 한국어 검사기를 돌리지 못한다`)
   const env = { ...process.env }
   delete env.KOREAN_STYLE_RULES
   delete env.KOREAN_CHECK_ALLOW
@@ -84,10 +100,7 @@ function koreanCheck() {
     if (report) say(`${report}\n위 경고는 커밋을 막지 않는다. 문맥을 보고 고칠지 판단한다.`)
     return 0
   }
-  say('orch 커밋 검사: 한국어 검사기가 돌지 못해 점검을 건너뛴다')
-  const detail = report || done.error?.message || ''
-  if (detail) say(detail)
-  return 0
+  return broken('한국어 검사기가 돌지 못했다', report || done.error?.message || '')
 }
 
 function originalHooksDir() {

@@ -112,6 +112,7 @@ worker 가 금지어가 든 `.md` 를 커밋하면 git 이 발견 줄과 권장 
 
 - `COMMIT-CHECK-SKIP <이유>` 나 `COMMIT-CHECK-FAIL <이유>` 가 나오면 그 worker 의 커밋은 검사받지 않는다. worker 는 그대로 뜬다. 이유를 보고 조치한 뒤 `--worktree` 로 다시 띄우면 걸린다. 주 checkout 이나 원격 환경에 띄운 worker 는 늘 건너뛴다.
 - 이미 떠 있는 worker 의 워크트리에는 걸리지 않는다. 다시 띄울 때 걸린다. 그때 검사기 사본도 새로 만든다.
+- 검사기가 돌지 못하면(검사기 사본 없음, 검사기 오류, 낮은 node) `.md` 를 스테이징한 커밋이 거절되고 worker 가 원인을 알려 온다. 원인을 고친 뒤 다시 띄우면 검사기 사본을 새로 만든다. 바로 고치기 어려우면 아래 설정으로 끈다.
 - 금지어를 품은 고유명사 때문에 worker 가 막히면 그 저장소의 `.claude/korean-check-allow.txt` 에 적게 한다. 형식은 `korean-check` 스킬이 설치돼 있으면 그 `references/markdown-readability.md` 가 소유한다.
 - 저장소 전체에서 끄려면 `orch config set worker.commit_check false --json` 을 한다. 그 뒤로 띄우는 worker 에는 걸지 않고, 이미 건 워크트리는 다시 띄울 때 푼다. 기본은 켜짐이다.
 - 한 워크트리에서만 풀려면 그 워크트리에서 `git config --worktree --unset core.hooksPath` 를 한다.

@@ -269,26 +269,56 @@ describe('커밋 거절과 통과', () => {
 describe('검사기가 돌지 못할 때', () => {
   beforeEach(() => assert.equal(installCommitCheck(wt).status, 'set'))
 
-  test('검사기 사본이 없으면 알리고 커밋한다', () => {
+  const OFF = /orch config set worker\.commit_check false/
+
+  test('검사기 사본이 없으면 .md 가 든 커밋을 거절하고 원인과 끄는 방법을 알린다', () => {
     rmSync(join(gitDir(wt), 'orch-hooks', 'korean-check'), { recursive: true })
-    const r = commit(wt, 'doc.md', BANNED, 'no checker')
-    assert.equal(r.status, 0, r.stderr)
-    assert.match(r.stderr, /점검을 건너뛴다/)
+    const r = commit(wt, 'doc.md', CLEAN, 'no checker')
+    assert.notEqual(r.status, 0, r.stderr)
+    assert.match(r.stderr, /한국어 검사기 사본이 없다/)
+    assert.match(r.stderr, /한국어 검사 없이 \.md 를 커밋할 수 없어 커밋하지 않았다/)
+    assert.match(r.stderr, OFF)
+    assert.deepEqual(subjects(wt), ['init'])
   })
 
-  test('검사기가 발견 줄 없이 1 로 죽으면 거절하지 않고 알린다', () => {
+  test('검사기가 발견 줄 없이 1 로 죽으면 금지어가 아니라 고장으로 거절한다', () => {
     writeFileSync(join(gitDir(wt), 'orch-hooks', 'korean-check', 'scripts', 'check.ts'), 'throw new Error("x")\n')
     const r = commit(wt, 'doc.md', BANNED, 'broken checker')
-    assert.equal(r.status, 0, r.stderr)
-    assert.match(r.stderr, /한국어 검사기가 돌지 못해 점검을 건너뛴다/)
-    assert.doesNotMatch(r.stderr, /커밋하지 않았다/)
+    assert.notEqual(r.status, 0, r.stderr)
+    assert.match(r.stderr, /한국어 검사기가 돌지 못했다/)
+    assert.match(r.stderr, /Error: x/)
+    assert.match(r.stderr, OFF)
+    assert.doesNotMatch(r.stderr, /금지어가 있어 커밋하지 않았다/)
+    assert.deepEqual(subjects(wt), ['init'])
   })
-  test('검사기 안쪽이 예외로 죽어도 조용히 지나가지 않고 알린다', () => {
+
+  test('검사기 안쪽이 예외로 죽어도 조용히 지나가지 않고 거절한다', () => {
     const style = join(gitDir(wt), 'orch-hooks', 'korean-check', 'scripts', 'korean-style-check.ts')
     writeFileSync(style, `if (process.argv[1]?.endsWith('korean-style-check.ts')) throw new Error('boom')\n${readFileSync(style, 'utf8')}`)
     const r = commit(wt, 'doc.md', BANNED, 'inner crash')
+    assert.notEqual(r.status, 0, r.stderr)
+    assert.match(r.stderr, /한국어 검사기가 돌지 못했다/)
+    assert.deepEqual(subjects(wt), ['init'])
+  })
+
+  test('고장이어도 스테이징한 .md 가 없는 커밋은 한 줄로 알리고 커밋한다', () => {
+    rmSync(join(gitDir(wt), 'orch-hooks', 'korean-check'), { recursive: true })
+    const r = commit(wt, 'a.txt', BANNED, 'text only')
     assert.equal(r.status, 0, r.stderr)
-    assert.match(r.stderr, /한국어 검사기가 돌지 못해 점검을 건너뛴다/)
+    assert.match(r.stderr, /스테이징한 \.md 가 없어 그대로 커밋한다/)
+    assert.doesNotMatch(r.stderr, OFF)
+    assert.deepEqual(subjects(wt), ['text only', 'init'])
+  })
+
+  test('고장이어도 머지 중인 커밋은 막지 않는다', () => {
+    g(proj, 'checkout', '-q', '-b', 'incoming')
+    assert.equal(commit(proj, 'incoming.md', CLEAN, 'incoming').status, 0)
+    g(proj, 'checkout', '-q', 'main')
+    assert.equal(commit(wt, 'mine.txt', CLEAN, 'mine').status, 0)
+    rmSync(join(gitDir(wt), 'orch-hooks', 'korean-check'), { recursive: true })
+    assert.equal(g(wt, 'merge', '--no-ff', '--no-commit', 'incoming').status, 0)
+    const r = g(wt, 'commit', '--no-edit')
+    assert.equal(r.status, 0, r.stderr)
   })
 })
 
