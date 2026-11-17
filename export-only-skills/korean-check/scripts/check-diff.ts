@@ -24,7 +24,7 @@
 //              문서를 옮기는 커밋이 손대지 않은 줄의 금지어로 막히지 않게 하려는 것이다.
 //              심볼릭 링크와 서브모듈 항목은 뺀다. 매핑 표를 가진 문서(규칙 파일 자신과 그 사본)도 뺀다. 그 표가 곧 금지어 목록이다.
 //              --base 나 파일 인자와 함께 주면 사용법 오류(2)다.
-//              스테이징된 내용을 임시 폴더에 같은 상대 경로로 풀어 두 검사기를 돌린다. 예외 파일(.claude/korean-check-allow.txt)은
+//              git 에 저장된 내용을 그대로(필터와 인코딩 변환 없이) 임시 폴더에 같은 상대 경로로 풀어 두 검사기를 돌린다. 예외 파일(.claude/korean-check-allow.txt)은
 //              대상 파일의 폴더에서 저장소 루트까지 있는 것을 임시 폴더의 같은 자리에 복사해 평소와 같은 규칙으로 읽힌다.
 //              예외 파일은 스테이징된 내용이 아니라 작업 트리의 것을 읽는다. 커밋에 넣으려면 함께 스테이징한다.
 //              git 은 저장소 루트에서만 부른다. 훅 환경에는 GIT_DIR 이 들어 있어 임시 폴더에서 부르면 실제 저장소에 닿는다.
@@ -40,14 +40,14 @@
 //     0  이번 변경에 금지어가 없다. 경고와 기존 줄의 발견이 있어도 0 이다
 //     1  이번 변경의 줄에 매핑 표 금지어가 있다
 //     2  돌지 못함. git 저장소가 아니거나 기준을 찾지 못했거나, 검사기가 돌지 못했다
-//        (2 로 끝났거나, 띄우지 못했거나, 신호로 끝났거나, 금지어 발견 줄 없이 1 로 죽었다. 판정은 checkerCode 다)
+//        (2 로 끝났거나, 띄우지 못했거나, 신호로 끝났거나, 잡지 않은 예외로 1 을 내며 죽었다. 판정은 checkerCode 다)
 // --staged 도 같다. 다만 금지어 발견은 줄의 `: 금지어 "` 꼴로 알아본다. 경로에 그 낱말이 든 파일의 경고가 커밋 거절로 바뀌지 않게 한다.
 //
 // 한계: 가독성 검사기의 TILDE 경고는 단락의 첫 줄 번호로 나온다.
 // 단락 중간에 더한 줄 때문에 걸려도 첫 줄이 기존 줄이면 「기존 줄」 로 분류된다.
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { isMain, write } from './io.ts'
@@ -66,6 +66,7 @@ const BANNED_ROW = /: 금지어 "([^"]+)"/
 const ALLOW_FILE = join('.claude', 'korean-check-allow.txt')
 const MAX_BUFFER = 256 * 1024 * 1024
 const CHUNK = 200
+const CRASHED = /^Node\.js v\d/m
 
 const USAGE = 'usage: check-diff.ts [-h] [--base BASE] [--staged] [files ...]\n'
 const HELP = `${USAGE}
@@ -121,9 +122,10 @@ function changedMarkdown(root: string, mergeBase: string): string[] {
 // 검사기 자식의 결과를 0(발견 없음), 1(금지어), 2(돌지 못함)로 맞춘다.
 // 띄우지 못했거나 신호로 끝났거나 0, 1 이 아닌 코드는 돌지 못한 것이다. node 는 잡지 않은 예외에도 1 을 내므로,
 // 1 인데 금지어 발견 줄이 없으면 그것도 돌지 못한 것으로 본다. 죽은 검사기를 「발견 없음」 으로 읽으면 금지어가 조용히 지나간다.
-export function checkerCode(done: { status: number | null; signal: string | null; error?: unknown }, rows: string[]): number {
+// 앞 파일의 금지어를 낸 뒤 뒤 파일에서 죽은 경우도 있다. node 가 잡지 않은 예외 끝에 남기는 버전 줄(CRASHED)이 stderr 에 있으면 죽은 것이다.
+export function checkerCode(done: { status: number | null; signal: string | null; error?: unknown; stderr?: string | null }, rows: string[]): number {
   if (done.error || done.signal || (done.status !== 0 && done.status !== 1)) return 2
-  if (done.status === 1 && !rows.some((row) => row.includes(BANNED))) return 2
+  if (done.status === 1 && (!rows.some((row) => row.includes(BANNED)) || CRASHED.test(done.stderr ?? ''))) return 2
   return done.status
 }
 
@@ -289,16 +291,17 @@ function stagedMarkdown(root: string): Staged[] | null {
   return found
 }
 
-// 인덱스에서 일반 파일인 경로들. 심볼릭 링크(120000)와 서브모듈(160000)의 내용은 문서가 아니다. 읽지 못하면 null
-function regularEntries(root: string, paths: string[]): Set<string> | null {
-  const regular = new Set<string>()
+// 인덱스에서 일반 파일인 경로와 그 내용의 해시. 심볼릭 링크(120000)와 서브모듈(160000)의 내용은 문서가 아니다. 읽지 못하면 null
+function regularEntries(root: string, paths: string[]): Map<string, string> | null {
+  const regular = new Map<string, string>()
   for (let at = 0; at < paths.length; at += CHUNK) {
     const done = spawnSync('git', ['--literal-pathspecs', 'ls-files', '-s', '-z', '--', ...paths.slice(at, at + CHUNK)], { cwd: root, encoding: 'utf8', maxBuffer: MAX_BUFFER })
     if (done.status !== 0) return null
     // 「모드 SP 해시 SP 단계 TAB 경로」
     for (const row of (done.stdout ?? '').split('\0')) {
       const tab = row.indexOf('\t')
-      if (tab > 0 && /^100(?:644|755) /.test(row)) regular.add(row.slice(tab + 1))
+      const m = /^100(?:644|755) ([0-9a-f]+) 0$/.exec(row.slice(0, Math.max(tab, 0)))
+      if (m) regular.set(row.slice(tab + 1), m[1])
     }
   }
   return regular
@@ -319,6 +322,25 @@ function stagedLines(root: string, item: Staged): Set<number> | null {
     }
   }
   return lines
+}
+
+// 해시 차례대로 blob 의 바이트를 낸다. `git cat-file --batch` 의 출력은 항목마다 「해시 SP 종류 SP 크기 LF 내용 LF」 다. 읽지 못하면 null
+function readBlobs(root: string, hashes: string[]): Buffer[] | null {
+  const done = spawnSync('git', ['cat-file', '--batch'], { cwd: root, input: hashes.map((hash) => `${hash}\n`).join(''), maxBuffer: MAX_BUFFER })
+  if (done.status !== 0) return null
+  const data = done.stdout as Buffer
+  const blobs: Buffer[] = []
+  let at = 0
+  for (const hash of hashes) {
+    const end = data.indexOf(0x0a, at)
+    if (end < 0) return null
+    const [name, kind, size] = data.subarray(at, end).toString('utf8').split(' ')
+    if (name !== hash || kind !== 'blob' || !/^\d+$/.test(size ?? '')) return null
+    const start = end + 1
+    blobs.push(data.subarray(start, start + Number(size)))
+    at = start + Number(size) + 1
+  }
+  return blobs
 }
 
 function sameFile(a: string, b: string): boolean {
@@ -380,9 +402,14 @@ function checkStaged(root: string): number {
   const added = new Map<string, Set<number> | null>()
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'korean-check-staged-')))
   try {
-    // 스테이징된 내용을 한 번에 푼다. git 은 저장소 루트에서 부르고 임시 폴더에서는 부르지 않는다
-    const out = spawnSync('git', ['checkout-index', '-z', '--stdin', `--prefix=${tmp}/`], { cwd: root, input: items.map((item) => `${item.path}\0`).join(''), encoding: 'utf8', maxBuffer: MAX_BUFFER })
-    if (out.status !== 0) return fail(`스테이징된 내용을 읽지 못했다: ${pyStrip(out.stderr ?? '')}`)
+    // 스테이징된 내용을 git 에 저장된 그대로 한 번에 읽는다. checkout-index 로 풀면 smudge 필터와 인코딩 변환을 타서
+    // 커밋될 내용과 달라지거나 풀지 못한다. git 은 저장소 루트에서 부르고 임시 폴더에서는 부르지 않는다
+    const blobs = readBlobs(root, items.map((item) => regular.get(item.path) as string))
+    if (blobs === null) return fail('스테이징된 내용을 읽지 못했다')
+    items.forEach((item, i) => {
+      mkdirSync(dirname(join(tmp, item.path)), { recursive: true })
+      writeFileSync(join(tmp, item.path), blobs[i])
+    })
     items = items.filter((item) => !isRulesFile(join(tmp, item.path)))
     if (!items.length) return 0
     // 예외 파일 찾기는 .git 이 있는 폴더에서 멈춘다. 임시 폴더 밖으로 올라가지 않게 표시만 둔다

@@ -217,6 +217,13 @@ describe('옵션과 오류', () => {
   })
 })
 
+// 글을 그대로 blob 으로 넣고 해시를 낸다. 필터를 거치지 않는다
+function hashObject(root: string, text: string): string {
+  const done = spawnSync('git', ['hash-object', '-w', '--no-filters', '--stdin'], { cwd: root, env: GIT_ENV, input: text, encoding: 'utf8' })
+  assert.equal(done.status, 0, done.stderr)
+  return done.stdout.trim()
+}
+
 describe('--staged', () => {
   const staged = (root: string, opts: { cwd?: string; env?: NodeJS.ProcessEnv; args?: string[] } = {}) =>
     run(DIFF, { cwd: opts.cwd ?? root, env: opts.env ?? GIT_ENV, args: ['--staged', ...(opts.args ?? [])] })
@@ -380,6 +387,16 @@ describe('--staged', () => {
     assert.equal(done.code, 1, done.stdout)
     assert.ok(done.stdout.startsWith('a:1 b.md:3: 금지어'), done.stdout)
   })
+  test('필터와 인코딩 변환을 거치지 않고 git 에 저장된 내용을 본다', () => {
+    const root = makeRepo()
+    write(join(root, '.gitattributes'), '*.md filter=hide working-tree-encoding=UTF-16LE-BOM\n')
+    git(root, 'config', 'filter.hide.smudge', 'sed s/스윕/XX/')
+    git(root, 'config', 'filter.hide.clean', 'cat')
+    git(root, 'update-index', '--add', '--cacheinfo', `100644,${hashObject(root, '결과를 스윕한다.\n')},enc.md`)
+    const done = staged(root)
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.ok(done.stdout.startsWith('enc.md:1: 금지어 "스윕"'), done.stdout)
+  })
   test('검사기가 돌지 못하면 2 다', () => {
     const root = makeRepo()
     stage(root, 'doc.md', OLD + '\n결과를 스윕한다.\n')
@@ -415,6 +432,10 @@ describe('checkerCode', () => {
   test('발견 줄 없이 1 로 죽은 검사기는 돌지 못한 것이다', () => {
     assert.equal(checkerCode({ status: 1, signal: null }, []), 2)
     assert.equal(checkerCode({ status: 1, signal: null }, ['doc.md:1  경고 [DASH] 설명']), 2)
+  })
+  test('금지어를 낸 뒤 잡지 않은 예외로 죽어도 돌지 못한 것이다', () => {
+    assert.equal(checkerCode({ status: 1, signal: null, stderr: 'Error: boom\n    at x (a.ts:1:1)\n\nNode.js v24.1.0\n' }, [row]), 2)
+    assert.equal(checkerCode({ status: 1, signal: null, stderr: 'korean-style-check: 너무 짧아 읽지 않는다\n' }, [row]), 1)
   })
   test('띄우지 못했거나 신호로 끝났거나 다른 코드면 돌지 못한 것이다', () => {
     assert.equal(checkerCode({ status: null, signal: null, error: new Error('E2BIG') }, []), 2)
