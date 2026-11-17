@@ -94,6 +94,19 @@ test('픽스처 glob 은 별도 테스트 명령이 필요 없다', () => {
   assert.deepEqual(r.violations, [])
 })
 
+test('plan 오버레이가 선언한 테스트 실행기의 전체 실행과 경로 선택을 인정한다', () => {
+  const prefix = 'orch slot heavy -- node tools/verify/check/local-test-run.ts'
+  const overlay = `# plan 레포 설정\n\n## 저장소 배치\n| 값 | 값 |\n| --- | --- |\n| 테스트 실행기 | \`${prefix}\` 뒤의 인자 |\n`
+  const entries: Entry[] = [['src/app.ts', '수정'], ['tests/app.test.ts', '수정']]
+  const files = { 'tools/verify/check/local-test-run.ts': '', 'tests/app.test.ts': '', '.claude/plan-overlay.md': overlay }
+  for (const command of [prefix, `${prefix} tests/app.test.ts`, `${prefix} tests`]) {
+    const result = inspect('### 1. `src/app.ts` 수정\n### 2. `tests/app.test.ts` 실행', command, entries, { files })
+    assert.deepEqual(result.violations, [], `${command}\n${result.stdout}`)
+  }
+  const wrong = inspect('### 1. `src/app.ts` 수정\n### 2. `tests/app.test.ts` 실행', 'orch slot light -- node tools/verify/check/local-test-run.ts tests/app.test.ts', entries, { files })
+  assert.ok(has(wrong.warnings, '테스트 실행 여부를 판정하지 못한'), wrong.stdout)
+})
+
 test('하이픈으로 이은 spec 이름은 테스트가 아니라서 테스트 요구를 채우지 못한다', () => {
   const entries: Entry[] = [['src/panel.js', '수정'], ['src/bottom-panel-spec.js', '신규']]
   const r = inspect('### 1. `src/panel.js` 를 고친다\n### 2. `src/bottom-panel-spec.js` 를 만든다', 'pnpm test', entries)

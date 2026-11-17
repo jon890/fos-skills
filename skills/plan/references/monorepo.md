@@ -141,6 +141,7 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_AR
 | 계약 검증 규칙 | plan | 저장소 루트 기준 JSON 파일 경로 | `` `.claude/contract-checks.json` `` | `verify_task.ts` 의 phase 검증 명령 검사 |
 | 느린 e2e | plan | 저장소 루트 기준 glob 을 인라인 코드로 나열한다 | `` `web/browser/**/*.spec.ts` `tests/service_test.py` `` | `verify_task.ts` 의 중간 phase 테스트 실행 대조. 없으면 아래 기본값을 쓴다 |
 | 통합 테스트 표지 | plan | 표지를 인라인 코드로 나열한다 | `` `@IntegrationTest` `` | `verify_task.ts` 의 일반 Gradle test 필터 경고 |
+| 테스트 실행기 | plan | 저장소 테스트 실행 명령의 접두를 인라인 코드로 적는다. 접두 뒤 인자는 실행 범위 경로이고, 생략하면 전체 테스트를 실행한다 | `` `orch slot heavy -- node tools/verify/check/local-test-run.ts` 뒤의 인자 `` | `verify_task.ts`. 선언된 접두가 phase 의 검증 명령과 일치하면 테스트 실행기로 인정하고 경로 인자로 테스트 범위를 대조한다 |
 
 크기 기준은 원본 설정 파일이 따로 있으면 `<JSON 파일>#<키>` 로 가리킨다. 숫자를 오버레이에 옮겨 적으면 원본만 바뀌었을 때 두 값이 어긋난다.
 「PR 변경 파일 상한」 이 있으면 저장소의 크기 측정처럼 계획 폴더만 빼고 변경 파일을 모두 센다.
