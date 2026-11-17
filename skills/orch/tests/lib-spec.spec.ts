@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
-import { allLiveSpecPaths, BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
+import { allLiveSpecPaths, BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, experimentOf, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
@@ -107,14 +107,24 @@ describe('permissionsOf', () => {
 })
 
 describe('selectionsOf', () => {
+  test('코드 블록의 experiment 예시는 실제 실험 기록으로 읽지 않는다', () => {
+    assert.equal(experimentOf('~~~\nexperiment: example. 후보: `a` `b` effort `low` / `c` `d` effort `medium`.\n~~~'), null)
+  })
+  test('코드 블록의 선택 예시는 건너뛰고 실제 줄 번호를 유지한다', () => {
+    const text = '```\nworker 선택: `fake` `example` effort `low`. 행: review. 이유: 예시.\n```\nworker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 구현.'
+    const choices = selectionsOf(text)
+    assert.equal(choices.length, 1)
+    assert.equal(choices[0].agent, 'codex')
+    assert.equal(choices[0].no, 4)
+  })
   test('백틱 값의 첫째를 에이전트, 둘째를 모델로 읽고 effort 뒤의 값은 effort 로 뺀다', () => {
-    const text = '# 일\n- **worker 선택:** effort `high` 로 `claude` `claude-opus-5-5` 를 고른다. 행: hard-design. 비교: `gpt-6.1-sol`. 이유: 계약 설계다.\n'
-    assert.deepEqual(selectionsOf(text), [{ row: 'hard-design', highReason: null, outsideReason: null, no: 2, agent: 'claude', model: 'claude-opus-5-5', effort: 'high', problems: [] }])
+    const text = '# 일\n- **worker 선택:** effort `high` 로 `claude` `claude-opus-5-5` 를 고른다. 행: hard-design. 이유: 계약 설계다.\n'
+    assert.deepEqual(selectionsOf(text), [{ row: 'hard-design', outsideReason: null, no: 2, agent: 'claude', model: 'claude-opus-5-5', effort: 'high', problems: [] }])
   })
 
   test('빠진 요소를 problems 에 적고 선택 줄이 아닌 줄은 건너뛴다', () => {
     const text = 'worker 선택 이유는 아래에 적는다\nworker 선택: `codex`\n'
-    assert.deepEqual(selectionsOf(text), [{ row: null, highReason: null, outsideReason: null, no: 2, agent: 'codex', model: null, effort: null, problems: ['행', '모델', 'effort', '비교', '이유'] }])
+    assert.deepEqual(selectionsOf(text), [{ row: null, outsideReason: null, no: 2, agent: 'codex', model: null, effort: null, problems: ['행', '모델', 'effort', '이유'] }])
   })
 })
 

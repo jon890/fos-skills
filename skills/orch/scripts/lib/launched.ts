@@ -26,7 +26,8 @@ import { join } from 'node:path'
 import { realPath } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
 
-export type Effective = { agent?: string | null; model?: string | null; effort?: string | null }
+export type CandidateOverride = { row: string | null; agent: string | null; model: string | null; effort: string | null; reason: string; effortLimit?: string | null }
+export type Effective = { agent?: string | null; model?: string | null; effort?: string | null; candidateOverride?: CandidateOverride }
 export type MainGuardStamp = { version: 1; main: string | null; caller_repo: string; target_repo: string }
 
 export type Launch = {
@@ -71,7 +72,14 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
     const stamp = v.main_guard as MainGuardStamp | undefined
     const invalidStamp = Object.hasOwn(v, 'main_guard') && (!stamp || typeof stamp !== 'object' || Array.isArray(stamp) || stamp.version !== 1 || !(stamp.main === null || typeof stamp.main === 'string') || typeof stamp.caller_repo !== 'string' || typeof stamp.target_repo !== 'string')
     const extras = { ...(invalidStamp || v.invalid_main_guard === true ? { invalid_main_guard: true as const } : stamp ? { main_guard: stamp } : {}), ...(typeof v.not_main === 'string' ? { not_main: v.not_main } : {}) }
-    return { ...extras, ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective: typeof v.effective === 'object' && v.effective !== null ? { agent: text((v.effective as Effective).agent), model: text((v.effective as Effective).model), effort: text((v.effective as Effective).effort) } : null, experiment: text(v.experiment) }
+    const raw = typeof v.effective === 'object' && v.effective !== null ? v.effective as Effective : null
+    const override = raw?.candidateOverride
+    const candidateOverride = override && typeof override === 'object' && typeof override.reason === 'string' && override.reason.trim()
+      ? { row: text(override.row), agent: text(override.agent), model: text(override.model), effort: text(override.effort), reason: override.reason,
+          ...(override.effortLimit !== undefined ? { effortLimit: text(override.effortLimit) } : {}) }
+      : null
+    const effective = raw ? { agent: text(raw.agent), model: text(raw.model), effort: text(raw.effort), ...(candidateOverride ? { candidateOverride } : {}) } : null
+    return { ...extras, ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective, experiment: text(v.experiment) }
   } catch {
     return null
   }

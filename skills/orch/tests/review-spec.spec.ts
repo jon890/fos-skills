@@ -46,6 +46,7 @@ test('구현 worker 가 Claude 면 Codex 리뷰 지시서를 PR 번호·제목·
   assert.match(r.stdout, /^REVIEW-SPEC-WORKER impl=claude\/claude-sonnet-5-5 review=codex\/gpt-6\.1-sol\/medium$/m)
   assert.match(r.stdout, /^REVIEW-SPEC-FILL PR 이 하는 일 한 줄; 리뷰어가 특히 볼 곳과 이유$/m)
   const text = readFileSync(file(), 'utf8')
+  assert.doesNotMatch(text, /비교:|^experiment:/m)
   assert.match(text, /^# fix: 변경 조각 형식을 검사한다 리뷰 \(PR #262\)\n\n공통 지시서 `.*\/spec-common\.md` 를 먼저 읽는다\./)
   assert.equal(reviewPrOfSpec(text), 262)
   assert.match(text, /^브랜치: `review\/pr-262`$/m)
@@ -66,7 +67,7 @@ test('구현 worker 가 Codex 면 Claude 리뷰이고 가장 늦은 구현 행�
   assert.match(r.stdout, /review=claude\/claude-sonnet-5-5\/medium/)
   assert.match(r.stdout, /^REVIEW-SPEC-WARN 구현 이력의 제공자가 둘 이상이다\(claude, codex\)/m)
   const [choice] = selectionsOf(readFileSync(file(), 'utf8'))
-  assert.deepEqual([choice.agent, choice.model], ['claude', 'claude-sonnet-5-5'])
+  assert.deepEqual([choice.agent, choice.model, choice.effort], ['claude', 'claude-sonnet-5-5', 'medium'])
 })
 test('만든 지시서는 spec-lint 가 막지 않고 남은 자리표시는 채움 경고로 알린다', () => {
   recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))

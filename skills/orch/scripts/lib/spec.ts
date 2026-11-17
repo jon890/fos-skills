@@ -29,17 +29,16 @@ const TICK = /`([^`]+)`/g
 
 // worker 선택 줄의 값. 줄 판정과 형식은 selectionsOf 가 소유한다
 export type Candidate = { agent: string | null; model: string | null; effort: string | null }
-export type HighReason = { kind: 'dispatch'; id: string } | { kind: 'user'; date: string }
-export type Selection = { row: string | null; highReason: HighReason | null; outsideReason: string | null; no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
+export type Selection = { row: string | null; outsideReason: string | null; no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
 
-// 형식 예: worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: ...
+// 형식 예: worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: ...
 // `effort` 뒤의 백틱 값이 effort 이고, 그 밖의 백틱 값 가운데 첫째가 에이전트, 둘째가 모델이다.
-// problems 에는 빠진 요소를 적는다. `비교:` 와 `이유:` 는 낱말이 있는지만 본다. 코디네이터가 비교 없이 고른 일을 막으려는 것이다.
-export const SELECTION_FORMAT = 'worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 행: <id>. 비교: <다른 후보>. 이유: <고른 이유>.'
+// problems 에는 빠진 요소를 적는다. 옛 비교 칸은 읽기만 하고 새 지시서 거절은 selectionVerdict 가 맡는다.
+export const SELECTION_FORMAT = 'worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 행: <id>. 이유: <고른 이유>.'
 
 export function selectionsOf(text: string): Selection[] {
   const found: Selection[] = []
-  lines(text).forEach((line, index) => {
+  outsideFences(lines(text)).forEach((line, index) => {
     const m = SELECTION.exec(line)
     if (!m) return
     const body = m[1]
@@ -47,20 +46,16 @@ export function selectionsOf(text: string): Selection[] {
     const rest = effortAt ? body.slice(0, effortAt.index) + body.slice(effortAt.index + effortAt[0].length) : body
     const values = [...rest.matchAll(TICK)].map((t) => t[1].trim())
     const row = /행:\s*([a-z][a-z0-9-]*)(?=\s|[.]|$)/.exec(body)?.[1] ?? null
-    const reason = /high 근거:\s*(medium 실패\s+(ctx_[\w-]+)|사용자 지정\s+(\d{4}-\d{2}-\d{2}))(?=\s|[.]|$)/.exec(body)
-    const highReason: HighReason | null = reason?.[2] ? { kind: 'dispatch', id: reason[2] } : reason?.[3] ? { kind: 'user', date: reason[3] } : null
     const problems: string[] = []
-    const outside = /후보 밖:(.*?)(?=\s+(?:행|비교|이유|high 근거):|$)/.exec(body)
+    const outside = /후보 밖:(.*?)(?=\s+(?:행|이유):|$)/.exec(body)
     const outsideReason = outside?.[1].replace(/[.\s]+$/, '').trim() || null
     if (outside && !outsideReason) problems.push('후보 밖 이유')
     if (!row) problems.push('행')
-    if (body.includes('high 근거:') && !highReason) problems.push('high 근거')
     if (values.length < 1) problems.push('에이전트')
     if (values.length < 2) problems.push('모델')
     if (!effortAt) problems.push('effort')
-    if (!/비교\s*:/.test(body)) problems.push('비교')
-    if (!/이유\s*:/.test(body)) problems.push('이유')
-    found.push({ row, highReason, outsideReason, no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
+    if (!/(?:^|[.\s])이유\s*:\s*[^.\s]/.test(body)) problems.push('이유')
+    found.push({ row, outsideReason, no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
   })
   return found
 }
@@ -86,7 +81,7 @@ export function skipsPrReady(text: string): boolean {
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
 
 export function experimentOf(text: string): Experiment | null {
-  const found = lines(text).flatMap((line, index) => {
+  const found = outsideFences(lines(text)).flatMap((line, index) => {
     const m = /^\s*(?:[-*]\s+)?experiment:\s*(.*)$/.exec(line)
     return m ? [{ no: index + 1, body: m[1] }] : []
   })
