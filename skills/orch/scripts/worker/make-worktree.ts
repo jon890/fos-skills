@@ -21,6 +21,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -142,7 +143,7 @@ function create(opts: { repo: string; name: string; base: string; resumeRemote: 
 function main(argv: string[]): number {
   let values
   try {
-    const options = {
+    const options = { ...MAIN_GUARD_OPTIONS,
       repo: { type: 'string', default: '' },
       name: { type: 'string', default: '' },
       base: { type: 'string', default: '' },
@@ -180,7 +181,9 @@ function main(argv: string[]): number {
     if (run(['git', 'check-ref-format', '--branch', branch]).code !== 0) throw new UsageError(`브랜치 이름이 올바르지 않다: ${branch}`)
     if (values.check) return check(values.check, branch)
     if (!values.repo || !values.name) throw new UsageError('--repo 와 --name 이 필요하다')
-    return create({ repo: values.repo, name: values.name, base: values.base as string, resumeRemote: values['resume-remote'] as boolean, branch })
+    const mainGuard = guardWrite(values.repo, 'worker worktree', values['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  return create({ repo: values.repo, name: values.name, base: values.base as string, resumeRemote: values['resume-remote'] as boolean, branch })
   } catch (e) {
     if (!(e instanceof UsageError)) throw e
     err(`${USAGE}\nmake-worktree: ${e.message}`)

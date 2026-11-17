@@ -96,6 +96,7 @@
 //     GH                    gh 실행 파일(lib/gh.ts). 기본 gh
 //     ORCH_DIR              orch 루트(lib/paths.ts). 기본은 주 checkout 의 .orch
 
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { isObject } from '../core/json.ts'
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -286,7 +287,7 @@ function renameForReservation(repo: string, target: Target, reservation: Reserva
 }
 
 function parse(argv: string[]): { repo: string; prune: boolean; values: Record<string, string | boolean | undefined> } {
-  const options = {
+  const options = { ...MAIN_GUARD_OPTIONS,
     repo: { type: 'string' },
     module: { type: 'string' },
     name: { type: 'string' },
@@ -380,6 +381,8 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   const repo = mainCheckout(resolve(parsed.repo))
+  const mainGuard = guardWrite(repo, 'queue reserve', parsed.values['not-main'])
+  if (mainGuard.code !== 0) return mainGuard.code
 
   let target: Target | null = null
   if (!parsed.prune) {

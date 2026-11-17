@@ -45,6 +45,7 @@
 // 잠금(<orch 루트>/state/resume/<dispatch>/lock): 이미 있으면 그 pid 가 살아 있거나 그 terminal 이 열려 있을 때 RESUME-FAIL target 이다.
 // 둘 다 아니면 옛 폴더를 비우고 새로 잡는다. 회수는 reclaim 파일을 잡은 실행 하나만 한다. 그래서 link 실패로 남은 터미널이 열려 있는 동안 같은 세션에 두 번째 프로세스를 띄우지 않는다.
 
+import { dispatchRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
 import { alive } from '../lib/process.ts'
 import { objectOr } from '../core/json.ts'
@@ -304,9 +305,9 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   const started = Date.now()
   const deadline = started + timeoutMs
   const again = `${orchWord()} worker resume --dispatch ${shQuote(dispatchId)}`
+  const target = judge(dispatchId, runFlag, repo)
   const dir = join(ensure('state', repo), 'resume', dispatchId)
   lock(dir)
-  const target = judge(dispatchId, runFlag, repo)
   emit(`RESUME-TARGET ${dispatchId} kind=${target.kind} task=${target.task} worktree=${target.worktree} agent=${target.agent}`)
   if (target.kind === 'limited') emit(['RESUME-SCREEN', ...target.screen.map((line) => `  ${line}`)].join('\n'), [], { fix: true })
   const pluginDir = target.kind === 'limited' && target.agent === 'claude' && target.oldTerminal ? oldPluginDir(target.oldTerminal) : null
@@ -396,7 +397,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     const spec = readLaunch(repo, dispatchId)?.spec ?? null
     if (!spec) emit('RESUME-WARN spec 기록 없음')
     // 실행 설정을 옮겨 적어 이 dispatch 가 다시 멈췄을 때도 resume 할 수 있게 한다
-    recordLaunch(repo, { ...(readLaunch(repo, dispatchId)?.completion === 'none' ? { completion: 'none' as const } : {}), dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec,
+    recordLaunch(repo, { ...readLaunch(repo, dispatchId), ...(readLaunch(repo, dispatchId)?.completion === 'none' ? { completion: 'none' as const } : {}), dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec,
       agent: target.agent, model: target.model, effort: target.effort })
   } catch (error) {
     emit(`RESUME-WARN launched-workers 기록을 쓰지 못했다: ${(error as Error).message}`)
@@ -407,7 +408,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
 }
 
 async function main(): Promise<number> {
-  const options = { dispatch: { type: 'string' }, run: { type: 'string' }, repo: { type: 'string' }, 'timeout-ms': { type: 'string' }, help: { type: 'boolean' } } as const
+  const options = { ...MAIN_GUARD_OPTIONS, dispatch: { type: 'string' }, run: { type: 'string' }, repo: { type: 'string' }, 'timeout-ms': { type: 'string' }, help: { type: 'boolean' } } as const
   let values
   try {
     values = parseArgs({ args: expandArgs(process.argv.slice(2), options), options }).values
@@ -430,7 +431,10 @@ async function main(): Promise<number> {
     process.stderr.write(`${USAGE}\n--timeout-ms 는 양의 정수다\n`)
     return 2
   }
-  const repo = mainCheckout(values.repo ?? process.cwd())
+  const repo = dispatchRepo(mainCheckout(values.repo ?? process.cwd()), values.dispatch ?? '')
+  if (!repo) { process.stderr.write('MAIN-TARGET-UNKNOWN 실제 worker 저장소를 확인하지 못했다\n'); return 1 }
+  const mainGuard = guardWrite(repo, 'worker resume', values['not-main'], { dispatch: values.dispatch })
+  if (mainGuard.code !== 0) return mainGuard.code
   try {
     return await resume(dispatch, values.run, repo, timeoutMs)
   } catch (error) {

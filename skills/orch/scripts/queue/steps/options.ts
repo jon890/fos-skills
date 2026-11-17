@@ -51,6 +51,13 @@ export function parseArgs(argv: string[]): Options {
   while (i < argv.length) {
     const arg = argv[i]
     if (arg === '-h' || arg === '--help') throw new Usage('')
+    if (arg === '--not-main' || arg.startsWith('--not-main=')) {
+      const value = arg.startsWith('--not-main=') ? arg.slice('--not-main='.length) : argv[++i]
+      if (value === undefined) throw new Usage('--not-main 에 이유가 없다')
+      o.notMain = value
+      i++
+      continue
+    }
     if (QUEUE_VALUE_OPTIONS.includes(arg)) {
       const value = i + 1 < argv.length ? argv[i + 1] : ''
       if (!value) throw new Usage(`${arg} 에 값이 없다`)

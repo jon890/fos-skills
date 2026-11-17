@@ -13,6 +13,7 @@
 // 짧은 출력(진입점의 orch worker adopt, lib/output.ts): SESSION 은 `SESSION <터미널> <화면 상태> <브랜치> specs=<지시서 후보를 쉼표로 또는 ->` 한 줄(JSON 은 --full),
 // ADOPTED 는 `ADOPTED <터미널> <지시서>`, ADOPT-MANUAL 은 첫 줄만이다. LIMITED, RESTART 와 그 들여 쓴 명령 줄은 그대로다.
 // 종료 코드: 0 목록/연결 성공, 1 조회/연결 실패, 2 사용법 오류, 3 안전하게 연결할 수 없거나 수동 이어받기가 필요함.
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -25,13 +26,17 @@ import { discoverAll, discoverSessions, handover } from '../lib/sessions.ts'
 
 const USAGE = '사용법: adopt-sessions.ts [--repo DIR] [--json] [--apply TERMINAL --run RUN [--spec FILE]]'
 async function main(): Promise<number> {
-  const options = { repo: { type: 'string' }, json: { type: 'boolean' }, apply: { type: 'string' }, run: { type: 'string' }, spec: { type: 'string' }, help: { type: 'boolean' } } as const
+  const options = { ...MAIN_GUARD_OPTIONS, repo: { type: 'string' }, json: { type: 'boolean' }, apply: { type: 'string' }, run: { type: 'string' }, spec: { type: 'string' }, help: { type: 'boolean' } } as const
   let values
   try { values = parseArgs({ args: expandArgs(process.argv.slice(2), options), options }).values }
   catch (error) { process.stderr.write(`${USAGE}\n${(error as Error).message}\n`); return 2 }
   if (values.help) { console.log(USAGE); return 0 }
   if ((!values.apply && (values.run || values.spec)) || (values.apply && !values.run)) { console.error(USAGE); return 2 }
   const repo = mainCheckout(values.repo ?? process.cwd())
+  if (values.apply) {
+    const mainGuard = guardWrite(repo, 'worker adopt', values['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   try {
     if (!values.apply) {
       const { sessions, limited, restartable } = await discoverAll(repo)

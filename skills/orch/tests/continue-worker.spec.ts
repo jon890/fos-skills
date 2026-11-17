@@ -20,7 +20,7 @@ function setup(options: { status?: string; prs?: unknown[]; spec?: string; compl
   const spec = join(repo, 'spec-x.md')
   writeFileSync(spec, options.spec ?? '# 작업\n\n브랜치: `feat/x`\n허락: PR 생성까지 허락했다.\n')
   recordLaunch(repo, { dispatch: 'd1', terminal: 'worker', worktree: repo, run: 'R', spec, ...(options.branch === false ? {} : { branch: 'feat/x' }), ...(options.completion ? { completion: options.completion } : {}) })
-  orca.setRules([{ args: ['worker-show'], stdout: result({ dispatch: { id: 'd1', status: options.status ?? 'completed' } }) }])
+  orca.setRules([{ args: ['worker-show'], stdout: result({ dispatch: { id: 'd1', runId: 'R', status: options.status ?? 'completed' }, worker: { worktreeId: repo } }) }])
   gh.setRules([{ args: ['list'], stdout: JSON.stringify(options.prs ?? PR) }])
   const send = join(repo, 'send.ts')
   writeFileSync(send, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(join(repo, 'send.log'))}, JSON.stringify(process.argv.slice(2)) + '\\n')\nconsole.log('FOLLOW-UP d1 d2 task2')\nprocess.exitCode = ${options.sendCode ?? 0}\n`)

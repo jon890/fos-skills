@@ -104,7 +104,7 @@ function dispatchStatus(dispatch: string): { ok: true; status: string } | { ok: 
 }
 
 // 대상이면 send-to-worker 로 후속 지시를 보낸다. run 은 지정이 우선이고 없으면 띄우기 기록의 Run 이다
-export async function continueWorker(repo: string, dispatch: string, options: { run?: string | null; knownPr?: number | null; exclude?: readonly number[] } = {}): Promise<Continued> {
+export async function continueWorker(repo: string, dispatch: string, options: { notMain?: string; run?: string | null; knownPr?: number | null; exclude?: readonly number[] } = {}): Promise<Continued> {
   const found = continueTarget(repo, dispatch, options.knownPr ?? null, options.exclude ?? [])
   if ('skip' in found) return { kind: 'skip', reason: found.skip }
   if ('error' in found) return { kind: 'fail', reason: `PR 상태를 읽지 못했다: ${found.error}` }
@@ -115,6 +115,7 @@ export async function continueWorker(repo: string, dispatch: string, options: { 
   const run = options.run ?? target.run
   const send = process.env.SEND_TO_WORKER || scriptPath('send-to-worker')
   const args = ['--dispatch', dispatch, '--spec', target.spec, '--note', continueNote(target.pr.number), ...(run ? ['--run', run] : [])]
+  if (options.notMain !== undefined) args.push('--not-main', options.notMain)
   const sent = await runAsync(scriptCommand(send, args), { timeoutMs: SEND_MS })
   const shown = `${sent.stdout}${sent.stderr}`.trim()
   const follow = FOLLOW_UP.exec(sent.stdout)

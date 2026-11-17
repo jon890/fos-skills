@@ -554,6 +554,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     return
   }
   const removeArgs = [path, '--delete-branch', ...(m.mergedHead ? ['--merged-head', m.mergedHead] : [])]
+  if (args.notMain !== undefined) removeArgs.push('--not-main', args.notMain)
   // remove-worktree.ts 는 OMC session-end hook 이 끝나기를 ORCH_HOOK_WAIT 초(기본 180)까지 기다린다
   const removed = run(scriptCommand(REMOVE, removeArgs), { timeoutSec: args.removeTimeoutSec })
   const said = removed.out || removed.err

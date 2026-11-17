@@ -25,7 +25,7 @@ before(() => {
   bindir = mkdtempSync(join(tmpdir(), 'queue-gate-bin-'))
   writeNodeBin(bindir, 'gh', FAKE_GH)
   writeNodeBin(bindir, 'git', FAKE_GIT)
-  writeNodeBin(bindir, 'orca', `const fs = require('node:fs'); console.log(JSON.stringify({ok:true,result:{message:{id:'notice'}}}))`)
+  writeNodeBin(bindir, 'orca', `const fs = require('node:fs'); console.log(JSON.stringify({ok:true,result:process.argv.includes('run-current') ? {run:null} : {message:{id:'notice'}}}))`)
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 

@@ -15,16 +15,18 @@
 //     CONTINUE-FAIL <dispatch> <이유>                              조회나 전송이 실패했다. 종료 코드 1. 같은 명령을 다시 부른다
 // 사용법 오류는 2 다.
 
+import { dispatchRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { continueWorker } from '../lib/continue-worker.ts'
 import { mainCheckout } from '../lib/git.ts'
+import { readLaunch } from '../lib/launched.ts'
 import { oneLine } from '../lib/output.ts'
 
 const USAGE = '사용법: continue-worker.ts --dispatch ID [--run ID] [--repo DIR]'
 
 export async function main(argv: string[]): Promise<number> {
-  const options = { dispatch: { type: 'string' }, run: { type: 'string' }, repo: { type: 'string' }, help: { type: 'boolean', short: 'h' } } as const
+  const options = { ...MAIN_GUARD_OPTIONS, dispatch: { type: 'string' }, run: { type: 'string' }, repo: { type: 'string' }, help: { type: 'boolean', short: 'h' } } as const
   let values
   try {
     values = parseArgs({ args: expandArgs(argv, options), options }).values
@@ -40,8 +42,17 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`${USAGE}\ncontinue-worker: --dispatch 가 필요하다\n`)
     return 2
   }
-  const repo = mainCheckout(values.repo ?? process.cwd())
-  const result = await continueWorker(repo, values.dispatch, { run: values.run ?? null })
+  const fallbackRepo = mainCheckout(values.repo ?? process.cwd())
+  const repo = dispatchRepo(fallbackRepo, values.dispatch)
+  if (!repo) {
+    if (!readLaunch(fallbackRepo, values.dispatch)) {
+      process.stdout.write(`CONTINUE-SKIP ${values.dispatch} 이 dispatch 가 없다\n`); return 3
+    }
+    process.stderr.write('MAIN-TARGET-UNKNOWN 실제 worker 저장소를 확인하지 못했다\n'); return 1
+  }
+  const mainGuard = guardWrite(repo, 'worker continue', values['not-main'], { dispatch: values.dispatch })
+  if (mainGuard.code !== 0) return mainGuard.code
+  const result = await continueWorker(repo, values.dispatch, { run: values.run ?? null, notMain: values['not-main'] })
   if (result.kind === 'ok') {
     process.stdout.write(`CONTINUED ${values.dispatch} ${result.dispatch} ${result.task || '-'} pr=#${result.target.pr.number}\n`)
     return 0

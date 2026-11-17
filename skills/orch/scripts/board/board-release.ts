@@ -27,6 +27,7 @@
 // 짧은 출력(진입점의 orch board release, lib/output.ts): 항목마다 `BOARD <id> release PR <N>[ done]`(dry-run 은 would-release), 끝 줄 `BOARD-RELEASE <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run, 대상 없음), 1 보드나 gh 를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류(설정 파일 오류 포함)
 
+import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,7 +46,7 @@ import { emit, short } from '../lib/output.ts'
 const USAGE = '사용법: board-release.ts (--release PR | --pr N [--pr N ...]) [--repo DIR] [--board PATH] [--board-bin PATH] [--dry-run]'
 const SKIP_STATUS = new Set(['done'])
 
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   release: { type: 'string' },
   pr: { type: 'string', multiple: true },
   repo: { type: 'string' },
@@ -134,6 +135,11 @@ function main(argv: string[]): number {
     err(`board-release: ${e.message.replace(/\s+/g, ' ')}`)
     return 2
   }
+  if (!values['dry-run']) {
+    const mainGuard = guardWrite(boardRepo(repo, board), 'board release', values['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
+
   let items: Record<string, unknown>[]
   try {
     const raw = (JSON.parse(readFileSync(board, 'utf8')) as { items?: unknown }).items

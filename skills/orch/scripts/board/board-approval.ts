@@ -1,6 +1,7 @@
 // 승인 대기의 add <id> --kind --title --run [--preview ...], list [--full], cancel <id> [--reason], check <id> [--version].
 // 짧은 출력: APPROVAL-ADD <id> <kind> <version> [replaced|kept], APPROVAL, APPROVAL-CANCEL, APPROVAL-OK, APPROVAL-REJECT.
 // 종료 코드: 0 반영·통과, 1 거절·조회/저장 실패, 2 사용법 오류. 승인·고쳐 달라를 쓰는 명령은 없다.
+import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { applyAdd, applyCancel, applyUsed, checkVerdict, formatLine, latest, stateReason, validateAdd } from '../core/approvals.ts'
@@ -8,7 +9,7 @@ import type { AddInput, ApprovalKind, CheckFacts, CheckReason } from '../core/ap
 import { expandArgs } from '../lib/args.ts'
 import { previewSha, readApprovals, readSignal, selfIsWorker, signalWorkers, updateApprovals } from '../lib/approvals.ts'
 import { fullAsked } from '../lib/output.ts'
-const OPTIONS = {
+const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   repo: { type: 'string' }, run: { type: 'string' }, title: { type: 'string' }, kind: { type: 'string' }, preview: { type: 'string' },
   item: { type: 'string' }, step: { type: 'string' }, then: { type: 'string' }, target: { type: 'string' }, change: { type: 'string' }, rollback: { type: 'string' },
   command: { type: 'string' }, reason: { type: 'string' }, version: { type: 'string' }, 'keep-open': { type: 'boolean' }, full: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
@@ -32,6 +33,10 @@ async function main(): Promise<number> {
   if (!['add', 'list', 'cancel', 'check'].includes(action) || (action === 'list' ? positionals.length !== 1 : positionals.length !== 2 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id))) { err(USAGE); return 2 }
   for (const key of ['step', 'version'] as const) if (v[key] !== undefined && (!/^\d+$/.test(v[key]!) || !Number.isSafeInteger(Number(v[key])) || Number(v[key]) < 1)) { err(`--${key} 은 양의 정수다`); return 2 }
   const repo = resolve(v.repo ?? process.cwd())
+  if (action !== 'list') {
+    const mainGuard = guardWrite(repo, 'board approval ' + action, v['not-main'])
+    if (mainGuard.code !== 0) return mainGuard.code
+  }
   if (action === 'add') {
     const preview = v.preview ? resolve(v.preview) : null
     const input: AddInput = { id, title: v.title ?? '', kind: (v.kind ?? '') as ApprovalKind, run: v.run ?? '', terminal: process.env.ORCA_TERMINAL_HANDLE || null,
