@@ -15,6 +15,8 @@
 // 코디네이터의 Run(run-current)이 dispatch 의 Run 과 다르면 다른 세션의 worker 다. 이때는 `--from run:<run>` 을 붙이지 않고,
 // 그 Run 에 묶여야 읽는 `check --run` 대신 inbox 로 후보를 읽는다. check 가 consumer_fenced 로 막혀도 같은 방법으로 내려간다.
 // Orca 오류는 `code: message` 한 줄로 낸다(lib/orca.ts 의 orcaJsonOrThrow).
+// dispatch 의 에이전트가 codex 면 보내는 본문 끝에 CODEX_TURN 한 줄을 붙인다(이미 있으면 다시 붙이지 않는다).
+// Codex worker 는 후속 지시에 확인만 출력하고 턴을 끝내 「Worker stopped without reporting」 이 세 번 되풀이됐다(2026-11-18).
 //
 // 사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG | --no-reply] [--spec FILE] [--run RUN]
 //         send-to-worker.ts --dispatch ENDED_ID --spec FILE [--note TEXT] [--run RUN] [--agent A --model M --effort E]
@@ -80,6 +82,14 @@ const LAUNCH_MS = 3_600_000
 const SETTING_KEYS = ['agent', 'model', 'effort'] as const
 // 사람에게 다시 띄우라고 안내하는 명령. 실행 규칙의 꼴(node 와 경고 끄기, 절대경로)로 낸다
 const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${shQuote(scriptPath('launch-worker'))}`
+// codex worker 에게 보내는 본문 끝에 붙이는 줄. 머리 주석의 codex 항목이다
+const CODEX_TURN = '이 지시는 이 턴 안에서 실행한다. 확인만 출력하고 턴을 끝내지 않는다. status 나 ask 를 보내기 전에는 턴을 끝내지 않는다.'
+
+// 에이전트가 codex 면 본문 끝에 CODEX_TURN 을 붙인다. 빈 본문과 이미 붙은 본문은 그대로 둔다
+function forAgent(body: string, agent: unknown): string {
+  if (agent !== 'codex' || !body || body.includes(CODEX_TURN)) return body
+  return `${body}\n\n${CODEX_TURN}`
+}
 
 type Json = Record<string, unknown>
 type Settings = Record<string, unknown>
@@ -500,6 +510,7 @@ async function main(argv: string[]): Promise<number> {
     const mainGuard = guardWrite(mainCheckout(described.worktree || process.cwd()), 'worker send', a.notMain, { dispatch: a.dispatch, worktree: described.worktree })
     if (mainGuard.code !== 0) return mainGuard.code
     const { status, handle } = described
+    body = forAgent(body, described.settings.agent)
     run = described.runId || a.run || ''
     if (a.run && described.runId && a.run !== described.runId) out(`note: --run ${a.run} 이 아니라 ${a.dispatch} 가 속한 Run ${described.runId} 로 보낸다`)
     const own = coordinatorRun()
