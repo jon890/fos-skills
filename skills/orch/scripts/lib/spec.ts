@@ -192,6 +192,22 @@ export function permissionsOf(text: string): string[] {
   return found
 }
 
+// 허락 줄이 원격 접속(ssh, 홈서버 조회, 원격 조회)을 허락하는데 worker 선택이 codex 인 곳. 없으면 null 이다.
+// Codex worker 는 실행 환경의 네트워크와 키 제한으로 ssh 가 권한 거부로 끝나 코디네이터가 대신 조회해야 했다(2026-11-18).
+// 그래서 spec-lint 가 「원격」 경고로 알리고, launch-worker 는 그 출력을 그대로 보인다.
+const REMOTE = /\bssh\b|홈\s*서버|원격\s*(?:조회|접속|명령)/i
+
+export function remoteWithCodex(text: string): { no: number; phrase: string } | null {
+  if (selectionsOf(text)[0]?.agent !== 'codex') return null
+  const all = lines(text)
+  for (const [index, line] of outsideFences(all).entries()) {
+    const m = PERMISSION.exec(line)
+    const hit = m ? REMOTE.exec(m[1]) : null
+    if (hit) return { no: index + 1, phrase: hit[0] }
+  }
+  return null
+}
+
 type Page<K extends string> = { [P in K]?: unknown } & { page?: { nextCursor?: unknown }; scope?: { source?: unknown } }
 
 // 한 조회를 page.nextCursor 가 없을 때까지 이어 읽는다. 한 페이지라도 실패하면 null 이다.

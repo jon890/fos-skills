@@ -52,7 +52,13 @@
 //                 --active 지시서는 보지 않는다. 기능 구현이 아니거나 이미 떠 있다.
 //                 확인받은 스펙 없이 기능 구현 worker 를 띄우는 일을 막는다. 지침만으로는 바쁠 때 건너뛰었다
 //     경로        백틱 안의 파일 경로(확장자가 있는 것)가 저장소에 없다. 파일 이름만 적었으면 어느 폴더에든 있으면 된다.
-//                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다
+//                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다.
+//                 지시서 폴더의 spec-common.md 는 코드 블록 밖 백틱 안의 절대경로(`/…`)와 홈 경로(`~/…`)가 디스크에 있는지 본다.
+//                 명령이면 낱말마다 본다. `<...>`, `{{...}}`, `$`, glob 이 든 낱말과 임시 폴더 경로는 보지 않는다.
+//                 스킬 폴더를 옮긴 뒤 공통 지시서의 검사 명령이 없는 파일을 가리켜 worker 마다 같은 실패를 되풀이했다
+//     원격        `허락:` 줄이 ssh, 홈서버 조회, 원격 조회를 허락하는데 `worker 선택:` 의 에이전트가 codex 다(lib/spec.ts 의 remoteWithCodex).
+//                 Codex worker 는 ssh 가 권한 거부로 막혀 코디네이터가 대신 조회해야 했다. claude 로 고르라고 알린다.
+//                 --active 로만 넘긴 지시서는 보지 않는다. 경고이고 종료 코드에 넣지 않는다. launch-worker 가 이 출력을 그대로 보인다
 //     공통        지시서 폴더의 spec-common.md 에 틀(skills/orch/templates/spec-common.md)의 `<!-- orch-rule: <이름> -->` 표지가 빠졌거나,
 //                 표지가 붙은 규칙의 본문이 틀과 다르다.
 //                 표지는 빠지면 worker 가 옛 방식으로 움직이는 규칙(완료 보고 시점, 질문 경로, 개선 후보 보고 같은 것)을 가리킨다.
@@ -93,7 +99,7 @@
 //
 // 짧은 출력(진입점의 orch spec lint, lib/output.ts): 막을 발견은 `SPEC-ERROR <줄>`, 경고는 `SPEC-WARN <줄>` 이다. stderr 의 요약은 그대로다.
 // 종료 코드:
-//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료, 머지 보류 경고는 있을 수 있다)
+//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료, 머지 보류, 원격 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
@@ -115,7 +121,7 @@ import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { autoStepNumberOf, boardIdOf, boardNewOf, boardIdOfLine, interimOf, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOf, boardNewOf, boardIdOfLine, interimOf, remoteWithCodex, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
@@ -142,6 +148,10 @@ const COMMON = 'spec-common.md'
 const BODY_NAME = /(?:^|[\s`'"(/=])((?:pr[-_]?body|pr[-_]?description|body)\.md)(?![\w-])/g
 const BODY_HINT = '고정된 공용 이름이라 다른 작업의 PR 본문과 섞인다. 파일 이름에 작업(워크트리) 이름을 넣는다(예: pr-body-<워크트리 이름>.md)'
 const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
+const REMOTE_HINT = 'Codex worker 는 ssh 가 권한 거부로 막힌다. 원격 조회가 필요한 일은 worker 선택을 claude 로 바꾸고 후보 밖 이유를 적는다(references/agent-selection.md)'
+// 공통 지시서의 백틱 안 낱말 가운데 디스크에서 확인할 절대경로와 홈 경로. 자리표시와 변수, glob 이 든 낱말은 뺀다
+// `/orch` 같은 명령 이름을 빼려고 절대경로는 마디가 둘 이상인 것만 본다
+const ABS_WORD = /^(?:~\/|\/[^/\s]+\/)[^\s<>{}$*?\[\]]+$/
 const RESUME_TEMP_HINT = '임시 폴더라 PC 를 다시 켜면 사라진다. 재개 절에는 회신과 측정 결과를 본문에 옮겨 적고 임시 경로를 가리키지 않는다'
 
 class UsageError extends Error {}
@@ -438,6 +448,7 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
     const common = join(dir, COMMON)
     if (!isFile(common)) continue
     const text = readFileSync(common, 'utf8')
+    found.push(...commonPaths(common, text))
     for (const issue of [...ruleIssues(text), ...duplicateRuleHeads(text)]) found.push(`${common}:${issue.no}: 공통: ${issue.message}`)
     const has = ruleBodies(text)
     const missing = required.filter((name) => !has.has(name))
@@ -454,6 +465,22 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
           `${common}:${mine.no}: 공통: 표지 \`${name}\` 가 붙은 규칙이 틀과 다르다. ` +
             `먼저 orch spec sync-common 으로 diff 를 본다. 일부러 바꾼 항목은 표지 이름 뒤에 keep 을 붙여 보존한다(틀: ${TEMPLATE}:${want.no})`,
         )
+      }
+    }
+  }
+  return found
+}
+
+// 머리 주석의 「경로」 가운데 공통 지시서 몫. 백틱 안의 절대경로와 홈 경로가 디스크에 없으면 한 줄씩 낸다
+function commonPaths(common: string, text: string): string[] {
+  const found: string[] = []
+  for (const [index, line] of outsideFences(splitLines(text)).entries()) {
+    for (const tok of ticks(line)) {
+      for (const raw of tok.split(/\s+/)) {
+        const word = stripChars(raw, `"'(),;:`).replace(/[.。]+$/, '')
+        if (!ABS_WORD.test(word) || new RegExp(TEMP_PATH.source).test(word)) continue
+        const abs = word.startsWith('~/') ? join(homedir(), word.slice(2)) : word
+        if (!existsSync(abs)) found.push(`${common}:${index + 1}: 경로: \`${word}\` 가 없다. 공통 지시서의 명령이 없는 파일을 가리키면 worker 마다 같은 실패를 되풀이한다`)
       }
     }
   }
@@ -545,6 +572,8 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     try { autoStepNumberOf(spec.lines.join('\n')) }
     catch (e) { errors.push(`${spec.name}:1: 보드 자동 단계: ${(e as Error).message}`) }
     if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source))
+    const remote = targets.has(spec.path) ? remoteWithCodex(spec.lines.join('\n')) : null
+    if (remote) warnings.push(`${spec.name}:${remote.no}: 원격: 허락 줄의 \`${remote.phrase}\` 와 codex 선택이 함께 있다. ${REMOTE_HINT}`)
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
       warnings.push(`${spec.name}:1: 제목: ${TITLE_HINT}`)
     }
@@ -671,6 +700,7 @@ export function main(argv: string[]): number {
     const temps = warnings.filter((line) => line.includes(': 임시: ')).length
     const holds = warnings.filter((line) => line.includes(': 머지 보류: ')).length
     const bodies = warnings.filter((line) => line.includes(': 본문: ')).length
+    const remotes = warnings.filter((line) => line.includes(': 원격: ')).length
     const tail =
       (overlaps > 0 ? `, 겹침 경고 ${overlaps}건` : '') +
       (titles > 0 ? `, 제목 경고 ${titles}건` : '') +
@@ -679,8 +709,9 @@ export function main(argv: string[]): number {
       (dones > 0 ? `, 완료 경고 ${dones}건` : '') +
       (temps > 0 ? `, 임시 경고 ${temps}건` : '') +
       (bodies > 0 ? `, 본문 경고 ${bodies}건` : '') +
+      (remotes > 0 ? `, 원격 경고 ${remotes}건` : '') +
       (holds > 0 ? `, 머지 보류 경고 ${holds}건` : '')
-    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps - bodies - holds
+    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps - bodies - holds - remotes
     process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${paths}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {

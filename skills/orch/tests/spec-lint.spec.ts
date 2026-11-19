@@ -205,6 +205,62 @@ describe('지시서 검사', () => {
     assert.deepEqual(lint([plain]), { code: 0, stdout: '' })
   })
 
+  test('공통 지시서의 백틱 명령 속 절대경로와 홈 경로가 없으면 경로 경고를 내고, 있는 경로와 자리표시는 조용하다', () => {
+    const a = spec('spec-a', '담당: `src/a/**`')
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'spec-lint-home-')))
+    try {
+      write(join(home, 'tools', 'check.ts'), '')
+      write(join(specs, 'spec-common.md'), [
+        '## 공통 규칙',
+        '',
+        '- 문서는 `python3 ~/tools/korean-style-check.py <파일>` 로 점검한다.',
+        `- 검사는 \`node ~/tools/check.ts <파일>\` 와 \`${process.execPath} --version\` 로 한다.`,
+        // 임시 폴더 아래 경로는 「임시」 몫이라 경로 검사에서 빼므로, 없는 절대경로는 임시 폴더 밖에서 고른다
+        '- 옛 경로 `/nonexistent-orch-lint/gone/old.ts` 도 적혀 있다.',
+        '- `/orch` 명령, `{{ROOT}}/a/b.ts`, `$HOME/x/y.ts`, `/tmp/claude-1/a.md`, `<경로>/a.ts` 는 보지 않는다.',
+        '```bash',
+        'node ~/tools/fenced-missing.ts',
+        '```',
+        '',
+      ].join('\n'))
+      const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a], { env: { ...ENV, HOME: home }, encoding: 'utf8' })
+      assert.equal(r.status, 0, r.stdout)
+      const found = r.stdout.split('\n').filter((line) => line.includes(': 경로: '))
+      assert.deepEqual(found.map((line) => /경로: `([^`]+)`/.exec(line)?.[1]), ['~/tools/korean-style-check.py', '/nonexistent-orch-lint/gone/old.ts'], r.stdout)
+      assert.match(found[0], /spec-common\.md:3: 경로: /)
+      assert.match(r.stderr, /경로 경고 2건/)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  test('허락 줄이 ssh 나 홈서버 조회를 허락하고 codex 를 고르면 원격 경고를 낸다', () => {
+    const header = (permission: string, agent: string) => [
+      '# 원격',
+      `허락: ${permission}`,
+      agent === 'codex'
+        ? 'worker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 이유: 탐색.'
+        : 'worker 선택: `claude` `claude-opus-5-5` effort `medium`. 행: impl-explore. 이유: 원격 조회. 후보 밖: ssh 가 필요하다.',
+      NO_LOOP,
+      '',
+    ].join('\n')
+    for (const permission of ['`ssh homeserver` 읽기 전용 조회를 허락했다.', '홈서버 조회를 허락했다.', '원격 조회와 PR 생성을 허락했다.']) {
+      const file = write(join(specs, 'spec-remote.md'), header(permission, 'codex'))
+      const r = run(['--repo', repo, file])
+      assert.equal(r.code, 0, r.stdout)
+      assert.match(r.stdout, /spec-remote\.md:2: 원격: .*codex.*claude/, permission)
+      assert.match(r.stderr, /원격 경고 1건/)
+    }
+    // claude 를 골랐거나, 허락 줄이 아닌 곳에서 ssh 를 말하거나, 이미 띄운 지시서면 조용하다
+    const quiet = [
+      write(join(specs, 'spec-claude.md'), header('`ssh homeserver` 조회를 허락했다.', 'claude')),
+      write(join(specs, 'spec-elsewhere.md'), header('PR 생성을 허락했다.', 'codex').replace('## 할 일', 'ssh 키는 건드리지 않는다.\n## 할 일')),
+    ]
+    for (const file of quiet) assert.doesNotMatch(run(['--repo', repo, file]).stdout, /원격:/, file)
+    const active = write(join(specs, 'spec-active.md'), header('`ssh homeserver` 조회를 허락했다.', 'codex'))
+    assert.doesNotMatch(run(['--repo', repo, '--active', active, quiet[0]]).stdout, /원격:/)
+  })
+
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고,
