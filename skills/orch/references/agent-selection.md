@@ -29,6 +29,7 @@
 - 이유가 있는 실제 예외는 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.candidateOverride` 에 행·에이전트·모델·effort·이유를 남긴다. effort 가 다르면 기존 키 `effortLimit` 에 행의 값을 남긴다.
 - 새 지시서에는 `비교:` 항목과 `experiment:` 줄을 쓰지 않는다. `--active` 지시서와 같은 지시서·설정으로 이어 가는 기존 worker 는 옛 형식을 허용한다. 새 지시서나 설정을 바꾼 재시도는 다시 검사한다.
 - `send-to-worker` 의 후속 지시서는 같은 worker 를 이어 가므로 행의 worker 대조와 옛 형식 거절을 건너뛴다. 전송 실패 뒤 다른 설정으로 새로 띄우면 launch 가 새 규칙을 검사한다.
+- 원격 조회(ssh, 홈서버 조회)가 필요한 일은 행과 관계없이 `claude` 로 고르고 `후보 밖: 원격 조회` 를 적는다. Codex worker 는 실행 환경 제한으로 ssh 가 권한 거부로 막힌다. `spec-lint` 가 허락 줄의 ssh 와 codex 선택이 함께 있으면 「원격」 으로 경고한다.
 - 모든 worker 의 한국어 커밋 검사는 git 훅이 맡는다. Codex 시작 설정은 [`launch.md`](launch.md) 의 「codex 준비 판정」 을 따른다.
 
 ### 리뷰 제공자
