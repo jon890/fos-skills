@@ -216,8 +216,15 @@ describe('지시서 검사', () => {
         '- 문서는 `python3 ~/tools/korean-style-check.py <파일>` 로 점검한다.',
         `- 검사는 \`node ~/tools/check.ts <파일>\` 와 \`${process.execPath} --version\` 로 한다.`,
         // 임시 폴더 아래 경로는 「임시」 몫이라 경로 검사에서 빼므로, 없는 절대경로는 임시 폴더 밖에서 고른다
-        '- 옛 경로 `/nonexistent-orch-lint/gone/old.ts` 도 적혀 있다.',
+        '- 옛 경로 `/Users/nonexistent-orch-lint/gone/old.ts` 도 적혀 있다.',
         '- `/orch` 명령, `{{ROOT}}/a/b.ts`, `$HOME/x/y.ts`, `/tmp/claude-1/a.md`, `<경로>/a.ts` 는 보지 않는다.',
+        // API 주소, 줄 번호와 앵커가 붙은 있는 파일, 새로 만들 출력 파일, 들여쓴 코드 블록은 조용하다
+        '- API 는 `/v1/runs` 와 `GET /api/agents/1` 이다.',
+        '- 근거는 `~/tools/check.ts:12`, `~/tools/check.ts:12-20`, `~/tools/check.ts#L3` 이다.',
+        '- 결과는 `node ~/tools/check.ts --out ~/reports/new-report.md` 와 `node ~/tools/check.ts > ~/logs/new.log` 로 남긴다.',
+        '',
+        '    node ~/tools/indented-missing.ts',
+        '',
         '```bash',
         'node ~/tools/fenced-missing.ts',
         '```',
@@ -226,7 +233,7 @@ describe('지시서 검사', () => {
       const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a], { env: { ...ENV, HOME: home }, encoding: 'utf8' })
       assert.equal(r.status, 0, r.stdout)
       const found = r.stdout.split('\n').filter((line) => line.includes(': 경로: '))
-      assert.deepEqual(found.map((line) => /경로: `([^`]+)`/.exec(line)?.[1]), ['~/tools/korean-style-check.py', '/nonexistent-orch-lint/gone/old.ts'], r.stdout)
+      assert.deepEqual(found.map((line) => /경로: `([^`]+)`/.exec(line)?.[1]), ['~/tools/korean-style-check.py', '/Users/nonexistent-orch-lint/gone/old.ts'], r.stdout)
       assert.match(found[0], /spec-common\.md:3: 경로: /)
       assert.match(r.stderr, /경로 경고 2건/)
     } finally {
@@ -255,6 +262,9 @@ describe('지시서 검사', () => {
     const quiet = [
       write(join(specs, 'spec-claude.md'), header('`ssh homeserver` 조회를 허락했다.', 'claude')),
       write(join(specs, 'spec-elsewhere.md'), header('PR 생성을 허락했다.', 'codex').replace('## 할 일', 'ssh 키는 건드리지 않는다.\n## 할 일')),
+      // 원격 조회를 막거나, 원격 낱말이 있어도 조회·접속이 아닌 허락이다
+      ...['홈서버에는 접속하지 않는다.', 'ssh 는 쓰지 않는다.', '원격 조회는 하지 않는다.', '홈서버 저장소(fos-home-infra) 문서 수정을 허락했다.', 'git push(SSH remote)를 허락했다.']
+        .map((permission, at) => write(join(specs, `spec-deny-${at}.md`), header(permission, 'codex'))),
     ]
     for (const file of quiet) assert.doesNotMatch(run(['--repo', repo, file]).stdout, /원격:/, file)
     const active = write(join(specs, 'spec-active.md'), header('`ssh homeserver` 조회를 허락했다.', 'codex'))

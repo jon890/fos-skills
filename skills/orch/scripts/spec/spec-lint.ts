@@ -55,6 +55,8 @@
 //                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다.
 //                 지시서 폴더의 spec-common.md 는 코드 블록 밖 백틱 안의 절대경로(`/…`)와 홈 경로(`~/…`)가 디스크에 있는지 본다.
 //                 명령이면 낱말마다 본다. `<...>`, `{{...}}`, `$`, glob 이 든 낱말과 임시 폴더 경로는 보지 않는다.
+//                 절대경로는 파일시스템 뿌리(`/Users/`, `/home/` 같은 FS_ROOTS)로 시작하는 것만 본다(API 주소 제외).
+//                 줄 번호와 앵커는 떼고 보며, `>`, `--out` 뒤의 출력 파일과 4칸 들여쓴 코드 블록은 보지 않는다.
 //                 스킬 폴더를 옮긴 뒤 공통 지시서의 검사 명령이 없는 파일을 가리켜 worker 마다 같은 실패를 되풀이했다
 //     원격        `허락:` 줄이 ssh, 홈서버 조회, 원격 조회를 허락하는데 `worker 선택:` 의 에이전트가 codex 다(lib/spec.ts 의 remoteWithCodex).
 //                 Codex worker 는 ssh 가 권한 거부로 막혀 코디네이터가 대신 조회해야 했다. claude 로 고르라고 알린다.
@@ -150,8 +152,11 @@ const BODY_HINT = '고정된 공용 이름이라 다른 작업의 PR 본문과 �
 const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
 const REMOTE_HINT = 'Codex worker 는 ssh 가 권한 거부로 막힌다. 원격 조회가 필요한 일은 worker 선택을 claude 로 바꾸고 후보 밖 이유를 적는다(references/agent-selection.md)'
 // 공통 지시서의 백틱 안 낱말 가운데 디스크에서 확인할 절대경로와 홈 경로. 자리표시와 변수, glob 이 든 낱말은 뺀다
-// `/orch` 같은 명령 이름을 빼려고 절대경로는 마디가 둘 이상인 것만 본다
-const ABS_WORD = /^(?:~\/|\/[^/\s]+\/)[^\s<>{}$*?\[\]]+$/
+// 홈 경로나 파일시스템 뿌리로 시작하는 것만 본다. `/v1/runs`, `/orch` 같은 API 주소와 명령 이름을 빼려는 것이다
+const FS_ROOTS = ['Users', 'home', 'root', 'opt', 'usr', 'etc', 'var', 'private', 'Volumes', 'Applications', 'Library', 'System', 'srv', 'mnt']
+const ABS_WORD = new RegExp(`^(?:~/|/(?:${FS_ROOTS.join('|')})/)[^\\s<>{}$*?\\[\\]]+$`)
+// 이 낱말 뒤의 경로는 명령이 새로 만들 출력 파일이라 보지 않는다
+const OUTPUT_FLAGS = new Set(['>', '>>', '2>', '&>', '--out', '--output', '-o'])
 const RESUME_TEMP_HINT = '임시 폴더라 PC 를 다시 켜면 사라진다. 재개 절에는 회신과 측정 결과를 본문에 옮겨 적고 임시 경로를 가리키지 않는다'
 
 class UsageError extends Error {}
@@ -475,13 +480,19 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
 function commonPaths(common: string, text: string): string[] {
   const found: string[] = []
   for (const [index, line] of outsideFences(splitLines(text)).entries()) {
+    // 4칸 이상 들여쓴 줄은 들여쓴 코드 블록이다. 예시라 보지 않는다
+    if (/^(?: {4}|\t)/.test(line)) continue
     for (const tok of ticks(line)) {
-      for (const raw of tok.split(/\s+/)) {
-        const word = stripChars(raw, `"'(),;:`).replace(/[.。]+$/, '')
-        if (!ABS_WORD.test(word) || new RegExp(TEMP_PATH.source).test(word)) continue
+      const words = tok.split(/\s+/)
+      words.forEach((raw, at) => {
+        if (at > 0 && OUTPUT_FLAGS.has(words[at - 1])) return
+        if (/^(?:\d?>>?|&>)\S/.test(raw)) return
+        // 줄 번호(`:12`, `:12-20`, `:12:3`)와 앵커(`#L3`)를 뗀다
+        const word = stripChars(raw, `"'(),;:`).replace(/[.。]+$/, '').replace(/#.*$/, '').replace(/(?::\d+(?:[-:]\d+)?)+$/, '')
+        if (!ABS_WORD.test(word) || new RegExp(TEMP_PATH.source).test(word)) return
         const abs = word.startsWith('~/') ? join(homedir(), word.slice(2)) : word
         if (!existsSync(abs)) found.push(`${common}:${index + 1}: 경로: \`${word}\` 가 없다. 공통 지시서의 명령이 없는 파일을 가리키면 worker 마다 같은 실패를 되풀이한다`)
-      }
+      })
     }
   }
   return found

@@ -195,15 +195,22 @@ export function permissionsOf(text: string): string[] {
 // 허락 줄이 원격 접속(ssh, 홈서버 조회, 원격 조회)을 허락하는데 worker 선택이 codex 인 곳. 없으면 null 이다.
 // Codex worker 는 실행 환경의 네트워크와 키 제한으로 ssh 가 권한 거부로 끝나 코디네이터가 대신 조회해야 했다(2026-11-18).
 // 그래서 spec-lint 가 「원격」 경고로 알리고, launch-worker 는 그 출력을 그대로 보인다.
-const REMOTE = /\bssh\b|홈\s*서버|원격\s*(?:조회|접속|명령)/i
+// 허락 줄을 문장과 쉼표로 나눈 마디마다 본다. 원격 낱말과 조회·접속 동사가 함께 있고 부정 표현이 없는 마디만 잡는다.
+// 「홈서버 저장소 문서 수정」, 「git push(SSH remote)」, 「ssh 는 쓰지 않는다」 는 원격 조회 허락이 아니다.
+const REMOTE = /\bssh\b|홈\s*서버|원격/i
+const ACCESS = /조회|접속|명령|읽기|읽어|실행|들어가|확인/
+const DENY = /않|말고|금지|없이|못/
 
 export function remoteWithCodex(text: string): { no: number; phrase: string } | null {
   if (selectionsOf(text)[0]?.agent !== 'codex') return null
   const all = lines(text)
   for (const [index, line] of outsideFences(all).entries()) {
     const m = PERMISSION.exec(line)
-    const hit = m ? REMOTE.exec(m[1]) : null
-    if (hit) return { no: index + 1, phrase: hit[0] }
+    if (!m) continue
+    for (const clause of m[1].split(/[.;,!?]|(?:하고|이고)\s/)) {
+      const hit = REMOTE.exec(clause)
+      if (hit && ACCESS.test(clause) && !DENY.test(clause)) return { no: index + 1, phrase: hit[0] }
+    }
   }
   return null
 }
