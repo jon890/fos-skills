@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.75.0 (2026-11-20)
+
+- 모델 표의 sol 행을 `gpt-6.2-sol` 로 바꾸고 사용 한도 표에서 옛 sol 을 뺐다. Fable 의 같은 등급 대응에 `gpt-6.2-astra` 를 넣었다.
+- `orch worker launch` 가 Codex worker 를 그 계정 목록의 같은 계열 새 세대로 띄운다. 받지 못하는 계정이면 그 띄우기만 옛 세대로 띄운다.
+- Claude worker 는 계열 이름으로 띄워 그 계열의 최신 모델을 쓰고, 띄우기 기록에 실제 모델 ID 를 남긴다.
+- 상주 루프가 하루 한 번 새 Codex 모델을 `MODEL-NEW` 로 알리고, 표보다 높은 같은 계열 세대가 나오면 표를 바꾸는 PR 을 연다.
+- `orch doctor` 가 낡은 Codex CLI 를 `CODEX-OUTDATED <설치> <최신>` 으로 알린다. `codex` 명령이 없는 머신은 확인하지 않는다.
+
 ## 7.74.0 (2026-11-20)
 
 - 재부팅이나 Orca 재시작으로 끊긴 worker 와 기능 후속 검증이 대기인 워크트리를 정리가 지우지 않는다.
