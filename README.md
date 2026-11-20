@@ -318,6 +318,7 @@ CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
 PR 은 CI 의 `Tests` job 이 통과해야 머지해요.
 orch 를 쓰면 이 저장소의 고유 규칙은 각자의 `.orch/overlay.md` 에 둬요. git 이 추적하지 않고, 적는 법은 [orch 오버레이 문서](skills/orch/references/overlay.md)가 정해요.
+이 README 와 `docs/`, 스킬 README 가 지금 동작과 어긋났으면 저장소 스킬 [`docs-refresh`](.claude/skills/docs-refresh/SKILL.md) 로 고쳐 문서 PR 을 올려요. 플러그인에 넣지 않고 이 저장소에서만 떠요.
 
 ### 고치는 동안
 
