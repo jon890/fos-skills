@@ -62,6 +62,7 @@ import { orca, orcaJson } from '../lib/orca.ts'
 import { emit } from '../lib/output.ts'
 import { ensure } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
+import { checkLaunchSettings } from '../lib/model-check.ts'
 import { shQuote } from '../lib/py.ts'
 import { FOUND, GO, LOCK, readFound, writeRequest } from '../lib/resume.ts'
 import type { Agent } from '../lib/resume.ts'
@@ -306,6 +307,11 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   const deadline = started + timeoutMs
   const again = `${orchWord()} worker resume --dispatch ${shQuote(dispatchId)}`
   const target = judge(dispatchId, runFlag, repo)
+  if (target.agent === 'codex') {
+    const checked = checkLaunchSettings({ agent: target.agent, model: target.model, effort: target.effort })
+    for (const warning of checked.warnings) emit(`RESUME-WARN ${warning}`)
+    if (checked.reject) throw new Fail('target', checked.reject, 'references/agent-selection.md 「사용 한도에 걸렸을 때」 의 같은 등급 대응을 고른다', 4)
+  }
   const dir = join(ensure('state', repo), 'resume', dispatchId)
   lock(dir)
   emit(`RESUME-TARGET ${dispatchId} kind=${target.kind} task=${target.task} worktree=${target.worktree} agent=${target.agent}`)
