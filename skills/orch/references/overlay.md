@@ -362,3 +362,18 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 풀리면 `AUTO-MERGE-BASIS` 줄과 `orch queue gate` 의 `GATE-OK` 다음 줄에 `REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>` 가 남는다.
 
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.
+
+### 리뷰 봇 장애 때 대체 리뷰
+
+리뷰 봇이 모델을 부르지도 못하고 몇 초 만에 실패하면(인증, 사용량 한도, 봇 설정 오류) 판정이 없어 자동 머지가 멈춘다.
+`auto_review` 에 `fallback` 을 두면 상주 루프가 코디네이터를 기다리지 않고 그 PR 에 리뷰 worker 를 띄운다.
+
+```json
+{ "queue": { "auto_review": { "pass": "판정: 머지 가능", "block": "판정: 반영 필요", "fallback": { "check": "claude-review", "fail_within_sec": 120 } } } }
+```
+
+- `check` 는 리뷰 봇의 체크 이름이다. 지금 HEAD 에서 그 체크가 실패로 끝났고 시작부터 끝까지 `fail_within_sec`(기본 120)초 안이면 장애로 본다.
+- 필수 체크가 모두 통과한 Ready PR 만 대상이다. 같은 HEAD 에는 한 번만 띄운다.
+- 리뷰 worker 의 지시서는 `orch spec review` 와 같은 틀이다. 루프가 「배경」 과 「특히 볼 것」 을 채우고, 리뷰를 등록한 뒤 판정 댓글을 하나 더 달게 한다.
+- 판정 댓글의 첫 줄은 `pass_text`(기본 `판정: 머지 가능`)나 `block_text`(기본 `판정: 반영 필요`)다. 각각 `pass`, `block` 정규식에 맞아야 하고, 맞지 않으면 설정 오류다. 코디네이터가 독립 리뷰 뒤 다는 판정 댓글과 같은 모양이라 자동 머지가 그대로 읽는다.
+- 띄우면 `REVIEW-FALLBACK`, 띄우지 못하면 `REVIEW-FALLBACK-FAIL` 을 그 PR 의 Run 에 보낸다. 실패면 지금처럼 코디네이터가 독립 리뷰를 맡긴다. 동작의 상세는 `scripts/loop/steps/review-fallback.ts` 파일 맨 위 설명이 소유한다.
