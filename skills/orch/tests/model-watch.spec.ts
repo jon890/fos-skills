@@ -242,3 +242,70 @@ describe('표 PR 은 하나', () => {
     assert.equal(git(origin, ['branch', '--list', 'orch/model-table-*']).split('\n').filter(Boolean).length, 1)
   })
 })
+
+describe('표 PR 을 매번 다시 맞춘다', () => {
+  function fosRepo(name: string): { repo: string; origin: string } {
+    const { dir: repo, origin } = copyRepo(join(tmp, name))
+    mkdirSync(join(repo, 'skills/orch/references'), { recursive: true })
+    writeFileSync(join(repo, TABLE_PATH), readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8'))
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'table'])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    return { repo, origin }
+  }
+
+  test('목록에서 빠졌다 돌아온 바꿈도 열린 PR 에 다시 들어간다', () => {
+    const { repo, origin } = fosRepo('fos')
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    const branch = 'orch/model-table-gpt-6.3-sol'
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Fast.')])
+    watch(repo, 0)
+    gh.open([{ number: 9, headRefName: branch, url: 'https://github.com/o/r/pull/9' }])
+    // 다음 날은 sol 이 빠지고 terra 만 있다. 그다음 날 둘 다 돌아온다
+    codexList([...TODAY, entry('gpt-6.2-terra', 'Efficient.')])
+    watch(repo, DAY)
+    assert.doesNotMatch(git(origin, ['show', `${branch}:${TABLE_PATH}`]).split('### 새 모델과 새 세대')[0], /`gpt-6\.3-sol`/)
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Fast.'), entry('gpt-6.2-terra', 'Efficient.')])
+    const notices = watch(repo, 2 * DAY)
+    assert.deepEqual(notices.filter(n => n.kind === 'MODEL-TABLE-PR').map(n => n.text), ['https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol,gpt-6.1-terra>gpt-6.2-terra'])
+    const pushed = git(origin, ['show', `${branch}:${TABLE_PATH}`])
+    assert.match(pushed, /`gpt-6\.3-sol`/)
+    assert.match(pushed, /`gpt-6\.2-terra`/)
+    // 내용이 같으면 다음 날 다시 올리지 않는다
+    const edits = gh.calls().filter(c => c[1] === 'edit').length
+    assert.deepEqual(watch(repo, 3 * DAY).filter(n => n.kind === 'MODEL-TABLE-PR'), [])
+    assert.equal(gh.calls().filter(c => c[1] === 'edit').length, edits)
+  })
+
+  test('표 PR 을 연 뒤에 만든 다른 체크아웃에서도 열린 PR 을 덮어 올린다', () => {
+    const { repo, origin } = fosRepo('fos')
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    const branch = 'orch/model-table-gpt-6.3-sol'
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Fast.')])
+    watch(repo, 0)
+    // 표 PR 브랜치를 받지 않은 새 체크아웃
+    const other = join(tmp, 'other-checkout')
+    git(tmp, ['clone', '-q', '--single-branch', '--branch', 'main', origin, other])
+    git(other, ['remote', 'set-head', 'origin', 'main'])
+    gh.open([{ number: 9, headRefName: branch, url: 'https://github.com/o/r/pull/9' }])
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Fast.'), entry('gpt-6.2-terra', 'Efficient.')])
+    const notices = watch(other, DAY)
+    assert.deepEqual(notices.filter(n => n.kind.startsWith('MODEL-TABLE')).map(n => n.kind), ['MODEL-TABLE-PR'])
+    assert.match(git(origin, ['show', `${branch}:${TABLE_PATH}`]), /`gpt-6\.2-terra`/)
+  })
+
+  test('보드 쓰기에 실패한 모델은 다음에 목록을 읽을 때 보드 쓰기만 다시 한다', () => {
+    const a = join(tmp, 'a')
+    mkdirSync(a)
+    codexList(TODAY)
+    const written: string[] = []
+    let fail = true
+    const board = (id: string) => { if (fail) return 'locked'; written.push(id); return null }
+    assert.deepEqual(watch(a, 0, undefined, board).map(n => n.kind), ['MODEL-NEW', 'MODEL-BOARD-FAIL'])
+    fail = false
+    assert.deepEqual(watch(a, DAY, undefined, board), [])
+    assert.deepEqual(written, ['model-new-gpt-6-2-astra'])
+    assert.deepEqual(watch(a, 2 * DAY, undefined, board), [])
+    assert.deepEqual(written, ['model-new-gpt-6-2-astra'])
+  })
+})
