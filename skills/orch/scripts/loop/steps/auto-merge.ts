@@ -13,12 +13,10 @@
 //        마지막 줄, 그것도 없으면 `끝 줄 없음` 이다. 머지 큐는 끝 줄 뒤에 after-queue 와 정리 출력을 같은 로그에 이어 쓰므로 마지막 줄이 끝 줄이 아니다.
 //        merge-with-finish 가 큐를 걸기 전에 끝나면(사용법 오류, 마무리를 띄우지 못함) 끝 줄은 `끝 줄 없음` 이고 이유는 로그에 있다.
 //        AUTO-MERGE-END(pr null, text `<끝 줄> log=<로그>`. 로그를 읽지 못하면 끝 줄 자리에 `로그 없음`)를 기록의 run 으로 쓰고 기록을 비운다.
-//        아직 돌면 이 틱에는 걸지 않는다. 이 저장소의 다른 머지 큐가 돌아도 걸지 않는다(lib/queue-process.ts 의 repoQueues).
-//        명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 프로세스 가운데 이 저장소의 차례 기록이나 맡은 PR 기록의 pid,
-//        또는 --repo 값이나 작업 폴더가 이 저장소인 것만 센다. 다른 저장소의 큐나 테스트가 임시 저장소에 띄운 큐는 막지 않는다(2026-11-20).
-//        저장소를 알 수 없는 큐는 센다
+//        아직 돌면 이 틱에는 걸지 않는다. 명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 줄이 있어도 걸지 않는다.
+//        머신 전체를 보므로 다른 저장소의 큐나 테스트 실행도 막는다. 거는 쪽으로는 틀리지 않아 그대로 둔다
 //        걸지 않은 틱에는 큐가 무엇을 기다리는지 로그에 한 줄씩 쓴다. 명령줄에 `merge_queue.` 가 든 프로세스의 차례 기록(lib/queue-turn.ts)마다
-//        `AUTO-MERGE-HELD pid <pid> #<차례 PR> <단계> <분>분 남은 #a #b` 이고, 차례 기록이 하나도 없으면 이 저장소의 도는 큐 프로세스마다
+//        `AUTO-MERGE-HELD pid <pid> #<차례 PR> <단계> <분>분 남은 #a #b` 이고, 차례 기록이 하나도 없으면 도는 큐 프로세스마다
 //        `AUTO-MERGE-HELD pid <pid> 차례 기록 없음: <명령줄 앞 160자>` 다. 코디네이터가 따로 건 큐가 자동 머지를 막을 때 무엇을 기다리는지
 //        loop.log 로 알게 하려는 것이다. Run 메시지로는 보내지 않는다. 도는 큐에 PR 을 덧붙이지 않는 이유는 docs/adr/020-orch-loop-refresh.md 에 있다
 //     3. 대상: Run id 와 지시서 폴더가 둘 다 있는 Run 의 지시서(lib/last-pr.ts 의 specFiles)의 `브랜치:` 줄에 든 내 열린 PR 이다.
@@ -101,8 +99,7 @@ import { boardPath } from '../../lib/board-file.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
 import { turnLine } from '../../lib/queue-turn.ts'
-import { repoQueues } from '../../lib/queue-process.ts'
-import { readClaims } from '../../lib/queue-claims.ts'
+import { isQueueCommand } from '../../lib/queue-process.ts'
 import { addedPaths, readReservations } from '../../lib/reservations.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
@@ -219,14 +216,8 @@ function dropOldLogs(dir: string, keep: string | null): void {
   }
 }
 
-// 이 저장소의 머지 큐 프로세스(lib/queue-process.ts 의 repoQueues). 이 저장소의 차례 기록과 맡은 PR 기록의 pid 는 명령줄을 따지지 않고 센다
-function sameRepoQueues(repo: string, list: Proc[]): Proc[] {
-  const known = new Set([...queueTurns(repo, list).map((turn) => turn.pid), ...readClaims(repo).map((claim) => claim.pid)])
-  return repoQueues(list, repo, known)
-}
-
-function queueRunning(repo: string, list: Proc[]): boolean {
-  return sameRepoQueues(repo, list).length > 0
+function queueRunning(list: Proc[]): boolean {
+  return list.some((p) => isQueueCommand(p.command))
 }
 
 // 도는 큐 때문에 이 틱의 자동 머지를 미룬다. 큐가 무엇을 기다리는지 로그에 한 줄씩 남긴다(머리 주석의 「자동 머지」 2)
@@ -236,7 +227,7 @@ function logHeld(repo: string, list: Proc[]): void {
     for (const turn of turns) log(`AUTO-MERGE-HELD ${turnLine(turn, Date.now())}`)
     return
   }
-  for (const p of sameRepoQueues(repo, list)) {
+  for (const p of list.filter((row) => isQueueCommand(row.command))) {
     log(`AUTO-MERGE-HELD pid ${p.pid} 차례 기록 없음: ${p.command.slice(0, HELD_COMMAND_CHARS)}`)
   }
 }
@@ -464,7 +455,7 @@ async function autoMergeStep(
     if (!notifyAutoMerge(ctx, 'AUTO-MERGE-END', null, `${queueEndLine(queue.log)} log=${queue.log}`, queue.run)) return
     state.queue = null
   }
-  if (queueRunning(ctx.repo, listed)) {
+  if (queueRunning(listed)) {
     logHeld(ctx.repo, listed)
     return
   }
@@ -612,7 +603,7 @@ async function autoMergeStep(
     errors.add('프로세스 목록을 읽지 못했다')
     return
   }
-  if (queueRunning(ctx.repo, again)) {
+  if (queueRunning(again)) {
     logHeld(ctx.repo, again)
     return
   }

@@ -6,10 +6,6 @@
 // 사용법:
 //     merge-with-finish.ts [래퍼 옵션] [merge_queue.ts 옵션] PR[!|~][:머지 전 명령] ...
 //
-//     0. 다른 머지 큐가 이미 맡은 PR(lib/queue-claims.ts 머리 주석의 「이미 맡은 PR」)은 마무리도 머지 큐도 걸지 않는다.
-//        PR 마다 `QUEUE-SKIP <PR> <이유>` 한 줄을 내고, `--chain` 묶음에 들었으면 묶음 전체를 뺀다. 남은 PR 이 없으면
-//        `QUEUE-SKIPPED <번호...>` 를 내고 0 으로 끝난다. 남은 PR 은 <orch 루트>/state/queue-claims/<pid>.json 에 맡은 것으로 적고 끝날 때 지운다.
-//        프로세스 목록을 읽지 못하면 빼지 않는다(머지 큐의 잠금 확인이 QUEUE-CHECK-FAILED 로 멈춘다)
 //     1. PR 마다 `finish-pr.ts` 를 백그라운드로 시작한다. 출력은 <로그 폴더>/finish-<PR>.out 이다.
 //        띄우기 전에 마무리 스크립트 파일이 있는지 보고, 띄운 프로세스가 시작된 것을 확인한 뒤에 `마무리 시작` 줄을 낸다.
 //        스크립트가 없거나 띄우지 못하면(인터프리터가 없다 같은 것) 이유를 stderr 에 내고 머지 큐를 걸지 않고 1 로 끝난다.
@@ -74,9 +70,7 @@
 // 옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
 //
 // 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류나 삭제한 옵션 포함)이거나
-//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다.
-//           맡은 PR 기록의 잠금을 잡지 못했거나 내 기록을 쓰지 못했으면 `QUEUE-CLAIM-FAIL <이유>` 를 내고 아무것도 걸지 않은 채 1 이다.
-//           다른 큐가 맡은 PR 을 확인하지 못한 채 넘기지 않으려는 것이다. 같은 명령을 다시 부르면 된다
+//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
 
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { spawn } from 'node:child_process'
@@ -97,9 +91,6 @@ import { repoArgProblem } from '../lib/git.ts'
 import { makeParent, pathOf, requireMigrated } from '../lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from '../lib/proc.ts'
 import { pidFileAlive } from '../lib/process.ts'
-import { claimedPrs, dropTaken, readClaims, removeClaim, withClaimsLock, writeClaim } from '../lib/queue-claims.ts'
-import { isQueueCommand, processes } from '../lib/queue-process.ts'
-import { readTurns } from '../lib/queue-turn.ts'
 import { queueDefaults } from '../lib/queue-defaults.ts'
 import { QUEUE_VALUE_OPTIONS } from '../lib/queue-options.ts'
 import { emit, shortEnv } from '../lib/output.ts'
@@ -399,56 +390,6 @@ async function main(argv: string[]): Promise<number> {
     wrapper.finishArg.push('--not-main', wrapper.notMain)
     queue.push('--not-main', wrapper.notMain)
   }
-  // 머리 주석의 「이미 맡은 PR」. 다른 큐가 맡은 PR 은 마무리도 큐도 걸지 않는다
-  const claim = claimQueue(real(wrapper.repo), prs, queue)
-  if ('fail' in claim) {
-    out(`QUEUE-CLAIM-FAIL ${claim.fail.replace(/\s+/g, ' ')}`)
-    return 1
-  }
-  if (claim.left.length === 0) {
-    out(`QUEUE-SKIPPED ${prs.map((pr) => pr.number).join(' ')}`)
-    return 0
-  }
-  return withClaim(claim.file, () => runQueue(wrapper, claim.left, claim.queue))
-}
-
-type ClaimResult = { left: PrArg[]; queue: string[]; file: string | null }
-
-// 다른 머지 큐가 맡은 PR 을 빼고, 남은 PR 을 내 기록으로 남긴다. 프로세스 목록을 읽지 못하면 빼지 않는다. 그때는 머지 큐의 잠금 확인이 QUEUE-CHECK-FAILED 로 멈춘다.
-// 읽기부터 쓰기까지 lib/queue-claims.ts 의 「맡기의 잠금」 안에서 한다. 잠금을 잡지 못했거나 내 기록을 쓰지 못하면 맡지 않은 것으로 끝낸다
-function claimQueue(repo: string, prs: PrArg[], queue: string[]): ClaimResult | { fail: string } {
-  try {
-    return withClaimsLock(repo, () => claimLocked(repo, prs, queue))
-  } catch (e) {
-    return { fail: `맡은 PR 기록을 확인하거나 남기지 못했다: ${(e as Error).message}` }
-  }
-}
-
-function claimLocked(repo: string, prs: PrArg[], queue: string[]): ClaimResult {
-  const list = processes()
-  if (list === null) return { left: prs, queue, file: null }
-  const isQueue = (pid: number) => pid !== process.pid && list.some((p) => p.pid === pid && isQueueCommand(p.command))
-  const numbers = prs.map((pr) => Number(pr.number))
-  const taken = claimedPrs(numbers, readClaims(repo).filter((c) => isQueue(c.pid)), readTurns(repo, isQueue), process.pid)
-  const dropped = dropTaken(queue, taken)
-  for (const skip of dropped.skipped) out(`QUEUE-SKIP ${skip.pr} ${skip.reason}`)
-  const gone = new Set(dropped.skipped.map((skip) => String(skip.pr)))
-  const left = prs.filter((pr) => !gone.has(pr.number))
-  if (left.length === 0) return { left, queue: dropped.queue, file: null }
-  // 기록을 쓰지 못하면 던져 claimQueue 가 실패로 끝낸다. 기록 없이 걸면 다른 큐가 이 PR 을 맡은 것을 모른다
-  const file = writeClaim(repo, { pid: process.pid, prs: left.map((pr) => Number(pr.number)) }, isQueue)
-  return { left, queue: dropped.queue, file }
-}
-
-async function withClaim(file: string | null, work: () => Promise<number>): Promise<number> {
-  try {
-    return await work()
-  } finally {
-    if (file) removeClaim(file)
-  }
-}
-
-async function runQueue(wrapper: Wrapper, prs: PrArg[], queue: string[]): Promise<number> {
   const admissionDir = mkdtempSync(join(tmpdir(), 'merge-queue-admission-'))
   const accepted = join(admissionDir, 'accepted')
   const started: StartedFinish[] = []
