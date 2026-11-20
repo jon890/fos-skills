@@ -242,6 +242,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     refresh_slots: zodCheck(z.number().int().min(0)),
     refresh_worker_paths: zodCheck(regexpSource('pipeline.refresh_worker_paths', '|')),
   },
+  plugin: { auto_update: zodCheck(bool) },
   heavy: Object.fromEntries(
     HEAVY_KEYS.map((key) => [
       key,

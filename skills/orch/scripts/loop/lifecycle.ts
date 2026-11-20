@@ -87,6 +87,8 @@ import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
 import { announce, moveWorkers, pendingRuns, settlePending, writePending } from './takeover.ts'
 import { busyReason, decide, HANDOVER_ENV, handOver, heirEntry, newSelfUpdate, observe, pendingHeir } from './self-update.ts'
+import { readUpdateReport, updatePlugins, updateSummary } from './plugin-auto-update.ts'
+import { loadConfig, PLUGIN_KEYS, section } from '../lib/config.ts'
 import type { Context, TickResult } from './steps/context.ts'
 import { dropStaleErrors } from './steps/errors.ts'
 import { ciEntries, iso, lines, log, oneLine, setLogFile, stallEntries } from './steps/shared.ts'
@@ -782,6 +784,17 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       const signal = stopping()
       if (signal) return signalCode(signal)
       if (!once) {
+        try {
+          const plugin = section<{ auto_update?: unknown }>(loadConfig(ctx.repo), 'plugin', PLUGIN_KEYS)
+          if (plugin.auto_update !== undefined && typeof plugin.auto_update !== 'boolean') throw new Error('plugin.auto_update 는 true 나 false 여야 한다')
+          if (plugin.auto_update !== false) {
+            const report = await updatePlugins()
+            if (report?.notifyFailure) for (const run of registeredRuns(ctx.repo)) {
+              try { sendNotice('PLUGIN-UPDATE-FAIL', null, updateSummary(report), run.run, ctx.repo) }
+              catch (e) { log(`NOTICE-FAIL PLUGIN-UPDATE-FAIL ${oneLine(e)}`) }
+            }
+          }
+        } catch (e) { log(`PLUGIN-UPDATE-FAIL ${oneLine(e)}`) }
         const changed = observe(update, currentBundle(ownBundle(), configDir), Date.now(), ownBundle())
         if (changed) log(changed)
       }
@@ -824,9 +837,12 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
         update.waitReason = next.reason
       }
       if (next.kind === 'go' && update.target) {
+        const report = readUpdateReport(join(homedir(), '.cache', 'fos-skills'))
+        const suffix = report?.version === bundleVersion(update.target) && report.results.length ? '\n' + updateSummary(report) : ''
         const outcome = await handOver({ ctx, state, lock, entry: heirEntry(update.target), hadRuns, stopTimer, startTimer,
           oldVersion: state.bundle_version || '-', newVersion: bundleVersion(update.target) || '-',
           oldBundle: ownBundle(), newBundle: update.target, lockPid, createLock, args: passArgs(ctx), waitMs: startWaitMs(),
+          noticeSuffix: suffix,
         })
         if (outcome !== 'failed') return 0
         update.failed = heirEntry(update.target)

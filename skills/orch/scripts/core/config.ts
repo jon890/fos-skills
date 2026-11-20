@@ -1,10 +1,10 @@
 import { isObject } from './json.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox' | 'worker'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'plugin' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox' | 'worker'
 
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox', 'worker']
+export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'plugin', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox', 'worker']
 
 export class ConfigError extends Error {}
 
@@ -56,6 +56,8 @@ export const PIPELINE_KEYS: readonly string[] = [
   'refresh_slots',
   'refresh_worker_paths',
 ]
+
+export const PLUGIN_KEYS: readonly string[] = ['auto_update']
 
 // heavy 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 heavy 행이다. 값은 정규식 문자열 목록이고 heavy-slot.ts 가 읽는다.
 export const HEAVY_KEYS: readonly string[] = ['exclusive', 'normal', 'light', 'wait_idle']

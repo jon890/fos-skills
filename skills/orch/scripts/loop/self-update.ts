@@ -82,6 +82,7 @@ type HandoverOptions = {
   // 잠금 읽기·만들기와 인자·대기 한도는 lifecycle 의 기존 규칙을 그대로 쓴다.
   lockPid: (lock: string) => number; createLock: (lock: string) => boolean
   args: string[]; waitMs: number
+  noticeSuffix?: string
 }
 
 function replaceLock(lock: string, pid: number): void {
@@ -136,7 +137,7 @@ export async function handOver(opts: HandoverOptions): Promise<'handed' | 'faile
         if (stopping()) return 'lost'
         if (pid !== undefined && Number(readLoop(ctx.repo)?.pid) === pid) {
           log(`LOOP-HANDOVER ${pid} ${opts.oldVersion} ${opts.newVersion}`)
-          notices(opts, 'LOOP-UPDATED', updatedText(basename(ctx.repo), opts.oldVersion, opts.newVersion, opts.oldBundle, opts.newBundle))
+          notices(opts, 'LOOP-UPDATED', updatedText(basename(ctx.repo), opts.oldVersion, opts.newVersion, opts.oldBundle, opts.newBundle) + (opts.noticeSuffix || ''))
           heir = null
           return 'handed'
         }
