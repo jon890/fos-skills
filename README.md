@@ -114,9 +114,9 @@ worker 에게 나눠 맡기려면 Orca 앱과 `gh` 로그인이 필요해요. �
 
 worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 것, 진행 중인 일을 한눈에 볼 수 있어요.
 
-![/board 창. 전체 진행률, 단축키, 오늘 목표, 결정 필요 항목이 보인다](docs/images/board.png)
+![/board 창. 전체 진행률, 단축키, 열린 PR, 진행 중인 항목이 보인다](docs/images/board.png)
 
-창에서 `s` 를 누르면 「오늘 시작」, `q` 를 누르면 「정할 것 묻기」 요청이 입력란에 채워져요. 화면은 데모 저장소에서 2026-10-27 에 찍었고, 나머지 단축키는 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.
+창에서 `s` 를 누르면 「오늘 시작」, `q` 를 누르면 「정할 것 묻기」 요청이 입력란에 채워져요. 화면은 fos-skills 저장소에서 2026-11-20 에 찍었고, 나머지 단축키는 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.
 
 ## 기여
 
