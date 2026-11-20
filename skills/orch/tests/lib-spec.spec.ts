@@ -2,7 +2,7 @@ import { autoStepNumberOf, boardNewOf, workerRoleOf } from '../scripts/lib/spec.
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { allLiveSpecPaths, BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, experimentOf, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
@@ -454,6 +454,19 @@ describe('liveSpecPaths', () => {
       { args: ['worker-list'], stdout: envelope({ workers: [] }) },
     )
     assert.deepEqual(liveSpecPaths('run_x'), new Set([spec]))
+  })
+
+  test('사본을 읽는 Task 의 원본 지시서도 살아 있는 경로로 지킨다', () => {
+    const original = join(base, 'spec-original.md')
+    const copied = join(base, '.orch', 'worker-specs', 'spec-copy.md')
+    mkdirSync(dirname(copied), { recursive: true })
+    writeFileSync(original, '원본')
+    writeFileSync(copied, '사본')
+    rules(
+      { args: ['task-list'], stdout: envelope({ tasks: [{ id: 'tx', status: 'running', spec: `지시서 ${copied} 를 읽는다. 원본 지시서 경로(정리용): ${original}` }] }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [] }) },
+    )
+    assert.deepEqual(liveSpecPaths('run_x'), new Set([copied, original]))
   })
 })
 

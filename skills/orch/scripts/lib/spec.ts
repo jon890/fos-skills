@@ -220,7 +220,7 @@ export function remoteWithCodex(text: string): { no: number; phrase: string } | 
 export function coordinatorCommandWarning(text: string): { no: number; command: string } | null {
   for (const [index, line] of outsideFences(lines(text)).entries()) {
     const permission = PERMISSION.exec(line)?.[1]
-    if (!permission || /ask|코디네이터에게|않|금지|직접 실행하지/.test(permission)) continue
+    if (!permission || /ask|코디네이터에게|금지|(?:실행|조회|접속)하지\s*않/.test(permission)) continue
     if (/(?:\bssh\b|원격|홈\s*서버).*(?:조회|접속|명령|실행)/i.test(permission)) return { no: index + 1, command: 'ssh' }
     if (/(?:git\s+rm\b|대량\s*삭제|일괄\s*삭제)/i.test(permission)) return { no: index + 1, command: '대량 삭제' }
   }

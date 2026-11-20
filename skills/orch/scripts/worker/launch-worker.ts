@@ -169,7 +169,7 @@ import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-
 import type { Reserved } from '../lib/spec-reserve.ts'
 import { autoStepNumberOf, boardIdOf, branchesOf, coordinatorCommandWarning, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
 import { recordStepLaunch } from '../lib/auto-advance.ts'
-import { copyWorkerSpec } from '../lib/worker-spec-copy.ts'
+import { workerSpecLine as copiedWorkerSpecLine } from '../lib/worker-spec-copy.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
@@ -849,8 +849,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   }
   let workerSpecLine = specLine.stdout.trim()
   if (passValue(passthru, '--agent') === 'claude' || (reusedTerminal && priorSelection?.agent === 'claude')) {
-    const copiedSpec = copyWorkerSpec(a.spec, repo, worktree)
-    workerSpecLine = workerSpecLine.replace(realPath(a.spec), copiedSpec)
+    workerSpecLine = copiedWorkerSpecLine(workerSpecLine, a.spec, repo, worktree, (message) => err(`경고: ${message}`))
   }
   // 핸들러는 base 를 브랜치 이름으로 받는다. --base origin/main 으로 불러도 defaultBase 와 같은 꼴(main)로 넘긴다
   const ctx: FireContext = { repo, base: (a.base || defaultBase(repo) || '').replace(/^origin\//, ''), run: a.run || null }

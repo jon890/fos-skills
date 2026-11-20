@@ -795,6 +795,7 @@ describe('띄우기', () => {
     assert.ok(lines('orca orchestration worker-start')[0].includes(`--worktree path:${worktree} --agent claude`))
     assert.match(lines('orca orchestration worker-start')[0], /지시서 .*\/\.orch\/worker-specs\/[^ ]+\.md 를 끝까지 읽고/)
     assert.doesNotMatch(lines('orca orchestration worker-start')[0], new RegExp(`지시서 ${spec} 를`))
+    assert.ok(lines('orca orchestration worker-start')[0].includes(`원본 지시서 경로(정리용): ${spec}`))
     assert.ok(r.stdout.trimEnd().endsWith(`LAUNCHED ctx_1 ${worktree}`), r.stdout)
   })
 
@@ -979,6 +980,15 @@ describe('띄우기', () => {
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
       assert.match(r.stderr, /띄운 worker 를 기록하지 못했다/)
+    })
+
+    test('Claude 지시서 복사에 실패하면 원본 경로로 띄우고 경고한다', () => {
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      writeFileSync(join(worktree, '.orch'), '폴더가 아니라 파일이다')
+      const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stderr, /지시서 복사에 실패해 원본 경로로 띄운다/)
+      assert.ok(lines('orca orchestration worker-start')[0].includes(`지시서 ${spec} 를 끝까지 읽고`))
     })
   })
 

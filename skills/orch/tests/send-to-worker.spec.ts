@@ -680,6 +680,20 @@ describe('Orca 후속 일과 기록', () => {
     })
   }
 
+  test('Claude 후속 지시서도 워크트리에 복사하고 원본 경로를 남긴다', () => {
+    follow()
+    const st = readState()
+    st.dispatches.ctx_1.worker.worktreeId = `repo::${tmp}`
+    st.dispatches.ctx_1.worker.startOptions = { launch: { effective: { agent: 'claude', model: 'claude-sonnet', effort: 'medium' } } }
+    state(st)
+    const spec = join(tmp, 'next.md')
+    const r = send('--spec', spec)
+    assert.equal(r.code, 0, both(r))
+    const sent = lines('orca orchestration send')[0]
+    assert.match(sent, /지시서 .*\/\.orch\/worker-specs\/[^ ]+\.md 를 끝까지 읽고/)
+    assert.ok(sent.includes(`원본 지시서 경로(정리용): ${spec}`), sent)
+  })
+
   for (const delivery of ['follow_up', 'reopened']) {
     test(`${delivery} 는 새 터미널과 Task 를 기록하고 launch 를 부르지 않는다`, () => {
       follow(delivery)

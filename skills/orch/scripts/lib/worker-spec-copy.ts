@@ -36,20 +36,35 @@ export function copyWorkerSpec(spec: string, repo: string, worktree: string): st
       return destination
     }
     let contents = readFileSync(real, 'utf8')
-    // 절대경로로 가리킨 커밋 전 자료만 복사한다. 저장소 밖 임의 경로는 읽지 않는다.
-    for (const match of contents.matchAll(/\/[^\s`'"<>()[\]]+/g)) {
-      const candidate = match[0].replace(/[.,;:]$/, '').replace(/(?:#.*|:\d+(?::\d+)?)$/, '')
-      if (!candidate || candidate === real || !fileAt(candidate)) continue
+    // handoff 출력 경로는 그대로 둔다. 각 경로 낱말을 한 번씩 바꿔 접두사가 같은 경로를 건드리지 않는다.
+    contents = contents.replace(/\/[^\s`'"<>()[\]]+/g, (token) => {
+      const candidate = token.replace(/[.,;:]$/, '').replace(/(?:#.*|:\d+(?::\d+)?)$/, '')
+      if (!candidate || candidate === real || !fileAt(candidate)) return token
       const resolved = realpathSync(candidate)
-      if (!inside(resolved, root) && !inside(resolved, sourceDir)) continue
+      if ((!inside(resolved, root) && !inside(resolved, sourceDir)) || inside(resolved, join(root, '.orch', 'handoff'))) return token
       const inWorktree = inside(resolved, root) ? join(worktree, relative(root, resolved)) : ''
-      const replacement = inside(resolved, worktree) ? resolved : inWorktree && fileAt(inWorktree) ? inWorktree : copy(resolved)
-      contents = contents.replaceAll(candidate, replacement)
-    }
+      const replacement = inside(resolved, worktree) ? resolved
+        : inWorktree && fileAt(inWorktree) && readFileSync(resolved).equals(readFileSync(inWorktree)) ? inWorktree
+        : copy(resolved)
+      return replacement + token.slice(candidate.length)
+    })
     writeFileSync(destination, contents)
     return destination
   }
   const common = join(sourceDir, 'spec-common.md')
   if (common !== source && fileAt(common)) copy(common)
   return copy(source)
+}
+
+// Task 의 첫 지시 줄에는 정리 명령이 찾는 원본 경로도 남긴다.
+// 복사 실패는 worker 시작을 막지 않고 원본을 읽도록 돌린다.
+export function workerSpecLine(line: string, spec: string, repo: string, worktree: string, warn: (message: string) => void): string {
+  const source = realpathSync(spec)
+  try {
+    const copied = copyWorkerSpec(source, repo, worktree)
+    return `${line.replace(source, copied)} 원본 지시서 경로(정리용): ${source}`
+  } catch (e) {
+    warn(`지시서 복사에 실패해 원본 경로로 띄운다: ${(e as Error).message}`)
+    return line
+  }
 }
