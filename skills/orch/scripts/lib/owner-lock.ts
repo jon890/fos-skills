@@ -8,11 +8,11 @@
 //     같은 죽은 잠금을 둘이 함께 읽어도 먼저 옮긴 쪽만 성공한다. 늦은 쪽은 묘비가 이미 있어(비어 있지 않은 디렉터리) rename 이 실패하므로,
 //     그 사이 새 주인이 잡은 잠금을 옮기지 않는다. 잠금 경로가 비는 것은 죽은 잠금을 옮긴 직후뿐이다(PR 558 리뷰의 회수 경합)
 //   놓기: owner 가 내 토큰일 때 잠금을 <잠금>.released-<토큰> 으로 rename 한 뒤 지운다
-// 묘비와 남은 임시 디렉터리는 한 시간이 지나면 다음 잡기가 지운다. 그보다 오래 멈춘 회수는 막지 못한다.
+// 묘비와 남은 임시 디렉터리는 한 시간이 지나면 다음 잡기가 지운다. 묘비는 회수한 시각부터 센다. 회수가 그보다 오래 멈추면 막지 못한다.
 // waitMs 안에 잡지 못하면 OwnerLockBusy 를 던진다. 부르는 쪽은 실패로 끝내고 잠금 없이 넘어가지 않는다.
 
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { alive } from './process.ts'
 
@@ -43,12 +43,16 @@ function held(seen: Seen): boolean {
 
 // 머리 주석의 「회수」. 본 죽은 잠금을 내가 옮겼으면 true
 export function reclaimDead(lock: string, seen: Seen): boolean {
+  const tomb = `${lock}.dead-${seen.key}`
   try {
-    renameSync(lock, `${lock}.dead-${seen.key}`)
-    return true
+    renameSync(lock, tomb)
   } catch {
     return false
   }
+  // 묘비는 옮긴 시각부터 센다. 수정 시각을 그대로 두면 오래 남은 죽은 잠금의 묘비를 회수 직후 sweepLeftovers 가 지웠다(PR 558 리뷰)
+  const now = new Date()
+  try { utimesSync(tomb, now, now) } catch { /* 이미 지웠다. 아래 sweepLeftovers 는 ctime 도 본다 */ }
+  return true
 }
 
 function tryTake(lock: string, token: string): boolean {
@@ -75,7 +79,9 @@ function sweepLeftovers(lock: string): void {
     if (!/^\.(dead|new|released)-/.test(entry.slice(name.length)) || !entry.startsWith(name)) continue
     const path = join(dir, entry)
     try {
-      if (Date.now() - statSync(path).mtimeMs > LEFTOVER_MS) rmSync(path, { recursive: true, force: true })
+      // rename 은 ctime 을 새로 적는다. 수정 시각과 둘 중 늦은 쪽부터 센다
+      const stat = statSync(path)
+      if (Date.now() - Math.max(stat.mtimeMs, stat.ctimeMs) > LEFTOVER_MS) rmSync(path, { recursive: true, force: true })
     } catch { /* 다른 실행이 지웠다 */ }
   }
 }

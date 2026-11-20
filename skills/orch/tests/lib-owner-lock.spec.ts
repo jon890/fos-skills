@@ -68,6 +68,21 @@ test('같은 죽은 잠금을 늦게 회수하는 쪽은 새 주인의 잠금을
   assert.equal(inside.third, 'busy')
 })
 
+test('한 시간 넘게 남은 죽은 잠금도 묘비는 회수한 시각부터 세어, 늦은 회수가 새 주인의 잠금을 옮기지 못한다', (t) => {
+  const lock = join(dir(t), 'a.lock')
+  plant(lock, '999999 dead-token')
+  const old = new Date(Date.now() - 61 * 60 * 1000)
+  utimesSync(lock, old, old)
+  const seenByA = peek(lock)!
+  const inside = withOwnerLock(lock, () => {
+    const moved = reclaimDead(lock, seenByA)
+    let third = 'entered'
+    try { withOwnerLock(lock, () => null, { waitMs: 200 }) } catch (e) { third = e instanceof OwnerLockBusy ? 'busy' : String(e) }
+    return { moved, third }
+  }, { waitMs: 200 })
+  assert.deepEqual(inside, { moved: false, third: 'busy' })
+})
+
 test('일하는 동안 남이 바꾼 잠금은 놓을 때 지우지 않는다', (t) => {
   const lock = join(dir(t), 'a.lock')
   withOwnerLock(lock, () => writeFileSync(join(lock, 'owner'), `${process.pid} other-token`))
