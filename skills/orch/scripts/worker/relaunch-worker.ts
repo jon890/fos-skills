@@ -13,9 +13,10 @@
 //     4. 같은 Task 에 더 새 dispatch 가 없는지 본다(dispatch-show --task). 상태가 completed 면 다시 띄우지 않는다(`orch worker continue` 를 쓴다)
 //     5. 지시서의 `worker 선택:` 줄을 WORKER_ARGS 와 대조한다(launch-worker 의 selectionReject).
 //        에이전트, 모델, effort 가 다르면 `RELAUNCH-FIX <지시서>:<줄 번호>` 와 고칠 줄을 내고 멈춘다. 지시서는 고치지 않는다
+//        에이전트에 없는 모델과 effort(lib/model-check.ts)도 여기서 거부한다. 자식이 abandon 뒤에 거부하면 옛 세션으로 돌아갈 수 없다
 //     6. 워크트리에 옛 터미널 밖의 터미널이 있으면 목록을 내고 멈춘다. 커밋 안 된 변경이 있고 --dirty-ack 이 없으면 목록을 내고 멈춘다
 //     7. 보존 표시(lib/relaunch-hold.ts)를 쓴다. 다시 띄우는 동안 cleanup 이 그 워크트리와 지시서를 지우지 않는다
-//     8. 옛 dispatch 가 살아 있으면 worker-abandon 한다. 옛 터미널이 열려 있으면 닫는다
+//     8. 옛 dispatch 가 살아 있으면 worker-abandon 한다. 옛 터미널이 목록에 있으면(꺼진 것도) 닫는다
 //     9. Task 상태를 다시 읽어 failed, blocked 면 --retry-of <옛 dispatch> 를, ready 면 그것 없이
 //        launch-worker --spec <기록의 지시서> --repo <주 checkout> --task <Task> --run <Run> 을 자식으로 부른다. 자식의 출력은 그대로 낸다
 //    10. 자식이 새 dispatch 를 띄웠으면(LAUNCHED 나 STALLED-START 줄) 보존 표시를 지운다. 살아 있는 새 dispatch 가 워크트리를 지킨다.
@@ -25,7 +26,8 @@
 //     RELAUNCH-TARGET <dispatch> task=<Task> status=<상태> worktree=<경로> spec=<지시서>
 //     RELAUNCH-FIX <지시서>:<줄 번호> <고칠 줄>                5 에서 멈춤. 종료 코드 1
 //     RELAUNCH-REFUSED <이유>                                  1~6 에서 멈춤(옛 worker 그대로). 종료 코드 3, 터미널과 변경 목록은 들여 써서 뒤에 낸다
-//     RELAUNCH-FAIL <단계> <이유> NEXT <명령>                  7~9 의 실패. 종료 코드 1. 보존 표시는 남는다(8 의 abandon 실패는 지운다)
+//     RELAUNCH-FAIL <단계> <이유> NEXT <명령>                  7~9 의 실패. 종료 코드 1(launch 단계는 자식의 종료 코드. spec-lint 는 5).
+//                                                              보존 표시는 남는다(8 의 abandon 실패는 지운다). NEXT 는 받은 옵션을 그대로 다시 준다
 //     RELAUNCHED <옛 dispatch> <새 dispatch>                   성공. 종료 코드 0. 그 앞에 자식의 LAUNCHED 줄이 있다
 //     자식이 STALLED-START 로 끝나면 자식의 종료 코드(1)를 그대로 낸다
 // 사용법 오류는 2 다. WORKER_ARGS 에 --terminal, --task, --retry-of 를 주면 사용법 오류다.
@@ -41,6 +43,7 @@ import { expandArgs } from '../lib/args.ts'
 import { orchWord, scriptPath } from '../lib/commands.ts'
 import { real } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
+import { checkLaunchSettings } from '../lib/model-check.ts'
 import { launchHistory } from '../lib/launch-history.ts'
 import { readLaunch } from '../lib/launched.ts'
 import { closeTerminal, orcaJson } from '../lib/orca.ts'
@@ -55,7 +58,7 @@ import { leftTerminals, selectionReject, uncommitted } from './launch-worker.ts'
 type Json = Record<string, unknown>
 
 const USAGE = '사용법: relaunch-worker.ts --dispatch ID --run ID [--repo DIR] [--dirty-ack REASON] [--lint-ack REASON] [--watch SEC] [--not-main REASON] -- WORKER_ARGS...'
-// 자식 launch-worker 는 워크트리 대기, worker-start, --watch 를 모두 기다린다. 그보다 넉넉히 준다
+// 자식 launch-worker 는 워크트리 대기, worker-start, --watch 를 모두 기다린다. --watch 초에 이만큼 더 준다
 const LAUNCH_MS = 900_000
 const SHOWN = 50
 
@@ -162,8 +165,9 @@ function selectionCheck(t: Target, passthru: string[]): string[] {
   ]
 }
 
-function openHandles(): Set<string> {
-  return new Set(terminalRows().filter((t) => t.connected !== false && t.status !== 'exited').map((t) => text(t.handle)).filter(Boolean))
+// 목록에 남은 터미널 handle. 꺼진 터미널도 센다. launch-worker 의 남은 터미널 검사(leftTerminals)가 상태를 보지 않고 세기 때문이다
+function listedHandles(): Set<string> {
+  return new Set(terminalRows().map((t) => text(t.handle)).filter(Boolean))
 }
 
 type Args = { dispatch: string; run: string; repo: string | null; dirtyAck: string | null; lintAck: string | null; watch: string | null; notMain?: string; passthru: string[] }
@@ -207,8 +211,11 @@ function parse(argv: string[]): Args | 'help' | string {
 // 같은 명령을 다시 부르는 줄(NEXT)
 function again(a: Args): string {
   const parts = [orchWord(), 'worker', 'relaunch', '--dispatch', a.dispatch]
+  if (a.repo) parts.push('--repo', a.repo)
   if (a.dirtyAck) parts.push('--dirty-ack', a.dirtyAck)
   if (a.lintAck) parts.push('--lint-ack', a.lintAck)
+  if (a.watch !== null) parts.push('--watch', a.watch)
+  if (a.notMain !== undefined) parts.push('--not-main', a.notMain)
   return [...parts.map((p, i) => (i === 0 ? p : shQuote(p))), '--', ...a.passthru.map(shQuote)].join(' ')
 }
 
@@ -231,6 +238,8 @@ export async function main(argv: string[], execute: typeof runAsync = runAsync):
       for (const line of fix) out(line)
       return 1
     }
+    const settings = checkLaunchSettings({ agent: passValue(a.passthru, '--agent'), model: passValue(a.passthru, '--model'), effort: passValue(a.passthru, '--effort') })
+    if (settings.reject) throw new Refused(settings.reject)
     let others: string
     try {
       others = leftTerminals(t.worktree, t.terminal ?? '')
@@ -270,7 +279,14 @@ export async function main(argv: string[], execute: typeof runAsync = runAsync):
       return 1
     }
   }
-  if (t.terminal && openHandles().has(t.terminal)) {
+  let listed: Set<string>
+  try {
+    listed = listedHandles()
+  } catch (e) {
+    out(`RELAUNCH-FAIL close 터미널 목록을 읽지 못했다: ${(e as Error).message} NEXT ${next}`)
+    return 1
+  }
+  if (t.terminal && listed.has(t.terminal)) {
     const closed = closeTerminal(t.terminal, { mode: 'result' })
     if (!closed.ok) {
       out(`RELAUNCH-FAIL close 옛 터미널 ${t.terminal} 을 닫지 못했다: ${closed.error} NEXT orca terminal close --terminal ${shQuote(t.terminal)} 뒤 ${next}`)
@@ -291,7 +307,7 @@ export async function main(argv: string[], execute: typeof runAsync = runAsync):
   if (a.lintAck) args.push('--lint-ack', a.lintAck)
   if (a.notMain !== undefined) args.push('--not-main', a.notMain)
   const launched = await execute(scriptCommand(process.env.LAUNCH_WORKER || scriptPath('launch-worker'), [...args, '--', ...a.passthru]), {
-    timeoutMs: LAUNCH_MS,
+    timeoutMs: Number(a.watch ?? 90) * 1000 + LAUNCH_MS,
     env: shortEnv(),
   })
   if (launched.stdout) process.stdout.write(launched.stdout.endsWith('\n') ? launched.stdout : `${launched.stdout}\n`)
@@ -303,7 +319,7 @@ export async function main(argv: string[], execute: typeof runAsync = runAsync):
     return launched.code
   }
   out(`RELAUNCH-FAIL launch launch-worker 가 종료 코드 ${launched.code} 로 끝나 새 worker 를 띄우지 못했다. 워크트리 보존 표시는 남겼다 NEXT ${next}`)
-  return 1
+  return launched.code === 0 ? 1 : launched.code
 }
 
 if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {

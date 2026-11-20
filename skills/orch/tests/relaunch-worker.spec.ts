@@ -244,6 +244,14 @@ describe('다시 띄우기', () => {
     assert.ok(!existsSync(holdFile()))
   })
 
+  test('꺼진 채 목록에 남은 옛 터미널도 닫는다. 자식 launch-worker 가 상태와 상관없이 남은 터미널로 세기 때문이다', () => {
+    writeSpec('claude', 'claude-opus-5-5', 'medium')
+    state({ terminals: [{ handle: 'term_old', worktreePath: wt, status: 'exited', connected: false }] })
+    const r = relaunch()
+    assert.equal(r.code, 0, r.out)
+    assert.ok(orcaCalls().some((c) => /terminal close --terminal term_old/.test(c)))
+  })
+
   test('Task 가 failed 면 --retry-of 로 띄운다', () => {
     writeSpec('claude', 'claude-opus-5-5', 'medium')
     state({ dispatches: { ctx_old: { runId: 'run_1', taskId: 'task_1', status: 'failed', terminal: 'term_old' } }, task: 'failed', terminals: [] })
