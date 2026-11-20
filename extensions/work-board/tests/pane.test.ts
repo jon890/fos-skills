@@ -15,6 +15,13 @@ const PANE = {
   props: { title: '작업 현황', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
+test('예약이 없으면 예약 구역을 그리지 않는다', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Box', key: 'schedules' })).toBeUndefined()
+  await ui.unmount()
+})
+
 async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD, commands = [], now = Date.parse('2026-10-22T10:05:00+09:00')) {
   on('command.register', (_, e) => {
     commands.push(e.name)

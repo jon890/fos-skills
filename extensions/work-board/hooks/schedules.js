@@ -1,0 +1,86 @@
+// CronCreate/CronDelete 결과로만 갱신하는 세션 전용 예약 목록.
+const WEEK = 7 * 24 * 60 * 60 * 1000
+const MINUTE = 60 * 1000
+
+function field(source, min, max, sunday = false) {
+  const values = new Set()
+  for (const part of source.split(',')) {
+    const [range, stepText] = part.split('/')
+    const step = stepText === undefined ? 1 : Number(stepText)
+    if (!Number.isInteger(step) || step < 1) return null
+    const [startText, endText] = range === '*' ? [String(min), String(max)] : range.split('-')
+    const start = Number(startText)
+    const end = endText === undefined ? (stepText === undefined ? start : max) : Number(endText)
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < min || end > max || start > end) return null
+    for (let n = start; n <= end; n += step) values.add(sunday && n === 7 ? 0 : n)
+  }
+  return values
+}
+
+export function nextCron(cron, after) {
+  if (typeof cron !== 'string' || !Number.isFinite(after)) return null
+  const parts = cron.trim().split(/\s+/)
+  if (parts.length !== 5) return null
+  const [minute, hour, day, month, weekday] = parts.map((part, i) => field(part, [0, 0, 1, 1, 0][i], [59, 23, 31, 12, 7][i], i === 4))
+  if ([minute, hour, day, month, weekday].some((part) => !part)) return null
+  const dayWildcard = parts[2] === '*'
+  const weekdayWildcard = parts[4] === '*'
+  let time = Math.floor(after / MINUTE) * MINUTE + MINUTE
+  const limit = time + 366 * 24 * 60 * MINUTE
+  while (time < limit) {
+    const date = new Date(time)
+    const dayMatch = day.has(date.getDate())
+    const weekdayMatch = weekday.has(date.getDay())
+    if (month.has(date.getMonth() + 1) && hour.has(date.getHours()) && minute.has(date.getMinutes())
+      && (dayWildcard ? weekdayMatch : weekdayWildcard ? dayMatch : dayMatch || weekdayMatch)) return time
+    time += MINUTE
+  }
+  return null
+}
+
+function dataOf(result) {
+  if (!result || result.deny || result.isError) return null
+  const data = result.result
+  return data && typeof data === 'object' ? data : null
+}
+
+export function updateSchedules(current, call, result, at) {
+  const rows = Array.isArray(current) ? current : []
+  const data = dataOf(result)
+  if (!data || !call || !Number.isFinite(at)) return rows
+  if (call.tool === 'CronDelete') {
+    if (typeof call.id !== 'string' || data.id !== call.id) return rows
+    return rows.filter((row) => row.id !== call.id)
+  }
+  if (call.tool !== 'CronCreate' || typeof call.cron !== 'string' || typeof call.prompt !== 'string'
+    || typeof data.id !== 'string' || !data.id || data.durable === true) return rows
+  const next = Number.isFinite(data.nextFireAt) ? data.nextFireAt : nextCron(call.cron, at)
+  if (next === null) return rows
+  const recurring = data.recurring === true || (data.recurring === undefined && call.recurring !== false)
+  const row = { id: data.id, cron: call.cron, prompt: call.prompt, schedule: typeof data.humanSchedule === 'string' ? data.humanSchedule : call.cron,
+    recurring, next, expires: recurring ? at + WEEK : null }
+  return [...rows.filter((item) => item.id !== row.id), row]
+}
+
+export function visibleSchedules(current, at) {
+  if (!Array.isArray(current)) return []
+  return current.flatMap((row) => {
+    if (!row || !Number.isFinite(row.next) || (row.expires !== null && row.expires <= at)) return []
+    if (row.next > at) return [row]
+    if (!row.recurring) return []
+    const next = nextCron(row.cron, at)
+    return next !== null && (row.expires === null || next <= row.expires) ? [{ ...row, next }] : []
+  })
+}
+
+function dateTime(at) {
+  const date = new Date(at)
+  return String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0')
+    + ' ' + String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+}
+
+export function scheduleLine(row) {
+  const prompt = row.prompt.trim().split(/\r?\n/)[0].slice(0, 80)
+  return row.schedule + ' · ' + prompt + ' · 다음 ' + dateTime(row.next)
+    + (row.expires === null ? '' : ' · 만료 ' + dateTime(row.expires))
+}
