@@ -1,0 +1,2 @@
+- 상주 루프가 모델 표를 고치는 PR 을 더는 열지 않는다. 옛 세대를 가리키는 행마다 `MODEL-TABLE-STALE <행> <옛> → <새>` 를 한 번 보내고, 보드에 「모델 표를 <새> 로 바꿀 때」 항목을 남긴다.
+- 낡은 표 행을 볼 때 origin 기본 브랜치를 먼저 받아 다른 체크아웃이 더한 행도 알린다. `MODEL-TABLE-PR`, `MODEL-GENERATION`, `MODEL-TABLE-SKIP` 알림은 없어졌다.

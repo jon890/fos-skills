@@ -5,7 +5,7 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import {
-  claudeGeneration, codexGeneration, commonModels, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, planTable, pinnedCheck, readCodexModels, sameFamily, workerCodexHome, workerCodexHomes, type CodexModel,
+  claudeGeneration, codexGeneration, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, pinnedCheck, staleRows, readCodexModels, sameFamily, workerCodexHome, type CodexModel,
 } from '../scripts/lib/model-generation.ts'
 import { limitRowOf } from '../scripts/lib/usage-boost.ts'
 
@@ -88,59 +88,35 @@ describe('띄울 세대', () => {
   })
 })
 
-describe('표 문서', () => {
-  test('지금 표는 오늘 목록의 최신 세대라 바꿀 모델이 없다', () => {
-    assert.deepEqual(planTable(TABLE, TODAY), { upgrades: [], skipped: [], text: TABLE })
+describe('낡은 표 행', () => {
+  test('지금 표는 오늘 목록의 최신 세대라 낡은 행이 없다', () => {
+    assert.deepEqual(staleRows(TABLE, TODAY), [])
   })
 
-  test('표의 모델보다 높은 같은 계열의 현재 세대가 나오면 바꿀 모델로 낸다. 산문의 모델은 보지 않는다', () => {
+  test('표의 모델보다 높은 같은 계열의 현재 세대가 나오면 그 행을 낸다. 한도 표와 산문은 보지 않는다', () => {
     const next = [...TODAY, model('gpt-6.3-sol', 'Fast, go-to model.'), model('gpt-6.3-astra', 'Most capable.')]
-    const plan = planTable(TABLE, next)
-    assert.deepEqual(plan.upgrades.map(u => `${u.from}>${u.to}`), ['gpt-6.2-sol>gpt-6.3-sol', 'gpt-6.2-astra>gpt-6.3-astra'])
-    const rewritten = plan.text
-    assert.doesNotMatch(rewritten.split('### 새 모델과 새 세대')[0], /`gpt-6\.2-sol`/)
-    // 「기본 후보에서 뺀 모델」 의 옛 astra 는 그대로다
-    assert.match(rewritten, /`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에서 뺀다/)
-    assert.equal(limitRowOf(rewritten, { model: 'gpt-6.3-sol', effort: 'medium' })?.cell, 'Claude Opus 5.5 `medium`')
+    const rows = staleRows(TABLE, next)
+    assert.ok(rows.some(r => r.row === 'impl-explore' && r.from === 'gpt-6.2-sol' && r.to === 'gpt-6.3-sol'))
+    assert.ok(rows.every(r => /^[a-z-]+$/.test(r.row)))
+    // 한 행에 같은 바꿈은 한 번이다(review 행은 Codex 칸 하나)
+    assert.equal(rows.filter(r => r.row === 'review').length, 1)
   })
 
-  test('옛 세대 두 줄이 같은 새 세대가 되면 한도 표의 뒷줄과 자기 자신 대응을 뺀다', () => {
-    const table = [
-      '## 모델', '', '| id | 성격 | 에이전트 | 모델 | effort |', '| --- | --- | --- | --- | --- |', '| `impl` | 구현 | `codex` | `gpt-6.1-sol` | `low` |', '',
-      '### 사용 한도에 걸렸을 때', '', '| 걸린 모델 | 같은 등급 대응 | 한 단계 아래 |', '| --- | --- | --- |',
-      '| `gpt-6.1-sol` | `gpt-6-sol`, Claude Sonnet 5.5 | `gpt-6-luna` |', '| `gpt-6-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |', '',
-      '### 다음', '`gpt-6-sol` 은 산문이다',
-    ].join('\n')
-    const rewritten = planTable(table, [model('gpt-6.2-sol'), model('gpt-6.1-sol', 'Previous generation.'), model('gpt-6-sol', 'Legacy.')]).text
-    assert.match(rewritten, /\| `impl` \| 구현 \| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
-    assert.match(rewritten, /^\| `gpt-6\.2-sol` \| Claude Sonnet 5\.5 \| `gpt-6-luna` \|$/m)
-    assert.equal(rewritten.match(/^\| `gpt-6\.2-sol` \|/gm)?.length, 1)
-    assert.match(rewritten, /`gpt-6-sol` 은 산문이다/)
-  })
-})
-
-describe('표와 띄우기가 같은 세대', () => {
-  test('현재 세대가 그 effort 를 지원하지 않으면 이전 세대로 올리지 않고 표와 띄우기 모두 그대로 둔다', () => {
-    // 6.3 은 Previous generation 이지만 low 를 지원하고, 현재 세대 6.4 는 medium 만 지원한다
-    const list = [model('gpt-6.4-sol', 'Current.', ['medium']), model('gpt-6.3-sol', 'Previous generation model.', ['low']), model('gpt-6.2-sol', 'Previous generation model.', ['low', 'medium'])]
-    assert.deepEqual(codexGeneration('gpt-6.2-sol', 'low', list), { from: 'gpt-6.2-sol', to: 'gpt-6.2-sol', reason: 'gpt-6.4-sol 가 effort low 를 지원하지 않아 gpt-6.2-sol 그대로 띄웠다' })
-    assert.equal(codexGeneration('gpt-6.2-sol', 'medium', list)?.to, 'gpt-6.4-sol')
-    const plan = planTable(TABLE, list)
-    assert.match(plan.text, /\| `impl-planned` \| [^|]+\| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
-    assert.match(plan.text, /\| `impl-explore` \| [^|]+\| `codex` \| `gpt-6\.4-sol` \| `medium` \|/)
-  })
-})
-
-describe('표 문서의 effort', () => {
-  test('새 세대가 그 자리의 effort 를 지원하지 않으면 그 자리는 바꾸지 않고 이유를 남긴다. 띄울 때의 판정과 같다', () => {
-    // 6.2 는 low 만, 6.3 은 medium 만 지원한다
-    const list = [model('gpt-6.3-sol', 'New.', ['medium']), model('gpt-6.2-sol', 'Current.', ['low'])]
-    const plan = planTable(TABLE, list)
-    assert.match(plan.text, /\| `impl-planned` \| [^|]+\| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
-    assert.match(plan.text, /\| `impl-explore` \| [^|]+\| `codex` \| `gpt-6\.3-sol` \| `medium` \|/)
-    assert.ok(plan.skipped.some(k => k.from === 'gpt-6.2-sol' && k.to === 'gpt-6.3-sol' && k.effort === 'low' && /effort low 를 지원하지 않아/.test(k.reason)))
+  test('현재 세대가 그 effort 를 지원하지 않으면 그 행은 내지 않는다. 띄울 때의 판정과 같다', () => {
+    // 6.3 은 medium 만, 6.2 는 low 와 medium 을 지원한다
+    const list = [model('gpt-6.3-sol', 'New.', ['medium']), model('gpt-6.2-sol', 'Current.', ['low', 'medium'])]
+    const rows = staleRows(TABLE, list)
+    assert.ok(rows.some(r => r.row === 'impl-explore'))
+    assert.ok(!rows.some(r => r.row === 'impl-planned'))
     assert.equal(codexGeneration('gpt-6.2-sol', 'low', list)?.to, 'gpt-6.2-sol')
     assert.equal(codexGeneration('gpt-6.2-sol', 'medium', list)?.to, 'gpt-6.3-sol')
+  })
+
+  test('Previous generation 으로 표시된 더 높은 세대로는 올리지 않는다', () => {
+    const list = [model('gpt-6.4-sol', 'Current.', ['medium']), model('gpt-6.3-sol', 'Previous generation model.', ['low']), model('gpt-6.2-sol', 'Previous generation model.', ['low', 'medium'])]
+    const rows = staleRows(TABLE, list)
+    assert.ok(!rows.some(r => r.row === 'impl-planned'))
+    assert.ok(rows.some(r => r.row === 'impl-explore' && r.to === 'gpt-6.4-sol'))
   })
 })
 
@@ -177,44 +153,6 @@ describe('계정', () => {
     delete process.env.CODEX_HOME
     forgetCodexModels()
     assert.equal(readCodexModels().models?.[0].description, 'shell')
-  })
-})
-
-describe('여러 계정', () => {
-  test('Orca 의 Codex 계정 모두의 홈을 낸다. 홈이 없는 계정은 이유와 함께 따로 둔다', (t) => {
-    const dir = tempDir('model-homes-', t)
-    const saved = { ...process.env }
-    t.after(() => { process.env = saved })
-    const accounts = join(dir, 'accounts')
-    mkdirSync(join(accounts, 'acct-1', 'home'), { recursive: true })
-    mkdirSync(join(accounts, 'acct-2', 'home'), { recursive: true })
-    process.env.ORCA_CODEX_ACCOUNTS = accounts
-    process.env.ORCH_SYSTEM_CODEX_HOME = join(dir, 'system-home')
-    delete process.env.ORCH_WORKER_CODEX_HOME
-    // Orca 1.x 의 모양(result 바로 아래 accounts)
-    process.env.ORCA = linkBin(dir, 'orca', `console.log(JSON.stringify({ ok: true, result: { activeAccountId: 'acct-1', accounts: [{ id: 'acct-1' }, { id: 'acct-2' }, { id: 'acct-gone' }] } }))`)
-    assert.deepEqual(workerCodexHomes(), {
-      homes: [{ id: 'acct-1', home: join(accounts, 'acct-1', 'home') }, { id: 'acct-2', home: join(accounts, 'acct-2', 'home') }],
-      missing: ['acct-gone: 홈을 찾지 못했다'],
-      failure: null,
-    })
-    // 지금 쓰는 계정이 system 이면 Codex 기본 홈도 worker 계정이다
-    process.env.ORCA = linkBin(dir, 'orca-system', `console.log(JSON.stringify({ ok: true, result: { codex: { activeAccountId: null, accounts: [{ id: 'acct-1' }] } } }))`)
-    assert.deepEqual(workerCodexHomes().homes.map(h => h.id), ['acct-1', 'system'])
-    process.env.ORCA = linkBin(dir, 'orca-fail', 'process.exit(1)')
-    assert.match(workerCodexHomes().failure ?? '', /Codex 계정 목록을 확인하지 못했/)
-    // 모양이 달라 계정을 셀 수 없으면 기본 홈 하나로 읽지 않고 읽지 못한 것으로 본다
-    process.env.ORCA = linkBin(dir, 'orca-shape', `console.log(JSON.stringify({ ok: true, result: { activeAccountId: null } }))`)
-    assert.deepEqual(workerCodexHomes(), { homes: [], missing: [], failure: 'Orca 의 Codex 계정 목록 모양(accounts 배열)을 읽지 못했다' })
-  })
-
-  test('모든 계정이 받는 모델만 남기고 effort 는 모두가 지원하는 것만 둔다', () => {
-    const a = [model('gpt-6.3-sol', 'Fast.', ['low', 'medium']), model('gpt-6.2-sol'), model('gpt-6.2-astra')]
-    const b = [model('gpt-6.3-sol', 'Fast.', ['medium', 'high']), model('gpt-6.2-sol'), model('gpt-6.2-astra', 'Current model.', ['low'], 'hide')]
-    const common = commonModels([a, b])
-    assert.deepEqual(common.map(m => [m.slug, m.visibility, m.efforts.join(',')]), [['gpt-6.3-sol', 'list', 'medium'], ['gpt-6.2-sol', 'list', 'low,medium,high'], ['gpt-6.2-astra', 'hide', 'low']])
-    // 한 계정에만 있는 새 세대로는 표를 바꾸지 않는다
-    assert.equal(planTable(TABLE, commonModels([[...TODAY, model('gpt-6.3-sol')], TODAY])).upgrades.length, 0)
   })
 })
 
