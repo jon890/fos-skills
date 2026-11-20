@@ -18,6 +18,7 @@
 - 파일 수정은 `sed -i` 대신 Edit 나 python 으로 한다.
 - 의존성이 필요하면 워크트리 안에서 lockfile 로 설치한다. 원래 저장소의 의존성 폴더를 링크로 걸지 않는다.
 - **PR 생성은 지시서의 `허락:` 줄이 허락한 경우에만 한다. 허락이 없으면 push 까지만 하고 status 로 알린다.** base 는 {{BASE}} 다. 다른 PR 브랜치를 base 로 두지 않는다. 제목과 본문은 {{PR_FORMAT}} 을 따른다. 지시서가 정한 PR 만 연다.
+- **원격 서버 명령(ssh)이나 auto mode 가 막을 수 있는 대량 삭제 같은 명령은 직접 실행하지 않는다.** 실행할 명령, 대상, 예상 결과를 한 덩어리로 `orch worker ask` 에 보내 코디네이터가 실행하게 한다. 지시서의 `허락:` 줄에 원격 조회나 삭제를 허락했어도 worker 직접 실행 허락으로 읽지 않는다. <!-- orch-rule: coordinator-commands -->
 - {{DRAFT_PR_RULE}}
 - 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claude-code-review.yml`)가 있으면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. 기본 브랜치와 workflow 가 달라 보안 검증으로 자동 리뷰가 건너뛰어질 수 있다. 코디네이터가 마련한 독립 리뷰 결과도 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
 - PR 을 연 뒤 리뷰가 달리면 `review-fix` 스킬로 반영한다. 리뷰 회신과 resolve 는 허용한다. 반영하지 않을 지적이 있으면 회신 전에 ask 로 묻는다.

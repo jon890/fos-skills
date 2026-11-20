@@ -793,6 +793,8 @@ describe('띄우기', () => {
     const r = launch(['--worktree', `path:${worktree}`, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.ok(lines('orca orchestration worker-start')[0].includes(`--worktree path:${worktree} --agent claude`))
+    assert.match(lines('orca orchestration worker-start')[0], /지시서 .*\/\.orch\/worker-specs\/[^ ]+\.md 를 끝까지 읽고/)
+    assert.doesNotMatch(lines('orca orchestration worker-start')[0], new RegExp(`지시서 ${spec} 를`))
     assert.ok(r.stdout.trimEnd().endsWith(`LAUNCHED ctx_1 ${worktree}`), r.stdout)
   })
 
@@ -973,7 +975,7 @@ describe('띄우기', () => {
     test('기록하지 못해도 LAUNCHED 와 종료 코드는 그대로다', () => {
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
       writeFileSync(join(worktree, '.orch'), '폴더가 아니라 파일이다')
-      const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+      const r = launch(['--worktree', worktree, '--', ...CODEX])
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
       assert.match(r.stderr, /띄운 worker 를 기록하지 못했다/)

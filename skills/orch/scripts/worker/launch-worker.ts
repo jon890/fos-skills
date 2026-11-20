@@ -167,8 +167,9 @@ import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-hist
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
-import { autoStepNumberOf, boardIdOf, branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
+import { autoStepNumberOf, boardIdOf, branchesOf, coordinatorCommandWarning, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
 import { recordStepLaunch } from '../lib/auto-advance.ts'
+import { copyWorkerSpec } from '../lib/worker-spec-copy.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
@@ -766,6 +767,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (reserved !== null) return reserved
 
   const specText = readFileSync(a.spec, 'utf8')
+  const commandWarning = coordinatorCommandWarning(specText)
+  if (commandWarning) err(`경고: ${a.spec}:${commandWarning.no}: ${commandWarning.command} 명령은 worker 가 직접 실행하지 않는다. 명령과 대상을 ask 로 코디네이터에게 보낸다고 허락 줄에 적는다`)
   const autoStep = autoStepNumberOf(specText)
   const candidateOverride = candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
@@ -843,6 +846,11 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       err(`워크트리는 남아 있다: ${worktree}`)
       return stopped
     }
+  }
+  let workerSpecLine = specLine.stdout.trim()
+  if (passValue(passthru, '--agent') === 'claude' || (reusedTerminal && priorSelection?.agent === 'claude')) {
+    const copiedSpec = copyWorkerSpec(a.spec, repo, worktree)
+    workerSpecLine = workerSpecLine.replace(realPath(a.spec), copiedSpec)
   }
   // 핸들러는 base 를 브랜치 이름으로 받는다. --base origin/main 으로 불러도 defaultBase 와 같은 꼴(main)로 넘긴다
   const ctx: FireContext = { repo, base: (a.base || defaultBase(repo) || '').replace(/^origin\//, ''), run: a.run || null }
@@ -940,7 +948,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     }
 
     const runArgs = a.run ? ['--run', a.run] : []
-    const result = await start([...runArgs, ...(a.task ? ['--task', a.task, ...(a.retryOf ? ['--retry-of', a.retryOf] : [])] : ['--spec', specLine.stdout.trim()]), '--worktree', `path:${worktree}`, ...passthru])
+    const result = await start([...runArgs, ...(a.task ? ['--task', a.task, ...(a.retryOf ? ['--retry-of', a.retryOf] : [])] : ['--spec', workerSpecLine]), '--worktree', `path:${worktree}`, ...passthru])
     if (result.code !== 0) {
       const output = result.stdout + result.stderr
       if (passthru.includes('--terminal') && output.includes('agent_unconfigured')) {
