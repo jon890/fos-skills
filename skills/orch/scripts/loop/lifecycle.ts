@@ -31,6 +31,12 @@
 //     --stop 도 --run 이 없으면 finish.run 을 쓴다.
 //
 // 틱 자식: 부모는 틱 자식 하나가 끝나면 pipeline.tick_sec 을 기다린 뒤 다음 틱 자식을 띄운다. 겹치지 않는다.
+//     pipeline.slow_sec 이 있고 --once 가 아니면 틱 자식을 --fast 로 띄우고, 느린 틱 자식(--slow, orch-loop.ts 머리 주석의 「느린 단계」)을
+//     따로 띄운다. 느린 틱은 앞 느린 틱이 끝났고 그 시작에서 slow_sec 이 지난 뒤, 빠른 틱을 띄우기 직전에 띄우고 기다리지 않는다.
+//     느린 틱끼리는 겹치지 않는다. 끝나면 결과 줄의 errors 만 합쳐 loop.json 에 쓰고, 0 이 아니거나 결과 줄이 없으면 errors 의 slow-tick 에
+//     이유를 두고 바뀐 이유일 때만 WATCH-ERROR slow-tick 을 보낸다. 루프가 끝나거나 넘겨줄 때는 도는 느린 틱이 끝나기를 기다린다.
+//     느린 틱은 slowTickLimitMs(3 × slow_sec, 적어도 30분. ORCH_SLOW_TICK_LIMIT_SEC 로 바꾼다)를 넘기면 그룹째 끊는다. 걸린 정리 명령 때문에
+//     정리와 보드 동기화가 알림 없이 영영 돌지 않거나, 넘겨주기가 그 끝을 끝없이 기다리지 않게 한다. 끊긴 것도 위와 같이 WATCH-ERROR slow-tick 이다.
 //     틱을 자식 프로세스로 떼어 낸 것은 lib 의 조회(질문 조회, gh)가 동기라, 같은 프로세스에서 돌면 그동안 생존 타이머가 돌지 못해서다.
 //     틱 자식은 자기 프로세스 그룹으로 띄운다(lib/proc.ts runAsync 의 group). 부모가 신호를 받으면 그 그룹 전체에 TERM 을 보내고,
 //     TICK_STOP_GRACE_MS 뒤에도 그룹이 남아 있으면 KILL 을 보낸다. 이 유예는 틱 자식이 자기 자식을 끝내는 유예(lib/proc.ts 의
@@ -684,6 +690,12 @@ function tickResult(done: RunResult, staleLogged = false): { result: TickResult 
   return { result, reason: null }
 }
 
+// 느린 틱의 시간 상한(머리 주석의 「틱 자식」)
+export function slowTickLimitMs(slowSec: number): number {
+  const given = Number(process.env.ORCH_SLOW_TICK_LIMIT_SEC)
+  return (Number.isFinite(given) && given > 0 ? given : Math.max(3 * slowSec, 1800)) * 1000
+}
+
 export async function foreground(ctx: Context, once: boolean, interval: number, entrypoint: string): Promise<number> {
   let handover: { from: number; had_runs: boolean } | null = null
   try {
@@ -770,10 +782,37 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
     }, interval * 1000)
   }
   startTimer()
+  // 느린 틱(머리 주석의 「틱 자식」). split 이 거짓이면 틱 자식 하나가 모든 단계를 돈다
+  const split = !once && ctx.slowSec !== null
+  let slow: Promise<void> | null = null
+  let slowAt = Number.NEGATIVE_INFINITY
+  const runSlow = (n: number): Promise<void> =>
+    runAsync(scriptCommand(entrypoint, [...passArgs(ctx), '--tick', '--tick-number', String(n), '--slow']), { cwd: ctx.repo, timeoutMs: slowTickLimitMs(ctx.slowSec as number), group: true })
+      .then((done) => {
+        if (stopping()) return
+        const parsed = tickResult(done)
+        const { result } = parsed
+        const reason = done.timedOut ? `${Math.round(slowTickLimitMs(ctx.slowSec as number) / 1000)}초를 넘겨 끊었다` : parsed.reason
+        if (result) for (const [source, value] of Object.entries(result.errors ?? {})) state.errors[source] = value ?? null
+        const key = state.run ? `slow-tick@${state.run}` : 'slow-tick'
+        if (reason !== null) {
+          log(`WATCH-ERROR slow-tick: ${reason}`)
+          if (causeKey(state.errors[key] ?? '') !== causeKey(reason)) {
+            try { sendNotice('WATCH-ERROR', null, `slow-tick: ${reason}`, state.run, ctx.repo) }
+            catch (e) { log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`) }
+          }
+        }
+        state.errors[key] = reason
+        dropStaleErrors(state.errors, runs, state.run)
+        writeLoop(ctx.repo, state)
+      })
+      .catch((e) => log(`orch-loop: 느린 틱을 마무리하지 못했다: ${oneLine(e)}`))
+      .finally(() => { slow = null })
   try {
     for (let n = 1; ; n++) {
       runs = registeredRuns(ctx.repo).map((entry) => entry.run)
       if (hadRuns && runs.length === 0) {
+        if (slow) await slow
         log('LOOP-EMPTY 등록된 Run 이 없어 루프를 끝낸다')
         return 0
       }
@@ -788,8 +827,13 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
           if (!isRegistered(ctx.repo, run)) delete restartNotices[run]
         }
       }
+      if (split && slow === null && Date.now() - slowAt >= (ctx.slowSec as number) * 1000) {
+        slowAt = Date.now()
+        log(`slow-tick ${n} ${iso()}`)
+        slow = runSlow(n)
+      }
       log(`tick ${n} ${iso()}`)
-      const done = await runAsync(scriptCommand(entrypoint, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
+      const done = await runAsync(scriptCommand(entrypoint, [...passArgs(ctx), '--tick', '--tick-number', String(n), ...(split ? ['--fast'] : [])]), {
         cwd: ctx.repo,
         timeoutMs: NO_LIMIT_MS,
         group: true,
@@ -860,6 +904,7 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
         update.waitReason = next.reason
       }
       if (next.kind === 'go' && update.target) {
+        if (slow) await slow
         const report = readUpdateReport(updateStateDir())
         const suffix = pluginUpdateNoticeSuffix(report, bundleVersion(update.target))
         const outcome = await handOver({ ctx, state, lock, entry: heirEntry(update.target), hadRuns, stopTimer, startTimer,

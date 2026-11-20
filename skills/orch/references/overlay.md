@@ -60,7 +60,7 @@ orch config unset contracts.merge_command contracts.paths
 - `unset` 은 오타 키와 모르는 절도 지우고 빈 객체를 정리한다. 옛 명령 칸은 지우지 않고 `orch doctor migrate-hooks --apply` 로 옮긴다.
 - 경로는 점으로 나눈다. 점이 든 이름이나 목록 항목은 경로로 고르지 않고 윗 객체나 목록 전체를 `set --json` 으로 바꾼다. 중간 값이 이미 객체가 아닌 경우에는 그 윗 값을 먼저 고친다.
 - 성공 줄 `CONFIG-SET`, `CONFIG-UNSET` 은 이전 값을 보여 준다. 거절은 종료 코드 1, 인자 오류는 2 다. `set` 과 `unset` 은 잠금 안에서 다시 읽고 검사한 뒤 옆 파일을 이름 바꿔 저장한다.
-- 대부분의 값은 다음 틱에 반영된다. 살아 있는 루프의 `pipeline.tick_sec` 을 바꾸면 다시 시작하라는 안내가 나온다. `finish.run`, `finish.specs_dir` 은 루프를 `--run` 없이 띄운 경우에 다시 시작한다. 명령이 루프를 자동으로 다시 시작하지는 않는다.
+- 대부분의 값은 다음 틱에 반영된다. 살아 있는 루프의 `pipeline.tick_sec` 이나 `pipeline.slow_sec` 을 바꾸면 다시 시작하라는 안내가 나온다. `finish.run`, `finish.specs_dir` 은 루프를 `--run` 없이 띄운 경우에 다시 시작한다. 명령이 루프를 자동으로 다시 시작하지는 않는다.
 
 ## 마무리 설정 파일
 
@@ -97,6 +97,7 @@ orch config unset contracts.merge_command contracts.paths
 | `queue` | `skipped_is_missing` | `--skipped-is-missing`. true 나 false 다 |
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `unit_prefix` 는 비지 않은 문자열이다. `shared_paths` 는 비지 않은 Python 정규식 문자열이나 그 비지 않은 목록이고 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
+| `queue` | `shared_groups` | 이름마다 `--shared-group 이름=정규식` 하나. 값은 이름(영문, 숫자, `_`, `-`)에서 비지 않은 Python 정규식 문자열이나 그 목록(`\|` 로 잇는다)으로 가는 비지 않은 객체다. PR 과 base 가 같은 묶음을 둘 다 바꿨을 때만 겹침이다. 의미와 전제는 [`cleanup.md`](cleanup.md) 의 「언제 overlap 을 쓰는가」 가 소유한다 |
 | `queue` | `poll_min_sec`, `poll_max_sec`, `ci_expected_sec` | 머지 큐가 진행 중인 체크를 다시 보는 간격(초, 1 이상이며 타이머 상한 이하의 정수). `poll_min_sec`(기본 60)에서 시작해 두 배씩 늘리고 `poll_max_sec`(기본 300)에서 멈춘다. `ci_expected_sec`(기본 없음)는 그 저장소의 보통 PR CI 시간이다. 주면 지금 도는 체크가 시작된 뒤 그 초가 지나는 시각을 넘겨 자지 않고, 그 뒤로는 `poll_min_sec` 마다 본다. 없으면 지금 동작과 같다. 각각 `--poll-min-sec`, `--poll-max-sec`, `--ci-expected-sec` 가 된다 |
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 바깥 목록은 비지 않고 안쪽은 항목이 2개 이상이다. 항목은 쉼표 없는 비지 않은 문자열이며 중복 단위는 둘 수 없다. 안쪽 목록마다 `--unit-group a,b` 가 된다 |
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 비지 않은 문자열 목록(빈 목록 허용). 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
@@ -107,6 +108,7 @@ orch config unset contracts.merge_command contracts.paths
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 비지 않은 문자열 목록(빈 목록 허용). 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이며 타이머 상한 이하이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
+| `pipeline` | `slow_sec` | 보드 동기화와 정리 같은 느린 단계를 따로 도는 주기(초)다. 양수이며 타이머 상한 이하이고 기본은 없음(틱마다 함께 돈다)이다. 주면 느린 단계가 빠른 틱(머지, CI, 메시지 확인)을 막지 않아 `tick_sec` 을 짧게 둘 수 있다. 예: `tick_sec` 60, `slow_sec` 600 |
 | `pipeline` | `request_ack_sec` | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 알리기까지의 시간(초)이다. 양수이며 타이머 상한 이하이고 기본 1800 이다. 루프가 틱마다 읽는다([`requests.md`](requests.md)) |
 | `pipeline` | `digest_sec` | 안내성 루프 알림을 DIGEST 하나로 모아 보내는 주기(초)다. 양수이며 타이머 상한 이하이고 기본 1800 이다. `orch-loop.ts` 가 읽는다 |
 | `pipeline` | `stall_error_retries` | 저장소에 `worker-stalled` 핸들러가 없을 때 상주 루프가 모델 오류로 멈춘 worker 에게 멈춤마다 「계속 진행해」 를 보내는 최대 횟수다. 0 이상의 정수이고 기본 3 이며 0 이면 끄고 바로 코디네이터에게 알린다. 아래 `references/hooks.md` 의 「멈춘 worker 다시 시도시키기」 |
@@ -127,7 +129,7 @@ orch config unset contracts.merge_command contracts.paths
 | `review` | `prepare` | 리뷰 worker 를 띄울 때 PR head 의 워크트리에서 한 번 돌리는 생성물 준비 명령(bash 문자열). 쓰는 법은 [`spec-writing.md`](spec-writing.md) 의 「리뷰 worker 지시서」 가 소유한다 |
 | `worker` | `commit_check` | worker 워크트리에 한국어 커밋 검사 훅을 걸지(bool, 기본 true). false 면 그 저장소의 worker 에는 걸지 않는다. 동작은 [`launch.md`](launch.md) 의 「한국어 커밋 검사」 가 소유한다 |
 
-짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`unit_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
+짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`unit_groups` 와 `shared_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
 
 아래는 저장된 파일의 모양이다. 값 변경은 위 「설정 바꾸기」 의 명령을 쓴다.
 
@@ -161,7 +163,7 @@ orch config unset contracts.merge_command contracts.paths
 ### 뒤처진 PR 미리 최신화
 
 **`pipeline.refresh_slots` 는 상주 루프가 건 최신화 가운데 동시에 CI 가 도는 PR 수의 상한이다. 기본 0 이고 0 이면 끈다.**
-동작과 효과는 [`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」 가 소유한다. 최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
+동작과 효과는 [`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」 가 소유한다. 최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `shared_groups`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
 대상과 미루는 경우는 `loop/steps/refresh.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
 
 **값은 CI runner 수보다 작게 둔다.** 최신화 하나가 PR CI 한 벌을 돌린다. worker 의 push, 머지 큐 차례의 CI, base 브랜치의 CI 도 같은 runner 를 쓰므로 runner 를 모두 주면 그쪽이 줄을 선다.
@@ -361,3 +363,18 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 풀리면 `AUTO-MERGE-BASIS` 줄과 `orch queue gate` 의 `GATE-OK` 다음 줄에 `REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>` 가 남는다.
 
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.
+
+### 리뷰 봇 장애 때 대체 리뷰
+
+리뷰 봇이 모델을 부르지도 못하고 몇 초 만에 실패하면(인증, 사용량 한도, 봇 설정 오류) 판정이 없어 자동 머지가 멈춘다.
+`auto_review` 에 `fallback` 을 두면 상주 루프가 코디네이터를 기다리지 않고 그 PR 에 리뷰 worker 를 띄운다.
+
+```json
+{ "queue": { "auto_review": { "pass": "판정: 머지 가능", "block": "판정: 반영 필요", "fallback": { "check": "claude-review", "fail_within_sec": 120 } } } }
+```
+
+- `check` 는 리뷰 봇의 체크 이름이다. 지금 HEAD 에서 그 체크가 실패로 끝났고 시작부터 끝까지 `fail_within_sec`(기본 120)초 안이면 장애로 본다.
+- 필수 체크가 모두 통과한 Ready PR 만 대상이다. 같은 HEAD 에는 한 번만 띄운다.
+- 리뷰 worker 의 지시서는 `orch spec review <PR>` 이 만드는 것과 같은 틀이다. 루프가 「배경」 과 「특히 볼 것」 을 채우고, 리뷰를 등록한 뒤 판정 댓글을 하나 더 달게 한다.
+- 판정 댓글의 첫 줄은 `pass_text`(기본 `판정: 머지 가능`)나 `block_text`(기본 `판정: 반영 필요`)다. 각각 `pass`, `block` 정규식에 맞아야 하고, 맞지 않으면 설정 오류다. 코디네이터가 독립 리뷰 뒤 다는 판정 댓글과 같은 모양이라 자동 머지가 그대로 읽는다.
+- 띄우면 `REVIEW-FALLBACK`, 띄우지 못하면 `REVIEW-FALLBACK-FAIL` 을 그 PR 의 Run 에 보낸다. 실패면 지금처럼 코디네이터가 독립 리뷰를 맡긴다. 동작의 상세는 `scripts/loop/steps/review-fallback.ts` 파일 맨 위 설명이 소유한다.

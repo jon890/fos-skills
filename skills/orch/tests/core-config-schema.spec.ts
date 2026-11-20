@@ -105,12 +105,13 @@ describe('짝 규칙', () => {
     { name: 'finish complete 와 intermediate', section: 'finish', bad: { complete: true, intermediate: true }, good: { complete: true, intermediate: false }, path: 'finish.complete' },
     { name: 'queue overlap 과 require_up_to_date', section: 'queue', bad: { up_to_date_when: 'overlap' }, good: { up_to_date_when: 'overlap', require_up_to_date: true }, path: 'queue.up_to_date_when' },
     { name: 'queue shared_paths 는 overlap 일 때만', section: 'queue', bad: { shared_paths: '^a/' }, good: { shared_paths: '^a/', up_to_date_when: 'overlap', require_up_to_date: true }, path: 'queue.shared_paths' },
+    { name: 'queue shared_groups 는 overlap 일 때만', section: 'queue', bad: { shared_groups: { m: '^a/' } }, good: { shared_groups: { m: '^a/' }, up_to_date_when: 'overlap', require_up_to_date: true }, path: 'queue.shared_groups' },
     { name: 'queue update_docs_on_overlap 에 docs_glob', section: 'queue', bad: { update_docs_on_overlap: true }, good: { update_docs_on_overlap: true, docs_glob: 'docs/**' }, path: 'queue.update_docs_on_overlap' },
     { name: 'queue poll_min_sec 가 poll_max_sec 이하', section: 'queue', bad: { poll_min_sec: 400 }, good: { poll_min_sec: 10, poll_max_sec: 20 }, path: 'queue.poll_min_sec' },
   ]
-  test('일곱 규칙이 모두 PAIRS 에 있다', () => {
-    assert.equal(Object.values(PAIRS).flat().length, 7)
-    assert.equal(rules.length, 7)
+  test('여덟 규칙이 모두 PAIRS 에 있다', () => {
+    assert.equal(Object.values(PAIRS).flat().length, 8)
+    assert.equal(rules.length, 8)
   })
   for (const rule of rules) {
     test(rule.name, () => {
@@ -191,7 +192,7 @@ describe('knownPath', () => {
 })
 
 test('루프를 다시 띄워야 반영되는 키', () => {
-  assert.deepEqual([...RESTART_KEYS], ['board.task', 'pipeline.tick_sec', 'finish.run', 'finish.specs_dir'])
+  assert.deepEqual([...RESTART_KEYS], ['board.task', 'pipeline.tick_sec', 'pipeline.slow_sec', 'finish.run', 'finish.specs_dir'])
 })
 
 test('config-schema.ts 를 가져오는 파일은 doctor 와 config 명령뿐이다(정적 import 와 동적 import 모두)', () => {

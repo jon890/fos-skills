@@ -142,7 +142,7 @@ export function newestOfFamily(slug: string, effort: string | null, models: Code
 export type Generation = { from: string; to: string; reason: string }
 export type Choice = { kind: 'upgrade' | 'kept' | 'fallback'; generation: Generation }
 
-// 「계열의 지금 세대」 를 고르는 하나뿐인 기준이다. 띄울 때(codexGeneration), 직접 고른 옛 세대 판정(pinnedCheck), 표 문서(planTable)가 함께 쓴다.
+// 「계열의 지금 세대」 를 고르는 하나뿐인 기준이다. 띄울 때(codexGeneration), 직접 고른 옛 세대 판정(pinnedCheck), 낡은 표 행 알림(staleRows)이 함께 쓴다.
 //     upgrade   목록의 현재 세대(isCurrent) 가운데 같은 계열에서 그 effort 를 지원하는 가장 높은 세대가 적힌 모델보다 높다. 그 세대로 바꾼다
 //     kept      더 높은 현재 세대가 있지만 그 effort 를 지원하지 않고, 적힌 모델은 받을 수 있다. 바꾸지 않고 이유를 남긴다(to 는 from 과 같다)
 //     fallback  적힌 모델을 이 계정이 받지 못한다(목록에 없거나 effort 미지원). 받을 수 있는 같은 계열 최신으로 그 띄우기만 바꾼다(스펙 REQ4)
@@ -176,74 +176,32 @@ export function claudeGeneration(slug: string): Generation | null {
   return { from: slug, to: name.family, reason: '계열 이름으로 최신' }
 }
 
-export type Skipped = { from: string; to: string; effort: string | null; reason: string }
-export type TablePlan = { upgrades: Generation[]; skipped: Skipped[]; text: string }
+export type StaleRow = { row: string; from: string; to: string }
 
-// 표 줄 하나에서 Codex 모델 자리와 그 자리의 effort. 모델 표는 effort 칸의 같은 순서 값, 한도 표는 모델 뒤의 `effort` 다(없으면 null)
-function occurrences(line: string, modelTable: boolean): { start: number; end: number; slug: string; effort: string | null }[] {
-  const found: { start: number; end: number; slug: string; effort: string | null }[] = []
-  if (modelTable) {
-    const cells = line.split('|').slice(1, -1)
-    if (cells.length !== 5) return found
-    const efforts = [...cells[4].matchAll(/`([^`]+)`/g)].map(m => (m[1] === '기본' ? null : m[1]))
-    const offset = line.indexOf('|') + 1 + cells.slice(0, 3).reduce((sum, cell) => sum + cell.length + 1, 0)
-    let k = 0
-    for (const m of cells[3].matchAll(/`([^`]+)`/g)) {
-      if (m[1].startsWith('gpt-')) found.push({ start: offset + m.index!, end: offset + m.index! + m[0].length, slug: m[1], effort: efforts[k] ?? efforts[0] ?? null })
-      k++
-    }
-    return found
-  }
-  for (const m of line.matchAll(/`(gpt-[^`\s]+)`(?:\s+`([a-z]+)`)?/g)) found.push({ start: m.index!, end: m.index! + `\`${m[1]}\``.length, slug: m[1], effort: m[2] ?? null })
-  return found
+// 모델 표 줄 하나의 Codex 모델 자리와 그 자리의 effort(effort 칸의 같은 순서 값)
+function occurrences(line: string): { slug: string; effort: string | null }[] {
+  const cells = line.split('|').slice(1, -1)
+  if (cells.length !== 5) return []
+  const efforts = [...cells[4].matchAll(/`([^`]+)`/g)].map(m => (m[1] === '기본' ? null : m[1]))
+  return [...cells[3].matchAll(/`([^`]+)`/g)].map((m, k) => ({ slug: m[1], effort: efforts[k] ?? efforts[0] ?? null })).filter(at => at.slug.startsWith('gpt-'))
 }
 
-// 표 문서를 목록의 현재 세대로 맞춘 결과(스펙 REQ3). 자리마다 그 effort 를 지원하는 같은 계열 최신으로만 바꾼다.
-// 띄울 때의 판정(codexGeneration)과 같은 기준이라, 표 PR 을 머지한 뒤 표와 실제로 띄우는 모델이 같다.
-// 더 높은 세대가 있지만 그 effort 를 지원하지 않는 자리는 바꾸지 않고 skipped 에 이유를 남긴다.
-// 한도 표에서 걸린 모델 칸이 앞 줄과 같아진 줄은 빼고, 같은 등급 대응 칸에서 걸린 모델 자신과 겹친 항목은 뺀다
-export function planTable(table: string, models: CodexModel[]): TablePlan {
-  const lines = table.split('\n')
-  const current = models.filter(isCurrent)
-  const upgrades = new Map<string, Generation>()
-  const skipped = new Map<string, Skipped>()
+// 모델 표(「## 모델」 절)에서 옛 세대를 가리키는 행(스펙 REQ3). 띄울 때와 같은 기준(chooseGeneration)이 새 세대로 올리는 자리만 낸다.
+// 그 effort 를 지원하지 않는 새 세대(kept)와 목록에 없는 표의 모델(fallback)은 표를 바꿀 근거가 아니라 내지 않는다.
+// 표는 루프가 고치지 않는다. 코디네이터가 이 결과를 보고 PR 로 고친다
+export function staleRows(table: string, models: CodexModel[]): StaleRow[] {
+  const found: StaleRow[] = []
   let section = ''
-  for (let i = 0; i < lines.length; i++) {
-    if (/^#{1,6} /.test(lines[i])) { section = lines[i]; continue }
-    if (!lines[i].startsWith('|') || (section !== '## 모델' && section !== '### 사용 한도에 걸렸을 때')) continue
-    let line = lines[i]
-    for (const at of occurrences(line, section === '## 모델').reverse()) {
-      const name = parseModel(at.slug)
-      if (!name || name.provider !== 'codex') continue
-      // 띄울 때와 같은 기준(chooseGeneration)이다. 목록에 없는 표의 모델(fallback)은 표를 바꿀 근거가 아니다
+  for (const line of table.split('\n')) {
+    if (/^#{1,6} /.test(line)) { section = line; continue }
+    if (section !== '## 모델' || !line.startsWith('|')) continue
+    const row = line.split('|')[1]?.trim().replace(/^`|`$/g, '') ?? ''
+    for (const at of occurrences(line)) {
       const choice = chooseGeneration(at.slug, at.effort, models)
-      if (choice?.kind === 'upgrade') {
-        const to = choice.generation.to
-        upgrades.set(`${at.slug}>${to}`, { from: at.slug, to, reason: '같은 계열 새 세대' })
-        line = `${line.slice(0, at.start)}\`${to}\`${line.slice(at.end)}`
-      } else if (choice?.kind === 'kept' || (!choice && name)) {
-        const newest = newestOfFamily(at.slug, null, current)
-        if (newest && compareGeneration(parseModel(newest.slug)!.generation, name.generation) > 0) {
-          skipped.set(`${at.slug}>${newest.slug}@${at.effort}`, { from: at.slug, to: newest.slug, effort: at.effort, reason: `${newest.slug} 가 effort ${at.effort} 를 지원하지 않아 바꾸지 않았다` })
-        }
-      }
+      if (choice?.kind === 'upgrade' && !found.some(f => f.row === row && f.from === at.slug && f.to === choice.generation.to)) found.push({ row, from: at.slug, to: choice.generation.to })
     }
-    lines[i] = line
   }
-  const drop = new Set<number>()
-  const seenFrom = new Set<string>()
-  let inLimit = false
-  for (let i = 0; i < lines.length; i++) {
-    if (/^#{1,6} /.test(lines[i])) { inLimit = lines[i] === '### 사용 한도에 걸렸을 때'; continue }
-    if (!inLimit || !lines[i].startsWith('|')) continue
-    const cells = lines[i].split('|').slice(1, -1).map(cell => cell.trim())
-    if (cells.length !== 3 || /^-+$/.test(cells[0]) || cells[0] === '걸린 모델') continue
-    if (seenFrom.has(cells[0])) { drop.add(i); continue }
-    seenFrom.add(cells[0])
-    const items = [...new Set(cells[1].split(/,\s*/))].filter(item => item !== cells[0])
-    if (items.length && items.join(', ') !== cells[1]) lines[i] = `| ${cells[0]} | ${items.join(', ')} | ${cells[2]} |`
-  }
-  return { upgrades: [...upgrades.values()], skipped: [...skipped.values()], text: lines.filter((_, i) => !drop.has(i)).join('\n') }
+  return found
 }
 
 // 머신의 모델 감지 기록(loop/model-watch.ts 의 model-watch.json)이 마지막으로 읽은 목록. 없으면 빈 목록이다

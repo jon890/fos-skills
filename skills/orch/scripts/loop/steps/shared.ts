@@ -27,7 +27,8 @@ const LOG_LIMIT = 1_048_576
 // finish-pr 이 정리 명령에 주는 시간 제한과 같다
 export const SWEEP_TIMEOUT_MS = 600_000
 
-export type CiEntry = { head: string; state: 'passed' | 'failed' | 'pending' }
+// required 는 필수 체크만으로 정한 상태다(lib/gh.ts 의 requiredCiState). state 와 다를 때만 있고 최신화가 쓴다
+export type CiEntry = { head: string; state: 'passed' | 'failed' | 'pending'; required?: 'passed' | 'failed' | 'pending' }
 
 export type StallState = 'error' | 'idle'
 
@@ -88,7 +89,8 @@ export function ciEntries(value: unknown): Record<string, CiEntry> {
   if (!isObject(value)) return entries
   for (const [number, entry] of Object.entries(value)) {
     if (isObject(entry) && typeof entry.head === 'string' && (entry.state === 'passed' || entry.state === 'failed' || entry.state === 'pending')) {
-      entries[number] = { head: entry.head, state: entry.state }
+      const required = entry.required === 'passed' || entry.required === 'failed' || entry.required === 'pending' ? { required: entry.required as CiEntry['state'] } : {}
+      entries[number] = { head: entry.head, state: entry.state, ...required }
     }
   }
   return entries

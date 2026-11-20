@@ -1,7 +1,7 @@
 // 머지 큐 옵션과 사용법 검사.
 
 import { readFileSync } from 'node:fs'
-import { groupMap } from '../../lib/overlap.ts'
+import { groupMap, parseSharedGroup } from '../../lib/overlap.ts'
 import { QUEUE_VALUE_OPTIONS } from '../../lib/queue-options.ts'
 import type { Options, StepContext } from './model.ts'
 import { Usage } from './model.ts'
@@ -28,6 +28,7 @@ export function parseArgs(argv: string[]): Options {
     upToDate: false,
     upToDateWhen: 'always',
     sharedPaths: '',
+    sharedGroups: [],
     unitPrefix: 'modules/',
     unitGroups: [],
     keepBranch: false,
@@ -73,6 +74,7 @@ export function parseArgs(argv: string[]): Options {
       else if (arg === '--allow-fail-check') o.allowFail.push(value)
       else if (arg === '--up-to-date-when') o.upToDateWhen = value
       else if (arg === '--shared-paths') o.sharedPaths = value
+      else if (arg === '--shared-group') o.sharedGroups.push(value)
       else if (arg === '--unit-prefix') o.unitPrefix = value
       else if (arg === '--unit-group') o.unitGroups.push(value)
       else if (arg === '--verify-merged-when') o.verifyWhen = value
@@ -113,8 +115,15 @@ export function validate(o: Options): Options {
   if (!['always', 'overlap'].includes(o.upToDateWhen)) throw new Usage('--up-to-date-when 은 always, overlap 중 하나다')
   if (o.upToDateWhen === 'overlap') {
     if (!o.upToDate) throw new Usage('--up-to-date-when overlap 은 --require-up-to-date 와 함께 쓴다')
-  } else if (o.sharedPaths || o.unitGroups.length > 0) {
-    throw new Usage('--shared-paths 와 --unit-group 은 --up-to-date-when overlap 과 함께 쓴다')
+  } else if (o.sharedPaths || o.sharedGroups.length > 0 || o.unitGroups.length > 0) {
+    throw new Usage('--shared-paths, --shared-group, --unit-group 은 --up-to-date-when overlap 과 함께 쓴다')
+  }
+  for (const group of o.sharedGroups) {
+    try {
+      parseSharedGroup(group)
+    } catch (e) {
+      throw new Usage(`--shared-group: ${(e as Error).message}`)
+    }
   }
   // 핸들러 파일이 있어야 하는 옵션은 preflight 가 본다
   if (o.updateDocs && !o.docsGlob) throw new Usage('--update-docs-on-overlap 은 --docs-glob 이 필요하다')

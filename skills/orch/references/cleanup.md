@@ -207,6 +207,14 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 - 모든 모듈에 영향을 주는 경로를 `--shared-paths` 로 빠짐없이 적었다. 공용 모듈, 루트 빌드 파일과 버전 카탈로그(`settings.gradle`, `gradle/`, `buildSrc/`), 계약, CI 설정, 공용 테스트 설정, 저장소 전체에서 번호가 하나로 이어지는 마이그레이션이 후보다
 - 머지 뒤 검사가 따로 있다(아래 「머지 뒤 안전망」)
 
+**한쪽만 바꾸면 겹치지 않는 경로는 `--shared-group 이름=정규식`(설정 `queue.shared_groups`)으로 묶는다.**
+마이그레이션 폴더, 가짜 외부 서비스와 그 테스트, 공유 계약 문서, e2e 지원 코드처럼 PR 과 base 가 그 묶음을 함께 바꿨을 때만 서로 깨지는 경로가 대상이다.
+`--shared-paths` 는 어느 한쪽만 건드려도 겹침이라, 그런 경로를 넣으면 머지 하나 뒤에 남은 PR 거의 전부가 다시 뒤처진다.
+묶음은 PR 과 base 가 **같은 묶음을** 둘 다 바꿨을 때만 겹침이다. 한쪽만 바꿨으면 다시 합치지 않고 바로 머지한다.
+그래서 base 쪽 변경만으로 깨지는 PR 쪽 테스트(새 마이그레이션이 PR 의 테스트 데이터와 어긋나는 경우)는 PR CI 가 보지 못한다.
+**이 경우는 base 의 push CI 가 머지 뒤에 잡는다는 전제다.** base 에 push CI 가 없는 저장소는 묶음 대신 `--shared-paths` 를 쓴다.
+묶음 정의(어느 경로를 어느 묶음으로 볼지)는 저장소 설정이 정하고, 판정 규칙은 `lib/overlap.ts` 의 `judge` 가 소유한다.
+
 **이 규칙이 놓치는 경우.** 단위가 겹치지 않으면 합친 상태를 아무도 검사하지 않는다.
 
 | 놓치는 경우 | 대응 |
@@ -232,6 +240,7 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
     "require_up_to_date": true,
     "up_to_date_when": "overlap",
     "shared_paths": ["^modules/common/", "^(settings|build)\\.gradle(\\.kts)?$", "^(gradle|buildSrc)/", "^\\.github/"],
+    "shared_groups": { "migration": "^modules/[^/]+/src/main/resources/db/migration/", "contract": ["^docs/contract\\.md$", "^tests/contract/"] },
     "unit_groups": [["web", "bff"]],
     "docs_glob": ["docs/*", "*.md"],
     "sweep_args": ["--specs-dir", ".orch/specs"]

@@ -7,7 +7,7 @@
 //   pipeline.refresh_worker_paths  정규식 문자열이나 그 목록(Python 정규식, 목록은 `|` 로 잇는다). PR 과 base 가 모두 바꾼 파일이
 //                                  맞으면 update-branch 대신 worker 에게 합치기를 보낸다. 계약 버전처럼 글자 충돌은 없어도
 //                                  worker 가 판단해야 하는 파일을 적는다
-//   queue.require_up_to_date, queue.up_to_date_when, queue.shared_paths, queue.unit_prefix, queue.unit_groups, queue.docs_glob
+//   queue.require_up_to_date, queue.up_to_date_when, queue.shared_paths, queue.shared_groups, queue.unit_prefix, queue.unit_groups, queue.docs_glob
 //                                  머지 큐(merge-with-finish 가 넘기는 옵션)와 같은 값으로 판정한다. 차례가 온 PR 에 머지 큐가 할
 //                                  update-branch 를 미리 하는 것이라 기준이 다르면 안 된다. require_up_to_date 가 false 면 머지 큐가
 //                                  최신화하지 않으므로 이 단계도 돌지 않는다
@@ -69,5 +69,5 @@ export function writeRefresh(file: string, repo: string, records: Record<string,
   renameSync(temporary, file)
 }
 
-export { joined, refreshSettings, verdict, aheadInQueue, isRecord, LANDING_MS, IN_FLIGHT_MS, inFlight } from '../core/refresh.ts'
+export { joined, sharedGroupsOf, refreshSettings, verdict, aheadInQueue, isRecord, LANDING_MS, IN_FLIGHT_MS, inFlight } from '../core/refresh.ts'
 export type { RefreshSettings, ForkFiles, Verdict, RefreshRecord } from '../core/refresh.ts'

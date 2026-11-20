@@ -163,6 +163,9 @@ worker 의 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claud
 독립 리뷰에는 PR URL 과 head SHA, 변경 파일과 검증 결과를 넘긴다. 지적은 PR 을 만든 worker 가 `review-fix` 로 반영한다.
 리뷰 workflow 를 바꾸지 않은 PR 은 기존 자동 리뷰 절차를 따른다.
 
+`REVIEW-FALLBACK` 은 리뷰 봇이 실행 장애로 실패해 상주 루프가 리뷰 worker 를 이미 띄웠다는 알림이다. 독립 리뷰를 따로 맡기지 않고 그 worker 의 판정 댓글을 기다린다.
+`REVIEW-FALLBACK-FAIL` 이면 루프가 띄우지 못한 것이라 지금처럼 독립 리뷰를 맡긴다. 설정은 [`overlay.md`](overlay.md) 의 「리뷰 봇 장애 때 대체 리뷰」 에 있다.
+
 ## 다음 단계 이어 가기
 
 `STEP-READY auto`·`STEP-READY ask` 또는 `worker_done`·머지·배포 알림을 받았거나 보드를 확인한 턴에, 상태가 doing 이나 wait 인 항목의 첫 미완료 단계를 본다. `[auto]` 면 같은 턴에 이어 가고, `[ask]` 면 `orch board approval add step-<항목>-<번호> --kind step` 으로 승인 대기를 올린다. 미리보기·항목·단계와 승인 확인은 위 [보드 승인](#보드-승인)을 따른다. `[wait]` 면 아무것도 하지 않는다.
@@ -204,7 +207,7 @@ orch board auto-check "$ITEM"
 
 ## 충돌과 리뷰 반영은 만든 worker 가 이어 받는다
 
-**기본은 worker 가 머지될 때까지 스스로 처리한다.** 공통 지시서가 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 에게 맡기고, `worker_done` 은 MERGED 뒤에 온다. 아래는 worker 가 이미 `worker_done` 으로 끝났거나 멈춘 PR 의 절차다.
+**기본은 worker 가 머지될 때까지 스스로 처리한다.** 공통 지시서가 준비됨 뒤에도 CI 실패, 충돌, 리뷰를 worker 에게 맡기고, `worker_done` 은 MERGED 뒤에 온다. 아래는 worker 가 이미 `worker_done` 으로 끝났거나 멈춘 PR 의 절차다.
 
 **충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다.** 새 worker 를 띄우면 워크트리와 터미널이 늘어 로컬 자원을 쓴다.
 그래서 worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 터미널을 닫는 때는 [`cleanup.md`](cleanup.md) 의 「정리」 가 소유한다.

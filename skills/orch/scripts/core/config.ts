@@ -28,6 +28,7 @@ export const QUEUE_KEYS: readonly string[] = [
   'method',
   'up_to_date_when',
   'shared_paths',
+  'shared_groups',
   'unit_prefix',
   'skipped_is_missing',
   'update_docs_on_overlap',
@@ -45,6 +46,7 @@ export const QUEUE_KEYS: readonly string[] = [
 export const PIPELINE_KEYS: readonly string[] = [
   'enabled',
   'tick_sec',
+  'slow_sec',
   'digest_sec',
   'request_ack_sec',
   'ready_slots',

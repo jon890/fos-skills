@@ -5,6 +5,7 @@
 //     판정한다. 루프는 --allow-fail 을 모른다. 머지 큐에 --allow-fail 을 주는 저장소에서는 루프가 실패로 알린 PR 도 큐는 머지할 수 있다.
 //     base 조회가 실패하거나 예외가 나면 기존 worker 전달로 돌아간다.
 //     같은 워크플로의 base 최신 실행도 실패하면 worker 에게 보내지 않고 CI-FAILED 에 `<base> 도 실패` 를 쓴다. 조회는 공유 캐시를 쓴다.
+//     항목의 required 는 필수 체크만으로 정한 상태(lib/gh.ts 의 requiredCiState)이고 state 와 다를 때만 둔다. 최신화가 쓰고 알림은 보지 않는다.
 //     loop.json 의 ci[<PR>] 와 HEAD 와 상태가 같으면 넘어간다. 다르면 새 값을 결과의 ci 에 담고, passed 로 바뀌었으면 ci-passed 를,
 //     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 Run 에 Orca 메시지로 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
 //     「이벤트별 필드」). 같은 HEAD 에서 다시 돌린 체크가 통과로 바뀌면 ci-passed 를 낸다. 새 HEAD 는 새로 판정한다.
@@ -23,7 +24,7 @@
 import { scriptPath } from '../../lib/commands.ts'
 import { SEND_MS } from '../../lib/conflicts.ts'
 import { fire } from '../../lib/events.ts'
-import { baseWorkflowFailed, cancelledOnly, ciState, failedCheck, requiredNames } from '../../lib/gh.ts'
+import { baseWorkflowFailed, cancelledOnly, ciState, failedCheck, requiredCiState, requiredNames } from '../../lib/gh.ts'
 import type { CiCheck, Names } from '../../lib/gh.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
@@ -118,7 +119,9 @@ async function watchCi(
       continue
     }
     const judged = ciState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
-    const entry: CiEntry = { head: pr.head, state: judged.state }
+    // 최신화는 필수 체크만 본다(refresh.ts 머리 주석의 「최신화」). 알림은 지금처럼 state 로 판정한다
+    const required = requiredCiState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
+    const entry: CiEntry = { head: pr.head, state: judged.state, ...(required === judged.state ? {} : { required }) }
     ci[key] = entry
     if (before && before.head === entry.head && before.state === entry.state) continue
     if (entry.state === 'passed') {

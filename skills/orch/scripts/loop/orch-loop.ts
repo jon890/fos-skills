@@ -5,7 +5,7 @@
 //
 // 사용법:
 //     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start [--take-over [--confirmed TEXT]] | --stop [--all] | --status | --foreground) [--once]
-//     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N      (내부용. 부모가 띄운다)
+//     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N [--fast | --slow]      (내부용. 부모가 띄운다)
 //
 //     --repo         대상 저장소. 주 checkout 으로 바꿔 쓴다
 //     --run          루프에 등록하거나 뺄 Run. 없으면 config.json 의 finish.run 이다
@@ -62,6 +62,7 @@
 //                    stdout 마지막 줄에 {"tick_at": <ISO 8601 UTC>, "errors": {<출처>: <이유 또는 null>}, "open_prs": <번호 목록 또는 null>,
 //                    "ci": {<PR 번호>: {"head": <SHA>, "state": <passed, failed, pending>}}, "stalls": {<dispatch>: <멈춤 항목>}} 을 내고 0.
 //                    열린 PR 을 읽지 못한 틱은 ci 가 없고, 멈춤 확인이 예외로 끝난 틱은 stalls 가 없다. 멈춤 항목은 steps/stalls.ts 머리 주석의 「멈춤 확인」 이다
+//     --fast, --slow --tick 과 함께. 아래 「느린 단계」 의 빠른 틱과 느린 틱이다. 둘 다 없으면 「틱」 의 단계를 모두 돈다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // 파일: 이 파일은 인자를 읽어 모드를 고르고, --tick 이면 단계를 차례로 불러 결과 줄을 낸다. 나머지는 아래 파일이 소유한다.
@@ -79,6 +80,7 @@
 //     4. 정리. steps/cleanup.ts
 //     5. CI 감시. steps/ci.ts
 //     5-1. 머지 알림. steps/merged.ts
+//     5-2. 대체 리뷰. steps/review-fallback.ts. 리뷰 봇이 실행 장애로 실패한 PR 에 리뷰 worker 를 띄운다
 //     6. 멈춤 확인. steps/stalls.ts
 //     6-1. 움직임 확인. steps/movement.ts
 //     6-2. 다음 단계 알림. steps/step-ready.ts
@@ -92,6 +94,14 @@
 //     12. 모아 보내기와 완료 보고·끊긴 worker 확인. steps/reports.ts
 //     13. 답 없는 요청 알림. steps/requests.ts
 //     14. 배포 뒤 할 일 알림. steps/followups.ts
+//
+// 느린 단계: pipeline.slow_sec 이 있으면 부모는 틱을 둘로 나눠 띄운다(lifecycle.ts 머리 주석의 「틱 자식」).
+//     빠른 틱(--fast)은 위 「틱」 에서 3 의 보드 동기화, 3-1, 4 를 빼고 돈다. 머지, CI, 메시지 확인, 사용자 결정 알림이 tick_sec 마다 돈다.
+//     사용자 결정 알림은 질문 확인이 읽은 미답변 질문을 쓰므로 빠른 틱에 남긴다.
+//     느린 틱(--slow)은 질문 확인 대신 Run 마다 완료 보고만 읽은 뒤(steps/questions.ts 의 loadCompletions) 2, 3 의 보드 동기화, 3-1, 4 만 돈다.
+//     느린 틱의 정리는 worker 목록을 읽지 못해도 오류로 알리지 않는다. 같은 Orca 장애를 빠른 틱의 질문 확인이 알린다.
+//     결과 줄에는 tick_at, errors, open_prs 만 담고 부모는 errors 만 합친다. 보드 동기화와 정리가 한 틱에 몇 분씩 걸려
+//     빠른 단계를 그만큼 늦추던 것을 막는다. slow_sec 이 없거나 --once 면 지금처럼 한 틱에 모두 돈다
 //     단계는 설정과 이번 틱의 Run(StepContext), 앞 단계가 낸 값(StepState)을 받아 바꿀 값과 오류 이유(StepResult)를 돌려준다(steps/context.ts).
 //     tick 이 결과를 차례로 합쳐 결과 줄을 낸다. 부모가 결과 줄을 loop.json 에 합치는 규칙은 lifecycle.ts 머리 주석의 「틱 자식」 이다.
 //
@@ -142,9 +152,10 @@ import { checkHeavySlot } from './steps/heavy-slot.ts'
 import { notifyMerged } from './steps/merged.ts'
 import { checkMovement } from './steps/movement.ts'
 import { openNumbers, readOpenPrs } from './steps/prs.ts'
-import { checkQuestions } from './steps/questions.ts'
+import { checkQuestions, loadCompletions } from './steps/questions.ts'
 import { relayQueueTurns } from './steps/queue-turns.ts'
 import { refreshPrs } from './steps/refresh.ts'
+import { startReviewFallback } from './steps/review-fallback.ts'
 import { checkReports } from './steps/reports.ts'
 import { iso, log } from './steps/shared.ts'
 import { notifyStepReady } from './steps/step-ready.ts'
@@ -156,7 +167,7 @@ import { notifyFollowups } from './steps/followups.ts'
 
 const USAGE = [
   '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start [--take-over [--confirmed TEXT]] | --stop [--all] | --status | --foreground) [--once]',
-  '        orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N',
+  '        orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N [--fast | --slow]',
 ].join('\n')
 
 const SELF = fileURLToPath(import.meta.url)
@@ -165,19 +176,34 @@ const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 
 type Mode = (typeof MODES)[number]
 
-// 틱 하나. 머리 주석의 「틱」 순서대로 단계를 부르고 결과를 합쳐 결과 줄을 낸다
-async function tick(config: Context, n: number): Promise<number> {
-  const ctx = stepContext(config, n)
+// 틱의 종류. all 은 모든 단계, fast 와 slow 는 머리 주석의 「느린 단계」 다
+export type TickKind = 'all' | 'fast' | 'slow'
+
+// 틱 하나. 머리 주석의 「틱」 순서대로 단계를 부르고 결과를 합쳐 결과 줄을 낸다. kind 가 fast 나 slow 면 「느린 단계」 대로 일부만 돈다
+async function tick(config: Context, n: number, kind: TickKind): Promise<number> {
+  const ctx = stepContext(config, n, kind)
   return withLoopCaller(ctx.repo, ctx.primary ?? ctx.run, async () => {
     const state = initialState()
-    collect(state, await checkQuestions(ctx, state))
+    const fast = kind !== 'slow'
+    if (fast) collect(state, await checkQuestions(ctx, state))
+    else loadCompletions(ctx)
     collect(state, await readOpenPrs(ctx, state))
-    collect(state, await syncBoard(ctx, state))
-    collect(state, await notifyPendingDecisions(ctx, state))
-    collect(state, await fillTaskLinks(ctx, state))
-    collect(state, await sweepRuns(ctx, state))
+    const slow = kind !== 'fast'
+    if (slow) collect(state, await syncBoard(ctx, state))
+    // 결정 알림은 질문 확인이 읽은 미답변 질문(state.pending)을 쓰므로 질문 확인이 도는 틱에 함께 돈다
+    if (fast) collect(state, await notifyPendingDecisions(ctx, state))
+    if (slow) {
+      collect(state, await fillTaskLinks(ctx, state))
+      collect(state, await sweepRuns(ctx, state))
+    }
+    if (!fast) {
+      const partial: TickResult = { tick_at: iso(), errors: state.errors, open_prs: openNumbers(state.prs) }
+      process.stdout.write(`${JSON.stringify(partial)}\n`)
+      return 0
+    }
     collect(state, await checkCi(ctx, state))
     collect(state, await notifyMerged(ctx, state))
+    collect(state, await startReviewFallback(ctx, state))
     collect(state, await checkStalls(ctx, state))
     collect(state, await checkMovement(ctx, state))
     collect(state, await notifyStepReady(ctx, state))
@@ -230,6 +256,8 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
       once: { type: 'boolean', default: false },
       tick: { type: 'boolean', default: false },
       'tick-number': { type: 'string' },
+      fast: { type: 'boolean', default: false },
+      slow: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
     } as const
     values = parseArgs({ args: expandArgs(argv, options), options }).values
@@ -247,6 +275,8 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
     if (values.confirmed !== undefined && !values['take-over']) throw new Usage('--confirmed 는 --take-over 와 함께 준다')
     if (values.confirmed !== undefined && !values.confirmed.trim()) throw new Usage('--confirmed 에 사용자 답을 준다')
     if ((mode === 'tick') !== (values['tick-number'] !== undefined)) throw new Usage('--tick 과 --tick-number 는 함께 준다')
+    if ((values.fast || values.slow) && mode !== 'tick') throw new Usage('--fast 와 --slow 는 --tick 과 함께 준다')
+    if (values.fast && values.slow) throw new Usage('--fast 와 --slow 는 함께 줄 수 없다')
     if (mode === 'tick') {
       const raw = values['tick-number'] as string
       if (!/^\d+$/.test(raw) || Number(raw) < 1) throw new Usage(`--tick-number 는 1 이상의 정수다: ${raw}`)
@@ -286,7 +316,7 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
   handleSignals()
   if (mode === 'tick') {
     watchParent()
-    return tick(ctx, tickNumber)
+    return tick(ctx, tickNumber, values.slow ? 'slow' : values.fast ? 'fast' : 'all')
   }
   return foreground(ctx, values.once as boolean, interval, entrypoint)
 }
