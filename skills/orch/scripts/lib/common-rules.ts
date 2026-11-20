@@ -1,5 +1,6 @@
 // 공통 지시서의 표지 항목과 비교 규칙. lint 와 sync-common 이 함께 쓴다.
 import { ConfigError, loadConfig } from './config.ts'
+import { integrationRules } from '../core/integration-evidence.ts'
 
 export type RuleBody = { no: number; body: string; head: number; end: number; raw: string; keep: boolean; unsafe: boolean; section: string | null }
 const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)([^>]*?)-->/g
@@ -41,6 +42,14 @@ export function ruleIssues(text: string): { no: number; message: string }[] {
 export const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = {
   migration: (repoRoot) => configured(repoRoot, 'migrations', ['dirs', 'watch']),
   adr: (repoRoot) => configured(repoRoot, 'adr', ['dirs']),
+  'integration-evidence': (repoRoot) => {
+    try {
+      return integrationRules(loadConfig(repoRoot)).length > 0
+    } catch (e) {
+      if (e instanceof ConfigError) return false
+      throw e
+    }
+  },
 }
 
 // 설정 절의 keys 가운데 하나라도 비지 않은 객체인지. 설정을 읽지 못하면 거짓이다

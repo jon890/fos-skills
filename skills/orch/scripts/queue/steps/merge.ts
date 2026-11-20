@@ -89,6 +89,8 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     const gate = await gateReasons(stepContext, state, 'failed')
     log(`${n} ${gate.summary}`)
     if (gate.reasons.length > 0) holdWith(state, gate.reasons)
+    // 통합 테스트를 생략한 모듈은 머지 출력에 경고로 남긴다. base 가 움직여 다시 판정해도 같은 HEAD 면 한 번만 낸다
+    if (p.beforeHead !== p.ph) for (const note of gate.notes) out(`경고: ${n} ${note}`)
 
     p.ov = []
     if (o.overlap) {

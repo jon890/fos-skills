@@ -294,9 +294,10 @@ describe('지시서 검사', () => {
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 .* 가 없다/m)
-    // migration 은 orch 설정에 migrations 가, adr 은 adr 이 있는 저장소에서만 요구한다
+    // migration 은 orch 설정에 migrations 가, adr 은 adr 이, integration-evidence 는 queue.integration_tests 규칙이 있는 저장소에서만 요구한다
+    const conditional = ['migration', 'adr', 'integration-evidence']
     for (const [, rule] of template.matchAll(/<!-- orch-rule: ([\w-]+) -->/g)) {
-      assert.equal(r.stdout.includes(`\`${rule}\``), rule !== 'migration' && rule !== 'adr', `${rule}\n${r.stdout}`)
+      assert.equal(r.stdout.includes(`\`${rule}\``), !conditional.includes(rule), `${rule}\n${r.stdout}`)
     }
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)

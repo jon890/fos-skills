@@ -38,6 +38,7 @@ import type { Config, Section } from './config.ts'
 import { contractSettings } from './contracts.ts'
 import { dockerRules } from './docker.ts'
 import { compileHeavy } from './heavy.ts'
+import { integrationRules } from './integration-evidence.ts'
 import { isObject } from './json.ts'
 import { stallTicks } from './loop.ts'
 import { boardSettingsFromConfig } from './milestones.ts'
@@ -226,6 +227,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     ci_expected_sec: zodCheck(wholeSec),
     auto_merge: zodCheck(bool),
     auto_review: REVIEW_ENTRY,
+    integration_tests: viaConfig('queue', 'integration_tests', integrationRules),
   },
   pipeline: {
     enabled: zodCheck(bool),

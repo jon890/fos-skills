@@ -199,6 +199,8 @@
 //   migrations 설정이 있으면 queueOrder 로 낮은 번호부터 정렬하고 자동 --chain 을 만든다. 수동 묶음도 함께 지키되 모순되면 코드 2 다.
 //   순서가 바뀌면 QUEUE-ORDER <번호...>: <이유> 를 낸다. 설정이 없으면 입력 순서를 유지한다.
 //   gate 와 머지 직전에 새 origin/<base> 의 최고 번호를 judgeMigrations 로 확인한다. 최고 이하이면 --again 안내와 함께 worker 에게 보류를 보낸다.
+//   queue.integration_tests 가 있으면 바뀐 모듈의 통합 테스트 기록을 같은 판정(steps/gate.ts)으로 보고, 없으면 worker 에게 보류를 보낸다.
+//   생략 줄로 넘긴 모듈은 머지 전에 `경고: <PR> 통합 테스트 생략 <모듈>: <이유>` 를 낸다.
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
