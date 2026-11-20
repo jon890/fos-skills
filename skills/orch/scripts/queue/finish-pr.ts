@@ -22,6 +22,8 @@
 //     4. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
 //        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 지시서만 남긴다
+//        이어서 <orch>/handoff/pr-<PR 번호>/ 만 휴지통으로 옮긴다. 규칙 밖의 옛 파일은 개수만 알리고 남긴다.
+//        worker 정리가 끝나지 않았거나 옮기지 못하면 FINISH-FAIL 로 끝내며 원본은 남긴다.
 //     5. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
 //        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. skipped 만 남으면 배포 브랜치의 원격 끝 커밋으로 판정한다.
@@ -157,7 +159,8 @@ import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
 import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges } from '../lib/feature-evidence.ts'
 import { boardPath } from '../lib/board-file.ts'
-import { pathOf, requireMigrated } from '../lib/paths.ts'
+import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
+import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
@@ -740,10 +743,28 @@ async function finish(args: Args, repo: string): Promise<number> {
   const ended = worktree && args.run ? await tellMerged(args, args.run, worktree, merge) : null
   await recordRouting(repo, Number(args.pr), 'merged')
   const feature = featureBranch(repo, branch, args.specsDir ?? undefined) || merged.body.includes(EVIDENCE_START)
+  const problems: string[] = []
+  let handoffProblem = false
   // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
   // 기능 PR 도 같다. 후속 검증이 대기여도 cleanup-sweep 은 워크트리와 브랜치만 지우고 지시서를 남긴다(사용자 결정 2026-11-04)
-  if (!(await cleanupWorker(args, repo, branch))) {
+  const workerClean = await cleanupWorker(args, repo, branch)
+  if (!workerClean) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
+  }
+  if (!workerClean && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
+    log(`PR ${args.pr} handoff 산출물 유지: worker 정리가 끝나지 않았다`)
+    problems.push(`PR ${args.pr} handoff 산출물 정리를 기다린다`)
+    handoffProblem = true
+  } else {
+    try {
+      const handoff = cleanupPrHandoff(repo, args.pr)
+      if (handoff.moved) log(`PR ${args.pr} handoff 산출물을 휴지통으로 옮김: ${handoff.trash}`)
+      if (handoff.legacy > 0) log(`규칙 밖의 옛 handoff 파일 ${handoff.legacy}개는 남김`)
+    } catch (e) {
+      log(`PR ${args.pr} handoff 산출물 정리 실패: ${(e as Error).message}`)
+      problems.push(`PR ${args.pr} handoff 산출물을 옮기지 못했다`)
+      handoffProblem = true
+    }
   }
 
   let deploy: Deploy = 'none'
@@ -770,7 +791,6 @@ async function finish(args: Args, repo: string): Promise<number> {
     if (problem) return fail(problem)
   }
 
-  const problems: string[] = []
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
   try {
     const result = await fire('after-deploy', input, {
@@ -787,7 +807,7 @@ async function finish(args: Args, repo: string): Promise<number> {
     problems.push('after-deploy 핸들러가 실패했다')
   }
 
-  if (!deployed || feature && problems.length > 0) return fail(problems.join('; '))
+  if (!deployed || handoffProblem || feature && problems.length > 0) return fail(problems.join('; '))
   deleteConflictSpecs(args, repo)
   if (args.specsDir) {
     if (last) deleteBranchSpecs(args, repo, branch)

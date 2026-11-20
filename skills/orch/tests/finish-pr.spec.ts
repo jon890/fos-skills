@@ -282,6 +282,45 @@ function inputs(file: string): Json[] {
 const DEPLOY = ['--deploy-workflow', 'deploy.yml', '--deploy-branch', 'main']
 
 describe('finish-pr 흐름', { concurrency: 4 }, () => {
+  test('MERGED 확인 뒤 해당 PR의 handoff 폴더만 휴지통으로 옮긴다', async (t) => {
+    const c = setup(t)
+    const handoff = join(c.repo, '.orch', 'handoff')
+    mkdirSync(join(handoff, 'pr-77'), { recursive: true })
+    mkdirSync(join(handoff, 'pr-78'))
+    writeFileSync(join(handoff, 'pr-77', 'preview.html'), '미리보기')
+    writeFileSync(join(handoff, 'old-reply.md'), '옛 파일')
+    const r = await c.finish([], { HOME: c.tmp })
+    assert.equal(r.code, 0, both(r))
+    assert.equal(existsSync(join(handoff, 'pr-77')), false)
+    assert.equal(existsSync(join(handoff, 'pr-78')), true)
+    assert.equal(existsSync(join(handoff, 'old-reply.md')), true)
+    assert.match(r.stdout, /규칙 밖의 옛 handoff 파일 1개는 남김/)
+    const trash = join(c.tmp, '.Trash')
+    assert.equal(existsSync(trash), true)
+  })
+
+  test('머지되지 않은 PR의 handoff 폴더는 남긴다', async (t) => {
+    const c = setup(t)
+    c.state.pr.state = 'CLOSED'
+    const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
+    mkdirSync(handoff, { recursive: true })
+    writeFileSync(join(handoff, 'body.md'), '본문')
+    const r = await c.finish([], { HOME: c.tmp })
+    assert.equal(r.code, 1, both(r))
+    assert.equal(existsSync(join(handoff, 'body.md')), true)
+  })
+
+  test('handoff 를 휴지통으로 옮기지 못하면 FINISH-FAIL 로 알리고 원본을 남긴다', async (t) => {
+    const c = setup(t)
+    const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
+    mkdirSync(handoff, { recursive: true })
+    writeFileSync(join(handoff, 'body.md'), '본문')
+    writeFileSync(join(c.tmp, '.Trash'), '폴더 대신 파일')
+    const r = await c.finish([], { HOME: c.tmp })
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /handoff 산출물을 옮기지 못했다/)
+    assert.equal(existsSync(join(handoff, 'body.md')), true)
+  })
   test('기능 후속 검증이 대기면 워크트리는 지우고 지시서·업무 완료를 남기고 근거 갱신 뒤 마무리한다', async (t) => {
     const c = setup(t)
     c.state.pr.body = `<!-- fos-feature-evidence -->
@@ -545,6 +584,17 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     has(r.stdout, '정리 남음')
     assert.equal(starting(c.calls(), 'sweep').length, CLEANUP_TRIES)
     assert.equal(existsSync(c.wt), true)
+  })
+
+  test('worker 정리가 끝나지 않으면 handoff 원본을 남기고 재시도를 요구한다', async (t) => {
+    const c = setup(t)
+    const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
+    mkdirSync(handoff, { recursive: true })
+    writeFileSync(join(handoff, 'body.md'), '본문')
+    const r = await c.finish([], { FAKE_SWEEP_REMOVES: '0', HOME: c.tmp })
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /handoff 산출물 정리를 기다린다/)
+    assert.equal(existsSync(join(handoff, 'body.md')), true)
   })
 
   test('설정 파일이 옵션을 채우고 명령줄이 우선한다', async (t) => {

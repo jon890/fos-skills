@@ -81,7 +81,7 @@
   권장: 선택지 이름. 이유
   ```
 
-- **코디네이터에게 넘길 파일(요청 본문, 측정 결과, 게시가 막혀 넘기는 본문)은 세션 임시 폴더에 두지 않는다.** worker 와 코디네이터는 세션마다 임시 폴더가 달라, 코디네이터가 그 경로를 열지 못한다. `"$(orch paths root)/handoff/"` 아래에 두고 절대경로로 적는다. 그 폴더는 git 이 무시하고, 오래되면 `orch cleanup handoff` 가 휴지통으로 옮긴다. `orch worker ask` 는 질문 본문에 세션 임시 폴더 경로(`$TMPDIR` 값, `/var/folders/`, `/private/tmp/claude-`, `/tmp/claude-`)가 있으면 보내지 않고 2 로 끝난다. <!-- orch-rule: handoff-path -->
+- **코디네이터에게 넘길 파일은 세션 임시 폴더에 두지 않는다.** PR 본문·미리보기 HTML·리뷰 답변 초안과 매핑 TSV 는 `"$(orch paths root)/handoff/pr-<PR 번호>/"` 에 모은다. PR 번호가 나오기 전 본문 초안은 위의 세션 임시 폴더에 둔다. 게시가 막혀 코디네이터에게 본문을 넘길 때는 `handoff/pending/<워크트리 이름>/` 에 복사하고, PR 번호가 나오면 `pr-<PR 번호>/` 로 옮긴다. `orch queue finish` 는 PR 머지 확인 뒤 번호 폴더를 휴지통으로 옮긴다. 측정 결과와 다른 일이 다시 쓸 인계는 `"$(orch paths root)/handoff/"` 의 별도 폴더에 두며 PR 정리에서 남긴다. 넘길 때는 절대경로를 적는다. `orch worker ask` 는 질문 본문에 세션 임시 폴더 경로(`$TMPDIR` 값, `/var/folders/`, `/private/tmp/claude-`, `/tmp/claude-`)가 있으면 보내지 않고 2 로 끝난다. <!-- orch-rule: handoff-path -->
 - 기준 브랜치와 충돌하면 코디네이터가 후속 지시서를 보낸다. 그 지시대로 이 worker 가 푼다.
 
 ## 끝내기

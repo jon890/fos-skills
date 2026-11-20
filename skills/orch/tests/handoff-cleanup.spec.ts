@@ -544,6 +544,15 @@ describe('handoff-cleanup', () => {
       assert.doesNotMatch(r.stdout, /^옮김/m)
     })
 
+    test('PR별 handoff 는 오래돼도 머지 확인 전에는 옮기지 않는다', () => {
+      const body = make('.orch/handoff/pr-77/body.md', '본문\n', 9)
+      const mapping = make('.orch/handoff/pr-77/replies.tsv', '대응\n', 9)
+      const old = make('.orch/handoff/old-reply.md', '옛 파일\n', 9)
+      const r = ok(['--apply'], { FAKE_RUN_TASKS: '{}' })
+      for (const target of [body, mapping, old]) assert.equal(existsSync(target), true, target)
+      assert.doesNotMatch(r.stdout, /옮김 .*handoff/)
+    })
+
     test('Run 의 Task 목록을 읽지 못하면 지시서를 옮기지 않는다', () => {
       const { mine } = twoRuns()
       const r = ok(['--apply', '--run', 'A'], { FAKE_ORCA_FAILS: '1' })
