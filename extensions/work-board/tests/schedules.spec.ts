@@ -68,3 +68,22 @@ test('도구 훅은 원래 결과를 돌려주고 세션 상태만 갱신한다'
   assert.deepEqual(stored, [])
   assert.equal(await watchSchedule({ ...$, state: undefined }, create, async () => answer), answer)
 })
+
+test('세션 상태 갱신이 계속 충돌하면 화면의 예약 목록은 유지한다', async () => {
+  const { watchSchedule: watchFresh } = await import('../hooks/register.js?retry-exhausted')
+  let attempts = 0
+  let invalidations = 0
+  const $ = {
+    state: {
+      get: async () => ({ value: [], version: attempts }),
+      set: async () => { attempts++; return { isSet: false } },
+    },
+    clock: { now: async () => at },
+    ui: { invalidate: () => { invalidations++ } },
+  }
+  assert.equal(await watchFresh($, create, async () => answer), answer)
+  assert.equal(attempts, 3)
+  assert.equal(invalidations, 1)
+  await watchFresh({ ...$, state: undefined }, remove, async () => ({ result: { id: 'job-1' } }))
+  assert.equal(invalidations, 2)
+})

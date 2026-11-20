@@ -70,6 +70,11 @@ export async function watchSchedule($, e, next) {
       }
       held = await $.state.get(SCHEDULES_REF)
     }
+    const latest = updateSchedules(visibleSchedules(held.value, at), e, result, at)
+    if (!sameSchedules(schedules, latest)) {
+      schedules = latest
+      $.ui.invalidate('ui.render')
+    }
   } catch { /* 보드 상태 오류가 예약 도구의 결과를 바꾸지 않는다 */ }
   return result
 }
