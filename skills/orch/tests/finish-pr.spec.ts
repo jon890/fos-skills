@@ -754,15 +754,15 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(existsSync(join(c.tmp, 'queue')), true)
   })
 
-  test('다시 돌기 요청이 있으면 끝난 뒤 한 번 더 돌고 요청을 지운다', async (t) => {
+  test('다시 돌기 표시가 있으면 끝난 뒤 한 번 더 돌고 표시를 지운다', async (t) => {
     const c = setup(t)
     const pidFile = join(c.tmp, 'queue', 'finish-77.pid')
     mkdirSync(join(c.tmp, 'queue'), { recursive: true })
-    // 도는 동안 orch followup done 이 남긴 요청(lib/process.ts 의 「다시 돌기 요청」)과 같다
+    // 도는 동안 orch followup done 이 남긴 다시 돌기 표시와 같다
     writeFileSync(`${pidFile}.rerun`, '')
     const r = await c.finish(['--pid-file', pidFile])
     assert.equal(r.code, 0, both(r))
-    has(r.stdout + r.stderr, '다시 돌기 요청이 있어 마무리를 한 번 더 돈다')
+    has(r.stdout + r.stderr, '다시 돌기 표시가 있어 마무리를 한 번 더 돈다')
     assert.equal(starting(c.calls(), 'sweep ').length, 2)
     assert.equal(existsSync(`${pidFile}.rerun`), false)
     assert.equal(existsSync(pidFile), false)

@@ -10,7 +10,7 @@
 //         보드 파일이 있으면 항목 followup-<PR> 을 done 으로 바꾼다. 실패해도 목록은 끝낸 채 둔다.
 //         이어서 그 PR 의 마무리(finish-pr.ts)를 백그라운드로 다시 띄워 지시서 정리, 업무 완료, 보드 done 까지 가게 한다.
 //         출력은 <orch 루트>/queue/finish-<PR>.out 이고 `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
-//         그 마무리에 다시 돌기 요청(lib/finish-pid.ts)을 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
+//         다시 돌기 표시(<pid 파일>.rerun)를 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
 //         도는 마무리가 끝날 때 그 요청을 보고 끝난 후속 검증으로 한 번 더 돈다. --no-finish 면 다시 띄우지 않는다. 띄우지 못하면 FINISH-START-FAIL 과 종료 코드 1 이다.
 //         --run 은 마무리에 그대로 넘긴다. 없으면 마무리가 설정의 finish.run 을 읽는다
 //
@@ -19,7 +19,7 @@
 
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { closeSync, openSync } from 'node:fs'
+import { closeSync, openSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { followupLine, markDone, openFollowups } from '../core/followups.ts'
@@ -31,7 +31,7 @@ import { mainCheckout, repoArgProblem } from '../lib/git.ts'
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
 import { scriptCommand } from '../lib/proc.ts'
-import { startOrQueue } from '../lib/finish-pid.ts'
+import { pidFileAlive } from '../lib/process.ts'
 
 const USAGE = `사용법:
   orch followup list [--all] [--repo DIR]
@@ -65,27 +65,25 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
   const dir = pathOf('queue', repo)
   makeParent(join(dir, 'x'), repo)
   const pidFile = join(dir, `finish-${pr}.pid`)
-  const outFile = join(dir, `finish-${pr}.out`)
-  const args = [String(pr), '--repo', repo, '--pid-file', pidFile, ...(run ? ['--run', run] : []), ...(notMain !== undefined ? ['--not-main', notMain] : [])]
-  const cmd = scriptCommand(process.env.FINISH_PR || scriptPath('finish-pr'), args)
-  let child: ChildProcess | null = null
-  // 도는 마무리가 있으면 끝난 뒤 한 번 더 돌게 요청을 남기고, 없으면 같은 잠금 안에서 띄워 pid 를 남긴다(lib/finish-pid.ts)
-  const state = startOrQueue(pidFile, () => {
-    const fd = openSync(outFile, 'w')
-    try {
-      child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', fd, fd], detached: true })
-    } finally {
-      closeSync(fd)
-    }
-    return child.pid ?? null
-  })
-  if (state === 'queued') {
+  // 도는 마무리가 이미 대기 경로를 지났을 수 있어, 끝날 때 한 번 더 돌게 표시를 남긴다(finish-pr.ts 의 --pid-file)
+  if (pidFileAlive(pidFile)) {
+    writeFileSync(`${pidFile}.rerun`, '')
     console.log(`FINISH-RUNNING ${pr} ${pidFile}`)
     return 0
   }
-  const error = child ? await started(child, cmd[0]) : `${cmd[0]} 를 실행하지 못했다`
-  if (state === 'failed' || error) {
-    console.log(`FINISH-START-FAIL ${pr} ${(error ?? `${cmd[0]} 를 실행하지 못했다`).replace(/\s+/g, ' ')}`)
+  const outFile = join(dir, `finish-${pr}.out`)
+  const args = [String(pr), '--repo', repo, '--pid-file', pidFile, ...(run ? ['--run', run] : []), ...(notMain !== undefined ? ['--not-main', notMain] : [])]
+  const cmd = scriptCommand(process.env.FINISH_PR || scriptPath('finish-pr'), args)
+  const fd = openSync(outFile, 'w')
+  let child: ChildProcess
+  try {
+    child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', fd, fd], detached: true })
+  } finally {
+    closeSync(fd)
+  }
+  const error = await started(child, cmd[0])
+  if (error) {
+    console.log(`FINISH-START-FAIL ${pr} ${error.replace(/\s+/g, ' ')}`)
     return 1
   }
   console.log(`FINISH-STARTED ${pr} ${outFile}`)

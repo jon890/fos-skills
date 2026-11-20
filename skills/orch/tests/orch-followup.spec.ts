@@ -63,7 +63,7 @@ test('done 은 항목을 끝내고 그 PR 의 마무리를 다시 띄운다', { 
   assert.match(readFileSync(c.log, 'utf8'), /^finish 787 --repo \S+ --pid-file \S+finish-787\.pid --run run_1 --not-main 테스트$/m)
 })
 
-test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기 요청을 남긴다', (t) => {
+test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기 표시를 남긴다', (t) => {
   const c = setup(t)
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
   t.after(() => child.kill('SIGKILL'))
@@ -73,7 +73,7 @@ test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기
   const r = c.run(['done', '787', '--not-main', '테스트'])
   assert.equal(r.code, 0, r.stdout + r.stderr)
   assert.match(r.stdout, /^FINISH-RUNNING 787 /m)
-  // 도는 마무리가 끝날 때 이 표시를 보고 한 번 더 돈다(finish-pr.spec.ts 의 「다시 돌기 요청」)
+  // 도는 마무리가 끝날 때 이 표시를 보고 한 번 더 돈다(finish-pr.spec.ts)
   assert.equal(existsSync(`${pidFile}.rerun`), true)
   assert.equal(existsSync(c.log), false)
 })
