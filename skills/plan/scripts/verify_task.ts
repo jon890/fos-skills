@@ -7,6 +7,7 @@
 // 변경 파일 표의 glob 행은 종류 칸에 `신규·수정` 을 써서 신규와 수정이 섞인 묶음을 적을 수 있다. 구체 경로에는 쓰지 못한다.
 // 작업 항목이 호출 형태(`name()`)로 적은 함수를 수정 파일이 정의하면, 그 함수를 부르는 파일 중
 // plan 의 변경 파일에 없는 것을 git grep 으로 찾아 경고한다.
+// 수정 소스 파일을 import 하는 기존 테스트도 변경 파일 표에서 빠졌으면 경고한다.
 // Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 직접 실행하는지 본다.
 // `bun test` 의 점 디렉터리 경로와 금지 문자열 검사가 같은 phase 의 테스트에 걸리는지도 본다.
 // 같은 접두사와 번호를 다른 계획 디렉터리가 쓰면(`plan12-a` 와 `plan12-b`) 알린다.
@@ -48,6 +49,7 @@
 //     2  검사를 돌리지 못함 (인자 오류, 디렉터리 없음, JSON 파싱 실패)
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { posix } from 'node:path'
 import { capture, isExpected, isMain, readTextFile, ValueError, write } from './io.ts'
 import { type Spec, parseCli, UsageError } from './cli.ts'
 import { run as checkFeature } from './check_feature.ts'
@@ -1667,6 +1669,65 @@ export function checkCallers(phaseEntries: [string, string, Entry[]][], repo: st
   }
 }
 
+// Git 추적 테스트만 한 번 grep 한다. 파일 이름이 나온 후보만 읽고, 후보가 많으면 수동 확인으로 돌려
+// 큰 저장소의 모든 소스나 모든 테스트 본문을 매 phase 마다 읽지 않는다.
+const IMPORT_TEST_LIMIT = 200
+const IMPORT_TEST_PATHS = ['*.test.*', '*.spec.*', 'test_*', 'test-*', '*Test.*', 'test/*', 'tests/*', '__tests__/*', 'spec/*', 'specs/*', '*/test/*', '*/tests/*', '*/__tests__/*', '*/spec/*', '*/specs/*']
+
+function importedModules(code: string): string[] {
+  const modules = [...code.matchAll(/\b(?:from\s+|import\s*|require\s*\(\s*|import\s*\(\s*)['"]([^'"\n]+)['"]/g)].map((match) => match[1])
+  // Python/Java/Kotlin 의 import 는 따옴표가 없다.
+  for (const match of code.matchAll(/^\s*(?:from\s+([\w.]+)\s+import\b|import\s+([\w.]+))/gm)) modules.push((match[1] ?? match[2]).replaceAll('.', '/'))
+  return modules
+}
+
+function importsSource(test: string, source: string, modules: string[]): boolean {
+  const stem = source.slice(0, -pathSuffix(source).length)
+  const targets = stem.endsWith('/index') ? [stem, stem.slice(0, -'/index'.length)] : [stem]
+  return modules.some((module) => {
+    const target = module.replace(/\.(?:tsx?|jsx?|mjs|cjs|py|java|kt)$/, '')
+    if (target.startsWith('.')) return targets.includes(posix.normalize(posix.join(posix.dirname(test), target)))
+    const alias = target.replace(/^[@~]\//, '')
+    return alias.includes('/') && targets.some((value) => value === alias || value.endsWith(`/${alias}`))
+  })
+}
+
+export function checkImportedTests(phaseEntries: [string, string, Entry[]][], repo: string, tasksDir: string, warnings: string[]): void {
+  const planned = new Set(phaseEntries.flatMap(([, , entries]) => entries.map(([rel]) => rel)))
+  const prefixes = excludePrefixes(planned.add(tasksDir))
+  const plannedGlobs = [...planned].filter(isGlob)
+  const modified = [...new Set(phaseEntries.flatMap(([, , entries]) => entries
+    .filter(([rel, action]) => action === '수정' && CODE_SUFFIXES.has(pathSuffix(rel)) && !isTest(rel) && !isGlob(rel) && isFile(`${repo}/${rel}`))
+    .map(([rel]) => rel)))]
+  if (!modified.length) return
+  // index 파일을 폴더 경로로 import 할 수 있으므로 부모 폴더 이름도 검색한다.
+  const names = [...new Set(modified.flatMap((rel) => pathStem(rel) === 'index' ? ['index', posix.basename(posix.dirname(rel))] : [pathStem(rel)]))]
+  const found = capture(['git', '-C', repo, 'grep', '-l', '-F', ...names.flatMap((name) => ['-e', name]), '--', ...IMPORT_TEST_PATHS])
+  if (found.code !== 0 && found.code !== 1) return
+  const candidates = pySplitLines(found.stdout).filter((rel) => isTest(rel) && CODE_SUFFIXES.has(pathSuffix(rel)) && !planned.has(rel) && !plannedGlobs.some((glob) => matches(rel, glob)) && !prefixes.some((p) => rel.startsWith(p)))
+  if (candidates.length > IMPORT_TEST_LIMIT) {
+    warnings.push(`${phaseEntries[0][0]} — 수정 파일을 import 하는 테스트 후보가 ${IMPORT_TEST_LIMIT}개를 넘어 자동 대조를 건너뛴다. 테스트 경로를 직접 찾아 변경 파일 표와 비교한다`)
+    return
+  }
+  const imports = new Map<string, string[]>()
+  for (const test of candidates) {
+    try {
+      imports.set(test, importedModules(readTextFile(`${repo}/${test}`)))
+    } catch {
+      warnings.push(`${phaseEntries[0][0]} — 테스트 파일을 읽지 못해 import 대조에서 건너뛴다: ${test}`)
+    }
+  }
+  for (const [path, , entries] of phaseEntries) {
+    for (const [source, action] of entries) {
+      if (action !== '수정' || !modified.includes(source)) continue
+      const tests = candidates.filter((test) => imports.has(test) && importsSource(test, source, imports.get(test)!))
+      if (!tests.length) continue
+      const shown = tests.slice(0, CALLER_LIMIT).join(', ') + (tests.length > CALLER_LIMIT ? ` 외 ${tests.length - CALLER_LIMIT}개` : '')
+      warnings.push(`${path} — \`${source}\` 을 import 하는 테스트가 plan 의 변경 파일에 없다: ${shown}. 변경으로 깨질 테스트면 변경 파일 표에 넣는다`)
+    }
+  }
+}
+
 const USAGE = `usage: verify_task.ts [-h] [--require-verification] [--audit] [--staged PHASE] [--tasks-dir TASKS_DIR] [plan]
 
 task 생성 직후 자동 검증. 사용법과 검사 항목은 이 파일 머리 주석이 설명한다.
@@ -1789,7 +1850,10 @@ export function main(argv: string[]): number {
       const [fileLimit, lengthLimit] = repoLimits(repo, planRel, warnings)
       checkChangedFileCount(`${planDir}/index.json`, allFiles, warnings, fileLimit, phaseEntries.map(([phase, , rels]) => [phase, new Set(rels.map(([rel]) => rel))] as [string, Set<string>]), planRel)
       if (lengthLimit && !audit) checkFileLength(`${planDir}/index.json`, allEntries, repo, lengthLimit, warnings)
-      if (!audit) checkCallers(phaseEntries, repo, tasksDir, warnings)
+      if (!audit) {
+        checkCallers(phaseEntries, repo, tasksDir, warnings)
+        checkImportedTests(phaseEntries, repo, tasksDir, warnings)
+      }
     }
   } catch (error) {
     if (!isExpected(error)) throw error
