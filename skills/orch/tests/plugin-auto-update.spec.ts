@@ -93,6 +93,25 @@ test('개발용 폴더는 건드리지 않고 잠금 중에는 확인하지 않�
   assert.equal(await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec: async () => { throw new Error('명령 호출 금지') } }), null)
 })
 
+test('작업 폴더를 읽는 설치본에는 갱신 명령이나 폴더 안 git 명령을 실행하지 않는다', async t => {
+  const f = fixture(t)
+  const checkout = join(f.root, 'checkout')
+  mkdirSync(checkout)
+  const file = join(f.home, 'plugins', 'installed_plugins.json')
+  writeFileSync(file, JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', version: '1.0.0', installPath: checkout }] } }))
+  const calls: { argv: string[]; cwd?: string }[] = []
+  const exec = async (argv: string[], opts: { cwd?: string } = {}) => {
+    calls.push({ argv, cwd: opts.cwd })
+    if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
+    if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    throw new Error('개발용 설치에 명령을 실행했다')
+  }
+  const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec, now: 1000 })
+  assert.deepEqual(report?.results, [])
+  assert.deepEqual(calls.map(call => call.argv[0]), ['git', 'curl'])
+  assert.ok(calls.every(call => call.cwd !== checkout))
+})
+
 test('main 보다 높은 설치본을 낮추지 않고 local scope 는 기록된 프로젝트에서 갱신한다', async t => {
   const f = fixture(t)
   const project = join(f.root, 'local-project')
