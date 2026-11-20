@@ -1,0 +1,1 @@
+- 큐가 `--finish-log-dir` 로 다른 곳에 둔 마무리도 `orch followup done` 이 그 pid 파일로 알아본다. 전에는 도는 마무리를 못 보고 하나 더 띄웠다.

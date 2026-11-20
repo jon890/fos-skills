@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -346,7 +346,10 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
     mkdirSync(handoff, { recursive: true })
     writeFileSync(join(handoff, 'body.md'), '본문')
-    const args = ['--specs-dir', c.specs, '--complete']
+    // 큐가 --finish-log-dir 로 정한 pid 파일이다. followup done 이 이 파일로 도는 마무리를 알아본다
+    const pidFile = join(c.repo, 'finish-logs', 'finish-77.pid')
+    mkdirSync(dirname(pidFile), { recursive: true })
+    const args = ['--specs-dir', c.specs, '--complete', '--pid-file', pidFile]
     // 정리 도구는 후속 검증 대기의 워크트리를 남긴다(docs/features/cleanup-keep-lost/spec.md 의 REQ3)
     const kept = { FAKE_SWEEP_REMOVES: '0', FAKE_SWEEP_SAY: '남김 <WT>: 기능 후속 검증이 끝나지 않았다: 후속 검증 이 완료되지 않았다: 대기 | 배포 후 smoke' }
     const waiting = await c.finish(args, kept)
@@ -366,6 +369,7 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(saved[0].done_at, null)
     // 처음 마무리의 옵션을 남겨 followup done 이 그대로 다시 쓴다
     assert.deepEqual(saved[0].finish_args, ['--specs-dir', c.specs, '--complete'])
+    assert.equal(saved[0].pid_file, pidFile)
     // 같은 PR 을 다시 돌려도 항목은 하나다
     const again = await c.finish(args, kept)
     assert.match(again.stdout, /^FOLLOWUP-KEPT #77 /m)
