@@ -1683,11 +1683,12 @@ function importedModules(code: string): string[] {
 
 function importsSource(test: string, source: string, modules: string[]): boolean {
   const stem = source.slice(0, -pathSuffix(source).length)
+  const targets = stem.endsWith('/index') ? [stem, stem.slice(0, -'/index'.length)] : [stem]
   return modules.some((module) => {
     const target = module.replace(/\.(?:tsx?|jsx?|mjs|cjs|py|java|kt)$/, '')
-    if (target.startsWith('.')) return posix.normalize(posix.join(posix.dirname(test), target)) === stem
+    if (target.startsWith('.')) return targets.includes(posix.normalize(posix.join(posix.dirname(test), target)))
     const alias = target.replace(/^[@~]\//, '')
-    return alias.includes('/') && (stem === alias || stem.endsWith(`/${alias}`))
+    return alias.includes('/') && targets.some((value) => value === alias || value.endsWith(`/${alias}`))
   })
 }
 
@@ -1699,7 +1700,8 @@ export function checkImportedTests(phaseEntries: [string, string, Entry[]][], re
     .filter(([rel, action]) => action === '수정' && CODE_SUFFIXES.has(pathSuffix(rel)) && !isTest(rel) && !isGlob(rel) && isFile(`${repo}/${rel}`))
     .map(([rel]) => rel)))]
   if (!modified.length) return
-  const names = [...new Set(modified.map(pathStem))]
+  // index 파일을 폴더 경로로 import 할 수 있으므로 부모 폴더 이름도 검색한다.
+  const names = [...new Set(modified.flatMap((rel) => pathStem(rel) === 'index' ? ['index', posix.basename(posix.dirname(rel))] : [pathStem(rel)]))]
   const found = capture(['git', '-C', repo, 'grep', '-l', '-F', ...names.flatMap((name) => ['-e', name]), '--', ...IMPORT_TEST_PATHS])
   if (found.code !== 0 && found.code !== 1) return
   const candidates = pySplitLines(found.stdout).filter((rel) => isTest(rel) && CODE_SUFFIXES.has(pathSuffix(rel)) && !planned.has(rel) && !plannedGlobs.some((glob) => matches(rel, glob)) && !prefixes.some((p) => rel.startsWith(p)))

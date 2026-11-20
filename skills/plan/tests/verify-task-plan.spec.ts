@@ -521,6 +521,17 @@ test('읽지 못하는 테스트 후보는 건너뛰고 다른 테스트의 경�
   assert.ok(has(result.warnings, 'src/screens.test.tsx'), result.stdout)
 })
 
+test('index 파일을 폴더 경로로 import 하는 테스트도 경고한다', () => {
+  const repo = callerRepo({
+    'src/comp/index.ts': 'export const value = 1\n',
+    'src/comp.test.ts': "import { value } from './comp'\n",
+  })
+  writePlan(repo, 'plan1-a', [{ work: '### 1. 모듈 수정과 `src/new.test.ts` 작성', entries: [['src/comp/index.ts', '수정'], ['src/new.test.ts', '신규']], command: 'node --test src/new.test.ts' }])
+  const result = verify(repo, ['plan1-a'])
+  assert.equal(result.code, 0, result.stdout)
+  assert.ok(has(result.warnings, '`src/comp/index.ts` 을 import 하는 테스트가 plan 의 변경 파일에 없다: src/comp.test.ts'), result.stdout)
+})
+
 // 기능 계약 연결
 
 const feature = (spec = VALID) => {
