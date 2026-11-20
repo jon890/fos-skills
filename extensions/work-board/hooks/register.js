@@ -99,6 +99,7 @@ const GITHUB_TIMEOUT_MS = 90000
 const MARKS_TIMEOUT_MS = 30000
 // inbox.ts 는 1분마다 부르고, 두레이에서 받기는 inbox 설정의 주기(기본 5분)가 지났을 때만 한다(D15)
 const INBOX_MS = 60000
+const FEEDBACK_MS = 5 * 60 * 1000
 // 받는 주기에는 두레이 호출이 수십 번 들 수 있어 다른 명령보다 길게 기다린다
 const INBOX_TIMEOUT_MS = 90000
 // main 의 최신 커밋은 세션 시작, /board 열 때, 활성 상태에서 이 주기, 갱신 직후에 읽는다(D2).
@@ -146,6 +147,8 @@ let prsReadAt = ''
 let inbox = null
 let inboxError = ''
 let inboxBusy = false
+let feedbackCount = 0
+let feedbackBusy = false
 // 이 세션에서 알림함이 켜진 것을 본 적이 있는지. 설정이 없는 사용자에게 node 실패를 오류 상자로 보이지 않으려는 것이다(R6)
 let inboxSeen = false
 // x: 켜져 있으면 숫자 단축키가 답변 요청문 대신 그 알림을 넘긴다. 넘기거나 다시 x 를 누르면 꺼진다
@@ -1273,6 +1276,7 @@ async function boardRoot($) {
   const cwd = await $.session.cwd()
   if (cwd !== rootCwd) {
     rootCwd = cwd
+    feedbackCount = 0
     try {
       rootDir = mainRoot(await run($, ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']))
     } catch {
@@ -1417,8 +1421,25 @@ async function pollNetwork($, force = false) {
   return networkPoll.poll(at, visible, [
     { key: 'prs', every: PR_MS, read: () => loadGithub($) },
     { key: 'inbox', every: INBOX_MS, read: () => loadInbox($) },
+    { key: 'feedback', every: FEEDBACK_MS, read: () => loadFeedbackCount($) },
     { key: 'version', every: VERSION_MS, read: () => loadLatest($) },
   ], force, () => $.clock.now())
+}
+
+async function loadFeedbackCount($) {
+  if (feedbackBusy) return
+  feedbackBusy = true
+  try {
+    const root = (await boardRoot($)) || (await $.session.cwd())
+    const script = $.plugin.root + '/extensions/work-board/bin/feedback-count.ts'
+    const count = Number((await run($, ['node', '--disable-warning=ExperimentalWarning', script, root], COMMAND_TIMEOUT_MS)).trim())
+    if (Number.isSafeInteger(count) && count >= 0) feedbackCount = count
+  } catch (error) {
+    // 조회가 실패해도 버튼을 그릴 수 있게 직전 값을 남기고 원인을 한 줄 기록한다.
+    console.warn('[work-board] 피드백 개수 조회 실패: ' + String(error.message || error))
+  }
+  finally { feedbackBusy = false }
+  $.ui.invalidate('ui.render')
 }
 
 // 업무 알림을 읽는다. 받기와 필터는 inbox.ts 가 하고, 여기서는 주 checkout 경로만 넘긴다
@@ -1733,6 +1754,14 @@ export const DECIDE_PROMPT = [
   '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
   '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',
   '8. 처리한 막힘은 이어갈 일이 있는 worker 면 4번 규칙대로 원래 질문의 스레드에 답해 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
+].join('\n')
+
+export const FEEDBACK_PROMPT = [
+  '스킬 개선 피드백을 반영하자.',
+  '1. orch feedback collect 로 후보와 지금 보낼 수 있는 알림을 모아 보여 줘.',
+  '2. 판정할 후보는 orch 스킬의 references/feedback-review.md 에 따라 core 에 필요한지부터 판정하고, 근거와 권장안을 사용자에게 올려 줘.',
+  '3. 사용자가 고른 후보만 지시서로 써서 worker 에게 맡기고, PR 머지와 플러그인 버전 올림을 확인해 줘.',
+  '4. orch feedback notify 로 반영 또는 기각 결과를 원래 저장소에 알려 줘.',
 ].join('\n')
 
 function fillPrompt($, text) {
@@ -2326,6 +2355,13 @@ export function register(on) {
                 plain: true,
                 onPress: () => { fillPrompt($, DECIDE_PROMPT) },
               }),
+              ...(feedbackCount > 0 ? [Button({
+                key: 'feedback',
+                label: '피드백 반영 (' + feedbackCount + ')',
+                hotkey: 'f',
+                plain: true,
+                onPress: () => { fillPrompt($, FEEDBACK_PROMPT) },
+              })] : []),
               ...(alerts.show ? [Button({
                 key: 'inbox-all',
                 label: '알림 답변',

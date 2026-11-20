@@ -1,10 +1,10 @@
 // 여러 저장소의 피드백 조회와 알림 조건. collect는 읽기 전용, notify만 원래 파일을 고친다.
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { acceptedPr, duplicateOf, isCore, parse, scan, type Candidate } from './feedback.ts'
-import { pathOf } from './paths.ts'
+import { ensure, pathOf } from './paths.ts'
 import { orcaJson } from './orca.ts'
 import { findMain } from './main-coordinator.ts'
 import { notifyRun } from './run-notice.ts'
@@ -13,6 +13,50 @@ import { moveToTrash } from './spec.ts'
 export type FeedbackRepo = { name: string; path: string }
 export type FeedbackRow = { repo: FeedbackRepo; candidate: Candidate; group: string; detail?: string; pr?: number; version?: string; resultStatus?: string }
 export type FeedbackCollected = { rows: FeedbackRow[]; errors: string[]; core: FeedbackRepo }
+const BOARD_CACHE = 'feedback-board-cache.json'
+const BOARD_CACHE_MS = 30 * 60 * 1000
+function cacheFile(core: FeedbackRepo): string { return join(pathOf('state', core.path), BOARD_CACHE) }
+function canonical(path: string): string { try { return realpathSync(path) } catch { return path } }
+
+// collect/notify의 마지막 분류만 기록한다. 후보 파일과 메시지는 건드리지 않는다.
+function saveBoardCache(collected: FeedbackCollected): void {
+  const file = cacheFile(collected.core)
+  const entries = collected.rows.filter(row => row.group === '보낼 알림')
+    .map(row => ({ repo: canonical(row.repo.path), slug: row.candidate.slug, status: row.candidate.values.상태 }))
+  try {
+    ensure('state', collected.core.path)
+    const temp = `${file}.tmp-${process.pid}`
+    writeFileSync(temp, JSON.stringify({ at: Date.now(), entries }))
+    renameSync(temp, file)
+  } catch { /* 캐시 오류는 collect의 후보 조회를 막지 않는다 */ }
+}
+
+// 보드에서는 파일만 읽는다. PR 결과가 필요한 알림은 최근 collect 결과에 있을 때만 센다.
+export function localFeedbackCount(repoPath: string, repos: FeedbackRepo[] = feedbackRepos(), time = Date.now()): number {
+  const core = repos.find(row => row.name === 'fos-skills')
+  if (!core) throw new Error('Orca 저장소 목록에 fos-skills가 없다')
+  const current = canonical(repoPath)
+  const coreBoard = current === canonical(core.path)
+  let entries: Array<{ repo: string; slug: string; status: string }> = []
+  try {
+    const cache = JSON.parse(readFileSync(cacheFile(core), 'utf8'))
+    if (typeof cache.at === 'number' && time - cache.at >= 0 && time - cache.at <= BOARD_CACHE_MS && Array.isArray(cache.entries)) entries = cache.entries
+  } catch { /* 저장본이 없으면 PR 판정이 필요한 알림을 세지 않는다 */ }
+  const sendable = new Set(entries.map(row => `${row.repo}\t${row.slug}\t${row.status}`))
+  let count = 0
+  for (const repo of coreBoard ? repos : repos.filter(row => canonical(row.path) === current)) {
+    const dir = pathOf('feedback', repo.path)
+    if (!existsSync(dir)) continue
+    for (const candidate of scan(dir).candidates) {
+      const status = candidate.values.상태
+      if (existsSync(sentMarker(candidate.file))) continue
+      if (status === '후보' && (coreBoard ? isCore(candidate) || canonical(repo.path) === current : !isCore(candidate))) count++
+      else if ((status.startsWith('반영됨 ') || status.startsWith('기각(')) && canonical(repo.path) === current) count++
+      else if (coreBoard && isCore(candidate) && sendable.has(`${canonical(repo.path)}\t${candidate.slug}\t${status}`)) count++
+    }
+  }
+  return count
+}
 type Pr = { state: string; mergeCommit?: { oid?: string } }
 export function sentMarker(file: string): string { return `${file}.sent` }
 
@@ -146,7 +190,9 @@ export function collectFeedback(repos = feedbackRepos(), trash = join(homedir(),
     else if (status === '후보') rows.push({ ...base, group: isCore(candidate) ? '판정할 core 후보' : '저장소 몫' })
     else if (status.startsWith('보류(')) rows.push({ ...base, group: isCore(candidate) ? '보류' : '저장소 몫' })
   }
-  return { rows, errors, core }
+  const collected = { rows, errors, core }
+  saveBoardCache(collected)
+  return collected
 }
 
 export function saveStatus(candidate: Candidate, status: string): void {

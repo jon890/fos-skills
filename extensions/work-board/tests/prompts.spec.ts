@@ -5,7 +5,22 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { START_PROMPT, DECIDE_PROMPT } from '../hooks/register.js'
+import { START_PROMPT, DECIDE_PROMPT, FEEDBACK_PROMPT } from '../hooks/register.js'
+
+test('피드백 요청문은 기존 판정 절차를 가리키고 알림까지 잇는다', () => {
+  for (const text of ['orch feedback collect', 'references/feedback-review.md', 'core 에 필요한지', '사용자가 고른', 'worker', 'PR 머지', '플러그인 버전', 'orch feedback notify']) {
+    assert.ok(FEEDBACK_PROMPT.includes(text), text)
+  }
+  assert.doesNotMatch(FEEDBACK_PROMPT, /prompt\.submit/)
+})
+
+test('피드백 버튼은 개수가 있을 때만 보이고 f가 요청문을 채운다', () => {
+  const hook = read('extensions/work-board/hooks/register.js')
+  assert.match(hook, /feedbackCount > 0 \? \[Button\(\{/)
+  assert.match(hook, /label: '피드백 반영 \(' \+ feedbackCount \+ '\)'/)
+  assert.match(hook, /key: 'feedback',[\s\S]*?hotkey: 'f',[\s\S]*?fillPrompt\(\$, FEEDBACK_PROMPT\)/)
+  assert.match(hook, /every: FEEDBACK_MS, read: \(\) => loadFeedbackCount\(\$\)/)
+})
 
 const read = (path: string) => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8')
 
