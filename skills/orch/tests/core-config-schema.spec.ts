@@ -105,12 +105,13 @@ describe('짝 규칙', () => {
     { name: 'finish complete 와 intermediate', section: 'finish', bad: { complete: true, intermediate: true }, good: { complete: true, intermediate: false }, path: 'finish.complete' },
     { name: 'queue overlap 과 require_up_to_date', section: 'queue', bad: { up_to_date_when: 'overlap' }, good: { up_to_date_when: 'overlap', require_up_to_date: true }, path: 'queue.up_to_date_when' },
     { name: 'queue shared_paths 는 overlap 일 때만', section: 'queue', bad: { shared_paths: '^a/' }, good: { shared_paths: '^a/', up_to_date_when: 'overlap', require_up_to_date: true }, path: 'queue.shared_paths' },
+    { name: 'queue shared_groups 는 overlap 일 때만', section: 'queue', bad: { shared_groups: { m: '^a/' } }, good: { shared_groups: { m: '^a/' }, up_to_date_when: 'overlap', require_up_to_date: true }, path: 'queue.shared_groups' },
     { name: 'queue update_docs_on_overlap 에 docs_glob', section: 'queue', bad: { update_docs_on_overlap: true }, good: { update_docs_on_overlap: true, docs_glob: 'docs/**' }, path: 'queue.update_docs_on_overlap' },
     { name: 'queue poll_min_sec 가 poll_max_sec 이하', section: 'queue', bad: { poll_min_sec: 400 }, good: { poll_min_sec: 10, poll_max_sec: 20 }, path: 'queue.poll_min_sec' },
   ]
-  test('일곱 규칙이 모두 PAIRS 에 있다', () => {
-    assert.equal(Object.values(PAIRS).flat().length, 7)
-    assert.equal(rules.length, 7)
+  test('여덟 규칙이 모두 PAIRS 에 있다', () => {
+    assert.equal(Object.values(PAIRS).flat().length, 8)
+    assert.equal(rules.length, 8)
   })
   for (const rule of rules) {
     test(rule.name, () => {
@@ -119,11 +120,6 @@ describe('짝 규칙', () => {
       assert.deepEqual(problems({ [rule.section]: rule.good }), [])
     })
   }
-
-  test('queue shared_groups 도 overlap 일 때만 둔다. 문제 경로는 그 규칙의 첫 키(shared_paths)다', () => {
-    assert.deepEqual(problems({ queue: { shared_groups: { m: '^a/' } } }).map((problem) => [problem.path, problem.kind]), [['queue.shared_paths', 'pair']])
-    assert.deepEqual(problems({ queue: { shared_groups: { m: '^a/' }, up_to_date_when: 'overlap', require_up_to_date: true } }), [])
-  })
 
   test('같은 절의 오타 키나 다른 키의 틀린 값이 있어도 짝 규칙 문제가 나온다', () => {
     const found = problems({ queue: { poll_min_sec: 400, poll_max_sec: 300, poll_min_secs: 1, method: 'fast' } })

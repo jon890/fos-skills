@@ -366,11 +366,15 @@ export const PAIRS: Readonly<Partial<Record<Section, readonly Pair[]>>> = {
       check: (body) => (body.up_to_date_when === 'overlap' && body.require_up_to_date !== true ? 'up_to_date_when 이 overlap 이면 require_up_to_date 가 true 여야 한다' : null),
     },
     {
-      keys: ['shared_paths', 'shared_groups', 'unit_groups', 'up_to_date_when'],
+      keys: ['shared_paths', 'unit_groups', 'up_to_date_when'],
       check: (body) =>
-        (present(body, 'shared_paths') || present(body, 'shared_groups') || present(body, 'unit_groups')) && (body.up_to_date_when ?? 'always') !== 'overlap'
-          ? 'shared_paths, shared_groups, unit_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다'
+        (present(body, 'shared_paths') || present(body, 'unit_groups')) && (body.up_to_date_when ?? 'always') !== 'overlap'
+          ? 'shared_paths 와 unit_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다'
           : null,
+    },
+    {
+      keys: ['shared_groups', 'up_to_date_when'],
+      check: (body) => (present(body, 'shared_groups') && (body.up_to_date_when ?? 'always') !== 'overlap' ? 'shared_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다' : null),
     },
     {
       keys: ['update_docs_on_overlap', 'docs_glob'],

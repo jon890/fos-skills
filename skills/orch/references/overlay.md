@@ -128,7 +128,7 @@ orch config unset contracts.merge_command contracts.paths
 | `review` | `prepare` | 리뷰 worker 를 띄울 때 PR head 의 워크트리에서 한 번 돌리는 생성물 준비 명령(bash 문자열). 쓰는 법은 [`spec-writing.md`](spec-writing.md) 의 「리뷰 worker 지시서」 가 소유한다 |
 | `worker` | `commit_check` | worker 워크트리에 한국어 커밋 검사 훅을 걸지(bool, 기본 true). false 면 그 저장소의 worker 에는 걸지 않는다. 동작은 [`launch.md`](launch.md) 의 「한국어 커밋 검사」 가 소유한다 |
 
-짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`shared_groups`·`unit_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
+짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`unit_groups` 와 `shared_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
 
 아래는 저장된 파일의 모양이다. 값 변경은 위 「설정 바꾸기」 의 명령을 쓴다.
 
