@@ -14,13 +14,21 @@
 
 | 자리 | 원본 | 대조 |
 | --- | --- | --- |
+| 절 이름과 순서 | 사용자가 정한 뼈대([`readability.md`](readability.md)) | 자동(`checkReadmeOutline`) |
 | 「스킬 목록」 표의 행 | `.claude-plugin/plugin.json` 의 `skills` | 자동(`checkSkillList`) |
-| 「스킬 목록」 표의 「하는 일」 | 각 스킬 `SKILL.md` 의 목표 줄과 `description` | 의미 |
+| 「스킬 목록」 표의 「언제 쓰나」 | 각 스킬 `SKILL.md` 의 목표 줄과 `description` | 의미 |
+| 「설치와 갱신」 의 명령 | `.claude-plugin/marketplace.json`, `docs/flow.md` 「설치」 | 의미 |
+| 「기여」 의 명령 | `docs/contributing.md` 「준비」, 「테스트」, 「PR」 | 의미 |
+| 문서 안의 `orch <묶음> <동작>` | `skills/orch/scripts/lib/commands.ts` 의 명령 표 | 자동(`checkOrchCommands`) |
+
+## docs/contributing.md
+
+| 자리 | 원본 | 대조 |
+| --- | --- | --- |
 | 「저장소 구조」 표의 경로 | 저장소의 실제 폴더 | 자동(`checkPaths`) |
 | 「공용 도구」 의 `scripts/` 표 | 각 `scripts/*.ts` 의 머리 주석 | 경로는 자동(`checkPaths`), 설명은 의미 |
-| 「기여」 의 테스트 명령과 옵션 | `scripts/run-tests.ts` 머리 주석, `.github/workflows/` 의 CI 정의(Claude Code CLI 버전, Node 버전) | 의미 |
+| 「테스트」 의 명령과 옵션 | `scripts/run-tests.ts` 머리 주석, `.github/workflows/` 의 CI 정의(Claude Code CLI 버전, Node 버전) | 의미 |
 | 「버전과 변경 이력」 | `scripts/skill_changes.ts`, `scripts/bump-plugin-version.ts`, `.github/workflows/plugin-version.yml` | 의미 |
-| 문서 안의 `orch <묶음> <동작>` | `skills/orch/scripts/lib/commands.ts` 의 명령 표 | 자동(`checkOrchCommands`) |
 
 ## docs/
 
@@ -42,7 +50,7 @@
 | --- | --- | --- |
 | `skills/<이름>/README.md` 의 사용 예시와 「받는 것」 | 그 스킬의 `SKILL.md` 단계와 출력 | 의미 |
 | `skills/<이름>/README.md` 전체 | 그 스킬의 `CHANGELOG.md` 가운데 README 를 마지막으로 고친 뒤 생긴 절 | 의미. 범위는 오버레이의 「README 뒤에 바뀐 스킬」 명령으로 고른다 |
-| `skills/<이름>/README.md` 의 형식 | 루트 README 「스킬 README」 | `scripts/check-skill-docs.ts` 가 본다. 이 스킬에서 다시 보지 않는다 |
+| `skills/<이름>/README.md` 의 형식 | `docs/contributing.md` 「스킬 README」 | `scripts/check-skill-docs.ts` 가 본다. 이 스킬에서 다시 보지 않는다 |
 | `skills/<이름>/README.md` 의 경로 | 그 스킬 폴더의 실제 파일 | 자동(`checkPaths`) |
 | `extensions/work-board/README.md` 「단축키」 표와 본문의 한 글자 키 | `extensions/work-board/hooks/register.js` 의 `Button` `hotkey` | 자동(`checkBoardHotkeys`) |
 | `extensions/work-board/README.md` 「화면」 표 | `register.js` 의 상자 렌더링 | 의미 |
