@@ -27,7 +27,6 @@
 | `skills/<이름>/` | 설치 스킬과 그 스킬의 references·templates·scripts·hooks·tests |
 | `export-only-skills/<이름>/` | 팀 내보내기 원본. 플러그인 스킬로도 등록한다 |
 | `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
-| `tools/` | 여러 스킬이 쓰는 공용 도구 |
 | `modules/` | 여러 영역의 테스트와 코드가 함께 쓰는 공용 모듈. 스킬이 아니다. 팀 저장소로 내보내지 않는다 |
 | `modules/kit/` | 옛 Python 명령과 같은 글자를 내는 실행용 helper(argparse 꼴 옵션 펼치기, `str.splitlines` 같은 Python 꼴). `scripts/` 와 `githooks/` 는 import 하고, 스킬과 도구는 복사본을 둔다(설계 [`features/node-runtime/design.md`](features/node-runtime/design.md) 「공통 꼴 모듈 kit」) |
 | `modules/testkit/` | 테스트용 helper. 이 저장소의 테스트만 쓴다 |
@@ -46,13 +45,13 @@
 ```json
 {
   "name": "fos-skills",
-  "description": "여러 저장소가 함께 쓰는 Claude Code 워크플로 스킬 모음",
+  "description": "기능 스펙부터 구현·검증·문서 개선까지 연결하는 소프트웨어 엔지니어링 스킬 모음",
   "owner": { "name": "jon890" },
   "plugins": [
     {
       "name": "fos-skills",
       "source": "./",
-      "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리 스킬"
+      "description": "기능 스펙부터 구현·검증·문서 개선까지 연결하는 소프트웨어 엔지니어링 스킬 모음"
     }
   ]
 }
@@ -91,7 +90,7 @@
 ## 스킬 사이의 경로 참조
 
 설치하면 저장소 루트가 `~/.claude/plugins/cache/fos-skills/fos-skills/<version>/` 로 복사된다.
-스킬 디렉터리는 캐시 안에서도 서로 형제이고 `tools/` 도 같은 루트에 있다.
+스킬 디렉터리는 캐시 안에서도 서로 형제다. 공용 도구도 소유 스킬 폴더 안에 있어 같은 루트 아래에서 풀린다.
 
 | 참조 | 플러그인 설치에서의 동작 |
 | --- | --- |
@@ -187,7 +186,7 @@
 ## orch 코어와 핸들러
 
 이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
-상주 루프의 자동 진행 가운데 ready 슬롯, base 합치기, 문서 PR 머지와 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge` 로 따로 켠다([ADR-016](adr/016-orch-auto-merge.md)).
+상주 루프의 자동 진행 가운데 문서 PR 바로 머지, 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. ready 슬롯은 `pipeline.ready_slots`, 뒤처진 PR 의 base 합치기는 `pipeline.refresh_slots`([ADR-020](adr/020-orch-loop-refresh.md)), 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge`([ADR-016](adr/016-orch-auto-merge.md))로 켠다.
 이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
@@ -225,7 +224,7 @@ skills/orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호�
 skills/orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
 skills/orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 skills/orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
-skills/orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할. 셸에서 부르는 명령은 orch_paths.ts
+skills/orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할. 셸에서 부르는 명령은 paths/orch_paths.ts
 skills/orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 skills/orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
 skills/orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)

@@ -172,7 +172,6 @@ fos-skills 는 소프트웨어 개발의 각 단계를 연결하는 종합 스�
 | `skills/<이름>/` | 설치해서 쓰는 스킬. 절차·참조·양식·스크립트·테스트를 함께 둬요 |
 | `export-only-skills/<이름>/` | 팀 저장소로 내보내는 원본. 플러그인 스킬로도 등록해요 |
 | `extensions/work-board/` | 작업 현황 창과 보드 명령 |
-| `tools/` | 여러 스킬이 사용하는 공용 도구 |
 | `scripts/` | 저장소 검사·설치·내보내기·버전 관리 |
 | `githooks/` | 이 저장소를 개발할 때 쓰는 Git 훅 |
 | `docs/` | 개발 흐름·아키텍처·ADR |
@@ -247,7 +246,7 @@ claude plugin install fos-skills@fos-skills
 
 ### 갱신
 
-플러그인에 버전을 쓰지 않아서, 버전을 올리지 않아도 main 의 새 커밋을 받아요.
+main 에 머지될 때마다 workflow 가 플러그인 version 을 올려요. 아래 명령으로 그 새 버전을 받아요. 사람이 버전을 올릴 일은 없어요(아래 「버전과 변경 이력」).
 
 ```bash
 claude plugin update fos-skills@fos-skills

@@ -14,8 +14,8 @@ claude plugin details fos-skills@fos-skills
 ```
 
 이 설치로 매니페스트의 skills 배열에 등록한 스킬을 받는다.
-`content-preview` 와 `korean-check` 의 원본은 여기 있고, 스킬로는 사본을 넣는 팀 저장소의 플러그인으로 받는다.
-그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
+`content-preview` 와 `korean-check` 는 원본을 `export-only-skills/` 에 두고 이 플러그인의 스킬로도 등록한다([ADR-034](adr/034-export-only-skills-registered.md)).
+사본을 넣는 팀 저장소의 플러그인도 설치했으면 같은 스킬이 접두사만 다르게 두 번 보인다.
 파일은 이 플러그인의 설치 캐시에도 남으므로 경로로 직접 읽고 실행할 수 있다.
 
 ```mermaid
@@ -137,7 +137,7 @@ flowchart TD
 ## orch 이벤트
 
 이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)).
-상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+상주 루프의 자동 머지(`queue.auto_merge`)와 뒤처진 PR 최신화(`pipeline.refresh_slots`), ready 슬롯(`pipeline.ready_slots`)은 구현했다. 문서 PR 바로 머지, `after-queue` 묶기, `ci-missing` 은 아직 내는 코드가 없다. [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이 그 키를 「읽는 코드가 없다」 로 적는다.
 이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
 
