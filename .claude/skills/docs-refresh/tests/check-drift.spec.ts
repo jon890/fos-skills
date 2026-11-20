@@ -13,8 +13,11 @@ import {
   checkEvents,
   checkOrchCommands,
   checkPaths,
+  checkReadmeOutline,
+  README_OUTLINE,
   checkSkillList,
   pathBases,
+  targetDocs,
   eventSpecs,
   sectionTable,
   splitRow,
@@ -120,6 +123,37 @@ describe('경로', () => {
     const only = (p: string) => p === 'skills/orch/references/board.md'
     assert.deepEqual(checkPaths('`references/board.md`\n', bases, only).map((d) => d.line), [1])
     assert.deepEqual(pathBases('docs/flow.md', components), ['', 'skills/orch', 'skills/spec'])
+  })
+
+  test('README 에서 옮긴 기여 문서도 대조 대상이다', (t) => {
+    const root = tempDir('docs-refresh-', t)
+    for (const d of ['README.md', 'docs/contributing.md', 'docs/flow.md', 'skills/a/README.md']) {
+      mkdirSync(join(root, d, '..'), { recursive: true })
+      writeFileSync(join(root, d), '# x\n')
+    }
+    assert.deepEqual(targetDocs(root), ['README.md', 'docs/contributing.md', 'docs/flow.md', 'skills/a/README.md'])
+  })
+})
+
+describe('README 뼈대', () => {
+  const ok = README_OUTLINE.map((t) => `## ${t}\n\n본문\n`).join('\n')
+
+  test('뼈대대로면 어긋남이 없고 코드 펜스 안의 제목은 보지 않는다', () => {
+    assert.deepEqual(checkReadmeOutline(`# x\n\n${ok}\n\`\`\`md\n### 예시\n\`\`\`\n`), [])
+  })
+
+  test('하위 절, 뼈대 밖 절, 빠진 절을 알린다', () => {
+    const md = ok.replace('## 화면\n', '## 만든 이유\n').replace('## 기여\n\n본문\n', '## 기여\n\n### 고치는 동안\n')
+    assert.deepEqual(checkReadmeOutline(md).map((d) => d.message), [
+      '하위 절 「고치는 동안」 을 두지 않는다. 상세는 docs/ 로 옮긴다',
+      '절 「만든 이유」 이 README 뼈대에 없다. 상세는 docs/ 로 옮긴다',
+      'README 뼈대의 절 「화면」 이 없다',
+    ])
+  })
+
+  test('순서가 다르면 알린다', () => {
+    const md = README_OUTLINE.slice().reverse().map((t) => `## ${t}\n`).join('')
+    assert.deepEqual(checkReadmeOutline(md).map((d) => d.line), [1])
   })
 })
 

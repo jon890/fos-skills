@@ -22,4 +22,4 @@
   - 감당할 것: 봇의 push 가 옛 방식 PR 과 CHANGELOG 에서 겹치면 `git pull --rebase` 가 실패해 3회 뒤 workflow 가 끝난다. 수동으로 복구한다.
   - 감당할 것: 스킬 폴더를 옮기면 조각 추가가 이름 변경으로 잡혀 머지 순서를 모르고 이름순으로 처리한다.
   - 팀 저장소 내보내기는 `changes/` 를 제외한다. 사본은 main 에서 조각이 지워진 뒤의 버전을 받는다.
-- **적용 범위**: 조각 이름과 형식, 직접 올림과 섞지 않는 규칙은 저장소 README 「버전과 변경 이력」 이 소유한다. 조각의 검사와 적용은 `scripts/skill_changes.ts` 가 소유한다. 설계는 `docs/features/version-at-merge/` 에 있다.
+- **적용 범위**: 조각 이름과 형식, 직접 올림과 섞지 않는 규칙은 [contributing.md](../contributing.md#버전과-변경-이력) 「버전과 변경 이력」 이 소유한다. 조각의 검사와 적용은 `scripts/skill_changes.ts` 가 소유한다. 설계는 `docs/features/version-at-merge/` 에 있다.

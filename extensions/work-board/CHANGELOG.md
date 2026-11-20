@@ -1,7 +1,7 @@
 # CHANGELOG: work-board
 
 work-board 는 스킬이 아닌 mod 이므로 이 파일에서 변경 이력을 시작한다.
-버전 등급과 쓰는 형식은 저장소 README 의 「버전과 변경 이력」 을 따른다.
+버전 등급과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 「버전과 변경 이력」 을 따른다.
 
 ## 1.30.0 (2026-11-17)
 

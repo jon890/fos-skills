@@ -1,6 +1,6 @@
 # CHANGELOG: korean-check
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
-올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
+올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
 ## 3.2.1 (2026-11-20)
 

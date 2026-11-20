@@ -66,7 +66,7 @@ for cand in "${BROWSER_DRIVER_PATH:-}" "$SKILL_DIR/browser-driver/browser_driver
 done
 ```
 
-아무것도 나오지 않으면 README 의 「링크로 설치」 대로 `~/.claude/scripts/browser-driver` 링크를 걸어 달라고 사용자에게 알린다.
+아무것도 나오지 않으면 fos-skills 저장소 `docs/contributing.md` 의 「링크로 설치」 대로 `~/.claude/scripts/browser-driver` 링크를 걸어 달라고 사용자에게 알린다.
 
 ```bash
 B="$HOME/.claude/scripts/browser-driver"

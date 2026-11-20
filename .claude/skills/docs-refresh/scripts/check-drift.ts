@@ -213,6 +213,31 @@ export function checkPaths(md: string, bases: string[], exists: (path: string) =
   return out
 }
 
+// 7. 루트 README 의 절 뼈대. 처음 보는 사람이 핵심만 읽게 사용자가 정한 순서다(사용자 결정 2026-11-20).
+// 절을 더하거나 `###` 하위 절을 두면 상세가 README 로 돌아온 것이다. 상세는 docs/flow.md, docs/contributing.md, 스킬 README 에 둔다.
+// 뼈대를 바꾸는 것은 사용자 결정이라, 바꾸면 이 목록과 ../references/readability.md 를 함께 고친다
+export const README_OUTLINE = ['흐름', '스킬 목록', '설치와 갱신', '처음 써 보기', '화면', '기여']
+
+export function checkReadmeOutline(readme: string): Omit<Drift, 'doc'>[] {
+  const out: Omit<Drift, 'doc'>[] = []
+  const found: { line: number; title: string }[] = []
+  let fence = false
+  readme.split('\n').forEach((l, i) => {
+    if (/^\s*```/.test(l)) fence = !fence
+    if (fence) return
+    const m = /^(#{2,6}) (.+)$/.exec(l)
+    if (!m) return
+    if (m[1].length > 2) out.push({ line: i + 1, message: `하위 절 「${m[2].trim()}」 을 두지 않는다. 상세는 docs/ 로 옮긴다` })
+    else found.push({ line: i + 1, title: m[2].trim() })
+  })
+  for (const h of found) if (!README_OUTLINE.includes(h.title)) out.push({ line: h.line, message: `절 「${h.title}」 이 README 뼈대에 없다. 상세는 docs/ 로 옮긴다` })
+  const missing = README_OUTLINE.filter((t) => !found.some((h) => h.title === t))
+  for (const t of missing) out.push({ line: 1, message: `README 뼈대의 절 「${t}」 이 없다` })
+  const order = found.filter((h) => README_OUTLINE.includes(h.title)).map((h) => h.title)
+  if (missing.length === 0 && order.join('\n') !== README_OUTLINE.join('\n')) out.push({ line: 1, message: `절 순서가 뼈대와 다르다: ${README_OUTLINE.join(' > ')}` })
+  return out
+}
+
 // 스킬 폴더 기준 경로를 풀 때 쓰는 폴더들. 루트 기준 상대 경로다
 export function componentDirs(root: string): string[] {
   const out: string[] = []
@@ -230,7 +255,7 @@ export function pathBases(doc: string, components: string[]): string[] {
 }
 
 export function targetDocs(root: string): string[] {
-  const docs = ['README.md', 'docs/flow.md', 'docs/code-architecture.md', 'docs/data-schema.md']
+  const docs = ['README.md', 'docs/contributing.md', 'docs/flow.md', 'docs/code-architecture.md', 'docs/data-schema.md']
   for (const name of readdirSync(join(root, 'skills')).sort()) if (existsSync(join(root, 'skills', name, 'README.md'))) docs.push(`skills/${name}/README.md`)
   docs.push('extensions/work-board/README.md')
   return docs.filter((d) => existsSync(join(root, d)))
@@ -242,6 +267,7 @@ export async function collect(root: string): Promise<Drift[]> {
   const add = (doc: string, list: Omit<Drift, 'doc'>[]) => drifts.push(...list.map((d) => ({ doc, ...d })))
 
   add('README.md', checkSkillList(read('README.md'), JSON.parse(read('.claude-plugin/plugin.json')).skills))
+  add('README.md', checkReadmeOutline(read('README.md')))
   add('extensions/work-board/README.md', checkBoardHotkeys(read('extensions/work-board/README.md'), boardHotkeys(read('extensions/work-board/hooks/register.js'))))
   add('docs/flow.md', checkEvents(read('docs/flow.md'), eventSpecs(read('skills/orch/scripts/lib/events.ts'))))
 
