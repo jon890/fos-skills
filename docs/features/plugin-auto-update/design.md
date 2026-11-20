@@ -12,7 +12,9 @@
 
 ## 책임과 경계
 
-`skills/orch/scripts/loop/plugin-auto-update.ts` 가 확인 주기, 머신 잠금, 설정 폴더 탐색, 갱신, 결과 기록을 맡는다. `lifecycle.ts` 는 틱 직후 이를 호출하고, 기존 설치본 교체 판정과 넘겨주기를 그대로 사용한다. 기존 `self-update.ts` 는 다시 뜰 때 공통 결과 기록을 읽어 알림 문장에 붙인다. `extensions/work-board/hooks/register.js` 는 현재 세션 설치본과 설치 기록의 버전만 대조하며 설치를 직접 바꾸지 않는다.
+`skills/orch/scripts/loop/plugin-auto-update.ts` 가 확인 주기, 머신 잠금, 설정 폴더 탐색, 갱신, 결과 기록을 맡는다. 설치 대상이 없으면 main 조회와 갱신 명령을 부르지 않는다. 홈과 공통 상태 폴더는 테스트에서 환경 변수로 임시 경로를 주입할 수 있다. `lifecycle.ts` 는 틱 직후 이를 호출하고, 기존 설치본 교체 판정과 넘겨주기를 그대로 사용한다. 기존 `self-update.ts` 는 다시 뜰 때 공통 결과 기록을 읽어 알림 문장에 붙인다. `extensions/work-board/hooks/register.js` 는 현재 세션 설치본과 설치 기록의 버전만 대조하며 설치를 직접 바꾸지 않는다.
+
+기본 홈 대상은 `~/.claude` 다. `CLAUDE_CONFIG_DIR` 로 별도 설정 폴더만 쓰는 경우는 이 기능의 기본 탐색 대상에 포함되지 않는다. Orca 프로필은 `ORCA_CLAUDE_PROFILES` 아래에서 별도로 찾는다.
 
 ## 인터페이스와 데이터
 
@@ -20,7 +22,7 @@
 
 머신 공통 상태는 사용자 홈의 캐시 폴더에 마지막 확인 시각, main 버전, 설치본별 결과와 실패 알림을 보낸 버전을 둔다. 이는 설치 기록을 대신하지 않는다. 갱신 명령이 성공하고 설치 기록의 `version` 이 main 과 같을 때 성공으로 판단한다. 상태 기록은 잠금을 쥔 루프만 쓴다. 같은 version 을 다시 읽으면 성공한 설치본은 명령을 호출하지 않고 성공 결과를 유지한다. 늦게 다시 뜬 루프에도 옛 버전과 성공 결과를 알리기 위해서다.
 
-Claude Code의 [mod 타입 선언](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts)은 `$.command.list()` 의 `source` 가 `builtin` 을 구분하고, `$.command.run()` 이 내장 명령을 포함한 슬래시 명령을 세션이 쉴 때 실행한다고 정의한다. 보드는 목록에 `{ name: 'reload-plugins', source: 'builtin' }` 이 있는 경우에만 `{ command: 'reload-plugins' }` 를 보낸다. 명령 출력은 Claude Code 가 채팅에 기록하며 입력란은 건드리지 않는다. 목록에 없거나 실행이 실패하면 다음 확인에서 재시도한다.
+Claude Code의 [mod 타입 선언](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts)은 `$.command.list()` 의 `source` 가 `builtin` 을 구분하고, `$.command.run()` 이 내장 명령을 포함한 슬래시 명령을 세션이 쉴 때 실행한다고 정의한다. 보드는 목록에 `{ name: 'reload-plugins', source: 'builtin' }` 이 있는 경우에만 `{ command: 'reload-plugins' }` 를 보낸다. 명령 출력은 Claude Code 가 채팅에 기록하며 입력란은 건드리지 않는다. 목록에 없거나 실행이 실패하면 `p` 버튼과 수동 갱신 안내를 보인다. 다시 읽은 버전은 설치 기록을 새로 읽고 같은 버전의 중복 실행을 막는다.
 
 ## 실패와 일관성
 
