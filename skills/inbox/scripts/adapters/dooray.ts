@@ -225,8 +225,11 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     if (!Array.isArray(channels)) throw new Error('dooray messenger channels 출력이 목록이 아니다')
     // 지난번에 읽지 못한 방은 바뀌지 않았어도 다시 읽는다
     const retry = new Set(cache.read<string[]>('dooray-retry-channels', []))
+    const titles = cache.read<Record<string, string>>('dooray-channel-titles', {})
     const known = new Map((channels as Json[]).filter((channel) => channel?.id).map((channel) => [String(channel.id), channel]))
-    for (const id of retry) if (!known.has(id)) known.set(id, { id, title: '', type: 'private', updatedAt: from })
+    for (const channel of known.values()) titles[String(channel.id)] = String(channel.title || '')
+    cache.write('dooray-channel-titles', titles)
+    for (const id of retry) if (!known.has(id)) known.set(id, { id, title: titles[id] ?? '', type: 'private', updatedAt: from })
     const changed = [...known.values()]
       .filter((channel) => !SKIP_CHANNEL_TYPES.has(String(channel.type)))
       .sort((a, b) => (Date.parse(a.updatedAt ?? '') || 0) - (Date.parse(b.updatedAt ?? '') || 0))

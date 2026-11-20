@@ -81,6 +81,7 @@ let stream: unknown[]
 let streamFor: ((since: string) => unknown[]) | null
 let sent: { argv: string[]; body: string }[]
 let dir: string
+let channelList: unknown[]
 
 function ok(value: unknown): RunResult {
   return { code: 0, stdout: JSON.stringify(value), stderr: '' }
@@ -105,7 +106,7 @@ function runner(argv: string[]): RunResult {
   if (key === 'stream list') return ok(streamFor ? streamFor(args[3]) : stream)
   if (key === 'post get') return ok(POSTS[args[3]])
   if (key === 'post comment') return ok(comments)
-  if (key === 'messenger channels') return ok(CHANNELS)
+  if (key === 'messenger channels') return ok(channelList)
   if (key === 'messenger logs') return ok(LOGS[args[2]] ?? [])
   return { code: 1, stdout: '', stderr: `모르는 명령 ${argv.join(' ')}` }
 }
@@ -122,6 +123,7 @@ beforeEach(() => {
   stream = STREAM
   streamFor = null
   sent = []
+  channelList = CHANNELS
   dir = mkdtempSync(join(tmpdir(), 'dooray-spec-'))
 })
 
@@ -247,10 +249,12 @@ describe('부분 실패와 이름 (검토 반영)', () => {
     assert.equal(first.cursors.task, '2026-11-02T06:00:00.000Z')
     failing.clear()
     calls = []
+    channelList = []
     const second = make().fetch({ since: SINCE, cursors: first.cursors })
     // 커서 뒤에 바뀐 방이 없어도 실패했던 방은 다시 읽는다
     assert.ok(calls.some((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev'))
     assert.ok(second.items.some((row) => row.id === 'dooray:messenger:ch-dev:l1'))
+    assert.deepEqual(second.items.find((row) => row.id === 'dooray:messenger:ch-dev:l1')?.scope, ['ch-dev', '예시 개발방'])
     assert.deepEqual(cache.read('dooray-retry-channels', ['?']), [])
   })
 
