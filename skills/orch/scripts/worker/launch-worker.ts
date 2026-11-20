@@ -2,7 +2,7 @@
 //
 // 사용법:
 //     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)
-//         [--task ID [--retry-of DISPATCH]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
+//         [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
 //
 //     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다.
 //                      `worker 선택:` 줄(형식은 lib/spec.ts 의 selectionsOf)이 없거나 빠진 요소가 있거나, 그 줄의 에이전트, 모델, effort 가
@@ -23,6 +23,9 @@
 //                      이유는 `dirty-ack: <이유>` 줄로 출력한다. 끊긴 worker 를 이어 띄울 때 쓴다(references/launch.md 「끊긴 worker 다시 띄우기」)
 //     --run            worker-start 와 다시 띄우기에 줄 Run. 없으면 코디네이터에 묶인 Run 이다
 //     --no-pr      PR 없는 작업으로 기록해 완료 근거 경고를 생략한다
+//     --preflight      --task 와 함께 준다. 차례 0~1-1(선택, 모델, Claude 프로필, orch PATH, `허락:` 줄, orch 폴더 이전, worker.commit_check 설정, spec-lint)만 하고
+//                      통과하면 `PREFLIGHT-OK` 와 0, 걸리면 같은 거부와 종료 코드로 끝난다. 1-2 의 번호 예약, 워크트리 확인, before-launch 는 하지 않는다.
+//                      orch worker relaunch 가 옛 worker 를 abandon 하기 전에 부른다
 //     --watch          띄운 뒤 worker-show 의 단계를 볼 초. 기본 90. 0 이면 보지 않는다
 //     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal 같은 것).
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
@@ -172,7 +175,7 @@ import { recordStepLaunch } from '../lib/auto-advance.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
-  '            [--task ID [--retry-of DISPATCH]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
+  '            [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
 ].join('\n')
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
 const LONG_MS = 600_000
@@ -454,6 +457,7 @@ type Args = {
   lintAck: string | null
   dirtyAck: string | null
   resumeRemote: boolean
+  preflight: boolean
   passthru: string[]
 }
 
@@ -534,6 +538,7 @@ function parse(argv: string[]): Args | 'help' {
     'lint-ack': { type: 'string' },
     'dirty-ack': { type: 'string' },
     'resume-remote': { type: 'boolean', default: false },
+    preflight: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },
   } as const
   let values
@@ -553,6 +558,7 @@ function parse(argv: string[]): Args | 'help' {
   if (dirtyAck === '') throw usage('--dirty-ack 에는 그대로 띄우는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
   if (!values.task && values['retry-of']) throw usage('--task 와 --retry-of 를 함께 준다')
+  if (values.preflight && !values.task) throw usage('--preflight 는 --task 와 함께 준다')
   if (values.task && (values.worktree || values.name)) throw usage('다시 띄우기의 워크트리는 이력에서 읽는다')
   if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
   if (!values.task && !values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
@@ -571,6 +577,7 @@ function parse(argv: string[]): Args | 'help' {
     lintAck,
     dirtyAck,
     resumeRemote,
+    preflight: values.preflight as boolean,
     passthru,
   }
 }
@@ -761,6 +768,11 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
 
   const gate = await lintGate(a, continuation, execute)
   if (gate.stop !== null) return gate.stop
+  // --preflight 는 0~1-1 의 거부만 보고 끝낸다. 지시서, 워크트리, Orca 를 바꾸지 않는다(relaunch-worker 가 옛 worker 를 abandon 하기 전에 부른다)
+  if (a.preflight) {
+    out('PREFLIGHT-OK')
+    return 0
+  }
 
   const reserved = await reserveNumbers(a, retryRepo, execute)
   if (reserved !== null) return reserved
