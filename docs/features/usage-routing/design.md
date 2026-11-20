@@ -10,13 +10,13 @@
 | REQ2 | 남은 사용량 비율이 남은 시간 비율 이하면 `keep` 이다. WORKER_ARGS 를 건드리지 않는다 |
 | REQ3 | 대상 행은 `BOOST_ROWS`(impl-planned, impl-explore, small-fix, design)의 Codex worker 뿐이다. 리뷰 제공자는 `orch spec review` 가 띄우기 이력의 에이전트로 정하므로, 이력에 Claude 가 남으면 리뷰는 Codex 가 된다 |
 | REQ4 | 바꾸면 `candidateOverride` 를 만들어 기존 후보 밖 기록 자리(`LAUNCH-EFFECTIVE`, 띄우기 기록의 `effective.candidateOverride`)에 넣는다. 지시서 대조는 바꾸기 전에 끝나서 거절하지 않는다 |
-| REQ5 | 사용량 출처가 없거나, JSON 이 깨졌거나, 값이 빠졌거나, `timestamp` 가 1시간보다 오래됐거나, 초기화 시각이 지났으면 `USAGE-UNKNOWN <이유>` 를 stdout 에 내고 그대로 띄운다. 대문자 판정 줄이라 짧은 출력에도 남는다 |
+| REQ5 | 사용량 출처가 없거나, JSON 이 깨졌거나, 값이 빠졌거나, 마지막 조회 성공(`lastSuccessAt`)이 1시간보다 오래됐거나, 초기화 시각이 지났으면 `USAGE-UNKNOWN <이유>` 를 stdout 에 내고 그대로 띄운다. 대문자 판정 줄이라 짧은 출력에도 남는다 |
 | REQ6 | `routing.usage_boost` 를 설정 키(`ROUTING_KEYS`)와 설정 검사표(`config-schema.ts`)에 더한다. `false` 면 사용량을 읽지 않는다. 지시서에 `후보 밖:` 이 있으면 대상이 아니다 |
 
 ## 책임과 경계
 
 - **`lib/usage-boost.ts`(새 파일)**: 사용량 출처 읽기, 같은 등급 대응 찾기, 바꿀지 판정을 소유한다. Orca 와 git 을 부르지 않는다. 시각과 사용량 읽기를 인자로 받아 단위 테스트가 고정 시각으로 돈다.
-  - `readWeekly(file, now)`: oh-my-claudecode 상태 줄 캐시의 `timestamp`, `data.weeklyPercent`, `data.weeklyResetsAt` 를 읽는다. `error: true` 는 값 없음이다.
+  - `readWeekly(file, now)`: oh-my-claudecode 상태 줄 캐시의 `lastSuccessAt`, `data.weeklyPercent`, `data.weeklyResetsAt` 를 읽는다. `error: true` 나 `lastSuccessAt` 이 없으면 값 없음이다. 신선도를 `timestamp` 로 보지 않는 것은 조회가 429 로 막히면 OMC 가 data 와 `lastSuccessAt` 을 두고 `timestamp` 만 지금으로 다시 쓰기 때문이다.
   - `sameGradeClaude(table, worker)`: `agent-selection.md` 「사용 한도에 걸렸을 때」 표에서 걸린 모델 칸이 모델과 effort 까지 맞는 줄을 먼저, 없으면 effort 없는 줄을 고른다. 「같은 등급 대응」 칸의 첫 Claude 모델이 답이다. `Claude Opus 5.5` 는 `claude-opus-5-5` 로 읽는다. 칸에 effort 가 없으면 행의 effort 를 쓴다.
   - `decideBoost`: 대상 행이 아니거나, 꺼졌거나, 대응이 없으면 사용량을 읽지 않고 `keep` 이다.
 - **`launch-worker.ts`**: 판정을 부르고 WORKER_ARGS 를 바꾸며, 만든 `candidateOverride` 를 지시서의 후보 밖 기록보다 먼저 쓴다. `--terminal` 이어 쓰기는 부르지 않는다.

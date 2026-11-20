@@ -2,7 +2,9 @@
 // 계약은 docs/features/usage-routing/spec.md 와 design.md 다. launch-worker 의 차례 0-0 이 부른다.
 //
 // 출처: oh-my-claudecode 상태 줄의 사용량 캐시(`<CLAUDE_CONFIG_DIR 또는 ~/.claude>/plugins/oh-my-claudecode/.usage-cache-anthropic.json`).
-//     `timestamp`(ms), `data.weeklyPercent`, `data.weeklyResetsAt`(ISO) 를 읽는다. `error` 가 참이면 값이 없는 것으로 본다.
+//     `lastSuccessAt`(ms), `data.weeklyPercent`, `data.weeklyResetsAt`(ISO) 를 읽는다. `error` 가 참이면 값이 없는 것으로 본다.
+//     신선도는 `timestamp` 가 아니라 `lastSuccessAt` 으로 본다. 조회가 429 로 막히면 OMC 는 data 와 lastSuccessAt 을 그대로 두고
+//     timestamp 만 지금으로 다시 쓰기 때문이다. lastSuccessAt 이 없으면 값이 없는 것으로 본다.
 //     ORCH_CLAUDE_USAGE 로 파일을 바꾼다(테스트는 임시 파일을 준다).
 // 기준: 남은 사용량 비율(100 − 주간 사용 %)이 남은 시간 비율(초기화까지 남은 시간 ÷ 7일)보다 크면 바꾼다.
 // 바꾸는 행: BOOST_ROWS 의 Codex worker 이고 지시서에 `후보 밖:` 이 없을 때만. 같은 등급은 agent-selection.md 「사용 한도에 걸렸을 때」 표의
@@ -38,7 +40,7 @@ export function readWeekly(file: string, now: number): Weekly {
   } catch {
     return { kind: 'unknown', reason: `출처 없음: ${file}` }
   }
-  let parsed: { timestamp?: unknown; error?: unknown; data?: { weeklyPercent?: unknown; weeklyResetsAt?: unknown } }
+  let parsed: { lastSuccessAt?: unknown; error?: unknown; data?: { weeklyPercent?: unknown; weeklyResetsAt?: unknown } }
   try {
     parsed = JSON.parse(raw)
   } catch {
@@ -46,7 +48,7 @@ export function readWeekly(file: string, now: number): Weekly {
   }
   const used = parsed?.data?.weeklyPercent
   const resetsAt = typeof parsed?.data?.weeklyResetsAt === 'string' ? Date.parse(parsed.data.weeklyResetsAt) : NaN
-  const at = parsed?.timestamp
+  const at = parsed?.lastSuccessAt
   if (parsed?.error === true || typeof used !== 'number' || !Number.isFinite(used) || !Number.isFinite(resetsAt) || typeof at !== 'number' || !Number.isFinite(at)) {
     return { kind: 'unknown', reason: `값 없음: ${file}` }
   }

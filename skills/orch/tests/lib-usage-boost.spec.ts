@@ -93,14 +93,14 @@ describe('사용량 읽기', () => {
   }
 
   test('상태 줄 캐시의 주간 사용 % 와 초기화 시각을 읽는다', () => {
-    const target = file({ timestamp: NOW - 5 * 60_000, data: { weeklyPercent: 22, weeklyResetsAt: '2026-11-21T20:59:59.886Z' }, error: false })
+    const target = file({ timestamp: NOW, lastSuccessAt: NOW - 5 * 60_000, data: { weeklyPercent: 22, weeklyResetsAt: '2026-11-21T20:59:59.886Z' }, error: false })
     assert.deepEqual(readWeekly(target, NOW), { kind: 'ok', used: 22, resetsAt: Date.parse('2026-11-21T20:59:59.886Z'), at: NOW - 5 * 60_000 })
   })
 
   test('1시간 안의 값은 받고 넘으면 오래된 값이다', () => {
-    const fresh = file({ timestamp: NOW - HOUR, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-21T00:00:00Z' } })
+    const fresh = file({ timestamp: NOW, lastSuccessAt: NOW - HOUR, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-21T00:00:00Z' } })
     assert.equal(readWeekly(fresh, NOW).kind, 'ok')
-    const stale = file({ timestamp: NOW - HOUR - 60_000, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-21T00:00:00Z' } })
+    const stale = file({ timestamp: NOW, lastSuccessAt: NOW - HOUR - 60_000, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-21T00:00:00Z' } })
     assert.deepEqual(readWeekly(stale, NOW), { kind: 'unknown', reason: '오래된 값: 61분 전에 갱신됐다' })
   })
 
@@ -108,11 +108,21 @@ describe('사용량 읽기', () => {
     assert.match((readWeekly(join(dir, 'none.json'), NOW) as { reason: string }).reason, /^출처 없음: /)
     assert.match((readWeekly(file('{'), NOW) as { reason: string }).reason, /^읽지 못함: /)
     assert.match((readWeekly(file({ timestamp: NOW, data: {} }), NOW) as { reason: string }).reason, /^값 없음: /)
-    assert.match((readWeekly(file({ timestamp: NOW, error: true, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-21T00:00:00Z' } }), NOW) as { reason: string }).reason, /^값 없음: /)
+    assert.match((readWeekly(file({ timestamp: NOW, lastSuccessAt: NOW, error: true, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-21T00:00:00Z' } }), NOW) as { reason: string }).reason, /^값 없음: /)
+  })
+
+  test('429 로 timestamp 만 새로 쓰인 캐시는 lastSuccessAt 으로 오래된 값이다', () => {
+    const target = file({ timestamp: NOW, lastSuccessAt: NOW - 2 * HOUR, error: false, data: { weeklyPercent: 10, weeklyResetsAt: '2026-11-21T00:00:00Z' } })
+    assert.deepEqual(readWeekly(target, NOW), { kind: 'unknown', reason: '오래된 값: 120분 전에 갱신됐다' })
+  })
+
+  test('lastSuccessAt 이 없으면 timestamp 가 새것이어도 값 없음이다', () => {
+    const target = file({ timestamp: NOW, data: { weeklyPercent: 10, weeklyResetsAt: '2026-11-21T00:00:00Z' } })
+    assert.match((readWeekly(target, NOW) as { reason: string }).reason, /^값 없음: /)
   })
 
   test('초기화 시각이 지난 값은 쓰지 않는다', () => {
-    const target = file({ timestamp: NOW, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-20T06:00:00Z' } })
+    const target = file({ timestamp: NOW, lastSuccessAt: NOW, data: { weeklyPercent: 1, weeklyResetsAt: '2026-11-20T06:00:00Z' } })
     assert.deepEqual(readWeekly(target, NOW), { kind: 'unknown', reason: '초기화 시각이 지난 값이다' })
   })
 

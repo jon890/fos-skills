@@ -508,10 +508,11 @@ describe('Claude 사용량으로 바꿔 띄우기', () => {
   const SOL_MEDIUM = ['--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium']
   const HOUR = 3_600_000
 
-  // 사용량 캐시를 임시 파일로 흉내 낸다. resetsIn 은 초기화까지 남은 시간(ms), age 는 갱신된 지 지난 시간(ms)이다
+  // 사용량 캐시를 임시 파일로 흉내 낸다. resetsIn 은 초기화까지 남은 시간(ms), age 는 마지막 조회 성공(lastSuccessAt) 뒤 지난 시간(ms)이다.
+  // timestamp 는 늘 지금이다. OMC 가 429 때 timestamp 만 다시 쓰는 모양이라, 신선도를 timestamp 로 보면 오래된 값 사례가 실패한다
   function usage(used: number, resetsIn: number, age = 60_000, extra: Record<string, unknown> = {}): void {
     const file = join(tmp, 'usage.json')
-    writeFileSync(file, JSON.stringify({ timestamp: Date.now() - age, data: { weeklyPercent: used, weeklyResetsAt: new Date(Date.now() + resetsIn).toISOString() }, error: false, ...extra }))
+    writeFileSync(file, JSON.stringify({ timestamp: Date.now(), lastSuccessAt: Date.now() - age, data: { weeklyPercent: used, weeklyResetsAt: new Date(Date.now() + resetsIn).toISOString() }, error: false, ...extra }))
     env.ORCH_CLAUDE_USAGE = file
   }
   function started(): string {
