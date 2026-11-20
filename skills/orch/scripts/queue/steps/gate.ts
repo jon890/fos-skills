@@ -190,12 +190,13 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   return { reasons, summary: facts.join(' '), fixed, notes }
 }
 
-// 통합 테스트 기록(core/integration-evidence.ts). 규칙이 없으면 바뀐 파일을 읽지 않는다. 바뀐 파일은 REST 로 끝까지 읽는다(gh pr view 의 files 는 100개까지다)
+// 통합 테스트 기록(core/integration-evidence.ts). 규칙이 없으면 바뀐 파일을 읽지 않는다. 바뀐 파일은 REST 로 끝까지 읽는다(gh pr view 의 files 는 100개까지다).
+// 이름을 바꾼 파일은 옛 경로도 본다. REST 도 3000개까지라 그보다 큰 PR 은 모듈을 놓칠 수 있다
 function integrationReasons(stepContext: StepContext, state: StepState, body: string, accept: (commit: string) => boolean): { reasons: GateReason[]; notes: string[] } {
   const rules = integrationRules(loadConfig(state.repoDir))
   if (rules.length === 0) return { reasons: [], notes: [] }
   const p = state.p
-  const files = api(stepContext, state, `repos/${p.owner}/${p.repo}/pulls/${p.n}/files?per_page=100`, '--paginate', '--jq', '.[].filename')
+  const files = api(stepContext, state, `repos/${p.owner}/${p.repo}/pulls/${p.n}/files?per_page=100`, '--paginate', '--jq', '.[] | .filename, (.previous_filename // empty)')
   if (files.code !== 0) return { reasons: [{ kind: 'lookup', text: '통합 테스트 대상 파일 조회 실패' }], notes: [] }
   const needs = integrationNeeds(files.stdout.split('\n').filter(Boolean), rules)
   const judged = integrationProblems(body, p.ph, needs, accept)

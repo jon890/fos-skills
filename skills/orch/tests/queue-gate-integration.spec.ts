@@ -153,6 +153,21 @@ describe('통합 테스트 기록 관문', { skip: !HAS_TOOLS && 'jq 와 bash �
     assert.equal(g.code, 0, both(g))
   })
 
+  test('이름을 바꾼 파일은 옛 경로의 모듈도 기록이 필요하다', async (t) => {
+    const c = setup(t)
+    const files = [{ path: 'modules/api/src/main/A.kt', previous: 'modules/core/src/main/A.kt' }]
+    const g = await gate(c, { '1': pr({ files, body: body(record('api')) }) })
+    assert.equal(g.code, 1, both(g))
+    assert.equal(gateReason(g), '통합 테스트 기록 없음: core (./gradlew :core:integrationTest)')
+  })
+
+  test('규칙 꼴이 틀리면 사용법 오류(2)다', async (t) => {
+    const c = setup(t, { queue: { integration_tests: [{ paths: 'modules/**', command: 'x' }] } })
+    const g = await gate(c, { '1': pr() })
+    assert.equal(g.code, 2, both(g))
+    assert.match(g.stderr, /queue\.integration_tests\[0\]\.paths 에는 <모듈> 가 꼭 하나/)
+  })
+
   test('바뀐 파일을 읽지 못하면 통과로 보지 않는다', async (t) => {
     const c = setup(t)
     const g = await gate(c, { '1': pr({ files_fail: true }) })

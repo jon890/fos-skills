@@ -77,6 +77,36 @@ describe('integrationProblems', () => {
     assert.match(integrationProblems('- 통합 테스트 생략: core', HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
   })
 
+  test('HTML 주석 안의 생략 줄과 기록 줄은 읽지 않는다', () => {
+    const text = body('<!--', record('core'), '-->') + '\n<!-- 통합 테스트 생략: core 틀 예시 -->\n'
+    assert.deepEqual(integrationProblems(text, HEAD, [need('core')]), { reasons: ['통합 테스트 기록 없음: core (./gradlew :core:integrationTest)'], notes: [] })
+  })
+
+  test('뒤에 글이 붙은 펜스 줄은 열린 코드 블록을 닫지 않는다', () => {
+    const text = body('```', '```bash', record('core'), '```')
+    assert.match(integrationProblems(text, HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
+  })
+
+  test('칸의 백틱, 번호와 체크박스 목록, 굵은 제목을 받는다', () => {
+    const lines = [
+      `1. 통합 테스트 통과: \`core\` | \`./gradlew :core:integrationTest\` | \`${HEAD}\``,
+      `- [x] 통합 테스트 통과: api | ./gradlew :api:integrationTest | ${HEAD}`,
+    ]
+    const text = `## **검증**\n${lines.join('\n')}\n`
+    assert.deepEqual(integrationProblems(text, HEAD, [need('api'), need('core')]).reasons, [])
+  })
+
+  test('커밋이 40자리가 아니면 따로 알린다', () => {
+    assert.deepEqual(integrationProblems(body(record('core', 'a'.repeat(7))), HEAD, [need('core')]).reasons, ['통합 테스트 기록의 커밋이 40자리가 아니다: core'])
+  })
+
+  test('한 모듈에 규칙이 둘이면 명령마다 기록이 필요하다', () => {
+    const two = integrationRules({ queue: { integration_tests: [RULE, { paths: 'modules/<모듈>/src/main/**', command: 'make it-<모듈>' }] } })
+    const needs = integrationNeeds(['modules/core/src/main/A.kt'], two)
+    assert.deepEqual(needs, [need('core'), { module: 'core', command: 'make it-core' }])
+    assert.deepEqual(integrationProblems(body(record('core')), HEAD, needs).reasons, ['통합 테스트 기록 없음: core (make it-core)'])
+  })
+
   test('여러 모듈은 모듈마다 따로 본다', () => {
     const text = body(record('core'), record('api', OLD)) + '\n통합 테스트 생략: batch 설정 문구만 바꿨다\n'
     const result = integrationProblems(text, HEAD, [need('api'), need('batch'), need('core'), need('web')])

@@ -5,7 +5,7 @@
 <!-- `## 할 일` 아래 첫 줄에 루프 선택을 적는다. 꼴이 틀리면 launch-worker 가 띄우지 않는다. 꼴과 예는 skills/orch/references/feature-loop.md 의 「루프를 쓸지 정한다」 가 소유한다. -->
 <!-- `루프 없이` 로 띄우면 코디네이터는 사용자에게 보내는 띄우기 보고에 그 이유를 한 줄로 적는다. -->
 <!-- `orch-rule:` 표지는 지우지 않는다. spec-lint 가 이 틀의 표지가 저장소 공통 지시서에 모두 있는지, 표지가 붙은 항목의 본문이 틀과 같은지 보고, 다르면 틀보다 낡았다고 경고한다. 틀을 고치면 `orch spec sync-common` 으로 diff 를 보고 `--apply` 로 반영한다. 일부러 바꾼 항목은 표지 이름 뒤에 `keep` 을 붙여 보존한다. -->
-<!-- `migration` 표지 항목은 Flyway 마이그레이션이 없는 저장소면 지운다. spec-lint 는 orch 설정에 `migrations` 가 있는 저장소에서만 그 표지가 빠진 것을 알린다. -->
+<!-- `migration` 표지 항목은 Flyway 마이그레이션이 없는 저장소면 지운다. spec-lint 는 orch 설정에 `migrations` 가 있는 저장소에서만 그 표지가 빠진 것을 알린다. `integration-evidence` 표지 항목은 `queue.integration_tests` 규칙이 없는 저장소면 지워도 된다. spec-lint 는 규칙이 있는 저장소에서만 알린다. -->
 
 - 대상 저장소는 {{REPO}} 다. 지정된 워크트리에서만 작업한다. 워크트리는 지시서의 `브랜치:` 이름으로 `origin/{{BASE}}` 최신 위에 만들어져 있다.
 - 브랜치 이름을 바꾸지 않는다. push 는 `git push -u origin HEAD` 로 한다.
@@ -83,7 +83,7 @@
 
 - **코디네이터에게 넘길 파일은 세션 임시 폴더에 두지 않는다.** PR 본문·미리보기 HTML·리뷰 답변 초안과 매핑 TSV 는 `"$(orch paths root)/handoff/pr-<PR 번호>/"` 에 모은다. PR 번호가 나오기 전 본문 초안은 위의 세션 임시 폴더에 둔다. 게시가 막혀 코디네이터에게 본문을 넘길 때는 `handoff/pending/<워크트리 이름>/` 에 복사하고, PR 번호가 나오면 `pr-<PR 번호>/` 로 옮긴다. `orch queue finish` 는 PR 머지 확인 뒤 번호 폴더를 휴지통으로 옮긴다. 측정 결과와 다른 일이 다시 쓸 인계는 `"$(orch paths root)/handoff/"` 의 별도 폴더에 두며 PR 정리에서 남긴다. 넘길 때는 절대경로를 적는다. `orch worker ask` 는 질문 본문에 세션 임시 폴더 경로(`$TMPDIR` 값, `/var/folders/`, `/private/tmp/claude-`, `/tmp/claude-`)가 있으면 보내지 않고 2 로 끝난다. <!-- orch-rule: handoff-path -->
 - 기준 브랜치와 충돌하면 코디네이터가 후속 지시서를 보낸다. 그 지시대로 이 worker 가 푼다.
-- 저장소 orch 설정에 통합 테스트 규칙(`orch config get queue.integration_tests`)이 있으면, PR 의 바뀐 모듈마다 규칙의 명령을 돌리고 통과와 커밋을 PR 본문 「검증」 절에 `통합 테스트 통과: <모듈> | <명령> | <40자리 커밋>` 줄로 적는다. 리뷰 반영으로 커밋이 바뀌면 다시 돌린다. 통합 테스트가 필요 없는 변경(주석, 문구)이면 `통합 테스트 생략: <모듈> <이유>` 줄을 적는다. 머지 관문이 이 줄을 확인한다. <!-- orch-rule: integration-evidence -->
+- 저장소 orch 설정에 통합 테스트 규칙(`orch config get queue.integration_tests`)이 있으면, PR 의 바뀐 모듈마다 규칙의 명령을 돌리고 통과와 커밋을 PR 본문 「검증」 절에 `통합 테스트 통과: <모듈> | <명령> | <40자리 커밋>` 줄로 적는다. 명령과 커밋은 백틱 없이 그대로 적는다. 리뷰 반영으로 커밋이 바뀌면 다시 돌린다. 통합 테스트가 필요 없는 변경(주석, 문구)이면 `통합 테스트 생략: <모듈> <이유>` 줄을 적는다. 머지 관문이 이 줄을 확인한다. <!-- orch-rule: integration-evidence -->
 
 ## 끝내기
 

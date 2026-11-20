@@ -93,7 +93,7 @@ if (args[0] === 'api') {
     const pr = state[files[1]]
     if (pr.files_fail) process.exit(1)
     const at = args.indexOf('--jq')
-    jq(at >= 0 ? args[at + 1] : '.', (pr.files ?? []).map((f) => ({ filename: f.path })))
+    jq(at >= 0 ? args[at + 1] : '.', (pr.files ?? []).map((f) => ({ filename: f.path, ...(f.previous ? { previous_filename: f.previous } : {}) })))
   }
   const rules = path.includes('/rules/branches/')
   if (rules && state._rules_error) {

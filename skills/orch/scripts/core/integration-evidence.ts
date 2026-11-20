@@ -11,10 +11,12 @@
 //   「검증」 절(제목이 `검증` 으로 시작하는 Markdown 제목부터 같거나 높은 단계 제목 앞까지)의
 //     `통합 테스트 통과: <모듈> | <명령> | <40자리 커밋>` 줄이 기록이다. 앞에 목록 표시(`- `, `* `)를 붙여도 된다
 //   본문 어디든 `통합 테스트 생략: <모듈> <이유>` 줄은 그 모듈을 넘긴다. 이유가 비면 생략으로 보지 않는다
+//   HTML 주석 안의 줄은 읽지 않는다. 칸 양끝의 백틱은 벗긴다. 목록 표시(번호, 체크박스 포함)를 앞에 붙여도 된다
 //
 // 판정(integrationProblems): 필요한 (모듈, 명령)마다
 //   생략한 모듈이면 notes 에 `통합 테스트 생략 <모듈>: <이유>`
 //   모듈과 명령이 같은 기록 중 커밋이 head 이거나 accept 가 받아들이면 통과
+//   기록의 커밋이 모두 40자리가 아니면 `통합 테스트 기록의 커밋이 40자리가 아니다: <모듈>`
 //   기록은 있는데 그 커밋이 아니면 `통합 테스트 기록이 head 가 아니다: <모듈>`
 //   기록이 없으면 `통합 테스트 기록 없음: <모듈> (<명령>)`
 // accept 는 기능 완료 근거의 검증 커밋과 같은 예외(base 만 합친 merge, 계획 폴더 삭제)를 받는다.
@@ -72,17 +74,22 @@ export function integrationNeeds(files: readonly string[], rules: readonly Integ
   return [...found.values()].sort((a, b) => (a.module === b.module ? (a.command < b.command ? -1 : 1) : a.module < b.module ? -1 : 1))
 }
 
-// 코드 블록(``` 나 ~~~) 밖의 줄
+// 코드 블록(``` 나 ~~~)과 HTML 주석 밖의 줄. 닫는 줄은 여는 줄과 같은 글자로 그 길이 이상이고 뒤에 글이 없어야 한다(CommonMark)
 function plainLines(body: string): string[] {
   let fence = ''
-  return body.split(/\r\n|\n|\r/).filter((line) => {
-    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
-    if (mark) {
-      if (!fence) fence = mark
-      else if (mark[0] === fence[0] && mark.length >= fence.length) fence = ''
+  const text = body.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => comment.replace(/[^\r\n]/g, ''))
+  return text.split(/\r\n|\n|\r/).filter((line) => {
+    if (fence) {
+      const close = /^\s*(`{3,}|~{3,})\s*$/.exec(line)?.[1]
+      if (close && close[0] === fence[0] && close.length >= fence.length) fence = ''
       return false
     }
-    return !fence
+    const open = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+    if (open) {
+      fence = open
+      return false
+    }
+    return true
   })
 }
 
@@ -94,7 +101,7 @@ function verificationLines(lines: string[]): string[] {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line)
     if (heading) {
       if (level && heading[1].length <= level) level = 0
-      if (!level && /^검증/.test(heading[2].trim())) {
+      if (!level && /^검증/.test(heading[2].replace(/[*_]/g, '').trim())) {
         level = heading[1].length
         continue
       }
@@ -104,7 +111,10 @@ function verificationLines(lines: string[]): string[] {
   return picked
 }
 
-const LIST = /^\s*(?:[-*+]\s+)?/
+// 앞에 붙여도 되는 목록 표시: `- `, `* `, `+ `, `1. `, `1) `, 체크박스 `[ ] `, `[x] `
+const LIST = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?/
+// 칸 양끝의 백틱을 벗긴다
+const cell = (text: string): string => text.trim().replace(/^`+|`+$/g, '').trim()
 
 export function integrationProblems(
   body: string,
@@ -117,11 +127,11 @@ export function integrationProblems(
   for (const line of lines) {
     const m = new RegExp(`${LIST.source}통합 테스트 생략:\\s*(\\S+)(?:\\s+(.*))?$`).exec(line)
     const reason = m?.[2]?.trim()
-    if (m && reason && !skips.has(m[1])) skips.set(m[1], reason)
+    if (m && reason && !skips.has(cell(m[1]))) skips.set(cell(m[1]), reason)
   }
   const records = verificationLines(lines).flatMap((line) => {
     const m = new RegExp(`${LIST.source}통합 테스트 통과:\\s*(\\S+)\\s*\\|\\s*(.+?)\\s*\\|\\s*(\\S+)\\s*$`).exec(line)
-    return m ? [{ module: m[1], command: m[2], commit: m[3].toLowerCase() }] : []
+    return m ? [{ module: cell(m[1]), command: cell(m[2]), commit: cell(m[3]).toLowerCase() }] : []
   })
   const reasons: string[] = []
   const notes: string[] = []
@@ -142,7 +152,9 @@ export function integrationProblems(
     }
     const mine = records.filter((r) => r.module === need.module && r.command === need.command)
     if (mine.some((r) => passes(r.commit))) continue
-    reasons.push(mine.length > 0 ? `통합 테스트 기록이 head 가 아니다: ${need.module}` : `통합 테스트 기록 없음: ${need.module} (${need.command})`)
+    if (mine.length === 0) reasons.push(`통합 테스트 기록 없음: ${need.module} (${need.command})`)
+    else if (mine.every((r) => !/^[0-9a-f]{40}$/.test(r.commit))) reasons.push(`통합 테스트 기록의 커밋이 40자리가 아니다: ${need.module}`)
+    else reasons.push(`통합 테스트 기록이 head 가 아니다: ${need.module}`)
   }
   return { reasons: [...new Set(reasons)], notes }
 }
