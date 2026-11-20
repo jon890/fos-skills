@@ -131,6 +131,8 @@ function tickRuns(ctx: Context): TickRun[] {
 export type StepContext = Context & {
   // 틱 번호. 1 부터다
   tick: number
+  // 틱의 종류. all 은 모든 단계, fast 와 slow 는 orch-loop.ts 머리 주석의 「느린 단계」 다
+  kind: 'all' | 'fast' | 'slow'
   // 이번 틱이 맡는 Run. 앞이 주 Run 이다
   runs: TickRun[]
   primary: string | null
@@ -175,12 +177,12 @@ export type StepState = {
 // 단계가 바꿀 값. errors 는 그 단계가 기록한 오류 이유다
 export type StepResult = Partial<StepState>
 
-export function stepContext(config: Context, n: number): StepContext {
+export function stepContext(config: Context, n: number, kind: StepContext['kind'] = 'all'): StepContext {
   const loaded = readLoop(config.repo)
   const before = loaded?.errors
   const previous = isObject(before) ? before : {}
   const runs = tickRuns(config)
-  return { ...config, tick: n, runs, primary: runs[0].run, loaded, previous, lookup: { runs, rows: new Map() }, completions: new Map() }
+  return { ...config, tick: n, kind, runs, primary: runs[0].run, loaded, previous, lookup: { runs, rows: new Map() }, completions: new Map() }
 }
 
 export function initialState(): StepState {

@@ -96,8 +96,10 @@
 //     14. 배포 뒤 할 일 알림. steps/followups.ts
 //
 // 느린 단계: pipeline.slow_sec 이 있으면 부모는 틱을 둘로 나눠 띄운다(lifecycle.ts 머리 주석의 「틱 자식」).
-//     빠른 틱(--fast)은 위 「틱」 에서 3(보드 동기화와 사용자 결정 알림), 3-1, 4 를 빼고 돈다. 머지, CI, 메시지 확인이 tick_sec 마다 돈다.
-//     느린 틱(--slow)은 질문 확인 대신 Run 마다 완료 보고만 읽은 뒤(steps/questions.ts 의 loadCompletions) 2, 3, 3-1, 4 만 돈다.
+//     빠른 틱(--fast)은 위 「틱」 에서 3 의 보드 동기화, 3-1, 4 를 빼고 돈다. 머지, CI, 메시지 확인, 사용자 결정 알림이 tick_sec 마다 돈다.
+//     사용자 결정 알림은 질문 확인이 읽은 미답변 질문을 쓰므로 빠른 틱에 남긴다.
+//     느린 틱(--slow)은 질문 확인 대신 Run 마다 완료 보고만 읽은 뒤(steps/questions.ts 의 loadCompletions) 2, 3 의 보드 동기화, 3-1, 4 만 돈다.
+//     느린 틱의 정리는 worker 목록을 읽지 못해도 오류로 알리지 않는다. 같은 Orca 장애를 빠른 틱의 질문 확인이 알린다.
 //     결과 줄에는 tick_at, errors, open_prs 만 담고 부모는 errors 만 합친다. 보드 동기화와 정리가 한 틱에 몇 분씩 걸려
 //     빠른 단계를 그만큼 늦추던 것을 막는다. slow_sec 이 없거나 --once 면 지금처럼 한 틱에 모두 돈다
 //     단계는 설정과 이번 틱의 Run(StepContext), 앞 단계가 낸 값(StepState)을 받아 바꿀 값과 오류 이유(StepResult)를 돌려준다(steps/context.ts).
@@ -179,22 +181,24 @@ export type TickKind = 'all' | 'fast' | 'slow'
 
 // 틱 하나. 머리 주석의 「틱」 순서대로 단계를 부르고 결과를 합쳐 결과 줄을 낸다. kind 가 fast 나 slow 면 「느린 단계」 대로 일부만 돈다
 async function tick(config: Context, n: number, kind: TickKind): Promise<number> {
-  const ctx = stepContext(config, n)
+  const ctx = stepContext(config, n, kind)
   return withLoopCaller(ctx.repo, ctx.primary ?? ctx.run, async () => {
     const state = initialState()
     const fast = kind !== 'slow'
     if (fast) collect(state, await checkQuestions(ctx, state))
     else loadCompletions(ctx)
     collect(state, await readOpenPrs(ctx, state))
-    if (kind !== 'fast') {
-      collect(state, await syncBoard(ctx, state))
-      collect(state, await notifyPendingDecisions(ctx, state))
+    const slow = kind !== 'fast'
+    if (slow) collect(state, await syncBoard(ctx, state))
+    // 결정 알림은 질문 확인이 읽은 미답변 질문(state.pending)을 쓰므로 질문 확인이 도는 틱에 함께 돈다
+    if (fast) collect(state, await notifyPendingDecisions(ctx, state))
+    if (slow) {
       collect(state, await fillTaskLinks(ctx, state))
       collect(state, await sweepRuns(ctx, state))
     }
     if (!fast) {
-      const slow: TickResult = { tick_at: iso(), errors: state.errors, open_prs: openNumbers(state.prs) }
-      process.stdout.write(`${JSON.stringify(slow)}\n`)
+      const partial: TickResult = { tick_at: iso(), errors: state.errors, open_prs: openNumbers(state.prs) }
+      process.stdout.write(`${JSON.stringify(partial)}\n`)
       return 0
     }
     collect(state, await checkCi(ctx, state))
