@@ -7,7 +7,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "7.66.0"
+  version: "7.66.2"
 ---
 
 # orch
@@ -33,6 +33,7 @@ metadata:
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다.
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG <경로> <이유>` 는 `config.json` 의 그 경로에 고칠 곳이 있다는 뜻이다. 이유별 조치는 [`references/hooks.md`](references/hooks.md) 의 줄 표가 소유한다.
+`ADR-RESERVE-MISSING` 은 ADR 색인을 만들거나 번호 붙은 `docs/adr` 파일이 있는데 번호 예약 폴더 설정이 없다는 알림이다. 다음 줄의 `orch config set adr.dirs '{"docs":"docs/adr"}' --json` 을 코디네이터가 저장소에 맞게 실행한다. doctor 의 진행을 막지는 않는다.
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
 `FEEDBACK-NOTICE` 는 이 저장소에 온 반영·기각 결과다. doctor 가 이 줄을 보인 뒤 후보 파일을 휴지통으로 옮긴다. fos-skills 세션에서는 `orch feedback collect` 로 모든 저장소를 모아 보고, 반영 조건을 확인한 뒤 `orch feedback notify` 로 알린다.
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 「고를 공부 후보 <개수>개가 <폴더> 에 있다」 로 알리기만 하고 고르라고 재촉하지 않는다.

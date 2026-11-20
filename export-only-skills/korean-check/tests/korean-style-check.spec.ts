@@ -113,10 +113,10 @@ describe('등록한 형태', () => {
 
 describe('DB 문맥의 표와 칸', () => {
   test('DB 의 표와 칸으로 쓴 말을 막는다', () => {
-    caught(['DB 표를 만든다.', '`sensor` DB 표 `raw_recipient` 를 본다.', '`orders` 표에 행을 넣는다.', '`care.registry` 칸을 바꾼다.', '`status` 칸은 null 이다.'], '금지어')
+    caught(['DB 표를 만든다.', '`sensor` DB 표 `raw_recipient` 를 본다.', '`orders` 테이블의 `orders` 표에 행을 넣는다.', 'DB 의 `care.registry` 칸을 바꾼다.', 'SQL 의 `status` 칸은 null 이다.'], '금지어')
   })
   test('문서의 표를 가리키는 말은 막지 않는다', () => {
-    passed(['아래 표를 본다.', '결과를 표로 정리한다.', '표의 열을 맞춘다.', '표를 만들어 비교한다.', 'DB 표준을 따른다.', 'DB 표시 방식을 바꾼다.', '`a.md` 파일의 표시를 바꾼다.', 'plan 디렉터리의 `remote.md` 표', '`run.py` 칸을 본다.', '빈 칸을 채운다.', '`orders` 테이블의 `status` 컬럼을 바꾼다.'])
+    passed(['아래 표를 본다.', '결과를 표로 정리한다.', '표의 열을 맞춘다.', '표를 만들어 비교한다.', 'DB 표준을 따른다.', 'DB 표시 방식을 바꾼다.', '`a.md` 파일의 표시를 바꾼다.', 'plan 디렉터리의 `remote.md` 표', '`run.py` 칸을 본다.', '빈 칸을 채운다.', '`orders` 테이블의 `status` 컬럼을 바꾼다.', '지시서의 `비교:` 칸을 채운다.', '`비교:` 표를 문서에 넣는다.'])
   })
   test('뒤에 오는 글자는 Python 의 공백 정의를 따른다: US(0x1f)는 공백이고 U+FEFF 는 아니다', () => {
     // 0x1f 는 줄 경계가 아니면서 정규식 \s 에는 든다
@@ -124,8 +124,8 @@ describe('DB 문맥의 표와 칸', () => {
     assertPassed('DB 표\ufeff다음 말이다.\n')
   })
   test('이름이 같은 코드 스팬 안의 글자는 열 계산에서 건너뛴다', () => {
-    const done = on('`x-` 칸을 채운다.\n')
-    assert.ok(done.stdout.includes('금지어 "`식별자` 칸" (열 1, 걸린 글자 "`x-` 칸")'), done.stdout)
+    const done = on('DB 의 `x-` 칸을 채운다.\n')
+    assert.ok(done.stdout.includes('금지어 "`식별자` 칸" (열 6, 걸린 글자 "`x-` 칸")'), done.stdout)
   })
 })
 

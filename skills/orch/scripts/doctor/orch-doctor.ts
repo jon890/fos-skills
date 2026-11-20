@@ -50,6 +50,8 @@
 //     검사표는 zod 에 기대므로 불러오지 못하면(의존 설치 실패) CLI-DEPS-MISSING <이유> 한 줄을 내고 설정 검사만 건너뛴다. 종료 코드는 바꾸지 않는다.
 //     ORCH_CONFIG_SCHEMA 는 테스트 전용이다. 검사표 모듈 대신 그 경로의 파일을 불러와 불러오기 실패를 흉내 낸다.
 //     UNKNOWN-HOOK 은 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
+//     ADR-RESERVE-MISSING 은 plan 오버레이 표에서 `ADR 색인 생성 | 한다` 이거나 docs/adr 바로 아래에 번호로 시작하는 .md 가 있는데
+//     config.json 의 adr.dirs 가 없을 때 낸다. 색인 생성이나 번호 붙은 ADR 은 병렬 PR 의 번호 충돌 가능성을 드러내며, 경고라 종료 코드를 바꾸지 않는다.
 //
 // 개선 후보 판정(늘 본다):
 //     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 저장소 몫 후보·보류를 센다.
@@ -451,7 +453,27 @@ function checkRepo(repo: string, schema: Schema | null): string[] {
   }
   const config = (isObject(read.value) ? read.value : {}) as Config
   lines.push(...legacyInboxFilter(repo, config))
+  lines.push(...missingAdrReservation(repo, config))
   return lines
+}
+
+function missingAdrReservation(repo: string, config: Config): string[] {
+  if (config.adr?.dirs !== undefined) return []
+  const overlay = join(repo, '.claude', 'plan-overlay.md')
+  let indexEnabled = false
+  try {
+    indexEnabled = /^\|\s*ADR 색인 생성\s*\|\s*한다\s*\|/m.test(readFileSync(overlay, 'utf8'))
+  } catch { /* 오버레이가 없으면 ADR 폴더만 본다 */ }
+  const adrDir = join(repo, 'docs', 'adr')
+  let numbered = false
+  try {
+    numbered = readdirSync(adrDir).some((name) => /^\d+[-_].+\.md$/i.test(name) && isFile(join(adrDir, name)))
+  } catch { /* 폴더가 없으면 오버레이만 본다 */ }
+  if (!indexEnabled && !numbered) return []
+  return [
+    'ADR-RESERVE-MISSING ADR 색인 생성 또는 번호 붙은 docs/adr 파일이 있는데 adr.dirs 설정이 없다',
+    `  고칠 명령: ${orchWord()} config set adr.dirs '{"docs":"docs/adr"}' --json`,
+  ]
 }
 
 // 옛 알림 필터 파일이 있으면 옮기는 법을 알린다. 옛 파일은 아직 읽히므로 종료 코드에는 영향이 없다
