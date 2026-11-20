@@ -135,6 +135,7 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_AR
 | PR 변경 파일 상한 | plan | 정수, 또는 `<JSON 파일>#<키.키>` | `` `.github/pr-size.json#grades.B.files` `` | `verify_task.ts`. 기본 기준 40개 대신 쓴다 |
 | 파일 길이 상한 | plan | 정수, 또는 `<JSON 파일>#<키.키>` | `` `600` `` | `verify_task.ts` |
 | PR 줄 수 상한 | plan | 정수, `<JSON 파일>#<키.키>`, 또는 `<JS·TS 파일>#<상수 이름>` | `` `scripts/pr/pr-size.mjs#MAX_LINES` `` | `verify_task.ts`. 운영 코드 추정 줄 수와 비교한다 |
+| PR 줄 수 운영 코드 | plan | 저장소 루트 기준 glob 을 인라인 코드로 나열한다 | `` `hermes/connectors/*/skills/*/SKILL.md` `` | `verify_task.ts`. 문서나 테스트로 보일 파일을 운영 코드로 센다 |
 | 파일 길이 대상 | plan | 인라인 코드로 적은 glob 목록. `/` 없는 패턴은 파일 이름에 맞춘다 | `` `*.java` `` | `verify_task.ts`. 없으면 코드 파일 전부다 |
 | PR 크기 예외 | plan | 저장소의 크기 예외 규칙을 가리키는 링크나 한 문장 | `` [크기 예외](../docs/contributing/pull-request.md#pr-크기) `` | critic 이 읽는다([critic 계약](../../implementation/references/role-critic.md) 7) |
 | 문서 검사 명령 | spec 또는 technical-design | 인라인 코드 하나가 명령 하나다. 저장소 루트에서 실행한다 | `` `scripts/verify.sh docs` `` | `run_doc_checks.ts`. technical-design 은 자기 오버레이에 없으면 spec 오버레이를 읽는다 |

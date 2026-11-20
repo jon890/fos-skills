@@ -78,7 +78,12 @@ phase 별 추정 줄 수를 보고 앞 plan 이 끝나야 의미가 생기는 �
 | 그 밖의 신규 파일(SQL, 설정, fixture) | 10줄 |
 
 추정은 운영 코드, 테스트, 문서로 나눠 낸다. 「PR 줄 수 상한」 은 운영 코드에만 비교한다.
-`.github/pr-size.json` 이 있으면 그 분류(`core`, `generated`, `tests`, `docs`)를 쓴다. 없으면 테스트는 테스트 경로와 이름, `e2e` 폴더로, 문서는 `.md` 와 `docs/` 폴더로 구분한다.
+`.github/pr-size.json` 이 있으면 그 분류(`core`, `generated`, `tests`, `docs`)를 쓴다. 없으면 아래 순서로 처음 맞는 것을 고른다.
+
+1. 레포 설정 「PR 줄 수 운영 코드」 의 glob 에 맞으면 운영 코드다. 저장소가 Markdown 같은 파일을 운영 코드로 셀 때 적는다
+2. `.md`, `.mdx` 이거나 경로에 `docs` 폴더가 있으면 문서다
+3. 경로에 `test`, `tests`, `__tests__`, `e2e` 폴더가 있거나 테스트 이름(`*.test.*`, `*.spec.*`, `*Test.java` 등)이면 테스트다
+4. 나머지는 운영 코드다
 의존 lock 파일(`pnpm-lock.yaml` 등), 빌드 결과물(`dist/`, `build/`, `.next/`, `coverage/`), 스냅샷과 압축·묶음 JS 는 설정이 없어도 세지 않는다.
 glob 행과 읽지 못한 수정 파일은 「줄 수 미상」 으로 빼고 센다. 한 phase 에서 만들고 뒤 phase 에서 고친 파일은 신규로 센다.
 

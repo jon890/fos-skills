@@ -39,7 +39,9 @@ export function fileLines(repo: string, rel: string, action: string, kind: Kind,
       return null
     }
   }
-  if (kind === 'docs') return DOC_SUFFIXES.test(rel) ? NEW_FILE_LINES.docs : NEW_FILE_LINES.other
+  // Markdown 은 운영 코드로 분류돼도(에이전트 스킬 문서) 문서 계수로 센다
+  if (DOC_SUFFIXES.test(rel)) return NEW_FILE_LINES.docs
+  if (kind === 'docs') return NEW_FILE_LINES.other
   return code ? NEW_FILE_LINES[kind] : NEW_FILE_LINES.other
 }
 

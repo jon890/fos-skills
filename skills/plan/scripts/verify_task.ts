@@ -1095,15 +1095,16 @@ export function checkChangedFileCount(path: string, entries: Set<string>, warnin
 // 운영 코드, 테스트, 문서로 나눠 센다. 레포 설정의 PR 줄 수 상한은 운영 코드에만 비교한다.
 // `.github/pr-size.json` 이 있으면 그 분류와 등급 기준을 적용하고, 분류 목록이 없으면 테스트와 문서를 경로로 구분한다.
 // phases 는 [phase 파일, 변경 파일 목록] 이다. 파일은 처음 나온 phase 에만 센다. 설정을 읽지 못하면 null 이다
-export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[], phases: [string, Entry[]][] = []): Estimate | null {
+export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[], phases: [string, Entry[]][] = [], coreGlobs: string[] = []): Estimate | null {
   const configPath = pjoin(repo, '.github/pr-size.json')
   try {
     const config = (isFile(configPath) ? JSON.parse(readTextFile(configPath)) : {}) as { grades?: Record<string, Record<string, number>>; core?: string[]; generated?: string[]; tests?: string[]; docs?: string[] }
     const match = (rel: string, patterns: string[] = []) => patterns.some((pattern) => fnmatchcase(rel, pattern))
+    // 저장소 크기 검사(fos-assistant `pr-size.mjs` 의 `category()`)와 같은 순서로 운영 코드 경로, 문서, 테스트를 본다
     const kindOf = (rel: string): SizeKind => {
-      if (match(rel, config.core)) return 'production'
-      if (config.tests ? match(rel, config.tests) : isTest(rel) || pathParts(rel).includes('e2e')) return 'tests'
+      if (match(rel, config.core) || matchAny(rel, coreGlobs)) return 'production'
       if (config.docs ? match(rel, config.docs) : /\.mdx?$/i.test(rel) || pathParts(rel).includes('docs')) return 'docs'
+      if (config.tests ? match(rel, config.tests) : isTest(rel) || pathParts(rel).includes('e2e')) return 'tests'
       return 'production'
     }
     const files = new Map<string, string>()
@@ -1120,7 +1121,7 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
     const byKind: Record<SizeKind, number> = { production: 0, tests: 0, docs: 0 }
     let total = 0, count = 0, unknown = 0, added = 0, moved = 0, removed = 0
     for (const [rel, action] of files) {
-      if (!match(rel, config.core) && (match(rel, config.generated) || excludedByDefault(rel))) continue
+      if (!match(rel, config.core) && !matchAny(rel, coreGlobs) && (match(rel, config.generated) || excludedByDefault(rel))) continue
       count++
       if ((onlyAdded(action) && deletedNames.has(pathName(rel))) || (onlyDeleted(action) && addedNames.has(pathName(rel)))) {
         moved++
@@ -1189,6 +1190,8 @@ export function checkTestReferences(path: string, text: string, entries: Entry[]
   }
 }
 
+const matchAny = (rel: string, globs: string[]) => globs.some((glob) => matches(rel, glob))
+
 // 파일 길이 상한을 적용할 파일이다. `/` 없는 패턴은 파일 이름에 맞춘다. globs 가 없으면 코드 파일 전부다
 function lengthTarget(rel: string, globs: string[]): boolean {
   if (globs.length === 0) return CODE_SUFFIXES.has(pathSuffix(rel))
@@ -1218,7 +1221,7 @@ function checkFileLength(path: string, entries: Set<string>, repo: string, limit
 }
 
 // 레포 설정의 PR 변경 파일 상한, 파일 길이 상한, PR 줄 수 상한을 읽는다. 없으면 null, 읽지 못하면 경고를 남기고 null 이다
-function repoLimits(repo: string, planDir: string, warnings: string[]): [Limit | null, [number, string[], string] | null, Limit | null] {
+function repoLimits(repo: string, planDir: string, warnings: string[]): [Limit | null, [number, string[], string] | null, Limit | null, string[]] {
   const sub = overlayValues.targets(repo, [planDir])[0]
   const skills = ['plan']
   let files: Limit | null = null
@@ -1256,7 +1259,8 @@ function repoLimits(repo: string, planDir: string, warnings: string[]): [Limit |
       warnings.push(`${source} — 「PR 줄 수 상한」 을 읽지 못해 줄 수 상한을 보지 않는다: ${error.message}`)
     }
   }
-  return [files, length, lines]
+  const [core] = overlayValues.lookup(repo, skills, 'PR 줄 수 운영 코드', sub)
+  return [files, length, lines, core ? overlayValues.codes(core) : []]
 }
 
 // 같은 접두사와 번호를 쓰는 다른 계획 디렉터리를 찾는다.
@@ -1907,9 +1911,9 @@ export function main(argv: string[]): number {
         const verification = pjoin(planDir, index.verification_plan)
         if (isFile(verification) && !phases.includes(verification)) checkTestReferences(verification, section(readTextFile(verification), '인수 검증 계획'), testEntries, repo, testSink)
       }
-      const estimate = audit ? null : checkEstimatedSize(`${planDir}/index.json`, allEntries, repo, warnings, phaseEntries.map(([phase, , entries]) => [phase, entries]))
       const planRel = `${tasksDir.replace(/\/+$/, '')}/${plan}`
-      const [fileLimit, lengthLimit, lineLimit] = repoLimits(repo, planRel, warnings)
+      const [fileLimit, lengthLimit, lineLimit, coreGlobs] = repoLimits(repo, planRel, warnings)
+      const estimate = audit ? null : checkEstimatedSize(`${planDir}/index.json`, allEntries, repo, warnings, phaseEntries.map(([phase, , entries]) => [phase, entries]), coreGlobs)
       if (estimate && lineLimit) {
         const found = lineLimitFinding(`${planDir}/index.json`, estimate, ...lineLimit)
         // 이 날짜 전에 만든 계획은 진행 중일 수 있어 상한을 넘어도 경고로만 낸다

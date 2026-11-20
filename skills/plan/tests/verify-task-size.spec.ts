@@ -46,6 +46,17 @@ test('파일째 지우는 운영 코드는 운영 코드에서 빼고, 같은 �
   assert.match(warnings[0], /이동 2개는 0줄로 셌다, 파일째 지우는 운영 코드 800줄은 운영 코드에서 뺐다/)
 })
 
+test('문서를 테스트보다 먼저 보고, 레포 설정의 운영 코드 경로는 Markdown 이어도 운영 코드로 센다', () => {
+  const repo = new Repo()
+  const entries: Entry[] = [['tests/README.md', '신규'], ['hermes/connectors/shop/skills/buy/SKILL.md', '신규'], ['__tests__/a.ts', '신규']]
+  const warnings: string[] = []
+  const estimate = checkEstimatedSize('plan', set(entries), repo.root, warnings, [], ['hermes/connectors/*/skills/*/SKILL.md'])
+  assert.equal(estimate!.core, NEW_FILE_LINES.docs)
+  assert.match(warnings[0], new RegExp(`테스트 ${NEW_FILE_LINES.tests}줄, 문서 ${NEW_FILE_LINES.docs}줄`))
+  const plain = checkEstimatedSize('plan', set(entries), repo.root, [])
+  assert.equal(plain!.core, 0)
+})
+
 test('phase 별 추정은 운영 코드만 세고 여러 phase 에 나온 파일은 처음 phase 에 센다', () => {
   const repo = new Repo()
   const first: Entry[] = [['src/a.ts', '신규'], ['tests/a.test.ts', '신규']]
@@ -89,6 +100,16 @@ test('PR 줄 수 상한을 넘으면 위반이고, 이전에 만든 계획은 �
   const legacy = sized(repo, 11, '2026-11-19')
   assert.ok(!legacy.violations.some((line) => line.includes('PR 줄 수 상한')), legacy.stdout)
   assert.ok(legacy.warnings.some((line) => line.includes('PR 줄 수 상한') && line.includes('을 넘는다')), legacy.stdout)
+})
+
+test('레포 설정의 「PR 줄 수 운영 코드」 경로를 상한 비교에 넣는다', () => {
+  const repo = new Repo('size-', true)
+  repo.file('.claude/plan-overlay.md', `| 값 | 값 |\n| --- | --- |\n| PR 줄 수 상한 | \`${NEW_FILE_LINES.production * 10}\` |\n| PR 줄 수 운영 코드 | \`skills/*/SKILL.md\` |\n`)
+  repo.file('docs/flow.md')
+  const entries = Array.from({ length: 11 }, (_, n): Entry => [`skills/s${n}/SKILL.md`, '신규'])
+  writePlan(repo, 'plan1-a', [{ entries }], { index: { created_at: '2026-11-20', pr_scope: '스킬을 더한다', deferred: [] } })
+  const r = verify(repo, ['plan1-a'])
+  assert.ok(r.violations.some((line) => line.includes('PR 줄 수 상한')), r.stdout)
 })
 
 test('PR 줄 수 상한은 JS 상수를 읽고, 읽지 못하면 경고하고 보지 않는다', () => {
