@@ -1,7 +1,7 @@
 import { ConfigError, PIPELINE_KEYS, QUEUE_KEYS, section } from './config.ts'
 import type { Config } from './config.ts'
-import { judge } from './overlap.ts'
-import type { JudgeOptions } from './overlap.ts'
+import { judge, parseSharedGroup } from './overlap.ts'
+import type { JudgeOptions, SharedGroup } from './overlap.ts'
 import { pyRegExp } from './regexp.ts'
 
 export type RefreshSettings = {
@@ -9,13 +9,35 @@ export type RefreshSettings = {
   workerPaths: RegExp | null
   upToDate: boolean
   when: 'always' | 'overlap'
-  judge: JudgeOptions & { sharedPaths: string; unitPrefix: string; docsGlobs: string[]; groups: string[][] }
+  judge: JudgeOptions & { sharedPaths: string; sharedGroups: SharedGroup[]; unitPrefix: string; docsGlobs: string[]; groups: string[][] }
 }
 export function joined(value: unknown, key: string, glue: string): string {
   if (value === undefined) return ''
   if (typeof value === 'string' && value) return value
   if (Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string' && v)) return (value as string[]).join(glue)
   throw new ConfigError(`설정 파일의 ${key} 는 비지 않은 문자열이나 그 목록이어야 한다`)
+}
+
+// queue.shared_groups 를 읽는다. { 이름: 정규식 또는 정규식 목록 } 이고 목록은 `|` 로 잇는다. 없으면 빈 목록이고 틀리면 ConfigError 다.
+// 머지 큐 옵션(lib/queue-defaults.ts)과 최신화 판정이 같이 쓴다
+export function sharedGroupsOf(value: unknown, key = 'queue.shared_groups'): SharedGroup[] {
+  if (value === undefined) return []
+  const shape = `설정 파일의 ${key} 는 이름(영문, 숫자, _, -)에서 비지 않은 정규식 문자열이나 그 목록으로 가는 비지 않은 객체여야 한다`
+  if (typeof value !== 'object' || value === null || Array.isArray(value) || Object.keys(value).length === 0) throw new ConfigError(shape)
+  return Object.entries(value as Record<string, unknown>).map(([name, pattern]) => {
+    let source: string
+    try {
+      source = joined(pattern, `${key}.${name}`, '|')
+    } catch {
+      throw new ConfigError(shape)
+    }
+    if (!source) throw new ConfigError(shape)
+    try {
+      return parseSharedGroup(`${name}=${source}`)
+    } catch (e) {
+      throw new ConfigError(`설정 파일의 ${key}.${name} 를 읽지 못했다: ${(e as Error).message}`)
+    }
+  })
 }
 
 export function refreshSettings(config: Config): RefreshSettings {
@@ -27,7 +49,7 @@ export function refreshSettings(config: Config): RefreshSettings {
     workerPaths: null,
     upToDate: false,
     when: 'always',
-    judge: { sharedPaths: '', unitPrefix: 'modules/', docsGlobs: [], groups: [] },
+    judge: { sharedPaths: '', sharedGroups: [], unitPrefix: 'modules/', docsGlobs: [], groups: [] },
   }
   // 끈 저장소에서는 나머지 키를 읽지 않는다. 다른 명령이 검사하는 키의 오류로 루프가 멈추지 않게 한다
   if (slots === 0) return off
@@ -64,7 +86,7 @@ export function refreshSettings(config: Config): RefreshSettings {
     workerPaths,
     upToDate,
     when,
-    judge: { sharedPaths, unitPrefix, docsGlobs: docs.split(',').filter((g) => g), groups: groups as string[][] },
+    judge: { sharedPaths, sharedGroups: sharedGroupsOf(queue.shared_groups), unitPrefix, docsGlobs: docs.split(',').filter((g) => g), groups: groups as string[][] },
   }
 }
 

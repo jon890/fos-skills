@@ -398,6 +398,22 @@ describe('질문 확인', () => {
     assert.equal(received('decision-pending').length, 1)
   })
 
+  test('slow_sec 으로 틱을 나눠도 사용자 결정 알림은 빠른 틱이 낸다. 느린 틱은 결정 알림과 정리 실패 알림을 내지 않는다', () => {
+    hook('decision-pending')
+    config({ pipeline: { slow_sec: 600 } })
+    const workers = [{ dispatchId: 'd', dispatchStatus: 'dispatched', agentTerminalHandle: 'term_w' }]
+    orca({ messages: [{ ...question('first'), body: '결정: 저장 형식\n권장: JSON' }], workers })
+    const slow = loop(['--run', 'r', '--tick', '--tick-number', '1', '--slow'])
+    assert.equal(slow.code, 0, slow.stdout + slow.stderr)
+    assert.equal(received('decision-pending').length, 0)
+    assert.equal(existsSync(join(tmp, 'sweep-cache.txt')), true, '느린 틱은 정리를 돈다')
+    rmSync(join(tmp, 'sweep-cache.txt'))
+    const fast = loop(['--run', 'r', '--tick', '--tick-number', '2', '--fast'])
+    assert.equal(fast.code, 0, fast.stdout + fast.stderr)
+    assert.equal(received('decision-pending').length, 1)
+    assert.equal(existsSync(join(tmp, 'sweep-cache.txt')), false, '빠른 틱은 정리를 돌지 않는다')
+  })
+
   test('알린 지 700초 지난 기술 질문은 REMINDER 를 알림 파일에 쓰고 worker-question 이 reminder 를 받는다', () => {
     hook('worker-question')
     orca({ messages: [{ ...question(), body: '기술 질문: 연결을 확인한다' }] })

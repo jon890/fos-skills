@@ -42,7 +42,7 @@ import { isObject } from './json.ts'
 import { stallTicks } from './loop.ts'
 import { boardSettingsFromConfig } from './milestones.ts'
 import { groupMap } from './overlap.ts'
-import { joined } from './refresh.ts'
+import { joined, sharedGroupsOf } from './refresh.ts'
 import { pyRegExp } from './regexp.ts'
 import { adrDirs } from './reservations.ts'
 
@@ -59,7 +59,7 @@ export type Pair = { keys: readonly string[]; check: (body: Record<string, unkno
 export const TIMER_MAX_SEC = 2147483
 
 // 바꾸면 상주 루프를 다시 띄워야 반영되는 키
-export const RESTART_KEYS: readonly string[] = ['board.task', 'pipeline.tick_sec', 'finish.run', 'finish.specs_dir']
+export const RESTART_KEYS: readonly string[] = ['board.task', 'pipeline.tick_sec', 'pipeline.slow_sec', 'finish.run', 'finish.specs_dir']
 
 const KO = { error: z.locales.ko().localeError }
 
@@ -189,6 +189,15 @@ const unitGroups = leaf((value) => {
   }
 }, 'queue.unit_groups 는 단위 이름이 둘 이상인 문자열 목록의 목록이어야 하고 한 단위가 두 묶음에 들 수 없다')
 
+const sharedGroups = leaf((value) => {
+  try {
+    sharedGroupsOf(value)
+    return value !== undefined
+  } catch {
+    return false
+  }
+}, 'queue.shared_groups 는 이름(영문, 숫자, _, -)에서 비지 않은 정규식 문자열이나 그 목록으로 가는 비지 않은 객체여야 하고 정규식으로 읽혀야 한다')
+
 const requiredChecks = leaf((value) => {
   if (typeof value === 'string') return value.split(',').some((piece) => piece) && !/["\\]/.test(value)
   return isNonEmptyList(value) && !value.some((name) => /["\\]/.test(name))
@@ -205,6 +214,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     method: zodCheck(z.enum(['merge', 'squash', 'rebase'])),
     up_to_date_when: zodCheck(z.enum(['always', 'overlap'])),
     shared_paths: zodCheck(regexpSource('queue.shared_paths', '|')),
+    shared_groups: zodCheck(sharedGroups),
     unit_prefix: zodCheck(nonEmptyText),
     skipped_is_missing: zodCheck(bool),
     update_docs_on_overlap: zodCheck(bool),
@@ -220,6 +230,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
   pipeline: {
     enabled: zodCheck(bool),
     tick_sec: zodCheck(timer),
+    slow_sec: zodCheck(timer),
     digest_sec: zodCheck(timer),
     request_ack_sec: zodCheck(timer),
     ready_slots: zodCheck(z.number().int().min(1)),
@@ -360,6 +371,10 @@ export const PAIRS: Readonly<Partial<Record<Section, readonly Pair[]>>> = {
         (present(body, 'shared_paths') || present(body, 'unit_groups')) && (body.up_to_date_when ?? 'always') !== 'overlap'
           ? 'shared_paths 와 unit_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다'
           : null,
+    },
+    {
+      keys: ['shared_groups', 'up_to_date_when'],
+      check: (body) => (present(body, 'shared_groups') && (body.up_to_date_when ?? 'always') !== 'overlap' ? 'shared_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다' : null),
     },
     {
       keys: ['update_docs_on_overlap', 'docs_glob'],

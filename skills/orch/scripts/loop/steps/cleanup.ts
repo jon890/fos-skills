@@ -67,9 +67,9 @@ export async function sweepRuns(ctx: StepContext, state: StepState): Promise<Ste
         if (run) {
           const workers = rowsOf(run, ctx.lookup)
           if (!workers.ok) {
-            // 같은 Orca 장애를 질문 단계가 이미 알렸으면 정리 실패로 다시 깨우지 않는다.
+            // 같은 Orca 장애를 질문 단계가 이미 알렸으면 정리 실패로 다시 깨우지 않는다. 느린 틱은 질문 확인을 돌지 않지만 빠른 틱이 알린다
             log(`orch-loop: ${run} 의 worker 목록을 읽지 못해 정리를 건너뛴다: ${workers.error}`)
-            report('cleanup', state.waiting.get(run) === null ? null : workers.error, { run })
+            report('cleanup', ctx.kind === 'slow' || state.waiting.get(run) === null ? null : workers.error, { run })
             continue
           }
         }

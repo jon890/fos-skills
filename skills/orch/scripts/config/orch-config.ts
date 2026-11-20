@@ -125,7 +125,7 @@ async function main(): Promise<number> {
     if (restart.length > 0) {
       const status = loopStatus(repo, Date.now())
       if (status.alive || status.recheck) {
-        const condition = restart.includes('pipeline.tick_sec') ? '' : '루프를 --run 없이 띄웠다면 '
+        const condition = restart.includes('pipeline.tick_sec') || restart.includes('pipeline.slow_sec') ? '' : '루프를 --run 없이 띄웠다면 '
         warn(`${restart.join(', ')}: ${condition}루프를 다시 띄워야 반영된다(orch loop stop 뒤 orch loop start)`)
       }
     }

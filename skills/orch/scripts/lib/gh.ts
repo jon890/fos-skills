@@ -265,6 +265,22 @@ export function ciState(rollup: unknown, required: readonly string[], skippedIsM
   return { state: 'passed', checks }
 }
 
+// 필수 체크만으로 정한 CI 상태다. 상주 루프의 최신화가 쓴다(loop/steps/refresh.ts 머리 주석의 「최신화」).
+//   failed   필수 체크 하나라도 실패다. 필수가 아닌 체크(리뷰 봇 같은 것)의 실패와 진행은 보지 않는다
+//   pending  필수 체크가 빠졌거나 아직 돈다
+//   passed   필수 체크가 모두 나타나 끝났고 실패가 없다
+// required 가 비면 ciState 와 같다. 필수 체크를 모르면 무엇을 빼야 할지 모르기 때문이다
+export function requiredCiState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState['state'] {
+  if (required.length === 0) return ciState(rollup, required, skippedIsMissing, head).state
+  const wanted = new Set(required)
+  const rows = currentChecks(rollup, head)
+    .filter((row) => wanted.has(checkName(row)))
+    .filter((row) => !(skippedIsMissing && field(row, 'conclusion') === 'SKIPPED'))
+  if (rows.some(failedRow)) return 'failed'
+  const missing = required.some((name) => !rows.some((row) => checkName(row) === name))
+  return missing || rows.some(pendingRow) ? 'pending' : 'passed'
+}
+
 // 체크 이름이 같아도 다른 workflow 일 수 있다. Actions URL 의 run 으로 workflow ID 를 읽고,
 // base 의 최신 완료된 push 실행이 최근에 실패했는지 본다. lib/gh-budget.ts 의 REST GET 공유 캐시를 쓴다.
 // 모든 실패 체크가 같은 workflow 의 base 실패로 설명될 때만 worker 전달을 막는다. 6시간이 지난 실패나 시각이 없는 응답은 제외한다.

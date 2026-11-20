@@ -1,5 +1,5 @@
 // PR 을 머지하기 전에 base 최신화가 필요한지 「단위」 겹침으로 정하는 판정의 한 벌이다. git 조회는 하지 않는다.
-// overlap_units 명령과 머지 큐가 쓴다. 판정 규칙(단위, 단위 묶음, 공용 경로, 문서 파일, 바로 머지로 보는 경우)은
+// overlap_units 명령과 머지 큐가 쓴다. 판정 규칙(단위, 단위 묶음, 공용 경로, 공용 묶음, 문서 파일, 바로 머지로 보는 경우)은
 // overlap_units.ts 머리 주석이 소유한다.
 //
 // 공용 경로 정규식은 Python re 의 글자로 받는다(lib/py.ts 의 pyRegExp). 옛 overlap_units.py 를 부르던 설정이 그대로 통하게 하려는 것이다.
@@ -91,9 +91,29 @@ function names(items: Iterable<string>): string {
   return sorted.length > SHOWN ? `${shown} 외 ${sorted.length - SHOWN}` : shown
 }
 
-export type JudgeOptions = { sharedPaths?: string; unitPrefix?: string; docsGlobs?: readonly string[]; groups?: readonly (readonly string[])[] }
+// 공용 묶음 하나. pattern 은 Python 정규식 글자다(lib/py.ts 의 pyRegExp)
+export type SharedGroup = { name: string; pattern: string }
 
-// PR 쪽 파일 목록과 base 쪽 파일 목록으로 최신화가 필요한지 정한다. sharedPaths 를 읽지 못하면 pyRegExp 의 Error 를 던진다.
+export type JudgeOptions = {
+  sharedPaths?: string
+  sharedGroups?: readonly SharedGroup[]
+  unitPrefix?: string
+  docsGlobs?: readonly string[]
+  groups?: readonly (readonly string[])[]
+}
+
+// `--shared-group 이름=정규식` 의 값 하나를 읽는다. 이름은 영문, 숫자, `_`, `-` 이고 정규식은 비지 않아야 한다. 틀리면 Error 다
+export function parseSharedGroup(text: string): SharedGroup {
+  const at = text.indexOf('=')
+  const name = at > 0 ? text.slice(0, at) : ''
+  const pattern = at > 0 ? text.slice(at + 1) : ''
+  if (!/^[A-Za-z0-9_-]+$/.test(name) || !pattern) throw new Error(`공용 묶음은 이름=정규식 꼴이고 이름은 영문, 숫자, _, - 다: ${text}`)
+  pyRegExp(pattern)
+  return { name, pattern }
+}
+
+// PR 쪽 파일 목록과 base 쪽 파일 목록으로 최신화가 필요한지 정한다. sharedPaths 나 sharedGroups 의 정규식을 읽지 못하면 pyRegExp 의 Error 를 던진다.
+// 공용 경로(sharedPaths)는 어느 한쪽만 맞아도 겹침이다. 공용 묶음(sharedGroups)은 PR 과 base 가 같은 묶음의 파일을 둘 다 바꿨을 때만 겹침이다.
 export function judge(prFiles: readonly string[], baseFiles: readonly string[], opts: JudgeOptions = {}): Verdict {
   const docsGlobs = opts.docsGlobs ?? []
   const unitPrefix = opts.unitPrefix ?? 'modules/'
@@ -104,6 +124,12 @@ export function judge(prFiles: readonly string[], baseFiles: readonly string[], 
     const shared = pyRegExp(opts.sharedPaths)
     const hits = new Set([...pr, ...base].filter((file) => shared.test(file)))
     if (hits.size > 0) return { update: true, reason: `공용 경로: ${names(hits)}` }
+  }
+  for (const group of opts.sharedGroups ?? []) {
+    const pattern = pyRegExp(group.pattern)
+    const mine = pr.filter((file) => pattern.test(file))
+    const theirs = base.filter((file) => pattern.test(file))
+    if (mine.length > 0 && theirs.length > 0) return { update: true, reason: `공용 묶음 ${group.name}: PR ${names(mine)}, base ${names(theirs)}` }
   }
   const mapping = groupMap(opts.groups ?? [])
   const units = (files: string[]) => new Set(files.map((file) => unitOf(file, unitPrefix)).map((unit) => mapping.get(unit) ?? unit))

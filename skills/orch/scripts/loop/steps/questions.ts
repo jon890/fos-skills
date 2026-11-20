@@ -21,6 +21,18 @@ import type { Waiting } from './shared.ts'
 
 export const REMIND_AFTER_SEC = 600
 
+// 느린 틱(orch-loop.ts 머리 주석의 「느린 단계」)은 질문 확인을 돌지 않는다. 보드 동기화가 쓸 완료 보고만 Run 마다 읽는다. 읽지 못한 Run 은 빈 목록이다
+export function loadCompletions(ctx: StepContext): void {
+  for (const { run } of ctx.runs) {
+    if (!run) continue
+    try {
+      ctx.completions.set(run, completionMessages(run))
+    } catch (e) {
+      log(`orch-loop: 느린 틱에서 완료 보고를 읽지 못했다: ${oneLine(e)}`)
+    }
+  }
+}
+
 function askers(pending: Record<string, unknown>[]): Waiting {
   const dispatches = new Set<string>()
   const terminals = new Set<string>()
