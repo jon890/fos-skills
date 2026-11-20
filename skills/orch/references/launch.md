@@ -88,6 +88,7 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
 ## 띄운 직후 확인
 
 - `worker-start` 응답의 `launch.effective`(기본 출력의 `LAUNCH-EFFECTIVE` 줄)가 1단계에서 고른 모델, effort 와 같다. 기본 출력의 `LAUNCHED <dispatch> <터미널> <워크트리>` 에서 터미널을 읽는다
+  - `LAUNCH-EFFECTIVE` 의 `candidateOverride.reason` 이 `사용량: ` 으로 시작하면 Claude 사용량 때문에 같은 등급의 Claude 로 바꿔 띄운 것이다. 고른 값과 달라도 정상이다([`agent-selection.md`](agent-selection.md) 「Claude 사용량이 남을 때」). `USAGE-UNKNOWN <이유>` 줄은 사용량을 읽지 못해 행 그대로 띄웠다는 뜻이다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 - 출력에 `COMMIT-CHECK-SKIP` 이나 `COMMIT-CHECK-FAIL` 이 없다. 있으면 아래 「한국어 커밋 검사」 를 따른다
 

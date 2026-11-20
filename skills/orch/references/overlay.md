@@ -69,7 +69,7 @@ orch config unset contracts.merge_command contracts.paths
 
 | 절 | 키 | 담는 것 |
 | --- | --- | --- |
-| `routing` | `review_author`, `review_pattern`, `size_pattern` | PR 관측값을 읽을 자동 리뷰 계정과 본문 꼴. 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
+| `routing` | `review_author`, `review_pattern`, `size_pattern`, `usage_boost` | PR 관측값을 읽을 자동 리뷰 계정과 본문 꼴, Claude 사용량이 남을 때 Codex 행을 Claude 로 바꿔 띄울지. 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
 | `inbox` | `enabled`, `dooray`, `slack` | inbox 스킬의 저장소별 알림 필터. 꼴은 `skills/inbox/references/config.md` 「저장소 필터」 와 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
 | `finish` | `gh_host` | 문자열이나 null. gh 에 줄 호스트. github.com 이 아닌 저장소에서만 |
 | `finish` | `repo`, `run`, `pid_file` | 문자열이나 null. 저장소 경로, worker 를 찾을 Orca Run id, 마무리 프로세스 PID 파일 |

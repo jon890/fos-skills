@@ -2,6 +2,7 @@
 
 **일의 내용으로 행을 고르고, 그 행에 정해진 worker 하나와 이유를 지시서에 적는다.**
 에이전트·모델·effort 가운데 하나라도 행과 다르면 `후보 밖: <이유>` 를 적는다. 사용자가 지정하거나 사용 한도 표로 바꾸는 경우도 같다.
+Claude 사용량이 남아 `launch-worker` 가 스스로 바꾸는 경우만 지시서를 고치지 않는다(아래 「Claude 사용량이 남을 때」).
 줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유한다. 명령 예시는 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 선택 근거와 실측은 [evidence.md](../../../docs/features/orch-routing/evidence.md), 사용자 결정은 [단일 worker 스펙](../../../docs/features/orch-single-worker/spec.md) 에 둔다.
 
@@ -67,6 +68,18 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 바꾼 worker 는 지시서의 `worker 선택:` 줄에 반영하고 `후보 밖: 한도 <제공자>` 를 적는다. 줄과 다르면 `launch-worker` 가 거부한다.
 시작 전 모델 검사에서 보여 주는 대체 후보도 이 표를 따른다. 구현은 `scripts/lib/model-check.ts` 의 `previousSol` 과 `otherProvider` 가 소유한다.
+
+### Claude 사용량이 남을 때
+
+**Claude 주간 사용량이 초기화 전에 남을 것 같으면 `launch-worker` 가 Codex 행을 같은 등급의 Claude 로 바꿔 띄운다.** 코디네이터는 지시서에 모델 표의 행 그대로 적는다.
+
+- 대상: `impl-planned`, `impl-explore`, `small-fix`, `design` 행의 Codex worker. 지시서에 `후보 밖:` 이 있으면 그 선택이 먼저라 바꾸지 않는다. `visual`, `review`, 이미 Claude 인 행은 바꾸지 않는다.
+- 기준: 남은 사용량 비율(100 − 주간 사용 %)이 초기화까지 남은 시간 비율(남은 시간 ÷ 7일)보다 크면 바꾼다.
+- 같은 등급: 위 「사용 한도에 걸렸을 때」 표의 「같은 등급 대응」 칸에서 첫 Claude 모델이다. 칸에 effort 가 없으면 행의 effort 를 그대로 쓴다. 지금 표로는 sol `medium` 이 Opus 5.5 `medium`, sol `low` 가 Sonnet 5.5 `low` 다.
+- 기록: 바꾸면 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.candidateOverride` 에 행, 띄운 worker, `사용량: 남은 78%, 남은 시간 22%` 꼴의 이유를 남긴다. 띄우기 기록의 에이전트가 Claude 라 리뷰 제공자는 Codex 로 정해진다.
+- 출처: 상태 줄과 같은 값인 oh-my-claudecode 사용량 캐시다. 출처가 없거나 읽지 못하거나 1시간보다 오래된 값이면 `USAGE-UNKNOWN <이유>` 를 내고 행 그대로 띄운다. 위치와 판정은 `scripts/lib/usage-boost.ts` 머리 주석이 소유한다.
+- 끄기: 저장소 설정 `routing.usage_boost` 가 `false` 면 보지 않는다. 값이 없으면 켜진 것이다.
+- `--terminal` 이어 쓰기와 `orch worker resume` 은 같은 세션을 잇는 일이라 바꾸지 않는다. `--task` 로 새로 띄우는 재시도는 다시 판정한다.
 
 ### 기본 후보에서 뺀 모델
 
