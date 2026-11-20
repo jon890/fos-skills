@@ -160,6 +160,7 @@ TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`]
 
 `orch queue merge` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다. 다른 큐가 이미 맡은 PR 은 `QUEUE-SKIP` 한 줄을 내고 건너뛴다.
 **`queue.auto_merge` 를 켠 저장소에서는 머지를 루프에 맡긴다.** 코디네이터는 리뷰 판정 댓글(자동 머지가 읽는 pass 문구)과 보류 PR 만 다루고, 루프가 건 것은 `state/loop.log` 의 `AUTO-MERGE` 줄로 본다. 루프가 걸지 않는 PR 만 직접 건다(`references/cleanup.md` 의 「머지」).
+기능 PR 의 `후속 검증: 대기` 는 마무리가 배포 뒤 할 일 목록으로 옮기고 PR 정리를 끝낸다. 루프가 배포를 확인하면 `FOLLOWUP-READY` 로 묶어 알리고, 코디네이터가 배포된 환경에서 확인한 뒤 `orch followup done <PR>` 로 끝내면 업무 완료와 보드 done 이 이어서 돈다(`references/cleanup.md` 의 「배포 뒤 할 일」).
 앞 PR 머지마다 뒤 PR 을 최신화하느라 CI 를 다시 기다리는 저장소는 `--up-to-date-when overlap` 으로 겹치지 않는 PR 의 최신화를 생략한다. 쓸 수 있는 저장소와 규칙은 `references/cleanup.md` 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다.
 그래도 겹치는 PR 이 차례마다 CI 를 기다리면 `pipeline.refresh_slots` 로 상주 루프가 뒤처진 PR 을 머지 차례 전에 최신화하게 한다(`references/cleanup.md` 의 「머지 차례 전에 미리 최신화하기」).
 머지 큐가 끝나면 `orch queue conflicts` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 인지는 마무리가 배포 뒤에 판정하므로 PR 마다 `!` 를 정하지 않는다. 판정을 덮을 때만 `!`(마지막)나 `~`(중간)를 붙인다. 워크트리는 `orch cleanup worktree` 로만 지운다. 끝난 handoff 산출물은 묻지 않고 `orch cleanup handoff --apply` 로 휴지통 폴더에 옮긴다.

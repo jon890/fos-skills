@@ -91,6 +91,7 @@
 //     11. 미답변 질문 확인. steps/unanswered.ts
 //     12. 모아 보내기와 완료 보고·끊긴 worker 확인. steps/reports.ts
 //     13. 답 없는 요청 알림. steps/requests.ts
+//     14. 배포 뒤 할 일 알림. steps/followups.ts
 //     단계는 설정과 이번 틱의 Run(StepContext), 앞 단계가 낸 값(StepState)을 받아 바꿀 값과 오류 이유(StepResult)를 돌려준다(steps/context.ts).
 //     tick 이 결과를 차례로 합쳐 결과 줄을 낸다. 부모가 결과 줄을 loop.json 에 합치는 규칙은 lifecycle.ts 머리 주석의 「틱 자식」 이다.
 //
@@ -151,6 +152,7 @@ import { checkStalls } from './steps/stalls.ts'
 import { fireTick } from './steps/tick-event.ts'
 import { checkUnanswered } from './steps/unanswered.ts'
 import { notifyUnacked } from './steps/requests.ts'
+import { notifyFollowups } from './steps/followups.ts'
 
 const USAGE = [
   '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start [--take-over [--confirmed TEXT]] | --stop [--all] | --status | --foreground) [--once]',
@@ -188,6 +190,7 @@ async function tick(config: Context, n: number): Promise<number> {
     collect(state, await checkUnanswered(ctx, state))
     collect(state, await checkReports(ctx, state))
     collect(state, await notifyUnacked(ctx, state))
+    collect(state, await notifyFollowups(ctx, state))
     const { errors, ci, stalls } = state
     const result: TickResult = { tick_at: iso(), errors, open_prs: openNumbers(state.prs), ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }
     process.stdout.write(`${JSON.stringify(result)}\n`)

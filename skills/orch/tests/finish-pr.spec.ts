@@ -324,29 +324,88 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.match(r.stdout, /FINISH-DONE/)
     assert.equal(existsSync(join(handoff, 'body.md')), true)
   })
-  test('기능 후속 검증이 대기면 워크트리는 지우고 지시서·업무 완료를 남기고 근거 갱신 뒤 마무리한다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = `<!-- fos-feature-evidence -->
+  const evidence = (c: Ctx, followup: string) => `<!-- fos-feature-evidence -->
 검증 커밋: ${c.state.pr.head}
 인수 검증: 통과 | REQ1 실행 로그
 문서 대조: 통과 | 설계 문서 대조, 후보 없음 근거
 독립 리뷰: 통과 | 별도 코드 검토 결과
-후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
+후속 검증: ${followup}
 <!-- /fos-feature-evidence -->`
+  const followups = (c: Ctx) => {
+    const file = join(c.repo, '.orch', 'state', 'followups.json')
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).items : null
+  }
+
+  test('기능 후속 검증이 대기면 워크트리는 지우고 그 줄을 배포 뒤 할 일로 옮겨 FINISH-DONE 이고, 끝낸 뒤 다시 돌면 업무까지 끝낸다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke, 코디네이터, CI 실행기')
     hook(c, taskCompleter())
     const args = ['--specs-dir', c.specs, '--complete']
     const waiting = await c.finish(args)
-    assert.equal(waiting.code, 1, both(waiting))
-    // 사용자 결정(2026-11-04): 워크트리와 브랜치는 MERGED 직후 지운다. 지시서와 업무 완료만 후속 검증 뒤로 남긴다
+    assert.equal(waiting.code, 0, both(waiting))
+    assert.match(waiting.stdout, /^FOLLOWUP-ADDED #77 배포 후 smoke, 코디네이터, CI 실행기$/m)
+    assert.match(waiting.stdout, /FINISH-DONE\s*$/)
+    // 사용자 결정(2026-11-04): 워크트리와 브랜치는 MERGED 직후 지운다. 지시서와 업무 완료는 후속 검증 뒤로 남긴다
     assert.equal(existsSync(c.wt), false)
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
     assert.equal(c.calls().some((line) => line.startsWith('sweep ')), true)
     assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), false)
-    c.state.pr.body = String(c.state.pr.body).replace('후속 검증: 대기', '후속 검증: 통과')
+    const saved = followups(c)
+    assert.equal(saved.length, 1)
+    assert.equal(saved[0].pr, 77)
+    assert.equal(saved[0].deploy, 'none')
+    assert.equal(saved[0].done_at, null)
+    // 같은 PR 을 다시 돌려도 항목은 하나다
+    const again = await c.finish(args)
+    assert.match(again.stdout, /^FOLLOWUP-KEPT #77 /m)
+    assert.equal(followups(c).length, 1)
+    // 코디네이터가 끝내면(orch followup done) 본문의 대기를 그대로 둬도 후속 검증 통과로 보고 업무와 지시서까지 끝낸다
+    const file = join(c.repo, '.orch', 'state', 'followups.json')
+    writeFileSync(file, JSON.stringify({ items: saved.map((item: Json) => ({ ...item, done_at: '2026-11-20T00:00:00.000Z' })) }))
     const done = await c.finish(args)
     assert.equal(done.code, 0, both(done))
-    assert.equal(existsSync(c.wt), false)
+    assert.doesNotMatch(done.stdout, /FOLLOWUP-/)
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+    assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), true)
+  })
+
+  test('후속 검증 대기를 본문에서 통과로 바꿔도 마무리를 이어 간다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = evidence(c, '통과 | 배포 후 smoke 결과 링크')
+    const done = await c.finish(['--specs-dir', c.specs, '--complete'])
+    assert.equal(done.code, 0, both(done))
+    assert.equal(followups(c), null)
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+  })
+
+  test('후속 검증이 없음이면 배포 뒤 할 일을 만들지 않는다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = evidence(c, '없음 | 배포 대상 없는 도구 변경')
+    const done = await c.finish(['--specs-dir', c.specs, '--complete'])
+    assert.equal(done.code, 0, both(done))
+    assert.doesNotMatch(done.stdout, /FOLLOWUP-/)
+    assert.equal(followups(c), null)
+  })
+
+  test('배포가 끝나지 않았으면 배포 뒤 할 일로 옮긴 뒤 FINISH-FAIL 이다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke')
+    c.state.runs = []
+    const r = await c.finish(['--specs-dir', c.specs, '--complete', ...DEPLOY])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^FOLLOWUP-ADDED #77 배포 후 smoke$/m)
+    assert.match(r.stdout, /FINISH-FAIL/)
+    assert.equal(followups(c)[0].deploy, 'timeout')
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
+  })
+
+  test('후속 검증 말고 다른 근거가 빠졌으면 배포 뒤 할 일로 옮기지 않고 FINISH-FAIL 이다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke').replace('독립 리뷰: 통과', '독립 리뷰: 대기')
+    const r = await c.finish(['--specs-dir', c.specs, '--complete'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /독립 리뷰 이 완료되지 않았다/)
+    assert.equal(followups(c), null)
   })
 
   test('worker 를 정리하고 배포를 기다리고 업무를 완료 처리하고 보드를 바꾼다', async (t) => {

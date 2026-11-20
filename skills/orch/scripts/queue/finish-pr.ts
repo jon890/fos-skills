@@ -44,8 +44,15 @@
 //     10. 보드 항목을 고친다(아래 「보드 항목」)
 //
 // 기능 PR(지시서가 기능 루프이거나 본문에 완료 근거 블록이 있다): 단계 6 의 판정 뒤, after-deploy 앞에서 PR 본문을 새로 읽어 완료 근거를 검사한다.
-//     근거가 빠졌거나 후속 검증이 대기·실패면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 워크트리는 단계 4 에서 이미 지웠다.
+//     근거가 빠졌거나 틀렸으면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 워크트리는 단계 4 에서 이미 지웠다.
 //     근거를 갱신한 뒤 같은 명령으로 재개한다
+//
+// 배포 뒤 할 일: 기능 PR 의 근거가 「후속 검증: 대기 | <글>」 하나만 남았으면 그 글을 배포 뒤 할 일 목록(lib/followups.ts)에 옮기고
+//     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드 파일이 있으면 항목 followup-<PR> 을 wait 로 보인다.
+//     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 배포가 실패했거나 시간이 지났으면
+//     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
+//     코디네이터가 `orch followup done <PR>` 로 끝내면 그 명령이 이 마무리를 다시 띄운다. 그때는 목록의 끝난 기록을 후속 검증 통과로 보고
+//     지시서 정리, 업무 완료, 보드 done 까지 간다. 본문의 대기를 통과로 바꿔도 같다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -157,7 +164,9 @@ import { real, realPath } from '../lib/fs.ts'
 import { gh } from '../lib/gh.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
-import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges } from '../lib/feature-evidence.ts'
+import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges, pendingFollowup } from '../lib/feature-evidence.ts'
+import { followupDone, mirrorBoard, updateFollowups } from '../lib/followups.ts'
+import { upsertFollowup } from '../core/followups.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
@@ -784,9 +793,14 @@ async function finish(args: Args, repo: string): Promise<number> {
     const fresh = gh(['pr', 'view', args.pr, '--json', 'body'], { cwd: repo, cache: false })
     let body = ''
     try { if (fresh.code === 0) body = JSON.parse(fresh.stdout).body } catch { /* 아래 검사로 실패 */ }
-    const problem = typeof body === 'string' ? featureEvidenceProblem(body, String(merged.pr.head ?? ''), true, true,
+    // 후속 검증의 대기는 여기서 막지 않고(afterMerge false) 아래에서 배포 뒤 할 일 목록으로 옮긴다
+    const problem = typeof body === 'string' ? featureEvidenceProblem(body, String(merged.pr.head ?? ''), true, false,
       (verified) => fetchedBaseMerges(repo, String(merged.pr.head ?? ''), verified, merged.base)) : '기능 완료 근거 조회 실패'
     if (problem) return fail(problem)
+    const waiting = pendingFollowup(body)
+    if (waiting !== null && !followupDone(repo, args.pr)) {
+      return holdForFollowup(args, repo, merged, waiting, deploy, deployed && !handoffProblem, problems)
+    }
   }
 
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
@@ -850,6 +864,33 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
   if (problems.length > 0) return fail(problems.join('; '))
   if (item && last) completeRequest(repo, item.id, args.pr, args.run ?? null, closed)
+  out('FINISH-DONE')
+  return 0
+}
+
+// 머리 주석의 「배포 뒤 할 일」. 후속 검증 줄을 목록에 옮기고 보드에 보인다. 지시서, 업무 완료(after-deploy), 보드 done 은 남긴다.
+// 배포가 실패했거나 시간이 지났거나 handoff 정리가 남았으면(ok 가 거짓) 옮긴 뒤 FINISH-FAIL 이다. 루프가 배포를 다시 확인한다
+function holdForFollowup(args: Args, repo: string, merged: Merged, text: string, deploy: Deploy, ok: boolean, problems: string[]): number {
+  const pr = Number(args.pr)
+  let line: string
+  try {
+    const got = updateFollowups(repo, (items) => {
+      const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy }, new Date().toISOString())
+      return { items: made.items, value: made }
+    })
+    const item = got.items.find((one) => one.pr === pr)
+    line = got.result === 'added' ? `FOLLOWUP-ADDED #${pr} ${oneLine(text)}` : `FOLLOWUP-KEPT #${pr} ${oneLine(text)}`
+    out(line)
+    if (item) {
+      const board = mirrorBoard(repo, item, { file: args.board, bin: args.boardBin })
+      if (board.startsWith('실패:')) log(`배포 뒤 할 일을 보드에 보이지 못했다: ${board.slice('실패:'.length).trim()}`)
+      else if (board !== '보드 없음') log(board)
+    }
+  } catch (e) {
+    return fail(`배포 뒤 할 일 목록에 옮기지 못했다: ${oneLine((e as Error).message)}. 후속 검증 이 완료되지 않았다: 대기 | ${text}`)
+  }
+  log(`지시서, 업무 완료, 보드는 배포 뒤 할 일을 끝낸 뒤로 남긴다. 끝내면: ${orchWord()} followup done ${pr}`)
+  if (!ok) return fail(problems.join('; ') || '배포를 확인하지 못했다')
   out('FINISH-DONE')
   return 0
 }
