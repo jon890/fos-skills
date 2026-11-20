@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { test, beforeEach, afterEach } from 'node:test'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
 import { watchCompletions } from '../scripts/loop/completion-watch.ts'
@@ -10,6 +10,7 @@ import { forgetLaunch, recordLaunch } from '../scripts/lib/launched.ts'
 import { recordHistory } from '../scripts/lib/launch-history.ts'
 import { skipsPrReady } from '../scripts/lib/spec.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
+import { loopFile, registerRun } from '../scripts/lib/loop.ts'
 let repo: string, bin: FakeBin
 const saved = { ...process.env }
 const envelope = (messages: unknown[]) => JSON.stringify({ ok: true, result: { messages } })
@@ -259,4 +260,116 @@ test('DONE-RETURNED 전송이 실패하면 다시 되돌리지 않고 알림만 
   assert.ok(state().ids.includes('d1')); assert.deepEqual(state().returnNotes, {})
   assert.equal(kinds().filter(k => k === 'DONE-RETURNED').length, 2, '실패한 시도 하나와 성공 하나')
   assert.ok(!kinds().includes('DONE-SUSPECT'))
+})
+
+// 2026-11-19 오탐: 준비됨을 보내고 머지된 worker 에게 DONE-SUSPECT 가 두 번 갔다.
+// 한 번은 띄우지 않은 저장소의 루프가, 한 번은 지시서를 지운 뒤 띄운 저장소의 루프가 보냈다
+test('dispatch 없이 터미널에서 보낸 준비됨도 같은 Task 와 발신자면 근거로 보고 머지된 PR 은 알리지 않는다', async () => {
+  const sha = 'e'.repeat(40)
+  const ready = { id: 'r346', type: 'status', run_id: 'R', from_handle: 'worker', payload: { taskId: 'task' }, body: `준비됨 #346, head ${sha}`, created_at: '2026-11-10T00:00:30Z' }
+  const gh = fakeBin(repo, 'gh', [{ args: ['view'], stdout: JSON.stringify({ number: 346, headRefName: 'fix/x', headRefOid: sha, title: '제목', url: 'u', state: 'MERGED' }) }])
+  process.env.GH = gh.path
+  recordLaunch(repo, { dispatch: 'd346', terminal: 'worker', worktree: repo, run: 'R', branch: 'fix/x' })
+  rules([done('d346')], [ready]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+})
+test('지시서를 지운 뒤 온 근거 없는 완료도 띄우기 기록의 브랜치 PR 이 MERGED 면 알리지 않는다', async () => {
+  const launch = { dispatch: 'merged', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/merged' }
+  recordLaunch(repo, launch)
+  recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  forgetLaunch(repo, 'merged')
+  const gh = fakeBin(repo, 'gh', [{ args: ['list', 'open'], stdout: '[]' }, { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 785, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
+  process.env.GH = gh.path
+  rules([done('merged')]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+  assert.ok(state().ids.includes('merged'))
+})
+test('같은 브랜치 이름의 옛 PR 이 띄우기 전에 머지됐으면 새 dispatch 의 근거 없는 완료를 알린다', async () => {
+  recordHistory(repo, { dispatch: 'reused', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/reused', at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  const gh = fakeBin(repo, 'gh', [{ args: ['list', 'open'], stdout: '[]' }, { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 1, state: 'MERGED', mergedAt: '2026-08-01T00:00:00Z' }]) }])
+  process.env.GH = gh.path
+  rules([done('reused')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(state().suspects, ['reused'])
+})
+test('띄운 시각을 모르면 같은 브랜치의 MERGED PR 이 있어도 근거 없는 완료를 알린다', async () => {
+  recordLaunch(repo, { dispatch: 'no-time', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/no-time' })
+  const gh = fakeBin(repo, 'gh', [{ args: ['list', 'open'], stdout: '[]' }, { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 9, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
+  process.env.GH = gh.path
+  rules([done('no-time')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(state().suspects, ['no-time'])
+})
+test('같은 브랜치에 열린 PR 이 남았거나 PR 조회가 실패하면 머지된 PR 이 있어도 알린다', async () => {
+  const merged = { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 1, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }
+  const openRules = (branch: string) => [
+    [{ args: ['list', 'open'], stdout: JSON.stringify([{ number: 2, title: 't', url: 'u', headRefName: branch }]) }, merged],
+    [{ args: ['list', 'open'], stderr: 'boom', code: 1 }, merged],
+  ]
+  for (const i of [0, 1]) {
+    const dispatch = `still-${i}`
+    recordHistory(repo, { dispatch, terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: `fix/${dispatch}`, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+    const gh = fakeBin(repo, 'gh', openRules(`fix/${dispatch}`)[i])
+    process.env.GH = gh.path
+    rules([done(dispatch, dispatch, `2026-11-10T00:0${i + 1}:00Z`)]); await watchCompletions(repo, 'R', 'main')
+  }
+  assert.equal(notices().length, 2)
+  assert.deepEqual(state().suspects, ['still-0', 'still-1'])
+})
+// 다른 저장소의 루프 상태는 그 저장소의 .orch 에 있다. ORCH_DIR 을 상대 경로로 두어 저장소마다 따로 읽게 한다
+function foreignSetup(t: Parameters<Parameters<typeof test>[1]>[0], dispatch: string, loop: 'live' | 'dead' | 'none', deleted = false) {
+  const other = tempDir('completion-watch-other-', t)
+  execFileSync('git', ['init', '-q', repo])
+  execFileSync('git', ['init', '-q', other])
+  process.env.ORCH_DIR = '.orch'
+  if (loop !== 'none') {
+    registerRun(other, 'R', null)
+    const at = new Date(Date.now() - (loop === 'live' ? 10_000 : 3_600_000)).toISOString()
+    mkdirSync(dirname(loopFile(other)), { recursive: true })
+    writeFileSync(loopFile(other), JSON.stringify({ pid: process.pid, run: 'R', repo: other, tick_sec: 300, started_at: at, alive_at: at, last_tick: at, ticks: 1, errors: {} }))
+  }
+  bin.setRules([
+    { args: ['check', 'worker_done'], stdout: envelope([done(`${dispatch}-done`, dispatch)]) }, { args: ['check', 'status'], stdout: envelope([]) },
+    { args: ['inbox'], stdout: envelope([]) },
+    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: dispatch, status: 'completed' }, worker: { worktreeId: deleted ? `other-id::${join(other, 'worktrees', 'gone')}` : `repo::${other}` } } }) },
+    { args: ['repo', 'list'], stdout: JSON.stringify({ ok: true, result: { repos: [{ id: 'mine-id', path: repo }, { id: 'other-id', path: other }] } }) },
+    { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
+  ])
+}
+test('띄우기 기록이 없고 Orca 의 worker 워크트리가 이 Run 을 보는 루프가 있는 다른 저장소면 그 루프에 맡기고 알리지 않는다', async t => {
+  foreignSetup(t, 'foreign', 'live')
+  await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+  assert.ok(state().ids.includes('foreign-done'))
+})
+test('finish 가 다른 저장소의 워크트리를 지웠어도 Orca 저장소 id 로 그 저장소를 찾아 그 루프에 맡긴다', async t => {
+  foreignSetup(t, 'foreign-gone', 'live', true)
+  await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.ok(state().ids.includes('foreign-gone-done'))
+})
+test('다른 저장소에 이 Run 을 보는 루프가 없거나 죽었으면 이 루프가 알린다', async t => {
+  for (const loop of ['none', 'dead'] as const) {
+    foreignSetup(t, `foreign-${loop}`, loop)
+    await watchCompletions(repo, 'R', 'main')
+    assert.ok(state().suspects.includes(`foreign-${loop}`), loop)
+  }
+})
+test('띄우기 기록이 없어도 Orca 의 워크트리가 이 저장소의 git 워크트리이거나 지워져 저장소를 알 수 없으면 그대로 알린다', async t => {
+  execFileSync('git', ['init', '-q', repo])
+  execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'])
+  // 저장소 폴더 밖에 만든 실제 워크트리. 경로 접두사가 아니라 git 이 알려 주는 주 checkout 으로 이 저장소의 것임을 안다
+  const linked = join(tempDir('completion-watch-linked-', t), 'wt')
+  execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'wt', linked])
+  for (const [dispatch, worktree] of [['linked', linked], ['here', join(repo, 'worktrees', 'gone')]]) {
+    bin.setRules([
+      { args: ['check', 'worker_done'], stdout: envelope([done(dispatch)]) }, { args: ['check', 'status'], stdout: envelope([]) },
+      { args: ['inbox'], stdout: envelope([]) },
+      { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: dispatch, status: 'completed' }, worker: { worktreeId: `repo::${worktree}` } } }) },
+      { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
+    ])
+    await watchCompletions(repo, 'R', 'main')
+  }
+  assert.deepEqual(state().suspects, ['linked', 'here'])
 })

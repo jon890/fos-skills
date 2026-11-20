@@ -7,6 +7,7 @@
 //   SHA 바로 뒤는 줄 끝이거나 공백, 탭, `.`, `,`, `;`, `:`, `(` 다. worker 가 같은 줄에 붙인 설명(`head <SHA> (리뷰 P3 1건)`)도 인정한다.
 //   SHA 가 40자리보다 길거나 짧으면 근거가 아니다.
 // 같은 dispatch 의 준비 상태를 우선하고 그 안에서 가장 늦은 시각을 고른다. 없으면 같은 Task 의 다른 dispatch 에도 같은 기준을 쓴다.
+//   dispatch 없이 온 준비 상태(worker 가 터미널에서 보내 payload 에 taskId 만 있다)는 발신자가 같을 때만 다른 dispatch 와 같은 순위로 센다.
 // 리뷰 dispatch(지시서에 `리뷰 PR:` 줄이 있다. 부르는 쪽이 options.isReview 로 알린다)는 PR 을 열지 않아 준비 상태가 없다.
 // PR 없는 dispatch 도 지시서가 확인되면 options.isNoPr 로 알린다. 첫 줄 `완료:`만 완료 근거로 인정한다.
 //   그 dispatch 는 준비 상태가 없으면 같은 dispatch, 같은 발신자가 앞서 보낸 결과 status 를 근거로 센다.
@@ -147,9 +148,10 @@ export function classify(messages: Json[], history: Json[] = [], options: Classi
         for (const candidate of ready ? [] : previous) {
           if (candidate.type !== 'status' || !task || !dispatch) continue
           const [candidateTask, candidateDispatch] = context(candidate)
-          if (candidateTask !== task || !candidateDispatch) continue
+          if (candidateTask !== task) continue
           const from = sender(item)
-          if (!from || !sender(candidate) || (candidateDispatch === dispatch && from !== sender(candidate))) continue
+          // dispatch 없이 터미널에서 보낸 준비 상태는 발신자가 같을 때만 같은 Task 의 근거로 본다(다른 dispatch 와 같은 순위)
+          if (!from || !sender(candidate) || ((!candidateDispatch || candidateDispatch === dispatch) && from !== sender(candidate))) continue
           if (!earlier(candidate, item, messages.slice(0, output.length), equal)) continue
           const found = readyOf(candidate)
           if (!found) continue
