@@ -1,6 +1,7 @@
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
+/** @typedef {import('../../../types/index.d.ts').BoardSchedule} BoardSchedule */
 
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
@@ -35,6 +36,7 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 
 const PANE = 'work-board'
 const SCHEDULES_REF = { plugin: 'fos-skills', key: 'board-schedules', id: 'current' }
+/** @type {BoardSchedule[]} */
 let schedules = []
 
 export async function watchSchedule($, e, next) {

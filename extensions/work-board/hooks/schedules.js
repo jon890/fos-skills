@@ -1,4 +1,5 @@
 // CronCreate/CronDelete 결과로만 갱신하는 세션 전용 예약 목록.
+/** @typedef {import('../../../types/index.d.ts').BoardSchedule} BoardSchedule */
 const WEEK = 7 * 24 * 60 * 60 * 1000
 const MINUTE = 60 * 1000
 
@@ -44,6 +45,7 @@ function dataOf(result) {
   return data && typeof data === 'object' ? data : null
 }
 
+/** @returns {BoardSchedule[]} */
 export function updateSchedules(current, call, result, at) {
   const rows = Array.isArray(current) ? current : []
   const data = dataOf(result)
@@ -57,11 +59,13 @@ export function updateSchedules(current, call, result, at) {
   const next = Number.isFinite(data.nextFireAt) ? data.nextFireAt : nextCron(call.cron, at)
   if (next === null) return rows
   const recurring = data.recurring === true || (data.recurring === undefined && call.recurring !== false)
+  /** @type {BoardSchedule} */
   const row = { id: data.id, cron: call.cron, prompt: call.prompt, schedule: typeof data.humanSchedule === 'string' ? data.humanSchedule : call.cron,
     recurring, next, expires: recurring ? at + WEEK : null }
   return [...rows.filter((item) => item.id !== row.id), row]
 }
 
+/** @returns {BoardSchedule[]} */
 export function visibleSchedules(current, at) {
   if (!Array.isArray(current)) return []
   return current.flatMap((row) => {
