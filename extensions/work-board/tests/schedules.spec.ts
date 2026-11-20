@@ -4,7 +4,12 @@ import { nextCron, updateSchedules, visibleSchedules, scheduleLine } from '../ho
 import { watchSchedule } from '../hooks/register.js'
 
 const at = new Date(2026, 10, 20, 10, 0).getTime()
-const create = { tool: 'CronCreate', cron: '*/5 * * * *', prompt: 'CI 결과를 확인한다\n자세한 안내', recurring: true }
+// Claude Code 2.1.329 plugin-authoring/types/claude-code.d.ts:
+// ToolEnvelope(17695)와 CronCreate 인자(21879)는 한 객체에 펼쳐지고,
+// ToolCallResult(17335)의 성공 값은 result 안에 든다.
+const create = { tool: 'CronCreate', tool_use_id: 'test-create', cron: '*/5 * * * *',
+  prompt: 'CI 결과를 확인한다\n자세한 안내', recurring: true }
+const remove = { tool: 'CronDelete', tool_use_id: 'test-delete', id: 'job-1' }
 const answer = { result: { id: 'job-1', humanSchedule: '5분마다', recurring: true, nextFireAt: at + 300000 } }
 
 test('성공한 만들기와 지우기 결과만 예약 목록에 반영한다', () => {
@@ -12,8 +17,8 @@ test('성공한 만들기와 지우기 결과만 예약 목록에 반영한다',
   assert.equal(rows.length, 1)
   assert.equal(rows[0].next, at + 300000)
   assert.match(scheduleLine(rows[0]), /5분마다 · CI 결과를 확인한다 · 다음 .* · 만료 /)
-  assert.deepEqual(updateSchedules(rows, { tool: 'CronDelete', id: 'job-1' }, { result: { id: 'job-1' } }, at), [])
-  assert.equal(updateSchedules(rows, { tool: 'CronDelete', id: 'job-1' }, { isError: true, result: { id: 'job-1' } }, at), rows)
+  assert.deepEqual(updateSchedules(rows, remove, { result: { id: 'job-1' } }, at), [])
+  assert.equal(updateSchedules(rows, remove, { isError: true, result: { id: 'job-1' } }, at), rows)
 })
 
 test('실패와 모양이 다른 호출은 목록을 바꾸지 않는다', () => {
@@ -21,7 +26,7 @@ test('실패와 모양이 다른 호출은 목록을 바꾸지 않는다', () =>
   assert.deepEqual(updateSchedules([], create, { isError: true, result: { id: 'job-1' } }, at), [])
   assert.deepEqual(updateSchedules([], { ...create, cron: { value: '* * * * *' } }, answer, at), [])
   assert.deepEqual(updateSchedules([], create, { result: { id: 3 } }, at), [])
-  assert.deepEqual(updateSchedules([], { tool: 'CronDelete', id: 'job-1' }, { result: { id: 'other' } }, at), [])
+  assert.deepEqual(updateSchedules([], remove, { result: { id: 'other' } }, at), [])
 })
 
 test('한 번만 도는 예약과 만료된 반복 예약은 사라진다', () => {
@@ -57,7 +62,7 @@ test('도구 훅은 원래 결과를 돌려주고 세션 상태만 갱신한다'
   const result = await watchSchedule($, create, async () => answer)
   assert.equal(result, answer)
   assert.equal(stored[0].id, 'job-1')
-  await watchSchedule($, { tool: 'CronDelete', id: 'job-1' }, async () => ({ result: { id: 'job-1' } }))
+  await watchSchedule($, remove, async () => ({ result: { id: 'job-1' } }))
   assert.deepEqual(stored, [])
   assert.equal(await watchSchedule({ ...$, state: undefined }, create, async () => answer), answer)
 })
