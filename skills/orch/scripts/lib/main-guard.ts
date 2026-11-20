@@ -37,8 +37,11 @@ export function boardRepo(repo: string, board?: string | null): string {
   return mainCheckout(dir)
 }
 
-export function dispatchRepo(repo: string, dispatch: string): string | null {
-  const got = orcaJson<{ dispatch?: { id?: string; runId?: string }; worker?: { worktreeId?: string; startOptions?: { resolvedWorktreeId?: string; worktree?: string } } }>(['orchestration', 'worker-show', '--dispatch', dispatch])
+type WorkerShown = { dispatch?: { id?: string; runId?: string }; worker?: { worktreeId?: string; startOptions?: { resolvedWorktreeId?: string; worktree?: string } } }
+
+// shown 은 같은 dispatch 의 worker-show 결과를 이미 읽은 호출자가 넘긴다. 같은 틱에서 Orca 를 두 번 부르지 않으려는 것이다
+export function dispatchRepo(repo: string, dispatch: string, shown?: ReturnType<typeof orcaJson<WorkerShown>>): string | null {
+  const got = shown ?? orcaJson<WorkerShown>(['orchestration', 'worker-show', '--dispatch', dispatch])
   if (!got.ok) return null
   const worker = got.data?.worker
   const id = worker?.worktreeId ?? worker?.startOptions?.resolvedWorktreeId ?? worker?.startOptions?.worktree ?? ''
