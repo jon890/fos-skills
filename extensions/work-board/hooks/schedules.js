@@ -56,12 +56,14 @@ export function updateSchedules(current, call, result, at) {
   }
   if (call.tool !== 'CronCreate' || typeof call.cron !== 'string' || typeof call.prompt !== 'string'
     || typeof data.id !== 'string' || !data.id || data.durable === true) return rows
-  const next = Number.isFinite(data.nextFireAt) ? data.nextFireAt : nextCron(call.cron, at)
+  const firstCron = nextCron(call.cron, at)
+  const next = Number.isFinite(data.nextFireAt) ? data.nextFireAt : firstCron
   if (next === null) return rows
+  const offset = firstCron === null ? 0 : next - firstCron
   const recurring = data.recurring === true || (data.recurring === undefined && call.recurring !== false)
   /** @type {BoardSchedule} */
   const row = { id: data.id, cron: call.cron, prompt: call.prompt, schedule: typeof data.humanSchedule === 'string' ? data.humanSchedule : call.cron,
-    recurring, next, expires: recurring ? at + WEEK : null }
+    recurring, next, offset, expires: recurring ? at + WEEK : null }
   return [...rows.filter((item) => item.id !== row.id), row]
 }
 
@@ -72,7 +74,8 @@ export function visibleSchedules(current, at) {
     if (!row || !Number.isFinite(row.next) || (row.expires !== null && row.expires <= at)) return []
     if (row.next > at) return [row]
     if (!row.recurring) return []
-    const next = nextCron(row.cron, at)
+    const nextCronTime = nextCron(row.cron, at - (row.offset || 0))
+    const next = nextCronTime === null ? null : nextCronTime + (row.offset || 0)
     return next !== null && (row.expires === null || next <= row.expires) ? [{ ...row, next }] : []
   })
 }

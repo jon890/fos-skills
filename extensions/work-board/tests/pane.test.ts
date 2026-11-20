@@ -22,6 +22,19 @@ test('예약이 없으면 예약 구역을 그리지 않는다', async ($, on) =
   await ui.unmount()
 })
 
+test('성공한 CronCreate 뒤 예약 구역에 일정과 할 일을 그린다', async ($, on) => {
+  const at = Date.parse('2026-10-22T10:05:00+09:00')
+  on('tool.call', (_, e) => ({ result: { id: 'job-1', humanSchedule: '5분마다', recurring: true,
+    nextFireAt: at + 5 * 60 * 1000 } }))
+  await start($, on, undefined, BOARD, [], at)
+  const created = await $.tool.call({ tool: 'CronCreate', cron: '*/5 * * * *', prompt: 'CI 확인\n상세', recurring: true })
+  expect(created).toEqual({ result: { id: 'job-1', humanSchedule: '5분마다', recurring: true, nextFireAt: at + 5 * 60 * 1000 } })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Box', key: 'schedules' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /5분마다 · CI 확인 · 다음 .* · 만료/ })).toBeTruthy()
+  await ui.unmount()
+})
+
 async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD, commands = [], now = Date.parse('2026-10-22T10:05:00+09:00')) {
   on('command.register', (_, e) => {
     commands.push(e.name)

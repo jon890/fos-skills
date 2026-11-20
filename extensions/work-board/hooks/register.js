@@ -42,12 +42,28 @@ let schedules = []
 export async function watchSchedule($, e, next) {
   const result = await next(e)
   try {
-    const held = await $.state.get(SCHEDULES_REF)
-    const updated = updateSchedules(held.value, e, result, await $.clock.now())
-    if (updated !== held.value) {
-      await $.state.set(SCHEDULES_REF, updated, { ifVersion: held.version })
-      schedules = updated
-      $.ui.invalidate('ui.render')
+    const at = await $.clock.now()
+    let held
+    try { held = await $.state.get(SCHEDULES_REF) } catch {
+      const updated = updateSchedules(schedules, e, result, at)
+      if (updated !== schedules) {
+        schedules = updated
+        $.ui.invalidate('ui.render')
+      }
+      return result
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const updated = updateSchedules(held.value, e, result, at)
+      if (updated === held.value) break
+      const saved = Number.isInteger(held.version)
+        ? await $.state.set(SCHEDULES_REF, updated, { ifVersion: held.version })
+        : await $.state.set(SCHEDULES_REF, updated)
+      if (saved.isSet) {
+        schedules = updated
+        $.ui.invalidate('ui.render')
+        break
+      }
+      held = await $.state.get(SCHEDULES_REF)
     }
   } catch { /* 보드 상태 오류가 예약 도구의 결과를 바꾸지 않는다 */ }
   return result
@@ -2313,10 +2329,18 @@ export function register(on) {
     // 접힌 보기에서 단추가 사라진 목록(줄이 비었거나 항목이 사라짐)은 펼침 상태를 버린다. 다시 생기면 접힌 채 나온다
     // 펼친 보기(d)는 단추를 그리지 않으므로 지우지 않고, 보드를 읽지 못한 동안에도 지우지 않는다
     const sectionViews = SECTIONS.slice(1).flatMap(manualView)
-    const activeSchedules = visibleSchedules(schedules, await $.clock.now())
+    const scheduleNow = await $.clock.now()
+    const activeSchedules = visibleSchedules(schedules, scheduleNow)
     if (activeSchedules.length !== schedules.length || activeSchedules.some((row, i) => row !== schedules[i])) {
       schedules = activeSchedules
-      try { await $.state.set(SCHEDULES_REF, schedules) } catch {}
+      try {
+        const held = await $.state.get(SCHEDULES_REF)
+        const cleaned = visibleSchedules(held.value, scheduleNow)
+        if (cleaned.length !== held.value?.length || cleaned.some((row, i) => row !== held.value[i])) {
+          if (Number.isInteger(held.version)) await $.state.set(SCHEDULES_REF, cleaned, { ifVersion: held.version })
+          else await $.state.set(SCHEDULES_REF, cleaned)
+        }
+      } catch {}
     }
     const scheduleView = activeSchedules.length ? [box('schedules', 'blue', '예약  ' + activeSchedules.length,
       activeSchedules.map((row) => Text({ key: 'schedule-' + row.id, wrap: 'wrap', children: [scheduleLine(row)] })))] : []

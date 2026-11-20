@@ -5,6 +5,7 @@ export type BoardSchedule = {
   schedule: string
   recurring: boolean
   next: number
+  offset: number
   expires: number | null
 }
 

@@ -31,6 +31,8 @@ test('한 번만 도는 예약과 만료된 반복 예약은 사라진다', () =
   const repeat = updateSchedules([], create, answer, at)
   assert.equal(visibleSchedules(repeat, at + 300000).length, 1)
   assert.deepEqual(visibleSchedules(repeat, at + 7 * 86400000), [])
+  const shifted = updateSchedules([], create, { result: { ...answer.result, nextFireAt: at + 300000 + 30000 } }, at)
+  assert.equal(visibleSchedules(shifted, at + 300000 + 30000)[0].next, at + 600000 + 30000)
 })
 
 test('cron 식은 로컬 시간의 범위·간격·요일을 읽는다', () => {
@@ -42,7 +44,15 @@ test('cron 식은 로컬 시간의 범위·간격·요일을 읽는다', () => {
 
 test('도구 훅은 원래 결과를 돌려주고 세션 상태만 갱신한다', async () => {
   let stored = []
-  const $ = { state: { get: async () => ({ value: stored, version: 1 }), set: async (_ref, rows) => { stored = rows; return { isSet: true } } },
+  let conflicts = 1
+  const $ = { state: { get: async () => ({ value: stored, version: 1 }), set: async (ref, rows, options) => {
+    assert.equal(ref.plugin, 'fos-skills')
+    assert.equal(ref.key, 'board-schedules')
+    assert.equal(options.ifVersion, 1)
+    if (conflicts-- > 0) return { isSet: false }
+    stored = rows
+    return { isSet: true }
+  } },
     clock: { now: async () => at }, ui: { invalidate: () => {} } }
   const result = await watchSchedule($, create, async () => answer)
   assert.equal(result, answer)
