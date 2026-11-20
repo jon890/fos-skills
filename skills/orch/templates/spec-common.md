@@ -133,11 +133,12 @@
   - 단순 함정이 아닌가: 오타, 일시적인 네트워크나 권한 문제, 이 작업에만 있는 사정처럼 스킬을 고쳐도 재발을 못 막는 것은 올리지 않는다.
   - 구조로 막을 수 있는가: 스크립트, 검사기, 명령 한 줄, 문서 구조 변경처럼 다시 일어나지 않게 만드는 방법이 있어야 한다. 「주의한다」 같은 문장 추가로만 막을 수 있으면 올리지 않는다.
 - 후보는 파일을 직접 쓰지 않고 `orch feedback add` 로 적는다. 필수 칸이 빠지면 명령이 저장하지 않는다. <!-- orch-rule: feedback-add -->
-  `SLUG` 는 영문 소문자·숫자·하이픈으로 짓고, `TITLE` 은 무엇이 안 됐는지 쉬운 말로 쓴다. 나머지는 옵션 이름에 맞는 설명과 근거를 채운다.
+  다른 저장소에서도 같은 스킬을 쓰면 나는 문제면 대상은 `core 스킬`, 이 저장소의 스킬·설정·코드 때문이면 `이 저장소` 로 적는다. `SLUG` 는 영문 소문자·숫자·하이픈으로 짓고, `TITLE` 은 무엇이 안 됐는지 쉬운 말로 쓴다. 나머지는 옵션 이름에 맞는 설명과 근거를 채운다.
 
   ```bash
   SLUG=""
   TITLE=""
+  TARGET=""
   SKILL=""
   FILE=""
   SITUATION=""
@@ -147,7 +148,7 @@
   SIGNIFICANCE=""
   NONTRIVIAL=""
   STRUCTURAL=""
-  orch feedback add --slug "$SLUG" --title "$TITLE" --skill "$SKILL" --file "$FILE" --situation "$SITUATION" --problem "$PROBLEM" --want "$WANT" --evidence "$EVIDENCE" --significance "$SIGNIFICANCE" --nontrivial "$NONTRIVIAL" --structural "$STRUCTURAL"
+  orch feedback add --slug "$SLUG" --title "$TITLE" --target "$TARGET" --skill "$SKILL" --file "$FILE" --situation "$SITUATION" --problem "$PROBLEM" --want "$WANT" --evidence "$EVIDENCE" --significance "$SIGNIFICANCE" --nontrivial "$NONTRIVIAL" --structural "$STRUCTURAL"
   ```
 
   워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.

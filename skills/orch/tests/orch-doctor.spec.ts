@@ -7,7 +7,7 @@ import { render as renderFeedback } from '../scripts/lib/feedback.ts'
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
@@ -42,7 +42,9 @@ if (process.env.FAKE_FAIL) {
   fs.writeSync(2, 'orca offline\\n')
   process.exit(1)
 }
-if (argv.includes('worker-list')) {
+if (argv[0] === 'repo' && argv[1] === 'list') {
+  print({ ok: true, result: { repos: process.env.FAKE_REPOS ? JSON.parse(process.env.FAKE_REPOS) : [] } })
+} else if (argv.includes('worker-list')) {
   // FAKE_WORKERS 파일의 행을 낸다. 없으면 빈 목록이다
   const rows = process.env.FAKE_WORKERS ? JSON.parse(fs.readFileSync(process.env.FAKE_WORKERS, 'utf8')) : []
   print({ ok: true, result: { workers: rows, scope: { source: 'flag' }, page: { nextCursor: null } } })
@@ -82,7 +84,7 @@ function write(file: string, text: string): void {
 function doctor(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; cli?: boolean } = {}): { code: number | null; stdout: string; stderr: string } {
   const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', opts.cli ? SCRIPT : FUNCTION_RUNNER, ...args], {
     cwd: opts.cwd ?? tmp,
-    env: { ...env, ...opts.env },
+    env: { ...env, ORCH_FEEDBACK_TRASH: join(tmp, 'feedback-trash'), ...opts.env },
     encoding: 'utf8',
     timeout: 60_000,
   })
@@ -728,7 +730,7 @@ describe('저장소 판정', () => {
     assert.match(r.stdout, /^UNKNOWN-HOOK .*befor-merge\.ts$/m)
   })
 
-  test('다시 보지 않은 개선 후보 파일 수를 FEEDBACK-OPEN 으로 내고 종료 코드는 0 이다', () => {
+  test('대상이 없는 옛 메모는 다른 저장소 doctor 가 할 일로 세지 않는다', () => {
     const dir = join(tmp, '.orch', 'feedback')
     write(join(dir, 'wt-a.md'), '후보\n')
     write(join(dir, 'wt-b.md'), '후보\n')
@@ -738,31 +740,110 @@ describe('저장소 판정', () => {
     write(join(dir, 'notes.txt'), 'x\n')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
-    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+    assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
     assert.equal(r.stderr.split('\n').filter(line => line.includes('옛 개선 후보 메모')).length, 1)
     assert.match(r.stderr, /메모 2개는 feedback migrate/)
   })
 
-  test('코디네이터의 coordinator-<YYYYMMDD>.md 도 열린 후보로 센다. 다른 이름의 폴더는 세지 않는다', () => {
+  test('대상이 없는 옛 코디네이터 메모도 core 판정 대상으로 남긴다', () => {
     const dir = join(tmp, '.orch', 'feedback')
     write(join(dir, 'coordinator-20261101.md'), '## 후보\n')
     write(join(dir, 'wt-a.md'), '후보\n')
     write(join(tmp, '.orch', 'skill-feedback', 'wt-b.md'), '후보\n')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
-    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+    assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
   })
 
   test('새 양식에서 후보와 보류만 세고 채택과 기각은 세지 않는다', () => {
     const dir = join(tmp, '.orch', 'feedback')
     for (const [slug, status] of Object.entries({ a: '후보', b: '보류(근거 확인)', c: '채택 #123', d: '기각(해결됨)' })) {
       write(join(dir, `${slug}.md`), renderFeedback('문제가 생겼다', {
-        스킬: 'orch (SKILL.md)', 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: status,
+        스킬: 'orch (SKILL.md)', 대상: '이 저장소', 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: status,
       }))
     }
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\nFEEDBACK-NOTICE 문제가 생겼다: 기각(해결됨)\n`)
+    assert.equal(existsSync(join(dir, 'd.md')), false)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'd.md')), true)
+    assert.equal(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+  })
+
+  test('fos-skills doctor는 등록된 다른 저장소의 core 후보도 센다', () => {
+    const core = join(tmp, 'fos-skills'), other = join(tmp, 'sample')
+    for (const repo of [core, other]) write(join(repo, '.orch', 'feedback', '.keep'), '')
+    for (const [repo, slug, target] of [[core, 'own', '이 저장소'], [other, 'core', 'core 스킬'], [other, 'local', '이 저장소']]) {
+      write(join(repo, '.orch', 'feedback', `${slug}.md`), renderFeedback(slug, {
+        스킬: 'orch (SKILL.md)', 대상: target, 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: '후보',
+      }))
+    }
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--repo', core], {
+      env: { FAKE_REPOS: JSON.stringify([{ path: core, displayName: 'fos-skills' }, { path: other, displayName: 'sample' }]) },
+    })
+    assert.equal(r.code, 0, r.stderr)
+    assert.match(r.stdout, new RegExp(`FEEDBACK-OPEN 2 ${core}`))
+  })
+
+  test('fos-skills doctor는 다른 저장소의 옛 메모도 센다', () => {
+    const core = join(tmp, 'fos-skills'), other = join(tmp, 'sample')
+    write(join(core, '.orch', 'feedback', '.keep'), '')
+    write(join(other, '.orch', 'feedback', 'old.md'), '옛 메모\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--repo', core], {
+      env: { FAKE_REPOS: JSON.stringify([{ path: core, displayName: 'fos-skills' }, { path: other, displayName: 'sample' }]) },
+    })
+    assert.equal(r.code, 0, r.stderr)
+    assert.match(r.stdout, new RegExp(`FEEDBACK-OPEN 1 ${core}`))
+  })
+
+  test('core 반영됨과 저장소 몫 중복 기각은 doctor가 각각 한 번 보이고 정리한다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    for (const [slug, target, status] of [
+      ['core', 'core 스킬', '반영됨 #123 (1.2.3)'],
+      ['duplicate', '이 저장소', '기각(중복: 대표)'],
+    ]) {
+      write(join(dir, `${slug}.md`), renderFeedback(slug, {
+        스킬: 'orch (SKILL.md)', 대상: target, 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: status,
+      }))
+    }
+    const args = ['--skip-version', '--skip-questions', '--skill-dir', skill]
+    const first = doctor(args)
+    assert.equal(first.code, 0, first.stderr)
+    assert.match(first.stdout, /FEEDBACK-NOTICE core: 반영됨 #123 \(1\.2\.3\)/)
+    assert.match(first.stdout, /FEEDBACK-NOTICE duplicate: 기각\(중복: 대표\)/)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'core.md')), true)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'duplicate.md')), true)
+    assert.doesNotMatch(doctor(args).stdout, /FEEDBACK-NOTICE/)
+  })
+
+  test('전송 표시가 남은 후보는 doctor가 메시지를 반복하지 않고 정리한다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    write(join(dir, 'sent.md'), renderFeedback('sent', {
+      스킬: 'orch (SKILL.md)', 대상: 'core 스킬', 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: '반영됨 #123 (1.2.3)',
+    }))
+    write(join(dir, 'sent.md.sent'), '전송 표시\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stderr)
+    assert.doesNotMatch(r.stdout, /FEEDBACK-NOTICE/)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'sent.md')), true)
+    assert.equal(existsSync(join(dir, 'sent.md.sent')), false)
+  })
+
+  test('저장소 몫 후보는 그 저장소 PR 머지 뒤 doctor가 한 번 보이고 정리한다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    write(join(dir, 'accepted.md'), renderFeedback('저장소 설정 고침', {
+      스킬: 'orch (SKILL.md)', 대상: '이 저장소', 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: '채택 #123',
+    }))
+    const gh = join(tmp, 'gh')
+    write(gh, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({state:"MERGED",mergeCommit:{oid:"test"}}))\n')
+    chmodSync(gh, 0o755)
+    const args = ['--skip-version', '--skip-questions', '--skill-dir', skill]
+    const r = doctor(args, { env: { ORCH_FEEDBACK_GH: gh } })
+    assert.equal(r.code, 0, r.stderr)
+    assert.match(r.stdout, /FEEDBACK-NOTICE 저장소 설정 고침: 저장소 PR #123 머지됨/)
+    assert.equal(existsSync(join(dir, 'accepted.md')), false)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'accepted.md')), true)
+    assert.doesNotMatch(doctor(args, { env: { ORCH_FEEDBACK_GH: gh } }).stdout, /FEEDBACK-NOTICE/)
   })
 
   test('개선 후보의 깨진 링크는 건너뛰고 doctor 가 나머지 검사를 계속한다', () => {
@@ -771,7 +852,7 @@ describe('저장소 판정', () => {
     symlinkSync(join(tmp, 'missing.md'), join(dir, 'broken.md'))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 1 ${dir}\n`)
+    assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
   })
 
   test('열린 후보가 없거나 폴더가 없으면 FEEDBACK-OPEN 을 내지 않는다', () => {

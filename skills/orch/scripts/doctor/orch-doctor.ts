@@ -54,7 +54,9 @@
 //     config.json 의 adr.dirs 가 없을 때 낸다. 색인 생성이나 번호 붙은 ADR 은 병렬 PR 의 번호 충돌 가능성을 드러내며, 경고라 종료 코드를 바꾸지 않는다.
 //
 // 개선 후보 판정(늘 본다):
-//     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 새 양식의 후보·보류와 아직 옮기지 않은 옛 메모 파일을 센다.
+//     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 저장소 몫 후보·보류를 센다.
+//     fos-skills 에서는 Orca 등록 저장소의 core 몫 후보·보류와 옛 메모도 센다.
+//     반영됨·기각 알림과 머지된 저장소 몫 채택은 출력한 뒤 휴지통으로 옮긴다.
 //     하나 이상이면 FEEDBACK-OPEN 줄을 낸다. 다시 보는 주기와 판정은 references/feedback-review.md 가 소유한다.
 //     폴더가 없거나 읽지 못하면 내지 않는다. 경고라 종료 코드를 바꾸지 않는다.
 //
@@ -151,7 +153,8 @@
 //     LOOP-STALE <repo> <pid> <번들 sha 나 버전>  지금 세션의 설치본이 아닌 번들로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
 //     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
 //     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
-//     FEEDBACK-OPEN <개수> <폴더>                 다시 보지 않은 스킬 개선 후보 파일이 있다(위 「개선 후보 판정」)
+//     FEEDBACK-OPEN <개수> <폴더>                 이 저장소 몫 또는 fos-skills 의 core 몫 개선 후보가 있다
+//     FEEDBACK-NOTICE <제목>: <결과>             받은 반영·기각 결과. 출력 뒤 휴지통으로 옮긴다
 //     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
 //     ORCA-SHAPE worker-list <키,키>              worker-list 행에 orch 가 읽는 키가 없다(위 「Orca 형식 판정」). 다음 줄에 안내가 온다
 //     CLI-MISSING <경로>, CLI-STALE <경로>        ~/.local/bin/orch 가 없거나 낡았다(위 「orch 명령 판정」). 다음 줄에 고칠 명령이 온다
@@ -173,7 +176,7 @@
 
 import { shellSshAgentLines } from '../lib/ssh-agent.ts'
 import { mainDoctorLines } from '../lib/main-guard.ts'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { bundleRoot, installLayout, staleBundle, staleLoopBundles } from '../lib/loop-bundle.ts'
 import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path'
@@ -190,7 +193,9 @@ import { isFile, real, realPath } from '../lib/fs.ts'
 import { defaultBase, mainCheckout } from '../lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from '../lib/loop.ts'
 import { orchDir, pathOf } from '../lib/paths.ts'
-import { isOpen as feedbackOpen, scan as scanFeedback } from '../lib/feedback.ts'
+import { acceptedPr, isCore, isOpen as feedbackOpen, scan as scanFeedback } from '../lib/feedback.ts'
+import { feedbackRepos, prResult, sentMarker } from '../lib/feedback-loop.ts'
+import { moveToTrash } from '../lib/spec.ts'
 import { isOpen, scan as scanStudy } from '../lib/study.ts'
 import { run, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
@@ -484,8 +489,35 @@ function checkFeedback(repo: string): string[] {
   const dir = pathOf('feedback', repo)
   const found = scanFeedback(dir)
   if (found.legacy.length) process.stderr.write(`orch-doctor: 옛 개선 후보 메모 ${found.legacy.length}개는 feedback migrate 로 미리 본다: ${dir}\n`)
-  const count = found.candidates.filter(feedbackOpen).length + found.legacy.length
-  return count > 0 ? [`FEEDBACK-OPEN ${count} ${dir}`] : []
+  const coreRepo = basename(repo) === 'fos-skills'
+  let count = found.candidates.filter(candidate => feedbackOpen(candidate) && (coreRepo || !isCore(candidate))).length + (coreRepo ? found.legacy.length : 0)
+  if (coreRepo) {
+    try {
+      for (const other of feedbackRepos()) {
+        if (mainCheckout(other.path) === repo) continue
+        const remote = scanFeedback(pathOf('feedback', other.path))
+        count += remote.candidates.filter(candidate => feedbackOpen(candidate) && isCore(candidate)).length + remote.legacy.length
+      }
+    } catch (error) { process.stderr.write(`orch-doctor: 전체 저장소의 개선 후보를 세지 못했다: ${(error as Error).message}\n`) }
+  }
+  const lines = count > 0 ? [`FEEDBACK-OPEN ${count} ${dir}`] : []
+  const trash = process.env.ORCH_FEEDBACK_TRASH || join(homedir(), '.Trash', 'orch-feedback')
+  for (const candidate of found.candidates) {
+    const status = candidate.values.상태
+    const sent = existsSync(sentMarker(candidate.file))
+    const accepted = !isCore(candidate) ? acceptedPr(candidate) : null
+    const merged = accepted ? prResult(repo, accepted).state === 'merged' : false
+    if (!status.startsWith('반영됨 ') && !status.startsWith('기각(') && !merged) continue
+    if (isCore(candidate) && /^기각\(중복:/.test(status)) continue
+    const detail = merged ? `저장소 PR #${accepted} 머지됨` : status
+    if (!sent) lines.push(`FEEDBACK-NOTICE ${candidate.title}: ${detail}`)
+    try {
+      moveToTrash(candidate.file, join(trash, basename(repo)))
+      if (sent) unlinkSync(sentMarker(candidate.file))
+    }
+    catch (error) { lines.push(`FEEDBACK-TRASH-FAIL ${candidate.file} ${(error as Error).message}`) }
+  }
+  return lines
 }
 
 function checkStudy(repo: string): string[] {

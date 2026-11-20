@@ -3,12 +3,23 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { oneLine } from './study.ts'
 
-export const FIELDS = ['스킬', '상황', '문제', '바라는 기능', '근거', '판단', '상태'] as const
+export const FIELDS = ['스킬', '대상', '상황', '문제', '바라는 기능', '근거', '판단', '상태'] as const
 export type Field = typeof FIELDS[number]
 export type Candidate = { title: string; values: Record<Field, string>; text: string; file: string; slug: string }
+export const TARGETS = ['core 스킬', '이 저장소'] as const
+export function targetOf(candidate: Candidate): string { return candidate.values.대상 || '확인 필요' }
+export function isCore(candidate: Candidate): boolean { return targetOf(candidate) !== '이 저장소' }
+export function acceptedPr(candidate: Candidate): number | null {
+  const match = /^채택 #([1-9]\d*)$/.exec(candidate.values.상태)
+  return match ? Number(match[1]) : null
+}
+export function duplicateOf(candidate: Candidate): string | null {
+  const match = /^기각\(중복:\s*([^/()]+\/)?([a-z0-9-]+)\)$/.exec(candidate.values.상태)
+  return match ? `${match[1] || ''}${match[2]}` : null
+}
 
 export function validStatus(value: string): boolean {
-  if (value === '후보' || /^채택 #[1-9]\d*$/.test(value)) return true
+  if (value === '후보' || /^채택 #[1-9]\d*$/.test(value) || /^반영됨 #[1-9]\d* \([^()]+\)$/.test(value)) return true
   const reason = /^(?:기각|보류)\((.*)\)$/.exec(value)?.[1]
   return reason !== undefined && reason.trim() !== ''
 }
@@ -18,18 +29,26 @@ export function isOpen(candidate: Candidate): boolean {
 }
 
 export function render(title: string, values: Record<Field, string>): string {
-  return [`## ${oneLine(title)}`, ...FIELDS.map(field => `- ${field}: ${oneLine(values[field])}`), ''].join('\n')
+  return [`## ${oneLine(title)}`, ...FIELDS.map(field => `- ${field}: ${oneLine(values[field] || (field === '대상' ? '확인 필요' : ''))}`), ''].join('\n')
 }
 
 export function parse(text: string, file = '', slug = ''): Candidate | null {
   const lines = text.trimEnd().split(/\r?\n/)
-  if (lines.length !== FIELDS.length + 1 || !lines[0].startsWith('## ') || !lines[0].slice(3).trim()) return null
+  const fields = lines.length === FIELDS.length ? FIELDS.filter(field => field !== '대상') : FIELDS
+  if (lines.length !== fields.length + 1 || !lines[0].startsWith('## ') || !lines[0].slice(3).trim()) return null
   const values = {} as Record<Field, string>
-  for (const [i, field] of FIELDS.entries()) {
+  for (const [i, field] of fields.entries()) {
     const prefix = `- ${field}: `
     if (!lines[i + 1].startsWith(prefix) || !lines[i + 1].slice(prefix.length).trim()) return null
     values[field] = lines[i + 1].slice(prefix.length).trim()
   }
+  if (!values.대상) {
+    const ordered = { 스킬: values.스킬, 대상: '확인 필요' } as Record<Field, string>
+    for (const field of FIELDS) if (field !== '스킬' && field !== '대상') ordered[field] = values[field]
+    Object.assign(values, ordered)
+    // 기존 파일의 값 순서는 호출자가 아닌 출력 함수가 FIELDS를 따른다.
+  }
+  if (![...TARGETS, '확인 필요'].includes(values.대상 as typeof TARGETS[number])) return null
   if (!validStatus(values.상태)) return null
   return { title: lines[0].slice(3), values, text, file, slug }
 }
