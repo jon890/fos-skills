@@ -1,0 +1,3 @@
+- Claude 주간 사용량이 남을 것 같으면 `orch worker launch` 가 코드·설계·문서 행의 Codex worker 를 같은 등급의 Claude 로 띄운다.
+- 바꾼 이유는 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 남고, `routing.usage_boost: false` 로 끈다.
+- 사용량을 읽지 못하면 `USAGE-UNKNOWN <이유>` 를 내고 모델 표 그대로 띄운다.

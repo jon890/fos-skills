@@ -280,6 +280,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     review_author: zodCheck(nonEmptyText),
     review_pattern: zodCheck(capturePattern('routing.review_pattern', 5, 'js')),
     size_pattern: zodCheck(capturePattern('routing.size_pattern', 1, 'js')),
+    usage_boost: zodCheck(bool),
   },
   docker: Object.fromEntries(DOCKER_KEYS.map((key) => [key, viaConfig('docker', key, dockerRules)])),
   finish: {
