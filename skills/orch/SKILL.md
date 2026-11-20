@@ -34,6 +34,7 @@ metadata:
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG <경로> <이유>` 는 `config.json` 의 그 경로에 고칠 곳이 있다는 뜻이다. 이유별 조치는 [`references/hooks.md`](references/hooks.md) 의 줄 표가 소유한다.
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
+`FEEDBACK-NOTICE` 는 이 저장소에 온 반영·기각 결과다. doctor 가 이 줄을 보인 뒤 후보 파일을 휴지통으로 옮긴다. fos-skills 세션에서는 `orch feedback collect` 로 모든 저장소를 모아 보고, 반영 조건을 확인한 뒤 `orch feedback notify` 로 알린다.
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 「고를 공부 후보 <개수>개가 <폴더> 에 있다」 로 알리기만 하고 고르라고 재촉하지 않는다.
 사용자 질문이나 결정에서 일반 기술 개념이 판단을 바꿨으면(뜻을 물은 경우 포함) 그 자리에서 공부 후보로 적는다. 아무 주제나 적지 않고 네 기준을 모두 채운 것만 적는다. 기준, 적는 법, 사용자가 고른 후보를 글로 잇는 법은 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
 `PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록이 가리키는 폴더가 없어 그 플러그인이 로드되지 않았다는 뜻이다. 이 스킬이 로드됐어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있으니 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다.

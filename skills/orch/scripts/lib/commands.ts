@@ -192,8 +192,8 @@ const ROWS: Row[] = [
   })),
   { group: 'request', verb: 'list', script: 'request/orch-request.ts', prepend: ['list'], context: ['repo', 'run'], legacy: null, usage: 'orch request list [--open]' },
   // feedback
-  ...['list', 'add', 'set', 'migrate'].map((verb): Row => ({
-    group: 'feedback', verb, script: 'feedback/feedback-candidates.ts', prepend: [verb], context: ['repo'],
+  ...['list', 'add', 'set', 'migrate', 'collect', 'notify'].map((verb): Row => ({
+    group: 'feedback', verb, script: 'feedback/feedback-candidates.ts', prepend: [verb], context: verb === 'collect' || verb === 'notify' ? [] : ['repo'],
     legacy: { name: 'feedback-candidates', flags: [verb] }, usage: `orch feedback ${verb}`,
   })),
   // study

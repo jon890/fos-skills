@@ -22,7 +22,7 @@ function runAt(cwd: string, ...args: string[]) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd, env, encoding: 'utf8' })
 }
 function run(...args: string[]) { return runAt(repo, ...args) }
-const fields = ['--slug', 'a', '--title', '필수 칸이 빠진 메모를 저장했다', '--skill', 'orch', '--file', 'skills/orch/SKILL.md', '--situation', '후보를 적다가', '--problem', '칸이 빠져 다시 조사했다', '--want', '필수 칸을 검사한다', '--evidence', '로그:12', '--significance', '조사를 줄인다', '--nontrivial', '수기 양식의 반복 문제다', '--structural', '명령이 검사한다']
+const fields = ['--slug', 'a', '--title', '필수 칸이 빠진 메모를 저장했다', '--target', 'core 스킬', '--skill', 'orch', '--file', 'skills/orch/SKILL.md', '--situation', '후보를 적다가', '--problem', '칸이 빠져 다시 조사했다', '--want', '필수 칸을 검사한다', '--evidence', '로그:12', '--significance', '조사를 줄인다', '--nontrivial', '수기 양식의 반복 문제다', '--structural', '명령이 검사한다']
 
 test('필수 옵션은 하나씩 빠지거나 비면 사용법 오류이고 파일을 만들지 않는다', () => {
   for (let i = 0; i < fields.length; i += 2) {
@@ -41,6 +41,7 @@ test('정해진 순서로 저장하고 목록과 상태를 바꾸며 다른 칸�
   const before = parse(readFileSync(file, 'utf8'))!
   assert.deepEqual(Object.keys(before.values), FIELDS)
   assert.equal(before.values.스킬, 'orch (skills/orch/SKILL.md)')
+  assert.equal(before.values.대상, 'core 스킬')
   assert.equal(run('add', ...fields).status, 1)
   assert.match(run('list', '--open').stdout, /^a\t후보\t/)
   for (const status of ['보류(재발 기록을 기다린다)', '채택 #123', '기각(이미 해결했다)', '후보']) {
@@ -52,6 +53,7 @@ test('정해진 순서로 저장하고 목록과 상태를 바꾸며 다른 칸�
     assert.ok(run('list').stdout.includes(status))
   }
   for (const status of ['채택', '기각()', '보류()', '기각( )', '보류(  )', '채택 #0', '아무거나']) assert.equal(run('set', '--slug', 'a', '--status', status).status, 2)
+  assert.equal(run('add', ...fields.slice(0, 5), '다른 값', ...fields.slice(6)).status, 2)
   assert.equal(run('set', '--slug', 'absent', '--status', '후보').status, 1)
   assert.equal(run('add', ...fields, '--apply').status, 2)
   assert.equal(run('add', ...fields.slice(0, 1), '../bad', ...fields.slice(2)).status, 2)

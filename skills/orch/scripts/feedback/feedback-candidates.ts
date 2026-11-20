@@ -7,18 +7,21 @@ import { basename, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { ensure, pathOf } from '../lib/paths.ts'
-import { isOpen, parseLegacy, render, scan, validStatus, type Field } from '../lib/feedback.ts'
+import { isOpen, parseLegacy, render, scan, targetOf, TARGETS, validStatus, type Field } from '../lib/feedback.ts'
+import { collectFeedback, notifyFeedback } from '../lib/feedback-loop.ts'
 import { oneLine, validSlug } from '../lib/study.ts'
 
 const USAGE = [
-  '사용법: orch feedback add --slug 이름 --title 제목 --skill 스킬 --file 스킬파일 --situation 상황 --problem 문제 --want 바라는기능 --evidence 근거 --significance 유의미한이유 --nontrivial 단순함정이아닌이유 --structural 구조로막는방법 [--repo DIR]',
+  '사용법: orch feedback add --slug 이름 --title 제목 --target "core 스킬 | 이 저장소" --skill 스킬 --file 스킬파일 --situation 상황 --problem 문제 --want 바라는기능 --evidence 근거 --significance 유의미한이유 --nontrivial 단순함정이아닌이유 --structural 구조로막는방법 [--repo DIR]',
   '        orch feedback list [--open] [--repo DIR]',
   '        orch feedback set --slug 이름 --status "후보 | 채택 #PR | 기각(이유) | 보류(이유)" [--repo DIR]',
   '        orch feedback migrate [--apply] [--trash DIR] [--repo DIR]',
+  '        orch feedback collect',
+  '        orch feedback notify [--trash DIR]',
   '후보 파일은 add 와 set 으로만 기록하고 고친다. 파일에 직접 글을 덧붙이지 않는다.',
 ].join('\n')
 const OPTIONS = {
-  ...Object.fromEntries(['slug', 'title', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural', 'status', 'repo', 'trash'].map(key => [key, { type: 'string' as const }])),
+  ...Object.fromEntries(['slug', 'title', 'target', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural', 'status', 'repo', 'trash'].map(key => [key, { type: 'string' as const }])),
   open: { type: 'boolean' as const }, apply: { type: 'boolean' as const }, help: { type: 'boolean' as const, short: 'h' },
 }
 class Usage extends Error {}
@@ -38,16 +41,34 @@ function main(): number {
     const { values, positionals } = parsed
     if (values.help) { process.stdout.write(`${USAGE}\n`); return 0 }
     const [command, ...rest] = positionals
-    if (!['add', 'list', 'set', 'migrate'].includes(command) || rest.length) throw new Usage('add, list, set, migrate 가운데 하나를 준다')
+    if (!['add', 'list', 'set', 'migrate', 'collect', 'notify'].includes(command) || rest.length) throw new Usage('add, list, set, migrate, collect, notify 가운데 하나를 준다')
     const allowed: Record<string, string[]> = {
-      add: ['slug', 'title', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural'],
-      list: ['open'], set: ['slug', 'status'], migrate: ['apply', 'trash'],
+      add: ['slug', 'title', 'target', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural'],
+      list: ['open'], set: ['slug', 'status'], migrate: ['apply', 'trash'], collect: ['trash'], notify: ['trash'],
     }
     for (const key of Object.keys(values)) if (!['repo', ...allowed[command]].includes(key)) throw new Usage(`${command} 에 --${key} 를 쓸 수 없다`)
     const need = (key: string): string => {
       const value = values[key]
       if (typeof value !== 'string' || !value.trim()) throw new Usage(`--${key} 를 준다`)
       return oneLine(value)
+    }
+    if (command === 'collect' || command === 'notify') {
+      if (values.repo) throw new Usage(`${command} 에 --repo 를 쓸 수 없다`)
+      const trash = resolve(typeof values.trash === 'string' ? values.trash : join(homedir(), '.Trash', 'orch-feedback'))
+      const collected = collectFeedback(undefined, trash)
+      if (command === 'collect') {
+        for (const group of ['판정할 core 후보', '저장소 몫', '보낼 알림', '버전 대기', 'PR 머지 대기', '닫힌 PR', '조회 실패', '보류', '받은 알림']) {
+          const rows = collected.rows.filter(row => row.group === group)
+          if (!rows.length) continue
+          process.stdout.write(`[${group}]\n`)
+          for (const row of rows) process.stdout.write(`${row.repo.name}\t${targetOf(row.candidate)}\t${row.candidate.values.상태}\t${row.candidate.title}${row.version ? `\t${row.version}` : ''}${row.detail ? `\t${row.detail}` : ''}\n`)
+        }
+        for (const error of collected.errors) process.stdout.write(`READ-FAIL ${error}\n`)
+      } else {
+        for (const line of notifyFeedback(collected, trash)) process.stdout.write(`${line}\n`)
+        for (const error of collected.errors) process.stdout.write(`READ-FAIL ${error}\n`)
+      }
+      return 0
     }
     const repo = typeof values.repo === 'string' ? values.repo : process.cwd()
     const dir = pathOf('feedback', repo)
@@ -63,8 +84,10 @@ function main(): number {
       const file = join(dir, `${slug}.md`)
       if (command === 'add') {
         const title = need('title')
+        const target = need('target')
+        if (!TARGETS.includes(target as typeof TARGETS[number])) throw new Usage('--target 은 "core 스킬" 또는 "이 저장소" 다')
         const fields: Record<Field, string> = {
-          스킬: `${need('skill')} (${need('file')})`, 상황: need('situation'), 문제: need('problem'),
+          스킬: `${need('skill')} (${need('file')})`, 대상: target, 상황: need('situation'), 문제: need('problem'),
           '바라는 기능': need('want'), 근거: need('evidence'),
           판단: `유의미한가: ${need('significance')} / 단순 함정이 아닌가: ${need('nontrivial')} / 구조로 막을 수 있는가: ${need('structural')}`,
           상태: '후보',
@@ -75,7 +98,7 @@ function main(): number {
         process.stdout.write(`ADDED ${slug} ${file}\n`)
       } else {
         const status = need('status')
-        if (!validStatus(status)) throw new Usage('--status 는 후보, 채택 #PR, 기각(이유), 보류(이유) 가운데 하나다')
+        if (!validStatus(status) || status.startsWith('반영됨 ')) throw new Usage('--status 는 후보, 채택 #PR, 기각(이유), 보류(이유) 가운데 하나다')
         const candidate = found.candidates.find(c => c.slug === slug)
         if (!candidate) throw new Refused(`${slug} 후보가 없다. feedback list 로 이름을 본다`)
         const temp = `${file}.tmp-${process.pid}`
@@ -131,7 +154,8 @@ function main(): number {
     if (error instanceof Usage) { process.stderr.write(`${USAGE}\n${error.message}\n`); return 2 }
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') { process.stderr.write(`다른 실행이 같은 이름을 먼저 저장했다. feedback list 로 확인한다: ${(error as NodeJS.ErrnoException).path ?? ''}\n`); return 1 }
     if (error instanceof Refused) { process.stderr.write(`${error.message}\n`); return 1 }
-    throw error
+    process.stderr.write(`feedback: ${(error as Error).message}\n`)
+    return 1
   }
 }
 process.exitCode = main()
