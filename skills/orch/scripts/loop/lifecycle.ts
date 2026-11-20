@@ -87,7 +87,8 @@ import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
 import { announce, moveWorkers, pendingRuns, settlePending, writePending } from './takeover.ts'
 import { busyReason, decide, HANDOVER_ENV, handOver, heirEntry, newSelfUpdate, observe, pendingHeir } from './self-update.ts'
-import { readUpdateReport, updatePlugins, updateSummary } from './plugin-auto-update.ts'
+import { readUpdateReport, updatePlugins, updateStateDir, updateSummary } from './plugin-auto-update.ts'
+import type { UpdateReport } from './plugin-auto-update.ts'
 import { loadConfig, PLUGIN_KEYS, section } from '../lib/config.ts'
 import type { Context, TickResult } from './steps/context.ts'
 import { dropStaleErrors } from './steps/errors.ts'
@@ -101,6 +102,18 @@ const POLL_MS = 100
 
 // --start 의 명의 확인 조회 한도
 const PROBE_MS = 30_000
+
+export async function checkPluginUpdates(repo: string, notify: (report: UpdateReport) => void, update = updatePlugins): Promise<void> {
+  const plugin = section<{ auto_update?: unknown }>(loadConfig(repo), 'plugin', PLUGIN_KEYS)
+  if (plugin.auto_update !== undefined && typeof plugin.auto_update !== 'boolean') throw new Error('plugin.auto_update 는 true 나 false 여야 한다')
+  if (plugin.auto_update === false) return
+  const report = await update()
+  if (report?.notifyFailure) notify(report)
+}
+
+export function pluginUpdateNoticeSuffix(report: UpdateReport | null, targetVersion: string | null): string {
+  return report?.version === targetVersion && report.results.length ? '\n' + updateSummary(report) : ''
+}
 
 // wx 로 만든 직후 pid 를 쓰기 전의 빈 잠금을 깨진 잠금으로 회수하지 않게, 이 시간 안의 빈 파일은 쥔 것으로 본다(lib/events.ts 와 같다)
 const EMPTY_LOCK_GRACE_MS = 2_000
@@ -785,15 +798,12 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
       if (signal) return signalCode(signal)
       if (!once) {
         try {
-          const plugin = section<{ auto_update?: unknown }>(loadConfig(ctx.repo), 'plugin', PLUGIN_KEYS)
-          if (plugin.auto_update !== undefined && typeof plugin.auto_update !== 'boolean') throw new Error('plugin.auto_update 는 true 나 false 여야 한다')
-          if (plugin.auto_update !== false) {
-            const report = await updatePlugins()
-            if (report?.notifyFailure) for (const run of registeredRuns(ctx.repo)) {
+          await checkPluginUpdates(ctx.repo, report => {
+            for (const run of registeredRuns(ctx.repo)) {
               try { sendNotice('PLUGIN-UPDATE-FAIL', null, updateSummary(report), run.run, ctx.repo) }
               catch (e) { log(`NOTICE-FAIL PLUGIN-UPDATE-FAIL ${oneLine(e)}`) }
             }
-          }
+          })
         } catch (e) { log(`PLUGIN-UPDATE-FAIL ${oneLine(e)}`) }
         const changed = observe(update, currentBundle(ownBundle(), configDir), Date.now(), ownBundle())
         if (changed) log(changed)
@@ -837,8 +847,8 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
         update.waitReason = next.reason
       }
       if (next.kind === 'go' && update.target) {
-        const report = readUpdateReport(join(homedir(), '.cache', 'fos-skills'))
-        const suffix = report?.version === bundleVersion(update.target) && report.results.length ? '\n' + updateSummary(report) : ''
+        const report = readUpdateReport(updateStateDir())
+        const suffix = pluginUpdateNoticeSuffix(report, bundleVersion(update.target))
         const outcome = await handOver({ ctx, state, lock, entry: heirEntry(update.target), hadRuns, stopTimer, startTimer,
           oldVersion: state.bundle_version || '-', newVersion: bundleVersion(update.target) || '-',
           oldBundle: ownBundle(), newBundle: update.target, lockPid, createLock, args: passArgs(ctx), waitMs: startWaitMs(),
