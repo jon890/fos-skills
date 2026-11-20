@@ -87,6 +87,8 @@ describe('스크립트 폴더', () => {
       'loop/plugin-auto-update.ts': 'orch-loop 부모가 설치본을 확인하고 갱신할 때 쓰는 모듈이다. 직접 실행하지 않는다',
       'loop/self-update.ts': 'orch-loop 의 부모가 옛 번들 판정과 다시 뜨기에 쓰는 모듈이다. 직접 실행하지 않는다',
       'loop/takeover.ts': 'orch-loop --start 의 메인 넘겨받기가 쓰는 worker 옮기기 모듈이다. 직접 실행하지 않는다',
+      'loop/model-watch.ts': 'orch-loop 부모가 하루 한 번 새 모델과 새 세대를 보는 모듈이다. 직접 실행하지 않는다',
+      'doctor/codex-version.ts': 'orch-doctor 가 낡은 Codex CLI 를 판정할 때 부르는 모듈이다. 직접 실행하지 않는다',
       'loop/lifecycle.ts': 'orch-loop 가 부르는 루프의 시작·멈춤·잠금과 틱 자식을 띄우는 부모다. 직접 실행하지 않는다',
       'worker/resume-exec.ts': 'worker/resume-worker.ts 가 연 새 터미널의 셸이 부르는 실행기다. 코디네이터가 직접 부르지 않는다',
     }
