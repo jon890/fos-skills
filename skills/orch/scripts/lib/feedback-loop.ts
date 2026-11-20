@@ -13,6 +13,17 @@ import { moveToTrash } from './spec.ts'
 export type FeedbackRepo = { name: string; path: string }
 export type FeedbackRow = { repo: FeedbackRepo; candidate: Candidate; group: string; detail?: string; pr?: number; version?: string; resultStatus?: string }
 export type FeedbackCollected = { rows: FeedbackRow[]; errors: string[]; core: FeedbackRepo }
+// 보드는 collectFeedback의 판정 결과를 재사용한다. 보류와 배포 대기는 이 수에 넣지 않는다.
+export function actionableFeedbackCount(collected: FeedbackCollected, repoPath: string): number {
+  const coreBoard = repoPath === collected.core.path
+  return collected.rows.filter(row => {
+    if (row.group === '받은 알림') return row.repo.path === repoPath
+    if (row.group === '보낼 알림') return coreBoard && row.candidate.values.대상 !== '이 저장소'
+    if (row.candidate.values.상태 !== '후보') return false
+    if (coreBoard) return row.group === '판정할 core 후보' || row.repo.path === repoPath && row.group === '저장소 몫'
+    return row.repo.path === repoPath && row.group === '저장소 몫'
+  }).length
+}
 type Pr = { state: string; mergeCommit?: { oid?: string } }
 export function sentMarker(file: string): string { return `${file}.sent` }
 
