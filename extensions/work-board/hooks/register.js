@@ -173,7 +173,7 @@ let whereSkips = 0 // where 가 실패한 동안 5초마다 다시 부르지 않
 const pressing = new Set()
 
 // 플러그인 버전. install 은 설치본(installOf), latest 는 main 의 { commit, version } 이나 { error }, 아직 읽지 않았으면 undefined
-let plugin = { name: '', repository: '', install: null, error: '', latest: undefined, installedNewer: '' }
+let plugin = { name: '', repository: '', install: null, error: '', latest: undefined, installedNewer: '', reloadFailedVersion: '' }
 let versionBusy = false
 let updating = false
 let reloadInFlight = false
@@ -1132,10 +1132,10 @@ export function newerInstall(install, rows) {
 }
 
 // 머리 줄에 붙일 버전 글과 색. latest 가 undefined 면 아직 확인하지 않은 것이다
-export function versionLabel(name, install, latest, error = '', installedNewer = '') {
+export function versionLabel(name, install, latest, error = '', installedNewer = '', reloadFailed = false) {
   if (!install) return { text: name + ' 설치본 확인 불가' + (error ? ': ' + error : ''), color: undefined, dim: true }
   const own = install.kind === 'tree' ? name + ' 작업 트리 ' + versionText(install.version, install.commit) : name + ' ' + versionText(install.version, install.commit)
-  if (installedNewer) return { text: own.trim() + ' → ' + installedNewer + ' 새 버전 설치됨 · 쉴 때 다시 읽음', color: 'cyan', dim: false }
+  if (installedNewer) return { text: own.trim() + ' → ' + installedNewer + (reloadFailed ? ' 새 버전 설치됨 · 자동 다시 읽기 실패 · p 로 갱신' : ' 새 버전 설치됨 · 쉴 때 다시 읽음'), color: 'cyan', dim: false }
   if (latest === undefined) return { text: own.trim() + ' · 최신 확인 중', color: undefined, dim: true }
   const state = versionState(install, latest)
   if (state === 'latest') return { text: own.trim() + ' 최신', color: undefined, dim: true }
@@ -1143,6 +1143,11 @@ export function versionLabel(name, install, latest, error = '', installedNewer =
     return { text: own.trim() + ' → 최신 ' + versionText(latest.version, latest.commit) + (install.kind === 'tree' ? '' : ' · p 로 갱신'), color: 'yellow', dim: false }
   }
   return { text: own.trim() + ' · 최신 확인 불가', color: undefined, dim: true }
+}
+
+export function updateButtonVisible(install, latest, installedNewer, reloadFailedVersion) {
+  if (installedNewer) return installedNewer === reloadFailedVersion && Boolean(updateCommand(install))
+  return updateVisible(install, latest)
 }
 
 // 갱신 명령과 그 명령을 돌릴 폴더. project·local scope 는 그 프로젝트 폴더에서 돌린다.
@@ -1574,7 +1579,7 @@ async function loadInstalledNewer($) {
         candidate.version = manifest.version
       } catch { /* 설치본을 읽지 못하면 다음 확인에서 다시 본다 */ }
     }
-    const newer = newerInstall(install, rows)
+    const newer = newerInstall(install, rows) === reloadQueuedVersion ? '' : newerInstall(install, rows)
     if (newer !== plugin.installedNewer) {
       plugin.installedNewer = newer
       $.ui.invalidate('ui.render')
@@ -1584,11 +1589,22 @@ async function loadInstalledNewer($) {
 }
 
 export async function runReloadIfReady($, installedNewer) {
-  if (!installedNewer || reloadInFlight || reloadQueuedVersion === installedNewer) return false
-  const commands = await $.command.list()
-  if (!commands.some(command => command.name === 'reload-plugins' && command.source === 'builtin')) return false
+  if (!installedNewer || reloadInFlight || reloadQueuedVersion === installedNewer || plugin.reloadFailedVersion === installedNewer) return false
   reloadInFlight = true
-  try { await $.command.run({ command: 'reload-plugins' }); reloadQueuedVersion = installedNewer; return true }
+  try {
+    const commands = await $.command.list()
+    if (!commands.some(command => command.name === 'reload-plugins' && command.source === 'builtin')) throw new Error('내장 reload-plugins 명령이 없다')
+    await $.command.run({ command: 'reload-plugins' })
+    reloadQueuedVersion = installedNewer
+    await loadInstall($)
+    plugin.installedNewer = ''
+    $.ui.invalidate('ui.render')
+    return true
+  } catch {
+    plugin.reloadFailedVersion = installedNewer
+    $.ui.invalidate('ui.render')
+    return false
+  }
   finally { reloadInFlight = false }
 }
 
@@ -2365,7 +2381,7 @@ export function register(on) {
       ? String(updated.getHours()).padStart(2, '0') + ':' + String(updated.getMinutes()).padStart(2, '0') + ' 업데이트'
       : '읽는 중'
     // 머리 줄: 업데이트 시각 뒤에 플러그인 버전. 좁은 창에서는 버전이 다음 줄로 넘어간다
-    const version = versionLabel(plugin.name || $.plugin.name, plugin.install, plugin.latest, plugin.error, plugin.installedNewer)
+    const version = versionLabel(plugin.name || $.plugin.name, plugin.install, plugin.latest, plugin.error, plugin.installedNewer, plugin.installedNewer === plugin.reloadFailedVersion)
     const headView = Box({
       key: 'updated-at',
       flexDirection: 'row',
@@ -2456,7 +2472,7 @@ export function register(on) {
                   $.ui.invalidate('ui.render')
                 },
               }),
-              ...(!plugin.installedNewer && updateVisible(plugin.install, plugin.latest) ? [Button({
+              ...(updateButtonVisible(plugin.install, plugin.latest, plugin.installedNewer, plugin.reloadFailedVersion) ? [Button({
                 key: 'update-plugin',
                 label: updating ? '플러그인 갱신 중' : '플러그인 갱신',
                 hotkey: 'p',

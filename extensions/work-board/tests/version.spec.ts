@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  comparePluginVersions, configDirOf, directoryMarketplaceOf, directoryRefusal, installOf, newerInstall, parseLsRemote, rawManifestUrl, runReloadIfReady, updateCommand, updateVisible, versionLabel, versionState, versionText,
+  comparePluginVersions, configDirOf, directoryMarketplaceOf, directoryRefusal, installOf, newerInstall, parseLsRemote, rawManifestUrl, runReloadIfReady, updateButtonVisible, updateCommand, updateVisible, versionLabel, versionState, versionText,
 } from '../hooks/register.js'
 
 const CONFIG = '/Users/me/.claude'
@@ -128,16 +128,36 @@ test('새 설치본은 main 조회와 관계없이 먼저 알리고, 낮은 설�
 
 test('내장 reload-plugins 만 입력란을 건드리지 않고 실행한다', async () => {
   const calls: string[] = []
-  const $ = { command: {
-    list: async () => [{ name: 'reload-plugins', source: 'plugin' }],
-    run: async ({ command }) => { calls.push(command) },
-  } }
+  let reads = 0
+  const $ = {
+    plugin: { root: USER_ROOT, name: 'fos-skills' },
+    fs: { read: async (file: string) => { reads++; return file.endsWith('installed_plugins.json') ? JSON.stringify(INSTALLED) : JSON.stringify({ name: 'fos-skills', version: '1.4.0' }) } },
+    ui: { invalidate: () => {} },
+    command: {
+      list: async () => [{ name: 'reload-plugins', source: 'plugin' }],
+      run: async ({ command }) => { calls.push(command) },
+    },
+  }
   assert.equal(await runReloadIfReady($, '1.10.0'), false)
   assert.deepEqual(calls, [])
   $.command.list = async () => [{ name: 'reload-plugins', source: 'builtin' }]
-  assert.equal(await runReloadIfReady($, '1.10.0'), true)
-  assert.equal(await runReloadIfReady($, '1.10.0'), false)
+  assert.equal(await runReloadIfReady($, '1.11.0'), true)
+  assert.equal(await runReloadIfReady($, '1.11.0'), false)
   assert.deepEqual(calls, ['reload-plugins'])
+  assert.ok(reads >= 2, '다시 읽은 뒤 설치 기록과 manifest 를 새로 읽는다')
+})
+
+test('다시 읽기 명령이 없거나 실행이 실패하면 p 로 수동 갱신할 수 있다', async () => {
+  const install = { kind: 'cache', version: '1.4.0', scope: 'user', projectPath: '', key: 'fos-skills@fos-skills' }
+  const $ = { ui: { invalidate: () => {} }, command: { list: async () => [], run: async () => {} } }
+  assert.equal(await runReloadIfReady($, '1.12.0'), false)
+  assert.equal(updateButtonVisible(install, { error: '오프라인' }, '1.12.0', '1.12.0'), true)
+  assert.match(versionLabel('fos-skills', install, undefined, '', '1.12.0', true).text, /자동 다시 읽기 실패 · p 로 갱신/)
+  $.command.list = async () => [{ name: 'reload-plugins', source: 'builtin' }]
+  $.command.run = async () => { throw new Error('실행 실패') }
+  assert.equal(await runReloadIfReady($, '1.13.0'), false)
+  assert.equal(updateButtonVisible(install, undefined, '1.13.0', '1.13.0'), true)
+  assert.equal(updateButtonVisible(install, undefined, '1.13.0', ''), false)
 })
 
 test('머리 줄 버전 글: 최신은 흐리게, 뒤처지면 노란색과 「p 로 갱신」, 확인하지 못하면 흐린 「최신 확인 불가」 (R2)', () => {
