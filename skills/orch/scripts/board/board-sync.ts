@@ -181,6 +181,14 @@ function foreignWorktrees(repo: string, items: Record<string, unknown>[]): Set<s
   return new Set(rows.filter((row) => row.dispatch && !own.has(row.dispatch) && !mine.has(row.worktree)).map((row) => row.worktree))
 }
 
+// 이 저장소의 띄우기 이력에 있는 dispatch 를 worker 줄로 가진 항목. 이력을 읽지 못하면 아무 항목도 고치지 않는다
+function ownItems(repo: string, items: Record<string, unknown>[]): Set<string> {
+  let own: Set<string>
+  try { own = new Set(launchHistory(repo).map((row) => row.dispatch)) }
+  catch { return new Set() }
+  return new Set(items.filter((item) => boardWorkerRows(item).some((row) => row.dispatch && own.has(row.dispatch))).map((item) => String(item.id)))
+}
+
 // 머지 커밋이 배포됐는지(lib/deploy.ts). 배포 실행 목록은 한 번만 읽어 runs 에 둔다. 머지 커밋을 읽지 못하면 wait 이다
 function deployedNow(repo: string, num: string, deploy: { workflow: string; branch: string }, cache: { runs: RunRow[] | null }): DeployVerdict {
   const merge = gh(['pr', 'view', num, '--json', 'mergeCommit', '--jq', '.mergeCommit.oid'], { cwd: repo, killSignal: 'SIGKILL' })
@@ -264,11 +272,15 @@ function main(argv: string[]): number {
     return 2
   }
   const repo = resolve(values.repo ?? '.')
+  const inLoop = Boolean(loopCaller(mainCheckout(repo)))
+  // 보드를 나눠 쓰는 저장소의 루프 한 틱이면 이 저장소가 띄운 worker 의 항목만 고친다. 항목의 PR 번호를 이 저장소 기준으로 조회하므로
+  // 남의 항목을 보면 번호가 겹친 이 저장소 PR 로 done 처리할 수 있다. 나머지 항목은 보드 저장소의 루프가 맡는다
+  const sharedLoop = inLoop && mainCheckout(repo) !== boardRepo(repo, board)
   if (!values['dry-run']) {
     // 메인 확인은 보드 파일이 있는 저장소 기준이다. 단 --repo 의 루프 한 틱이 부른 동기화는 --repo 기준으로 본다.
     // 보드를 나눠 쓰는 저장소(finish.board 를 같은 파일로 둔 저장소)의 루프는 자기 저장소의 PR 을 그 보드에 반영해야 하는데,
     // 보드 저장소의 메인이 다른 Run 이라 틱마다 NOT-MAIN 으로 실패했다(2026-11-18)
-    const target = loopCaller(mainCheckout(repo)) ? repo : boardRepo(repo, board)
+    const target = inLoop ? repo : boardRepo(repo, board)
     const mainGuard = guardWrite(target, 'board sync', values['not-main'])
     if (mainGuard.code !== 0) return mainGuard.code
   }
@@ -361,9 +373,11 @@ function main(argv: string[]): number {
   const notified = loadNotified(repo)
   let notifiedChanged = false
   const now = Date.now()
+  const owned = sharedLoop ? ownItems(repo, items) : null
   itemsLoop:
   for (const item of items) {
     const id = String(item.id)
+    if (owned && !owned.has(id)) continue
     const cmds: string[][] = []
     const after: string[][] = []
     let finish = false
