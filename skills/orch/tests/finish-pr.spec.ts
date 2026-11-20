@@ -774,7 +774,8 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(starting(c.calls(), 'sweep ').length, 2)
     assert.equal(existsSync(marker), false)
     assert.equal(existsSync(pidFile), false)
-    assert.equal(existsSync(join(c.repo, '.orch', 'state', 'pr-claims')), false)
+    // 놓은 실행권은 묘비로 남는다. 실행권 자체는 남지 않는다
+    assert.equal(existsSync(join(c.repo, '.orch', 'state', 'pr-claims', 'finish-77')), false)
   })
 
   test('시작할 때 이미 있던 다시 돌기 표시는 지금 실행이 대신하므로 지우고 한 번만 돈다', async (t) => {
