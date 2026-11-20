@@ -40,7 +40,10 @@
 //        --terminal 로 이어 쓰면 보지 않는다
 //     0-0-1. 0-0 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). --terminal 로 이어 쓰면 보지 않는다.
 //        지시서에 `후보 밖:` 이 있으면(사람이 고른 모델) 바꾸지 않는다. 그 모델이 Codex 이고 같은 계열에 그 effort 를 지원하는 새 세대가 있으면
-//        `MODEL-OUTDATED <옛> → <새>` 와 고칠 안내로 4 다. worker 계정이 새 세대를 받지 못하면 그대로 띄운다. 모델 목록은 Orca 가 새 worker 에 쓸 Codex 계정으로 읽는다.
+//        `MODEL-OUTDATED <옛> → <새>` 와 고칠 안내로 4 다. 목록을 읽지 못해도 감지 기록(model-watch.json)이 새 세대를 알면 같다.
+//        더 높은 세대를 알지만 worker 계정이 받지 못하면 그대로 띄우고 effective.generation(from 과 to 가 같다)에 이유를 남긴다. 판정은 lib/model-generation.ts 의 pinnedCheck.
+//        모델 목록은 Orca 가 새 worker 에 쓸 Codex 계정으로 읽는다. 원격 환경 옵션(--on, --environment, --pairing-code)이 있으면 이 머신의 목록을 쓰지 않는다:
+//        세대를 바꾸지 않고 0-1 도 하지 않으며 경고만 낸다. 0~0-1 은 decideSettings 가 소유하고 relaunch-worker 가 abandon 전에 같은 것을 부른다.
 //        codex 는 `codex debug models` 에 같은 계열(`gpt-<세대>-<계열>` 의 계열)의 더 높은 세대가 있고 effort 를 지원하면 --model 을 그 세대로 바꾼다.
 //        적힌 모델을 이 계정이 받지 못하면(목록에 없거나 effort 를 지원하지 않는다) 받을 수 있는 같은 계열 최신으로 이 띄우기만 바꾼다. 목록을 읽지 못하면 바꾸지 않는다.
 //        claude 는 `claude-<계열>-<세대>` 를 계열 이름(opus, sonnet, haiku, fable)으로 바꿔 Claude Code 가 그 계열의 최신 모델로 띄우게 한다.
@@ -164,7 +167,7 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { claudeGeneration, codexGeneration, outdatedPick, readCodexModels, sameFamily, type Generation } from '../lib/model-generation.ts'
+import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFamily, type Generation } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
@@ -452,6 +455,44 @@ export function selectionReject(specPath: string, passthru: string[], repo: stri
   }
   if (mismatched.length === 0) return null
   return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 과 띄우는 값이 다르다: ${mismatched.join('; ')}. 지시서를 고치거나 그 값으로 띄운다`
+}
+
+export type Decided = { reject: { text: string; code: number } | null; warnings: string[]; boostOverride: CandidateOverride | null; generation: Generation | null }
+
+// 머리 주석의 「0」~「0-1」 을 이 순서로 한다: 선택 검사, 사용량 판정, 세대 판정(직접 고른 옛 세대 거절), 모델 검사. passthru 를 바꾼다.
+// relaunch-worker 가 옛 worker 를 abandon 하기 전에 같은 판정을 passthru 사본으로 부른다(skipSelection 은 relaunch 가 선택 줄을 따로 대조할 때)
+export function decideSettings(specPath: string, passthru: string[], repo: string, opts: { retry: boolean; continuation: boolean; skipSelection?: boolean }): Decided {
+  const warnings: string[] = []
+  let boostOverride: CandidateOverride | null = null
+  let generation: Generation | null = null
+  const remote = remoteSelectorOf(passthru) !== null
+  if (!passthru.includes('--terminal')) {
+    const rejected = opts.skipSelection ? null : selectionReject(specPath, passthru, repo, opts.retry, opts.continuation)
+    if (rejected) return { reject: { text: rejected, code: 1 }, warnings, boostOverride, generation }
+    boostOverride = applyUsageBoost(specPath, passthru, repo)
+    // 지시서가 `후보 밖:` 으로 모델을 정했으면 세대를 바꾸지 않는다. 사용량 판정이 표의 값으로 바꾼 경우는 바꾼다(머리 주석의 「0-0-1」)
+    let pinned = false
+    try { pinned = pinnedSelection(readFileSync(specPath, 'utf8')) } catch { /* 지시서를 읽지 못하면 spec-line 이 알린다 */ }
+    if (boostOverride || !pinned) {
+      if (remote && passValue(passthru, '--agent') === 'codex') warnings.push('원격 worker 라 이 머신의 Codex 모델 목록으로 세대를 바꾸지 않는다')
+      else generation = applyGeneration(passthru)
+    } else {
+      // 직접 고른 옛 세대는 막는다. worker 계정이 새 세대를 받지 못할 때만 그대로 띄우고 이유를 남긴다(머리 주석의 「0-0-1」)
+      const pin = pinnedCheck(passValue(passthru, '--agent'), passValue(passthru, '--model'), passValue(passthru, '--effort'), { remote })
+      if (pin.kind === 'outdated') return { reject: { text: pin.message, code: 4 }, warnings, boostOverride, generation }
+      if (pin.kind === 'kept') generation = pin.generation
+      else if (pin.warning) warnings.push(pin.warning)
+    }
+  }
+  // 원격 worker 의 Codex 모델은 그 서버의 계정이 받는지 이 머신에서 알 수 없어 검사하지 않는다
+  if (remote && passValue(passthru, '--agent') === 'codex') {
+    warnings.push('원격 worker 라 이 머신의 codex debug models 로 --model, --effort 를 검사하지 않는다')
+    return { reject: null, warnings, boostOverride, generation }
+  }
+  const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
+  warnings.push(...settings.warnings)
+  if (settings.reject) return { reject: { text: settings.reject, code: 4 }, warnings, boostOverride, generation }
+  return { reject: null, warnings, boostOverride, generation }
 }
 
 // 머리 주석의 「0-0」. 지시서의 행이 바꿀 수 있는 Codex 행이고 Claude 주간 사용량이 남을 것 같으면 WORKER_ARGS 를 같은 등급의 Claude 로 바꾼다.
@@ -791,34 +832,13 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
   }
-  let boostOverride: CandidateOverride | null = null
-  let generation: Generation | null = null
-  if (!passthru.includes('--terminal')) {
-    const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task, continuation)
-    if (rejected) {
-      err(`거부: ${rejected}`)
-      return 1
-    }
-    boostOverride = applyUsageBoost(a.spec, passthru, retryRepo)
-    // 지시서가 `후보 밖:` 으로 모델을 정했으면 세대를 바꾸지 않는다. 사용량 판정이 표의 값으로 바꾼 경우는 바꾼다(머리 주석의 「0-0-1」)
-    let pinned = false
-    try { pinned = pinnedSelection(readFileSync(a.spec, 'utf8')) } catch { /* 지시서를 읽지 못하면 spec-line 이 알린다 */ }
-    if (boostOverride || !pinned) generation = applyGeneration(passthru)
-    else {
-      // 직접 고른 옛 세대는 막는다. worker 계정이 새 세대를 받지 못하면 그대로 띄운다(머리 주석의 「0-0-1」)
-      const outdated = outdatedPick(passValue(passthru, '--agent'), passValue(passthru, '--model'), passValue(passthru, '--effort'))
-      if (outdated) {
-        err(`거부: ${outdated}`)
-        return 4
-      }
-    }
+  const decided = decideSettings(a.spec, passthru, retryRepo, { retry: !!a.task, continuation })
+  for (const warning of decided.warnings) err(`경고: ${warning}`)
+  if (decided.reject) {
+    err(`거부: ${decided.reject.text}`)
+    return decided.reject.code
   }
-  const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
-  for (const warning of settings.warnings) err(`경고: ${warning}`)
-  if (settings.reject) {
-    err(`거부: ${settings.reject}`)
-    return 4
-  }
+  const { boostOverride, generation } = decided
   if (passValue(passthru, '--agent') === 'claude') {
     const profile = selectedReadiness(profilesRoot())
     if (profile && profile.missing.length > 0) {

@@ -17,7 +17,8 @@
 //        아니거나 화면을 읽지 못하면 정상 작업 중일 수 있어 멈춘다. 일부러 바꾸는 것이면 --working-ack <이유> 로 넘긴다
 //     5. 지시서의 `worker 선택:` 줄을 WORKER_ARGS 와 대조한다(launch-worker 의 selectionReject).
 //        에이전트, 모델, effort 가 다르면 `RELAUNCH-FIX <지시서>:<줄 번호>` 와 고칠 줄을 내고 멈춘다. 지시서는 고치지 않는다
-//        에이전트에 없는 모델과 effort(lib/model-check.ts)는 이 대조보다 먼저 거부한다. 자식이 abandon 뒤에 거부하면 옛 세션으로 돌아갈 수 없다
+//        에이전트에 없는 모델과 effort, 직접 고른 옛 세대(MODEL-OUTDATED)는 이 대조보다 먼저 거부한다. launch 와 같은 차례(사용량 판정 → 세대 판정 → 모델 검사)로
+//        launch-worker 의 decideSettings 를 부른다. 자식이 abandon 뒤에 거부하면 옛 세션으로 돌아갈 수 없다
 //     6. 워크트리에 옛 터미널 밖의 터미널이 있으면 목록을 내고 멈춘다. 커밋 안 된 변경이 있고 --dirty-ack 이 없으면 목록을 내고 멈춘다
 //     6-1. launch-worker --preflight 를 자식으로 불러 띄우기 전 검사(Claude 프로필, orch PATH, `허락:` 줄, orch 폴더 이전, 설정, spec-lint)를 미리 한다.
 //        걸리면 자식의 출력을 그대로 내고 RELAUNCH-REFUSED 다. before-launch 이벤트의 거부는 9 의 자식에서만 난다
@@ -53,9 +54,6 @@ import { expandArgs } from '../lib/args.ts'
 import { orchWord, scriptPath } from '../lib/commands.ts'
 import { real } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
-import { checkLaunchSettings } from '../lib/model-check.ts'
-import { outdatedPick, resolvedCodexModel } from '../lib/model-generation.ts'
-import { pinnedSelection } from '../lib/selection.ts'
 import { launchHistory } from '../lib/launch-history.ts'
 import { readLaunch } from '../lib/launched.ts'
 import { closeTerminal, orcaJson } from '../lib/orca.ts'
@@ -67,7 +65,7 @@ import { terminalRows } from '../lib/sessions.ts'
 import { limitedScreen, structuredScreen, isStructured } from '../lib/sessions.ts'
 import { screenLines } from '../lib/screen.ts'
 import { selectionsOf } from '../lib/spec.ts'
-import { leftTerminals, selectionReject, uncommitted } from './launch-worker.ts'
+import { decideSettings, leftTerminals, selectionReject, uncommitted } from './launch-worker.ts'
 
 type Json = Record<string, unknown>
 
@@ -336,16 +334,10 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
   const launcher = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
   try {
     out(`RELAUNCH-TARGET ${t.dispatch} task=${t.task} status=${t.status} worktree=${t.worktree} spec=${t.spec}`)
-    // launch 는 세대를 바꾼 뒤의 모델을 띄우므로 같은 값을 검사한다. `후보 밖:` 으로 정한 모델은 그대로 검사한다(launch-worker 머리 주석의 「0-0-1」)
-    const agent = passValue(a.passthru, '--agent')
-    const effort = passValue(a.passthru, '--effort')
-    let pinned = false
-    try { pinned = pinnedSelection(readFileSync(t.spec, 'utf8')) } catch { /* 지시서 문제는 아래 선택 검사가 알린다 */ }
-    const model = pinned ? passValue(a.passthru, '--model') : resolvedCodexModel(agent, passValue(a.passthru, '--model'), effort)
-    const outdated = pinned ? outdatedPick(agent, model, effort) : null
-    if (outdated) throw new Refused(outdated)
-    const settings = checkLaunchSettings({ agent, model, effort })
-    if (settings.reject) throw new Refused(settings.reject)
+    // launch 와 같은 차례(사용량 판정 → 세대 판정·직접 고른 옛 세대 거절 → 모델 검사)를 passthru 사본으로 abandon 전에 한다(launch-worker 의 decideSettings).
+    // 선택 줄 대조는 아래 selectionCheck 가 RELAUNCH-FIX 로 따로 한다
+    const decided = decideSettings(t.spec, [...a.passthru], t.repo, { retry: true, continuation: false, skipSelection: true })
+    if (decided.reject) throw new Refused(decided.reject.text)
     limitCheck(t, a.workingAck)
     if (a.workingAck !== null && LIVE_DISPATCH.has(t.status)) out(`working-ack: ${a.workingAck}`)
     const fix = selectionCheck(t, a.passthru)

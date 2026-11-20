@@ -138,6 +138,8 @@ beforeEach(() => {
     CODEX_BIN: join(tmp, 'no-codex'),
     // Orca 계정 조회(orca account list)를 부르지 않고 셸의 codex 환경을 쓴다. 계정 홈 판정은 lib-model-generation.spec.ts 가 본다
     ORCH_WORKER_CODEX_HOME: '',
+    // 직접 고른 옛 세대 판정이 이 기계의 모델 감지 기록을 읽지 않게 한다
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     MAKE_WORKTREE: make,
@@ -757,6 +759,41 @@ describe('모델 세대', () => {
     assert.doesNotMatch(r.stderr, /MODEL-OUTDATED/)
   })
 
+  test('모델 목록을 읽지 못해도 감지 기록이 새 세대를 알면 직접 고른 옛 세대를 거절한다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 옛 세대.').replace('effort `medium`', 'effort `low`'))
+    env.CODEX_BIN = linkBin(tmp, 'codex', 'process.exit(7)')
+    mkdirSync(join(tmp, 'machine'), { recursive: true })
+    writeFileSync(join(tmp, 'machine', 'model-watch.json'), JSON.stringify({ models: [{ slug: 'gpt-6.2-sol', visibility: 'list', description: 'Fast.', efforts: ['low'] }] }))
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 4, both(r))
+    assert.match(r.stderr, /MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol \(모델 목록을 읽지 못했지만 감지 기록에 gpt-6\.2-sol 가 있다\)/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('새 세대를 아는데 계정이 받지 못해 직접 고른 옛 세대로 띄우면 이유를 기록에 남긴다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 계정에 6.2 가 없다.').replace('effort `medium`', 'effort `low`'))
+    codexList([sol('gpt-6.1-sol', 'Fast, go-to model for coding.')])
+    mkdirSync(join(tmp, 'machine'), { recursive: true })
+    writeFileSync(join(tmp, 'machine', 'model-watch.json'), JSON.stringify({ models: [{ slug: 'gpt-6.2-sol', visibility: 'list', description: 'Fast.', efforts: ['low'] }] }))
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model gpt-6\.1-sol --effort low(?: |$)/)
+    assert.deepEqual(history().effective.generation, { from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', reason: 'worker 계정 목록에 gpt-6.2-sol 가 없어 직접 고른 세대 그대로 띄웠다' })
+  })
+
+  test('원격 worker 는 이 머신의 모델 목록으로 세대를 바꾸거나 직접 고른 옛 세대를 거절하지 않는다', () => {
+    const screen = ["% printf ...", '__ORCH_PROBE__ orch=/r/orch node=/r/node']
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model for coding.')])
+    writeFileSync(spec, SOL)
+    state({ next_ids: ['ctx_1'], screen, dispatches: { ctx_1: shown('input_accepted') } })
+    const plain = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium', '--on', 'macbook'], 'bash', false)
+    assert.equal(plain.code, 0, both(plain))
+    assert.match(started(), / --model gpt-6\.1-sol --effort medium /)
+    assert.match(plain.stderr, /원격 worker 라 이 머신의 Codex 모델 목록으로 세대를 바꾸지 않는다/)
+  })
+
   test('`후보 밖:` 으로 정한 Claude 모델 ID 는 계열 이름으로 바꾸지 않는다', () => {
     writeFileSync(spec, '# 일\n허락: push\n- **worker 선택:** `claude` `claude-opus-5-5` effort `medium`. 행: impl-explore. 이유: 탐색. 후보 밖: codex 사용 한도.\n')
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
@@ -775,7 +812,12 @@ describe('모델 세대', () => {
     mkdirSync(project, { recursive: true })
     // Orca 가 띄운 worker 가 첫 응답을 쓴 것처럼 세션 기록을 미리 둔다. 띄우기 시작 뒤에 고친 파일만 읽는다
     const session = join(project, 'session.jsonl')
-    writeFileSync(session, [JSON.stringify({ type: 'user', message: { content: 'hi' } }), JSON.stringify({ type: 'assistant', message: { model: 'claude-fable-5-3' } })].join('\n') + '\n')
+    // 띄우기 뒤에 시작한 세션처럼 시각을 앞으로 둔다. 같은 워크트리의 옛 세션은 띄우기 뒤에 갱신돼도 읽지 않는다
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString()
+    writeFileSync(session, [JSON.stringify({ type: 'user', timestamp: at(30_000), message: { content: 'hi' } }), JSON.stringify({ type: 'assistant', timestamp: at(31_000), message: { model: 'claude-fable-5-3' } })].join('\n') + '\n')
+    const old = join(project, 'old.jsonl')
+    writeFileSync(old, [JSON.stringify({ type: 'user', timestamp: at(-3_600_000), message: { content: 'old' } }), JSON.stringify({ type: 'assistant', timestamp: at(40_000), message: { model: 'claude-fable-5-2' } })].join('\n') + '\n')
+    utimesSync(old, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000))
     const later = new Date(Date.now() + 60_000)
     utimesSync(session, later, later)
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })

@@ -5,7 +5,7 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import {
-  claudeGeneration, codexGeneration, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, planTable, readCodexModels, resolvedCodexModel, sameFamily, workerCodexHome, type CodexModel,
+  claudeGeneration, codexGeneration, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, planTable, pinnedCheck, readCodexModels, sameFamily, workerCodexHome, type CodexModel,
 } from '../scripts/lib/model-generation.ts'
 import { limitRowOf } from '../scripts/lib/usage-boost.ts'
 
@@ -146,7 +146,7 @@ describe('계정', () => {
     forgetCodexModels()
     assert.equal(workerCodexHome(), join(accounts, 'acct-1', 'home'))
     assert.equal(readCodexModels().models?.[0].description, join(accounts, 'acct-1', 'home'))
-    assert.equal(resolvedCodexModel('codex', 'gpt-6.2-sol', 'medium'), 'gpt-6.3-sol')
+    assert.equal(codexGeneration('gpt-6.2-sol', 'medium', readCodexModels().models!)?.to, 'gpt-6.3-sol')
     // 조회하지 못하거나 관리 계정이 없으면 부른 셸 그대로다
     process.env.ORCA = linkBin(dir, 'orca-fail', 'process.exit(1)')
     forgetCodexModels()
@@ -155,6 +155,53 @@ describe('계정', () => {
     delete process.env.CODEX_HOME
     forgetCodexModels()
     assert.equal(readCodexModels().models?.[0].description, 'shell')
+  })
+})
+
+describe('직접 고른 옛 세대', () => {
+  function withCodex(t: { after(fn: () => void): void }, body: string): void {
+    const dir = tempDir('pinned-', t)
+    const saved = { ...process.env }
+    t.after(() => { process.env = saved; forgetCodexModels() })
+    process.env.ORCH_WORKER_CODEX_HOME = ''
+    process.env.CODEX_BIN = linkBin(dir, 'codex', body)
+    forgetCodexModels()
+  }
+  const list = (models: unknown[]) => `console.log(${JSON.stringify(JSON.stringify({ models }))})`
+  const entry = (slug: string, efforts: string[], description = 'Current.') => ({ slug, visibility: 'list', description, supported_reasoning_levels: efforts.map(effort => ({ effort })) })
+
+  test('계정 목록에 그 effort 를 지원하는 새 세대가 있으면 거절한다', (t) => {
+    withCodex(t, list([entry('gpt-6.2-sol', ['low']), entry('gpt-6.1-sol', ['low'], 'Previous generation.')]))
+    const pin = pinnedCheck('codex', 'gpt-6.1-sol', 'low', { known: [] })
+    assert.equal(pin.kind, 'outdated')
+    assert.match((pin as { message: string }).message, /^MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol\n지시서를 새 세대로 고친다/)
+  })
+
+  test('목록 조회가 실패해도 감지 기록이 새 세대를 알면 거절하고, 모르면 확인하지 못했다고 알린다', (t) => {
+    withCodex(t, 'process.exit(7)')
+    const known = [model('gpt-6.2-sol', 'Fast.', ['low'])]
+    const pin = pinnedCheck('codex', 'gpt-6.1-sol', 'low', { known })
+    assert.equal(pin.kind, 'outdated')
+    assert.match((pin as { message: string }).message, /감지 기록에 gpt-6\.2-sol 가 있다/)
+    const unknown = pinnedCheck('codex', 'gpt-6.1-sol', 'low', { known: [] })
+    assert.equal(unknown.kind, 'none')
+    assert.match((unknown as { warning: string }).warning, /^MODEL-CHECK-SKIP 직접 고른 gpt-6\.1-sol 이 낡았는지 확인하지 못했다/)
+  })
+
+  test('새 세대를 알지만 계정이 받지 못하거나 effort 를 지원하지 않으면 그대로 두고 이유를 남긴다', (t) => {
+    withCodex(t, list([entry('gpt-6.2-sol', ['low']), entry('gpt-6.1-sol', ['ultra'], 'Previous generation.')]))
+    const effort = pinnedCheck('codex', 'gpt-6.1-sol', 'ultra', { known: [] })
+    assert.deepEqual(effort, { kind: 'kept', generation: { from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', reason: 'gpt-6.2-sol 가 effort ultra 를 지원하지 않아 직접 고른 세대 그대로 띄웠다' } })
+    forgetCodexModels()
+    process.env.CODEX_BIN = linkBin(tempDir('pinned-only-', t), 'codex', list([entry('gpt-6.1-sol', ['low'])]))
+    const account = pinnedCheck('codex', 'gpt-6.1-sol', 'low', { known: [model('gpt-6.2-sol', 'Fast.', ['low'])] })
+    assert.deepEqual(account, { kind: 'kept', generation: { from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', reason: 'worker 계정 목록에 gpt-6.2-sol 가 없어 직접 고른 세대 그대로 띄웠다' } })
+  })
+
+  test('원격 worker 는 이 머신의 목록을 보지 않고 감지 기록만 본다', (t) => {
+    withCodex(t, list([entry('gpt-6.2-sol', ['low'])]))
+    assert.equal(pinnedCheck('codex', 'gpt-6.1-sol', 'low', { remote: true, known: [] }).kind, 'none')
+    assert.equal(pinnedCheck('codex', 'gpt-6.1-sol', 'low', { remote: true, known: [model('gpt-6.2-sol', 'Fast.', ['low'])] }).kind, 'outdated')
   })
 })
 

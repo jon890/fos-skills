@@ -12,9 +12,10 @@
 //     (ORCA_CODEX_ACCOUNTS, 없으면 ~/Library/Application Support/Orca/codex-accounts 아래 <id>/home)을 CODEX_HOME 으로 주고 부른다.
 //     Orca 관리 계정이 없거나(system) 조회하지 못하면 부른 셸의 환경 그대로다. ORCH_WORKER_CODEX_HOME 으로 홈을 정한다(빈 값이면 셸 그대로, 테스트).
 //     현재 세대는 목록에 보이고 설명이 `Legacy` 나 `Previous generation` 으로 시작하지 않는 것이다(스펙 REQ1).
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { machineDir } from './machine.ts'
 import { orcaJson } from './orca.ts'
 import { run } from './proc.ts'
 
@@ -219,22 +220,41 @@ export function planTable(table: string, models: CodexModel[]): TablePlan {
   return { upgrades: [...upgrades.values()], skipped: [...skipped.values()], text: lines.filter((_, i) => !drop.has(i)).join('\n') }
 }
 
-// 띄울 때와 같은 기준으로 Codex 모델의 세대를 정한 값. 목록을 읽지 못하거나 codex 가 아니면 그대로다.
-// relaunch 의 사전 모델 검사가 launch 의 세대 판정 뒤 값을 검사하게 한다
-export function resolvedCodexModel(agent: string | null, model: string | null, effort: string | null): string | null {
-  if (agent !== 'codex' || !model) return model
-  const list = readCodexModels()
-  if (list.failure !== null) return model
-  return codexGeneration(model, effort, list.models)?.to ?? model
+// 머신의 모델 감지 기록(loop/model-watch.ts 의 model-watch.json)이 마지막으로 읽은 목록. 없으면 빈 목록이다
+export function knownModels(file = join(machineDir(), 'model-watch.json')): CodexModel[] {
+  try {
+    const raw = (JSON.parse(readFileSync(file, 'utf8')) as { models?: unknown }).models
+    return Array.isArray(raw) ? raw.filter((m): m is CodexModel => !!m && typeof m.slug === 'string' && Array.isArray(m.efforts)) : []
+  } catch {
+    return []
+  }
 }
 
-// 지시서가 `후보 밖:` 으로 직접 고른 Codex 모델이 낡았는지(스펙 REQ23, DECISION30). 같은 계열에 그 effort 를 지원하는 새 세대가
-// worker 계정 목록에 있으면 거절 문구, 없으면(계정이 새 세대를 받지 못한다) null 이다. 목록을 읽지 못해도 null 이다
-export function outdatedPick(agent: string | null, model: string | null, effort: string | null): string | null {
-  if (agent !== 'codex' || !model) return null
-  const list = readCodexModels()
-  if (list.failure !== null) return null
-  const found = codexGeneration(model, effort, list.models)
-  if (!found || found.reason !== '같은 계열 새 세대') return null
-  return `MODEL-OUTDATED ${found.from} → ${found.to}\n지시서를 새 세대로 고친다. \`후보 밖:\` 으로 옛 세대를 고를 수 있는 것은 worker 계정이 새 세대를 받지 못할 때뿐이다`
+export type PinCheck = { kind: 'outdated'; message: string } | { kind: 'kept'; generation: Generation } | { kind: 'none'; warning: string | null }
+
+const higher = (a: CodexModel | null, slug: string) => !!a && compareGeneration(parseModel(a.slug)!.generation, parseModel(slug)!.generation) > 0
+
+// 지시서가 `후보 밖:` 으로 직접 고른 Codex 모델을 판정한다(스펙 REQ23, DECISION30).
+//     outdated  worker 계정 목록에 같은 계열의 그 effort 를 지원하는 새 세대가 있다. 목록을 읽지 못했어도 감지 기록(knownModels)이 그런 새 세대를 알면 같다
+//     kept      더 높은 세대를 알지만(목록이나 감지 기록) 그 계정이 받지 못하거나 그 effort 를 지원하지 않는다. 옛 세대를 그대로 띄우고 이유를 남긴다
+//     none      더 높은 세대를 모른다. 목록을 읽지 못했으면 warning 에 이유가 있다
+// remote 면 이 머신의 목록은 원격 계정의 것이 아니라 보지 않는다(읽지 못한 것과 같다)
+export function pinnedCheck(agent: string | null, model: string | null, effort: string | null, opts: { remote?: boolean; known?: CodexModel[] } = {}): PinCheck {
+  const name = parseModel(model)
+  if (agent !== 'codex' || !model || !name || name.provider !== 'codex') return { kind: 'none', warning: null }
+  const known = (opts.known ?? knownModels()).filter(isCurrent)
+  const list = opts.remote ? { models: null, failure: '원격 worker 라 이 머신의 목록을 쓰지 않았' } as CodexList : readCodexModels()
+  const outdated = (to: string, why: string) => ({ kind: 'outdated' as const, message: `MODEL-OUTDATED ${model} → ${to}${why}\n지시서를 새 세대로 고친다. \`후보 밖:\` 으로 옛 세대를 고를 수 있는 것은 worker 계정이 새 세대를 받지 못할 때뿐이다` })
+  if (list.failure === null) {
+    const target = newestOfFamily(model, effort, list.models)
+    if (higher(target, model)) return outdated(target!.slug, '')
+    const listed = newestOfFamily(model, null, list.models)
+    if (higher(listed, model)) return { kind: 'kept', generation: { from: model, to: model, reason: `${listed!.slug} 가 effort ${effort ?? '기본'} 를 지원하지 않아 직접 고른 세대 그대로 띄웠다` } }
+    const recorded = newestOfFamily(model, null, known)
+    if (higher(recorded, model)) return { kind: 'kept', generation: { from: model, to: model, reason: `worker 계정 목록에 ${recorded!.slug} 가 없어 직접 고른 세대 그대로 띄웠다` } }
+    return { kind: 'none', warning: null }
+  }
+  const recorded = newestOfFamily(model, effort, known)
+  if (higher(recorded, model)) return outdated(recorded!.slug, ` (모델 목록을 읽지 못했지만 감지 기록에 ${recorded!.slug} 가 있다)`)
+  return { kind: 'none', warning: `MODEL-CHECK-SKIP 직접 고른 ${model} 이 낡았는지 확인하지 못했다: ${codexBin()} debug models ${list.failure}다` }
 }
