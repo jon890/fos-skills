@@ -216,6 +216,19 @@ test('list 는 번호 순으로 내고 --open 은 끝난 요청을 뺀다', () =
   assert.deepEqual(request(['list', '--open', '--repo', receiver]).lines, ['REQUEST R1 sent from=sender 로그인 고침'])
 })
 
+test('보드 줄 규칙에 걸리는 이유(기다림 문장, 줄 안의 ✓)는 빼고 머리만 보드에 쓴다', () => {
+  assert.equal(send().code, 0)
+  const reason = '상대 팀 답을 기다리는 중이라 보류한다'
+  const held = request(['hold', '--id', 'R1', '--repo', receiver, '--reason', reason])
+  assert.equal(held.code, 0, held.lines.join('\n') + held.stderr)
+  assert.ok(!`${held.lines.join('\n')}${held.stderr}`.includes('BOARD-FAIL'), held.lines.join('\n') + held.stderr)
+  assert.equal(record(receiver, 'R1').reason, reason)
+  const texts = board(receiver)[0].details.map((d: unknown) => typeof d === 'string' ? d : (d as Json).text) as string[]
+  const line = texts.find((text) => text.includes('요청 보류'))
+  assert.ok(line, JSON.stringify(texts))
+  assert.match(line!, /요청 보류$/)
+})
+
 test('보낸 Run 없이 보내면 사용법 오류다', () => {
   assert.equal(request(['send', '--to', receiver, '--title', 't', '--body', 'b', '--repo', sender]).code, 2)
 })
