@@ -39,6 +39,21 @@ test('보드 안내는 파일 직접 수정 대신 등록된 상태·단계 명�
   assert.ok(!doc.includes('`board.ts set/step/mark`'))
 })
 
+test('content-preview 와 spec 의 사용자 확인은 replying.md 「보드 승인」 을 가리킨다', () => {
+  assert.ok(read('references', 'replying.md').split('\n').includes('## 보드 승인'), 'replying.md 에 「보드 승인」 절이 없다')
+  const pointer = '`references/replying.md` 「보드 승인」'
+  const callers: [string, string, string][] = [
+    ['content-preview', join(ORCH, '..', '..', 'export-only-skills', 'content-preview', 'SKILL.md'), '--kind post'],
+    ['spec', join(ORCH, '..', 'spec', 'SKILL.md'), '--kind spec'],
+  ]
+  for (const [name, file, kind] of callers) {
+    const doc = readFileSync(file, 'utf8')
+    assert.ok(doc.includes(pointer), `${name} SKILL.md 가 「보드 승인」 을 가리키지 않는다`)
+    assert.ok(doc.includes(`orch board approval add <id> ${kind}`), `${name} SKILL.md 에 ${kind} 승인 대기 명령이 없다`)
+    assert.ok(doc.includes('orch 없이 쓰면 지금처럼 채팅으로 확인'), `${name} SKILL.md 에 orch 없는 환경의 채팅 확인 갈래가 없다`)
+  }
+})
+
 // `## 제목` 줄 아래부터 다음 같은 단계 제목 전까지
 function section(text: string, heading: string): string[] {
   const lines = text.split('\n')
