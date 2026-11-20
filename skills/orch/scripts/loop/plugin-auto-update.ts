@@ -14,7 +14,7 @@ import { PLUGIN } from '../lib/install-record.ts'
 export const UPDATE_MS = 30 * 60 * 1000
 const COMMAND_MS = 180_000
 type Entry = { scope?: unknown; projectPath?: unknown; installPath?: unknown; version?: unknown }
-export type UpdateResult = { configDir: string; scope: string; oldVersion: string; result: 'success' | 'failed' | 'skipped'; reason?: string }
+export type UpdateResult = { configDir: string; scope: string; projectPath?: string; oldVersion: string; result: 'success' | 'failed' | 'skipped'; reason?: string }
 export type UpdateReport = { version: string; checkedAt: number; results: UpdateResult[]; failureNotified?: string; notifyFailure?: boolean }
 type Exec = (argv: string[], options?: RunOptions) => Promise<RunResult>
 type Options = { home?: string; profiles?: string; stateDir?: string; repository?: string; now?: number; exec?: Exec }
@@ -151,17 +151,18 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
     for (const configDir of dirs) {
       for (const entry of records(configDir)) {
         if (!cacheEntry(entry, dirs)) continue
+        const projectPath = typeof entry.projectPath === 'string' ? entry.projectPath : undefined
         const oldVersion = installedVersion(entry)
         const comparison = comparePluginVersion(oldVersion, version)
         if (comparison === null) {
-          results.push({ configDir, scope: entry.scope, oldVersion: oldVersion || '-', result: 'failed', reason: '설치본 버전을 읽지 못했다' })
+          results.push({ configDir, scope: entry.scope, projectPath, oldVersion: oldVersion || '-', result: 'failed', reason: '설치본 버전을 읽지 못했다' })
           continue
         }
         if (comparison >= 0) {
           const earlier = comparison === 0 && previous?.version === version
-            ? previous.results.find(row => row.configDir === configDir && row.scope === entry.scope && row.result === 'success')
+            ? previous.results.find(row => row.configDir === configDir && row.scope === entry.scope && row.projectPath === projectPath && row.result === 'success')
             : undefined
-          results.push(earlier ?? { configDir, scope: entry.scope, oldVersion, result: 'skipped', reason: comparison === 0 ? '이미 최신' : 'main 보다 높음' })
+          results.push(earlier ?? { configDir, scope: entry.scope, projectPath, oldVersion, result: 'skipped', reason: comparison === 0 ? '이미 최신' : 'main 보다 높음' })
           continue
         }
         if (stopping()) break
@@ -170,8 +171,8 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
           cwd, env: { CLAUDE_CONFIG_DIR: configDir }, timeoutMs: COMMAND_MS, group: true,
         })
         const updated = records(configDir).find(row => row.scope === entry.scope && row.projectPath === entry.projectPath)
-        if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, oldVersion, result: 'success' })
-        else results.push({ configDir, scope: entry.scope, oldVersion, result: 'failed', reason: command.code !== 0 ? (command.stderr || command.stdout || `종료 코드 ${command.code}`).trim().split('\n').at(-1) : '설치 기록의 version 이 main 과 다르다' })
+        if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success' })
+        else results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'failed', reason: command.code !== 0 ? (command.stderr || command.stdout || `종료 코드 ${command.code}`).trim().split('\n').at(-1) : '설치 기록의 version 이 main 과 다르다' })
       }
     }
     const notifyFailure = results.some(row => row.result === 'failed') && previous?.failureNotified !== version
@@ -185,7 +186,7 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
 }
 
 export function updateSummary(report: UpdateReport): string {
-  const lines = report.results.map(row => `${row.configDir} ${row.scope}: ${row.oldVersion} → ${row.result === 'success' ? report.version + ' 성공' : row.result === 'skipped' ? row.reason : '실패: ' + row.reason}`)
+  const lines = report.results.map(row => `${row.configDir} ${row.scope}${row.projectPath ? ' ' + row.projectPath : ''}: ${row.oldVersion} → ${row.result === 'success' ? report.version + ' 성공' : row.result === 'skipped' ? row.reason : '실패: ' + row.reason}`)
   const headline = report.results.some(row => row.result === 'success')
     ? `fos-skills ${report.version} 설치됨, 세션은 쉴 때 다시 읽는다`
     : report.results.some(row => row.result === 'failed') ? `fos-skills ${report.version} 설치 실패` : `fos-skills ${report.version} 변경 없음`

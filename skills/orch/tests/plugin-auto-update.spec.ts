@@ -138,3 +138,24 @@ test('Orca 프로필 기록이 다른 설정 폴더의 캐시를 가리켜도 �
   assert.deepEqual(report?.results.map(row => row.result), ['success', 'success'])
   assert.deepEqual(updatedDirs, [f.home, f.profile])
 })
+
+test('같은 scope 의 프로젝트 설치본은 각각의 갱신 결과를 유지한다', async t => {
+  const f = fixture(t)
+  const projects = [join(f.root, 'a'), join(f.root, 'b')]
+  for (const project of projects) { mkdirSync(project); f.add(f.home, 'project', '1.0.0', project) }
+  const exec = async (argv: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
+    if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
+    if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    const file = join(opts.env!.CLAUDE_CONFIG_DIR!, 'plugins', 'installed_plugins.json')
+    const value = JSON.parse(readFileSync(file, 'utf8'))
+    value.plugins['fos-skills@fos-skills'].find(row => row.projectPath === opts.cwd).version = '1.2.0'
+    writeFileSync(file, JSON.stringify(value))
+    return { code: 0, stdout: '', stderr: '', timedOut: false }
+  }
+  const options = { home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec }
+  const first = await updatePlugins({ ...options, now: 1000 })
+  const second = await updatePlugins({ ...options, now: 1000 + UPDATE_MS })
+  assert.deepEqual(first?.results.map(row => row.projectPath), projects)
+  assert.deepEqual(second?.results.map(row => row.projectPath), projects)
+  assert.deepEqual(second?.results.map(row => row.result), ['success', 'success'])
+})
