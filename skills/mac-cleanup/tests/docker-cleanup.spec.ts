@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
 import { Sandbox, write } from './helpers.ts'
+import { buildCacheBytes, settleBuilderPrune } from '../scripts/docker_cleanup.ts'
 import { makeRow, type Row } from './runtimes-helpers.ts'
 
 const LOCAL = 'unix:///Users/x/.docker/run/docker.sock'
@@ -186,5 +187,43 @@ describe('이미지 조사 파일로 rmi', () => {
       assert.ok(done.stderr.includes(message), `${label}: ${done.stderr}`)
     }
     assert.deepEqual(docker.calls(), [])
+  })
+})
+
+describe('builder prune 의 시간 제한', () => {
+  const SHOWN = 'docker --context desktop-linux builder prune -af'
+  const timeout = { code: -9, stdout: '', stderr: '', failure: 'timeout' as const, message: 'timed out after 1800 seconds' }
+  const df = (size: string) => () => [JSON.stringify({ Type: 'Images', Size: '5GB' }), JSON.stringify({ Type: 'Build Cache', Size: size })].join('\n') + '\n'
+
+  test('시간 제한에 걸려도 다시 읽은 빌드 캐시가 0B 면 성공이다', () => {
+    const [ok, text] = settleBuilderPrune(SHOWN, timeout, df('0B'))
+    assert.equal(ok, true)
+    assert.ok(text.startsWith(`[삭제] ${SHOWN}\n`) && text.includes('0B 라 정리된 것으로 본다'), text)
+  })
+
+  test('남은 빌드 캐시가 있거나 다시 읽지 못하면 실패이고 이유를 적는다', () => {
+    const left = settleBuilderPrune(SHOWN, timeout, df('1.2GB'))
+    assert.equal(left[0], false)
+    assert.ok(left[1].startsWith(`[실패] ${SHOWN}  timed out after 1800 seconds. 남은 빌드 캐시: 1.2GB`), left[1])
+    const unread = settleBuilderPrune(SHOWN, timeout, () => {
+      throw new Error('daemon gone')
+    })
+    assert.equal(unread[0], false)
+    assert.ok(unread[1].includes('남은 빌드 캐시를 다시 읽지 못했다: daemon gone'), unread[1])
+    const noRow = settleBuilderPrune(SHOWN, timeout, () => '')
+    assert.ok(!noRow[0] && noRow[1].includes('남은 빌드 캐시: 읽지 못함'), noRow[1])
+  })
+
+  test('성공과 시간 초과가 아닌 실패는 다시 읽지 않는다', () => {
+    const never = () => {
+      throw new Error('부르면 안 된다')
+    }
+    assert.deepEqual(settleBuilderPrune(SHOWN, { ...timeout, code: 0, failure: null, stdout: 'Total: 1GB\n' }, never), [true, `[삭제] ${SHOWN}\nTotal: 1GB\n`])
+    assert.deepEqual(settleBuilderPrune(SHOWN, { ...timeout, code: 1, failure: null, stderr: 'boom\n' }, never), [false, `[실패] ${SHOWN}  boom\n`])
+  })
+
+  test('buildCacheBytes 는 Build Cache 줄의 크기를 바이트로 읽는다', () => {
+    assert.equal(buildCacheBytes(df('38.7GB')()), 38_700_000_000)
+    assert.equal(buildCacheBytes(''), null)
   })
 })

@@ -16,14 +16,17 @@
 // 이 맥의 unix 소켓이 아니거나 비어 있으면 dry-run 과 --apply 모두 거부하고 종료 코드 5 로 끝난다. 조사 뒤 context 가 다른 엔진을 가리키게 바뀐 경우도 막는다.
 // `rmi` 는 REF 마다 `docker rmi` 를 따로 부르고 `-f` 를 쓰지 않는다. `-` 로 시작하는 REF 는 옵션으로 읽히므로 입력 오류다.
 // --apply 가 없으면 아무것도 바꾸지 않고 보낼 명령만 보인다.
+// `builder prune` 은 캐시가 크면 오래 걸려 시간 제한(1800초)을 넉넉히 둔다. 그래도 넘으면 바로 실패로 끝내지 않고 `docker system df` 로 남은 빌드 캐시를 다시 읽는다.
+// 남은 빌드 캐시가 0B 면 성공으로, 남았거나 다시 읽지 못하면 실패로 보인다.
 //
 // 종료 코드: 0 실패 없음, 1 명령이 하나라도 실패함, 2 입력 오류, 4 docker 를 쓸 수 없음, 5 이 맥 밖의 엔진이라 거부.
 
 import { readFileSync } from 'node:fs'
 import { readArgs, type Entry } from './cli.ts'
 import { contextEndpoint, isLocalEndpoint, readRuntimesFile } from './container_runtimes.ts'
-import { dockerArgv, DockerError, docker, formatSize, useContext } from './docker_volumes.ts'
-import { isMain, write } from './io.ts'
+import { dockerArgv, DockerError, docker, formatSize, parseSize, useContext } from './docker_volumes.ts'
+import { isMain, runText, write, type RunResult } from './io.ts'
+import { pySplitLines } from './kit/py.ts'
 import { loadJson, osErrorMessage } from './pylike.ts'
 
 const USAGE = `usage: docker_cleanup.ts [-h] --runtime RUNTIME [--apply]
@@ -66,6 +69,9 @@ const ENTRY: Entry = {
 
 export const ACTIONS = ['builder-prune', 'rmi']
 
+// builder prune 의 시간 제한(초). 실측: 빌드 캐시 38.7GB(633개)에서 300초를 넘겼다(2026-11-20)
+export const BUILDER_PRUNE_TIMEOUT = 1800
+
 type ImageItem = { class: string; rmi: string; size_bytes: number | null }
 
 // 이미지 조사 파일을 읽어 {context, images} 를 돌려준다. 형식이 맞지 않으면 Error 다
@@ -79,6 +85,31 @@ export function readImagesFile(text: string): { context: string | null; images: 
     if (i.size_bytes !== undefined && i.size_bytes !== null && typeof i.size_bytes !== 'number') throw bad
   }
   return { context: data.context ?? null, images: data.images.map((i: any) => ({ class: i.class, rmi: i.rmi, size_bytes: i.size_bytes ?? null })) }
+}
+
+// `docker system df --format '{{json .}}'` 의 Build Cache 크기(바이트). 읽지 못하면 null 이다
+export function buildCacheBytes(dfText: string): number | null {
+  for (const line of pySplitLines(dfText)) {
+    if (!line.trim()) continue
+    const row = loadJson(line) as Record<string, any>
+    if (row && row.Type === 'Build Cache') return parseSize(row.Size)
+  }
+  return null
+}
+
+// builder prune 의 실행 결과를 성공 여부와 출력 줄로 바꾼다. 시간 제한에 걸렸으면 readDf 로 남은 빌드 캐시를 다시 읽어 0B 면 성공으로 본다
+export function settleBuilderPrune(shown: string, done: RunResult, readDf: () => string): [boolean, string] {
+  if (!done.failure && done.code === 0) return [true, `[삭제] ${shown}\n${done.stdout}`]
+  if (done.failure !== 'timeout') return [false, `[실패] ${shown}  ${done.failure ? done.message : done.stderr.trim()}\n`]
+  let left: number | null
+  try {
+    left = buildCacheBytes(readDf())
+  } catch (error) {
+    return [false, `[실패] ${shown}  ${done.message}. 남은 빌드 캐시를 다시 읽지 못했다: ${(error as Error).message}\n`]
+  }
+  if (left === 0) return [true, `[삭제] ${shown}\n${BUILDER_PRUNE_TIMEOUT}초 안에 응답이 끝나지 않았지만 다시 읽은 빌드 캐시가 0B 라 정리된 것으로 본다\n`]
+  const shownLeft = left === null ? '읽지 못함' : formatSize(left)
+  return [false, `[실패] ${shown}  ${done.message}. 남은 빌드 캐시: ${shownLeft}\n`]
 }
 
 export function main(argv: string[]): number {
@@ -179,6 +210,13 @@ export function main(argv: string[]): number {
     const shown = dockerArgv(command).join(' ')
     if (!apply) {
       write(1, `[삭제 예정] ${shown}\n`)
+      continue
+    }
+    if (action === 'builder-prune') {
+      const done = runText(dockerArgv(command), { timeoutSec: BUILDER_PRUNE_TIMEOUT })
+      const [ok, text] = settleBuilderPrune(shown, done, () => docker(['system', 'df', '--format', '{{json .}}'], 120))
+      if (!ok) failed = true
+      write(1, text)
       continue
     }
     try {

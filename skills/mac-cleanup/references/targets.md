@@ -126,6 +126,7 @@ node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTI
 node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" builder-prune
 ```
 
+- `builder-prune` 은 빌드 캐시가 크면 오래 걸린다(38.7GB 에서 300초를 넘긴 실측이 있다). 시간 제한에 걸리면 스크립트가 `docker system df` 로 남은 빌드 캐시를 다시 읽어, 0B 면 성공으로 보인다. 시간 제한 값은 스크립트 머리 주석이 소유한다.
 
 ## Gradle
 
