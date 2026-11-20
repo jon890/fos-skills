@@ -12,7 +12,8 @@
 //         출력은 <orch 루트>/queue/finish-<PR>.out 이고 `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
 //         다시 돌기 표시(<pid 파일>.rerun)를 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
 //         도는 마무리가 끝날 때 그 요청을 보고 끝난 후속 검증으로 한 번 더 돈다. --no-finish 면 다시 띄우지 않는다. 띄우지 못하면 FINISH-START-FAIL 과 종료 코드 1 이다.
-//         --run 은 마무리에 그대로 넘긴다. 없으면 마무리가 설정의 finish.run 을 읽는다
+//         다시 띄우는 마무리에는 처음 마무리의 옵션(항목의 finish_args: 보드, --complete 같은 마지막 PR 표시, 지시서 폴더, 배포 설정)을 그대로 준다.
+//         보드 항목도 그 보드에서 done 으로 바꾼다. --run 을 주면 처음 값 대신 그 값을 넘긴다. 둘 다 없으면 마무리가 설정의 finish.run 을 읽는다
 //
 // 종료 코드: 0 성공, 1 없는 항목이나 마무리를 띄우지 못함, 2 사용법이나 설정 오류
 // FINISH_PR 환경 변수로 마무리 스크립트 경로를 바꾼다.
@@ -61,7 +62,18 @@ function started(child: ChildProcess, name: string): Promise<string | null> {
   })
 }
 
-async function restartFinish(repo: string, pr: number, run: string | undefined, notMain: string | undefined): Promise<number> {
+// 처음 마무리의 옵션(finish_args)에서 --run 을 뺀다. --run 을 주면 그 값이 앞선다
+function withoutRun(args: string[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--run') { i += 1; continue }
+    if (args[i].startsWith('--run=')) continue
+    out.push(args[i])
+  }
+  return out
+}
+
+async function restartFinish(repo: string, pr: number, run: string | undefined, notMain: string | undefined, finishArgs: string[]): Promise<number> {
   const dir = pathOf('queue', repo)
   makeParent(join(dir, 'x'), repo)
   const pidFile = join(dir, `finish-${pr}.pid`)
@@ -74,7 +86,8 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
     return 0
   }
   const outFile = join(dir, `finish-${pr}.out`)
-  const args = [String(pr), '--repo', repo, '--pid-file', pidFile, ...(run ? ['--run', run] : []), ...(notMain !== undefined ? ['--not-main', notMain] : [])]
+  const replay = run ? withoutRun(finishArgs) : finishArgs
+  const args = [String(pr), '--repo', repo, '--pid-file', pidFile, ...replay, ...(run ? ['--run', run] : []), ...(notMain !== undefined ? ['--not-main', notMain] : [])]
   const cmd = scriptCommand(process.env.FINISH_PR || scriptPath('finish-pr'), args)
   const fd = openSync(outFile, 'w')
   let child: ChildProcess
@@ -95,10 +108,10 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
 async function done(repo: string, pr: number, values: { note?: string; run?: string; 'no-finish'?: boolean; 'not-main'?: string }): Promise<number> {
   const guard = guardWrite(repo, 'followup done', values['not-main'], { prs: [String(pr)] })
   if (guard.code !== 0) return guard.code
-  // 목록을 끝내고 같은 잠금 안에서 보드를 목록의 값(done)으로 쓴다(lib/followups.ts 의 「보드 반영」)
-  const { value: result, board } = updateWithBoard(repo, pr, (items) => {
+  // 목록을 끝내고 같은 잠금 안에서 보드를 목록의 값(done)으로 쓴다(lib/followups.ts 의 「보드 반영」). 보드는 처음 마무리가 쓴 곳이다
+  const { value: { result, finishArgs }, board } = updateWithBoard(repo, pr, (items) => {
     const made = markDone(items, pr, new Date().toISOString(), values.note?.trim() || null)
-    return { items: made.items, value: made.result }
+    return { items: made.items, value: { result: made.result, finishArgs: made.items.find((one) => one.pr === pr)?.finish_args ?? [] } }
   })
   if (result === 'missing') {
     console.log(`FOLLOWUP-MISSING #${pr}`)
@@ -107,7 +120,7 @@ async function done(repo: string, pr: number, values: { note?: string; run?: str
   console.log(result === 'done' ? `FOLLOWUP-DONE #${pr}` : `FOLLOWUP-ALREADY #${pr}`)
   if (board.startsWith('실패:')) console.log(`FOLLOWUP-BOARD-FAIL #${pr} ${board.slice('실패:'.length).trim()}`)
   if (values['no-finish']) return 0
-  return restartFinish(repo, pr, values.run, values['not-main'])
+  return restartFinish(repo, pr, values.run, values['not-main'], finishArgs)
 }
 
 async function main(argv: string[]): Promise<number> {

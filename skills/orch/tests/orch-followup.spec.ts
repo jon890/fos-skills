@@ -78,6 +78,44 @@ test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기
   assert.equal(existsSync(c.log), false)
 })
 
+test('done 은 처음 마무리가 쓴 보드에 done 을 쓰고, 다시 띄우는 마무리에 처음 옵션을 그대로 준다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {
+  const c = setup(t)
+  const board = join(c.repo, 'boards', 'team.json')
+  mkdirSync(join(c.repo, 'boards'), { recursive: true })
+  writeFileSync(board, JSON.stringify({ items: [] }))
+  const file = join(c.repo, '.orch', 'state', 'followups.json')
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  items[0].finish_args = ['--run', 'run_first', '--board', board, '--complete']
+  writeFileSync(file, JSON.stringify({ items }))
+  const r = c.run(['done', '787', '--not-main', '테스트'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.doesNotMatch(r.stdout, /FOLLOWUP-BOARD-FAIL/)
+  const saved = JSON.parse(readFileSync(board, 'utf8')).items.find((one: { id: string }) => one.id === 'followup-787')
+  assert.equal(saved.status, 'done')
+  const deadline = Date.now() + 5000
+  while (!existsSync(c.log) && Date.now() < deadline) await sleep(50)
+  assert.match(readFileSync(c.log, 'utf8'), new RegExp(`^finish 787 --repo \\S+ --pid-file \\S+ --run run_first --board ${board} --complete --not-main 테스트$`, 'm'))
+})
+
+test('done 에 --run 을 주면 처음 마무리의 --run 대신 그 값을 준다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {
+  const c = setup(t)
+  const file = join(c.repo, '.orch', 'state', 'followups.json')
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  items[0].finish_args = ['--run', 'run_first', '--intermediate']
+  writeFileSync(file, JSON.stringify({ items }))
+  assert.equal(c.run(['done', '787', '--run', 'run_2', '--not-main', '테스트']).code, 0)
+  const deadline = Date.now() + 5000
+  while (!existsSync(c.log) && Date.now() < deadline) await sleep(50)
+  assert.match(readFileSync(c.log, 'utf8'), /^finish 787 --repo \S+ --pid-file \S+ --intermediate --run run_2 --not-main 테스트$/m)
+})
+
+test('같은 PR 의 마무리가 없으면 남긴 다시 돌기 표시를 스스로 가져가 새로 띄운다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, (t) => {
+  const c = setup(t)
+  const r = c.run(['done', '787', '--not-main', '테스트'])
+  assert.match(r.stdout, /^FINISH-STARTED 787 /m)
+  assert.equal(existsSync(join(c.repo, '.orch', 'queue', 'finish-787.pid.rerun')), false)
+})
+
 test('--no-finish 면 마무리를 띄우지 않고, 이미 끝난 항목은 ALREADY, 없는 항목은 MISSING 과 1 이다', (t) => {
   const c = setup(t)
   const done = c.run(['done', '787', '--no-finish', '--not-main', '테스트'])

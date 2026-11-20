@@ -364,6 +364,8 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(saved[0].pr, 77)
     assert.equal(saved[0].deploy, 'none')
     assert.equal(saved[0].done_at, null)
+    // 처음 마무리의 옵션을 남겨 followup done 이 그대로 다시 쓴다
+    assert.deepEqual(saved[0].finish_args, ['--specs-dir', c.specs, '--complete'])
     // 같은 PR 을 다시 돌려도 항목은 하나다
     const again = await c.finish(args, kept)
     assert.match(again.stdout, /^FOLLOWUP-KEPT #77 /m)

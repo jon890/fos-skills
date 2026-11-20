@@ -49,6 +49,7 @@
 //
 // 배포 뒤 할 일: 기능 PR 의 근거가 「후속 검증: 대기 | <글>」 하나만 남았으면 그 글을 배포 뒤 할 일 목록(lib/followups.ts)에 옮기고
 //     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드 파일이 있으면 항목 followup-<PR> 을 wait 로 보인다.
+//     이 마무리에 준 옵션(보드, 마지막 PR 표시 같은 것, replayArgs)을 항목의 finish_args 에 남긴다. followup done 이 그 값을 그대로 쓴다.
 //     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 단계 4 의 정리는 워크트리를 남기고,
 //     그 PR 의 handoff 산출물도 실패로 세지 않고 함께 남긴다(사용자 결정 2026-11-20). 배포가 실패했거나 시간이 지났으면
 //     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
@@ -906,7 +907,7 @@ function holdForFollowup(args: Args, repo: string, merged: Merged, text: string,
   let line: string
   try {
     const { value: got, board } = updateWithBoard(repo, pr, (items) => {
-      const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy }, new Date().toISOString())
+      const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy, finish_args: replayArgs(args) }, new Date().toISOString())
       return { items: made.items, value: made }
     }, { file: args.board, bin: args.boardBin })
     line = got.result === 'added' ? `FOLLOWUP-ADDED #${pr} ${oneLine(text)}` : `FOLLOWUP-KEPT #${pr} ${oneLine(text)}`
@@ -920,6 +921,22 @@ function holdForFollowup(args: Args, repo: string, merged: Merged, text: string,
   if (!ok) return fail(problems.join('; ') || '배포를 확인하지 못했다')
   out('FINISH-DONE')
   return 0
+}
+
+// 배포 뒤 할 일 항목의 finish_args. `orch followup done` 이 다시 띄우는 마무리가 처음과 같은 보드, 마지막 PR 표시, 지시서 폴더,
+// 배포 설정을 쓰게 한다(PR 558 리뷰). --repo, --pid-file, --not-main, 대기 한도는 다시 띄우는 쪽이 정한다.
+// --sweep-arg 와 업무 번호 정규식은 설정(--config)에서 다시 읽으므로 넣지 않는다
+export function replayArgs(args: Args): string[] {
+  const pairs: Array<[string, string | null | undefined]> = [
+    ['--config', args.config ? resolve(args.config) : null], ['--run', args.run], ['--base-branch', args.baseBranch],
+    ['--specs-dir', args.specsDir], ['--deploy-workflow', args.deployWorkflow], ['--deploy-branch', args.deployBranch],
+    ['--board', args.board], ['--board-id', args.boardId],
+    ['--board-bin', args.boardBin !== (process.env.BOARD_BIN || BOARD_BIN) ? args.boardBin : null],
+  ]
+  return [
+    ...pairs.flatMap(([name, value]) => (value ? [name, value] : [])),
+    ...(args.complete ? ['--complete'] : []), ...(args.intermediate ? ['--intermediate'] : []),
+  ]
 }
 
 // 머리 주석의 「배포 뒤 할 일」 의 본문 통과. 앞 마무리가 목록에 옮긴 항목이 열려 있으면 끝내고 보드도 done 으로 바꾼다.

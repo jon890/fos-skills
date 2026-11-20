@@ -74,12 +74,25 @@ export function updateFollowups<T>(repo: string, change: Change<T>): T {
 }
 
 // 목록을 고치고, 같은 잠금 안에서 그 PR 의 보드 항목을 방금 쓴 목록의 값으로 쓴다(머리 주석의 「보드 반영」).
-// board 는 반영한 줄이나 건너뛴 이유다. 실패는 `실패:` 로 시작한다. 목록에 그 PR 이 없으면 `항목 없음` 이다
-export function updateWithBoard<T>(repo: string, pr: number, change: Change<T>, options: BoardOptions = {}): { value: T; board: string } {
+// board 는 반영한 줄이나 건너뛴 이유다. 실패는 `실패:` 로 시작한다. 목록에 그 PR 이 없으면 `항목 없음` 이다.
+// options 를 주지 않으면 그 항목의 finish_args(처음 마무리의 옵션)에 든 --board 와 --board-bin 을 쓴다
+export function updateWithBoard<T>(repo: string, pr: number, change: Change<T>, options?: BoardOptions): { value: T; board: string } {
   return locked(repo, change, (items, value) => {
     const item = items.find((one) => one.pr === pr)
-    return { value, board: item ? mirrorBoard(repo, item, options) : '항목 없음' }
+    return { value, board: item ? mirrorBoard(repo, item, options ?? boardOptionsOf(item.finish_args)) : '항목 없음' }
   })
+}
+
+// 옵션 목록의 --board, --board-bin 값. `--board x` 와 `--board=x` 를 받는다
+export function boardOptionsOf(args: string[]): BoardOptions {
+  const value = (name: string): string | null => {
+    for (let i = args.length - 1; i >= 0; i--) {
+      if (args[i] === name && i + 1 < args.length) return args[i + 1]
+      if (args[i].startsWith(`${name}=`)) return args[i].slice(name.length + 1)
+    }
+    return null
+  }
+  return { file: value('--board'), bin: value('--board-bin') }
 }
 
 // 후속 검증을 코디네이터가 끝낸 PR 인가. 목록을 읽지 못하면 끝나지 않은 것으로 본다

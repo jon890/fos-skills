@@ -13,6 +13,8 @@
 //     notified_at   코디네이터에게 알린 시각. 알린 항목은 다시 알리지 않는다
 //     done_at       코디네이터가 끝낸 시각
 //     note          끝낼 때 남긴 한 줄
+//     finish_args   처음 마무리에 준 옵션(queue/finish-pr.ts 의 replayArgs). `orch followup done` 이 그 보드에 쓰고 마무리를 다시 띄울 때 그대로 준다.
+//                   옛 항목에는 없어 빈 목록으로 읽는다
 //
 // 끝난 항목은 DONE_KEEP_DAYS(30일) 동안 남긴다. 그 안에 마무리를 다시 돌려도 후속 검증을 끝난 것으로 본다.
 
@@ -30,6 +32,7 @@ export type Followup = {
   notified_at: string | null
   done_at: string | null
   note: string | null
+  finish_args: string[]
 }
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -47,6 +50,7 @@ export function parseFollowups(data: unknown): Followup[] {
     return [{
       pr, title: str(row.title), text: str(row.text), merge_commit: str(row.merge_commit), deploy,
       added_at: str(row.added_at), notified_at: optional(row.notified_at), done_at: optional(row.done_at), note: optional(row.note),
+      finish_args: Array.isArray(row.finish_args) ? row.finish_args.filter((arg): arg is string => typeof arg === 'string') : [],
     }]
   })
 }
@@ -55,13 +59,15 @@ export type Upsert = { items: Followup[]; result: 'added' | 'updated' | 'done' }
 
 // 마무리가 옮긴 항목을 더한다. 같은 PR 이 이미 끝났으면 그대로 두고 done 이다.
 // 끝나지 않은 같은 PR 은 글과 배포 결과만 새로 쓰고 알림 기록은 지킨다. 같은 PR 의 마무리를 다시 돌려도 알림이 되풀이되지 않는다
-export function upsertFollowup(items: Followup[], entry: Omit<Followup, 'added_at' | 'notified_at' | 'done_at' | 'note'>, at: string): Upsert {
+export type Entry = Omit<Followup, 'added_at' | 'notified_at' | 'done_at' | 'note' | 'finish_args'> & { finish_args?: string[] }
+
+export function upsertFollowup(items: Followup[], entry: Entry, at: string): Upsert {
   const found = items.find((item) => item.pr === entry.pr)
   if (found?.done_at) return { items, result: 'done' }
   if (found) {
-    return { items: items.map((item) => (item.pr === entry.pr ? { ...item, ...entry, deploy: deployedValue(item.deploy) ? item.deploy : entry.deploy } : item)), result: 'updated' }
+    return { items: items.map((item) => (item.pr === entry.pr ? { ...item, ...entry, finish_args: entry.finish_args ?? item.finish_args, deploy: deployedValue(item.deploy) ? item.deploy : entry.deploy } : item)), result: 'updated' }
   }
-  return { items: [...items, { ...entry, added_at: at, notified_at: null, done_at: null, note: null }], result: 'added' }
+  return { items: [...items, { ...entry, finish_args: entry.finish_args ?? [], added_at: at, notified_at: null, done_at: null, note: null }], result: 'added' }
 }
 
 // 배포를 확인한 값인가. 배포 설정이 없으면(none) 머지 즉시 확인한 것으로 본다
