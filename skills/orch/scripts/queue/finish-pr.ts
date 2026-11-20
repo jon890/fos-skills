@@ -175,6 +175,7 @@ import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
+import { rerunAfter } from '../lib/process.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
@@ -1006,16 +1007,22 @@ async function executeMain(argv: string[]): Promise<number> {
     // 표시를 남기지 못하면 정리가 이 PR 을 FINISH-MISSING 으로 한 번 더 알릴 뿐이다
     process.stderr.write(`finish-pr: 마무리 표시를 남기지 못했다: ${(e as Error).message}\n`)
   }
+  // rerunAfter 가 false 면 pid 파일을 이미 지웠다. 그 뒤 followup done 이 새 마무리를 띄웠을 수 있어 finally 는 다시 지우지 않는다
+  let released = false
   try {
     let code = await finish(args, repo)
     // 도는 동안 후속 검증이 끝났으면(orch followup done 이 남긴 표시) 끝난 상태로 한 번 더 돌아 남긴 워크트리와 업무까지 끝낸다
-    while (pidFile && takeRerun(pidFile)) {
+    while (pidFile && !released) {
+      if (!rerunAfter(pidFile)) {
+        released = true
+        break
+      }
       log('다시 돌기 표시가 있어 마무리를 한 번 더 돈다')
       code = await finish(args, repo)
     }
     return code
   } finally {
-    if (pidFile) {
+    if (pidFile && !released) {
       try {
         unlinkSync(pidFile)
       } catch {
@@ -1025,15 +1032,6 @@ async function executeMain(argv: string[]): Promise<number> {
   }
 }
 
-// 머리 주석 --pid-file 의 다시 돌기 표시(<pid 파일>.rerun). 있으면 지우고 true
-function takeRerun(pidFile: string): boolean {
-  try {
-    unlinkSync(`${pidFile}.rerun`)
-    return true
-  } catch {
-    return false
-  }
-}
 
 export function reportError(e: unknown): void {
   process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
