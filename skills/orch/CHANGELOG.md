@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.81.0 (2026-11-21)
+
+- 같은 PR 의 머지 큐를 한 곳에서만 돌린다. 다른 큐가 이미 맡은 PR 을 다시 걸면 `QUEUE-DUP <PR> 이미 진행 중이다: pid …` 와 종료 코드 4 로 끝난다.
+- 큐가 보류로 뺀 PR 은 진행 중으로 보지 않아, 보류를 푼 뒤 그 큐가 도는 중에도 다시 걸 수 있다.
+- 다른 큐가 맡았는지 확인하지 못하면 `QUEUE-CLAIM-FAIL` 과 종료 코드 1 로 끝난다. 상주 루프는 그 PR 을 다음 틱에 다시 건다.
+- 같은 PR 의 마무리는 하나만 돈다. 늦게 뜬 마무리는 `FINISH-RUNNING <PR> pid <pid>` 로 끝나고, 끝나는 마무리가 새 마무리의 pid 파일을 지우지 않는다.
+- `orch queue merge` 가 SIGTERM, SIGINT, SIGHUP 을 받으면 자식 머지 큐를 끝낸 뒤 끝난다.
+
 ## 7.80.0 (2026-11-21)
 
 - 설정 `queue.integration_tests` 에 경로 패턴과 명령을 두면, `orch queue gate` 와 머지 큐가 바뀐 모듈마다 PR 본문의 통합 테스트 통과 기록과 head 커밋을 확인한다.
