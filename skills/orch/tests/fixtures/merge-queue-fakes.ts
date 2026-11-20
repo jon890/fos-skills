@@ -87,6 +87,14 @@ if (args[0] === 'api') {
     process.exit(0)
   }
   if (state._api_fails) process.exit(1)
+  // 바뀐 파일 목록(REST pulls/<n>/files). pr.files 의 path 를 filename 으로 돌려준다
+  const files = new RegExp('/pulls/([0-9]+)/files').exec(path)
+  if (files) {
+    const pr = state[files[1]]
+    if (pr.files_fail) process.exit(1)
+    const at = args.indexOf('--jq')
+    jq(at >= 0 ? args[at + 1] : '.', (pr.files ?? []).map((f) => ({ filename: f.path })))
+  }
   const rules = path.includes('/rules/branches/')
   if (rules && state._rules_error) {
     fs.writeSync(2, state._rules_error)

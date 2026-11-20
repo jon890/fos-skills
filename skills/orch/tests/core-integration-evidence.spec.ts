@@ -1,0 +1,86 @@
+// 통합 테스트 기록 판정(core/integration-evidence.ts)의 규칙 읽기, 바뀐 모듈 찾기, 본문 판정을 본다.
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import { ConfigError } from '../scripts/core/config.ts'
+import { integrationNeeds, integrationProblems, integrationRules } from '../scripts/core/integration-evidence.ts'
+
+const HEAD = 'a'.repeat(40)
+const OLD = 'b'.repeat(40)
+const RULE = { paths: 'modules/<모듈>/src/main/**', command: './gradlew :<모듈>:integrationTest' }
+const rules = integrationRules({ queue: { integration_tests: [RULE] } })
+const need = (module: string) => ({ module, command: `./gradlew :${module}:integrationTest` })
+const record = (module: string, commit = HEAD) => `- 통합 테스트 통과: ${module} | ./gradlew :${module}:integrationTest | ${commit}`
+
+describe('integrationRules', () => {
+  test('설정이 없으면 규칙이 없다', () => {
+    assert.deepEqual(integrationRules({}), [])
+    assert.deepEqual(integrationRules({ queue: { integration_tests: [] } }), [])
+  })
+
+  for (const [name, value] of [
+    ['목록이 아니다', { paths: 'a/<모듈>/**', command: 'x' }],
+    ['모듈 자리가 없다', [{ paths: 'a/**', command: 'x' }]],
+    ['모듈 자리가 둘이다', [{ paths: '<모듈>/<모듈>/**', command: 'x' }]],
+    ['명령이 비었다', [{ paths: 'a/<모듈>/**', command: ' ' }]],
+    ['모르는 키가 있다', [{ paths: 'a/<모듈>/**', command: 'x', when: 'y' }]],
+  ] as const) {
+    test(`꼴이 틀리면 ConfigError 다: ${name}`, () => {
+      assert.throws(() => integrationRules({ queue: { integration_tests: value } }), ConfigError)
+    })
+  }
+})
+
+describe('integrationNeeds', () => {
+  test('패턴에 맞는 파일의 모듈을 이름 순서로 한 번씩 낸다', () => {
+    const files = ['modules/zeta/src/main/A.kt', 'modules/core/src/main/x/B.kt', 'modules/core/src/main/C.kt', 'modules/core/src/test/D.kt', 'docs/a.md']
+    assert.deepEqual(integrationNeeds(files, rules), [need('core'), need('zeta')])
+  })
+
+  test('경로 전체가 맞아야 하고 모듈 자리는 경로 조각 하나다', () => {
+    assert.deepEqual(integrationNeeds(['x/modules/core/src/main/A.kt', 'modules/a/b/src/main/A.kt'], rules), [])
+  })
+})
+
+describe('integrationProblems', () => {
+  const body = (...lines: string[]) => `## 요약\n본문\n\n## 검증\n${lines.join('\n')}\n\n## 결정\n없음\n`
+
+  test('바뀐 모듈이 없으면 문제가 없다', () => {
+    assert.deepEqual(integrationProblems('', HEAD, []), { reasons: [], notes: [] })
+  })
+
+  test('검증 절에 head 커밋 기록이 있으면 통과다', () => {
+    assert.deepEqual(integrationProblems(body(record('core')), HEAD, [need('core')]), { reasons: [], notes: [] })
+  })
+
+  test('기록이 없으면 모듈과 명령을 알린다', () => {
+    assert.deepEqual(integrationProblems(body('- 단위 테스트 통과'), HEAD, [need('core')]).reasons, ['통합 테스트 기록 없음: core (./gradlew :core:integrationTest)'])
+  })
+
+  test('검증 절 밖이나 코드 블록 안의 기록은 기록이 아니다', () => {
+    const outside = `${record('core')}\n${body()}`
+    const fenced = body('```', record('core'), '```')
+    for (const text of [outside, fenced]) assert.match(integrationProblems(text, HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
+  })
+
+  test('커밋이 head 와 다르면 head 가 아니라고 알린다. accept 가 받으면 통과다', () => {
+    assert.deepEqual(integrationProblems(body(record('core', OLD)), HEAD, [need('core')]).reasons, ['통합 테스트 기록이 head 가 아니다: core'])
+    assert.deepEqual(integrationProblems(body(record('core', OLD)), HEAD, [need('core')], (c) => c === OLD).reasons, [])
+  })
+
+  test('명령이 규칙과 다르면 그 명령의 기록이 없다', () => {
+    const text = body('- 통합 테스트 통과: core | ./gradlew test | ' + HEAD)
+    assert.match(integrationProblems(text, HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
+  })
+
+  test('이유가 있는 생략 줄은 넘기고 notes 로 보인다. 이유가 비면 생략이 아니다', () => {
+    assert.deepEqual(integrationProblems('통합 테스트 생략: core 주석만 바꿨다', HEAD, [need('core')]), { reasons: [], notes: ['통합 테스트 생략 core: 주석만 바꿨다'] })
+    assert.match(integrationProblems('- 통합 테스트 생략: core', HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
+  })
+
+  test('여러 모듈은 모듈마다 따로 본다', () => {
+    const text = body(record('core'), record('api', OLD)) + '\n통합 테스트 생략: batch 설정 문구만 바꿨다\n'
+    const result = integrationProblems(text, HEAD, [need('api'), need('batch'), need('core'), need('web')])
+    assert.deepEqual(result.reasons, ['통합 테스트 기록이 head 가 아니다: api', '통합 테스트 기록 없음: web (./gradlew :web:integrationTest)'])
+    assert.deepEqual(result.notes, ['통합 테스트 생략 batch: 설정 문구만 바꿨다'])
+  })
+})

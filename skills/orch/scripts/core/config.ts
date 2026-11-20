@@ -16,6 +16,9 @@ export const HOOKS_KEYS: readonly string[] = ['timeouts']
 // queue 절에서 상주 루프만 읽는 키. 자동 머지(lib/auto-merge.ts)가 읽고, merge-with-finish 의 옵션 표(lib/queue-options.ts)에는 없다
 export const QUEUE_LOOP_KEYS: readonly string[] = ['auto_merge', 'auto_review']
 
+// queue 절에서 머지 관문(queue/steps/gate.ts)만 읽는 키. 머지 큐 옵션으로 바꾸지 않는다. 꼴은 core/integration-evidence.ts 가 판정한다
+export const QUEUE_GATE_KEYS: readonly string[] = ['integration_tests']
+
 // queue 절의 아는 키 전부. skills/orch/references/overlay.md 「마무리 설정 파일」 표의 queue 행이다.
 // merge-with-finish 가 머지 큐 옵션으로 바꾸고, orch-loop 가 필수 체크 판정에 required 와 skipped_is_missing 을, 자동 머지에 QUEUE_LOOP_KEYS 를 읽는다
 export const QUEUE_KEYS: readonly string[] = [
@@ -35,6 +38,7 @@ export const QUEUE_KEYS: readonly string[] = [
   'poll_max_sec',
   'ci_expected_sec',
   ...QUEUE_LOOP_KEYS,
+  ...QUEUE_GATE_KEYS,
 ]
 
 // pipeline 절의 아는 키 전부. docs/data-schema.md 「config.json 에 더하는 절」 표의 pipeline 행이다.
