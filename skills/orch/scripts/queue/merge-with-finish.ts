@@ -74,7 +74,9 @@
 // 옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
 //
 // 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류나 삭제한 옵션 포함)이거나
-//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
+//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다.
+//           맡은 PR 기록의 잠금을 잡지 못했거나 내 기록을 쓰지 못했으면 `QUEUE-CLAIM-FAIL <이유>` 를 내고 아무것도 걸지 않은 채 1 이다.
+//           다른 큐가 맡은 PR 을 확인하지 못한 채 넘기지 않으려는 것이다. 같은 명령을 다시 부르면 된다
 
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { spawn } from 'node:child_process'
@@ -399,6 +401,10 @@ async function main(argv: string[]): Promise<number> {
   }
   // 머리 주석의 「이미 맡은 PR」. 다른 큐가 맡은 PR 은 마무리도 큐도 걸지 않는다
   const claim = claimQueue(real(wrapper.repo), prs, queue)
+  if ('fail' in claim) {
+    out(`QUEUE-CLAIM-FAIL ${claim.fail.replace(/\s+/g, ' ')}`)
+    return 1
+  }
   if (claim.left.length === 0) {
     out(`QUEUE-SKIPPED ${prs.map((pr) => pr.number).join(' ')}`)
     return 0
@@ -409,13 +415,12 @@ async function main(argv: string[]): Promise<number> {
 type ClaimResult = { left: PrArg[]; queue: string[]; file: string | null }
 
 // 다른 머지 큐가 맡은 PR 을 빼고, 남은 PR 을 내 기록으로 남긴다. 프로세스 목록을 읽지 못하면 빼지 않는다. 그때는 머지 큐의 잠금 확인이 QUEUE-CHECK-FAILED 로 멈춘다.
-// 읽기부터 쓰기까지 lib/queue-claims.ts 의 「맡기의 잠금」 안에서 한다. 잠금을 잡지 못하면 빼지 않고 기록 없이 진행한다(머지 큐 잠금이 뒤를 막는다)
-function claimQueue(repo: string, prs: PrArg[], queue: string[]): ClaimResult {
+// 읽기부터 쓰기까지 lib/queue-claims.ts 의 「맡기의 잠금」 안에서 한다. 잠금을 잡지 못했거나 내 기록을 쓰지 못하면 맡지 않은 것으로 끝낸다
+function claimQueue(repo: string, prs: PrArg[], queue: string[]): ClaimResult | { fail: string } {
   try {
     return withClaimsLock(repo, () => claimLocked(repo, prs, queue))
   } catch (e) {
-    process.stderr.write(`merge-with-finish: 맡은 PR 기록의 잠금을 잡지 못했다: ${(e as Error).message}\n`)
-    return { left: prs, queue, file: null }
+    return { fail: `맡은 PR 기록을 확인하거나 남기지 못했다: ${(e as Error).message}` }
   }
 }
 
@@ -430,12 +435,8 @@ function claimLocked(repo: string, prs: PrArg[], queue: string[]): ClaimResult {
   const gone = new Set(dropped.skipped.map((skip) => String(skip.pr)))
   const left = prs.filter((pr) => !gone.has(pr.number))
   if (left.length === 0) return { left, queue: dropped.queue, file: null }
-  let file: string | null = null
-  try {
-    file = writeClaim(repo, { pid: process.pid, prs: left.map((pr) => Number(pr.number)) }, isQueue)
-  } catch (e) {
-    process.stderr.write(`merge-with-finish: 맡은 PR 기록을 남기지 못했다: ${(e as Error).message}\n`)
-  }
+  // 기록을 쓰지 못하면 던져 claimQueue 가 실패로 끝낸다. 기록 없이 걸면 다른 큐가 이 PR 을 맡은 것을 모른다
+  const file = writeClaim(repo, { pid: process.pid, prs: left.map((pr) => Number(pr.number)) }, isQueue)
   return { left, queue: dropped.queue, file }
 }
 

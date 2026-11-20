@@ -12,10 +12,12 @@
 //
 // 맡기의 잠금(withClaimsLock): 프로세스 목록과 기록을 읽고, 맡을 PR 을 고르고, 내 기록을 쓰기까지를 저장소마다 한 잠금(queue-claims/claims.lock) 안에서 한다.
 //   잠금 없이 두 호출이 겹치면 둘 다 기록이 없는 것을 보고 같은 PR 을 맡았고, 먼저 읽은 프로세스 목록으로 뒤에 쓴 기록을 지울 수도 있었다(PR 558 리뷰).
+//   잠금은 lib/owner-lock.ts 다. 쥔 프로세스가 살아 있으면 넘겨받지 않고, 죽었으면 다음 호출이 회수한다.
+//   잡지 못하면 OwnerLockBusy 를 던진다. 부르는 쪽은 PR 을 맡지 않은 것으로 끝낸다(merge-with-finish.ts 의 QUEUE-CLAIM-FAIL)
 
 import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withOwnerLock } from './owner-lock.ts'
 import { makeParent, pathOf } from './paths.ts'
 import type { QueueTurn } from './queue-turn.ts'
 import { QUEUE_VALUE_OPTIONS } from '../core/queue-options.ts'
@@ -118,8 +120,8 @@ export function writeClaim(repo: string, claim: Claim, isQueue: (pid: number) =>
 // 머리 주석의 「맡기의 잠금」. 프로세스 목록 읽기(ps)가 느릴 수 있어 잠금을 오래 기다린다. 잡지 못하면 던진다
 export function withClaimsLock<T>(repo: string, work: () => T): T {
   const dir = claimDir(repo)
-  makeParent(join(dir, 'claims'), repo)
-  return withFileLock(join(dir, 'claims'), work, { waitMs: 60_000 })
+  makeParent(join(dir, 'claims.lock'), repo)
+  return withOwnerLock(join(dir, 'claims.lock'), work, { waitMs: 60_000 })
 }
 
 export function removeClaim(file: string): void {

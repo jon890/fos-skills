@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -876,6 +876,30 @@ describe('merge-with-finish 이미 맡은 PR', { skip: !HAS_BASH && 'bash 가 �
     const r = await c.wrap(['--repo', c.tmp, '449', '450'])
     assert.equal(r.code, 0, both(r))
     assert.match(r.stdout, /^QUEUE-SKIPPED 449 450$/m)
+    await sleep(300)
+    assert.equal(existsSync(c.logFile), false)
+  })
+
+  test('죽은 프로세스가 남긴 맡기 잠금은 회수하고, 살아 있는 큐가 맡은 PR 을 건너뛴다', async (t) => {
+    const c = setup(t)
+    const pid = fakeQueue(t)
+    claim(c, pid, [449])
+    // 잠금을 넘겨받다 죽은 프로세스가 남긴 잠금과 같다
+    writeFileSync(join(c.tmp, '.orch', 'state', 'queue-claims', 'claims.lock'), '999999 dead-token')
+    const r = await c.wrap(['--repo', c.tmp, '449', '450'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, `QUEUE-SKIP 449 pid ${pid} 의 머지 큐가 이미 맡았다`)
+    assert.deepEqual(await c.lines('queue'), [`queue --repo ${c.tmp} 450`])
+  })
+
+  test('맡은 PR 기록을 남기지 못하면 아무것도 걸지 않고 QUEUE-CLAIM-FAIL 과 1 이다', { skip: process.getuid?.() === 0 && 'root 는 권한을 무시한다' }, async (t) => {
+    const c = setup(t)
+    const dir = join(c.tmp, '.orch', 'state', 'queue-claims')
+    mkdirSync(dir, { recursive: true })
+    chmodSync(dir, 0o500)
+    const r = await c.wrap(['--repo', c.tmp, '449']).finally(() => chmodSync(dir, 0o700))
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^QUEUE-CLAIM-FAIL /m)
     await sleep(300)
     assert.equal(existsSync(c.logFile), false)
   })
