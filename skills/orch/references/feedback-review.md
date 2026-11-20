@@ -37,7 +37,7 @@ doctor 가 옛 메모 파일을 알리면 `orch feedback migrate` 로 미리보�
 
 ## 판정
 
-fos-skills 세션에서는 `orch feedback collect` 로 Orca 에 등록된 저장소의 후보를 모아 본다. 이 명령은 파일과 메시지를 바꾸지 않는다. 먼저 core 스킬에 필요한가를 확인한다. 저장소 몫은 원래 저장소에서 판정하고, core 몫과 대상이 `확인 필요` 인 옛 파일은 fos-skills 에서 판정한다.
+fos-skills 세션에서는 `orch feedback collect` 로 Orca 에 등록된 저장소의 후보를 모아 본다. 이 명령은 파일과 메시지를 바꾸지 않는다. 먼저 core 스킬에 필요한가를 확인한다. 저장소 몫으로 다시 판단한 후보는 `orch feedback set --slug "$SLUG" --status 후보 --target "이 저장소" --repo "$REPO"` 로 대상을 바꿔 원래 저장소에 돌린다. core 몫과 대상이 `확인 필요` 인 옛 파일은 fos-skills 에서 판정한다.
 
 후보마다 근거(파일과 줄, 로그, 재발 기록)를 지금 설치본과 대조한 뒤 결과를 정한다. 상태는 `orch feedback set --slug "$SLUG" --status "$STATUS" --repo "$REPO"` 로 바꾼다. `SLUG` 는 목록의 이름이고 `STATUS` 는 아래 상태 값이다.
 

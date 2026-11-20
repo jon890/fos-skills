@@ -59,6 +59,18 @@ test('정해진 순서로 저장하고 목록과 상태를 바꾸며 다른 칸�
   assert.equal(run('add', ...fields.slice(0, 1), '../bad', ...fields.slice(2)).status, 2)
 })
 
+test('core 판정 뒤 저장소 몫으로 돌릴 때 원래 후보의 대상만 바꾼다', () => {
+  assert.equal(run('add', ...fields).status, 0)
+  const file = join(dir, 'a.md')
+  const before = parse(readFileSync(file, 'utf8'))!
+  const result = run('set', '--slug', 'a', '--status', '후보', '--target', '이 저장소')
+  assert.equal(result.status, 0, result.stderr)
+  const after = parse(readFileSync(file, 'utf8'))!
+  assert.deepEqual({ ...after.values, 대상: before.values.대상 }, before.values)
+  assert.equal(run('set', '--slug', 'a', '--status', '후보', '--target', '모르는 값').status, 2)
+  assert.equal(parse(readFileSync(file, 'utf8'))?.values.대상, '이 저장소')
+})
+
 test('옛 메모는 기본으로 미리 보기만 하고 모르는 칸과 상태를 확인 필요로 남긴다', () => {
   mkdirSync(dir, { recursive: true })
   const file = join(dir, 'old.md')

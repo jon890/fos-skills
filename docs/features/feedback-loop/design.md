@@ -15,7 +15,7 @@
 
 ## 책임과 경계
 
-`lib/feedback.ts`는 파일 형식과 상태를 소유한다. `feedback/feedback-candidates.ts`는 CLI 인자와 모아 보기·알림 보내기를 소유한다. `doctor/orch-doctor.ts`는 현재 저장소에 남은 알림 표시와 정리를 소유한다. 후보 파일은 원래 저장소의 `.orch/feedback/`에 남는다. 다른 저장소의 코드나 설정을 고치지 않는다.
+`lib/feedback.ts`는 파일 형식과 상태를 소유한다. `feedback/feedback-candidates.ts`는 CLI 인자와 모아 보기·알림 보내기를 소유한다. 판정에서 저장소 몫으로 확인하면 기존 `set` 명령의 `--target`으로 원래 후보 파일의 대상을 바꾼다. `doctor/orch-doctor.ts`는 현재 저장소에 남은 알림 표시와 정리를 소유한다. 후보 파일은 원래 저장소의 `.orch/feedback/`에 남는다. 다른 저장소의 코드나 설정을 고치지 않는다.
 
 | 대상과 상태 | 모아 보기 | 처리 주체 |
 | --- | --- | --- |

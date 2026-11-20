@@ -14,7 +14,7 @@ import { oneLine, validSlug } from '../lib/study.ts'
 const USAGE = [
   '사용법: orch feedback add --slug 이름 --title 제목 --target "core 스킬 | 이 저장소" --skill 스킬 --file 스킬파일 --situation 상황 --problem 문제 --want 바라는기능 --evidence 근거 --significance 유의미한이유 --nontrivial 단순함정이아닌이유 --structural 구조로막는방법 [--repo DIR]',
   '        orch feedback list [--open] [--repo DIR]',
-  '        orch feedback set --slug 이름 --status "후보 | 채택 #PR | 기각(이유) | 보류(이유)" [--repo DIR]',
+  '        orch feedback set --slug 이름 --status "후보 | 채택 #PR | 기각(이유) | 보류(이유)" [--target "core 스킬 | 이 저장소"] [--repo DIR]',
   '        orch feedback migrate [--apply] [--trash DIR] [--repo DIR]',
   '        orch feedback collect',
   '        orch feedback notify [--trash DIR]',
@@ -44,7 +44,7 @@ function main(): number {
     if (!['add', 'list', 'set', 'migrate', 'collect', 'notify'].includes(command) || rest.length) throw new Usage('add, list, set, migrate, collect, notify 가운데 하나를 준다')
     const allowed: Record<string, string[]> = {
       add: ['slug', 'title', 'target', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural'],
-      list: ['open'], set: ['slug', 'status'], migrate: ['apply', 'trash'], collect: ['trash'], notify: ['trash'],
+      list: ['open'], set: ['slug', 'status', 'target'], migrate: ['apply', 'trash'], collect: ['trash'], notify: ['trash'],
     }
     for (const key of Object.keys(values)) if (!['repo', ...allowed[command]].includes(key)) throw new Usage(`${command} 에 --${key} 를 쓸 수 없다`)
     const need = (key: string): string => {
@@ -99,10 +99,12 @@ function main(): number {
       } else {
         const status = need('status')
         if (!validStatus(status) || status.startsWith('반영됨 ')) throw new Usage('--status 는 후보, 채택 #PR, 기각(이유), 보류(이유) 가운데 하나다')
+        const target = values.target === undefined ? undefined : need('target')
+        if (target !== undefined && !TARGETS.includes(target as typeof TARGETS[number])) throw new Usage('--target 은 "core 스킬" 또는 "이 저장소" 다')
         const candidate = found.candidates.find(c => c.slug === slug)
         if (!candidate) throw new Refused(`${slug} 후보가 없다. feedback list 로 이름을 본다`)
         const temp = `${file}.tmp-${process.pid}`
-        writeFileSync(temp, render(candidate.title, { ...candidate.values, 상태: status }))
+        writeFileSync(temp, render(candidate.title, { ...candidate.values, ...(target === undefined ? {} : { 대상: target }), 상태: status }))
         renameSync(temp, file)
         process.stdout.write(`SET ${slug} ${status}\n`)
       }
