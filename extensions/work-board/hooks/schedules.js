@@ -24,8 +24,8 @@ export function nextCron(cron, after) {
   if (parts.length !== 5) return null
   const [minute, hour, day, month, weekday] = parts.map((part, i) => field(part, [0, 0, 1, 1, 0][i], [59, 23, 31, 12, 7][i], i === 4))
   if ([minute, hour, day, month, weekday].some((part) => !part)) return null
-  const dayWildcard = parts[2] === '*'
-  const weekdayWildcard = parts[4] === '*'
+  const dayWildcard = parts[2].startsWith('*')
+  const weekdayWildcard = parts[4].startsWith('*')
   let time = Math.floor(after / MINUTE) * MINUTE + MINUTE
   const start = new Date(time)
   const limit = new Date(start.getFullYear() + 9, start.getMonth(), start.getDate()).getTime()
