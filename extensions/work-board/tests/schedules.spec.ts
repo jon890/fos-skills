@@ -43,6 +43,8 @@ test('한 번만 도는 예약과 만료된 반복 예약은 사라진다', () =
 test('cron 식은 로컬 시간의 범위·간격·요일을 읽는다', () => {
   assert.equal(nextCron('*/5 * * * *', at), at + 300000)
   assert.equal(nextCron('broken', at), null)
+  assert.equal(nextCron('0 0 1 1 *', at), new Date(2027, 0, 1).getTime())
+  assert.equal(nextCron('0 0 29 2 *', new Date(2027, 0, 1).getTime()), new Date(2028, 1, 29).getTime())
   const friday = new Date(2026, 10, 20, 10, 0).getDay()
   assert.equal(nextCron(`0 11 * * ${friday}`, at), new Date(2026, 10, 20, 11, 0).getTime())
 })

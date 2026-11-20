@@ -27,13 +27,25 @@ export function nextCron(cron, after) {
   const dayWildcard = parts[2] === '*'
   const weekdayWildcard = parts[4] === '*'
   let time = Math.floor(after / MINUTE) * MINUTE + MINUTE
-  const limit = time + 366 * 24 * 60 * MINUTE
+  const start = new Date(time)
+  const limit = new Date(start.getFullYear() + 9, start.getMonth(), start.getDate()).getTime()
   while (time < limit) {
     const date = new Date(time)
     const dayMatch = day.has(date.getDate())
     const weekdayMatch = weekday.has(date.getDay())
-    if (month.has(date.getMonth() + 1) && hour.has(date.getHours()) && minute.has(date.getMinutes())
-      && (dayWildcard ? weekdayMatch : weekdayWildcard ? dayMatch : dayMatch || weekdayMatch)) return time
+    if (!month.has(date.getMonth() + 1)) {
+      time = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime()
+      continue
+    }
+    if (!(dayWildcard ? weekdayMatch : weekdayWildcard ? dayMatch : dayMatch || weekdayMatch)) {
+      time = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime()
+      continue
+    }
+    if (!hour.has(date.getHours())) {
+      time += (60 - date.getMinutes()) * MINUTE
+      continue
+    }
+    if (minute.has(date.getMinutes())) return time
     time += MINUTE
   }
   return null
