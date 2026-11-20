@@ -280,6 +280,20 @@ describe('update-branch', () => {
     assert.deepEqual(records(), {})
   })
 
+  test('필수가 아닌 claude-review 만 실패한 PR 은 최신화 대상이고, 필수 체크가 실패하면 미룬다', () => {
+    const a = branch('feat-7', { 'modules/api/A.java': 'api\n' })
+    const b = branch('feat-8', { 'modules/web/W.java': 'web\n' })
+    advanceMain({ 'contracts/a.yaml': 'b\n' })
+    const review = { __typename: 'CheckRun', name: 'claude-review', status: 'COMPLETED', conclusion: 'FAILURE' }
+    const failedTest = { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' }
+    prs({ number: 7, name: 'feat-7', head: a.head, rollup: [...passed(), review] }, { number: 8, name: 'feat-8', head: b.head, rollup: [failedTest] })
+    const output = once()
+    assert.deepEqual(updates(), [[7, a.head]])
+    assert.deepEqual(lines(output, 'REFRESH-WAIT'), ['REFRESH-WAIT #8 CI failed(공용 경로: contracts/a.yaml)'])
+    // CI 알림은 지금처럼 필수가 아닌 체크의 실패도 알린다
+    assert.match(output, /^CI-FAILED #7 claude-review: /m)
+  })
+
   test('최신화 자리가 차면 번호 순으로 그만큼만 건다', () => {
     config({ refresh_slots: 1 })
     const a = branch('feat-7', { 'modules/api/A.java': 'api\n' })
