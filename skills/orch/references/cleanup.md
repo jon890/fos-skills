@@ -326,6 +326,20 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 `FINISH-FAIL` 이면 출력의 이유를 읽고 사용자에게 알린다. 배포 실패나 업무 번호 없음처럼 사람이 정해야 하는 것은 스크립트가 다시 시도하지 않는다.
 머지 큐가 `STOP` 으로 멈춘 뒤 남은 PR 만 다시 걸어도 같은 PR 의 마무리는 겹쳐 돌지 않는다.
 
+### 배포 뒤 할 일
+
+**기능 PR 의 `후속 검증: 대기 | <글>` 은 마무리가 배포 뒤 할 일 목록으로 옮긴다.** 다른 근거가 모두 통과면 worker 를 정리하고 `FOLLOWUP-ADDED #<PR> <글>` 과 `FINISH-DONE` 을 낸다. 지시서, 업무 완료, 그 PR 의 보드 항목은 남긴다.
+워크트리와 브랜치, 그 PR 의 handoff 산출물도 아래 「남기는 것」 대로 남긴다. 후속 검증에서 결함이 나오면 같은 워크트리에서 고친다. 이렇게 남긴 것은 마무리의 실패로 세지 않는다. 배포가 실패했거나 시간이 지났으면 옮긴 뒤 `FINISH-FAIL` 이다.
+목록은 저장소마다 `<orch 루트>/state/followups.json` 하나다. `orch status` 의 `FOLLOWUPS`, `FOLLOWUP` 줄과 `orch followup list` 로 보고, 보드 파일이 있으면 `followup-<PR>` 항목(wait)으로도 보인다.
+상주 루프가 머지 커밋의 배포를 확인하면(배포 설정 `finish.deploy_workflow` 가 있으면 그 실행으로, 없으면 머지 즉시) 확인된 항목을 묶어 `FOLLOWUP-READY` 를 한 번 보낸다. 알린 항목은 다시 알리지 않는다. 판정과 기록은 `scripts/lib/followups.ts` 머리 주석이 소유한다.
+알림을 받으면 배포된 환경에서 그 글대로 확인하고 결과를 PR 이나 업무에 남긴 뒤 끝낸다.
+
+```bash
+orch followup done "$PR" --note "$NOTE"
+```
+
+`PR` 은 PR 번호, `NOTE` 는 확인 결과 한 줄이다. 끝내면 처음 마무리와 같은 옵션(보드, 마지막 PR 표시 같은 것)으로 그 PR 의 마무리를 다시 띄워(`FINISH-STARTED`) 남겼던 워크트리와 브랜치, handoff 를 지우고 지시서 정리, 업무 완료, 보드 done 까지 간다. 정리 도구도 목록의 끝난 기록을 후속 검증 통과로 본다. PR 본문의 후속 검증을 통과로 고쳐 마무리를 다시 돌려도 목록의 그 항목을 끝낸다(`FOLLOWUP-DONE #<PR>`). 확인이 실패하면 끝내지 않고 고칠 일을 새 worker 로 맡긴다.
+
 ## 정리
 
 **정리는 `cleanup-sweep.ts` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 상주 루프(`orch-loop.ts`)가 틱마다 `--remote-branches` 와 함께 부른다.
@@ -493,4 +507,4 @@ PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가
 orch cleanup handoff --apply
 ```
 
-기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. 근거 누락이나 대기면 정리가 워크트리와 지시서를 남기고, finish-pr 은 업무 완료와 보드도 남긴 채 FINISH-FAIL 로 끝난다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다.
+기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. 근거가 빠졌거나 실패면 정리가 워크트리와 지시서를 남기고, finish-pr 은 업무 완료와 보드도 남긴 채 FINISH-FAIL 로 끝난다. 근거를 갱신한 뒤 같은 명령으로 재개한다. 후속 검증 대기는 워크트리를 남긴 채 위 「배포 뒤 할 일」 로 옮긴다.

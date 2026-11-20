@@ -105,6 +105,18 @@ describe('orch status', () => {
     assert.deepEqual(snapshot(), before)
   })
 
+  test('끝나지 않은 배포 뒤 할 일이 있으면 개수와 항목마다 한 줄을 낸다. 끝난 항목은 내지 않는다', () => {
+    scene()
+    const item = (pr: number, extra: Json = {}) => ({ pr, title: `t${pr}`, text: `smoke ${pr}`, merge_commit: 'a'.repeat(40), deploy: 'success', added_at: '2026-11-20T00:00:00Z', notified_at: null, done_at: null, note: null, ...extra })
+    write('.orch/state/followups.json', { items: [item(787), item(789, { deploy: 'timeout' }), item(793, { done_at: '2026-11-20T01:00:00Z' })] })
+    const r = status()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const at = r.lines.indexOf('FOLLOWUPS open=2')
+    assert.ok(at > 0, r.stdout)
+    assert.deepEqual(r.lines.slice(at + 1, at + 3), ['FOLLOWUP #787 배포 확인 smoke 787', 'FOLLOWUP #789 배포 확인 전(timeout) smoke 789'])
+    assert.doesNotMatch(r.stdout, /#793/)
+  })
+
   test('상태에 기록된 번들 버전을 줄 끝에 보인다', () => {
     scene()
     const file = join(repo, '.orch/state/loop.json')

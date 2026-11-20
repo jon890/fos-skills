@@ -1,11 +1,12 @@
 // 기능 PR 의 완료 근거 형식. 의미와 실행 사실은 코디네이터가 확인한다.
-// 새 상태 저장소 없이 PR 본문을 읽고, 현재 HEAD 의 기록과 필수 검토 누락을 막는다.
+// PR 본문을 읽고, 현재 HEAD 의 기록과 필수 검토 누락을 막는다. 후속 검증을 끝냈는지는 배포 뒤 할 일 목록(lib/followups.ts)도 본다.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { ghJson } from './gh.ts'
 import { loadConfig } from './config.ts'
 import { git } from './git.ts'
 import { pathOf } from './paths.ts'
+import { followupDone } from './followups.ts'
 import { branchesOf, specsOnBranch, taskFirstLine } from './spec.ts'
 import { readLaunch } from './launched.ts'
 import { worktreePaths } from './workers.ts'
@@ -227,7 +228,19 @@ export function featureCompletionProblem(repo: string, number: string, branch = 
     const base = got.ok && got.data && typeof got.data.baseRefName === 'string' ? got.data.baseRefName : ''
     return fetchedBaseMerges(repo, head, verified, base) || fetchedPlanDeletion(repo, head, verified, base)
   }
-  return featureEvidenceProblem(body, head, true, true, accept)
+  // 코디네이터가 배포 뒤 할 일을 끝낸 PR(lib/followups.ts)은 본문의 「후속 검증: 대기」 를 끝난 것으로 본다
+  return featureEvidenceProblem(body, head, true, !followupDone(repo, number), accept)
+}
+
+// 완료 근거 블록의 「후속 검증: 대기 | <글>」 의 글. 블록이 없거나 대기가 아니면 null 이다
+export function pendingFollowup(body: string): string | null {
+  const parts = withoutExamples(body).split(EVIDENCE_START)
+  if (parts.length !== 2) return null
+  for (const line of parts[1].split(END)[0].split('\n')) {
+    const match = /^후속 검증:\s*대기\s*\|\s*(.+)$/.exec(line.trim())
+    if (match) return match[1].trim()
+  }
+  return null
 }
 
 // origin/<base> 와 HEAD 를 받은 뒤 baseMergesOnly 로 본다. 정리와 마무리처럼 미리 받아 두지 않은 쪽이 쓴다
