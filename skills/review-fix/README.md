@@ -71,4 +71,4 @@ PR 이 base 와 충돌하면 충돌을 먼저 푼다. 같은 줄을 양쪽이 �
 
 - 남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 스킬이 설치돼 있으면 그쪽이 맡는다
 - PR 본문을 새로 쓰거나 고치는 일은 `create-pr` 가 맡는다
-- 반복될 지적을 저장소 규칙으로 옮기는 일은 `docs-consolidate` 가 맡고, 넣을 곳은 `plan` 의 `references/rule-placement.md` 가 정한다
+- 반복될 지적을 저장소 규칙으로 옮기는 일은 `docs-consolidate` 가 맡고, 넣을 곳은 [`plan` 의 `rule-placement.md`](../plan/references/rule-placement.md) 가 정한다
