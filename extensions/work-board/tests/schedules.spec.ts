@@ -51,7 +51,7 @@ test('cron 식은 로컬 시간의 범위·간격·요일을 읽는다', () => {
   assert.equal(nextCron('0 0 1 1 *', at), new Date(2027, 0, 1).getTime())
   assert.equal(nextCron('0 0 29 2 *', new Date(2027, 0, 1).getTime()), new Date(2028, 1, 29).getTime())
   assert.equal(nextCron('0 0 */2 * 1', at), new Date(2026, 10, 23).getTime())
-  assert.equal(nextCron('0 9 */2 * 1', at), new Date(2026, 10, 23, 9).getTime())
+  assert.equal(nextCron('0 9 */2 * 1', new Date(2026, 10, 24, 10).getTime()), new Date(2026, 11, 7, 9).getTime())
   assert.equal(nextCron('0 0 23 * */2', at), new Date(2027, 0, 23).getTime())
   assert.equal(nextCron('0 9 23 * */2', at), new Date(2027, 0, 23, 9).getTime())
   const friday = new Date(2026, 10, 20, 10, 0).getDay()
