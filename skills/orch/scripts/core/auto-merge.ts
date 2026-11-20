@@ -63,7 +63,10 @@ export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-h
 // require 는 적은 순서대로 볼 조건, unknown 은 모르는 이름이다. unknown 이 있으면 루프가 어느 PR 도 걸지 않는다
 // featureHead 가 거짓이면 기능 PR 에도 verdict-on-head 를 덧붙이지 않는다. 적지 않은 값(undefined)은 참이다
 // fixedAfterBlock 이 참일 때만 block 을 반영한 PR 이 재리뷰 없이 풀린다. 적지 않은 값(undefined)은 거짓이다
-export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean }
+// 리뷰 봇이 실행 장애로 실패했을 때 루프가 거는 대체 리뷰(loop/steps/review-fallback.ts 머리 주석). check 는 리뷰 봇의 체크 이름,
+// failWithinSec 은 시작부터 실패까지 이 초 안이면 장애로 보는 기준, passText 와 blockText 는 대체 리뷰가 달 판정 댓글의 첫 줄이다
+export type ReviewFallback = { check: string; failWithinSec: number; passText: string; blockText: string }
+export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean; fallback?: ReviewFallback | null }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewConfig | null
@@ -77,7 +80,33 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
-export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block']
+export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block', 'fallback']
+const FALLBACK_KEYS: readonly string[] = ['check', 'fail_within_sec', 'pass_text', 'block_text']
+export const DEFAULT_FAIL_WITHIN_SEC = 120
+export const DEFAULT_PASS_TEXT = '판정: 머지 가능'
+export const DEFAULT_BLOCK_TEXT = '판정: 반영 필요'
+
+// queue.auto_review.fallback. 판정 댓글의 첫 줄은 pass, block 정규식에 맞아야 자동 머지가 읽으므로 맞지 않으면 ConfigError 다
+function reviewFallback(value: unknown, rule: ReviewRule): ReviewFallback | null {
+  const name = 'queue.auto_review.fallback'
+  if (value === undefined) return null
+  if (!isObject(value)) throw new ConfigError(`설정 파일의 ${name} 는 {"check": 체크 이름} 객체여야 한다`)
+  const unknown = Object.keys(value).filter((key) => !FALLBACK_KEYS.includes(key)).sort()
+  if (unknown.length > 0) throw new ConfigError(`설정 파일의 ${name} 에 모르는 키가 있다: ${unknown.join(', ')}`)
+  const text = (key: string, fallback?: string): string => {
+    const got = value[key] ?? fallback
+    if (typeof got !== 'string' || !got.trim() || got.includes('\n')) throw new ConfigError(`설정 파일의 ${name}.${key} 는 비지 않은 한 줄 문자열이어야 한다`)
+    return got
+  }
+  const check = text('check')
+  const failWithinSec = value.fail_within_sec ?? DEFAULT_FAIL_WITHIN_SEC
+  if (typeof failWithinSec !== 'number' || !Number.isFinite(failWithinSec) || failWithinSec <= 0) throw new ConfigError(`설정 파일의 ${name}.fail_within_sec 는 양수여야 한다`)
+  const passText = text('pass_text', DEFAULT_PASS_TEXT)
+  const blockText = text('block_text', DEFAULT_BLOCK_TEXT)
+  if (!rule.pass.test(passText) || rule.block.test(passText)) throw new ConfigError(`설정 파일의 ${name}.pass_text 는 queue.auto_review.pass 에 맞고 block 에 맞지 않아야 한다: ${passText}`)
+  if (!rule.block.test(blockText)) throw new ConfigError(`설정 파일의 ${name}.block_text 는 queue.auto_review.block 에 맞아야 한다: ${blockText}`)
+  return { check, failWithinSec, passText, blockText }
+}
 
 // 값이 모두 비지 않은 문자열인 객체. 아니면 ConfigError
 function stringMap(value: unknown, name: string): Record<string, string> {
@@ -125,7 +154,7 @@ function reviewRule(value: unknown): ReviewConfig {
   }
   if (value.feature_head !== undefined && typeof value.feature_head !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.feature_head 는 true 나 false 여야 한다`)
   if (value.fixed_after_block !== undefined && typeof value.fixed_after_block !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.fixed_after_block 는 true 나 false 여야 한다`)
-  return { ...(rule as ReviewRule), ...reviewRequire(value.require), featureHead: value.feature_head !== false, fixedAfterBlock: value.fixed_after_block === true }
+  return { ...(rule as ReviewRule), ...reviewRequire(value.require), featureHead: value.feature_head !== false, fixedAfterBlock: value.fixed_after_block === true, fallback: reviewFallback(value.fallback, rule as ReviewRule) }
 }
 
 // 모르는 이름은 ConfigError 로 막지 않고 unknown 에 둔다. 루프가 멈추면 CI 감시와 정리까지 함께 멈추기 때문이다

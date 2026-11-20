@@ -1,6 +1,6 @@
 // PR 변경 파일과 base 변경의 겹침 확인.
 
-import { isDoc, judge } from '../../lib/overlap.ts'
+import { isDoc, judge, parseSharedGroup } from '../../lib/overlap.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from '../../lib/proc.ts'
 import type { StepContext } from './model.ts'
 import type { StepState } from './model.ts'
@@ -52,6 +52,7 @@ export function overlapsDeferred(stepContext: StepContext, state: StepState): st
   const o = state.o
   const verdict = judge(mine, against.files, {
     sharedPaths: o.sharedPaths,
+    sharedGroups: o.sharedGroups.map(parseSharedGroup),
     unitPrefix: o.unitPrefix,
     docsGlobs: o.docsGlob.split(',').filter((g) => g),
     groups: o.unitGroups.map((group) => group.split(',')),
@@ -86,6 +87,7 @@ export function needsUpdate(stepContext: StepContext, state: StepState): boolean
       p.ph,
       // 값이 `-` 로 시작해도 옵션으로 읽히지 않도록 `=` 로 붙여 넘긴다
       `--shared-paths=${o.sharedPaths}`,
+      ...o.sharedGroups.map((group) => `--shared-group=${group}`),
       `--unit-prefix=${o.unitPrefix}`,
       `--docs-glob=${o.docsGlob}`,
       ...o.unitGroups.map((group) => `--unit-group=${group}`),

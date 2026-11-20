@@ -29,6 +29,10 @@ test('실제 Node 크래시의 스택 뒤에서도 오류 메시지를 원인으
 })
 
 test('설정 오류는 세 번째 실패에 한 번 바로 알리고 성공 뒤 다시 센다', { timeout: 120_000 }, async t => {
+  // t.after 는 등록한 차례로 돈다. 루프를 멈추는 정리를 임시 폴더 정리보다 먼저 등록해야 한다.
+  // 거꾸로면 루프가 상태 파일을 쓰는 동안 폴더를 지우다 ENOTEMPTY 로 테스트가 가끔 실패한다
+  let stop = async () => {}
+  t.after(() => stop())
   const root = tempDir('loop-tick-failure-', t)
   const repo = join(root, 'repo')
   const orch = join(root, 'orch')
@@ -53,7 +57,7 @@ test('설정 오류는 세 번째 실패에 한 번 바로 알리고 성공 뒤 
   delete env.NODE_OPTIONS
   const child = spawn(process.execPath, [script, '--repo', repo, '--run', 'r', '--foreground'], { env, stdio: 'ignore' })
   const closed = new Promise<void>(resolve => child.once('close', () => resolve()))
-  t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); await closed })
+  stop = async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); await closed }
   const stateFile = join(orch, 'state', 'loop.json')
   const state = () => existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null
   const wait = async (predicate: () => boolean) => {

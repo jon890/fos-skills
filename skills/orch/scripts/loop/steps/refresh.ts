@@ -11,6 +11,7 @@
 //     3. 아래는 `REFRESH-WAIT #<PR> <이유>(<판정 이유>)` 를 로그에 쓰고 넘어간다. 도는 머지 큐(명령줄에 `merge_queue.` 가 든 프로세스의
 //        차례 기록)의 차례 PR 이면 `머지 큐의 차례다`. 큐 밖에서 HEAD 가 바뀌면 그 PR 이 STOP 으로 멈추기 때문이다.
 //        이번 틱의 CI 가 그 HEAD 에서 passed 가 아니면 `CI <상태 또는 없음>`. 도는 CI 를 끊거나 실패를 덮지 않으려는 것이다.
+//        상태는 필수 체크만으로 정한 것(CI 항목의 required, 없으면 state)이다. 필수가 아닌 리뷰 봇이 실패해도 최신화를 미루지 않는다.
 //        lib/refresh.ts 의 aheadInQueue 가 큐의 앞 PR 을 내면 `머지 큐의 앞 PR #<번호> 이 머지된 뒤 최신화한다`.
 //        쓴 자리가 refresh_slots 이상이면 `최신화 자리 <쓴 수>/<상한> 가 찼다`. 부르기 직전에 차례 기록을 다시 읽어 차례 PR 이 되었으면 차례다
 //     4. update: lib/gh.ts 의 updateBranch(이유 refresh, expected_head_sha 는 판정한 HEAD)를 부른다. 성공하면 기록의 value 가 updated 이고
@@ -47,7 +48,10 @@ async function refreshBehind(ctx: Context, mine: OwnPr[], ci: Record<string, CiE
   const records = readRefresh(file)
   const byNumber = new Map(mine.map((pr) => [pr.number, pr]))
   for (const key of Object.keys(records)) if (!byNumber.has(Number(key))) delete records[key]
-  const ciOf = (pr: OwnPr) => (ci[String(pr.number)]?.head === pr.head ? ci[String(pr.number)].state : null)
+  const ciOf = (pr: OwnPr) => {
+    const entry = ci[String(pr.number)]
+    return entry?.head === pr.head ? entry.required ?? entry.state : null
+  }
   const now = Date.now()
   let used = Object.entries(records).filter(([key, record]) => {
     const pr = byNumber.get(Number(key))

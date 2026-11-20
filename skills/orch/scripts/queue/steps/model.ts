@@ -100,6 +100,8 @@ export type Options = {
   upToDate: boolean
   upToDateWhen: string
   sharedPaths: string
+  // --shared-group 의 값(이름=정규식) 그대로. 판정 때 lib/overlap.ts 의 parseSharedGroup 으로 읽는다
+  sharedGroups: string[]
   unitPrefix: string
   unitGroups: string[]
   keepBranch: boolean

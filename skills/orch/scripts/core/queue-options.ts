@@ -1,7 +1,7 @@
 // 머지 큐가 값을 받는 옵션 목록이다. 이 옵션 바로 뒤의 인자는 값이라, 숫자여도 PR 번호로 읽지 않는다.
 // merge_queue.ts 와 merge-with-finish.ts 가 함께 import 한다. 바꾸면 값이 숫자여도 PR 번호로 읽지 않는 판정이 함께 바뀐다.
 //
-// 아래 QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS 는 config.json 의 queue 키를 머지 큐 옵션으로 바꾸는 표다.
+// 아래 QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS, QUEUE_NAMED 는 config.json 의 queue 키를 머지 큐 옵션으로 바꾸는 표다.
 // merge-with-finish.ts 가 쓴다. 표들의 키를 합치면 lib/config.ts 의 QUEUE_KEYS 와 같은 집합이다(lib-config.spec.ts 가 본다).
 // merge-with-finish.ts 는 import 하면 명령이 돌아 테스트가 읽을 수 없으므로 표를 이 모듈에 둔다.
 
@@ -17,6 +17,7 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--allow-fail-check',
   '--up-to-date-when',
   '--shared-paths',
+  '--shared-group',
   '--unit-prefix',
   '--unit-group',
   '--verify-merged-when',
@@ -55,3 +56,5 @@ export const QUEUE_FLAGS: Readonly<Record<string, string>> = {
 export const QUEUE_REPEATED: Readonly<Record<string, string>> = { sweep_args: '--sweep-arg' }
 // queue 절의 묶음 목록 키. 안쪽 목록 하나가 `--unit-group a,b` 하나가 된다
 export const QUEUE_GROUPS: Readonly<Record<string, string>> = { unit_groups: '--unit-group' }
+// queue 절의 이름 붙은 정규식 키. 이름 하나가 `--shared-group 이름=정규식` 하나가 된다(정규식 목록은 `|` 로 잇는다)
+export const QUEUE_NAMED: Readonly<Record<string, string>> = { shared_groups: '--shared-group' }

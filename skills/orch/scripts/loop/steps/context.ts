@@ -3,7 +3,7 @@
 //
 // 틱의 Run: 틱 자식은 등록을 다시 읽는다. 등록이 없으면 --run(또는 finish.run) 하나를, 그것도 없으면 Run 없는 한 칸을 맡는다.
 //
-// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.digest_sec(양수, 기본 1800), pipeline.request_ack_sec(양수, 기본 1800. requests.ts), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. stalls.ts 머리 주석의 「멈춤 확인」),
+// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.slow_sec(양수, 없으면 null. orch-loop.ts 머리 주석의 「느린 단계」), pipeline.digest_sec(양수, 기본 1800), pipeline.request_ack_sec(양수, 기본 1800. requests.ts), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. stalls.ts 머리 주석의 「멈춤 확인」),
 //     pipeline.stall_error_retries(0 이상의 정수, 기본 3. lib/stall-retry.ts),
 //     pipeline.idle_min, pipeline.idle_exited(movement.ts 머리 주석의 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
 //     queue.auto_merge, queue.auto_review, migrations.dirs, migrations.before, migrations.blocked_after_sec(lib/auto-merge.ts 의 autoMergeConfig 가 읽는다.
@@ -41,6 +41,8 @@ export type Context = {
   run: string | null
   specsDir: string | null
   tickSec: number
+  // pipeline.slow_sec. 느린 단계(보드 동기화, 정리)를 따로 도는 주기(초). null 이면 틱마다 함께 돈다(orch-loop.ts 머리 주석의 「느린 단계」)
+  slowSec: number | null
   // pipeline.digest_sec. 모아 보내는 알림의 주기(초, lib/notice-digest.ts)
   digestSec: number
   // pipeline.request_ack_sec. 받은 요청에 받음 답이 없을 때 보낸 쪽에 알리기까지의 시간(초, steps/requests.ts)
@@ -75,7 +77,7 @@ function optionalString(value: unknown, key: string): string | null {
 
 export function context(repo: string, run: string | undefined, specsDir: string | undefined): Context {
   const config = loadConfig(repo)
-  const pipeline = section<{ tick_sec?: unknown; stall_ticks?: unknown; stall_error_retries?: unknown; digest_sec?: unknown; request_ack_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
+  const pipeline = section<{ tick_sec?: unknown; slow_sec?: unknown; stall_ticks?: unknown; stall_error_retries?: unknown; digest_sec?: unknown; request_ack_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
   const finish = section<{ run?: unknown; specs_dir?: unknown }>(config, 'finish', FINISH_KEYS)
   const queue = section<{ skipped_is_missing?: unknown; sweep_args?: unknown }>(config, 'queue', QUEUE_KEYS)
   const skipped = queue.skipped_is_missing ?? false
@@ -83,6 +85,10 @@ export function context(repo: string, run: string | undefined, specsDir: string 
   const tickSec = pipeline.tick_sec ?? DEFAULT_TICK_SEC
   if (typeof tickSec !== 'number' || !Number.isFinite(tickSec) || tickSec <= 0) {
     throw new ConfigError(`설정 파일의 pipeline.tick_sec 은 양수여야 한다: ${JSON.stringify(tickSec)}`)
+  }
+  const slowSec = pipeline.slow_sec ?? null
+  if (slowSec !== null && (typeof slowSec !== 'number' || !Number.isFinite(slowSec) || slowSec <= 0)) {
+    throw new ConfigError(`설정 파일의 pipeline.slow_sec 은 양수여야 한다: ${JSON.stringify(slowSec)}`)
   }
   const digestSec = pipeline.digest_sec ?? DEFAULT_DIGEST_SEC
   if (typeof digestSec !== 'number' || !Number.isFinite(digestSec) || digestSec <= 0) {
@@ -103,6 +109,7 @@ export function context(repo: string, run: string | undefined, specsDir: string 
     run: run || optionalString(finish.run, 'finish.run'),
     specsDir: specsDir || optionalString(finish.specs_dir, 'finish.specs_dir'),
     tickSec,
+    slowSec: slowSec as number | null,
     skippedIsMissing: skipped,
     stallTicks: stallTicks(pipeline.stall_ticks),
     stallErrorRetries,
@@ -124,6 +131,8 @@ function tickRuns(ctx: Context): TickRun[] {
 export type StepContext = Context & {
   // 틱 번호. 1 부터다
   tick: number
+  // 틱의 종류. all 은 모든 단계, fast 와 slow 는 orch-loop.ts 머리 주석의 「느린 단계」 다
+  kind: 'all' | 'fast' | 'slow'
   // 이번 틱이 맡는 Run. 앞이 주 Run 이다
   runs: TickRun[]
   primary: string | null
@@ -168,12 +177,12 @@ export type StepState = {
 // 단계가 바꿀 값. errors 는 그 단계가 기록한 오류 이유다
 export type StepResult = Partial<StepState>
 
-export function stepContext(config: Context, n: number): StepContext {
+export function stepContext(config: Context, n: number, kind: StepContext['kind'] = 'all'): StepContext {
   const loaded = readLoop(config.repo)
   const before = loaded?.errors
   const previous = isObject(before) ? before : {}
   const runs = tickRuns(config)
-  return { ...config, tick: n, runs, primary: runs[0].run, loaded, previous, lookup: { runs, rows: new Map() }, completions: new Map() }
+  return { ...config, tick: n, kind, runs, primary: runs[0].run, loaded, previous, lookup: { runs, rows: new Map() }, completions: new Map() }
 }
 
 export function initialState(): StepState {
