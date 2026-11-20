@@ -174,6 +174,14 @@ describe('지시서 검사', () => {
     assert.equal(count(r.stdout, '경로:'), 1, r.stdout)
   })
 
+  test('PR 인계 파일을 handoff 바로 아래에 두는 지시서는 경고한다', () => {
+    const a = spec('spec-handoff', 'PR 답변을 `handoff/review-reply.md` 에 둔다\n측정은 `handoff/measure.tsv` 에 둔다\nPR 파일은 `handoff/pr-77/review-reply.md` 에 둔다\n')
+    const r = lint([a])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /PR 인계: `handoff\/review-reply\.md`/)
+    assert.equal(count(r.stdout, 'PR 인계:'), 1, r.stdout)
+  })
+
   test('첫 글자 뒤의 한글도 식별자 글자로 본다', () => {
     // 첫 글자는 ASCII 여야 하고 뒤는 Python 의 \w 처럼 유니코드 글자를 받는다
     write(join(repo, 'src/kr.ts'), 'export function get값() {}\n')
