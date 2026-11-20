@@ -162,7 +162,7 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { claudeGeneration, codexGeneration, readCodexModels, type Generation } from '../lib/model-generation.ts'
+import { claudeGeneration, codexGeneration, readCodexModels, sameFamily, type Generation } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
@@ -779,7 +779,9 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   const sameSpec = !!priorSelection && (!priorSelection.spec || realPath(priorSelection.spec) === realPath(a.spec))
   const sameSettings = !!priorSelection && ['agent', 'model', 'effort'].every(name => {
     const previous = priorSelection[name as 'agent' | 'model' | 'effort'] ?? null
-    return reusedTerminal || previous === passValue(passthru, `--${name}`)
+    // 기록의 모델은 세대를 바꾼 뒤의 값이다(0-0-1). 같은 계열이면 같은 설정으로 본다
+    const given = passValue(passthru, `--${name}`)
+    return reusedTerminal || previous === given || (name === 'model' && sameFamily(previous, given))
   })
   const continuation = sameSpec && sameSettings
   const reuseOpts = passthru.filter((x) => x === '--agent' || x === '--model' || x === '--effort')
