@@ -4,24 +4,34 @@
 // 사용법:
 //   docker_cleanup.ts --runtime ID [--apply] RUNTIMES_JSON builder-prune
 //   docker_cleanup.ts --runtime ID [--apply] RUNTIMES_JSON rmi REF [REF ...]
+//   docker_cleanup.ts --runtime ID [--apply] --images-json FILE --class 미사용 RUNTIMES_JSON rmi
 //
 // 옵션은 위치 인자(RUNTIMES_JSON, 동작, REF) 앞에 둔다. 위치 인자는 이어진 덩어리 하나만 받는다.
 // RUNTIMES_JSON 은 `container_runtimes.ts --json-out FILE` 이 쓴 파일이고 ID 는 그 파일의 런타임 id 다. REF 는 `docker_images.ts` 줄 끝의 `rmi=` 값이다.
+// --images-json FILE 은 `survey_docker.ts` 가 쓴 이미지 조사 파일(`docker_images.ts --json-out`)이다. REF 대신 그 파일에서 --class 분류의 `rmi` 값을 모두 지운다.
+// --class 는 `미사용` 이나 `확인 필요(최근 생성)` 이다. `사용 중` 은 받지 않는다. 파일의 context 가 그 런타임의 context 와 다르면 입력 오류다.
+// 그 분류의 이미지가 없으면 아무것도 보내지 않고 0 으로 끝난다.
 // 명령은 그 런타임의 context 를 지정해(`docker --context <context> ...`) 보낸다. 사용자의 현재 context 설정은 바꾸지 않는다.
 // 이 맥 밖의 엔진에는 보내지 않는다(`delete_volumes.ts` 와 같다). 조사 파일에서 이 맥 안의 런타임이 아니거나, 지금 context 의 엔드포인트를 읽어
 // 이 맥의 unix 소켓이 아니거나 비어 있으면 dry-run 과 --apply 모두 거부하고 종료 코드 5 로 끝난다. 조사 뒤 context 가 다른 엔진을 가리키게 바뀐 경우도 막는다.
 // `rmi` 는 REF 마다 `docker rmi` 를 따로 부르고 `-f` 를 쓰지 않는다. `-` 로 시작하는 REF 는 옵션으로 읽히므로 입력 오류다.
 // --apply 가 없으면 아무것도 바꾸지 않고 보낼 명령만 보인다.
+// `builder prune` 은 캐시가 크면 오래 걸려 시간 제한(1800초)을 넉넉히 둔다. 그래도 넘으면 바로 실패로 끝내지 않고 `docker system df` 로 남은 빌드 캐시를 다시 읽는다.
+// 남은 빌드 캐시가 0B 면 성공으로, 남았거나 다시 읽지 못하면 실패로 보인다.
 //
 // 종료 코드: 0 실패 없음, 1 명령이 하나라도 실패함, 2 입력 오류, 4 docker 를 쓸 수 없음, 5 이 맥 밖의 엔진이라 거부.
 
+import { readFileSync } from 'node:fs'
 import { readArgs, type Entry } from './cli.ts'
 import { contextEndpoint, isLocalEndpoint, readRuntimesFile } from './container_runtimes.ts'
-import { dockerArgv, DockerError, docker, useContext } from './docker_volumes.ts'
-import { isMain, write } from './io.ts'
-import { osErrorMessage } from './pylike.ts'
+import { dockerArgv, DockerError, docker, formatSize, parseSize, useContext } from './docker_volumes.ts'
+import { isMain, runText, write, type RunResult } from './io.ts'
+import { pySplitLines } from './kit/py.ts'
+import { loadJson, osErrorMessage } from './pylike.ts'
 
 const USAGE = `usage: docker_cleanup.ts [-h] --runtime RUNTIME [--apply]
+                         [--images-json IMAGES_JSON]
+                         [--class {미사용,확인 필요(최근 생성)}]
                          runtimes_json {builder-prune,rmi} [ref ...]
 `
 
@@ -38,6 +48,8 @@ options:
   -h, --help            show this help message and exit
   --runtime RUNTIME
   --apply
+  --images-json IMAGES_JSON
+  --class {미사용,확인 필요(최근 생성)}
 `
 
 const ENTRY: Entry = {
@@ -45,32 +57,86 @@ const ENTRY: Entry = {
   usage: USAGE,
   help: HELP,
   spec: {
-    options: [{ name: 'runtime', value: true, required: true }, { name: 'apply', value: false }],
+    options: [
+      { name: 'runtime', value: true, required: true },
+      { name: 'apply', value: false },
+      { name: 'images-json', value: true },
+      { name: 'class', value: true, choices: ['미사용', '확인 필요(최근 생성)'] },
+    ],
     positionals: [{ name: 'runtimes_json', nargs: 1 }, { name: 'action', nargs: 1 }, { name: 'refs', nargs: '*' }],
   },
 }
 
 export const ACTIONS = ['builder-prune', 'rmi']
 
+// builder prune 의 시간 제한(초). 실측: 빌드 캐시 38.7GB(633개)에서 300초를 넘겼다(2026-11-20)
+export const BUILDER_PRUNE_TIMEOUT = 1800
+
+type ImageItem = { class: string; rmi: string; size_bytes: number | null }
+
+// 이미지 조사 파일을 읽어 {context, images} 를 돌려준다. 형식이 맞지 않으면 Error 다
+export function readImagesFile(text: string): { context: string | null; images: ImageItem[] } {
+  const data = loadJson(text) as any
+  const bad = new Error('docker_images.ts --json-out 형식이 아니다')
+  if (data === null || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.images)) throw bad
+  if (data.context !== undefined && data.context !== null && typeof data.context !== 'string') throw bad
+  for (const i of data.images) {
+    if (i === null || typeof i !== 'object' || typeof i.class !== 'string' || typeof i.rmi !== 'string') throw bad
+    if (i.size_bytes !== undefined && i.size_bytes !== null && typeof i.size_bytes !== 'number') throw bad
+  }
+  return { context: data.context ?? null, images: data.images.map((i: any) => ({ class: i.class, rmi: i.rmi, size_bytes: i.size_bytes ?? null })) }
+}
+
+// `docker system df --format '{{json .}}'` 의 Build Cache 크기(바이트). 읽지 못하면 null 이다
+export function buildCacheBytes(dfText: string): number | null {
+  for (const line of pySplitLines(dfText)) {
+    if (!line.trim()) continue
+    const row = loadJson(line) as Record<string, any>
+    if (row && row.Type === 'Build Cache') return parseSize(row.Size)
+  }
+  return null
+}
+
+// builder prune 의 실행 결과를 성공 여부와 출력 줄로 바꾼다. 시간 제한에 걸렸으면 readDf 로 남은 빌드 캐시를 다시 읽어 0B 면 성공으로 본다
+export function settleBuilderPrune(shown: string, done: RunResult, readDf: () => string): [boolean, string] {
+  if (!done.failure && done.code === 0) return [true, `[삭제] ${shown}\n${done.stdout}`]
+  if (done.failure !== 'timeout') return [false, `[실패] ${shown}  ${done.failure ? done.message : done.stderr.trim()}\n`]
+  let left: number | null
+  try {
+    left = buildCacheBytes(readDf())
+  } catch (error) {
+    return [false, `[실패] ${shown}  ${done.message}. 남은 빌드 캐시를 다시 읽지 못했다: ${(error as Error).message}\n`]
+  }
+  if (left === 0) return [true, `[삭제] ${shown}\n${BUILDER_PRUNE_TIMEOUT}초 안에 응답이 끝나지 않았지만 다시 읽은 빌드 캐시가 0B 라 정리된 것으로 본다\n`]
+  const shownLeft = left === null ? '읽지 못함' : formatSize(left)
+  return [false, `[실패] ${shown}  ${done.message}. 남은 빌드 캐시: ${shownLeft}\n`]
+}
+
 export function main(argv: string[]): number {
   const args = readArgs(argv, ENTRY)
   if (typeof args === 'number') return args
   const file = args.positionals.runtimes_json as string
   const action = args.positionals.action as string
-  const refs = (args.positionals.refs as string[] | undefined) ?? []
+  let refs = (args.positionals.refs as string[] | undefined) ?? []
   const apply = args.options.apply === true
   const id = args.options.runtime as string
+  const imagesJson = args.options['images-json'] as string | undefined
+  const cls = args.options.class as string | undefined
   if (!ACTIONS.includes(action)) {
     write(2, `입력 오류: 동작은 ${ACTIONS.join(', ')} 중 하나다(받은 값 ${action})\n`)
     return 2
   }
-  if ((action === 'rmi') === (refs.length === 0) || (action === 'builder-prune' && refs.length)) {
-    write(2, action === 'rmi' ? '입력 오류: rmi 는 REF 가 하나 이상 필요하다\n' : '입력 오류: builder-prune 은 REF 를 받지 않는다\n')
+  if ((imagesJson === undefined) !== (cls === undefined)) {
+    write(2, '입력 오류: --images-json 과 --class 는 함께 준다\n')
     return 2
   }
-  const bad = refs.find((r) => r.startsWith('-'))
-  if (bad !== undefined) {
-    write(2, `입력 오류: REF 가 -로 시작한다(${bad}). 옵션으로 읽히므로 보내지 않는다\n`)
+  const fromFile = imagesJson !== undefined
+  if (fromFile && (action !== 'rmi' || refs.length)) {
+    write(2, '입력 오류: --images-json 은 REF 없이 rmi 에만 쓴다\n')
+    return 2
+  }
+  if (!fromFile && ((action === 'rmi') === (refs.length === 0) || (action === 'builder-prune' && refs.length))) {
+    write(2, action === 'rmi' ? '입력 오류: rmi 는 REF 가 하나 이상 필요하다\n' : '입력 오류: builder-prune 은 REF 를 받지 않는다\n')
     return 2
   }
   let rt
@@ -78,6 +144,27 @@ export function main(argv: string[]): number {
     rt = readRuntimesFile(file).find((r) => r.id === id)
   } catch (error) {
     write(2, `입력을 읽을 수 없다: ${osErrorMessage(error, file)}\n`)
+    return 2
+  }
+  let picked: ImageItem[] = []
+  if (fromFile) {
+    let survey
+    try {
+      survey = readImagesFile(readFileSync(imagesJson, 'utf8'))
+    } catch (error) {
+      write(2, `입력을 읽을 수 없다: ${osErrorMessage(error, imagesJson)}\n`)
+      return 2
+    }
+    if (rt && survey.context !== rt.context) {
+      write(2, `입력 오류: 이미지 조사 파일의 context(${survey.context ?? '없음'})가 런타임 ${rt.id} 의 context(${rt.context ?? '없음'})와 다르다\n`)
+      return 2
+    }
+    picked = survey.images.filter((i) => i.class === cls)
+    refs = picked.map((i) => i.rmi)
+  }
+  const bad = refs.find((r) => r.startsWith('-'))
+  if (bad !== undefined) {
+    write(2, `입력 오류: REF 가 -로 시작한다(${bad}). 옵션으로 읽히므로 보내지 않는다\n`)
     return 2
   }
   if (!rt) {
@@ -91,6 +178,11 @@ export function main(argv: string[]): number {
   if (!rt.context) {
     write(2, `입력 오류: ${rt.label}(${rt.id}) 는 조사 파일에 context 가 없어 대상 엔진을 정할 수 없다\n`)
     return 2
+  }
+
+  if (fromFile && refs.length === 0) {
+    write(1, `이미지 조사 파일에 ${cls} 이미지가 없다. 보낼 명령이 없다\n`)
+    return 0
   }
 
   useContext(rt.context)
@@ -109,11 +201,22 @@ export function main(argv: string[]): number {
   const commands = action === 'builder-prune' ? [['builder', 'prune', '-af']] : refs.map((ref) => ['rmi', ref])
   write(1, apply ? '## 실행\n' : '## dry-run (변경 없음, 실제 삭제는 --apply)\n')
   write(1, `런타임: ${rt.label}(${rt.id}), context: ${rt.context}\n`)
+  if (fromFile) {
+    const total = picked.reduce((sum, i) => sum + (i.size_bytes ?? 0), 0)
+    write(1, `대상: 이미지 조사 파일의 ${cls} ${picked.length}개, 합계 최대 ${formatSize(total)}\n`)
+  }
   let failed = false
   for (const command of commands) {
     const shown = dockerArgv(command).join(' ')
     if (!apply) {
       write(1, `[삭제 예정] ${shown}\n`)
+      continue
+    }
+    if (action === 'builder-prune') {
+      const done = runText(dockerArgv(command), { timeoutSec: BUILDER_PRUNE_TIMEOUT })
+      const [ok, text] = settleBuilderPrune(shown, done, () => docker(['system', 'df', '--format', '{{json .}}'], 120))
+      if (!ok) failed = true
+      write(1, text)
       continue
     }
     try {

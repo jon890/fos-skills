@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
 import { Sandbox, write } from './helpers.ts'
+import { buildCacheBytes, settleBuilderPrune } from '../scripts/docker_cleanup.ts'
 import { makeRow, type Row } from './runtimes-helpers.ts'
 
 const LOCAL = 'unix:///Users/x/.docker/run/docker.sock'
@@ -24,7 +25,7 @@ function setup(endpoints: Record<string, string> = { 'desktop-linux': LOCAL, orb
   // 옵션은 위치 인자 앞에 둔다. rest 의 `--apply` 는 앞으로 옮긴다
   const run = (id: string, rest: string[]) => box.run('docker_cleanup', ['--runtime', id, ...rest.filter((a) => a === '--apply'), file, ...rest.filter((a) => a !== '--apply')])
   const sent = () => docker.calls().map((c) => c.argv).filter((a) => a[0] === '--context')
-  return { box, docker, run, sent }
+  return { box, docker, file, run, sent }
 }
 
 describe('이미지와 빌드 캐시 삭제', () => {
@@ -109,5 +110,120 @@ describe('입력 오류는 docker 를 부르기 전에 2 다', () => {
       assert.ok(done.stderr.includes(message), done.stderr)
     }
     assert.deepEqual(docker.calls(), [])
+  })
+})
+
+describe('이미지 조사 파일로 rmi', () => {
+  const IMAGES = [
+    { class: '사용 중', size: '8MB', size_bytes: 8_000_000, ref: 'alpine:latest', rmi: 'alpine:latest', id: 'a'.repeat(12), created: '', created_since: '' },
+    { class: '미사용', size: '300MB', size_bytes: 300_000_000, ref: 'old:1.0', rmi: 'old:1.0', id: 'b'.repeat(12), created: '', created_since: '' },
+    { class: '확인 필요(최근 생성)', size: '1GB', size_bytes: 1_000_000_000, ref: 'mine:dev', rmi: 'mine:dev', id: 'c'.repeat(12), created: '', created_since: '' },
+    { class: '미사용', size: '1.2GB', size_bytes: 1_200_000_000, ref: '<none>', rmi: 'd'.repeat(12), id: 'd'.repeat(12), created: '', created_since: '' },
+  ]
+
+  function withFile(context: string | null = 'desktop-linux', images: unknown[] = IMAGES) {
+    const s = setup()
+    const imagesFile = write(join(s.box.root, 'images.json'), JSON.stringify({ ...(context ? { context } : {}), recent_hours: 24, images }))
+    // 옵션은 위치 인자(RUNTIMES_JSON, 동작) 앞에 둔다
+    const runOpts = (id: string, opts: string[], rest: string[]) => s.box.run('docker_cleanup', ['--runtime', id, ...opts, s.file, ...rest])
+    const runFile = (id: string, cls: string, opts: string[] = []) => runOpts(id, ['--images-json', imagesFile, '--class', cls, ...opts], ['rmi'])
+    return { ...s, imagesFile, runFile, runOpts }
+  }
+
+  test('dry-run 은 그 분류의 rmi 값만 명령으로 보이고 개수와 합계를 적는다', () => {
+    const { runFile, sent } = withFile()
+    const done = runFile('docker-desktop', '미사용')
+    assert.equal(done.code, 0, done.stderr)
+    assert.equal(
+      done.stdout,
+      '## dry-run (변경 없음, 실제 삭제는 --apply)\n런타임: Docker Desktop(docker-desktop), context: desktop-linux\n' +
+        '대상: 이미지 조사 파일의 미사용 2개, 합계 최대 1.5GB\n' +
+        `[삭제 예정] docker --context desktop-linux rmi old:1.0\n[삭제 예정] docker --context desktop-linux rmi ${'d'.repeat(12)}\n`,
+    )
+    assert.deepEqual(sent(), [])
+  })
+
+  test('--apply 는 그 분류의 이미지마다 rmi 를 따로 보낸다', () => {
+    const { runFile, sent } = withFile()
+    const done = runFile('docker-desktop', '확인 필요(최근 생성)', ['--apply'])
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(sent(), [['--context', 'desktop-linux', 'rmi', 'mine:dev']])
+  })
+
+  test('그 분류의 이미지가 없으면 docker 를 부르지 않고 0 이다', () => {
+    const { runFile, docker } = withFile('desktop-linux', [IMAGES[0]])
+    const done = runFile('docker-desktop', '미사용', ['--apply'])
+    assert.equal(done.code, 0, done.stderr)
+    assert.equal(done.stdout, '이미지 조사 파일에 미사용 이미지가 없다. 보낼 명령이 없다\n')
+    assert.deepEqual(docker.calls(), [])
+  })
+
+  test('파일의 context 가 런타임의 context 와 다르면 2 이고 docker 를 부르지 않는다', () => {
+    for (const context of ['orbstack', null]) {
+      const { runFile, docker } = withFile(context)
+      const done = runFile('docker-desktop', '미사용', ['--apply'])
+      assert.equal(done.code, 2, done.stderr)
+      assert.ok(done.stderr.includes('이미지 조사 파일의 context'), done.stderr)
+      assert.deepEqual(docker.calls(), [])
+    }
+  })
+
+  test('조합이 맞지 않거나 형식이 틀리면 2 이고 docker 를 부르지 않는다', () => {
+    const { runOpts, imagesFile, box, docker } = withFile()
+    const broken = write(join(box.root, 'broken.json'), JSON.stringify({ images: [{ class: '미사용' }] }))
+    const cases: [string[], string[], string][] = [
+      [['--images-json', imagesFile], ['rmi'], '--images-json 과 --class 는 함께 준다'],
+      [['--class', '미사용'], ['rmi', 'a:1'], '--images-json 과 --class 는 함께 준다'],
+      [['--images-json', imagesFile, '--class', '미사용'], ['rmi', 'a:1'], 'REF 없이 rmi 에만 쓴다'],
+      [['--images-json', imagesFile, '--class', '미사용'], ['builder-prune'], 'REF 없이 rmi 에만 쓴다'],
+      [['--images-json', imagesFile, '--class', '사용 중'], ['rmi'], 'invalid choice'],
+      [['--images-json', broken, '--class', '미사용'], ['rmi'], 'docker_images.ts --json-out 형식이 아니다'],
+      [['--images-json', join(box.root, 'none.json'), '--class', '미사용'], ['rmi'], '입력을 읽을 수 없다'],
+    ]
+    for (const [opts, rest, message] of cases) {
+      const done = runOpts('docker-desktop', opts, rest)
+      const label = [...opts, ...rest].join(' ')
+      assert.equal(done.code, 2, `${label}: ${done.stderr}`)
+      assert.ok(done.stderr.includes(message), `${label}: ${done.stderr}`)
+    }
+    assert.deepEqual(docker.calls(), [])
+  })
+})
+
+describe('builder prune 의 시간 제한', () => {
+  const SHOWN = 'docker --context desktop-linux builder prune -af'
+  const timeout = { code: -9, stdout: '', stderr: '', failure: 'timeout' as const, message: 'timed out after 1800 seconds' }
+  const df = (size: string) => () => [JSON.stringify({ Type: 'Images', Size: '5GB' }), JSON.stringify({ Type: 'Build Cache', Size: size })].join('\n') + '\n'
+
+  test('시간 제한에 걸려도 다시 읽은 빌드 캐시가 0B 면 성공이다', () => {
+    const [ok, text] = settleBuilderPrune(SHOWN, timeout, df('0B'))
+    assert.equal(ok, true)
+    assert.ok(text.startsWith(`[삭제] ${SHOWN}\n`) && text.includes('0B 라 정리된 것으로 본다'), text)
+  })
+
+  test('남은 빌드 캐시가 있거나 다시 읽지 못하면 실패이고 이유를 적는다', () => {
+    const left = settleBuilderPrune(SHOWN, timeout, df('1.2GB'))
+    assert.equal(left[0], false)
+    assert.ok(left[1].startsWith(`[실패] ${SHOWN}  timed out after 1800 seconds. 남은 빌드 캐시: 1.2GB`), left[1])
+    const unread = settleBuilderPrune(SHOWN, timeout, () => {
+      throw new Error('daemon gone')
+    })
+    assert.equal(unread[0], false)
+    assert.ok(unread[1].includes('남은 빌드 캐시를 다시 읽지 못했다: daemon gone'), unread[1])
+    const noRow = settleBuilderPrune(SHOWN, timeout, () => '')
+    assert.ok(!noRow[0] && noRow[1].includes('남은 빌드 캐시: 읽지 못함'), noRow[1])
+  })
+
+  test('성공과 시간 초과가 아닌 실패는 다시 읽지 않는다', () => {
+    const never = () => {
+      throw new Error('부르면 안 된다')
+    }
+    assert.deepEqual(settleBuilderPrune(SHOWN, { ...timeout, code: 0, failure: null, stdout: 'Total: 1GB\n' }, never), [true, `[삭제] ${SHOWN}\nTotal: 1GB\n`])
+    assert.deepEqual(settleBuilderPrune(SHOWN, { ...timeout, code: 1, failure: null, stderr: 'boom\n' }, never), [false, `[실패] ${SHOWN}  boom\n`])
+  })
+
+  test('buildCacheBytes 는 Build Cache 줄의 크기를 바이트로 읽는다', () => {
+    assert.equal(buildCacheBytes(df('38.7GB')()), 38_700_000_000)
+    assert.equal(buildCacheBytes(''), null)
   })
 })

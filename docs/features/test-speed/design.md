@@ -109,7 +109,7 @@
 
 ### CI 와 로컬 검증
 
-- `.github/workflows/ci.yml` 은 job 하나(`Tests`)가 된다. 순서: checkout, setup-node 24, setup-python 3.12, `jq`·`zsh` 설치, Claude Code CLI 설치, `claude plugin test .`, `node scripts/run-tests.ts`. 실행기 밖의 `tsc` 단계와 node 테스트 줄, Python 반복문은 지운다. `FOS_TSC_DIR`, `NODE_COMPILE_CACHE` 같은 값은 주지 않고 실행기 기본값을 쓴다(값의 원본은 실행기다). 제한 시간은 지금 두 job 중 긴 쪽인 15분이다.
+- `.github/workflows/ci.yml` 은 shard job 둘과 결과를 모으는 `Tests` job 이 된다(스펙 DECISION11, 2026-11-20 에 job 하나에서 바꿨다). shard 마다 `node scripts/run-tests.ts --shard <job-index + 1>/<job-total>` 로 정렬한 파일을 번갈아 나눠 돌고, `claude plugin test .` 와 `tsc` 는 첫 shard 만 돈다. shard 수는 matrix 목록의 길이가 정한다. `Tests` job 은 모든 shard 가 통과해야 통과해서 필수 검사 이름이 그대로다. 로컬 명령은 옵션 없이 전체를 돈다. 아래는 job 하나였던 처음 설계다. 순서: checkout, setup-node 24, setup-python 3.12, `jq`·`zsh` 설치, Claude Code CLI 설치, `claude plugin test .`, `node scripts/run-tests.ts`. 실행기 밖의 `tsc` 단계와 node 테스트 줄, Python 반복문은 지운다. `FOS_TSC_DIR`, `NODE_COMPILE_CACHE` 같은 값은 주지 않고 실행기 기본값을 쓴다(값의 원본은 실행기다). 제한 시간은 지금 두 job 중 긴 쪽인 15분이다.
 - `.orch/overlay.md` 의 머지 조건은 「`Tests` 가 통과해야 한다」 가 되고, 로컬 검증은 `claude plugin test .` 와 `node scripts/run-tests.ts` 둘이 된다. 600초를 넘기면 `--background` 와 `--wait` 를 쓰라는 안내는 대기 옵션을 정리할 때까지 남긴다.
 - node-runtime 스펙과 설계의 「`Python tests` job 을 지운다」(REQ5)는 「실행기의 Python 단계와 CI 의 Python, jq, zsh 설치 단계를 지운다」 가 된다. 그쪽 문서는 이미 그 꼴로 맞춰졌다(bb61fd3, node-runtime REQ5 와 DECISION22). 이 기능의 PR3 은 node-runtime 문서를 고치지 않는다.
 - PR3 이 고칠 문서: README 「기여」 절의 테스트 명령과 세션 분리 설명, 「scripts」 표의 `run-node-tests.ts` 행. `docs/code-architecture.md` 의 「모듈 책임」 표에 실행기 행을 더하고, 「검증」 표의 node 줄과 「실행 규칙」 의 「테스트」 행(`Plugin tests` job, 「필수 체크 이름이 바뀌지 않는다」)을 고친다.

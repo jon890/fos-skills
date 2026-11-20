@@ -108,18 +108,25 @@ node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply            # 테�
 node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply --kind other   # 따로 승인받은 other
 ```
 - 이미지는 `scripts/docker_images.ts` 가 사용 중, 미사용, 최근 생성으로 나눈다(`survey_docker.ts` 가 런타임마다 돌린다).
-- 이미지는 각 줄 끝의 `rmi=` 값을 `docker_cleanup.ts rmi` 에 넘겨 지운다(dry-run 으로 먼저 보인 뒤 승인한 것만 `--apply`). 옵션은 위치 인자 앞에 둔다. `$REF` 는 그 값이고, `docker rmi` 는 REF 마다 따로 불린다. 값을 고르는 규칙은 `docker_images.ts` 머리 주석이 소유한다.
+- `survey_docker.ts` 는 런타임마다 이미지 조사 결과도 `images-<런타임 id 조각>-<해시>.json` 에 쓰고 `이미지 조사 파일:` 경로로 알린다.
+  승인받은 분류(대개 `미사용`)를 통째로 지울 때는 이 파일과 분류를 `docker_cleanup.ts rmi` 에 넘긴다. 사용자에게 보인 목록과 지우는 목록이 한 번의 조사에서 나온다. 출력의 `rmi=` 값을 옮겨 적지 않는다.
+  파일의 context 가 `--runtime` 의 context 와 다르면 입력 오류로 거부한다. `사용 중` 분류는 받지 않는다.
+- 분류 가운데 일부만 승인받았으면 그 이미지 줄 끝의 `rmi=` 값을 REF 로 넘긴다. `docker rmi` 는 이미지마다 따로 불린다. 옵션은 위치 인자 앞에 둔다. 값을 고르는 규칙은 `docker_images.ts` 머리 주석이 소유한다.
+- 둘 다 dry-run 으로 먼저 보인 뒤 승인한 것만 `--apply` 로 지운다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
 - 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다. 호스트 디스크의 실제 확보는 `runtime_reclaim.ts` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
 
-`$REF` 는 지울 이미지의 `rmi=` 값이다.
+`$IMAGES` 는 승인한 런타임의 `이미지 조사 파일:` 경로이고, `$REF` 는 일부만 지울 때 그 이미지의 `rmi=` 값이다.
 
 ```bash
-node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" "$RUNTIMES" rmi "$REF"                    # dry-run
-node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" rmi "$REF"
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --images-json "$IMAGES" --class 미사용 "$RUNTIMES" rmi            # dry-run
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply --images-json "$IMAGES" --class 미사용 "$RUNTIMES" rmi
+node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" rmi "$REF"           # 일부만 승인받았을 때
 node "$SKILL_DIR/scripts/docker_cleanup.ts" --runtime "$RUNTIME" --apply "$RUNTIMES" builder-prune
 ```
+
+- `builder-prune` 은 빌드 캐시가 크면 오래 걸린다(38.7GB 에서 300초를 넘긴 실측이 있다). 시간 제한에 걸리면 스크립트가 `docker system df` 로 남은 빌드 캐시를 다시 읽어, 0B 면 성공으로 보인다. 시간 제한 값은 스크립트 머리 주석이 소유한다.
 
 ## Gradle
 

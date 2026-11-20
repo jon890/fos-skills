@@ -49,8 +49,7 @@ export function completionMessages(run: string): Json[] {
 }
 
 // finish 가 워크트리를 지웠으면 worktreeId 의 앞부분(`<Orca 저장소 id>::<경로>`)으로 Orca 에 등록된 저장소를 찾는다. 모르면 null
-function orcaRepoOf(dispatch: string): string | null {
-  const shown = orcaJson<Json>(['orchestration', 'worker-show', '--dispatch', dispatch])
+function orcaRepoOf(shown: ReturnType<typeof orcaJson<Json>>): string | null {
   const worker = shown.ok ? shown.data?.worker : null
   const id = String(worker?.worktreeId ?? worker?.startOptions?.resolvedWorktreeId ?? '')
   if (!id.includes('::')) return null
@@ -65,8 +64,10 @@ function orcaRepoOf(dispatch: string): string | null {
 // 워크트리가 지워졌으면 Orca 저장소 id 로 찾는다. 그래도 저장소를 알 수 없으면 모른다(false). 그 저장소에 루프가 없으면 어디서도 알리지 않게 되므로 false 다
 function foreignDispatch(repo: string, run: string, dispatch: string): boolean {
   if (!dispatch) return false
-  const found = dispatchRepo(repo, dispatch)
-  const owner = found !== null && existsSync(found) ? found : orcaRepoOf(dispatch)
+  // worker-show 는 한 번만 부르고 두 판단에 함께 쓴다
+  const shown = orcaJson<Json>(['orchestration', 'worker-show', '--dispatch', dispatch])
+  const found = dispatchRepo(repo, dispatch, shown)
+  const owner = found !== null && existsSync(found) ? found : orcaRepoOf(shown)
   if (owner === null) return false
   const mine = mainCheckout(repo)
   if (owner === mine || owner.startsWith(`${mine}/`)) return false

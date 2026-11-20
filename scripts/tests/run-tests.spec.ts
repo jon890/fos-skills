@@ -8,7 +8,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { installMismatch, parseArgs, reconcile } from "../run-tests.ts";
+import { installMismatch, parseArgs, pickShard, reconcile } from "../run-tests.ts";
 
 const RUNNER = fileURLToPath(new URL("../run-tests.ts", import.meta.url));
 
@@ -165,6 +165,28 @@ describe("run-tests", { concurrency: true }, () => {
     assert.match(both.err, /--tsc-only 는 파일 인자와 함께/);
     assert.equal(parseArgs(["--tsc-only"], 2).tscOnly, true);
     assert.equal(parseArgs([], 2).tscOnly, false);
+  });
+
+  test("--shard 는 정렬한 파일을 번갈아 나누고 모든 shard 를 합치면 빠짐도 겹침도 없으며 tsc 는 첫 shard 만 돈다", () => {
+    const all = { node: ["a", "b", "c", "d", "e"], tsc: true };
+    const parts = [1, 2].map((index) => pickShard(all, { index, count: 2 }));
+    assert.deepEqual(parts.map((p) => p.node), [["a", "c", "e"], ["b", "d"]]);
+    assert.deepEqual(parts.map((p) => p.tsc), [true, false]);
+    assert.deepEqual(pickShard(all), all);
+    assert.deepEqual(parseArgs(["--shard", "2/3"], 2).shard, { index: 2, count: 3 });
+    for (const bad of ["0/2", "3/2", "1", "a/b", "1/0"]) assert.throws(() => parseArgs(["--shard", bad], 2), /--shard 는 I\/N 꼴/);
+    assert.throws(() => parseArgs(["--tsc-only", "--shard", "1/2"], 2), /--tsc-only 는 --shard 와 함께/);
+  });
+
+  test("--shard 로 부르면 자기 몫의 파일만 돈다", async () => {
+    const root = tempDir();
+    write(root, "t/a.spec.ts", PASS);
+    write(root, "t/b.spec.ts", PASS);
+    write(root, "t/c.spec.ts", PASS);
+    const second = await runner(root, ["--shard", "2/2", "t/"]);
+    assert.equal(second.code, 0, second.out + second.err);
+    assert.match(second.out, /^통과 t\/b\.spec\.ts /m);
+    assert.match(second.out, /^결과: 통과 1, 실패 0, 전체 1, /m);
   });
 
   test("폴더를 인자로 주면 그 아래 *.spec.ts 다", async () => {
