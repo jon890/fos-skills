@@ -39,6 +39,11 @@ const SCHEDULES_REF = { plugin: 'fos-skills', key: 'board-schedules', id: 'curre
 /** @type {BoardSchedule[]} */
 let schedules = []
 
+function sameSchedules(left, right) {
+  const rows = Array.isArray(left) ? left : []
+  return rows.length === right.length && rows.every((row, i) => row === right[i])
+}
+
 export async function watchSchedule($, e, next) {
   const result = await next(e)
   try {
@@ -53,8 +58,8 @@ export async function watchSchedule($, e, next) {
       return result
     }
     for (let attempt = 0; attempt < 3; attempt++) {
-      const updated = updateSchedules(held.value, e, result, at)
-      if (updated === held.value) break
+      const updated = updateSchedules(visibleSchedules(held.value, at), e, result, at)
+      if (sameSchedules(held.value, updated)) break
       const saved = Number.isInteger(held.version)
         ? await $.state.set(SCHEDULES_REF, updated, { ifVersion: held.version })
         : await $.state.set(SCHEDULES_REF, updated)
@@ -2329,19 +2334,7 @@ export function register(on) {
     // 접힌 보기에서 단추가 사라진 목록(줄이 비었거나 항목이 사라짐)은 펼침 상태를 버린다. 다시 생기면 접힌 채 나온다
     // 펼친 보기(d)는 단추를 그리지 않으므로 지우지 않고, 보드를 읽지 못한 동안에도 지우지 않는다
     const sectionViews = SECTIONS.slice(1).flatMap(manualView)
-    const scheduleNow = await $.clock.now()
-    const activeSchedules = visibleSchedules(schedules, scheduleNow)
-    if (activeSchedules.length !== schedules.length || activeSchedules.some((row, i) => row !== schedules[i])) {
-      schedules = activeSchedules
-      try {
-        const held = await $.state.get(SCHEDULES_REF)
-        const cleaned = visibleSchedules(held.value, scheduleNow)
-        if (cleaned.length !== held.value?.length || cleaned.some((row, i) => row !== held.value[i])) {
-          if (Number.isInteger(held.version)) await $.state.set(SCHEDULES_REF, cleaned, { ifVersion: held.version })
-          else await $.state.set(SCHEDULES_REF, cleaned)
-        }
-      } catch {}
-    }
+    const activeSchedules = visibleSchedules(schedules, await $.clock.now())
     const scheduleView = activeSchedules.length ? [box('schedules', 'blue', '예약  ' + activeSchedules.length,
       activeSchedules.map((row) => Text({ key: 'schedule-' + row.id, wrap: 'wrap', children: [scheduleLine(row)] })))] : []
     if (!expanded && board && !board.error) for (const id of [...folded]) if (!shownFolds.has(id)) folded.delete(id)
