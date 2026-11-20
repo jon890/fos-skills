@@ -1707,11 +1707,18 @@ export function checkImportedTests(phaseEntries: [string, string, Entry[]][], re
     warnings.push(`${phaseEntries[0][0]} — 수정 파일을 import 하는 테스트 후보가 ${IMPORT_TEST_LIMIT}개를 넘어 자동 대조를 건너뛴다. 테스트 경로를 직접 찾아 변경 파일 표와 비교한다`)
     return
   }
-  const imports = new Map(candidates.map((test) => [test, importedModules(readTextFile(`${repo}/${test}`))]))
+  const imports = new Map<string, string[]>()
+  for (const test of candidates) {
+    try {
+      imports.set(test, importedModules(readTextFile(`${repo}/${test}`)))
+    } catch {
+      warnings.push(`${phaseEntries[0][0]} — 테스트 파일을 읽지 못해 import 대조에서 건너뛴다: ${test}`)
+    }
+  }
   for (const [path, , entries] of phaseEntries) {
     for (const [source, action] of entries) {
       if (action !== '수정' || !modified.includes(source)) continue
-      const tests = candidates.filter((test) => importsSource(test, source, imports.get(test)!))
+      const tests = candidates.filter((test) => imports.has(test) && importsSource(test, source, imports.get(test)!))
       if (!tests.length) continue
       const shown = tests.slice(0, CALLER_LIMIT).join(', ') + (tests.length > CALLER_LIMIT ? ` 외 ${tests.length - CALLER_LIMIT}개` : '')
       warnings.push(`${path} — \`${source}\` 을 import 하는 테스트가 plan 의 변경 파일에 없다: ${shown}. 변경으로 깨질 테스트면 변경 파일 표에 넣는다`)

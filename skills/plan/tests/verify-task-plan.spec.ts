@@ -1,7 +1,7 @@
 // verify_task 의 명령 경계 테스트 3: 계획 index 와 PR 크기, 계획 번호 겹침, 레포 설정의 상한, 원격 검증 표, 호출자 경고, 기능 계약 연결.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { checkEstimatedSize, checkTestReferences } from '../scripts/verify_task.ts'
@@ -505,6 +505,20 @@ test('이미 계획한 테스트와 import 하지 않는 테스트는 경고하�
   writePlan(repo, 'plan1-a', [{ work: '### 1. 화면 수정', entries: [['src/guide.tsx', '수정'], ['src/guide.test.tsx', '수정']], command: 'pytest' }])
   const result = verify(repo, ['plan1-a'])
   assert.ok(result.warnings.every((line) => !line.includes('을 import 하는 테스트가 plan 의 변경 파일에 없다')), result.stdout)
+})
+
+test('읽지 못하는 테스트 후보는 건너뛰고 다른 테스트의 경고는 유지한다', () => {
+  const repo = callerRepo({
+    'src/guide.tsx': 'export function Guide() { return null }\n',
+    'src/guide.test.tsx': "import { Guide } from './guide'\n",
+    'src/screens.test.tsx': "import { Guide } from './guide'\n",
+  })
+  writeFileSync(join(repo.root, 'src/guide.test.tsx'), Buffer.concat([Buffer.from("import { Guide } from './guide'\n"), Buffer.from([0xff])]))
+  writePlan(repo, 'plan1-a', [{ work: '### 1. 화면 수정과 `src/new.test.tsx` 작성', entries: [['src/guide.tsx', '수정'], ['src/new.test.tsx', '신규']], command: 'node --test src/new.test.tsx' }])
+  const result = verify(repo, ['plan1-a'])
+  assert.equal(result.code, 0, result.stdout)
+  assert.ok(has(result.warnings, '읽지 못해 import 대조에서 건너뛴다: src/guide.test.tsx'), result.stdout)
+  assert.ok(has(result.warnings, 'src/screens.test.tsx'), result.stdout)
 })
 
 // 기능 계약 연결
