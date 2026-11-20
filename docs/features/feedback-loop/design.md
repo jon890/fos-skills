@@ -31,7 +31,7 @@
 
 `orch feedback collect`는 묶음별로 `저장소\t대상\t상태\t제목`을 낸다. 묶음은 표의 분류와 같다. 폴더가 없으면 건너뛰며 읽기 실패는 `READ-FAIL`에 저장소와 이유를 낸다. PR 조회나 git·버전 파일 읽기에 실패하면 `조회 실패`로 보이고, 정상적으로 확인했지만 아직 버전 변경이 없을 때만 `버전 대기`로 보인다. `orch feedback notify`는 처리한 후보와 전송·휴지통 결과를 낸다. 사용법 오류는 종료 코드 2, 저장소 목록 자체를 못 읽으면 1, 저장소별 조회·전송 실패는 해당 저장소를 표시하고 다른 저장소는 계속 처리한다.
 
-core PR은 fos-skills 저장소에서 `gh pr view`로 본다. 저장소 몫 PR은 원래 저장소 doctor가 확인한다. core PR의 merge commit이 현재 `main`에 있고, 그 뒤 `.claude-plugin/plugin.json`의 version 값이 실제로 바뀐 첫 커밋이 `main`에 있으면 그 버전을 사용한다. 단순히 현재 버전만 읽으면 PR보다 앞서 배포된 버전을 잘못 알리므로 commit 순서를 비교한다. 닫혔으나 머지되지 않은 PR과 조회 실패는 각각 따로 묶어 재판정한다.
+core PR은 fos-skills 저장소에서 `gh pr view`로 본다. 저장소 몫 PR은 원래 저장소 doctor가 확인한다. core PR의 merge commit이 현재 `main`에 있고, 그 뒤 첫 부모 경로에서 `.claude-plugin/plugin.json`의 version 값이 실제로 바뀐 첫 커밋이 있으면 그 버전을 사용한다. 단순히 현재 버전만 읽으면 PR보다 앞서 배포된 버전을 잘못 알리므로 commit 순서를 비교한다. 닫혔으나 머지되지 않은 PR과 조회 실패는 각각 따로 묶어 재판정한다.
 
 ## 실패와 일관성
 

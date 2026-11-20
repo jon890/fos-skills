@@ -41,15 +41,9 @@ export function versionResult(repo: string, mergeSha: string): { version?: strin
   try {
     try { command('git', ['merge-base', '--is-ancestor', mergeSha, 'origin/main'], repo) }
     catch (error) { return { error: `반영 PR을 origin/main에서 확인하지 못했다: ${(error as Error).message.split('\n')[0]}` } }
-    // 앞에서부터 찾는 첫 version 변경 commit이 해당 PR 뒤의 실제 배포 버전이다.
-    const commits = command('git', ['log', '--format=%H', 'origin/main', '--', '.claude-plugin/plugin.json'], repo).split('\n').filter(Boolean).reverse()
+    // main의 첫 부모 경로만 보면 PR 전에 갈라진 브랜치의 version commit을 잘못 고르지 않는다.
+    const commits = command('git', ['log', '--first-parent', '--reverse', '--format=%H', `${mergeSha}..origin/main`, '--', '.claude-plugin/plugin.json'], repo).split('\n').filter(Boolean)
     for (const sha of commits) {
-      if (sha === mergeSha) continue
-      try { command('git', ['merge-base', '--is-ancestor', mergeSha, sha], repo) }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException & { status?: number }).status === 1) continue
-        throw error
-      }
       const current = JSON.parse(command('git', ['show', `${sha}:.claude-plugin/plugin.json`], repo)) as { version?: string }
       let previous: { version?: string } = {}
       const parents = command('git', ['rev-list', '--parents', '-n', '1', sha], repo).split(' ')
