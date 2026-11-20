@@ -49,10 +49,11 @@
 //
 // 배포 뒤 할 일: 기능 PR 의 근거가 「후속 검증: 대기 | <글>」 하나만 남았으면 그 글을 배포 뒤 할 일 목록(lib/followups.ts)에 옮기고
 //     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드 파일이 있으면 항목 followup-<PR> 을 wait 로 보인다.
-//     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 배포가 실패했거나 시간이 지났으면
+//     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 단계 4 의 정리는 워크트리를 남기고,
+//     그 PR 의 handoff 산출물도 실패로 세지 않고 함께 남긴다(사용자 결정 2026-11-20). 배포가 실패했거나 시간이 지났으면
 //     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
 //     코디네이터가 `orch followup done <PR>` 로 끝내면 그 명령이 이 마무리를 다시 띄운다. 그때는 목록의 끝난 기록을 후속 검증 통과로 보고
-//     지시서 정리, 업무 완료, 보드 done 까지 간다. 본문의 대기를 통과로 바꿔도 같다
+//     지시서 정리, 업무 완료, 보드 done 까지 간다. 정리도 목록의 끝난 기록을 보고 남겼던 워크트리와 handoff 를 지운다. 본문의 대기를 통과로 바꿔도 같다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -183,6 +184,7 @@ import { orchWord, scriptPath } from '../lib/commands.ts'
 const SCRIPT = fileURLToPath(import.meta.url)
 const CLEANUP_TRIES = 5
 const KEPT_ON_PURPOSE = /끊긴 worker |끊김인지 확인하지 못한 |기능 후속 검증이 끝나지 않았다/
+const KEPT_FOR_FOLLOWUP = /기능 후속 검증이 끝나지 않았다/
 // 옛 명령의 자식 실행 시간 제한(초). 정리 스크립트만 600초였다
 const RUN_TIMEOUT_MS = 300_000
 const SWEEP_TIMEOUT_MS = 600_000
@@ -427,15 +429,22 @@ function localBranchExists(repo: string, branch: string): boolean {
 // 정리 스크립트를 돌려 그 브랜치의 워크트리와 로컬 브랜치가 사라질 때까지 다시 시도한다. 사라졌으면 true.
 // 로컬 브랜치 이름이 PR 의 head 브랜치 이름과 다르면 head 이름으로는 워크트리가 보이지 않는다.
 // 정리 출력에 그 워크트리를 일부러 남긴 줄(`남김 <경로>: …` 이나 짧은 출력의 `KEPT <경로> …`)이 있는지
-export function keptOnPurpose(output: string, path: string): boolean {
-  return output.split('\n').some((line) => {
+// 돌려주는 값은 남긴 까닭이다. 후속 검증 대기면 'followup', 끊긴 worker 면 'lost', 그런 줄이 없으면 null 이다
+export function keptOnPurpose(output: string, path: string): 'followup' | 'lost' | null {
+  let kept: 'followup' | 'lost' | null = null
+  for (const line of output.split('\n')) {
     const text = line.trim()
-    return (text.startsWith(`남김 ${path}: `) || text.startsWith(`KEPT ${path} `)) && KEPT_ON_PURPOSE.test(text)
-  })
+    if (!(text.startsWith(`남김 ${path}: `) || text.startsWith(`KEPT ${path} `)) || !KEPT_ON_PURPOSE.test(text)) continue
+    if (KEPT_FOR_FOLLOWUP.test(text)) return 'followup'
+    kept = 'lost'
+  }
+  return kept
 }
 
+type Cleanup = { clean: boolean; kept: 'followup' | 'lost' | null }
+
 // 그래서 보이지 않아도 정리 스크립트를 한 번은 돌린다. 그 스크립트가 PR 을 upstream 이름 등으로 찾아 정리한다
-async function cleanupWorker(args: Args, repo: string, branch: string): Promise<boolean> {
+async function cleanupWorker(args: Args, repo: string, branch: string): Promise<Cleanup> {
   const sweep = process.env.CLEANUP_SWEEP || scriptPath('cleanup-sweep')
   const sweepArgs = ['--repo', repo, '--apply', '--kill-holders']
   if (args.notMain !== undefined) sweepArgs.push('--not-main', args.notMain)
@@ -450,13 +459,14 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
       if (line) log(`sweep: ${line.replace(/\r$/, '')}`)
     }
     const left = worktreePath(repo, branch)
-    if (!left && !localBranchExists(repo, branch)) return true
+    if (!left && !localBranchExists(repo, branch)) return { clean: true, kept: null }
     // 이 PR 의 워크트리를 정리가 끊긴 worker 나 후속 검증 대기로 일부러 남겼으면 다시 돌려도 같다(cleanup/steps/worktrees.ts 의 「남기는 워크트리」).
     // 다른 워크트리의 남김 줄로는 멈추지 않는다
-    if (left && keptOnPurpose(done.stdout, left)) return false
+    const kept = left ? keptOnPurpose(done.stdout, left) : null
+    if (kept) return { clean: false, kept }
     if (attempt < CLEANUP_TRIES) await sleep(args.pollInterval * 1000)
   }
-  return false
+  return { clean: false, kept: null }
 }
 
 // 머리 주석의 단계 2. 그 워크트리의 살아 있는 worker 에게 머지를 알리고, dispatch 가 끝나기를 기다린다.
@@ -769,11 +779,15 @@ async function finish(args: Args, repo: string): Promise<number> {
   let handoffProblem = false
   // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
   // 기능 PR 도 같다. 후속 검증이 대기거나 끊긴 worker 의 워크트리면 cleanup-sweep 이 남기고, 여기서는 「정리 남음」 만 알린다(사용자 결정 2026-11-20)
-  const workerClean = await cleanupWorker(args, repo, branch)
+  const cleanup = await cleanupWorker(args, repo, branch)
+  const workerClean = cleanup.clean
   if (!workerClean) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
   }
-  if (!workerClean && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
+  if (cleanup.kept === 'followup' && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
+    // 후속 검증 대기로 남긴 워크트리는 실패가 아니다. handoff 도 워크트리와 함께 남기고, followup done 의 마무리 재실행이 함께 치운다
+    log(`PR ${args.pr} handoff 산출물 유지: 후속 검증이 끝날 때까지 워크트리와 함께 남긴다`)
+  } else if (!workerClean && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
     log(`PR ${args.pr} handoff 산출물 유지: worker 정리가 끝나지 않았다`)
     problems.push(`PR ${args.pr} handoff 산출물 정리를 기다린다`)
     handoffProblem = true

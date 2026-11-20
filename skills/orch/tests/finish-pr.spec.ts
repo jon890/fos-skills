@@ -339,19 +339,25 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).items : null
   }
 
-  test('기능 후속 검증이 대기면 워크트리는 지우고 그 줄을 배포 뒤 할 일로 옮겨 FINISH-DONE 이고, 끝낸 뒤 다시 돌면 업무까지 끝낸다', async (t) => {
+  test('기능 후속 검증이 대기면 워크트리와 handoff 를 남긴 채 배포 뒤 할 일로 옮겨 FINISH-DONE 이고, 끝낸 뒤 다시 돌면 워크트리와 업무까지 끝낸다', async (t) => {
     const c = setup(t)
     c.state.pr.body = evidence(c, '대기 | 배포 후 smoke, 코디네이터, CI 실행기')
     hook(c, taskCompleter())
+    const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
+    mkdirSync(handoff, { recursive: true })
+    writeFileSync(join(handoff, 'body.md'), '본문')
     const args = ['--specs-dir', c.specs, '--complete']
-    const waiting = await c.finish(args)
+    // 정리 도구는 후속 검증 대기의 워크트리를 남긴다(docs/features/cleanup-keep-lost/spec.md 의 REQ3)
+    const kept = { FAKE_SWEEP_REMOVES: '0', FAKE_SWEEP_SAY: '남김 <WT>: 기능 후속 검증이 끝나지 않았다: 후속 검증 이 완료되지 않았다: 대기 | 배포 후 smoke' }
+    const waiting = await c.finish(args, kept)
     assert.equal(waiting.code, 0, both(waiting))
     assert.match(waiting.stdout, /^FOLLOWUP-ADDED #77 배포 후 smoke, 코디네이터, CI 실행기$/m)
     assert.match(waiting.stdout, /FINISH-DONE\s*$/)
-    // 사용자 결정(2026-11-04): 워크트리와 브랜치는 MERGED 직후 지운다. 지시서와 업무 완료는 후속 검증 뒤로 남긴다
-    assert.equal(existsSync(c.wt), false)
+    // 사용자 결정(2026-11-20): 후속 검증이 끝날 때까지 워크트리, 지시서, handoff 를 남기고, 남긴 것은 실패로 세지 않는다
+    assert.equal(existsSync(c.wt), true)
+    assert.equal(existsSync(join(handoff, 'body.md')), true)
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
-    assert.equal(c.calls().some((line) => line.startsWith('sweep ')), true)
+    assert.equal(starting(c.calls(), 'sweep ').length, 1)
     assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), false)
     const saved = followups(c)
     assert.equal(saved.length, 1)
@@ -359,17 +365,30 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(saved[0].deploy, 'none')
     assert.equal(saved[0].done_at, null)
     // 같은 PR 을 다시 돌려도 항목은 하나다
-    const again = await c.finish(args)
+    const again = await c.finish(args, kept)
     assert.match(again.stdout, /^FOLLOWUP-KEPT #77 /m)
     assert.equal(followups(c).length, 1)
-    // 코디네이터가 끝내면(orch followup done) 본문의 대기를 그대로 둬도 후속 검증 통과로 보고 업무와 지시서까지 끝낸다
+    // 코디네이터가 끝내면(orch followup done) 정리가 남긴 워크트리를 지우고, 본문의 대기를 그대로 둬도 후속 검증 통과로 보고 업무와 지시서까지 끝낸다
     const file = join(c.repo, '.orch', 'state', 'followups.json')
     writeFileSync(file, JSON.stringify({ items: saved.map((item: Json) => ({ ...item, done_at: '2026-11-20T00:00:00.000Z' })) }))
     const done = await c.finish(args)
     assert.equal(done.code, 0, both(done))
     assert.doesNotMatch(done.stdout, /FOLLOWUP-/)
+    assert.equal(existsSync(c.wt), false)
+    assert.equal(existsSync(handoff), false)
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
     assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), true)
+  })
+
+  test('끊긴 worker 로 남긴 워크트리의 handoff 가 있으면 지금처럼 FINISH-FAIL 이다', async (t) => {
+    const c = setup(t)
+    const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
+    mkdirSync(handoff, { recursive: true })
+    writeFileSync(join(handoff, 'body.md'), '본문')
+    const r = await c.finish(DEPLOY, { FAKE_SWEEP_REMOVES: '0', FAKE_SWEEP_SAY: '남김 <WT>: 끊긴 worker ctx_a, 다시 띄우거나 직접 정리한다' })
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'handoff 산출물 정리를 기다린다')
+    assert.equal(existsSync(join(handoff, 'body.md')), true)
   })
 
   test('후속 검증 대기를 본문에서 통과로 바꿔도 마무리를 이어 간다', async (t) => {
