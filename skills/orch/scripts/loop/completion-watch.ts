@@ -46,24 +46,28 @@ export function completionMessages(run: string): Json[] {
   return messages(['check', '--run', run, '--all', '--types', 'worker_done']).filter(m => m.type === 'worker_done')
 }
 
-// Orca 의 worker 워크트리가 다른 저장소의 것인지. 조회하지 못하면 모른다(false)
+// Orca 의 worker 워크트리가 다른 저장소의 것인지. 조회하지 못하거나 워크트리가 지워져 저장소를 알 수 없으면 모른다(false)
 function foreignDispatch(repo: string, dispatch: string): boolean {
   if (!dispatch) return false
   const owner = dispatchRepo(repo, dispatch)
+  if (owner === null || !existsSync(owner)) return false
   const mine = mainCheckout(repo)
-  return owner !== null && owner !== mine && !owner.startsWith(`${mine}/`)
+  return owner !== mine && !owner.startsWith(`${mine}/`)
 }
 
-// dispatch 의 브랜치에 열린 PR 이 없고 MERGED PR 이 있는지. 브랜치를 모르거나 조회가 실패하면 false
-function branchMerged(repo: string, launch: { branch?: string | null; spec?: string | null } | undefined): boolean {
+// dispatch 의 브랜치에 열린 PR 이 없고 MERGED PR 이 있는지. 브랜치를 모르거나 조회가 실패하면 false.
+// 띄운 시각(since)을 알면 그 뒤에 머지된 PR 만 센다. 같은 이름의 옛 브랜치 PR 로 새 dispatch 의 경고를 숨기지 않으려는 것이다
+function branchMerged(repo: string, launch: { branch?: string | null; spec?: string | null } | undefined, since: string | null): boolean {
   let branch = launch?.branch ?? null
   if (!branch && launch?.spec) {
     try { branch = branchesOf(readFileSync(launch.spec, 'utf8'))[0] ?? null } catch { branch = null }
   }
   if (!branch) return false
-  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state', '--limit', '5'], { cwd: repo })
+  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,mergedAt', '--limit', '5'], { cwd: repo })
   if (!got.ok || !Array.isArray(got.data)) return false
-  return !got.data.some(pr => pr?.state === 'OPEN') && got.data.some(pr => pr?.state === 'MERGED')
+  const after = since ? Date.parse(since) : NaN
+  const recent = (pr: Json) => Number.isNaN(after) || Date.parse(String(pr?.mergedAt ?? '')) >= after
+  return !got.data.some(pr => pr?.state === 'OPEN') && got.data.some(pr => pr?.state === 'MERGED' && recent(pr))
 }
 
 export async function watchCompletions(repo: string, run: string, base: string, completed?: Json[]): Promise<void> {
@@ -160,7 +164,7 @@ export async function watchCompletions(repo: string, run: string, base: string, 
           notice = ''
         } else if (back.kind === 'fail') {
           notice = `${notice || 'PR 이 열린 채 완료 보고가 왔다'} (이어 맡기지 못했다: ${back.reason}. 고친 뒤 orch worker continue --dispatch ${dispatch})`
-        } else if (verified.status === 'suspicious' && branchMerged(repo, launch)) {
+        } else if (verified.status === 'suspicious' && branchMerged(repo, launch, historyByDispatch.get(dispatch)?.at ?? null)) {
           notice = ''
         } else if (back.reason.includes('이미 한 번 되돌렸다')) {
           // 준비됨 뒤의 두 번째 조기 완료도 알린다. 근거 없는 보고의 이유가 없으면 PR 이 열려 있다는 사실이 이유다

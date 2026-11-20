@@ -278,12 +278,19 @@ test('지시서를 지운 뒤 온 근거 없는 완료도 띄우기 기록의 �
   recordLaunch(repo, launch)
   recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
   forgetLaunch(repo, 'merged')
-  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 785, state: 'MERGED' }]) }])
+  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 785, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
   process.env.GH = gh.path
   rules([done('merged')]); await watchCompletions(repo, 'R', 'main')
   assert.equal(notices().length, 0)
   assert.deepEqual(state().suspects, [])
   assert.ok(state().ids.includes('merged'))
+})
+test('같은 브랜치 이름의 옛 PR 이 띄우기 전에 머지됐으면 새 dispatch 의 근거 없는 완료를 알린다', async () => {
+  recordHistory(repo, { dispatch: 'reused', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/reused', at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 1, state: 'MERGED', mergedAt: '2026-08-01T00:00:00Z' }]) }])
+  process.env.GH = gh.path
+  rules([done('reused')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(state().suspects, ['reused'])
 })
 test('같은 브랜치에 열린 PR 이 남았거나 PR 조회가 실패하면 머지된 PR 이 있어도 알린다', async () => {
   for (const [i, rule] of [{ stdout: JSON.stringify([{ number: 2, state: 'OPEN' }, { number: 1, state: 'MERGED' }]) }, { stderr: 'boom', code: 1 }].entries()) {
@@ -311,7 +318,7 @@ test('띄우기 기록이 없고 Orca 의 worker 워크트리가 다른 저장�
   assert.deepEqual(state().suspects, [])
   assert.ok(state().ids.includes('foreign-done'))
 })
-test('띄우기 기록이 없어도 Orca 가 이 저장소의 워크트리라고 하거나 조회가 실패하면 그대로 알린다', async () => {
+test('띄우기 기록이 없어도 Orca 의 워크트리가 이 저장소 안이거나 지워져 저장소를 알 수 없으면 그대로 알린다', async () => {
   execFileSync('git', ['init', '-q', repo])
   bin.setRules([
     { args: ['check', 'worker_done'], stdout: envelope([done('here')]) }, { args: ['check', 'status'], stdout: envelope([]) },
