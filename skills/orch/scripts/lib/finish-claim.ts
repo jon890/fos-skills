@@ -6,7 +6,8 @@
 // pid 파일(finish-<PR>.pid)은 실행권을 쥔 동안에만 쓰고 지운다. 그래서 끝나는 마무리가 새 마무리의 pid 파일을 지우지 못한다.
 // 죽은 pid 가 남은 pid 파일은 읽는 쪽(lib/process.ts 의 pidFileAlive)이 돌지 않는 것으로 본다.
 //
-// 다시 돌기 표시(<pid 파일>.rerun): 도는 마무리가 끝날 때 한 번 더 돌라는 요청이다. orch followup done 이 쓴다.
+// 다시 돌기 표시(<orch 루트>/state/finish-rerun/<PR>): 도는 마무리가 끝날 때 한 번 더 돌라는 요청이다. orch followup done 이 쓴다.
+//   저장소와 PR 번호로 정한 자리에 둔다. pid 파일 옆에 두면 로그 폴더를 따로 준 마무리(--finish-log-dir)와 followup done 이 다른 자리를 본다(PR 568 리뷰)
 //   쓰는 쪽  표시를 쓴 뒤 pid 파일을 본다. 살아 있으면 그대로 두고, 아니면 표시를 둔 채 새 마무리를 띄운다
 //   시작     실행권을 잡으면 표시를 지운다. 지금 시작하는 실행이 그 요청보다 뒤라 요청을 대신한다
 //   끝       표시가 있으면 가져가 한 번 더 돈다. 없으면 pid 파일을 지우고 실행권을 놓은 뒤 표시를 한 번 더 본다.
@@ -16,10 +17,31 @@
 //   그래서 끝나는 마무리와 새 요청이 어떤 순서로 겹쳐도 요청 뒤에 시작한 실행이 하나는 있다(PR 558 리뷰의 겹침).
 
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { claimFile, releaseClaim, takeClaim } from './pr-claim.ts'
+import { dirname, join, resolve } from 'node:path'
+import { makeParent, pathOf } from './paths.ts'
+import { claimFile, prNumber, releaseClaim, takeClaim } from './pr-claim.ts'
 import type { Claim, Holder } from './pr-claim.ts'
-import { takeRerun } from './process.ts'
+
+export function rerunFile(repo: string, pr: string | number): string {
+  return join(pathOf('state', repo), 'finish-rerun', prNumber(pr))
+}
+
+// 머리 주석의 「쓰는 쪽」 이 표시를 남긴다
+export function askRerun(repo: string, pr: string | number): void {
+  const file = rerunFile(repo, pr)
+  makeParent(file, repo)
+  writeFileSync(file, '')
+}
+
+// 표시가 있으면 지우고 true. 지우기 하나라 둘이 겹쳐도 한쪽만 가져간다
+export function takeRerun(repo: string, pr: string | number): boolean {
+  try {
+    unlinkSync(rerunFile(repo, pr))
+    return true
+  } catch {
+    return false
+  }
+}
 
 export type Begin = { kind: 'run'; claim: Claim } | { kind: 'running'; holder: Holder } | { kind: 'unknown'; reason: string }
 
@@ -54,13 +76,13 @@ function dropFinish(pidFile: string, claim: Claim): void {
 // 머리 주석의 「시작」
 export function beginFinish(repo: string, pr: string | number, pidFile: string): Begin {
   const begun = claimFinish(repo, pr, pidFile)
-  if (begun.kind === 'run') takeRerun(pidFile)
+  if (begun.kind === 'run') takeRerun(repo, pr)
   return begun
 }
 
 // 머리 주석의 「끝」 앞 절반. 표시가 있으면 true 이고 실행권을 그대로 쥔다. 없으면 pid 파일을 지우고 실행권을 놓는다
-export function rerunOrRelease(pidFile: string, claim: Claim): boolean {
-  if (takeRerun(pidFile)) return true
+export function rerunOrRelease(repo: string, pr: string | number, pidFile: string, claim: Claim): boolean {
+  if (takeRerun(repo, pr)) return true
   dropFinish(pidFile, claim)
   return false
 }
@@ -70,11 +92,11 @@ export function rerunOrRelease(pidFile: string, claim: Claim): boolean {
 export function retakeForRerun(repo: string, pr: string | number, pidFile: string): { kind: 'rerun'; claim: Claim } | { kind: 'done' } | { kind: 'lost'; reason: string } {
   // 다시 잡았는데 표시가 없으면(다른 마무리가 그 사이 가져갔다) 놓고 처음부터 다시 본다. 다시 쥔 동안 들어온 표시를 놓치지 않는다
   for (;;) {
-    if (!existsSync(`${pidFile}.rerun`)) return { kind: 'done' }
+    if (!existsSync(rerunFile(repo, pr))) return { kind: 'done' }
     const again = claimFinish(repo, pr, pidFile)
     if (again.kind === 'running') return { kind: 'done' }
     if (again.kind === 'unknown') return { kind: 'lost', reason: again.reason }
-    if (takeRerun(pidFile)) return { kind: 'rerun', claim: again.claim }
+    if (takeRerun(repo, pr)) return { kind: 'rerun', claim: again.claim }
     dropFinish(pidFile, again.claim)
   }
 }

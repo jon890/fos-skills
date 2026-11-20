@@ -1,6 +1,6 @@
 // pid 생존 확인과 작업 디렉터리 점유 프로세스 찾기의 한 벌이다.
 
-import { readFileSync, unlinkSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { inside, real } from './fs.ts'
 import { run } from './proc.ts'
 
@@ -66,15 +66,4 @@ export function cwdHolders(dir: string): { ok: true; holders: { pid: number; cwd
     }
   }
   return { ok: true, holders }
-}
-
-// 마무리(queue/finish-pr.ts --pid-file)의 다시 돌기 표시(<pid 파일>.rerun). 있으면 지우고 true. 지우기 하나라 둘이 겹쳐도 한쪽만 가져간다.
-// 누가 언제 쓰고 가져가는지는 lib/finish-claim.ts 머리 주석이 소유한다
-export function takeRerun(pidFile: string): boolean {
-  try {
-    unlinkSync(`${pidFile}.rerun`)
-    return true
-  } catch {
-    return false
-  }
 }

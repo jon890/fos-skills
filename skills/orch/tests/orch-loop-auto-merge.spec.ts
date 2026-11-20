@@ -609,7 +609,8 @@ describe('걸지 못하고 끝난 큐', () => {
     assert.equal(events('AUTO-MERGE').length, 2)
   })
 
-  test('다른 큐가 맡은 PR(QUEUE-DUP)의 tried 는 두고, 함께 걸었던 다른 PR 만 다시 건다', async () => {
+  // PR 568 리뷰: PR 을 쥔 큐도 다른 PR 에서 막혀 물러나면, QUEUE-DUP 을 받은 PR 을 아무도 맡지 않는다
+  test('다른 큐가 쥐고 있어 물러난 큐(QUEUE-DUP)의 PR 도 tried 를 지워, 함께 걸었던 PR 과 같이 다시 건다', async () => {
     spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
     github([pr(1), pr(2)])
     once({ FAKE_QUEUE_SAY: 'QUEUE-DUP 1 이미 진행 중이다: pid 4242 2026-11-20T00:00:00.000Z queue merge run=run_other' })
@@ -618,8 +619,7 @@ describe('걸지 못하고 끝난 큐', () => {
     await until(`가짜 큐 pid ${first.pid} 종료`, () => !alive(first.pid))
     once()
     assert.match(String(events('AUTO-MERGE-END')[0]?.text), /^QUEUE-DUP 1 /)
-    assert.deepEqual(await queued(2), queueArgs('2'))
-    assert.deepEqual(Object.keys(autoMergeState().tried as Json).sort(), [`1@${HEAD_A}`, `2@${HEAD_A}`])
+    assert.deepEqual(await queued(2), queueArgs('1', '2'))
   })
 })
 

@@ -39,8 +39,14 @@ export function newToken(): string {
 // 회수 경합에서 다시 보는 횟수. 넘으면 unknown 이다
 const TAKE_TRIES = 20
 
+// PR 번호는 정수로 바꿔 쓴다. `0568` 과 `568` 이 다른 실행권이 되면 같은 PR 을 둘이 잡는다(PR 568 리뷰)
+export function prNumber(pr: string | number): string {
+  const n = Number(pr)
+  return Number.isSafeInteger(n) && n >= 0 ? String(n) : String(pr)
+}
+
 export function claimFile(repo: string, kind: ClaimKind, pr: string | number): string {
-  return join(pathOf('state', repo), 'pr-claims', `${kind}-${pr}`)
+  return join(pathOf('state', repo), 'pr-claims', `${kind}-${prNumber(pr)}`)
 }
 
 type Owner = { pid: number; identity: string; token: string; at: string; note: string }
@@ -136,7 +142,7 @@ export type Claimed =
 export function claimPrs(repo: string, kind: ClaimKind, prs: string[], opts: { note?: string; token?: string; inherit?: string } = {}): Claimed {
   const token = opts.token ?? newToken()
   const claims: Claim[] = []
-  const ordered = [...new Set(prs)].sort((a, b) => Number(a) - Number(b))
+  const ordered = [...new Set(prs.map(prNumber))].sort((a, b) => Number(a) - Number(b))
   // 폴더를 만들고 git 이 orch 루트를 무시하게 한다
   makeParent(claimFile(repo, kind, ordered[0] ?? '0'), repo)
   for (const pr of ordered) {

@@ -74,7 +74,7 @@ test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기
   assert.equal(r.code, 0, r.stdout + r.stderr)
   assert.match(r.stdout, /^FINISH-RUNNING 787 /m)
   // 도는 마무리가 끝날 때 이 표시를 보고 한 번 더 돈다(finish-pr.spec.ts)
-  assert.equal(existsSync(`${pidFile}.rerun`), true)
+  assert.equal(existsSync(join(c.repo, '.orch', 'state', 'finish-rerun', '787')), true)
   assert.equal(existsSync(c.log), false)
 })
 
@@ -117,7 +117,7 @@ test('같은 PR 의 마무리가 없으면 다시 돌기 표시를 둔 채 새�
   const deadline = Date.now() + 5000
   while (!existsSync(c.log) && Date.now() < deadline) await sleep(50)
   // 표시는 띄운 마무리가 실행권을 잡으면 지운다. 끝나던 마무리가 아직 쥐고 있어 잡지 못하면 그 마무리가 놓은 뒤 가져간다(lib-finish-claim.spec.ts)
-  assert.equal(existsSync(join(c.repo, '.orch', 'queue', 'finish-787.pid.rerun')), true)
+  assert.equal(existsSync(join(c.repo, '.orch', 'state', 'finish-rerun', '787')), true)
 })
 
 test('--no-finish 면 마무리를 띄우지 않고, 이미 끝난 항목은 ALREADY, 없는 항목은 MISSING 과 1 이다', (t) => {

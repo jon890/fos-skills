@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { once } from 'node:events'
@@ -11,7 +11,7 @@ import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { peek, reclaimDead } from '../scripts/lib/owner-lock.ts'
-import { claimPrs, refusal, releaseByToken, releaseClaim, sweepClaims, takeClaim } from '../scripts/lib/pr-claim.ts'
+import { claimFile, claimPrs, refusal, releaseByToken, releaseClaim, sweepClaims, takeClaim } from '../scripts/lib/pr-claim.ts'
 import { identity } from '../scripts/lib/process.ts'
 
 const HOLDER = fileURLToPath(new URL('./fixtures/claim-holder.ts', import.meta.url))
@@ -200,4 +200,40 @@ test('token 이 같은 실행권만 놓고, 그 뒤 다른 쪽이 잡은 실행�
   releaseClaim(mine.claim)
   releaseByToken(file, ['parent'])
   assert.equal(JSON.parse(readFileSync(join(file, 'owner'), 'utf8')).pid, next.result.pid)
+})
+
+// PR 568 리뷰의 순서: C 가 A 의 inode 를 읽은 뒤 A 가 정상으로 놓고 B 가 잡는다. C 가 A 의 inode 와 읽지 못한 owner 로 회수하면 B 의 실행권을 옮긴다
+test('inode 를 읽고 owner 를 읽는 사이에 놓이고 새 주인이 잡으면 새 주인의 것으로 다시 읽는다. 살아 있는 새 주인의 실행권을 회수하지 않는다', async (t) => {
+  const base = dir(t)
+  const file = join(base, 'pr-claims', 'finish-1')
+  plant(file, { pid: process.pid, identity: identity(process.pid), token: 'a', at: '', note: 'a' })
+  let b: Held | null = null
+  const started: Promise<Held>[] = []
+  const seen = peek(file, () => {
+    // A 가 정상으로 놓는다. B 의 시작은 아래에서 따로 본다. 여기서는 그 사이 owner 가 사라진 것만 만든다
+    renameSync(file, `${file}.released-a`)
+    rmSync(`${file}.released-a`, { recursive: true, force: true })
+    plant(file, { pid: process.pid, identity: identity(process.pid), token: 'b', at: '', note: 'b' })
+  })
+  assert.equal(JSON.parse(seen!.owner).token, 'b')
+  // 놓인 채 아무도 잡지 않았으면 없는 것으로 읽는다. 앞 주인의 inode 로 빈 owner 를 만들지 않는다
+  const gone = peek(file, () => rmSync(file, { recursive: true, force: true }))
+  assert.equal(gone, null)
+  // 실제 프로세스로: 새 주인 B 가 쥔 동안 C 는 잡지 못한다
+  started.push(holder(t, file, 'b'))
+  b = await started[0]
+  assert.equal(b.result.kind, 'taken')
+  assert.equal(takeClaim(file).kind, 'held')
+  assert.equal(JSON.parse(readFileSync(join(file, 'owner'), 'utf8')).pid, b.result.pid)
+})
+
+test('PR 번호는 정수로 바꿔 쓴다. 0568 과 568 은 같은 실행권이다', (t) => {
+  const repo = dir(t)
+  assert.equal(claimFile(repo, 'queue', '0568'), claimFile(repo, 'queue', 568))
+  const first = claimPrs(repo, 'queue', ['0568'], { token: 'one' })
+  assert.equal(first.kind, 'ok')
+  const second = claimPrs(repo, 'queue', ['568'], { token: 'two' })
+  assert.equal(second.kind, 'held')
+  if (second.kind === 'held') assert.equal(second.held[0].pr, '568')
+  if (first.kind === 'ok') for (const claim of first.claims) releaseClaim(claim)
 })

@@ -14,8 +14,8 @@
 //        merge-with-finish 가 큐를 걸기 전에 끝나면(사용법 오류, 마무리를 띄우지 못함) 끝 줄은 `끝 줄 없음` 이고 이유는 로그에 있다.
 //        AUTO-MERGE-END(pr null, text `<끝 줄> log=<로그>`. 로그를 읽지 못하면 끝 줄 자리에 `로그 없음`)를 기록의 run 으로 쓰고 기록을 비운다.
 //        큐가 실행권을 잡지 못해 아무것도 걸지 않고 끝났으면(로그에 QUEUE-DUP 나 QUEUE-CLAIM-FAIL 줄이 있다. lib/pr-claim.ts) 끝 줄은 그 마지막 줄이고,
-//        그때 건 PR 의 tried 를 지워 다음 틱이 다시 판정한다. QUEUE-DUP 줄에 번호가 나온 PR 의 tried 는 둔다. 그 PR 은 다른 큐가 같은 HEAD 로 맡았다.
-//        지우지 않으면 아무도 맡지 않은 PR 이 `이미 건 HEAD` 로 남아 HEAD 가 바뀔 때까지 걸리지 않는다(PR 558 리뷰)
+//        그때 건 PR 의 tried 를 모두 지워 다음 틱이 다시 판정한다. QUEUE-DUP 줄에 나온 PR 도 지운다. 그 PR 을 쥔 큐도 다른 PR 에서 막혀
+//        물러났을 수 있어, 아무도 맡지 않은 PR 이 `이미 건 HEAD` 로 남는다(PR 558, PR 568 리뷰). 쥔 큐가 도는 동안에는 아래 큐 확인이 다시 걸기를 막는다
 //        아직 돌면 이 틱에는 걸지 않는다. 명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 줄이 있어도 걸지 않는다.
 //        머신 전체를 보므로 다른 저장소의 큐나 테스트 실행도 막는다. 거는 쪽으로는 틀리지 않아 그대로 둔다
 //        걸지 않은 틱에는 큐가 무엇을 기다리는지 로그에 한 줄씩 쓴다. 명령줄에 `merge_queue.` 가 든 프로세스의 차례 기록(lib/queue-turn.ts)마다
@@ -255,7 +255,7 @@ function queueEndLine(file: string): string {
 // 큐가 실행권을 잡지 못해 아무것도 걸지 않고 끝났을 때 로그에 남는 줄(lib/pr-claim.ts 의 refusal)
 const NOT_ADMITTED = /^(QUEUE-DUP|QUEUE-CLAIM-FAIL)\b/
 
-// 걸지 못하고 끝난 큐가 건 PR 의 tried 를 지운다(머리 주석의 「자동 머지」 2). 다른 큐가 맡은 PR(QUEUE-DUP 줄의 번호)은 둔다
+// 걸지 못하고 끝난 큐가 건 PR 의 tried 를 모두 지운다(머리 주석의 「자동 머지」 2)
 function forgetNotAdmitted(state: AutoMergeState, queue: QueueRecord): void {
   let rows: string[]
   try {
@@ -264,9 +264,7 @@ function forgetNotAdmitted(state: AutoMergeState, queue: QueueRecord): void {
     return
   }
   if (!rows.some((line) => NOT_ADMITTED.test(line))) return
-  const taken = new Set(rows.flatMap((line) => /^QUEUE-DUP (\d+)\b/.exec(line)?.[1] ?? []))
   for (const n of queue.prs) {
-    if (taken.has(String(n))) continue
     for (const key of Object.keys(state.tried)) if (key.startsWith(`${n}@`) && state.tried[key] === queue.at) delete state.tried[key]
   }
 }

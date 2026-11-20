@@ -129,7 +129,7 @@
 //     --worker-done-timeout MIN  머지를 알린 worker 의 dispatch 가 끝나기를 기다리는 한도(분). 기본 10. 0 이면 알리기만 한다
 //     --pid-file FILE       같은 PR 의 마무리가 둘 도는 것을 막는다. 이 PR 의 마무리 실행권(lib/finish-claim.ts)을 잡은 뒤 pid 를 쓰고 끝나면 지운다.
 //                           다른 마무리가 쥐고 있으면 `FINISH-RUNNING <PR> pid <pid>` 를 내고 0 으로, 쥔 쪽을 확인하지 못하면 1 로 끝난다
-//                           끝날 때 다시 돌기 표시(<pid 파일>.rerun, 도는 중에 `orch followup done` 이 남긴다)가 있으면 지우고 한 번 더 돈다
+//                           끝날 때 다시 돌기 표시(state/finish-rerun/<PR>, 도는 중에 `orch followup done` 이 남긴다)가 있으면 지우고 한 번 더 돈다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, SEND_TO_WORKER 로 worker 에게 보내는 명령을, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
@@ -1041,7 +1041,7 @@ async function executeMain(argv: string[]): Promise<number> {
     let code = await finish(args, repo)
     // 도는 동안 후속 검증이 끝났으면(orch followup done 이 남긴 표시) 끝난 상태로 한 번 더 돌아 남긴 워크트리와 업무까지 끝낸다
     while (pidFile && claim) {
-      if (!rerunOrRelease(pidFile, claim)) {
+      if (!rerunOrRelease(repo, args.pr, pidFile, claim)) {
         claim = null
         const again = retakeForRerun(repo, args.pr, pidFile)
         if (again.kind === 'lost') process.stderr.write(`finish-pr: 다시 돌기 표시가 있지만 실행권을 확인하지 못했다. 표시는 남겼다: ${again.reason}\n`)

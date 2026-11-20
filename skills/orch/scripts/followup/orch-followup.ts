@@ -10,7 +10,7 @@
 //         보드 파일이 있으면 항목 followup-<PR> 을 done 으로 바꾼다. 실패해도 목록은 끝낸 채 둔다.
 //         이어서 그 PR 의 마무리(finish-pr.ts)를 백그라운드로 다시 띄워 지시서 정리, 업무 완료, 보드 done 까지 가게 한다.
 //         출력은 <orch 루트>/queue/finish-<PR>.out 이고 `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
-//         다시 돌기 표시(<pid 파일>.rerun)를 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
+//         다시 돌기 표시(state/finish-rerun/<PR>)를 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
 //         도는 마무리가 끝날 때 그 요청을 보고 끝난 후속 검증으로 한 번 더 돈다. --no-finish 면 다시 띄우지 않는다. 띄우지 못하면 FINISH-START-FAIL 과 종료 코드 1 이다.
 //         다시 띄우는 마무리에는 처음 마무리의 옵션(항목의 finish_args: 보드, --complete 같은 마지막 PR 표시, 지시서 폴더, 배포 설정)을 그대로 준다.
 //         보드 항목도 그 보드에서 done 으로 바꾼다. --run 을 주면 처음 값 대신 그 값을 넘긴다. 둘 다 없으면 마무리가 설정의 finish.run 을 읽는다
@@ -32,6 +32,7 @@ import { mainCheckout, repoArgProblem } from '../lib/git.ts'
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
 import { scriptCommand } from '../lib/proc.ts'
+import { askRerun } from '../lib/finish-claim.ts'
 import { pidFileAlive } from '../lib/process.ts'
 
 const USAGE = `사용법:
@@ -80,7 +81,7 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
   // 도는 마무리가 이미 대기 경로를 지났을 수 있어, 끝날 때 한 번 더 돌게 표시를 남긴다(규칙은 lib/finish-claim.ts 머리 주석).
   // 표시를 먼저 쓰고 pid 를 본다. 살아 있으면 그 마무리가 끝내기 전에 표시를 본다. 아니면 표시를 둔 채 새 마무리를 띄운다.
   // 새 마무리는 실행권을 잡으면 표시를 지우고, 끝나던 마무리가 아직 쥐고 있어 잡지 못하면 그 마무리가 놓은 뒤 표시를 보고 한 번 더 돈다
-  writeFileSync(`${pidFile}.rerun`, '')
+  askRerun(repo, pr)
   if (pidFileAlive(pidFile)) {
     console.log(`FINISH-RUNNING ${pr} ${pidFile}`)
     return 0

@@ -25,18 +25,31 @@ export const LEFTOVER_MS = 60 * 60 * 1000
 
 export type Seen = { owner: string; key: string }
 
-// 지금 잠금의 owner 와 묘비 이름에 쓸 key. 잠금이 없으면 null
-export function peek(lock: string): Seen | null {
-  let ino: number
-  try {
-    ino = statSync(lock).ino
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw e
+// 지금 잠금의 owner 와 묘비 이름에 쓸 key. 잠금이 없으면 null.
+// inode 를 읽고 owner 를 읽는 사이에 잠금이 놓이고 새 주인이 잡을 수 있다. 그때 앞 잠금의 inode 와 읽지 못한 owner 로 key 를 만들면
+// 회수가 새 주인의 잠금을 옮긴다(PR 568 리뷰). 그래서 owner 를 읽은 뒤 inode 가 그대로인지 다시 보고, 바뀌었으면 처음부터 읽는다.
+// owner 를 읽지 못한 잠금은 한 번 더 읽어도 같을 때만 깨진 잠금으로 본다. afterStat 은 테스트가 그 사이에 끼어드는 자리다
+export function peek(lock: string, afterStat?: () => void): Seen | null {
+  const ino = (): number | null => {
+    try {
+      return statSync(lock).ino
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw e
+    }
   }
-  let owner = ''
-  try { owner = readFileSync(join(lock, 'owner'), 'utf8') } catch { /* 깨진 잠금 */ }
-  return { owner, key: createHash('sha1').update(`${owner}\0${ino}`).digest('hex').slice(0, 16) }
+  let unread = false
+  for (;;) {
+    const before = ino()
+    if (before === null) return null
+    afterStat?.()
+    afterStat = undefined
+    let owner: string | null = null
+    try { owner = readFileSync(join(lock, 'owner'), 'utf8') } catch { /* 깨졌거나 그 사이 놓였다 */ }
+    if (ino() !== before) { unread = false; continue }
+    if (owner === null && !unread) { unread = true; continue }
+    return { owner: owner ?? '', key: createHash('sha1').update(`${owner ?? ''}\0${before}`).digest('hex').slice(0, 16) }
+  }
 }
 
 function held(seen: Seen): boolean {
