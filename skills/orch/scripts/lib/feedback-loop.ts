@@ -1,6 +1,6 @@
 // 여러 저장소의 피드백 조회와 알림 조건. collect는 읽기 전용, notify만 원래 파일을 고친다.
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { acceptedPr, duplicateOf, isCore, parse, scan, type Candidate } from './feedback.ts'
@@ -11,9 +11,10 @@ import { notifyRun } from './run-notice.ts'
 import { moveToTrash } from './spec.ts'
 
 export type FeedbackRepo = { name: string; path: string }
-export type FeedbackRow = { repo: FeedbackRepo; candidate: Candidate; group: string; detail?: string; pr?: number; version?: string }
+export type FeedbackRow = { repo: FeedbackRepo; candidate: Candidate; group: string; detail?: string; pr?: number; version?: string; resultStatus?: string }
 export type FeedbackCollected = { rows: FeedbackRow[]; errors: string[]; core: FeedbackRepo }
 type Pr = { state: string; mergeCommit?: { oid?: string } }
+export function sentMarker(file: string): string { return `${file}.sent` }
 
 export function feedbackRepos(): FeedbackRepo[] {
   const got = orcaJson<{ repos?: Array<{ path?: unknown; displayName?: unknown }> }>(['repo', 'list'])
@@ -89,7 +90,7 @@ export function collectFeedback(repos = feedbackRepos(), trash = join(homedir(),
       for (const name of names.reverse()) {
         const file = join(dir, name)
         const candidate = parse(readFileSync(file, 'utf8'), file, slug)
-        if (candidate?.values.상태.startsWith('반영됨 ') && isCore(candidate)) return { repo, candidate }
+        if (candidate && isCore(candidate) && (candidate.values.상태.startsWith('반영됨 ') || candidate.values.상태.startsWith('기각('))) return { repo, candidate }
       }
     } catch { /* 휴지통에 대표 기록이 없으면 계속 기다린다 */ }
     return null
@@ -116,6 +117,14 @@ export function collectFeedback(repos = feedbackRepos(), trash = join(homedir(),
     const key = duplicate ? (duplicate.includes('/') ? duplicate : `${repo.name}/${duplicate}`) : ''
     const representative = duplicate ? (bySlug.get(key) ?? fromTrash(key)) : null
     const source = representative ?? item
+    if (duplicate && !representative) {
+      rows.push({ ...base, group: '보낼 알림', resultStatus: `기각(대표 없음: ${duplicate})` })
+      continue
+    }
+    if (duplicate && representative?.candidate.values.상태.startsWith('기각(')) {
+      rows.push({ ...base, group: '보낼 알림', resultStatus: `기각(대표 ${duplicate}: ${representative.candidate.values.상태})` })
+      continue
+    }
     const reflected = duplicate ? /^반영됨 #([1-9]\d*) \(([^()]+)\)$/.exec(source.candidate.values.상태) : null
     if (reflected && isCore(source.candidate)) {
       rows.push({ ...base, group: '보낼 알림', pr: Number(reflected[1]), version: reflected[2] })
@@ -153,7 +162,7 @@ export function notifyFeedback(collected: FeedbackCollected, trash: string, deps
   const notices = new Map<string, FeedbackRow[]>()
   for (const row of collected.rows.filter(row => row.group === '보낼 알림' || row.group === '받은 알림')) {
     if (row.group === '받은 알림') continue
-    const status = row.version ? `반영됨 #${row.pr} (${row.version})` : `반영됨 #${row.pr} (저장소 PR)`
+    const status = row.resultStatus ?? (row.version ? `반영됨 #${row.pr} (${row.version})` : `반영됨 #${row.pr} (저장소 PR)`)
     try { saveStatus(row.candidate, status) }
     catch (error) { lines.push(`UPDATE-FAIL ${row.repo.name}\t${row.candidate.slug}\t${(error as Error).message}`); continue }
     lines.push(`UPDATED ${row.repo.name}\t${row.candidate.slug}\t${status}`)
@@ -162,6 +171,7 @@ export function notifyFeedback(collected: FeedbackCollected, trash: string, deps
     notices.set(row.repo.path, group)
   }
   for (const row of collected.rows.filter(row => row.group === '받은 알림' && isCore(row.candidate))) {
+    if (existsSync(sentMarker(row.candidate.file))) continue
     const reflected = /^반영됨 #([1-9]\d*) \(([^()]+)\)$/.exec(row.candidate.values.상태)
     if (reflected) { row.pr = Number(reflected[1]); row.version = reflected[2] === '저장소 PR' ? undefined : reflected[2] }
     const group = notices.get(row.repo.path) ?? []
@@ -171,15 +181,33 @@ export function notifyFeedback(collected: FeedbackCollected, trash: string, deps
   for (const [repoPath, group] of notices) {
     const main = deps.findMain(repoPath)
     if (main.kind !== 'main') { lines.push(`MESSAGE-SKIP ${group[0].repo.name} ${main.kind}`); continue }
-    const body = group.map(row => row.candidate.values.상태.startsWith('기각(') && !duplicateOf(row.candidate)
-      ? `${row.candidate.title}: ${row.candidate.values.상태}`
+    const body = group.map(row => (row.resultStatus ?? row.candidate.values.상태).startsWith('기각(') && (row.resultStatus || !duplicateOf(row.candidate))
+      ? `${row.candidate.title}: ${row.resultStatus ?? row.candidate.values.상태}`
       : `${row.candidate.title}: PR #${row.pr}, 버전 ${row.version ?? '저장소 PR'}`).join('\n')
       + (group.some(row => row.version) ? '\n플러그인 갱신 필요' : '')
+    const marked: string[] = []
+    try {
+      for (const row of group) {
+        const marker = sentMarker(row.candidate.file)
+        writeFileSync(marker, '전송 표시\n', { flag: 'wx' })
+        marked.push(marker)
+      }
+    } catch (error) {
+      for (const marker of marked) unlinkSync(marker)
+      lines.push(`MESSAGE-MARK-FAIL ${group[0].repo.name} ${(error as Error).message}`)
+      continue
+    }
     const sent = deps.notifyRun(main.run, 'FEEDBACK', body, null, { subject: `스킬 개선 결과: ${group[0].repo.name}`, repo: repoPath, source: 'orch-feedback' })
-    if (!sent.ok) { lines.push(`MESSAGE-FAIL ${group[0].repo.name} ${sent.error}`); continue }
+    if (!sent.ok) {
+      for (const marker of marked) unlinkSync(marker)
+      lines.push(`MESSAGE-FAIL ${group[0].repo.name} ${sent.error}`); continue
+    }
     lines.push(`MESSAGE-SENT ${group[0].repo.name} ${group.length}`)
     for (const row of group) {
-      try { lines.push(`TRASHED ${row.repo.name}\t${row.candidate.slug}\t${moveToTrash(row.candidate.file, join(trash, basename(row.repo.path)))}`) }
+      try {
+        lines.push(`TRASHED ${row.repo.name}\t${row.candidate.slug}\t${moveToTrash(row.candidate.file, join(trash, basename(row.repo.path)))}`)
+        unlinkSync(sentMarker(row.candidate.file))
+      }
       catch (error) { lines.push(`TRASH-FAIL ${row.repo.name}\t${row.candidate.slug}\t${(error as Error).message}`) }
     }
   }

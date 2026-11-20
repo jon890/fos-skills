@@ -785,6 +785,50 @@ describe('저장소 판정', () => {
     assert.match(r.stdout, new RegExp(`FEEDBACK-OPEN 2 ${core}`))
   })
 
+  test('fos-skills doctor는 다른 저장소의 옛 메모도 센다', () => {
+    const core = join(tmp, 'fos-skills'), other = join(tmp, 'sample')
+    write(join(core, '.orch', 'feedback', '.keep'), '')
+    write(join(other, '.orch', 'feedback', 'old.md'), '옛 메모\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--repo', core], {
+      env: { FAKE_REPOS: JSON.stringify([{ path: core, displayName: 'fos-skills' }, { path: other, displayName: 'sample' }]) },
+    })
+    assert.equal(r.code, 0, r.stderr)
+    assert.match(r.stdout, new RegExp(`FEEDBACK-OPEN 1 ${core}`))
+  })
+
+  test('core 반영됨과 저장소 몫 중복 기각은 doctor가 각각 한 번 보이고 정리한다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    for (const [slug, target, status] of [
+      ['core', 'core 스킬', '반영됨 #123 (1.2.3)'],
+      ['duplicate', '이 저장소', '기각(중복: 대표)'],
+    ]) {
+      write(join(dir, `${slug}.md`), renderFeedback(slug, {
+        스킬: 'orch (SKILL.md)', 대상: target, 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: status,
+      }))
+    }
+    const args = ['--skip-version', '--skip-questions', '--skill-dir', skill]
+    const first = doctor(args)
+    assert.equal(first.code, 0, first.stderr)
+    assert.match(first.stdout, /FEEDBACK-NOTICE core: 반영됨 #123 \(1\.2\.3\)/)
+    assert.match(first.stdout, /FEEDBACK-NOTICE duplicate: 기각\(중복: 대표\)/)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'core.md')), true)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'duplicate.md')), true)
+    assert.doesNotMatch(doctor(args).stdout, /FEEDBACK-NOTICE/)
+  })
+
+  test('전송 표시가 남은 후보는 doctor가 메시지를 반복하지 않고 정리한다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    write(join(dir, 'sent.md'), renderFeedback('sent', {
+      스킬: 'orch (SKILL.md)', 대상: 'core 스킬', 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: '반영됨 #123 (1.2.3)',
+    }))
+    write(join(dir, 'sent.md.sent'), '전송 표시\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stderr)
+    assert.doesNotMatch(r.stdout, /FEEDBACK-NOTICE/)
+    assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'sent.md')), true)
+    assert.equal(existsSync(join(dir, 'sent.md.sent')), false)
+  })
+
   test('저장소 몫 후보는 그 저장소 PR 머지 뒤 doctor가 한 번 보이고 정리한다', () => {
     const dir = join(tmp, '.orch', 'feedback')
     write(join(dir, 'accepted.md'), renderFeedback('저장소 설정 고침', {

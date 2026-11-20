@@ -176,7 +176,7 @@
 
 import { shellSshAgentLines } from '../lib/ssh-agent.ts'
 import { mainDoctorLines } from '../lib/main-guard.ts'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { bundleRoot, installLayout, staleBundle, staleLoopBundles } from '../lib/loop-bundle.ts'
 import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path'
@@ -194,7 +194,7 @@ import { defaultBase, mainCheckout } from '../lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from '../lib/loop.ts'
 import { orchDir, pathOf } from '../lib/paths.ts'
 import { acceptedPr, isCore, isOpen as feedbackOpen, scan as scanFeedback } from '../lib/feedback.ts'
-import { feedbackRepos, prResult } from '../lib/feedback-loop.ts'
+import { feedbackRepos, prResult, sentMarker } from '../lib/feedback-loop.ts'
 import { moveToTrash } from '../lib/spec.ts'
 import { isOpen, scan as scanStudy } from '../lib/study.ts'
 import { run, withRun } from '../lib/proc.ts'
@@ -495,7 +495,8 @@ function checkFeedback(repo: string): string[] {
     try {
       for (const other of feedbackRepos()) {
         if (mainCheckout(other.path) === repo) continue
-        count += scanFeedback(pathOf('feedback', other.path)).candidates.filter(candidate => feedbackOpen(candidate) && isCore(candidate)).length
+        const remote = scanFeedback(pathOf('feedback', other.path))
+        count += remote.candidates.filter(candidate => feedbackOpen(candidate) && isCore(candidate)).length + remote.legacy.length
       }
     } catch (error) { process.stderr.write(`orch-doctor: 전체 저장소의 개선 후보를 세지 못했다: ${(error as Error).message}\n`) }
   }
@@ -503,13 +504,17 @@ function checkFeedback(repo: string): string[] {
   const trash = process.env.ORCH_FEEDBACK_TRASH || join(homedir(), '.Trash', 'orch-feedback')
   for (const candidate of found.candidates) {
     const status = candidate.values.상태
+    const sent = existsSync(sentMarker(candidate.file))
     const accepted = !isCore(candidate) ? acceptedPr(candidate) : null
     const merged = accepted ? prResult(repo, accepted).state === 'merged' : false
     if (!status.startsWith('반영됨 ') && !status.startsWith('기각(') && !merged) continue
-    if (/^기각\(중복:/.test(status)) continue
+    if (isCore(candidate) && /^기각\(중복:/.test(status)) continue
     const detail = merged ? `저장소 PR #${accepted} 머지됨` : status
-    lines.push(`FEEDBACK-NOTICE ${candidate.title}: ${detail}`)
-    try { moveToTrash(candidate.file, join(trash, basename(repo))) }
+    if (!sent) lines.push(`FEEDBACK-NOTICE ${candidate.title}: ${detail}`)
+    try {
+      moveToTrash(candidate.file, join(trash, basename(repo)))
+      if (sent) unlinkSync(sentMarker(candidate.file))
+    }
     catch (error) { lines.push(`FEEDBACK-TRASH-FAIL ${candidate.file} ${(error as Error).message}`) }
   }
   return lines

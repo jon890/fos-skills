@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
@@ -143,6 +143,71 @@ test('서로 다른 저장소의 같은 이름을 섞지 않고 휴지통의 대
   assert.equal(duplicate?.group, '보낼 알림')
   assert.equal(duplicate?.pr, 2)
   assert.equal(duplicate?.version, '1.1.0')
+})
+
+test('대표와 중복 후보를 한 통으로 알리고 대표의 결과를 중복 후보에 남긴다', () => {
+  candidate(local, 'representative', '채택 #2', 'core 스킬')
+  const duplicate = candidate(local, 'duplicate', '기각(중복: representative)', 'core 스킬')
+  const repos = [{ name: 'fos-skills', path: core }, { name: 'sample', path: local }]
+  const sent: string[] = []
+  const lines = notifyFeedback(collectFeedback(repos), join(root, 'trash'), {
+    findMain: () => ({ kind: 'main', run: 'run', terminal: 'terminal', alive: ['run'] }),
+    notifyRun: (_run, _kind, body) => { sent.push(body); return { ok: true, id: 'sent' } },
+  })
+  assert.equal(sent.length, 1)
+  assert.match(sent[0], /representative: PR #2, 버전 1\.1\.0/)
+  assert.match(sent[0], /duplicate: PR #2, 버전 1\.1\.0/)
+  assert.ok(lines.includes('MESSAGE-SENT sample 2'))
+  assert.equal(parse(readFileSync(join(root, 'trash', 'sample', 'duplicate.md'), 'utf8'))?.values.상태, '반영됨 #2 (1.1.0)')
+  assert.equal(existsSync(duplicate), false)
+})
+
+test('대표가 기각됐거나 없으면 중복 후보에 그 결과를 알린다', () => {
+  candidate(local, 'rejected', '기각(효과 없음)', 'core 스킬')
+  const duplicate = candidate(local, 'duplicate', '기각(중복: rejected)', 'core 스킬')
+  const missing = candidate(local, 'missing', '기각(중복: absent)', 'core 스킬')
+  const repos = [{ name: 'fos-skills', path: core }, { name: 'sample', path: local }]
+  const collected = collectFeedback(repos)
+  assert.equal(collected.rows.find(row => row.candidate.slug === 'duplicate')?.resultStatus, '기각(대표 rejected: 기각(효과 없음))')
+  assert.equal(collected.rows.find(row => row.candidate.slug === 'missing')?.resultStatus, '기각(대표 없음: absent)')
+  const sent: string[] = []
+  notifyFeedback(collected, join(root, 'trash'), {
+    findMain: () => ({ kind: 'main', run: 'run', terminal: 'terminal', alive: ['run'] }),
+    notifyRun: (_run, _kind, body) => { sent.push(body); return { ok: true, id: 'sent' } },
+  })
+  assert.equal(sent.length, 1)
+  assert.match(sent[0], /대표 rejected: 기각\(효과 없음\)/)
+  assert.match(sent[0], /대표 없음: absent/)
+  assert.equal(existsSync(duplicate), false)
+  assert.equal(existsSync(missing), false)
+})
+
+test('휴지통에 옮긴 기각 대표도 나중에 생긴 중복 후보의 결과로 쓴다', () => {
+  candidate(local, 'rejected', '기각(효과 없음)', 'core 스킬')
+  const repos = [{ name: 'fos-skills', path: core }, { name: 'sample', path: local }]
+  const trash = join(root, 'trash')
+  notifyFeedback(collectFeedback(repos, trash), trash, {
+    findMain: () => ({ kind: 'main', run: 'run', terminal: 'terminal', alive: ['run'] }),
+    notifyRun: () => ({ ok: true, id: 'sent' }),
+  })
+  candidate(local, 'duplicate', '기각(중복: rejected)', 'core 스킬')
+  assert.equal(collectFeedback(repos, trash).rows[0].resultStatus, '기각(대표 rejected: 기각(효과 없음))')
+})
+
+test('메시지 뒤 휴지통 이동이 실패해도 같은 알림을 다시 보내지 않는다', () => {
+  const file = candidate(local, 'accepted', '채택 #2', 'core 스킬')
+  const repos = [{ name: 'fos-skills', path: core }, { name: 'sample', path: local }]
+  const trash = join(root, 'trash')
+  writeFileSync(trash, '휴지통 경로를 파일로 막는다')
+  let count = 0
+  const deps = {
+    findMain: () => ({ kind: 'main' as const, run: 'run', terminal: 'terminal', alive: ['run'] }),
+    notifyRun: () => { count++; return { ok: true as const, id: 'sent' } },
+  }
+  assert.ok(notifyFeedback(collectFeedback(repos), trash, deps).some(line => line.startsWith('TRASH-FAIL')))
+  assert.equal(existsSync(`${file}.sent`), true)
+  notifyFeedback(collectFeedback(repos), trash, deps)
+  assert.equal(count, 1)
 })
 
 test('실제 Orca 목록 형식과 읽지 못하는 저장소를 명령에서 표시한다', () => {
