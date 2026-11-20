@@ -32,7 +32,7 @@ import { mainCheckout, repoArgProblem } from '../lib/git.ts'
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
 import { scriptCommand } from '../lib/proc.ts'
-import { pidFileAlive, takeRerun } from '../lib/process.ts'
+import { pidFileAlive } from '../lib/process.ts'
 
 const USAGE = `사용법:
   orch followup list [--all] [--repo DIR]
@@ -77,11 +77,11 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
   const dir = pathOf('queue', repo)
   makeParent(join(dir, 'x'), repo)
   const pidFile = join(dir, `finish-${pr}.pid`)
-  // 도는 마무리가 이미 대기 경로를 지났을 수 있어, 끝날 때 한 번 더 돌게 표시를 남긴다(finish-pr.ts 의 rerunAfter).
-  // 표시를 먼저 쓰고 pid 를 본다. 살아 있으면 그 마무리가 끝내기 전에 표시를 본다. 죽었으면 표시를 내가 가져가 새로 띄운다.
-  // 그 사이 끝나던 마무리가 먼저 가져갔으면 그 마무리가 한 번 더 돈다
+  // 도는 마무리가 이미 대기 경로를 지났을 수 있어, 끝날 때 한 번 더 돌게 표시를 남긴다(규칙은 lib/finish-claim.ts 머리 주석).
+  // 표시를 먼저 쓰고 pid 를 본다. 살아 있으면 그 마무리가 끝내기 전에 표시를 본다. 아니면 표시를 둔 채 새 마무리를 띄운다.
+  // 새 마무리는 실행권을 잡으면 표시를 지우고, 끝나던 마무리가 아직 쥐고 있어 잡지 못하면 그 마무리가 놓은 뒤 표시를 보고 한 번 더 돈다
   writeFileSync(`${pidFile}.rerun`, '')
-  if (pidFileAlive(pidFile) || !takeRerun(pidFile)) {
+  if (pidFileAlive(pidFile)) {
     console.log(`FINISH-RUNNING ${pr} ${pidFile}`)
     return 0
   }

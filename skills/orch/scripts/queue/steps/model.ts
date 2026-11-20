@@ -157,6 +157,8 @@ export class StepState {
   repoDir = ''
   queueLock = ''
   queueLockToken = ''
+  // 이 큐가 쥔 PR 실행권의 token(부모가 넘긴 것과 스스로 잡은 것). 보류로 뺀 PR 의 실행권을 놓는 데 쓴다(lib/pr-claim.ts)
+  claimTokens: string[] = []
   // 큐를 시작할 때 있던 핸들러 파일의 이벤트. 입력에 조회가 드는 이벤트(after-merge)와 검사를 켜는 이벤트(verify-merged)가 본다
   hooks = new Set<QueueEvent>()
   // 합친 사본 검사를 하는가. hooks/verify-merged.ts 가 있으면 한다

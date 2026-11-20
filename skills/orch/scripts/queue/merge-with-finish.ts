@@ -6,15 +6,24 @@
 // 사용법:
 //     merge-with-finish.ts [래퍼 옵션] [merge_queue.ts 옵션] PR[!|~][:머지 전 명령] ...
 //
+//     0. PR 마다 머지 큐 실행권(lib/pr-claim.ts 의 queue)을 잡는다. 같은 PR 을 다른 머지 큐(상주 루프의 자동 머지, 다른 코디네이터 호출)가
+//        이미 맡았으면 `QUEUE-DUP <PR> 이미 진행 중이다: pid <pid> <시작 시각> <명령과 Run>` 을 내고 마무리도 머지 큐도 걸지 않고 4 로 끝난다.
+//        머지와 마무리는 진행 중인 쪽이 끝낸다. 인자의 PR 가운데 하나만 겹쳐도 아무것도 걸지 않는다. 겹친 PR 을 빼고 다시 부른다.
+//        번호가 낮은 PR 부터 잡고 처음 막힌 PR 에서 멈추므로 줄은 그 PR 하나만 나온다(lib/pr-claim.ts 의 claimPrs)
+//        쥔 쪽이 살아 있는지 읽지 못하면(ps 실패) `QUEUE-CLAIM-FAIL <이유>` 와 1 로 끝난다. 아무것도 걸지 않았으니 같은 명령을 다시 부른다.
+//        실행권은 이 프로세스가 끝날 때 놓고, 죽으면 다음 호출이 회수한다. 큐가 보류로 뺀 PR 의 실행권은 자식 큐가 그 자리에서 놓는다. 자식 머지 큐에는 ORCH_QUEUE_CLAIM_TOKEN 으로 넘긴다.
+//        SIGTERM, SIGINT, SIGHUP 을 받으면 자식 머지 큐에 넘기고 그 종료를 기다린 뒤 끝난다. 실행권을 놓은 채 자식 큐만 남지 않게 하려는 것이다
 //     1. PR 마다 `finish-pr.ts` 를 백그라운드로 시작한다. 출력은 <로그 폴더>/finish-<PR>.out 이다.
 //        띄우기 전에 마무리 스크립트 파일이 있는지 보고, 띄운 프로세스가 시작된 것을 확인한 뒤에 `마무리 시작` 줄을 낸다.
 //        스크립트가 없거나 띄우지 못하면(인터프리터가 없다 같은 것) 이유를 stderr 에 내고 머지 큐를 걸지 않고 1 로 끝난다.
 //        마무리 없이 머지하면 머지 뒤 정리와 업무 완료가 빠지기 때문이다. 앞 PR 의 마무리는 이미 떠 있으면 그대로 돈다
 //        그 PR 의 마무리가 이미 돌고 있으면(<로그 폴더>/finish-<PR>.pid 의 프로세스가 살아 있으면) 새로 시작하지 않는다.
+//        이 확인은 알리려는 것이고, 겹침은 마무리가 스스로 막는다(lib/finish-claim.ts). 확인과 띄우기 사이에 다른 마무리가 시작했으면 띄운 마무리가 FINISH-RUNNING 으로 끝난다
 //        신호를 보낼 권한이 없는 pid(EPERM)도 살아 있는 것으로 본다(lib/process.ts 의 alive).
 //        머지 큐가 STOP 으로 멈춘 뒤 남은 PR 만 다시 걸어도 마무리가 겹치지 않는다
 //     2. `merge_queue.ts` 를 같은 인자로 돌리고 그 종료 코드로 끝난다.
 //        큐가 코드 2 로 시작을 거절하거나 마무리 시작이 실패하면, 이번 호출이 새로 띄운 마무리만 끝낸다. 이미 돌던 마무리는 남긴다.
+//        끝낸 마무리의 pid 파일은 지우지 않는다. 죽은 pid 는 돌지 않는 것으로 읽히고, 지우다가 그 사이 시작한 마무리의 pid 파일을 지울 수 있다
 //        오래 걸리므로 Bash 도구의 run_in_background 로 건다. 셸의 `&` 나 nohup 은 쓰지 않는다
 //     짧은 출력(진입점의 orch queue merge, lib/output.ts)은 `마무리 시작` 줄 대신 `FINISH-STARTED <PR> <로그>`, 이미 돌면 `FINISH-RUNNING <PR> <pid 파일>` 이고,
 //        머지 큐에 신호를 넘겨 그 짧은 줄(MERGED, STOP, QUEUE-DONE 같은 것)이 잇는다. 마무리 로그는 지금 출력 그대로다
@@ -70,13 +79,14 @@
 // 옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
 //
 // 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류나 삭제한 옵션 포함)이거나
-//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
+//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못했거나 실행권을 확인하지 못해(QUEUE-CLAIM-FAIL) 머지 큐를 걸지 않았다는 뜻이기도 하다.
+//           4 는 같은 PR 을 다른 머지 큐가 이미 맡았다(QUEUE-DUP)
 
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -89,7 +99,9 @@ import { FINISH_KEYS, FINISH_OPTIONS } from '../lib/finish-options.ts'
 import { isFile, real } from '../lib/fs.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { makeParent, pathOf, requireMigrated } from '../lib/paths.ts'
-import { NO_LIMIT_MS, runInherit, scriptCommand } from '../lib/proc.ts'
+import { claimPrs, newToken, refusal, releaseClaim } from '../lib/pr-claim.ts'
+import type { Claim } from '../lib/pr-claim.ts'
+import { NO_LIMIT_MS, runInherit, scriptCommand, stopChildren } from '../lib/proc.ts'
 import { pidFileAlive } from '../lib/process.ts'
 import { queueDefaults } from '../lib/queue-defaults.ts'
 import { QUEUE_VALUE_OPTIONS } from '../lib/queue-options.ts'
@@ -310,17 +322,17 @@ async function startFinish(wrapper: Wrapper, pr: PrArg, started: StartedFinish[]
     process.stderr.write(`merge-with-finish: 마무리를 띄우지 못했다: PR ${pr.number}: ${launched}\n`)
     return false
   }
-  started.push({ child: launched, pidFile })
+  started.push({ child: launched })
   const note = pr.mark === '!' ? '업무의 마지막 PR' : pr.mark === '~' ? '중간 PR' : '마지막 PR 인지는 배포 뒤 판정'
   out(`마무리 시작: PR ${pr.number} (${note}) -> ${outFile}`)
   return true
 }
 
-type StartedFinish = { child: ChildProcess; pidFile: string }
+type StartedFinish = { child: ChildProcess }
 
 // 이번 호출이 시작한 자식 핸들로만 끝낸다. 앞서 돌던 다른 큐의 마무리는 건드리지 않는다.
 async function stopFinishes(started: StartedFinish[]): Promise<void> {
-  await Promise.all(started.map(async ({ child, pidFile }) => {
+  await Promise.all(started.map(async ({ child }) => {
     const pid = child.pid!
     if (child.exitCode === null && child.signalCode === null) {
       const ended = new Promise<void>((resolve) => child.once('exit', () => resolve()))
@@ -332,9 +344,6 @@ async function stopFinishes(started: StartedFinish[]): Promise<void> {
       await Promise.race([ended, sleep(1000)])
       if (child.exitCode === null && child.signalCode === null) { signal('SIGKILL'); await ended }
     }
-    try {
-      if (readFileSync(pidFile, 'utf8').trim() === String(pid)) unlinkSync(pidFile)
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   }))
 }
 
@@ -390,6 +399,16 @@ async function main(argv: string[]): Promise<number> {
     wrapper.finishArg.push('--not-main', wrapper.notMain)
     queue.push('--not-main', wrapper.notMain)
   }
+  // 머리 주석의 0. 마무리를 띄우기 전에 잡는다. 실행권 없이 띄운 마무리를 거절 뒤에 끝내면 진행 중인 쪽의 마무리를 끝낼 수 있다
+  const token = newToken()
+  const run = wrapper.run ?? pairValue(wrapper.finishArg, '--run')
+  const claimed = claimPrs(wrapper.repo, 'queue', prs.map((pr) => pr.number), { token, note: `queue merge${run ? ` run=${run}` : ''}` })
+  if (claimed.kind !== 'ok') {
+    const refused = refusal(claimed)
+    for (const line of refused.lines) out(line)
+    return refused.code
+  }
+  claims = claimed.claims
   const admissionDir = mkdtempSync(join(tmpdir(), 'merge-queue-admission-'))
   const accepted = join(admissionDir, 'accepted')
   const started: StartedFinish[] = []
@@ -399,14 +418,31 @@ async function main(argv: string[]): Promise<number> {
       for (const pr of prs) if (!(await startFinish(wrapper, pr, started))) return 1
     }
     // 코드 2 여도 큐가 이미 시작됐으면 머지된 PR 의 마무리를 남긴다.
-    const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || scriptPath('merge_queue'), queue), { timeoutMs: NO_LIMIT_MS, env: { ...shortEnv(), MERGE_QUEUE_ACCEPTED_FILE: accepted } })
+    const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || scriptPath('merge_queue'), queue), { timeoutMs: NO_LIMIT_MS, env: { ...shortEnv(), MERGE_QUEUE_ACCEPTED_FILE: accepted, ORCH_QUEUE_CLAIM_TOKEN: token } })
     keepFinishes = done.code !== 2 || existsSync(accepted)
     return done.code
   } finally {
     try { if (!keepFinishes) await stopFinishes(started) }
-    finally { rmSync(admissionDir, { recursive: true, force: true }) }
+    finally {
+      rmSync(admissionDir, { recursive: true, force: true })
+      for (const claim of claims) releaseClaim(claim)
+      claims = []
+    }
   }
 }
+
+let claims: Claim[] = []
+
+// 자식 머지 큐가 신호를 처리하고(진행 중인 자식을 끊고 잠금을 푼다) 끝날 시간. 그 뒤에도 살아 있으면 KILL 이다
+const QUEUE_STOP_GRACE_MS = 10_000
+
+// 자식 머지 큐에 넘기고 runInherit 이 그 종료 코드로 돌아오게 한다. 실행권은 main 의 finally 가 놓는다
+function onSignal(signal: NodeJS.Signals): void {
+  void stopChildren(signal, QUEUE_STOP_GRACE_MS)
+}
+process.on('SIGTERM', onSignal)
+process.on('SIGINT', onSignal)
+process.on('SIGHUP', onSignal)
 
 main(process.argv.slice(2)).then(
   (code) => {

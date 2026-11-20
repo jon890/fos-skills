@@ -10,6 +10,9 @@
 //   놓기: owner 가 내 토큰일 때 잠금을 <잠금>.released-<토큰> 으로 rename 한 뒤 지운다
 // 묘비와 남은 임시 디렉터리는 한 시간이 지나면 다음 잡기가 지운다. 묘비는 회수한 시각부터 센다. 회수가 그보다 오래 멈추면 막지 못한다.
 // waitMs 안에 잡지 못하면 OwnerLockBusy 를 던진다. 부르는 쪽은 실패로 끝내고 잠금 없이 넘어가지 않는다.
+//
+// tryTake, release, peek, reclaimDead 는 프로세스가 사는 동안 쥐는 PR 실행권(lib/pr-claim.ts)도 쓴다. owner 의 내용과
+// 쥔 쪽이 살아 있는지의 판정은 부르는 쪽이 정하고, 디렉터리 rename 규칙만 여기 것을 쓴다.
 
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
@@ -18,7 +21,7 @@ import { alive } from './process.ts'
 
 export class OwnerLockBusy extends Error {}
 
-const LEFTOVER_MS = 60 * 60 * 1000
+export const LEFTOVER_MS = 60 * 60 * 1000
 
 export type Seen = { owner: string; key: string }
 
@@ -55,8 +58,9 @@ export function reclaimDead(lock: string, seen: Seen): boolean {
   return true
 }
 
-function tryTake(lock: string, token: string): boolean {
-  const fresh = `${lock}.new-${randomUUID()}`
+// 머리 주석의 「잡기」. token 은 owner 파일에 쓸 내용, id 는 임시 디렉터리 이름에 붙일 나만의 값이다
+export function tryTake(lock: string, token: string, id: string = randomUUID()): boolean {
+  const fresh = `${lock}.new-${id}`
   mkdirSync(fresh, { recursive: true })
   writeFileSync(join(fresh, 'owner'), token)
   try {
@@ -69,6 +73,18 @@ function tryTake(lock: string, token: string): boolean {
     throw e
   }
 }
+
+// 머리 주석의 「놓기」. owner 가 내가 쓴 내용일 때만 놓는다. suffix 는 놓는 디렉터리 이름에 붙일 나만의 값이다
+export function release(lock: string, owner: string, suffix: string): void {
+  if (peek(lock)?.owner !== owner) return
+  const gone = `${lock}.released-${suffix}`
+  try {
+    renameSync(lock, gone)
+    rmSync(gone, { recursive: true, force: true })
+  } catch { /* 이미 없다 */ }
+}
+
+export const LEFTOVER = /\.(dead|new|released)-/
 
 function sweepLeftovers(lock: string): void {
   const dir = dirname(lock)
@@ -106,12 +122,6 @@ export function withOwnerLock<T>(lock: string, work: () => T, opts: { waitMs?: n
   try {
     return work()
   } finally {
-    if (peek(lock)?.owner === token) {
-      const gone = `${lock}.released-${token.split(' ')[1]}`
-      try {
-        renameSync(lock, gone)
-        rmSync(gone, { recursive: true, force: true })
-      } catch { /* 이미 없다 */ }
-    }
+    release(lock, token, token.split(' ')[1])
   }
 }

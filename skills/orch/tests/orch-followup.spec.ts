@@ -109,11 +109,12 @@ test('done 에 --run 을 주면 처음 마무리의 --run 대신 그 값을 준�
   assert.match(readFileSync(c.log, 'utf8'), /^finish 787 --repo \S+ --pid-file \S+ --intermediate --run run_2 --not-main 테스트$/m)
 })
 
-test('같은 PR 의 마무리가 없으면 남긴 다시 돌기 표시를 스스로 가져가 새로 띄운다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, (t) => {
+test('같은 PR 의 마무리가 없으면 다시 돌기 표시를 둔 채 새로 띄운다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, (t) => {
   const c = setup(t)
   const r = c.run(['done', '787', '--not-main', '테스트'])
   assert.match(r.stdout, /^FINISH-STARTED 787 /m)
-  assert.equal(existsSync(join(c.repo, '.orch', 'queue', 'finish-787.pid.rerun')), false)
+  // 표시는 띄운 마무리가 실행권을 잡으면 지운다. 끝나던 마무리가 아직 쥐고 있어 잡지 못하면 그 마무리가 놓은 뒤 가져간다(lib-finish-claim.spec.ts)
+  assert.equal(existsSync(join(c.repo, '.orch', 'queue', 'finish-787.pid.rerun')), true)
 })
 
 test('--no-finish 면 마무리를 띄우지 않고, 이미 끝난 항목은 ALREADY, 없는 항목은 MISSING 과 1 이다', (t) => {

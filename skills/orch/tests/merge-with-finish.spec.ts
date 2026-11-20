@@ -5,8 +5,10 @@
 // (tests/fixtures/merge-queue-fakes.ts). GitHub 와 Orca 에는 닿지 않는다.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import { once } from 'node:events'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -130,7 +132,8 @@ test('큐 시작 거절은 새 마무리만 끝내고 이미 돌던 마무리는
   assert.equal(result.code, 2, both(result))
   const freshPid = Number(readFileSync(recorded, 'utf8'))
   assert.throws(() => process.kill(freshPid, 0), /ESRCH/)
-  assert.equal(existsSync(freshPidFile), false)
+  // 끝낸 마무리의 pid 파일은 지우지 않는다. 죽은 pid 라 돌지 않는 것으로 읽힌다
+  assert.equal(readFileSync(freshPidFile, 'utf8'), String(freshPid))
   assert.doesNotThrow(() => process.kill(oldPid, 0))
 })
 
@@ -351,10 +354,11 @@ describe('merge-with-finish 마무리', { skip: !HAS_BASH && 'bash 가 필요하
     has(r.stderr, `마무리를 띄우지 못했다: PR 449: 마무리 스크립트가 없다: ${missing}`)
     lacks(r.stdout, '마무리 시작')
     // 인터프리터(python3)를 PATH 에서 찾지 못하면 띄우기가 실패한다. 스크립트 파일은 있다.
-    // --repo 검사가 git 을 부르므로 PATH 에는 git 만 둔다
+    // --repo 검사가 git 을 부르므로 PATH 에는 git 과 ps 만 둔다
     const onlyGit = join(c.tmp, 'only-git')
     mkdirSync(onlyGit)
-    symlinkSync(spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim(), join(onlyGit, 'git'))
+    // 실행권을 잡을 때 ps 로 이 프로세스의 시작 시각을 읽는다
+    for (const tool of ['git', 'ps']) symlinkSync(spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim(), join(onlyGit, tool))
     r = await c.wrap(['449'], { PATH: onlyGit })
     assert.equal(r.code, 1, both(r))
     has(r.stderr, '마무리를 띄우지 못했다: PR 449: python3 를 실행하지 못했다')
@@ -840,5 +844,179 @@ describe('짧은 출력', () => {
     const r = await c.wrap(['--repo', c.tmp, '12'])
     assert.match(r.stdout, /^마무리 시작: PR 12 /m)
     assert.deepEqual(await c.lines('queue out='), ['queue out='])
+  })
+})
+
+// 같은 PR 의 머지 큐는 실행권을 쥔 한 곳만 돈다(lib/pr-claim.ts, docs/features/queue-dedupe/design.md).
+// 가짜 머지 큐(slow-queue.ts)는 인자를 적고 FAKE_QUEUE_GATE 파일이 생길 때까지 돈다. 앞 큐가 도는 동안의 두 번째 호출을 본다
+const SLOW_QUEUE = `import fs from 'node:fs'
+import { setTimeout as sleep } from 'node:timers/promises'
+fs.appendFileSync(process.env.FAKE_LOG!, 'queue ' + process.argv.slice(2).join(' ') + '\\n')
+const deadline = Date.now() + 30000
+while (!fs.existsSync(process.env.FAKE_QUEUE_GATE!) && Date.now() < deadline) await sleep(20)
+console.log('QUEUE-DONE')
+`
+const MERGE_QUEUE = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
+const CLAIM_HOLDER = fileURLToPath(new URL('./fixtures/claim-holder.ts', import.meta.url))
+
+describe('같은 PR 의 머지 큐 중복 막기', { skip: !HAS_BASH && 'bash 가 필요하다' }, () => {
+  type Slow = Ctx & { gate: string; slowEnv: Record<string, string>; claims: string; open: () => void; start: (args: string[]) => { child: ChildProcess; done: Promise<Done> } }
+
+  function slow(t: TestContext): Slow {
+    const c = setup(t)
+    const queue = join(c.tmp, 'slow-queue.ts')
+    writeFileSync(queue, SLOW_QUEUE)
+    const gate = join(c.tmp, 'gate')
+    const slowEnv = { MERGE_QUEUE: queue, FAKE_QUEUE_GATE: gate }
+    // 끝날 때도 한 번 부른다. 임시 폴더를 먼저 지웠으면 가짜 큐는 이미 죽인 뒤다
+    const open = () => { try { writeFileSync(gate, '') } catch { /* 폴더를 지웠다 */ } }
+    t.after(open)
+    return {
+      ...c,
+      gate,
+      slowEnv,
+      claims: join(c.tmp, '.orch', 'state', 'pr-claims'),
+      open,
+      // pid 가 필요한 호출(신호, 죽이기)은 자식 핸들을 함께 낸다
+      start: (args) => {
+        const child = spawn(NODE[0], [...NODE.slice(1), '--finish-log-dir', c.logs, ...args], { cwd: c.tmp, env: { ...c.env, ...slowEnv }, stdio: ['ignore', 'pipe', 'pipe'] })
+        t.after(() => child.kill('SIGKILL'))
+        let stdout = ''
+        let stderr = ''
+        child.stdout!.on('data', (chunk) => { stdout += chunk })
+        child.stderr!.on('data', (chunk) => { stderr += chunk })
+        return { child, done: once(child, 'close').then(([code]) => ({ code: code as number | null, stdout, stderr })) }
+      },
+    }
+  }
+
+  // 2026-11-20 의 순서: 상주 루프의 자동 머지가 건 큐가 도는 동안 코디네이터가 같은 PR 을 다시 걸었다
+  test('앞 큐가 도는 동안 같은 PR 을 다시 걸면 QUEUE-DUP 과 진행 중인 쪽을 알리고 4 로 끝난다. 마무리도 머지 큐도 걸지 않는다', async (t) => {
+    const c = slow(t)
+    const first = c.start(['--run', 'run_loop', '1'])
+    assert.equal((await c.lines('queue ')).length, 1)
+    await c.finishes(1)
+    const second = await c.wrap(['--run', 'run_me', '1'], c.slowEnv)
+    assert.equal(second.code, 4, both(second))
+    assert.match(second.stdout, new RegExp(`^QUEUE-DUP 1 이미 진행 중이다: pid ${first.child.pid} \\S+ queue merge run=run_loop$`, 'm'))
+    lacks(second.stdout, '마무리')
+    c.open()
+    assert.equal((await first.done).code, 0)
+    assert.equal((await c.lines('queue ')).length, 1)
+    assert.equal((await c.lines('finish ')).length, 1)
+    // 앞 큐가 끝나면 실행권을 놓아 다시 걸 수 있다
+    assert.equal(existsSync(c.claims), false)
+    const third = await c.wrap(['--no-finish', '1'], c.slowEnv)
+    assert.equal(third.code, 0, both(third))
+  })
+
+  test('짧은 출력(orch queue merge)에서도 QUEUE-DUP 줄이 나온다', async (t) => {
+    const c = slow(t)
+    c.start(['1'])
+    await c.lines('queue ')
+    const second = await c.wrap(['1'], { ...c.slowEnv, ORCH_OUTPUT: 'short' })
+    assert.equal(second.code, 4, both(second))
+    assert.match(second.stdout, /^QUEUE-DUP 1 이미 진행 중이다: pid \d+ /m)
+  })
+
+  // PR 558 리뷰: 두 호출이 겹치면 둘 다 기록이 없는 것을 보고 각자 마무리를 띄웠다.
+  // 인자 순서가 달라도 낮은 번호부터 잡으므로 하나씩 잡고 둘 다 물러나지 않는다
+  test('같은 PR 을 동시에 걸면 한쪽만 마무리와 머지 큐를 걸고 다른 쪽은 QUEUE-DUP 으로 끝난다', async (t) => {
+    const c = slow(t)
+    const both2 = [c.start(['1', '2']), c.start(['2', '1'])]
+    const loser = await Promise.race(both2.map((one) => one.done))
+    assert.equal(loser.code, 4, both(loser))
+    assert.match(loser.stdout, /^QUEUE-DUP [12] 이미 진행 중이다/m)
+    lacks(loser.stdout, '마무리 시작')
+    c.open()
+    const codes = (await Promise.all(both2.map((one) => one.done))).map((r) => r.code).sort()
+    assert.deepEqual(codes, [0, 4])
+    assert.equal((await c.lines('queue ')).length, 1)
+    assert.equal((await c.lines('finish ', 2)).length, 2)
+  })
+
+  test('인자의 PR 가운데 하나만 다른 큐가 맡았어도 아무것도 걸지 않고, 잡았던 실행권을 놓는다', async (t) => {
+    const c = slow(t)
+    c.start(['2'])
+    await c.lines('queue ')
+    const refused = await c.wrap(['1', '2', '3'], c.slowEnv)
+    assert.equal(refused.code, 4, both(refused))
+    assert.equal(count(refused.stdout, 'QUEUE-DUP'), 1)
+    has(refused.stdout, 'QUEUE-DUP 2 ')
+    assert.deepEqual(readdirSync(c.claims), ['queue-2'])
+    assert.equal((await c.lines('finish ')).length, 1)
+  })
+
+  // PR 558 리뷰: 맡은 PR 을 확인하지 못했는데 그대로 큐를 걸었다
+  test('쥔 쪽이 살아 있는지 읽지 못하면 QUEUE-CLAIM-FAIL 과 1 로 끝나고 아무것도 걸지 않는다', async (t) => {
+    const c = slow(t)
+    const first = c.start(['1'])
+    await c.lines('queue ')
+    await c.finishes(1)
+    const ps = join(c.tmp, 'ps')
+    writeFileSync(ps, '#!/bin/sh\nfor a in "$@"; do [ "$a" = "$FAIL_PID" ] && exit 1; done\nexec ps "$@"\n')
+    chmodSync(ps, 0o755)
+    const r = await c.wrap(['1'], { ...c.slowEnv, PS: ps, FAIL_PID: String(first.child.pid) })
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'QUEUE-CLAIM-FAIL ')
+    lacks(r.stdout, '마무리')
+    assert.equal((await c.lines('queue ')).length, 1)
+    assert.equal(JSON.parse(readFileSync(join(c.claims, 'queue-1', 'owner'), 'utf8')).pid, first.child.pid)
+  })
+
+  // PR 558 리뷰: 잠금을 쥔 프로세스가 도중에 종료된 상태를 다음 호출이 회수하지 못했다
+  test('큐를 건 프로세스가 죽으면 남은 실행권을 다음 호출이 회수해 건다', async (t) => {
+    const c = slow(t)
+    const first = c.start(['--no-finish', '1'])
+    await c.lines('queue ')
+    // 자식 머지 큐가 출력을 물려받아 살아 있으므로 close 가 아니라 exit 를 기다린다
+    const exited = once(first.child, 'exit')
+    first.child.kill('SIGKILL')
+    await exited
+    assert.deepEqual(readdirSync(c.claims), ['queue-1'])
+    c.open()
+    const r = await c.wrap(['--no-finish', '1'], c.slowEnv)
+    assert.equal(r.code, 0, both(r))
+    assert.equal((await c.lines('queue ', 2)).length, 2)
+    // 회수한 죽은 실행권의 묘비만 남는다
+    assert.deepEqual(readdirSync(c.claims).filter((name) => !name.includes('.dead-')), [])
+  })
+
+  test('SIGTERM 을 받으면 자식 머지 큐를 끝낸 뒤 실행권을 놓고 끝난다', async (t) => {
+    const c = slow(t)
+    const first = c.start(['--no-finish', '1'])
+    await c.lines('queue ')
+    first.child.kill('SIGTERM')
+    const ended = await first.done
+    assert.equal(ended.code, 143, both(ended))
+    lacks(ended.stdout, 'QUEUE-DONE')
+    assert.equal(existsSync(c.claims), false)
+  })
+
+  test('직접 부른 머지 큐(orch queue run)도 다른 큐가 맡은 PR 은 QUEUE-DUP 과 4 로 끝난다. 부모가 넘긴 실행권은 제 것으로 읽고, 보류로 뺀 PR 의 실행권은 놓는다', async (t) => {
+    const c = setup(t)
+    const holder = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', CLAIM_HOLDER, 'take', join(c.tmp, '.orch', 'state', 'pr-claims', 'queue-7'), 'queue merge run=run_a'], { stdio: ['pipe', 'pipe', 'inherit'] })
+    t.after(() => holder.kill('SIGKILL'))
+    let text = ''
+    for await (const chunk of holder.stdout!) {
+      text += chunk
+      if (text.includes('\n')) break
+    }
+    const held = JSON.parse(text) as { pid: number; kind: string; claim: { token: string } }
+    assert.equal(held.kind, 'taken', text)
+    const env = { ...c.env, GH: '/usr/bin/false', MERGE_QUEUE_SLEEP_SCALE: '0', MERGE_QUEUE_GH_RETRIES: '1', MERGE_QUEUE_GH_RETRY_SECONDS: '0' }
+    const queue = [process.execPath, '--disable-warning=ExperimentalWarning', MERGE_QUEUE, '--repo', c.tmp, '--no-sweep', '7']
+    const refused = await spawnDone(queue, { cwd: c.tmp, env })
+    assert.equal(refused.code, 4, both(refused))
+    assert.match(refused.stdout, new RegExp(`^QUEUE-DUP 7 이미 진행 중이다: pid ${held.pid} \\S+ queue merge run=run_a$`, 'm'))
+    const inherited = await spawnDone(queue, { cwd: c.tmp, env: { ...env, ORCH_QUEUE_CLAIM_TOKEN: held.claim.token } })
+    lacks(inherited.stdout, 'QUEUE-DUP')
+    assert.notEqual(inherited.code, 4, both(inherited))
+    // PR 조회가 실패해 큐가 이 PR 을 보류로 뺐다. 뺀 PR 의 실행권은 쥔 프로세스가 살아 있어도 그 자리에서 놓아,
+    // 보류가 풀린 뒤 다시 건 호출이 QUEUE-DUP 으로 거절되지 않는다(독립 리뷰의 순서)
+    has(inherited.stdout, 'STOP 7 ')
+    assert.equal(existsSync(join(c.tmp, '.orch', 'state', 'pr-claims', 'queue-7')), false)
+    const again = await spawnDone(queue, { cwd: c.tmp, env })
+    lacks(again.stdout, 'QUEUE-DUP')
   })
 })
