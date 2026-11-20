@@ -68,7 +68,7 @@ squash 머지 뒤에는 git 이력에 계획서가 남지 않아, 스크립트�
 
 새 기능은 [index 양식](../templates/index.json)을 읽고 스펙·설계·요구사항·검증 계획 경로를 채운다. 기능 없는 기존 작업은 spec/design/requirements/verification_plan 을 생략할 수 있다.
 
-`pr_scope` 와 `deferred` 는 [`plan-size.md`](plan-size.md) 가 소유한다.
+`pr_scope`, `deferred`, `size_exception`(사용자가 정한 크기 예외의 사유, 선택)은 [`plan-size.md`](plan-size.md) 가 소유한다.
 
 계획 단계에서 이미 작성한 ADR 등 문서만으로 충족하는 요구사항은 `plan_commit_requirements` 객체에 `"REQ2": "docs/adr/choice.md"` 처럼 적는다.
 키는 이번 PR 의 `requirements` 에 있는 ID, 값은 저장소 루트 기준으로 내용이 있는 Markdown 문서 경로다. 그 ID 는 phase 에 다시 배정하지 않아도 된다.

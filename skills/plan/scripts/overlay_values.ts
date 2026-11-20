@@ -41,7 +41,8 @@ export function codes(value: string): string[] {
   return found.length > 0 ? found : [pyStrip(value)]
 }
 
-// 정수, 또는 `<JSON 파일>#<키.키>` 가 가리키는 정수를 낸다. 읽지 못하면 ValueError 다
+// 정수, `<JSON 파일>#<키.키>`, 또는 `<JS·TS 파일>#<상수 이름>` 이 가리키는 정수를 낸다. 읽지 못하면 ValueError 다.
+// JS·TS 파일은 `const 이름 = 정수` 선언 한 줄을 읽는다. 저장소의 크기 검사 스크립트가 상한을 상수로 둘 때 쓴다
 export function number(root: string, value: string): number {
   const text = codes(value)[0]
   if (/^\p{Nd}+$/u.test(text)) return pyInt(text)
@@ -49,6 +50,9 @@ export function number(root: string, value: string): number {
   const rel = at < 0 ? text : text.slice(0, at)
   const keys = at < 0 ? '' : text.slice(at + 1)
   if (at < 0 || !keys) throw new ValueError(`정수나 \`<JSON 파일>#<키>\` 가 아니다: ${text}`)
+  // 값은 저장소 루트 기준 경로다. 절대경로나 `..` 로 저장소 밖 파일을 읽지 않는다
+  if (rel.startsWith('/') || rel.split('/').includes('..')) throw new ValueError(`저장소 루트 아래 경로가 아니다: ${rel}`)
+  if (/\.[cm]?[jt]sx?$/.test(rel)) return constant(root, rel, keys)
   let data: unknown
   try {
     data = JSON.parse(readTextFile(`${root}/${rel}`))
@@ -62,4 +66,19 @@ export function number(root: string, value: string): number {
   }
   if (typeof data === 'boolean' || typeof data !== 'number' || !Number.isInteger(data)) throw new ValueError(`${rel} 의 ${keys} 가 정수가 아니다: ${pyRepr(data)}`)
   return data
+}
+
+// JS·TS 파일에서 `const <name> = <정수>` 선언의 값을 읽는다. `export` 와 `: number` 표기, 숫자 구분자 `_` 를 받는다
+function constant(root: string, rel: string, name: string): number {
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new ValueError(`${rel} 의 상수 이름이 아니다: ${name}`)
+  let text: string
+  try {
+    text = readTextFile(`${root}/${rel}`)
+  } catch (error) {
+    if (!isExpected(error)) throw error
+    throw new ValueError(`${rel} 을 읽지 못했다: ${error.message}`)
+  }
+  const found = new RegExp(`^\\s*(?:export\\s+)?const\\s+${escapeRegExp(name)}\\s*(?::\\s*number\\s*)?=\\s*(\\d[\\d_]*)\\s*;?\\s*(?://.*)?$`, 'm').exec(text)
+  if (!found) throw new ValueError(`${rel} 에 정수 상수 ${name} 이 없다`)
+  return pyInt(found[1].replaceAll('_', ''))
 }
