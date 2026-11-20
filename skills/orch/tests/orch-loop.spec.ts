@@ -143,6 +143,9 @@ beforeEach(() => {
     GIT_CEILING_DIRECTORIES: tmp,
     // 사용자 입력 기록과 닫은 질문(lib/machine.ts)을 이 머신의 폴더에서 읽지 않는다
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
+    ORCH_PLUGIN_UPDATE_HOME: join(tmp, 'claude'),
+    ORCA_CLAUDE_PROFILES: join(tmp, 'profiles'),
+    ORCH_PLUGIN_UPDATE_STATE_DIR: join(tmp, 'plugin-update-state'),
   }
   delete env.ORCA_PANE_KEY
   delete env.ORCH_DIR

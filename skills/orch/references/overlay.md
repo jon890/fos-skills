@@ -110,6 +110,7 @@ orch config unset contracts.merge_command contracts.paths
 | `pipeline` | `stall_error_retries` | 저장소에 `worker-stalled` 핸들러가 없을 때 상주 루프가 모델 오류로 멈춘 worker 에게 멈춤마다 「계속 진행해」 를 보내는 최대 횟수다. 0 이상의 정수이고 기본 3 이며 0 이면 끄고 바로 코디네이터에게 알린다. 아래 `references/hooks.md` 의 「멈춘 worker 다시 시도시키기」 |
 | `pipeline` | `refresh_slots`, `refresh_worker_paths` | 상주 루프가 머지 차례 전에 뒤처진 PR 에 base 를 미리 합치는 최신화. 아래 「뒤처진 PR 미리 최신화」 |
 | `pipeline` | `enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` | `enabled`, `docs_merge`, `update_behind_drafts` 는 참거짓, 나머지는 0 이상의 유한한 수다. 아직 읽는 명령은 없다 |
+| `plugin` | `auto_update` | 기본은 true 다. false 면 그 저장소의 상주 루프가 fos-skills 새 버전을 확인하거나 이 머신의 설치본을 갱신하지 않는다. 다른 저장소의 루프에는 영향을 주지 않는다 |
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 비지 않은 JS 정규식 문자열 목록(빈 목록 허용)이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 | `adr` | `dirs` | 이름에서 ADR 폴더로 가는 객체. `orch queue reserve --kind adr` 가 이 폴더에 번호를 예약한다. 폴더마다 번호가 따로이고 자동 머지는 읽지 않는다 |

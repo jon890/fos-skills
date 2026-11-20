@@ -138,7 +138,7 @@ orch board del --done                   # 끝난 항목을 비워요
 
 ## 갱신
 
-main 에 머지된 새 버전은 창의 `p` 로 받아요. `claude plugin update fos-skills@fos-skills` 를 돌린 뒤 입력란에 채워지는 `/reload-plugins` 를 Enter 로 보내면 돼요.
+상주 루프가 main 의 새 버전을 확인해 이 머신의 설치본을 갱신해요. 보드는 「새 버전 설치됨 · 쉴 때 다시 읽음」 을 보인 뒤, 세션이 쉴 때 자동으로 다시 읽어요. 개발용 작업 폴더는 자동으로 갱신하지 않으며, 창의 `p` 로 수동 갱신할 수 있어요.
 창을 닫거나 오래 입력하지 않으면 자동 네트워크 조회를 쉬어요. 상태 줄에는 PR과 알림을 확인한 시각과 「조회 쉼」을 붙여요. `/board` 를 다시 열면 상태를 읽고, 같은 저장소를 보는 세션은 PR 조회 결과를 나눠 써요.
 work-board 를 고치는 동안에는 [docs/contributing.md](../../docs/contributing.md#고치는-동안) 의 「고치는 동안」 대로 작업 트리를 `--plugin-dir` 로 로드해요. 테스트는 저장소 루트에서 `claude plugin test .` 로 돌려요.
 

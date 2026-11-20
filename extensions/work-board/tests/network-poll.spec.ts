@@ -113,7 +113,7 @@ test('등록 훅은 창 표시와 사람 입력을 확인하고, PR 을 로컬 4
   const $ = {
     plugin: { root: '/plugin', name: 'fos-skills' },
     session: { cwd: async () => '/repo' },
-    clock: { now: async () => at, every: (ms, fn) => timers.set(ms, [...(timers.get(ms) || []), fn]) },
+    clock: { now: async () => at, every: (ms, fn) => timers.set(ms, [...(timers.get(ms) || []), fn]), after: (ms, fn) => timers.set(ms, [...(timers.get(ms) || []), fn]) },
     fs: { exists: async () => false, read: async () => { throw Error('missing') } },
     command: { register: async () => {} },
     ui: { invalidate: () => {}, status: (text) => statuses.push(text), panes: async () => panes, open: async () => ({ isPlaced: true }) },

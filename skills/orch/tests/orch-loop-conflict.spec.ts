@@ -115,6 +115,9 @@ beforeEach(() => {
     SEND_TO_WORKER: join(binDir, 'send.ts'),
     FAKE_DIR: tmp,
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
+    ORCH_PLUGIN_UPDATE_HOME: join(tmp, 'claude'),
+    ORCA_CLAUDE_PROFILES: join(tmp, 'profiles'),
+    ORCH_PLUGIN_UPDATE_STATE_DIR: join(tmp, 'plugin-update-state'),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다. 로컬의 전역 설정이 결과를 바꾸지 않게 고정한다
     GIT_CEILING_DIRECTORIES: tmp,
     GIT_CONFIG_GLOBAL: '/dev/null',

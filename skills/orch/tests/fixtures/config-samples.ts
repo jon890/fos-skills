@@ -57,6 +57,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     refresh_slots: { good: [0, 2], bad: [-1, 1.5, '1'] },
     refresh_worker_paths: { good: ['^a/', ['^a/', '^b/']], bad: ['(', '', 5, []] },
   },
+  plugin: { auto_update: flag },
   heavy: { exclusive: regexList, normal: regexList, light: regexList, wait_idle: regexList },
   migrations: {
     dirs: { good: [{}, { core: 'src/main/resources/db' }], bad: ['x', { core: '' }, { core: 1 }] },
