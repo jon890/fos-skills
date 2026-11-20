@@ -99,8 +99,8 @@ describe('표 문서', () => {
     assert.deepEqual(plan.upgrades.map(u => `${u.from}>${u.to}`), ['gpt-6.2-sol>gpt-6.3-sol', 'gpt-6.2-astra>gpt-6.3-astra'])
     const rewritten = plan.text
     assert.doesNotMatch(rewritten.split('### 새 모델과 새 세대')[0], /`gpt-6\.2-sol`/)
-    // 「기본 후보에서 뺀 모델」 의 옛 astra 는 그대로다
-    assert.match(rewritten, /`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에서 뺀다/)
+    // 「기본 후보에서 뺀 모델」 은 세대가 아니라 계열로 적어 그대로다
+    assert.match(rewritten, /astra 계열\(`gpt-<세대>-astra`\)은 세대와 상관없이 worker 와 하위 에이전트의 기본 후보에서 뺀다/)
     assert.equal(limitRowOf(rewritten, { model: 'gpt-6.3-sol', effort: 'medium' })?.cell, 'Claude Opus 5.5 `medium`')
   })
 
