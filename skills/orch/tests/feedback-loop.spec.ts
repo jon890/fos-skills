@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
-import { collectFeedback, feedbackRepos, notifyFeedback, releasedVersion, versionResult } from '../scripts/lib/feedback-loop.ts'
+import { collectFeedback, feedbackRepos, localFeedbackCount, notifyFeedback, releasedVersion, versionResult } from '../scripts/lib/feedback-loop.ts'
 import { duplicateOf, parse, render } from '../scripts/lib/feedback.ts'
 
 let root: string, core: string, local: string, merged: string
@@ -57,6 +57,11 @@ test('PR 머지 뒤 실제 version 변경 commit이 있어야 알림 대상으�
   const mineAccepted = candidate(local, 'mine-accepted', '채택 #2', '이 저장소')
   const repos = [{ name: 'fos-skills', path: core }, { name: 'sample', path: local }]
   const result = collectFeedback(repos)
+  process.env.ORCH_FEEDBACK_GH = join(root, 'missing-gh')
+  assert.equal(localFeedbackCount(core, repos), 2, 'core 보드는 후보와 마지막 분류의 보낼 알림을 센다')
+  assert.equal(localFeedbackCount(local, repos), 1, '다른 저장소는 자기 몫 후보만 센다')
+  assert.equal(localFeedbackCount(core, repos, Date.now() + 31 * 60 * 1000), 1, '오래된 분류는 보낼 알림에 쓰지 않는다')
+  process.env.ORCH_FEEDBACK_GH = join(root, 'gh')
   assert.deepEqual(result.rows.map(row => [row.candidate.slug, row.group]).sort(), [
     ['accepted', '보낼 알림'], ['closed', '닫힌 PR'], ['failed', '조회 실패'], ['mine', '저장소 몫'], ['mine-accepted', '저장소 몫'], ['new', '판정할 core 후보'], ['open', 'PR 머지 대기'],
   ])

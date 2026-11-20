@@ -1,6 +1,6 @@
-// 보드가 일정 간격으로 실행한다. collectFeedback의 PR 조회 결과를 그 사이 캐시한다.
+// 보드가 일정 간격으로 실행한다. 후보 파일과 마지막 collect 결과만 읽는다.
 import { resolve } from 'node:path'
-import { actionableFeedbackCount, collectFeedback } from '../../../skills/orch/scripts/lib/feedback-loop.ts'
+import { localFeedbackCount } from '../../../skills/orch/scripts/lib/feedback-loop.ts'
 
 const repo = process.argv[2]
 if (!repo) {
@@ -8,8 +8,7 @@ if (!repo) {
   process.exitCode = 2
 } else {
   try {
-    const collected = collectFeedback()
-    console.log(actionableFeedbackCount(collected, resolve(repo)))
+    console.log(localFeedbackCount(resolve(repo)))
   } catch (error) {
     console.error((error as Error).message)
     process.exitCode = 1

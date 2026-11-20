@@ -1432,9 +1432,12 @@ async function loadFeedbackCount($) {
   try {
     const root = (await boardRoot($)) || (await $.session.cwd())
     const script = $.plugin.root + '/extensions/work-board/bin/feedback-count.ts'
-    const count = Number((await run($, ['node', '--disable-warning=ExperimentalWarning', script, root], GITHUB_TIMEOUT_MS)).trim())
+    const count = Number((await run($, ['node', '--disable-warning=ExperimentalWarning', script, root], COMMAND_TIMEOUT_MS)).trim())
     if (Number.isSafeInteger(count) && count >= 0) feedbackCount = count
-  } catch { /* 조회 실패 중에는 직전 개수를 유지한다 */ }
+  } catch (error) {
+    // 조회가 실패해도 버튼을 그릴 수 있게 직전 값을 남기고 원인을 한 줄 기록한다.
+    console.warn('[work-board] 피드백 개수 조회 실패: ' + String(error.message || error))
+  }
   finally { feedbackBusy = false }
   $.ui.invalidate('ui.render')
 }
