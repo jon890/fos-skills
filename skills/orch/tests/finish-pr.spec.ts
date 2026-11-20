@@ -90,7 +90,10 @@ if os.environ.get("EXPECT_ROUTING") == "1":
     assert row["outcome"] == "merged"
     assert all(w["dispatchStatus"] == "completed" for w in json.load(open(os.environ["FAKE_STATE"]))["orca"]["workers"])
     open(os.environ["FAKE_LOG"], "a").write("routing-before-cleanup\\n")
-if os.environ.get("FAKE_SWEEP_REMOVES") == "1":
+if os.environ.get("FAKE_SWEEP_SAY"):
+    print(os.environ["FAKE_SWEEP_SAY"].replace("<WT>", os.environ["FAKE_WORKTREE"]))
+calls = sum(1 for line in open(os.environ["FAKE_LOG"]) if line.startswith("sweep "))
+if os.environ.get("FAKE_SWEEP_REMOVES") == "1" or (os.environ.get("FAKE_SWEEP_REMOVES") == "2" and calls >= 2):
     wt = os.environ["FAKE_WORKTREE"]
     repo = sys.argv[sys.argv.index("--repo") + 1]
     subprocess.run(["git", "-C", repo, "worktree", "remove", "--force", wt], check=True, capture_output=True)
@@ -646,6 +649,23 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     has(r.stdout, '정리 남음')
     assert.equal(starting(c.calls(), 'sweep').length, CLEANUP_TRIES)
     assert.equal(existsSync(c.wt), true)
+  })
+
+  test('이 PR 의 워크트리를 정리가 일부러 남겼으면 정리를 되풀이하지 않는다', async (t) => {
+    const c = setup(t)
+    const r = await c.finish(DEPLOY, { FAKE_SWEEP_REMOVES: '0', FAKE_SWEEP_SAY: '남김 <WT>: 끊긴 worker ctx_a, 다시 띄우거나 직접 정리한다' })
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '정리 남음')
+    assert.equal(starting(c.calls(), 'sweep').length, 1)
+  })
+
+  test('다른 워크트리의 남김 줄로는 멈추지 않고, 일시 실패한 이 PR 의 정리를 다시 시도한다', async (t) => {
+    const c = setup(t)
+    const r = await c.finish(DEPLOY, { FAKE_SWEEP_REMOVES: '2', FAKE_SWEEP_SAY: '남김 /other/wt: 끊긴 worker ctx_b, 다시 띄우거나 직접 정리한다' })
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stdout, '정리 남음')
+    assert.equal(starting(c.calls(), 'sweep').length, 2)
+    assert.equal(existsSync(c.wt), false)
   })
 
   test('worker 정리가 끝나지 않으면 handoff 원본을 남기고 재시도를 요구한다', async (t) => {

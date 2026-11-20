@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "4.2.0"
+  version: "4.3.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -34,7 +34,7 @@ description: |
 | 3 | 표기 검사 | 표기 검사기와 고침 지시 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.ts`, `scripts/leak-check.ts` |
 | 4 | 검토 | 의미 점검의 통과 조건을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$PREVIEW_DIR/preview.html` 을 생성했다 | `scripts/show-preview.ts` |
-| 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
+| 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다. orch 코디네이터면 보드 승인 대기의 승인을 확인했다 | |
 
 이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
@@ -195,6 +195,13 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" node "$SKILL_DIR/scripts/show-preview
 
 부분 수정이면 5단계 미리보기를 함께 띄우고, 바뀐 블록만 AS-IS 와 TO-BE 로 채팅에 보인다.
 렌더링된 전문만으로는 무엇이 바뀌었는지 알 수 없다.
+
+#### orch 코디네이터로 돌 때
+
+orch 코디네이터로 돌 때는 채팅 확인 대신 `orch board approval add <id> --kind post --title <제목> --preview "$PREVIEW_DIR/preview.html"` 로 승인 대기를 올리고 채팅에도 한 줄 알린다.
+종류별 값과 신호 처리는 orch 스킬의 `references/replying.md` 「보드 승인」 이 소유한다.
+orch 없이 쓰면 지금처럼 채팅으로 확인받는다.
+dispatch 로 일을 받은 worker 는 승인 대기를 올리지 않고 아래 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
 #### 사용자가 이번 본문의 등록을 미리 승인했을 때
 

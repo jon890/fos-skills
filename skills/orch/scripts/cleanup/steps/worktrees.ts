@@ -32,6 +32,12 @@
 //     `남김: 사용자 보유 터미널 (<경로>). 근거: <이유>` 다. user_takeover 로 표시된 행만 그 터미널 화면을 읽는다.
 //     화면이 에이전트 작업 중이면 working 이다. 새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적는다
 //
+// 다시 띄우는 중 (--run 이면 그 Run 의 워크트리인지 본 바로 뒤, 아니면 워크트리마다 가장 먼저):
+//     `orch worker relaunch` 가 그 워크트리에 남긴 보존 표시(lib/relaunch-hold.ts)가 24시간 안이면 아무것도 하지 않고
+//     `남김 <경로>: 다시 띄우는 중(옛 dispatch <id>, <시각> 부터). …` 를 낸다. 터미널 닫기와 dispatch 반납도 하지 않는다.
+//     옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 dispatch 가 모두 끝나 보여, 아래 「PR 없이 끝난 워크트리」 가
+//     워크트리와 지시서를 지웠다(2026-11-19). 새 dispatch 가 뜨면 표시가 지워지고 「일하는 중」 이 지킨다
+//
 // 정리 대상 (브랜치마다):
 //     - 그 브랜치의 PR 이 MERGED 다
 //     - PR 이 없거나 MERGED 가 아니면, upstream 이 gone 이고 `git cherry` 로 base 에 없는 커밋이 0 개다
@@ -59,6 +65,22 @@
 //     원격 브랜치도 위 조건을 채웠을 때만 지운다(원격 브랜치 삭제의 끝점 확인은 그대로다).
 //     하나라도 아니면 남기고 `남김 <경로>: PR 없음, upstream 이 남아 있다. 치우지 않는 이유: <이유>` 를 낸다.
 //     치울 때는 PR 이 MERGED 일 때와 같게 그 경로의 터미널(Orca 가 다시 연 빈 셸 포함)을 모두 닫고, --kill-holders 면 남은 프로세스도 끈다
+//
+// 남기는 워크트리(정리 대상이어도 지우지 않는다. 스펙 docs/features/cleanup-keep-lost/spec.md):
+//     끊긴 worker  모든 Run 의 그 경로 worker 행(삭제 직전 소유 확인과 같은 행) 가운데 가장 최근 dispatch 가
+//                  lib/worker-state.ts 의 heldDispatch 다. 재부팅이나 Orca 재시작으로 끊긴 것(lost)과 끊김인지 모르는 failed(unknown)다.
+//                  PR 이 MERGED 여도 워크트리, 터미널, 지시서를 지우지 않고 dispatch 도 반납하지 않는다. dry-run 에서도 지울 것으로 내지 않는다.
+//                  줄은 `남김 <경로>: 끊긴 worker <dispatch>, 다시 띄우거나 직접 정리한다` 다(unknown 은 「끊김인지 확인하지 못한 failed dispatch」).
+//                  `orch worker resume` 이나 새 dispatch 가 뜨면 가장 최근 행이 그것이라 다시 보통 규칙을 따른다.
+//                  오류로 끝난 failed(heldDispatch 가 null)는 지금처럼 끝난 것으로 보고 정리한다
+//     후속 검증 대기  PR 이 MERGED 인 기능 PR(본문에 기능 완료 근거 블록이 있거나 lib/feature-evidence.ts 의 featureBranch)의
+//                  featureCompletionProblem 이 있다. `남김 <경로>: 기능 후속 검증이 끝나지 않았다: <이유>` 를 내고 지시서와 함께 남긴다.
+//                  근거를 갱신하면 다음 정리가 지운다(사용자 결정 2026-11-20. 2026-11-04 의 「워크트리는 지우고 지시서만 남긴다」 를 바꿨다)
+//     --remove-kept <경로> 로 준 워크트리는 위 둘을 넘어 정리한다. 지시서도 함께 지운다.
+//     커밋 안 된 변경, 원격에 없는 커밋, 살아 있는 worker, 터미널 소유 확인은 그대로 막는다.
+//     오래 남은 끊긴 worker 워크트리는 orch doctor 의 KEPT-LOST 가 알린다.
+//     후속 검증 대기는 대기만이 아니라 근거 누락, 실패, 근거 조회 실패도 남긴다(featureCompletionProblem 이 내는 문제 모두).
+//     브랜치가 없는 워크트리(리뷰 워크트리, 저장소 밖 detached)는 보지 않는다. 다시 만들기 쉬워 스펙 범위 밖으로 둔다
 //
 // 건너뜀 (이유를 낸다):
 //     - 커밋 안 된 변경이 있다
@@ -182,11 +204,14 @@ import { finishStarted } from '../../lib/finish-marks.ts'
 import { fire } from '../../lib/events.ts'
 import { forgetLaunch, launchesAt } from '../../lib/launched.ts'
 import { idleShellVerdict } from '../../lib/idle-shells.ts'
-import { isFinished, isLive, judge, readScreens, screenHandles } from '../../lib/worker-state.ts'
+import { heldDispatch, isFinished, isLive, judge, readScreens, screenHandles } from '../../lib/worker-state.ts'
+import type { Held } from '../../lib/worker-state.ts'
+import { EVIDENCE_START, featureBranch, featureCompletionProblem } from '../../lib/feature-evidence.ts'
 import { isObject } from '../../core/json.ts'
 import { liveReviewPrs, originBranch, reviewPrOf, reviewPrOfBranch } from '../../lib/review.ts'
 import { blocker as ownershipBlocker, rowHandles } from '../../lib/ownership.ts'
 import { realPath } from '../../lib/fs.ts'
+import { relaunchHoldAt } from '../../lib/relaunch-hold.ts'
 import { scriptCommand } from '../../lib/proc.ts'
 import { scriptPath } from '../../lib/commands.ts'
 
@@ -318,6 +343,20 @@ function noPrBlocker(s: Sweep, branch: string, path: string, mine: WorkerRow[], 
   return null
 }
 
+// 끊긴 worker 로 남기는 이유. 줄 문구는 스펙 REQ1 이 정했다
+function heldReason(held: Held): string {
+  if (held.kind === 'lost') return `끊긴 worker ${held.dispatch}, 다시 띄우거나 직접 정리한다`
+  return `끊김인지 확인하지 못한 failed dispatch ${held.dispatch}(${held.detail}), 다시 띄우거나 직접 정리한다`
+}
+
+// 기능 PR 의 완료 근거가 끝나지 않았으면 그 이유, 아니면 null 이다. 기능 PR 이 아니면 gh 를 부르지 않는다.
+// 판정은 specs.ts 의 specsKept 와 같은 lib/feature-evidence.ts 의 featureCompletionProblem 이다
+function followUpPending(s: Sweep, branch: string, pr: Pr): string | null {
+  const body = String(pr.body ?? '')
+  if (!body.includes(EVIDENCE_START) && !featureBranch(s.repo, branch, s.specsDir ?? undefined)) return null
+  return featureCompletionProblem(s.repo, String(pr.number), branch, s.specsDir ?? undefined, body)
+}
+
 function prInput(pr: Pr): Json {
   const author = isObject(pr.author) && typeof pr.author.login === 'string' ? pr.author.login : null
   return {
@@ -376,6 +415,9 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
     return keep('이 Run 의 워크트리가 아니다', `건너뜀 ${path}: 이 Run 의 워크트리가 아니다`)
   }
+  // 머리 주석의 「다시 띄우는 중」. 옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 그 경로의 dispatch 가 모두 끝나 보인다. Run 범위 밖의 경로는 앞에서 이미 건너뛴다
+  const hold = relaunchHoldAt(repo, path)
+  if (hold) return keep('다시 띄우는 중', `남김 ${path}: 다시 띄우는 중(옛 dispatch ${hold.dispatch}, ${hold.at} 부터). orch worker relaunch 가 새 worker 를 띄우면 풀린다`)
   // 살아 있는 dispatch 의 워크트리는 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많으면 그 조회가 정리 시간을 다 쓴다(머리 주석의 「일하는 중」)
   if (mine.some(isLive)) {
     const verdict = judge({ rows: mine, screens: readScreens(screenHandles(mine)) })
@@ -383,8 +425,10 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     const reason = `살아 있는 worker ${mine.filter(isLive).map((w) => String(w.dispatchId ?? '?')).join(', ')}`
     return keep(reason, `건너뜀 ${path}: ${reason}. 근거: ${verdict.reason}`)
   }
-  // 머리 주석의 「끝난 dispatch 반납」. 워크트리를 남기더라도 Orca 가 거둘 수 있다고 적은 터미널은 먼저 반납한다
-  releaseDispatches(mine.filter((w) => isFinished(w) && w.terminalState === 'reclaimable'), args.apply, log, '')
+  // 머리 주석의 「끝난 dispatch 반납」. 워크트리를 남기더라도 Orca 가 거둘 수 있다고 적은 터미널은 먼저 반납한다.
+  // 끊긴 worker 로 남길 dispatch 는 반납하지 않는다(「남기는 워크트리」)
+  const early = args.removeKept.has(realPath(path)) ? null : heldDispatch(mine)
+  releaseDispatches(mine.filter((w) => isFinished(w) && w.terminalState === 'reclaimable' && w !== early?.row), args.apply, log, '')
   const launched = launchedOwn(repo, mine, terminals, path)
   const taken = new Set<unknown>([...takenOverOwn(args, mine, terminals, path), ...launched])
   if (!branch) {
@@ -407,17 +451,26 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
   }
   // 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널. 워크트리를 남기더라도 터미널은 닫고 dispatch 를 반납한다
+  const forced = args.removeKept.has(realPath(path))
   if (m.ok || m.pr?.state === 'CLOSED') {
     let fresh: WorkerRow[]
     try { fresh = await args.worktreeWorkers(path) }
     catch (e) { return keep('터미널 소유 상태 조회 실패', `남김: 터미널 소유 상태 조회 실패 (${path}): ${(e as Error).message}`) }
     if (workersAt(fresh, path).some(isLive)) return keep('살아 있는 dispatch 가 경로를 쓴다', `건너뜀 ${path}: 살아 있는 dispatch 가 경로를 쓴다`)
+    // 머리 주석의 「남기는 워크트리」 의 끊긴 worker. 터미널을 닫거나 dispatch 를 반납하기 전에 본다
+    const held = forced ? null : heldDispatch(workersAt(fresh, path))
+    if (held) return keep(heldReason(held), `남김 ${path}: ${heldReason(held)}`)
     if (args.run) args.foreign = await foreignHandles(args.run, async () => fresh)
     // 원래 user_owned 였던 예외만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
     const previouslyTaken = new Set(mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]))
     const ignored = new Set([...taken].filter((handle) => previouslyTaken.has(handle)))
     const owner = await ownershipBlocker(path, ignored, async () => fresh)
     if (owner) return keep(owner, `남김: ${owner} (${path})`)
+  }
+  // 머리 주석의 「남기는 워크트리」 의 후속 검증 대기. 지시서와 함께 워크트리를 남긴다
+  if (m.ok && m.pr?.state === 'MERGED' && !forced) {
+    const pending = followUpPending(s, branch, m.pr)
+    if (pending) return keep(`후속 검증 대기: ${pending}`, `남김 ${path}: 기능 후속 검증이 끝나지 않았다: ${pending}`)
   }
   const closing = closedOwnTerminals(s, m.pr, mine, terminals, path)
   if (!m.ok) {
@@ -508,7 +561,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
     log(`  worktree 와 로컬 브랜치를 지울 것 ${branch}`)
     deleteRemote(repo, plan, args.base, false, log)
-    if (!specsKept(s, path, name, branch, m.pr)) {
+    if (forced || !specsKept(s, path, name, branch, m.pr)) {
       trashLaunchedSpecs(repo, specsDir, path, false, log, args.liveSpecs, args.trash)
       deleteSpecFiles(specsDir, name, false, log, args.liveSpecs, branch, m.pr)
     }
@@ -565,7 +618,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
   report.removed.push(path)
   deleteRemote(repo, plan, args.base, true, log)
-  if (!specsKept(s, path, name, branch, m.pr)) {
+  if (forced || !specsKept(s, path, name, branch, m.pr)) {
     trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
     deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
   }

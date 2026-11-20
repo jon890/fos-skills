@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 4.3.0 (2026-11-20)
+
+- orch 코디네이터로 돌 때는 외부 게시 확인을 채팅 대신 보드 승인 대기(`--kind post`)로 받는다고 6단계에 적는다.
+
 ## 4.2.0 (2026-11-17)
 
 - Dooray 미리보기의 mermaid 그림을 머리 설정이 없어도 손그림으로 그린다. 그림 머리의 `config` 가 있으면 그쪽이 이긴다.

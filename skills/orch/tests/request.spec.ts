@@ -216,6 +216,36 @@ test('list 는 번호 순으로 내고 --open 은 끝난 요청을 뺀다', () =
   assert.deepEqual(request(['list', '--open', '--repo', receiver]).lines, ['REQUEST R1 sent from=sender 로그인 고침'])
 })
 
+test('보드 줄 규칙에 걸리는 이유(기다림 문장, 줄 안의 ✓)는 빼고 머리만 보드에 쓴다', () => {
+  assert.equal(send().code, 0)
+  const reason = '상대 팀 답을 기다리는 중이라 보류한다'
+  const held = request(['hold', '--id', 'R1', '--repo', receiver, '--reason', reason])
+  assert.equal(held.code, 0, held.lines.join('\n') + held.stderr)
+  assert.ok(!`${held.lines.join('\n')}${held.stderr}`.includes('BOARD-FAIL'), held.lines.join('\n') + held.stderr)
+  assert.equal(record(receiver, 'R1').reason, reason)
+  const texts = board(receiver)[0].details.map((d: unknown) => typeof d === 'string' ? d : (d as Json).text) as string[]
+  const line = texts.find((text) => text.includes('요청 보류'))
+  assert.ok(line, JSON.stringify(texts))
+  assert.match(line!, /요청 보류$/)
+})
+
 test('보낸 Run 없이 보내면 사용법 오류다', () => {
   assert.equal(request(['send', '--to', receiver, '--title', 't', '--body', 'b', '--repo', sender]).code, 2)
+})
+
+// 2026-11-20 오탐: 긴 이유를 붙인 done 이 요청은 끝냈지만 보드 줄 쓰기에서 BOARD-FAIL(단계 줄 본문은 80자 안이다)로 실패했다
+test('긴 이유는 보드 줄에서 80자 안으로 줄이고 기록에는 그대로 남긴다', () => {
+  assert.equal(send().code, 0)
+  const reason = '설정 파일의 키 이름을 바꾸고 관련 테스트를 모두 고쳤으며 배포 뒤 확인까지 마쳤다. 남은 일은 다음 요청에서 다룬다고 합의했다'
+  const done = request(['done', '--id', 'R1', '--repo', receiver, '--reason', reason])
+  assert.equal(done.code, 0, done.lines.join('\n') + done.stderr)
+  assert.ok(!`${done.lines.join('\n')}${done.stderr}`.includes('BOARD-FAIL'), done.lines.join('\n') + done.stderr)
+  assert.equal(record(receiver, 'R1').reason, reason)
+  for (const repo of [receiver, sender]) {
+    const texts = board(repo)[0].details.map((d: unknown) => typeof d === 'string' ? d : (d as Json).text) as string[]
+    const line = texts.find((text) => text.includes('요청 완료'))
+    assert.ok(line, JSON.stringify(texts))
+    assert.ok([...line!].length <= 80, line)
+    assert.match(line!, /요청 완료: 설정 파일의 키 이름을 바꾸고.*…$/)
+  }
 })

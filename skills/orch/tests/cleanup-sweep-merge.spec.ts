@@ -11,7 +11,7 @@ import type { SweepContext } from '../scripts/cleanup/cleanup-sweep.ts'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 describe('머지 판정과 기본 정리', () => {
-  test('머지됐고 기능 후속 검증이 대기면 워크트리는 지우고 지시서만 남긴다', () => {
+  test('머지됐고 기능 후속 검증이 대기면 워크트리와 지시서를 함께 남긴다', () => {
     const path = worktree('feat-domain')
     squashMerge('feat-domain', path)
     const specs = join(fx.repo, '.orch/specs')
@@ -26,13 +26,12 @@ describe('머지 판정과 기본 정리', () => {
 독립 리뷰: 통과 | 별도 리뷰 결과
 후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
 <!-- /fos-feature-evidence -->` }
-    // 사용자 결정(2026-11-04): 후속 검증 대기는 워크트리와 브랜치를 붙잡지 않는다. 지시서만 그 뒤로 남긴다
+    // 사용자 결정(2026-11-20): 후속 검증 대기면 워크트리도 지시서와 함께 남긴다(2026-11-04 의 지시서만 남기기를 바꿨다)
     const pending = runSweep(['--specs-dir', '.orch/specs', '--apply'])
-    gone(path, pending)
-    assert.ok(!branches().has('feat-domain'))
+    exists(path, pending)
+    assert.ok(branches().has('feat-domain'))
     assert.equal(existsSync(spec), true)
-    has(pending, '지시서 남김')
-    has(pending, '후속 검증')
+    has(pending, `남김 ${path}: 기능 후속 검증이 끝나지 않았다`)
   })
 
   test('squash 머지된 worktree 를 터미널, dispatch, 지시서와 함께 정리한다', () => {

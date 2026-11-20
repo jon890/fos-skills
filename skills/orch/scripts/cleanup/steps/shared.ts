@@ -29,6 +29,8 @@ export type Args = {
   killHolders: boolean
   agentGlob: string
   closeOwnTakenOver: boolean
+  // --remove-kept 로 준 워크트리 실경로. 끊긴 worker 와 후속 검증 대기의 남김을 넘어선다(worktrees.ts 파일 맨 위 설명의 「남기는 워크트리」)
+  removeKept: Set<string>
   remoteBranches: boolean
   trash: string
   apply: boolean

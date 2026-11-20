@@ -7,6 +7,13 @@
 //   dispatch 는 이미 completed 로 닫혀 send 는 ENDED, resume 은 RESUME-FAIL 이었다. 같은 PR 은 한 번만 되돌린다(state 의 returned: dispatch 와 `pr:<번호>`).
 //   이어 맡기지 못하면 이유와 `orch worker continue --dispatch <id>` 를 DONE-SUSPECT 에 적는다. 전송 기록은 되돌린 직후에 남겨 다음 틱이 다시 보내지 않는다.
 // 리뷰 dispatch 는 띄우기 기록이 지워져도 영구 이력의 spec 으로 알아본다(lib/review.ts).
+// 다른 저장소의 dispatch: 한 Run 에 저장소마다 루프가 있으면 모든 루프가 같은 worker_done 을 읽는다. 이 저장소에 띄우기 기록이 없고
+//   Orca 의 worker 워크트리가 다른 저장소의 것이고 그 저장소에 이 Run 을 보는 살아 있는 루프가 있으면, 근거 없는 보고를 알리지 않고 본 것으로만 남긴다.
+//   띄운 저장소의 루프가 맡는다. 그 저장소에 루프가 없으면 이 루프가 알린다. finish 가 워크트리를 지웠으면 worktreeId 앞부분의 Orca 저장소 id 로
+//   `orca repo list` 에서 저장소를 찾는다.
+//   띄운 루프는 지시서를 지운 뒤 「(지시서를 읽지 못했다)」 를 붙여 본문이 달라, Run 알림의 중복 억제(lib/run-notice.ts)를 지나 두 번 갔다(2026-11-19).
+// 머지된 dispatch: 근거 없는 보고라도 띄우기 기록의 브랜치(없으면 지시서의 첫 `브랜치:` 줄)에 열린 PR 이 없고 MERGED PR 이 있으면
+//   이미 끝난 일이라 DONE-SUSPECT 를 보내지 않는다. PR 조회가 실패하면 판단하지 않고 그대로 알린다.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { classify, context, noPrInstruction, payload } from '../lib/completion.ts'
@@ -16,14 +23,16 @@ import { ghJson } from '../lib/gh.ts'
 import { linkBoardPr, prTaskRef } from '../lib/board.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
-import { runKey } from '../lib/loop.ts'
+import { isRegistered, loopStatus, runKey } from '../lib/loop.ts'
 import { reviewPrOfDispatch } from '../lib/review.ts'
 import { readLaunch } from '../lib/launched.ts'
 import { launchHistory } from '../lib/launch-history.ts'
 import { git, mainCheckout } from '../lib/git.ts'
 import { fire } from '../lib/events.ts'
 import { notifyRun } from '../lib/run-notice.ts'
-import { continueWorker } from '../lib/continue-worker.ts'
+import { continueWorker, openPrOf } from '../lib/continue-worker.ts'
+import { dispatchRepo } from '../lib/main-guard.ts'
+import { branchesOf } from '../lib/spec.ts'
 
 type Json = Record<string, any>
 type Seen = { ids: string[]; last: string; suspects: string[]; events: string[]; returned?: string[]; returnNotes?: Record<string, string> }
@@ -37,6 +46,49 @@ const time = (m: Json): string => String(m.created_at ?? m.createdAt ?? '')
 
 export function completionMessages(run: string): Json[] {
   return messages(['check', '--run', run, '--all', '--types', 'worker_done']).filter(m => m.type === 'worker_done')
+}
+
+// finish 가 워크트리를 지웠으면 worktreeId 의 앞부분(`<Orca 저장소 id>::<경로>`)으로 Orca 에 등록된 저장소를 찾는다. 모르면 null
+function orcaRepoOf(dispatch: string): string | null {
+  const shown = orcaJson<Json>(['orchestration', 'worker-show', '--dispatch', dispatch])
+  const worker = shown.ok ? shown.data?.worker : null
+  const id = String(worker?.worktreeId ?? worker?.startOptions?.resolvedWorktreeId ?? '')
+  if (!id.includes('::')) return null
+  const repoId = id.slice(0, id.indexOf('::'))
+  const listed = orcaJson<Json>(['repo', 'list'])
+  const repos = listed.ok && Array.isArray(listed.data?.repos) ? listed.data.repos : []
+  const found = repos.find((row: Json) => row?.id === repoId)?.path
+  return typeof found === 'string' && existsSync(found) ? mainCheckout(found) : null
+}
+
+// Orca 의 worker 워크트리가 다른 저장소의 것이고 그 저장소에 이 Run 을 보는 살아 있는 루프가 있는지.
+// 워크트리가 지워졌으면 Orca 저장소 id 로 찾는다. 그래도 저장소를 알 수 없으면 모른다(false). 그 저장소에 루프가 없으면 어디서도 알리지 않게 되므로 false 다
+function foreignDispatch(repo: string, run: string, dispatch: string): boolean {
+  if (!dispatch) return false
+  const found = dispatchRepo(repo, dispatch)
+  const owner = found !== null && existsSync(found) ? found : orcaRepoOf(dispatch)
+  if (owner === null) return false
+  const mine = mainCheckout(repo)
+  if (owner === mine || owner.startsWith(`${mine}/`)) return false
+  return isRegistered(owner, run) && loopStatus(owner, Date.now()).alive
+}
+
+// dispatch 의 브랜치에 열린 PR 이 없고 MERGED PR 이 있는지. 브랜치를 모르거나 조회가 실패하면 false.
+// 띄운 시각(since) 뒤에 머지된 PR 만 센다. 같은 이름의 옛 브랜치 PR 로 새 dispatch 의 경고를 숨기지 않으려는 것이다. 띄운 시각을 모르면 숨기지 않는다
+function branchMerged(repo: string, launch: { branch?: string | null; spec?: string | null } | undefined, since: string | null): boolean {
+  const after = since ? Date.parse(since) : NaN
+  if (Number.isNaN(after)) return false
+  let branch = launch?.branch ?? null
+  if (!branch && launch?.spec) {
+    try { branch = branchesOf(readFileSync(launch.spec, 'utf8'))[0] ?? null } catch { branch = null }
+  }
+  if (!branch) return false
+  // 열린 PR 은 따로 조회한다. 머지된 PR 이 많으면 한 번의 --state all 목록에서 열린 PR 이 밀려날 수 있다
+  const open = openPrOf(repo, branch)
+  if (!open.ok || open.pr) return false
+  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'merged', '--json', 'number,state,mergedAt', '--limit', '5'], { cwd: repo })
+  if (!got.ok || !Array.isArray(got.data)) return false
+  return got.data.some(pr => Date.parse(String(pr?.mergedAt ?? '')) >= after)
 }
 
 export async function watchCompletions(repo: string, run: string, base: string, completed?: Json[]): Promise<void> {
@@ -99,6 +151,9 @@ export async function watchCompletions(repo: string, run: string, base: string, 
     const id = String(message.id)
     const launch = launchOf(dispatch)
     const verified = message.completionVerification as Json | undefined
+    if (!launch && verified?.status === 'suspicious' && foreignDispatch(repo, run, dispatch)) {
+      seen.ids.push(id); if (time(message) > seen.last) seen.last = time(message); save(); continue
+    }
     if (launch?.completion !== 'none' && (verified?.status === 'ready' || verified?.status === 'suspicious')) {
       let pr: Json | null = null
       let prState: string | null = null
@@ -130,6 +185,8 @@ export async function watchCompletions(repo: string, run: string, base: string, 
           notice = ''
         } else if (back.kind === 'fail') {
           notice = `${notice || 'PR 이 열린 채 완료 보고가 왔다'} (이어 맡기지 못했다: ${back.reason}. 고친 뒤 orch worker continue --dispatch ${dispatch})`
+        } else if (verified.status === 'suspicious' && branchMerged(repo, launch, historyByDispatch.get(dispatch)?.at ?? null)) {
+          notice = ''
         } else if (back.reason.includes('이미 한 번 되돌렸다')) {
           // 준비됨 뒤의 두 번째 조기 완료도 알린다. 근거 없는 보고의 이유가 없으면 PR 이 열려 있다는 사실이 이유다
           notice = `${notice || 'PR 이 열린 채 완료 보고가 왔다'} (${back.reason})`

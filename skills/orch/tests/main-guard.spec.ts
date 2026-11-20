@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { inheritOverride, overrideHash } from '../scripts/lib/main-guard-context.ts'
 import { guardWrite, mainDoctorLines } from '../scripts/lib/main-guard.ts'
 import { allLaunches, forgetLaunch, readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
+import { recordHistory } from '../scripts/lib/launch-history.ts'
 import { registerRun } from '../scripts/lib/loop.ts'
 import { pathOf } from '../scripts/lib/paths.ts'
 import { withRun } from '../scripts/lib/proc.ts'
@@ -380,4 +381,65 @@ test('이미 허용된 호출의 이유는 우회 기록과 알림을 만들지 
   assert.equal(existsSync(join(pathOf('state', repo), 'launched-workers', 'not-main')), false)
   assert.equal(existsSync(join(pathOf('state', empty), 'launched-workers', 'not-main')), false)
   assert.equal(calls().some(args => args[1] === 'send'), false)
+})
+
+// 보드를 다른 저장소(shared)에 두고, 루프 밖과 루프 한 틱 안에서 board-sync 를 한 번씩 부른다
+function sharedBoardSync(items: unknown[], env: Record<string, string> = {}) {
+  const shared = join(root, `shared-board-${counter++}`)
+  mkdirSync(join(shared, '.omc'), { recursive: true })
+  assert.equal(spawnSync('git', ['init', '-q', shared]).status, 0)
+  registerRun(shared, 'other', null, false, 'to', '2026-11-17T00:00:00Z')
+  const board = join(shared, '.omc', 'board.json')
+  writeFileSync(board, JSON.stringify({ items }))
+  mkdirSync(join(repo, '.orch'), { recursive: true })
+  writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ finish: { board } }))
+  settings({ caller: 'main' })
+  const loopModule = new URL('../scripts/lib/loop.ts', import.meta.url).href
+  const contextModule = new URL('../scripts/lib/main-guard-context.ts', import.meta.url).href
+  const script = join(root, `fake-orch-loop-${counter++}.ts`)
+  writeFileSync(script, `import { spawnSync } from 'node:child_process'
+import { writeLoop } from ${JSON.stringify(loopModule)}
+import { withLoopCaller } from ${JSON.stringify(contextModule)}
+const repo = ${JSON.stringify(repo)}
+const now = new Date().toISOString()
+writeLoop(repo, { pid: process.pid, run: 'main', repo, tick_sec: 60, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} })
+const child = () => spawnSync(process.execPath, [${JSON.stringify(join(source, 'scripts', 'board', 'board-sync.ts'))}, '--repo', repo], { encoding: 'utf8', env: process.env, timeout: 20_000 })
+const outside = child()
+const inside = await withLoopCaller(repo, 'main', async () => child())
+process.stdout.write(JSON.stringify({ outside: [outside.status, outside.stderr], inside: [inside.status, inside.stderr] }))
+`)
+  const done = spawnSync(process.execPath, [script], { encoding: 'utf8', env: { ...process.env, ...env }, timeout: 60_000 })
+  assert.equal(done.status, 0, done.stderr)
+  return JSON.parse(done.stdout) as { outside: [number, string]; inside: [number, string] }
+}
+
+// 2026-11-18 오탐: 보드를 나눠 쓰는 저장소의 루프가 보드 저장소의 메인과 Run 이 달라 board sync 가 틱마다 NOT-MAIN 이었다
+test('루프 한 틱의 보드 동기화는 보드 파일이 다른 저장소에 있어도 루프 저장소의 메인으로 본다', () => {
+  const { outside, inside } = sharedBoardSync([])
+  assert.equal(outside[0], 1, '루프 밖 호출은 보드 저장소의 메인 기준 그대로 거절한다')
+  assert.match(outside[1], /NOT-MAIN main=other caller=main/)
+  assert.equal(inside[0], 0, inside[1])
+})
+
+test('나눠 쓰는 보드에서 루프는 이 저장소가 띄운 worker 의 항목만 PR 상태를 조회한다', () => {
+  // 항목의 PR 번호는 루프 저장소 기준으로 조회한다. 남의 항목 번호가 이 저장소 PR 과 겹치면 done 으로 잘못 닫을 수 있다
+  recordHistory(repo, { dispatch: 'dmine', terminal: 'tw', worktree: join(repo, 'wt-mine'), run: 'main', at: '2026-11-17T00:00:00Z', title: null, row: null, retry_of: null })
+  const ghLog = join(root, `gh-${counter++}.jsonl`)
+  const gh = join(root, `gh-${counter++}`)
+  writeFileSync(gh, `#!/usr/bin/env node
+require('node:fs').appendFileSync(${JSON.stringify(ghLog)}, JSON.stringify(process.argv.slice(2)) + '\\n')
+if (process.argv.includes('view')) process.stdout.write('OPEN\\n')
+else process.stdout.write('[]\\n')
+`)
+  chmodSync(gh, 0o755)
+  const row = (dispatch: string) => ({ role: 'impl', worktree: `wt-${dispatch}`, dispatch, status: 'working' })
+  const { inside } = sharedBoardSync([
+    { id: 'mine', title: '내 일', status: 'doing', pr: '5', workers: [row('dmine')] },
+    { id: 'theirs', title: '남의 일', status: 'doing', pr: '7', workers: [row('dtheirs')] },
+  ], { GH: gh })
+  assert.equal(inside[0], 0, inside[1])
+  const viewed = (existsSync(ghLog) ? readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]) : [])
+    .filter(args => args[0] === 'pr' && args[1] === 'view').map(args => args[2])
+  assert.ok(viewed.includes('5'), JSON.stringify(viewed))
+  assert.ok(!viewed.includes('7'), JSON.stringify(viewed))
 })

@@ -2,7 +2,7 @@
 //
 // 사용법:
 //     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)
-//         [--task ID [--retry-of DISPATCH]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
+//         [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
 //
 //     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다.
 //                      `worker 선택:` 줄(형식은 lib/spec.ts 의 selectionsOf)이 없거나 빠진 요소가 있거나, 그 줄의 에이전트, 모델, effort 가
@@ -23,6 +23,9 @@
 //                      이유는 `dirty-ack: <이유>` 줄로 출력한다. 끊긴 worker 를 이어 띄울 때 쓴다(references/launch.md 「끊긴 worker 다시 띄우기」)
 //     --run            worker-start 와 다시 띄우기에 줄 Run. 없으면 코디네이터에 묶인 Run 이다
 //     --no-pr      PR 없는 작업으로 기록해 완료 근거 경고를 생략한다
+//     --preflight      --task 와 함께 준다. 차례 0~1-1(선택, 모델, Claude 프로필, orch PATH, `허락:` 줄, orch 폴더 이전, worker.commit_check 설정, spec-lint)만 하고
+//                      통과하면 `PREFLIGHT-OK` 와 0, 걸리면 같은 거부와 종료 코드로 끝난다. 1-2 의 번호 예약, 워크트리 확인, before-launch 는 하지 않는다.
+//                      orch worker relaunch 가 옛 worker 를 abandon 하기 전에 부른다
 //     --watch          띄운 뒤 worker-show 의 단계를 볼 초. 기본 90. 0 이면 보지 않는다
 //     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal 같은 것).
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
@@ -30,6 +33,11 @@
 // 차례:
 //     0. selectionVerdict 로 지시서의 행별 worker 와 후보 밖 이유를 검사한다. 새 지시서의 비교 칸과 experiment 줄은 거절한다.
 //        새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다. 같은 지시서·설정의 이어하기는 옛 형식을 허용한다.
+//     0-0. 지시서 행이 impl-planned, impl-explore, small-fix, design 의 Codex worker 이고 `후보 밖:` 이 없으면 Claude 주간 사용량을 읽는다(lib/usage-boost.ts).
+//        남은 사용량 비율이 초기화까지 남은 시간 비율보다 크면 WORKER_ARGS 의 --agent, --model, --effort 를 같은 등급의 Claude 로 바꾸고
+//        LAUNCH-EFFECTIVE 와 기록의 effective.candidateOverride 에 행·worker·이유(`사용량: 남은 N%, 남은 시간 M%`)를 남긴다. 아래 차례는 바꾼 값으로 돈다.
+//        사용량 출처가 없거나 읽지 못하거나 1시간보다 오래됐으면 `USAGE-UNKNOWN <이유>` 를 내고 그대로 띄운다. 설정 routing.usage_boost 가 false 면 보지 않는다.
+//        --terminal 로 이어 쓰면 보지 않는다
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
@@ -148,7 +156,7 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
-import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Effective } from '../lib/launched.ts'
+import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
 import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
@@ -165,6 +173,7 @@ import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
+import { boostEnabled, decideBoost, readSelectionTable, readWeekly, usageCacheFile } from '../lib/usage-boost.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
 import { autoStepNumberOf, boardIdOf, branchesOf, coordinatorCommandWarning, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
@@ -173,7 +182,7 @@ import { workerSpecLine as copiedWorkerSpecLine } from '../lib/worker-spec-copy.
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
-  '            [--task ID [--retry-of DISPATCH]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
+  '            [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
 ].join('\n')
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
 const LONG_MS = 600_000
@@ -308,7 +317,7 @@ function passValue(passthru: string[], name: string): string | null {
 }
 
 // 그 워크트리에 붙은 터미널(handle 과 제목). reuse 는 이어 쓸 터미널이라 뺀다. 읽지 못하면 Stop(1).
-function leftTerminals(worktree: string, reuse = ''): string {
+export function leftTerminals(worktree: string, reuse = ''): string {
   const done = orca(['terminal', 'list', '--json'])
   if (done.code !== 0) throw new Stop('거부: orca terminal list 를 읽지 못해 남은 터미널을 확인할 수 없다', 1)
   let rows: Record<string, unknown>[]
@@ -402,7 +411,7 @@ async function lintGate(a: Args, continuation: boolean, execute: typeof runAsync
 
 // 지시서의 worker 선택 줄과 WORKER_ARGS 를 대조한다. 머리 주석의 「0」. 어긋나면 거부 문구, 맞으면 null 이다.
 // 지시서를 읽지 못하면 null 이다. 그 실패는 다음 단계의 spec-line 이 사용법 오류로 알린다.
-function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean, continuation: boolean): string | null {
+export function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean, continuation: boolean): string | null {
   let text: string
   try {
     text = readFileSync(specPath, 'utf8')
@@ -421,6 +430,36 @@ function selectionReject(specPath: string, passthru: string[], repo: string, ret
   return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 과 띄우는 값이 다르다: ${mismatched.join('; ')}. 지시서를 고치거나 그 값으로 띄운다`
 }
 
+// 머리 주석의 「0-0」. 지시서의 행이 바꿀 수 있는 Codex 행이고 Claude 주간 사용량이 남을 것 같으면 WORKER_ARGS 를 같은 등급의 Claude 로 바꾼다.
+// 판정은 lib/usage-boost.ts 가 소유한다. 바꾸면 후보 밖 기록을, 아니면 null 을 낸다. 사용량을 읽지 못하면 USAGE-UNKNOWN 줄만 낸다
+function applyUsageBoost(specPath: string, passthru: string[], repo: string): CandidateOverride | null {
+  let text: string
+  try {
+    text = readFileSync(specPath, 'utf8')
+  } catch {
+    return null
+  }
+  const [selection] = selectionsOf(text)
+  if (!selection) return null
+  const now = Date.now()
+  const boost = decideBoost({ selection, enabled: () => boostEnabled(repo), weekly: () => readWeekly(usageCacheFile(), now), now, table: readSelectionTable() })
+  if (boost.kind === 'keep') {
+    if (boost.notice) out(boost.notice)
+    return null
+  }
+  setOption(passthru, '--agent', boost.worker.agent)
+  setOption(passthru, '--model', boost.worker.model)
+  setOption(passthru, '--effort', boost.worker.effort === '기본' ? null : boost.worker.effort)
+  return boost.override
+}
+
+// WORKER_ARGS 의 `--name 값` 을 바꾼다. 없으면 끝에 더하고, value 가 null 이면 뺀다
+function setOption(passthru: string[], name: string, value: string | null): void {
+  const at = passthru.indexOf(name)
+  if (at >= 0) passthru.splice(at, 2, ...(value === null ? [] : [name, value]))
+  else if (value !== null) passthru.push(name, value)
+}
+
 function isDir(target: string): boolean {
   try {
     return statSync(target).isDirectory()
@@ -434,7 +473,7 @@ const MADE_BY_LAUNCH = new Set(['.claude/settings.local.json'])
 const DIRTY_SHOWN = 50
 
 // --worktree 의 커밋 안 된 변경(porcelain 줄). git 저장소가 아니거나 읽지 못하면 빈 목록이다
-function uncommitted(worktree: string): string[] {
+export function uncommitted(worktree: string): string[] {
   const done = git(worktree, ['status', '--porcelain', '--untracked-files=all'])
   if (done.code !== 0) return []
   return done.stdout.split('\n').filter((line) => line.trim() && !MADE_BY_LAUNCH.has(line.slice(3)))
@@ -455,6 +494,7 @@ type Args = {
   lintAck: string | null
   dirtyAck: string | null
   resumeRemote: boolean
+  preflight: boolean
   passthru: string[]
 }
 
@@ -535,6 +575,7 @@ function parse(argv: string[]): Args | 'help' {
     'lint-ack': { type: 'string' },
     'dirty-ack': { type: 'string' },
     'resume-remote': { type: 'boolean', default: false },
+    preflight: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },
   } as const
   let values
@@ -554,6 +595,7 @@ function parse(argv: string[]): Args | 'help' {
   if (dirtyAck === '') throw usage('--dirty-ack 에는 그대로 띄우는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
   if (!values.task && values['retry-of']) throw usage('--task 와 --retry-of 를 함께 준다')
+  if (values.preflight && !values.task) throw usage('--preflight 는 --task 와 함께 준다')
   if (values.task && (values.worktree || values.name)) throw usage('다시 띄우기의 워크트리는 이력에서 읽는다')
   if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
   if (!values.task && !values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
@@ -572,6 +614,7 @@ function parse(argv: string[]): Args | 'help' {
     lintAck,
     dirtyAck,
     resumeRemote,
+    preflight: values.preflight as boolean,
     passthru,
   }
 }
@@ -706,12 +749,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
   }
+  let boostOverride: CandidateOverride | null = null
   if (!passthru.includes('--terminal')) {
     const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task, continuation)
     if (rejected) {
       err(`거부: ${rejected}`)
       return 1
     }
+    boostOverride = applyUsageBoost(a.spec, passthru, retryRepo)
   }
   const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
   for (const warning of settings.warnings) err(`경고: ${warning}`)
@@ -762,6 +807,11 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
 
   const gate = await lintGate(a, continuation, execute)
   if (gate.stop !== null) return gate.stop
+  // --preflight 는 0~1-1 의 거부만 보고 끝낸다. 지시서, 워크트리, Orca 를 바꾸지 않는다(relaunch-worker 가 옛 worker 를 abandon 하기 전에 부른다)
+  if (a.preflight) {
+    out('PREFLIGHT-OK')
+    return 0
+  }
 
   const reserved = await reserveNumbers(a, retryRepo, execute)
   if (reserved !== null) return reserved
@@ -770,7 +820,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   const commandWarning = coordinatorCommandWarning(specText)
   if (commandWarning) err(`경고: ${a.spec}:${commandWarning.no}: ${commandWarning.command} 명령은 worker 가 직접 실행하지 않는다. 명령과 대상을 ask 로 코디네이터에게 보낸다고 허락 줄에 적는다`)
   const autoStep = autoStepNumberOf(specText)
-  const candidateOverride = candidateOverrideOf(specText)
+  const candidateOverride = boostOverride ?? candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
   let worktree: string

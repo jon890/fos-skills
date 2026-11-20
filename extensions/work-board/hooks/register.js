@@ -1,5 +1,7 @@
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
+import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
+/** @typedef {import('../../../types/index.d.ts').BoardSchedule} BoardSchedule */
 
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
@@ -33,6 +35,49 @@ import { PR_MS, createNetworkPoll } from './network-poll.js'
 // 파일과 로컬 명령은 계속 읽는다. 네트워크 조회는 network-poll.js 가 창 표시와 최근 입력, 조회별 주기로 제한한다.
 
 const PANE = 'work-board'
+const SCHEDULES_REF = { plugin: 'fos-skills', key: 'board-schedules', id: 'current' }
+/** @type {BoardSchedule[]} */
+let schedules = []
+
+function sameSchedules(left, right) {
+  const rows = Array.isArray(left) ? left : []
+  return rows.length === right.length && rows.every((row, i) => row === right[i])
+}
+
+export async function watchSchedule($, e, next) {
+  const result = await next(e)
+  try {
+    const at = await $.clock.now()
+    let held
+    try { held = await $.state.get(SCHEDULES_REF) } catch {
+      const updated = updateSchedules(schedules, e, result, at)
+      if (updated !== schedules) {
+        schedules = updated
+        $.ui.invalidate('ui.render')
+      }
+      return result
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const updated = updateSchedules(visibleSchedules(held.value, at), e, result, at)
+      if (sameSchedules(held.value, updated)) break
+      const saved = Number.isInteger(held.version)
+        ? await $.state.set(SCHEDULES_REF, updated, { ifVersion: held.version })
+        : await $.state.set(SCHEDULES_REF, updated)
+      if (saved.isSet) {
+        schedules = updated
+        $.ui.invalidate('ui.render')
+        break
+      }
+      held = await $.state.get(SCHEDULES_REF)
+    }
+    const latest = updateSchedules(visibleSchedules(held.value, at), e, result, at)
+    if (!sameSchedules(schedules, latest)) {
+      schedules = latest
+      $.ui.invalidate('ui.render')
+    }
+  } catch { /* 보드 상태 오류가 예약 도구의 결과를 바꾸지 않는다 */ }
+  return result
+}
 
 // PR 번호를 링크로 그릴 때 쓰는 저장소 주소. PR 조회 때 비어 있으면 orch 공유 캐시로 읽는다.
 let repoUrl = ''
@@ -1861,6 +1906,7 @@ function onPaneFocus($, e, next) {
 
 export function register(on) {
   on('session.start', async ($, e, next) => {
+    try { schedules = (await $.state.get(SCHEDULES_REF)).value || [] } catch { schedules = [] }
     await loadFile($)
     await loadApprovals($, true)
     networkPoll.input(await $.clock.now())
@@ -1896,6 +1942,8 @@ export function register(on) {
   on('ui.input', recordOrigin)
   on('ui.select', recordInput)
   on('ui.focus', onPaneFocus)
+  on('tool.call', { tool: 'CronCreate' }, watchSchedule)
+  on('tool.call', { tool: 'CronDelete' }, watchSchedule)
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
@@ -2357,6 +2405,9 @@ export function register(on) {
     // 접힌 보기에서 단추가 사라진 목록(줄이 비었거나 항목이 사라짐)은 펼침 상태를 버린다. 다시 생기면 접힌 채 나온다
     // 펼친 보기(d)는 단추를 그리지 않으므로 지우지 않고, 보드를 읽지 못한 동안에도 지우지 않는다
     const sectionViews = SECTIONS.slice(1).flatMap(manualView)
+    const activeSchedules = visibleSchedules(schedules, await $.clock.now())
+    const scheduleView = activeSchedules.length ? [box('schedules', 'blue', '예약  ' + activeSchedules.length,
+      activeSchedules.map((row) => Text({ key: 'schedule-' + row.id, wrap: 'wrap', children: [scheduleLine(row)] })))] : []
     if (!expanded && board && !board.error) for (const id of [...folded]) if (!shownFolds.has(id)) folded.delete(id)
 
     // 전체 진행률: 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합
@@ -2489,6 +2540,7 @@ export function register(on) {
         ...inboxView,
         ...workerView,
         ...prView,
+        ...scheduleView,
         ...sectionViews,
       ],
     })

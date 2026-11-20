@@ -27,6 +27,8 @@ function ownTerminal(path: string, opts: Own = {}): void {
     workerState: opts.state ?? 'succeeded',
     agentTerminalHandle: 'term_o',
     resource: { worktreeId: `x::${path}`, terminalHandle: 'term_o', ownershipState: 'user_owned', retainedReason: 'user_takeover' },
+    // failed 는 이유가 알려진 오류(worker 보고)로 둔다. 이유를 모르는 failed 는 끊김처럼 남긴다(lib/worker-state.ts 의 「failed 의 이유」)
+    ...(opts.status === 'failed' ? { projection: { stage: { detail: 'settled' } } } : {}),
   }
   fx.terminals = [{ handle: 'term_o', worktreePath: path }]
   fx.allWorkers = [worker]
@@ -283,6 +285,43 @@ describe('PR 없이 끝난 워크트리', () => {
     const out = runSweep(['--run', 'run_x', '--apply'])
     exists(path, out)
     lacks(calls(), 'terminal close')
+  })
+
+  // orch worker relaunch 가 옛 dispatch 를 abandon 하고 새 dispatch 를 띄우기 전의 틈이다(lib/relaunch-hold.ts)
+  function relaunchHold(path: string, at: Date, body?: string): void {
+    const dir = join(fx.repo, '.orch/state/relaunch-hold')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'ctx_o.json'), body ?? JSON.stringify({ dispatch: 'ctx_o', worktree: path, spec: null, at: at.toISOString() }))
+  }
+
+  test('다시 띄우는 중인 워크트리는 끝난 dispatch 뿐이어도 터미널과 함께 남긴다', () => {
+    const path = worktree('meas-11', { commits: 0, push: false })
+    ownTerminal(path, { status: 'abandoned', state: 'fenced' })
+    relaunchHold(path, new Date())
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    exists(path, out)
+    has(out, `남김 ${path}: 다시 띄우는 중(옛 dispatch ctx_o`)
+    lacks(calls(), 'terminal close')
+    lacks(calls(), 'worker-release')
+  })
+
+  test('다른 경로의 보존 표시와 깨진 표시 파일은 이 워크트리를 지키지 않는다', () => {
+    const path = worktree('meas-13', { commits: 0, push: false })
+    ownTerminal(path, { status: 'abandoned', state: 'fenced' })
+    relaunchHold(`${path}-other`, new Date())
+    gone(path, runSweep(['--run', 'run_x', '--apply']))
+    const broken = worktree('meas-14', { commits: 0, push: false })
+    ownTerminal(broken, { status: 'abandoned', state: 'fenced' })
+    relaunchHold(broken, new Date(), '{"dispatch": "ctx_o", "worktree":')
+    gone(broken, runSweep(['--run', 'run_x', '--apply']))
+  })
+
+  test('24시간이 지난 보존 표시는 듣지 않는다', () => {
+    const path = worktree('meas-12', { commits: 0, push: false })
+    ownTerminal(path, { status: 'abandoned', state: 'fenced' })
+    relaunchHold(path, new Date(Date.now() - 25 * 60 * 60 * 1000))
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    gone(path, out)
   })
 
   test('dry-run 은 치울 것만 낸다', () => {

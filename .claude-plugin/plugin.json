@@ -1,12 +1,13 @@
 {
   "name": "fos-skills",
-  "version": "18.67.0",
+  "version": "18.73.0",
   "description": "기능 스펙·설계, 구현, 독립 검증과 문서 개선을 orch 루프로 연결하는 소프트웨어 엔지니어링 스킬 모음",
   "author": {
     "name": "jon890"
   },
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
+  "types": "./types/index.d.ts",
   "skills": [
     "./export-only-skills/content-preview",
     "./export-only-skills/korean-check",

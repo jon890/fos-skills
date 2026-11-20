@@ -14,7 +14,8 @@
 //                abandoned, failed, stopped 가 아니며 반납(released)되지 않았다
 //     끝남       살아 있지 않고, dispatchStatus 가 completed, failed, canceled 이거나 workerState 가 succeeded, fenced 이거나
 //                반납됐다(terminalState 나 resource.releaseState 가 released). failed 도 끝난 것으로 본다(사용자 결정 2026-10-30).
-//                같은 워크트리로 다시 맡길 일이 있으면 새 워크트리로 띄운다
+//                같은 워크트리로 다시 맡길 일이 있으면 새 워크트리로 띄운다.
+//                다만 정리 도구는 그 경로의 가장 최근 dispatch 가 끊긴(lost) failed 면 워크트리를 남긴다(아래 「failed 의 이유」, 사용자 결정 2026-11-20)
 //     그 밖      끊긴 dispatch(dispatched 인데 workerState 가 abandoned 같은 것)다
 //
 // 넘겨받은 터미널: resource.ownershipState 가 user_owned 이고 그 행의 터미널 handle 이 own(호출자가 코디네이터 것으로 확인한 handle)에 없다.
@@ -40,6 +41,18 @@
 //     5 와 6 은 화면을 읽은 터미널에만 걸린다. 닫힌 터미널의 옛 소유 표시로 끝난 worker 를 붙잡지 않는다.
 //
 // judge 는 조회하지 않는다. 화면이 필요한 handle 은 screenHandles 로 고르고 readScreens 로 읽어 넘긴다.
+//
+// failed 의 이유(failedKind. dispatchStatus 가 failed 인 행만):
+//     lost     projection.stage.detail 이 terminal_missing 이다. Orca 가 재시작 복구에서 worker 터미널을 잃고 닫은 dispatch 다.
+//              실측(2026-11-20, 모든 Run 의 terminal_missing 48행): dispatch 의 lastFailure 가 모두
+//              「The assigned worker terminal is no longer live after orchestration recovery.」 였고, Run 에는 stopReason lost 인 멈춤 보고가 왔다
+//     error    detail 이 ERROR_DETAILS 가운데 하나다. worker 보고(settled), 코디네이터 중지(process_stopped), 버림(abandoned),
+//              에이전트 프로세스 끝남(process_exited), 띄우기 실패(agent_readiness, dispatch_input)
+//     unknown  detail 이 없거나 모르는 값이다. 끊김인지 오류인지 몰라 정리 도구는 lost 처럼 남긴다
+// heldDispatch 는 경로의 worker 행을 Run 마다 나눠 각 Run 의 가장 최근 행(worker-list 는 최신 dispatch 를 먼저 낸다)을 본다.
+//     하나라도 lost 나 unknown 이면 그 행을 낸다. Run 사이의 순서는 확인하지 못해 남기는 쪽으로 본다.
+//     살아 있지도 끝나지도 않은 행(dispatched 인데 workerState 가 abandoned 같은 것)도 unknown 이다. 복구가 failed 로 닫기 전의 끊김일 수 있다.
+//     같은 Run 에서 resume 이나 새 dispatch 가 떴으면 가장 최근 행이 그것이라 그 Run 은 보통 규칙으로 돌아간다
 
 import { objectOr } from '../core/json.ts'
 import { orcaJson } from './orca.ts'
@@ -162,6 +175,55 @@ export function judge(facts: Facts): Verdict {
   if (ahead === null) return { state: 'unknown', reason: `${done}, PR 없음, base 보다 앞선 커밋을 세지 못했다` }
   if (ahead === 0) return { state: 'done', reason: `${done}, PR 없음, base 보다 앞선 커밋 0 개` }
   return { state: 'unknown', reason: `${done}, PR 없음, base 보다 앞선 커밋 ${ahead} 개` }
+}
+
+export type FailedKind = 'lost' | 'error' | 'unknown'
+export type Held = { kind: 'lost' | 'unknown'; dispatch: string; detail: string; row: Row }
+
+export const LOST_DETAIL = 'terminal_missing'
+export const ERROR_DETAILS = new Set(['settled', 'process_stopped', 'abandoned', 'process_exited', 'agent_readiness', 'dispatch_input'])
+
+// 머리 주석의 「failed 의 이유」. failed 가 아니면 null 이다
+export function failedKind(row: Row): FailedKind | null {
+  if (row.dispatchStatus !== 'failed') return null
+  const detail = objectOr(objectOr(row.projection).stage).detail
+  if (detail === LOST_DETAIL) return 'lost'
+  return typeof detail === 'string' && ERROR_DETAILS.has(detail) ? 'error' : 'unknown'
+}
+
+// 머리 주석의 「failed 의 이유」 의 heldDispatch. rows 는 한 경로의 worker 행이고 worker-list 순서 그대로다
+export function heldDispatch(rows: Row[]): Held | null {
+  // Run 마다 첫 행이 그 Run 의 가장 최근 dispatch 다. Run 사이의 순서는 믿지 않고 하나라도 남길 것이면 남긴다
+  const seen = new Set<unknown>()
+  for (const row of rows) {
+    if (seen.has(row.runId)) continue
+    seen.add(row.runId)
+    const held = heldRow(row)
+    if (held) return held
+  }
+  return null
+}
+
+function heldRow(row: Row): Held | null {
+  const detail = objectOr(objectOr(row.projection).stage).detail
+  const shown = given(detail) ? String(detail) : '없음'
+  const kind = failedKind(row)
+  if (kind === 'lost' || kind === 'unknown') return { kind, dispatch: id(row), detail: shown, row }
+  // 살아 있지도 끝나지도 않은 행(dispatched 인데 workerState 가 abandoned 같은 것)은 복구가 닫기 전의 끊김일 수 있다
+  if (kind === null && !isLive(row) && !isFinished(row)) return { kind: 'unknown', dispatch: id(row), detail: `${String(row.dispatchStatus ?? '?')}/${String(row.workerState ?? '?')}`, row }
+  return null
+}
+
+// 끊긴 시각(ms). 행의 resource 반납 시각이다. Orca 는 복구에서 dispatch 를 닫으며 같은 때 반납한다(실측 2026-11-20). 없으면 null
+export function heldSince(row: Row): number | null {
+  const resource = objectOr(row.resource)
+  for (const value of [resource.releaseCompletedAt, resource.releaseRequestedAt]) {
+    if (typeof value !== 'string' || !value) continue
+    // Orca 는 sqlite 꼴 `YYYY-MM-DD HH:MM:SS`(UTC)로 적는다
+    const at = Date.parse(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value) ? `${value.replace(' ', 'T')}Z` : value)
+    if (Number.isFinite(at)) return at
+  }
+  return null
 }
 
 // 판정에 화면이 필요한 handle. 살아 있는 행 가운데 넘겨받은 것(판정 3)과, 살아 있지 않은 행 가운데 alive 에 든 터미널(판정 5, 6)이다.

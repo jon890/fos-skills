@@ -1,5 +1,37 @@
 # CHANGELOG: orch
 
+## 7.74.0 (2026-11-20)
+
+- 재부팅이나 Orca 재시작으로 끊긴 worker 와 기능 후속 검증이 대기인 워크트리를 정리가 지우지 않는다.
+- 남긴 워크트리는 `orch cleanup sweep --remove-kept` 로 지우고, 끊긴 지 하루가 넘으면 `orch doctor` 가 `KEPT-LOST` 로 알린다.
+
+## 7.73.3 (2026-11-20)
+
+- 요청 명령의 답(받음, 보류, 완료 같은 것)에 붙인 이유가 길면 보드 이력 줄에서 80자 안으로 줄여 BOARD-FAIL 없이 쓴다. 이유 전문은 요청 기록과 답 메시지에 남는다.
+
+## 7.73.2 (2026-11-20)
+
+- 보드 파일을 다른 저장소와 나눠 쓰는 저장소에서 루프의 보드 동기화가 틱마다 NOT-MAIN 으로 실패하지 않는다. 루프 밖에서 부른 보드 쓰기는 그대로 보드 저장소의 메인을 확인한다.
+- 이때 루프는 자기 저장소가 띄운 worker 의 항목만 고친다. 다른 저장소 항목의 PR 번호를 자기 저장소 PR 로 잘못 읽어 닫지 않는다.
+
+## 7.73.1 (2026-11-20)
+
+- 루프가 터미널에서 보낸 준비됨(dispatch 없이 Task 만 있는 status)도 완료 근거로 보고, 브랜치 PR 이 이미 머지된 worker 와 다른 저장소가 띄운 worker 에게 DONE-SUSPECT 를 보내지 않는다.
+
+## 7.73.0 (2026-11-20)
+
+- `orch worker relaunch --dispatch <id> -- <worker 인자>` 를 더했다. 사용 한도로 멈춘 worker 를 같은 워크트리와 지시서로 다른 모델에 다시 띄운다.
+- relaunch 는 이 Run 이 띄운 worker 인지, 커밋 안 된 변경과 남은 터미널을 먼저 본 뒤 옛 dispatch 를 abandon 하고 옛 터미널을 닫고 같은 Task 를 띄운다.
+- `worker 선택:` 줄이 새 인자와 다르면 띄우지 않고 `RELAUNCH-FIX <지시서>:<줄 번호>` 로 고칠 줄을 알린다.
+- 다시 띄우는 동안 cleanup 이 그 워크트리와 지시서를 지우지 않는다. 새 worker 가 뜨지 않으면 보존 표시가 24시간 남는다.
+- relaunch 는 살아 있는 worker 의 화면이 사용 한도가 아니면 `--working-ack` 없이 멈추고, abandon 전에 launch-worker --preflight 로 띄우기 전 검사를 돌린다.
+
+## 7.72.0 (2026-11-20)
+
+- Claude 주간 사용량이 남을 것 같으면 `orch worker launch` 가 코드·설계·문서 행의 Codex worker 를 같은 등급의 Claude 로 띄운다.
+- 바꾼 이유는 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 남고, `routing.usage_boost: false` 로 끈다.
+- 사용량을 읽지 못하면 `USAGE-UNKNOWN <이유>` 를 내고 모델 표 그대로 띄운다.
+
 ## 7.71.0 (2026-11-20)
 
 - 기능 루프에서 앞 단계 PR 머지나 사용자 결정 응답 직후 다음 단계 worker 를 묻지 않고 띄우는 코디네이터 규칙을 기본 동작으로 옮긴다.

@@ -79,7 +79,7 @@ export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line'
 export const REVIEW_KEYS: readonly string[] = ['prepare']
 
 // PR 종료 관측값의 저장소별 읽기 규칙.
-export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern']
+export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern', 'usage_boost']
 
 // inbox 절의 아는 키. 알림 필터이고 inbox 스킬(skills/inbox/scripts/inbox.ts)이 읽는다. docs/data-schema.md 「config.json 에 더하는 절」 표의 inbox 행이다.
 // enabled 는 false 로 그 저장소의 알림을 끄고, 나머지는 adapter 이름이다. adapter 를 더하면 이 목록에도 더한다
