@@ -292,6 +292,13 @@ test('같은 브랜치 이름의 옛 PR 이 띄우기 전에 머지됐으면 새
   rules([done('reused')]); await watchCompletions(repo, 'R', 'main')
   assert.deepEqual(state().suspects, ['reused'])
 })
+test('띄운 시각을 모르면 같은 브랜치의 MERGED PR 이 있어도 근거 없는 완료를 알린다', async () => {
+  recordLaunch(repo, { dispatch: 'no-time', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/no-time' })
+  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 9, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
+  process.env.GH = gh.path
+  rules([done('no-time')]); await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(state().suspects, ['no-time'])
+})
 test('같은 브랜치에 열린 PR 이 남았거나 PR 조회가 실패하면 머지된 PR 이 있어도 알린다', async () => {
   for (const [i, rule] of [{ stdout: JSON.stringify([{ number: 2, state: 'OPEN' }, { number: 1, state: 'MERGED' }]) }, { stderr: 'boom', code: 1 }].entries()) {
     const dispatch = `still-${i}`

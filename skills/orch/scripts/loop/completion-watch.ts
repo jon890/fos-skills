@@ -56,8 +56,10 @@ function foreignDispatch(repo: string, dispatch: string): boolean {
 }
 
 // dispatch 의 브랜치에 열린 PR 이 없고 MERGED PR 이 있는지. 브랜치를 모르거나 조회가 실패하면 false.
-// 띄운 시각(since)을 알면 그 뒤에 머지된 PR 만 센다. 같은 이름의 옛 브랜치 PR 로 새 dispatch 의 경고를 숨기지 않으려는 것이다
+// 띄운 시각(since) 뒤에 머지된 PR 만 센다. 같은 이름의 옛 브랜치 PR 로 새 dispatch 의 경고를 숨기지 않으려는 것이다. 띄운 시각을 모르면 숨기지 않는다
 function branchMerged(repo: string, launch: { branch?: string | null; spec?: string | null } | undefined, since: string | null): boolean {
+  const after = since ? Date.parse(since) : NaN
+  if (Number.isNaN(after)) return false
   let branch = launch?.branch ?? null
   if (!branch && launch?.spec) {
     try { branch = branchesOf(readFileSync(launch.spec, 'utf8'))[0] ?? null } catch { branch = null }
@@ -65,8 +67,7 @@ function branchMerged(repo: string, launch: { branch?: string | null; spec?: str
   if (!branch) return false
   const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,mergedAt', '--limit', '5'], { cwd: repo })
   if (!got.ok || !Array.isArray(got.data)) return false
-  const after = since ? Date.parse(since) : NaN
-  const recent = (pr: Json) => Number.isNaN(after) || Date.parse(String(pr?.mergedAt ?? '')) >= after
+  const recent = (pr: Json) => Date.parse(String(pr?.mergedAt ?? '')) >= after
   return !got.data.some(pr => pr?.state === 'OPEN') && got.data.some(pr => pr?.state === 'MERGED' && recent(pr))
 }
 
