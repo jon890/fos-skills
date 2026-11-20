@@ -260,3 +260,65 @@ test('DONE-RETURNED 전송이 실패하면 다시 되돌리지 않고 알림만 
   assert.equal(kinds().filter(k => k === 'DONE-RETURNED').length, 2, '실패한 시도 하나와 성공 하나')
   assert.ok(!kinds().includes('DONE-SUSPECT'))
 })
+
+// 2026-11-19 오탐: 준비됨을 보내고 머지된 worker 에게 DONE-SUSPECT 가 두 번 갔다.
+// 한 번은 띄우지 않은 저장소의 루프가, 한 번은 지시서를 지운 뒤 띄운 저장소의 루프가 보냈다
+test('dispatch 없이 터미널에서 보낸 준비됨도 같은 Task 와 발신자면 근거로 보고 머지된 PR 은 알리지 않는다', async () => {
+  const sha = 'e'.repeat(40)
+  const ready = { id: 'r346', type: 'status', run_id: 'R', from_handle: 'worker', payload: { taskId: 'task' }, body: `준비됨 #346, head ${sha}`, created_at: '2026-11-10T00:00:30Z' }
+  const gh = fakeBin(repo, 'gh', [{ args: ['view'], stdout: JSON.stringify({ number: 346, headRefName: 'fix/x', headRefOid: sha, title: '제목', url: 'u', state: 'MERGED' }) }])
+  process.env.GH = gh.path
+  recordLaunch(repo, { dispatch: 'd346', terminal: 'worker', worktree: repo, run: 'R', branch: 'fix/x' })
+  rules([done('d346')], [ready]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+})
+test('지시서를 지운 뒤 온 근거 없는 완료도 띄우기 기록의 브랜치 PR 이 MERGED 면 알리지 않는다', async () => {
+  const launch = { dispatch: 'merged', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/merged' }
+  recordLaunch(repo, launch)
+  recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+  forgetLaunch(repo, 'merged')
+  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 785, state: 'MERGED' }]) }])
+  process.env.GH = gh.path
+  rules([done('merged')]); await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+  assert.ok(state().ids.includes('merged'))
+})
+test('같은 브랜치에 열린 PR 이 남았거나 PR 조회가 실패하면 머지된 PR 이 있어도 알린다', async () => {
+  for (const [i, rule] of [{ stdout: JSON.stringify([{ number: 2, state: 'OPEN' }, { number: 1, state: 'MERGED' }]) }, { stderr: 'boom', code: 1 }].entries()) {
+    const dispatch = `still-${i}`
+    recordHistory(repo, { dispatch, terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: `fix/${dispatch}`, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
+    const gh = fakeBin(repo, 'gh', [{ args: ['list'], ...rule }])
+    process.env.GH = gh.path
+    rules([done(dispatch, dispatch, `2026-11-10T00:0${i + 1}:00Z`)]); await watchCompletions(repo, 'R', 'main')
+  }
+  assert.equal(notices().length, 2)
+  assert.deepEqual(state().suspects, ['still-0', 'still-1'])
+})
+test('띄우기 기록이 없고 Orca 의 worker 워크트리가 다른 저장소면 그 저장소의 루프에 맡기고 알리지 않는다', async t => {
+  const other = tempDir('completion-watch-other-', t)
+  execFileSync('git', ['init', '-q', repo])
+  execFileSync('git', ['init', '-q', other])
+  bin.setRules([
+    { args: ['check', 'worker_done'], stdout: envelope([done('foreign-done', 'foreign')]) }, { args: ['check', 'status'], stdout: envelope([]) },
+    { args: ['inbox'], stdout: envelope([]) },
+    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: 'foreign', status: 'completed' }, worker: { worktreeId: `repo::${other}` } } }) },
+    { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
+  ])
+  await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.deepEqual(state().suspects, [])
+  assert.ok(state().ids.includes('foreign-done'))
+})
+test('띄우기 기록이 없어도 Orca 가 이 저장소의 워크트리라고 하거나 조회가 실패하면 그대로 알린다', async () => {
+  execFileSync('git', ['init', '-q', repo])
+  bin.setRules([
+    { args: ['check', 'worker_done'], stdout: envelope([done('here')]) }, { args: ['check', 'status'], stdout: envelope([]) },
+    { args: ['inbox'], stdout: envelope([]) },
+    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: 'here', status: 'completed' }, worker: { worktreeId: `repo::${join(repo, 'worktrees', 'gone')}` } } }) },
+    { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
+  ])
+  await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(state().suspects, ['here'])
+})

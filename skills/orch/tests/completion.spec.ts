@@ -47,6 +47,21 @@ describe('classify', () => {
     assert.deepEqual(result.completionVerification, { status: 'ready', pr: 123, head: SHA, statusMessageId: 'm1' })
   })
 
+  test('dispatch 없이 터미널에서 보낸 준비 상태는 같은 Task 와 발신자면 근거다', () => {
+    const terminal = ready({ id: 'term-ready', task_id: undefined, dispatch_id: undefined, payload: { taskId: 'task_a' } })
+    const result = classify([message('worker_done', 2)], [terminal])[0]
+    assert.equal(result.type, 'worker_done')
+    assert.deepEqual(result.completionVerification, { status: 'ready', pr: 123, head: SHA, statusMessageId: 'term-ready' })
+  })
+
+  test('dispatch 없는 준비 상태는 발신자가 다르거나 같은 dispatch 의 근거가 있으면 쓰지 않는다', () => {
+    const terminal = (changes: Json = {}) => ready({ id: 'term-ready', task_id: undefined, dispatch_id: undefined, payload: { taskId: 'task_a' }, ...changes })
+    assert.equal(classify([message('worker_done', 2)], [terminal({ from_handle: 'term_other' })])[0].type, 'suspicious_worker_done')
+    const own = ready({ id: 'own', subject: `준비됨 #124, head ${SHA}`, created_at: '2026-10-23T00:00:00Z' })
+    const result = classify([message('worker_done', 2)], [own, terminal()])[0]
+    assert.equal((result.completionVerification as Json).statusMessageId, 'own')
+  })
+
   test('PR 없는 지시서의 첫 줄 완료 보고는 no-pr 근거로 인정한다', () => {
     const instructions = [
       '허락: PR 은 열지 않는다.\n## 완료 기준\n- 설계 문서를 작성한다.',
