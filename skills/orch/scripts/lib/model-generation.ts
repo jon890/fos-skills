@@ -7,8 +7,15 @@
 // 세대 비교는 숫자 조각을 앞에서부터 본다. 6.2 > 6.1 > 6 이다.
 //
 // 모델 목록: `codex debug models` 의 JSON(models[].slug, visibility, description, supported_reasoning_levels[].effort). CODEX_BIN 으로 실행 파일을 바꾼다.
-//     한 프로세스 안에서는 실행 파일마다 한 번만 부른다. 목록에 보이는 모델은 visibility 가 `list` 인 것이다.
+//     한 프로세스 안에서는 실행 파일과 계정마다 한 번만 부른다. 목록에 보이는 모델은 visibility 가 `list` 인 것이다.
+//     계정은 Orca 가 새 Codex worker 에 쓸 계정이다(workerCodexHome). `orca account list --agent codex` 의 activeAccountId 의 홈
+//     (ORCA_CODEX_ACCOUNTS, 없으면 ~/Library/Application Support/Orca/codex-accounts 아래 <id>/home)을 CODEX_HOME 으로 주고 부른다.
+//     Orca 관리 계정이 없거나(system) 조회하지 못하면 부른 셸의 환경 그대로다. ORCH_WORKER_CODEX_HOME 으로 홈을 정한다(빈 값이면 셸 그대로, 테스트).
 //     현재 세대는 목록에 보이고 설명이 `Legacy` 나 `Previous generation` 으로 시작하지 않는 것이다(스펙 REQ1).
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { orcaJson } from './orca.ts'
 import { run } from './proc.ts'
 
 export const CLAUDE_FAMILIES: readonly string[] = ['opus', 'sonnet', 'haiku', 'fable']
@@ -72,19 +79,40 @@ export function parseCodexModels(stdout: string): CodexList {
   return { models, failure: null }
 }
 
+let workerHome: { value: string | null } | null = null
+
+// Orca 가 새 Codex worker 에 쓸 계정의 홈. 모르면 null(부른 셸의 계정)이다
+export function workerCodexHome(): string | null {
+  const fixed = process.env.ORCH_WORKER_CODEX_HOME
+  if (fixed !== undefined) return fixed || null
+  if (workerHome) return workerHome.value
+  let value: string | null = null
+  const listed = orcaJson<Record<string, any>>(['account', 'list', '--agent', 'codex'], { timeoutMs: 10_000 })
+  if (listed.ok) {
+    const codex = listed.data?.codex ?? listed.data
+    const id = typeof codex?.activeAccountId === 'string' ? codex.activeAccountId : null
+    const root = process.env.ORCA_CODEX_ACCOUNTS || join(homedir(), 'Library/Application Support/Orca/codex-accounts')
+    if (id && /^[\w-]+$/.test(id) && existsSync(join(root, id, 'home'))) value = join(root, id, 'home')
+  }
+  workerHome = { value }
+  return value
+}
+
 // 실패는 `<실행 파일><failure>다` 로 읽히는 조각이다(model-check 의 경고 문장)
-export function readCodexModels(bin = codexBin()): CodexList {
-  const hit = cache.get(bin)
+export function readCodexModels(bin = codexBin(), home: string | null = workerCodexHome()): CodexList {
+  const cacheKey = `${bin}\0${home ?? ''}`
+  const hit = cache.get(cacheKey)
   if (hit) return hit
-  const done = run([bin, 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024 })
+  const done = run([bin, 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024, ...(home ? { env: { CODEX_HOME: home } } : {}) })
   const list: CodexList = done.code !== 0 ? { models: null, failure: `가 종료 코드 ${done.code} 로 끝났` } : parseCodexModels(done.stdout)
-  cache.set(bin, list)
+  cache.set(cacheKey, list)
   return list
 }
 
 // 테스트가 실행 파일을 바꾼 뒤 다시 읽게 한다
 export function forgetCodexModels(): void {
   cache.clear()
+  workerHome = null
 }
 
 // 같은 계열에서 목록에 보이고 effort 를 지원하는 모델 가운데 세대가 가장 높은 것. 없으면 null 이다
@@ -125,46 +153,58 @@ export function claudeGeneration(slug: string): Generation | null {
   return { from: slug, to: name.family, reason: '계열 이름으로 최신' }
 }
 
-// 표 문서(agent-selection.md)에서 모델을 바꾸는 줄. 「## 모델」 절과 「### 사용 한도에 걸렸을 때」 절의 표 줄(`|` 로 시작)만이다.
-// 다른 절의 산문(「기본 후보에서 뺀 모델」 의 `gpt-6-astra` 같은 것)은 세대를 바꾸면 뜻이 바뀌어 건드리지 않는다
-function tableLines(lines: string[]): number[] {
-  const picked: number[] = []
-  let inside = false
-  for (let i = 0; i < lines.length; i++) {
-    if (/^#{1,6} /.test(lines[i])) inside = lines[i] === '## 모델' || lines[i] === '### 사용 한도에 걸렸을 때'
-    else if (inside && lines[i].startsWith('|')) picked.push(i)
-  }
-  return picked
-}
+export type Skipped = { from: string; to: string; effort: string | null; reason: string }
+export type TablePlan = { upgrades: Generation[]; skipped: Skipped[]; text: string }
 
-// 표의 Codex 모델 가운데 목록에 같은 계열의 현재 세대가 더 높은 것. 표 문서를 맞추는 PR(스펙 REQ3)의 입력이다
-export function tableUpgrades(table: string, models: CodexModel[]): Generation[] {
-  const lines = table.split('\n')
-  const seen = new Set<string>()
-  const found: Generation[] = []
-  const current = models.filter(isCurrent)
-  for (const i of tableLines(lines)) {
-    for (const match of lines[i].matchAll(/`(gpt-[^`\s]+)`/g)) {
-      const slug = match[1]
-      if (seen.has(slug)) continue
-      seen.add(slug)
-      const name = parseModel(slug)
-      if (!name) continue
-      const target = newestOfFamily(slug, null, current)
-      if (target && compareGeneration(parseModel(target.slug)!.generation, name.generation) > 0) found.push({ from: slug, to: target.slug, reason: '같은 계열 새 세대' })
+// 표 줄 하나에서 Codex 모델 자리와 그 자리의 effort. 모델 표는 effort 칸의 같은 순서 값, 한도 표는 모델 뒤의 `effort` 다(없으면 null)
+function occurrences(line: string, modelTable: boolean): { start: number; end: number; slug: string; effort: string | null }[] {
+  const found: { start: number; end: number; slug: string; effort: string | null }[] = []
+  if (modelTable) {
+    const cells = line.split('|').slice(1, -1)
+    if (cells.length !== 5) return found
+    const efforts = [...cells[4].matchAll(/`([^`]+)`/g)].map(m => (m[1] === '기본' ? null : m[1]))
+    const offset = line.indexOf('|') + 1 + cells.slice(0, 3).reduce((sum, cell) => sum + cell.length + 1, 0)
+    let k = 0
+    for (const m of cells[3].matchAll(/`([^`]+)`/g)) {
+      if (m[1].startsWith('gpt-')) found.push({ start: offset + m.index!, end: offset + m.index! + m[0].length, slug: m[1], effort: efforts[k] ?? efforts[0] ?? null })
+      k++
     }
+    return found
   }
+  for (const m of line.matchAll(/`(gpt-[^`\s]+)`(?:\s+`([a-z]+)`)?/g)) found.push({ start: m.index!, end: m.index! + `\`${m[1]}\``.length, slug: m[1], effort: m[2] ?? null })
   return found
 }
 
-// 표 줄의 옛 세대를 새 세대로 바꾼다. 한도 표에서 걸린 모델 칸이 앞 줄과 같아진 줄은 빼고,
-// 같은 등급 대응 칸에서 걸린 모델 자신과 겹친 항목은 뺀다(`gpt-6.1-sol` 줄의 `gpt-6-sol` 이 둘 다 새 세대가 되는 경우)
-export function rewriteTable(table: string, upgrades: Generation[]): string {
+// 표 문서를 목록의 현재 세대로 맞춘 결과(스펙 REQ3). 자리마다 그 effort 를 지원하는 같은 계열 최신으로만 바꾼다.
+// 띄울 때의 판정(codexGeneration)과 같은 기준이라, 표 PR 을 머지한 뒤 표와 실제로 띄우는 모델이 같다.
+// 더 높은 세대가 있지만 그 effort 를 지원하지 않는 자리는 바꾸지 않고 skipped 에 이유를 남긴다.
+// 한도 표에서 걸린 모델 칸이 앞 줄과 같아진 줄은 빼고, 같은 등급 대응 칸에서 걸린 모델 자신과 겹친 항목은 뺀다
+export function planTable(table: string, models: CodexModel[]): TablePlan {
   const lines = table.split('\n')
-  const swap = (text: string) => upgrades.reduce((acc, u) => acc.replaceAll(`\`${u.from}\``, `\`${u.to}\``), text)
+  const current = models.filter(isCurrent)
+  const upgrades = new Map<string, Generation>()
+  const skipped = new Map<string, Skipped>()
+  let section = ''
+  for (let i = 0; i < lines.length; i++) {
+    if (/^#{1,6} /.test(lines[i])) { section = lines[i]; continue }
+    if (!lines[i].startsWith('|') || (section !== '## 모델' && section !== '### 사용 한도에 걸렸을 때')) continue
+    let line = lines[i]
+    for (const at of occurrences(line, section === '## 모델').reverse()) {
+      const name = parseModel(at.slug)
+      if (!name || name.provider !== 'codex') continue
+      const target = newestOfFamily(at.slug, at.effort, current)
+      const newest = newestOfFamily(at.slug, null, current)
+      if (target && compareGeneration(parseModel(target.slug)!.generation, name.generation) > 0) {
+        upgrades.set(`${at.slug}>${target.slug}`, { from: at.slug, to: target.slug, reason: '같은 계열 새 세대' })
+        line = `${line.slice(0, at.start)}\`${target.slug}\`${line.slice(at.end)}`
+      } else if (newest && compareGeneration(parseModel(newest.slug)!.generation, name.generation) > 0) {
+        skipped.set(`${at.slug}>${newest.slug}@${at.effort}`, { from: at.slug, to: newest.slug, effort: at.effort, reason: `${newest.slug} 가 effort ${at.effort} 를 지원하지 않아 바꾸지 않았다` })
+      }
+    }
+    lines[i] = line
+  }
   const drop = new Set<number>()
   const seenFrom = new Set<string>()
-  for (const i of tableLines(lines)) lines[i] = swap(lines[i])
   let inLimit = false
   for (let i = 0; i < lines.length; i++) {
     if (/^#{1,6} /.test(lines[i])) { inLimit = lines[i] === '### 사용 한도에 걸렸을 때'; continue }
@@ -176,5 +216,14 @@ export function rewriteTable(table: string, upgrades: Generation[]): string {
     const items = [...new Set(cells[1].split(/,\s*/))].filter(item => item !== cells[0])
     if (items.length && items.join(', ') !== cells[1]) lines[i] = `| ${cells[0]} | ${items.join(', ')} | ${cells[2]} |`
   }
-  return lines.filter((_, i) => !drop.has(i)).join('\n')
+  return { upgrades: [...upgrades.values()], skipped: [...skipped.values()], text: lines.filter((_, i) => !drop.has(i)).join('\n') }
+}
+
+// 띄울 때와 같은 기준으로 Codex 모델의 세대를 정한 값. 목록을 읽지 못하거나 codex 가 아니면 그대로다.
+// relaunch 의 사전 모델 검사가 launch 의 세대 판정 뒤 값을 검사하게 한다
+export function resolvedCodexModel(agent: string | null, model: string | null, effort: string | null): string | null {
+  if (agent !== 'codex' || !model) return model
+  const list = readCodexModels()
+  if (list.failure !== null) return model
+  return codexGeneration(model, effort, list.models)?.to ?? model
 }

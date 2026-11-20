@@ -140,6 +140,8 @@ beforeEach(() => {
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(binDir, 'orca'),
     CODEX_BIN: join(tmp, 'no-codex'),
+    // Orca 계정 조회(orca account list)를 부르지 않고 셸의 codex 환경을 쓴다. 계정 홈 판정은 lib-model-generation.spec.ts 가 본다
+    ORCH_WORKER_CODEX_HOME: '',
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     SPEC_LINT: join(binDir, 'spec-lint-ok.sh'),
@@ -296,6 +298,17 @@ describe('띄우기 전 확인', () => {
     assert.deepEqual(touched(orcaCalls()), [])
   })
 
+  test('사전 모델 검사는 launch 가 세대를 바꾼 뒤의 모델을 본다', () => {
+    // 목록에 새 세대만 남아도 옛 세대가 적힌 지시서를 MODEL-UNAVAILABLE 로 거부하지 않는다
+    writeSpec('codex', 'gpt-6.2-sol', 'medium')
+    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.3-sol","visibility":"list","description":"New.","supported_reasoning_levels":[{"effort":"medium"}]}]}'\n`)
+    chmodSync(join(tmp, 'codex'), 0o755)
+    env = { ...env, CODEX_BIN: join(tmp, 'codex') }
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
+    assert.doesNotMatch(r.out, /MODEL-UNAVAILABLE/)
+    assert.equal(r.code, 0, r.out)
+  })
+
   test('launch-worker 의 띄우기 전 검사에 걸리면 옛 worker 를 건드리지 않는다', () => {
     writeFileSync(spec, `# 일\n\n브랜치: \`feat/a\`\n${selectionLine('claude', 'claude-opus-5-5', 'medium')}\n`)
     const r = relaunch()
@@ -333,7 +346,7 @@ describe('다시 띄우기', () => {
     assert.match(order[0], /worker-abandon --dispatch ctx_old/)
     assert.match(order[1], /terminal close --terminal term_old/)
     // abandon 뒤 Task 가 ready 라 --retry-of 를 붙이지 않는다
-    assert.match(order[2], /worker-start --run run_1 --task task_1 --worktree path:.*--agent claude --model opus --effort medium/)
+    assert.match(order[2], /worker-start --run run_1 --task task_1 --worktree path:.*--agent claude --model claude-opus-5-5 --effort medium/)
     assert.doesNotMatch(order[2], /--retry-of/)
     assert.ok(!existsSync(holdFile()))
   })

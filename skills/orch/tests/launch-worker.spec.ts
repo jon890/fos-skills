@@ -136,6 +136,8 @@ beforeEach(() => {
     ORCA: join(binDir, 'orca'),
     // 실제 codex 의 모델 목록에 기대지 않게 없는 실행 파일로 고정한다(검사 불능이라 경고만 나온다)
     CODEX_BIN: join(tmp, 'no-codex'),
+    // Orca 계정 조회(orca account list)를 부르지 않고 셸의 codex 환경을 쓴다. 계정 홈 판정은 lib-model-generation.spec.ts 가 본다
+    ORCH_WORKER_CODEX_HOME: '',
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     MAKE_WORKTREE: make,
@@ -723,6 +725,25 @@ describe('모델 세대', () => {
     assert.match(started(), / --model gpt-6\.2-sol --effort medium(?: |$)/)
     assert.equal(effective(r), undefined)
     assert.equal(history().effective?.generation, undefined)
+  })
+
+  test('`후보 밖:` 으로 정한 모델은 세대를 바꾸지 않는다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 6.1 세대로 재현한다.').replace('effort `medium`', 'effort `low`'))
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model for coding.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model gpt-6\.1-sol --effort low(?: |$)/)
+    assert.equal(effective(r)?.generation, undefined)
+  })
+
+  test('`후보 밖:` 으로 정한 Claude 모델 ID 는 계열 이름으로 바꾸지 않는다', () => {
+    writeFileSync(spec, '# 일\n허락: push\n- **worker 선택:** `claude` `claude-opus-5-5` effort `medium`. 행: impl-explore. 이유: 탐색. 후보 밖: codex 사용 한도.\n')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model claude-opus-5-5 --effort medium(?: |$)/)
+    assert.equal(effective(r)?.generation, undefined)
   })
 
   test('Claude 는 계열 이름으로 띄우고 worker 세션 기록의 실제 모델 ID 를 기록에 남긴다', () => {

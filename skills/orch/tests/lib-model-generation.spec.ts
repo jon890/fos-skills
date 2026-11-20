@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { tempDir } from '../../../modules/testkit/temp.ts'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import {
-  claudeGeneration, codexGeneration, compareGeneration, isCurrent, parseCodexModels, parseModel, rewriteTable, sameFamily, tableUpgrades, type CodexModel,
+  claudeGeneration, codexGeneration, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, planTable, readCodexModels, resolvedCodexModel, sameFamily, workerCodexHome, type CodexModel,
 } from '../scripts/lib/model-generation.ts'
 import { limitRowOf } from '../scripts/lib/usage-boost.ts'
 
@@ -87,14 +89,14 @@ describe('띄울 세대', () => {
 
 describe('표 문서', () => {
   test('지금 표는 오늘 목록의 최신 세대라 바꿀 모델이 없다', () => {
-    assert.deepEqual(tableUpgrades(TABLE, TODAY), [])
+    assert.deepEqual(planTable(TABLE, TODAY), { upgrades: [], skipped: [], text: TABLE })
   })
 
   test('표의 모델보다 높은 같은 계열의 현재 세대가 나오면 바꿀 모델로 낸다. 산문의 모델은 보지 않는다', () => {
     const next = [...TODAY, model('gpt-6.3-sol', 'Fast, go-to model.'), model('gpt-6.3-astra', 'Most capable.')]
-    const upgrades = tableUpgrades(TABLE, next)
-    assert.deepEqual(upgrades.map(u => `${u.from}>${u.to}`), ['gpt-6.2-sol>gpt-6.3-sol', 'gpt-6.2-astra>gpt-6.3-astra'])
-    const rewritten = rewriteTable(TABLE, upgrades)
+    const plan = planTable(TABLE, next)
+    assert.deepEqual(plan.upgrades.map(u => `${u.from}>${u.to}`), ['gpt-6.2-sol>gpt-6.3-sol', 'gpt-6.2-astra>gpt-6.3-astra'])
+    const rewritten = plan.text
     assert.doesNotMatch(rewritten.split('### 새 모델과 새 세대')[0], /`gpt-6\.2-sol`/)
     // 「기본 후보에서 뺀 모델」 의 옛 astra 는 그대로다
     assert.match(rewritten, /`gpt-6-astra` 는 worker 와 하위 에이전트의 기본 후보에서 뺀다/)
@@ -108,12 +110,51 @@ describe('표 문서', () => {
       '| `gpt-6.1-sol` | `gpt-6-sol`, Claude Sonnet 5.5 | `gpt-6-luna` |', '| `gpt-6-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |', '',
       '### 다음', '`gpt-6-sol` 은 산문이다',
     ].join('\n')
-    const upgrades = [{ from: 'gpt-6.1-sol', to: 'gpt-6.2-sol', reason: '' }, { from: 'gpt-6-sol', to: 'gpt-6.2-sol', reason: '' }]
-    const rewritten = rewriteTable(table, upgrades)
+    const rewritten = planTable(table, [model('gpt-6.2-sol'), model('gpt-6.1-sol', 'Previous generation.'), model('gpt-6-sol', 'Legacy.')]).text
     assert.match(rewritten, /\| `impl` \| 구현 \| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
     assert.match(rewritten, /^\| `gpt-6\.2-sol` \| Claude Sonnet 5\.5 \| `gpt-6-luna` \|$/m)
     assert.equal(rewritten.match(/^\| `gpt-6\.2-sol` \|/gm)?.length, 1)
     assert.match(rewritten, /`gpt-6-sol` 은 산문이다/)
+  })
+})
+
+describe('표 문서의 effort', () => {
+  test('새 세대가 그 자리의 effort 를 지원하지 않으면 그 자리는 바꾸지 않고 이유를 남긴다. 띄울 때의 판정과 같다', () => {
+    // 6.2 는 low 만, 6.3 은 medium 만 지원한다
+    const list = [model('gpt-6.3-sol', 'New.', ['medium']), model('gpt-6.2-sol', 'Current.', ['low'])]
+    const plan = planTable(TABLE, list)
+    assert.match(plan.text, /\| `impl-planned` \| [^|]+\| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
+    assert.match(plan.text, /\| `impl-explore` \| [^|]+\| `codex` \| `gpt-6\.3-sol` \| `medium` \|/)
+    assert.ok(plan.skipped.some(k => k.from === 'gpt-6.2-sol' && k.to === 'gpt-6.3-sol' && k.effort === 'low' && /effort low 를 지원하지 않아/.test(k.reason)))
+    assert.equal(codexGeneration('gpt-6.2-sol', 'low', list), null)
+    assert.equal(codexGeneration('gpt-6.2-sol', 'medium', list)?.to, 'gpt-6.3-sol')
+  })
+})
+
+describe('계정', () => {
+  test('Orca 가 새 Codex worker 에 쓸 계정 홈으로 모델 목록을 읽는다', (t) => {
+    const dir = tempDir('model-home-', t)
+    const saved = { ...process.env }
+    t.after(() => { process.env = saved; forgetCodexModels() })
+    const accounts = join(dir, 'accounts')
+    mkdirSync(join(accounts, 'acct-1', 'home'), { recursive: true })
+    process.env.ORCA_CODEX_ACCOUNTS = accounts
+    delete process.env.ORCH_WORKER_CODEX_HOME
+    process.env.ORCA = linkBin(dir, 'orca', `console.log(JSON.stringify({ ok: true, result: { codex: { activeAccountId: 'acct-1', accounts: [] } } }))`)
+    // 가짜 codex 는 CODEX_HOME 을 모델 설명으로 돌려준다
+    process.env.CODEX_BIN = linkBin(dir, 'codex', `console.log(JSON.stringify({ models: [{ slug: 'gpt-6.3-sol', visibility: 'list', description: process.env.CODEX_HOME || 'shell', supported_reasoning_levels: [{ effort: 'medium' }] }] }))`)
+    forgetCodexModels()
+    assert.equal(workerCodexHome(), join(accounts, 'acct-1', 'home'))
+    assert.equal(readCodexModels().models?.[0].description, join(accounts, 'acct-1', 'home'))
+    assert.equal(resolvedCodexModel('codex', 'gpt-6.2-sol', 'medium'), 'gpt-6.3-sol')
+    // 조회하지 못하거나 관리 계정이 없으면 부른 셸 그대로다
+    process.env.ORCA = linkBin(dir, 'orca-fail', 'process.exit(1)')
+    forgetCodexModels()
+    assert.equal(workerCodexHome(), null)
+    process.env.ORCH_WORKER_CODEX_HOME = ''
+    delete process.env.CODEX_HOME
+    forgetCodexModels()
+    assert.equal(readCodexModels().models?.[0].description, 'shell')
   })
 })
 

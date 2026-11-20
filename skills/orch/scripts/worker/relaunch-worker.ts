@@ -54,6 +54,8 @@ import { orchWord, scriptPath } from '../lib/commands.ts'
 import { real } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
+import { resolvedCodexModel } from '../lib/model-generation.ts'
+import { pinnedSelection } from '../lib/selection.ts'
 import { launchHistory } from '../lib/launch-history.ts'
 import { readLaunch } from '../lib/launched.ts'
 import { closeTerminal, orcaJson } from '../lib/orca.ts'
@@ -334,7 +336,13 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
   const launcher = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
   try {
     out(`RELAUNCH-TARGET ${t.dispatch} task=${t.task} status=${t.status} worktree=${t.worktree} spec=${t.spec}`)
-    const settings = checkLaunchSettings({ agent: passValue(a.passthru, '--agent'), model: passValue(a.passthru, '--model'), effort: passValue(a.passthru, '--effort') })
+    // launch 는 세대를 바꾼 뒤의 모델을 띄우므로 같은 값을 검사한다. `후보 밖:` 으로 정한 모델은 그대로 검사한다(launch-worker 머리 주석의 「0-0-1」)
+    const agent = passValue(a.passthru, '--agent')
+    const effort = passValue(a.passthru, '--effort')
+    let pinned = false
+    try { pinned = pinnedSelection(readFileSync(t.spec, 'utf8')) } catch { /* 지시서 문제는 아래 선택 검사가 알린다 */ }
+    const model = pinned ? passValue(a.passthru, '--model') : resolvedCodexModel(agent, passValue(a.passthru, '--model'), effort)
+    const settings = checkLaunchSettings({ agent, model, effort })
     if (settings.reject) throw new Refused(settings.reject)
     limitCheck(t, a.workingAck)
     if (a.workingAck !== null && LIVE_DISPATCH.has(t.status)) out(`working-ack: ${a.workingAck}`)

@@ -39,6 +39,7 @@
 //        사용량 출처가 없거나 읽지 못하거나 1시간보다 오래됐으면 `USAGE-UNKNOWN <이유>` 를 내고 그대로 띄운다. 설정 routing.usage_boost 가 false 면 보지 않는다.
 //        --terminal 로 이어 쓰면 보지 않는다
 //     0-0-1. 0-0 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). --terminal 로 이어 쓰면 보지 않는다.
+//        지시서에 `후보 밖:` 이 있으면(사람이 고른 모델) 0-0 이 바꾼 경우만 본다. 모델 목록은 Orca 가 새 worker 에 쓸 Codex 계정으로 읽는다.
 //        codex 는 `codex debug models` 에 같은 계열(`gpt-<세대>-<계열>` 의 계열)의 더 높은 세대가 있고 effort 를 지원하면 --model 을 그 세대로 바꾼다.
 //        적힌 모델을 이 계정이 받지 못하면(목록에 없거나 effort 를 지원하지 않는다) 받을 수 있는 같은 계열 최신으로 이 띄우기만 바꾼다. 목록을 읽지 못하면 바꾸지 않는다.
 //        claude 는 `claude-<계열>-<세대>` 를 계열 이름(opus, sonnet, haiku, fable)으로 바꿔 Claude Code 가 그 계열의 최신 모델로 띄우게 한다.
@@ -181,7 +182,7 @@ import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
-import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
+import { candidateOverrideOf, pinnedSelection, selectionVerdict } from '../lib/selection.ts'
 import { boostEnabled, decideBoost, readSelectionTable, readWeekly, usageCacheFile } from '../lib/usage-boost.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
@@ -798,7 +799,10 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       return 1
     }
     boostOverride = applyUsageBoost(a.spec, passthru, retryRepo)
-    generation = applyGeneration(passthru)
+    // 지시서가 `후보 밖:` 으로 모델을 정했으면 세대를 바꾸지 않는다. 사용량 판정이 표의 값으로 바꾼 경우는 바꾼다(머리 주석의 「0-0-1」)
+    let pinned = false
+    try { pinned = pinnedSelection(readFileSync(a.spec, 'utf8')) } catch { /* 지시서를 읽지 못하면 spec-line 이 알린다 */ }
+    if (boostOverride || !pinned) generation = applyGeneration(passthru)
   }
   const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
   for (const warning of settings.warnings) err(`경고: ${warning}`)

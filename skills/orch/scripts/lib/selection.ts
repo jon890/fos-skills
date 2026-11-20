@@ -94,3 +94,8 @@ export function selectionVerdict(text: string, _repo: string, options: { launch?
   }
   return errors
 }
+
+// 지시서의 `worker 선택:` 이 `후보 밖:` 으로 모델을 정했는지. 정했으면 launch 가 세대를 바꾸지 않는다(사람이 고른 모델을 지킨다)
+export function pinnedSelection(text: string): boolean {
+  return !!selectionsOf(text)[0]?.outsideReason
+}
