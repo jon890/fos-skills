@@ -47,8 +47,11 @@ export type WatchState = {
 }
 export type Notice = { kind: string; text: string }
 type Exec = (argv: string[], opts?: RunOptions) => RunResult
-// board 는 보드에 새 모델 항목을 더한다. 실패하면 이유를, 보드가 없어 건너뛰었거나 성공하면 null 을 낸다
-export type WatchOptions = { stateFile?: string; now?: number; exec?: Exec; notify: (notice: Notice) => void; board?: (id: string, title: string) => string | null }
+// board 는 보드에 항목을 더한다. 성공하면 null, 보드가 없어 건너뛰었으면 BOARD_SKIPPED, 실패하면 이유를 낸다.
+// 건너뛴 것은 기록하지 않는다. 보드를 나중에 만든 저장소도 다음에 목록을 읽을 때 항목을 받는다
+export const BOARD_SKIPPED = Symbol('board-skipped')
+type BoardResult = string | null | typeof BOARD_SKIPPED
+export type WatchOptions = { stateFile?: string; now?: number; exec?: Exec; notify: (notice: Notice) => void; board?: (id: string, title: string) => BoardResult }
 
 export function watchFile(): string {
   return join(machineDir(), 'model-watch.json')
@@ -91,11 +94,11 @@ export function newModels(state: WatchState, models: CodexModel[]): WatchState {
 }
 
 // 보드에 새 모델 항목을 더한다. 보드 파일이 없는 저장소는 건너뛴다
-export function boardWriter(repo: string, exec: Exec): (id: string, title: string) => string | null {
+export function boardWriter(repo: string, exec: Exec): (id: string, title: string) => BoardResult {
   return (id, title) => {
     let file: string
     try { file = boardPath(repo) } catch (e) { return (e as Error).message }
-    if (!existsSync(file)) return null
+    if (!existsSync(file)) return BOARD_SKIPPED
     const done = exec(scriptCommand(process.env.BOARD_BIN || BOARD_BIN, ['set', id, 'decide', '--title', title, '--file', file]), { timeoutMs: 30_000 })
     return done.code === 0 ? null : (done.stderr || done.stdout).trim().split('\n').pop() || `종료 코드 ${done.code}`
   }
@@ -106,7 +109,8 @@ export function boardWriter(repo: string, exec: Exec): (id: string, title: strin
 function tableOf(repo: string, exec: Exec): { text: string } | null {
   if (existsSync(join(repo, TABLE_PATH))) {
     const base = defaultBase(repo) ?? 'main'
-    exec(['git', '-C', repo, 'fetch', '-q', 'origin', base], { timeoutMs: 60_000 })
+    // refspec 를 적어야 작업 브랜치만 받은(--single-branch) 체크아웃에도 origin/<기본 브랜치> 가 생긴다
+    exec(['git', '-C', repo, 'fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], { timeoutMs: 60_000 })
     const shown = exec(['git', '-C', repo, 'show', `origin/${base}:${TABLE_PATH}`], { timeoutMs: 30_000 })
     return { text: shown.code === 0 ? shown.stdout : readFileSync(join(repo, TABLE_PATH), 'utf8') }
   }
@@ -145,8 +149,8 @@ export function watchModels(repo: string, opts: WatchOptions): void {
       // 보드 쓰기는 성공할 때까지 목록을 읽을 때마다 같은 항목 ID 로 다시 한다. Run 알림은 다시 보내지 않는다
       if (mine.boarded.includes(slug)) continue
       const failed = board(`model-new-${slug.replace(/[^a-z0-9-]/g, '-')}`, `새 모델 ${slug}`)
-      if (failed) notices.push({ kind: 'MODEL-BOARD-FAIL', text: `${slug}: ${failed}` })
-      else mine.boarded.push(slug)
+      if (typeof failed === 'string') notices.push({ kind: 'MODEL-BOARD-FAIL', text: `${slug}: ${failed}` })
+      else if (failed === null) mine.boarded.push(slug)
     }
     mine.checked_at = now
     // 알림을 보내기 전에 기록한다. 보내다 죽어도 같은 모델을 다시 알리지 않는다
@@ -165,8 +169,8 @@ export function watchModels(repo: string, opts: WatchOptions): void {
       }
       if (mine.tables[`board:${stale.to}`]) continue
       const failed = board(`model-table-${stale.to.replace(/[^a-z0-9-]/g, '-')}`, `모델 표를 ${stale.to} 로 바꿀 때`)
-      if (failed) later.push({ kind: 'MODEL-BOARD-FAIL', text: `${stale.to}: ${failed}` })
-      else mine.tables[`board:${stale.to}`] = { at: now }
+      if (typeof failed === 'string') later.push({ kind: 'MODEL-BOARD-FAIL', text: `${stale.to}: ${failed}` })
+      else if (failed === null) mine.tables[`board:${stale.to}`] = { at: now }
     }
     writeWatch(file, { ...state, repos: { ...state.repos, [repo]: mine } })
     for (const notice of later) opts.notify(notice)

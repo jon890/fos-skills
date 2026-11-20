@@ -9,7 +9,7 @@ import { copyRepo, git, gitEnv } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { run } from '../scripts/lib/proc.ts'
 import type { RunOptions } from '../scripts/lib/proc.ts'
-import { boardWriter, FIRST_COMPARE, newModels, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
+import { BOARD_SKIPPED, boardWriter, FIRST_COMPARE, newModels, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
 
 const DAY = WATCH_MS
 const entry = (slug: string, description: string, visibility = 'list') => ({ slug, visibility, description, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] })
@@ -125,7 +125,7 @@ describe('보드와 여러 저장소', () => {
     assert.deepEqual([item?.status, item?.title], ['decide', '새 모델 gpt-6.3-sol'])
     const bare = join(tmp, 'bare')
     mkdirSync(bare)
-    assert.equal(boardWriter(bare, exec)('x', 'y'), null)
+    assert.equal(boardWriter(bare, exec)('x', 'y'), BOARD_SKIPPED)
   })
 
 })
@@ -190,5 +190,41 @@ describe('낡은 표 행', () => {
     git(other, ['commit', '-qam', 'new row'])
     git(other, ['push', '-q', 'origin', 'main'])
     assert.deepEqual(watch(repo, DAY, undefined, () => null), [{ kind: 'MODEL-TABLE-STALE', text: 'impl-new gpt-6.2-sol → gpt-6.3-sol' }])
+  })
+
+  test('작업 브랜치만 받은 체크아웃도 기본 브랜치를 받아 그 표를 본다', () => {
+    const { dir: repo, origin } = copyRepo(join(tmp, 'fos'))
+    mkdirSync(join(repo, 'skills/orch/references'), { recursive: true })
+    writeFileSync(join(repo, TABLE_PATH), readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8'))
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'table'])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    git(repo, ['push', '-q', 'origin', 'main:work'])
+    const single = join(tmp, 'single')
+    git(tmp, ['clone', '-q', '--single-branch', '--branch', 'work', origin, single])
+    // 기본 브랜치에만 옛 세대 행이 더해졌다
+    const file = join(repo, TABLE_PATH)
+    const text = readFileSync(file, 'utf8')
+    const row = text.split('\n').find(line => line.startsWith('| `impl-explore` |'))!
+    writeFileSync(file, text.replace(row, `${row}\n${row.replace('`impl-explore`', '`impl-new`')}`))
+    git(repo, ['commit', '-qam', 'new row'])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    codexList(NEXT)
+    const stale = watch(single, 0, undefined, () => null).filter(n => n.kind === 'MODEL-TABLE-STALE').map(n => n.text)
+    assert.ok(stale.includes('impl-new gpt-6.2-sol → gpt-6.3-sol'))
+  })
+
+  test('보드가 없어 건너뛴 항목은 기록하지 않아, 보드를 나중에 만들면 다음에 목록을 읽을 때 더한다. Run 알림은 한 번이다', () => {
+    const repo = join(tmp, 'other')
+    mkdirSync(repo)
+    codexList(NEXT)
+    const written: string[] = []
+    let ready = false
+    const board = (id: string) => { if (!ready) return BOARD_SKIPPED; written.push(id); return null }
+    assert.ok(watch(repo, 0, undefined, board).some(n => n.kind === 'MODEL-TABLE-STALE'))
+    assert.deepEqual(written, [])
+    ready = true
+    assert.deepEqual(watch(repo, DAY, undefined, board), [])
+    assert.deepEqual(written.sort(), ['model-new-gpt-6-2-astra', 'model-table-gpt-6-3-sol'])
   })
 })
