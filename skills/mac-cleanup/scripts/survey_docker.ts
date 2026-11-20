@@ -7,8 +7,10 @@
 // RUNTIMES_JSON 은 `container_runtimes.ts --json-out FILE` 이 쓴 파일이다. 기본은 거기서 켜져 있는(state running) 이 맥 안의 런타임 모두다.
 // 같은 소켓을 가리키는 context 는 container_runtimes.ts 가 런타임 하나로 합쳤으므로 런타임마다 한 번만 조사한다.
 // --runtime ID 를 주면 그 런타임 하나만 켜짐 여부와 상관없이 조사한다(승인받아 방금 켠 런타임). 이 맥 밖의 엔진은 조사하지 않는다.
-// 런타임마다 `## 런타임 ID` 절로 나누고, `docker_images.ts --context` 와 `docker_volumes.ts --context --peek N --json-out` 의 출력을 그대로 보인다.
-// volume 조사 JSON 은 DIR/volumes-<ID 를 읽기 쉽게 바꾼 이름>-<ID 해시 8자리>.json 에 쓰고(ID 가 다르면 이름이 겹치지 않는다), 두 조사가 모두 성공했을 때만 그 경로를 출력한다. 실패하면 이전 실행의 같은 파일도 지운다. `delete_volumes.ts` 가 이 파일을 입력으로 받는다.
+// 런타임마다 `## 런타임 ID` 절로 나누고, `docker_images.ts --context --json-out` 과 `docker_volumes.ts --context --peek N --json-out` 의 출력을 그대로 보인다.
+// 조사 JSON 은 DIR/images-<조각>.json 과 DIR/volumes-<조각>.json 에 쓴다. 조각은 ID 를 읽기 쉽게 바꾼 이름과 ID 해시 8자리라 ID 가 다르면 이름이 겹치지 않는다.
+// 두 조사가 모두 성공했을 때만 두 경로를 `이미지 조사 파일:`, `volume 조사 파일:` 줄로 출력한다. 실패하면 이전 실행의 같은 파일도 지운다.
+// `docker_cleanup.ts rmi --images-json` 이 이미지 파일을, `delete_volumes.ts` 가 volume 파일을 입력으로 받는다. 사용자에게 보인 목록과 지우는 목록이 한 번의 조사에서 나온다.
 // 사용자의 현재 context 설정은 바꾸지 않는다. 한 런타임의 조사가 실패해도 나머지를 계속한다.
 //
 // 종료 코드: 0 조사 완료, 1 한 런타임이라도 조사가 실패함, 2 입력 오류.
@@ -51,7 +53,9 @@ const ENTRY: Entry = {
 }
 
 // 런타임 id 마다 다른 파일 이름. 읽기 쉬운 이름 조각에 id 전체의 해시를 붙여 `foo+bar` 와 `foo_bar` 가 같은 파일로 겹치지 않는다
-export const volumesFileName = (id: string): string => `volumes-${id.replace(/[^A-Za-z0-9.-]/g, '_')}-${createHash('sha256').update(id).digest('hex').slice(0, 8)}.json`
+const surveyFileName = (kind: string, id: string): string => `${kind}-${id.replace(/[^A-Za-z0-9.-]/g, '_')}-${createHash('sha256').update(id).digest('hex').slice(0, 8)}.json`
+export const volumesFileName = (id: string): string => surveyFileName('volumes', id)
+export const imagesFileName = (id: string): string => surveyFileName('images', id)
 
 const script = (name: string): string => join(import.meta.dirname, name)
 
@@ -99,14 +103,17 @@ export function main(argv: string[]): number {
   for (const rt of targets) {
     write(1, `\n## 런타임 ${rt.id} (${rt.label}, context=${rt.context})\n`)
     const volumes = join(outDir, volumesFileName(rt.id))
-    rmSync(volumes, { force: true }) // 이전 실행의 파일이 이번 조사 결과로 읽히지 않게 한다
-    const images = runSurvey('이미지', [script('docker_images.ts'), '--context', rt.context!])
+    const imageFile = join(outDir, imagesFileName(rt.id))
+    // 이전 실행의 파일이 이번 조사 결과로 읽히지 않게 한다
+    for (const f of [volumes, imageFile]) rmSync(f, { force: true })
+    const images = runSurvey('이미지', [script('docker_images.ts'), '--context', rt.context!, '--json-out', imageFile])
     const vols = runSurvey('volume', [script('docker_volumes.ts'), '--context', rt.context!, '--peek', peek, '--json-out', volumes])
     if (images && vols) {
+      write(1, `이미지 조사 파일: ${imageFile}\n`)
       write(1, `volume 조사 파일: ${volumes}\n`)
     } else {
       failed = true
-      rmSync(volumes, { force: true })
+      for (const f of [volumes, imageFile]) rmSync(f, { force: true })
       write(1, `${rt.id}: 조사에 실패했다. 이 런타임의 이미지와 volume 은 정리 후보에 넣지 않는다\n`)
     }
   }

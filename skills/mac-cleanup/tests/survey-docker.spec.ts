@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
 import { Sandbox, write } from './helpers.ts'
-import { volumesFileName } from '../scripts/survey_docker.ts'
+import { imagesFileName, volumesFileName } from '../scripts/survey_docker.ts'
 import { makeRow, type Row } from './runtimes-helpers.ts'
 
 const ROWS: Row[] = [
@@ -51,6 +51,18 @@ describe('REQ4 런타임별 조사', () => {
     assert.ok(!existsSync(join(outDir, volumesFileName('colima:default'))))
   })
 
+  test('런타임마다 이미지 조사 파일을 따로 쓰고 경로를 알린다. 파일 이름은 volume 파일과 같은 조각을 쓴다', () => {
+    const { run, outDir } = setup()
+    const done = run()
+    assert.equal(done.code, 0, done.stderr)
+    for (const [id, context] of [['docker-desktop', 'desktop-linux'], ['orbstack', 'orbstack']]) {
+      const file = join(outDir, imagesFileName(id))
+      assert.ok(done.stdout.includes(`이미지 조사 파일: ${file}\n`), done.stdout)
+      assert.equal(JSON.parse(readFileSync(file, 'utf8')).context, context)
+      assert.equal(imagesFileName(id).replace(/^images-/, ''), volumesFileName(id).replace(/^volumes-/, ''))
+    }
+  })
+
   test('--runtime 은 꺼짐으로 적힌 런타임도 그 하나만 조사한다. 파일 이름의 :은 _ 다', () => {
     const { run, outDir, contexts } = setup()
     const done = run(['--runtime', 'colima:default'])
@@ -78,10 +90,13 @@ describe('REQ4 런타임별 조사', () => {
   test('조사가 실패하면 volume 조사 파일 경로를 내지 않고 이전 실행의 같은 파일도 지운다', () => {
     const { run, outDir } = setup([{ args: ['--context', 'orbstack', 'images'], stderr: 'boom', code: 1 }])
     const stale = write(join(outDir, volumesFileName('orbstack')), '{"volumes": []}')
+    const staleImages = write(join(outDir, imagesFileName('orbstack')), '{"images": []}')
     const done = run()
     assert.equal(done.code, 1)
     assert.ok(!done.stdout.includes(volumesFileName('orbstack')), done.stdout)
+    assert.ok(!done.stdout.includes(imagesFileName('orbstack')), done.stdout)
     assert.ok(!existsSync(stale))
+    assert.ok(!existsSync(staleImages))
     assert.ok(done.stdout.includes('volume 조사 파일: ') && done.stdout.includes(volumesFileName('docker-desktop')))
   })
 

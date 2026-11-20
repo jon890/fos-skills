@@ -1,0 +1,1 @@
+- `survey_docker.ts` 가 런타임마다 이미지 조사 결과를 `images-*.json` 으로 남기고, `docker_cleanup.ts rmi` 가 `--images-json` 과 `--class` 로 그 파일의 한 분류를 통째로 지운다. 사용자에게 보인 목록과 지우는 목록이 한 번의 조사에서 나온다.
