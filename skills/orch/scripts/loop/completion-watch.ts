@@ -8,7 +8,8 @@
 //   이어 맡기지 못하면 이유와 `orch worker continue --dispatch <id>` 를 DONE-SUSPECT 에 적는다. 전송 기록은 되돌린 직후에 남겨 다음 틱이 다시 보내지 않는다.
 // 리뷰 dispatch 는 띄우기 기록이 지워져도 영구 이력의 spec 으로 알아본다(lib/review.ts).
 // 다른 저장소의 dispatch: 한 Run 에 저장소마다 루프가 있으면 모든 루프가 같은 worker_done 을 읽는다. 이 저장소에 띄우기 기록이 없고
-//   Orca 의 worker 워크트리가 다른 저장소의 것인 근거 없는 보고는 알리지 않고 본 것으로만 남긴다. 띄운 저장소의 루프가 맡는다.
+//   Orca 의 worker 워크트리가 다른 저장소의 것이고 그 저장소에 이 Run 을 보는 살아 있는 루프가 있으면, 근거 없는 보고를 알리지 않고 본 것으로만 남긴다.
+//   띄운 저장소의 루프가 맡는다. 그 저장소에 루프가 없으면 이 루프가 알린다.
 //   띄운 루프는 지시서를 지운 뒤 「(지시서를 읽지 못했다)」 를 붙여 본문이 달라, Run 알림의 중복 억제(lib/run-notice.ts)를 지나 두 번 갔다(2026-11-19).
 // 머지된 dispatch: 근거 없는 보고라도 띄우기 기록의 브랜치(없으면 지시서의 첫 `브랜치:` 줄)에 열린 PR 이 없고 MERGED PR 이 있으면
 //   이미 끝난 일이라 DONE-SUSPECT 를 보내지 않는다. PR 조회가 실패하면 판단하지 않고 그대로 알린다.
@@ -21,7 +22,7 @@ import { ghJson } from '../lib/gh.ts'
 import { linkBoardPr, prTaskRef } from '../lib/board.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
-import { runKey } from '../lib/loop.ts'
+import { isRegistered, loopStatus, runKey } from '../lib/loop.ts'
 import { reviewPrOfDispatch } from '../lib/review.ts'
 import { readLaunch } from '../lib/launched.ts'
 import { launchHistory } from '../lib/launch-history.ts'
@@ -46,13 +47,15 @@ export function completionMessages(run: string): Json[] {
   return messages(['check', '--run', run, '--all', '--types', 'worker_done']).filter(m => m.type === 'worker_done')
 }
 
-// Orca 의 worker 워크트리가 다른 저장소의 것인지. 조회하지 못하거나 워크트리가 지워져 저장소를 알 수 없으면 모른다(false)
-function foreignDispatch(repo: string, dispatch: string): boolean {
+// Orca 의 worker 워크트리가 다른 저장소의 것이고 그 저장소에 이 Run 을 보는 살아 있는 루프가 있는지.
+// 조회하지 못하거나 워크트리가 지워져 저장소를 알 수 없으면 모른다(false). 그 저장소에 루프가 없으면 어디서도 알리지 않게 되므로 false 다
+function foreignDispatch(repo: string, run: string, dispatch: string): boolean {
   if (!dispatch) return false
   const owner = dispatchRepo(repo, dispatch)
   if (owner === null || !existsSync(owner)) return false
   const mine = mainCheckout(repo)
-  return owner !== mine && !owner.startsWith(`${mine}/`)
+  if (owner === mine || owner.startsWith(`${mine}/`)) return false
+  return isRegistered(owner, run) && loopStatus(owner, Date.now()).alive
 }
 
 // dispatch 의 브랜치에 열린 PR 이 없고 MERGED PR 이 있는지. 브랜치를 모르거나 조회가 실패하면 false.
@@ -133,7 +136,7 @@ export async function watchCompletions(repo: string, run: string, base: string, 
     const id = String(message.id)
     const launch = launchOf(dispatch)
     const verified = message.completionVerification as Json | undefined
-    if (!launch && verified?.status === 'suspicious' && foreignDispatch(repo, dispatch)) {
+    if (!launch && verified?.status === 'suspicious' && foreignDispatch(repo, run, dispatch)) {
       seen.ids.push(id); if (time(message) > seen.last) seen.last = time(message); save(); continue
     }
     if (launch?.completion !== 'none' && (verified?.status === 'ready' || verified?.status === 'suspicious')) {
