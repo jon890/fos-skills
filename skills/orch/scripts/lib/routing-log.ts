@@ -308,7 +308,7 @@ async function collect(repo: string, pr: number, outcome: Outcome): Promise<void
     version: 1, recorded_at: new Date().toISOString(), pr, repo: target.slug, branch: info.headRefName,
     merged_at: outcome === 'merged' ? info.mergedAt : null, closed_at: outcome === 'closed' ? info.closedAt : null, outcome,
     dispatches: rows.map(row => ({ dispatch: row.dispatch, at: row.at, agent: row.agent ?? null, model: row.model ?? null,
-      effort: row.effort ?? null, effective: row.effective ? { agent: row.effective.agent ?? null, model: row.effective.model ?? null, effort: row.effective.effort ?? null } : null, experiment: row.experiment ?? null, row: row.row ?? null,
+      effort: row.effort ?? null, effective: row.effective ? { agent: row.effective.agent ?? null, model: row.effective.modelId ?? row.effective.model ?? null, effort: row.effective.effort ?? null } : null, experiment: row.experiment ?? null, row: row.row ?? null,
       retry_of: row.retry_of ?? null, opened_pr: row.dispatch === opener.dispatch })),
     task_row: opener.row ?? null, first_review: review?.first_review ?? null, size_grade: review?.size_grade ?? null,
     fix_commits_after_review: review?.at && commits ? commits.filter(c => ms(c.commit?.committer?.date) > ms(review.at)).length : null,
