@@ -10,6 +10,8 @@
 //   git 이 추적하거나 무시하지 않는 파일 가운데 tests/ 아래 *.spec.ts 를 `node --test` 한 번으로 돌고, tsc 도 함께 돈다.
 //   인자를 주면 그 파일이나 glob, 폴더만 돈다(tsc 는 돌지 않는다). 폴더는 그 아래 *.spec.ts, 나머지는 node 파일이다.
 //   --tsc-only 는 반대로 tsc 만 돌고 테스트는 돌지 않는다. 타입만 확인할 때 쓴다. tsc 줄과 종료 코드는 전체 실행의 tsc 단계와 같다.
+//   --shard I/N 은 정렬한 node 파일을 N 개로 번갈아 나눠 I 번째(1부터)만 돈다. tsc 는 1번 shard 만 돈다.
+//   CI 가 job 여러 개로 나눠 돌 때 쓴다. 번갈아 나누면 무거운 파일이 한쪽에 몰리지 않는다(2개로 나눠 각 shard 의 파일별 시간 합 차이 8%, 2026-11-20 CI 기록).
 //
 // tsc:
 //   node 는 타입을 지우기만 해서 잘못된 속성 접근이 실행 때까지 드러나지 않는다. 저장소에 package.json 과
@@ -26,6 +28,7 @@
 //   node scripts/run-tests.ts                              모든 묶음과 tsc 를 전경으로 돌린다
 //   node scripts/run-tests.ts skills/orch/tests/a.spec.ts  주어진 파일이나 glob, 폴더만 돌린다
 //   node scripts/run-tests.ts --tsc-only                  tsc 타입 검사만 돌린다(테스트 없음, 파일 인자와 함께 쓰지 않는다)
+//   node scripts/run-tests.ts --shard 1/2                  묶음을 둘로 나눈 첫째 몫과 tsc 를 돌린다
 //   node scripts/run-tests.ts --background                 띄우고 결과 폴더를 출력한 뒤 바로 끝난다
 //   node scripts/run-tests.ts --wait "$DIR"                결과 폴더의 끝 줄을 기다린다
 //
@@ -34,6 +37,7 @@
 //   --timeout SEC     node 테스트 하나의 제한(--test-timeout), node 단계의 무진행 감시, tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다.
 //                     node 단계는 파일 완료 보고가 SEC 초 동안 없을 때 끊고, 보고가 없는 파일을 모두 시간 초과로 센다
 //   --tsc-only        tsc 만 돈다. 파일 인자와 함께 줄 수 없다(2)
+//   --shard I/N       node 파일의 I 번째 몫만 돈다(1 <= I <= N). tsc 는 I 가 1 일 때만 돈다. --tsc-only 와 함께 줄 수 없다(2)
 //   --out DIR         결과 폴더 (기본: 임시 폴더 아래 새 폴더)
 //   --max-wait SEC    --wait 가 기다릴 최대 시간 (기본 540, Bash 도구의 600초 안)
 //
@@ -82,7 +86,8 @@ const REPORTER = fileURLToPath(new URL("./run-tests-reporter.ts", import.meta.ur
 // 띄운 단계들. 신호나 예외로 끝날 때 그룹을 모두 정리한다.
 const running = new Set<ChildProcess>();
 
-type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; tscOnly: boolean; wait?: string; patterns: string[] };
+export type Shard = { index: number; count: number };
+type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; tscOnly: boolean; shard?: Shard; wait?: string; patterns: string[] };
 export type Targets = { node: string[]; tsc: boolean };
 
 export function parseArgs(argv: string[], parallelism = availableParallelism()): Options {
@@ -105,11 +110,27 @@ export function parseArgs(argv: string[], parallelism = availableParallelism()):
     else if (arg === "--wait") opts.wait = value(++i, arg);
     else if (arg === "--background") opts.background = true;
     else if (arg === "--tsc-only") opts.tscOnly = true;
+    else if (arg === "--shard") opts.shard = parseShard(value(++i, arg));
     else if (arg.startsWith("-")) throw new Error(`모르는 옵션: ${arg}`);
     else opts.patterns.push(arg);
   }
   if (opts.tscOnly && opts.patterns.length) throw new Error(`--tsc-only 는 파일 인자와 함께 쓰지 않는다: ${opts.patterns.join(" ")}`);
+  if (opts.tscOnly && opts.shard) throw new Error("--tsc-only 는 --shard 와 함께 쓰지 않는다");
   return opts;
+}
+
+function parseShard(text: string): Shard {
+  const m = /^(\d+)\/(\d+)$/.exec(text);
+  const index = m ? Number(m[1]) : NaN;
+  const count = m ? Number(m[2]) : NaN;
+  if (!(index >= 1 && index <= count)) throw new Error(`--shard 는 I/N 꼴이고 1 <= I <= N 이어야 한다: ${text}`);
+  return { index, count };
+}
+
+// 정렬한 파일을 번갈아 나눈 I 번째 몫. tsc 는 첫 shard 만 돈다
+export function pickShard(targets: Targets, shard?: Shard): Targets {
+  if (!shard) return targets;
+  return { node: targets.node.filter((_, i) => i % shard.count === shard.index - 1), tsc: targets.tsc && shard.index === 1 };
 }
 
 function clean(path: string) {
@@ -387,6 +408,7 @@ async function run(opts: Options, cwd: string): Promise<number> {
     }
     targets = found;
   }
+  targets = pickShard(targets, opts.shard);
   if (!targets.node.length && !targets.tsc) {
     console.error(`돌릴 테스트 파일이 없다: ${opts.patterns.length ? opts.patterns.join(" ") : "tests/ 아래 *.spec.ts"}`);
     return 2;
@@ -397,7 +419,7 @@ async function run(opts: Options, cwd: string): Promise<number> {
   writeFileSync(summary, "");
   writeFileSync(join(out, PID_FILE), String(process.pid));
   console.log(
-    `결과 폴더: ${out} (node 파일 ${targets.node.length}개${targets.tsc ? ", tsc" : ""}, 동시 ${opts.concurrency}개)`,
+    `결과 폴더: ${out} (node 파일 ${targets.node.length}개${targets.tsc ? ", tsc" : ""}, 동시 ${opts.concurrency}개${opts.shard ? `, shard ${opts.shard.index}/${opts.shard.count}` : ""})`,
   );
 
   const stop = () => {
