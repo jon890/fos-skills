@@ -11,6 +11,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { lineBody, MAX_BODY } from '../../../../extensions/work-board/hooks/line-rules.js'
 import { boardIds, isClosed, nextRequestState, replyKind, replyTarget, REQUEST_STATES } from '../core/main-coordinator.ts'
 import type { RequestAction, RequestState } from '../core/main-coordinator.ts'
 import { BOARD_BIN } from './board.ts'
@@ -143,8 +144,15 @@ export function stateWord(state: RequestState): string {
   return STATE_WORD[state]
 }
 
+// 보드 줄 본문은 MAX_BODY(80자) 안이어야 한다(work-board 의 줄 규칙). 넘으면 이유를 줄이고 `…` 를 붙인다. 이유 전문은 기록과 답 메시지에 남는다
 function historyLine(h: RequestHistory): string {
-  return `${h.at.slice(0, 16).replace('T', ' ')} 요청 ${STATE_WORD[h.state]}${h.reason ? `: ${h.reason}` : ''}`
+  const head = `${h.at.slice(0, 16).replace('T', ' ')} 요청 ${STATE_WORD[h.state]}`
+  const reason = (h.reason ?? '').replace(/\s+/g, ' ').trim()
+  if (!reason) return head
+  const full = `${head}: ${reason}`
+  if ([...lineBody(full)].length <= MAX_BODY) return full
+  const room = Math.max(0, MAX_BODY - [...head].length - ': …'.length)
+  return `${head}: ${[...reason].slice(0, room).join('').trimEnd()}…`
 }
 
 export type BoardOutcome = { repo: string; item: string; result: 'written' | 'skipped' | 'failed'; error?: string }
