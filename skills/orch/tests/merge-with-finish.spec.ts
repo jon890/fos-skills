@@ -5,8 +5,8 @@
 // (tests/fixtures/merge-queue-fakes.ts). GitHub 와 Orca 에는 닿지 않는다.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -840,5 +840,53 @@ describe('짧은 출력', () => {
     const r = await c.wrap(['--repo', c.tmp, '12'])
     assert.match(r.stdout, /^마무리 시작: PR 12 /m)
     assert.deepEqual(await c.lines('queue out='), ['queue out='])
+  })
+})
+
+// 같은 PR 에 머지 큐가 둘 뜨지 않게 한다(lib/queue-claims.ts). 도는 큐는 명령줄에 merge_queue. 가 든 node 프로세스로 흉내 낸다
+describe('merge-with-finish 이미 맡은 PR', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  function fakeQueue(t: TestContext): number {
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'merge_queue.fake'], { stdio: 'ignore' })
+    t.after(() => child.kill('SIGKILL'))
+    return child.pid!
+  }
+  function claim(c: Ctx, pid: number, prs: number[]): void {
+    const dir = join(c.tmp, '.orch', 'state', 'queue-claims')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `${pid}.json`), JSON.stringify({ pid, prs }))
+  }
+
+  test('다른 큐가 맡은 PR 은 마무리도 큐도 걸지 않고 한 줄로 알린다', async (t) => {
+    const c = setup(t)
+    const pid = fakeQueue(t)
+    claim(c, pid, [449])
+    const r = await c.wrap(['--repo', c.tmp, '449!', '450'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, `QUEUE-SKIP 449 pid ${pid} 의 머지 큐가 이미 맡았다`)
+    assert.deepEqual(await c.lines('queue'), [`queue --repo ${c.tmp} 450`])
+    assert.deepEqual(Object.keys(await c.finishes(1)), ['450'])
+    // 끝나면 내 기록을 지운다. 다른 큐의 기록은 남긴다
+    assert.deepEqual(readdirSync(join(c.tmp, '.orch', 'state', 'queue-claims')), [`${pid}.json`])
+  })
+
+  test('모든 PR 을 다른 큐가 맡았으면 QUEUE-SKIPPED 로 끝나고 아무것도 걸지 않는다', async (t) => {
+    const c = setup(t)
+    const pid = fakeQueue(t)
+    claim(c, pid, [449, 450])
+    const r = await c.wrap(['--repo', c.tmp, '449', '450'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^QUEUE-SKIPPED 449 450$/m)
+    await sleep(300)
+    assert.equal(existsSync(c.logFile), false)
+  })
+
+  test('죽은 프로세스의 기록은 막지 않고 지운다', async (t) => {
+    const c = setup(t)
+    claim(c, 999999, [449])
+    const r = await c.wrap(['--repo', c.tmp, '449'])
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stdout, 'QUEUE-SKIP')
+    assert.deepEqual(await c.lines('queue'), [`queue --repo ${c.tmp} 449`])
+    assert.deepEqual(readdirSync(join(c.tmp, '.orch', 'state', 'queue-claims')), [])
   })
 })
