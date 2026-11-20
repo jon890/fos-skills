@@ -1,6 +1,6 @@
 // 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
 //     cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders]
-//                      [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]
+//                      [--agent-glob 'agent-*'] [--close-own-taken-over] [--remove-kept DIR ...] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]
 //
 //     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
 //                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
@@ -24,6 +24,10 @@
 //     --close-own-taken-over
 //                   --run 과 함께 줄 때만 쓴다. 이 Run 의 끝난 dispatch 가 쓴 터미널이 `user_takeover` 로 남았어도
 //                   worktrees.ts 파일 맨 위 설명의 「넘겨받은 터미널」 조건을 모두 채우면 닫고 정리한다. 없으면 예전처럼 남긴다
+//     --remove-kept 끊긴 worker 나 후속 검증 대기로 남긴 그 워크트리를 남기지 않고 정리한다. 여러 번 줄 수 있다.
+//                   코디네이터가 다시 띄우지 않기로 정한 워크트리에 준다(worktrees.ts 파일 맨 위 설명의 「남기는 워크트리」).
+//                   커밋 안 된 변경, 원격에 없는 커밋, 살아 있는 worker, 터미널 소유 확인은 그대로 막는다.
+//                   다른 정리 대상도 평소처럼 함께 정리한다. 그 워크트리만 지우는 옵션이 아니다
 //     --remote-branches
 //                   저장소마다 워크트리와 로컬 브랜치 정리가 끝난 뒤, 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다
 //                   (remote-branches.ts 파일 맨 위 설명의 「원격 브랜치 삭제」 의 --remote-branches). 없으면 하지 않는다
@@ -66,7 +70,7 @@ import { isObject } from '../../core/json.ts'
 import { sweepLine } from './output.ts'
 
 const USAGE =
-  "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]"
+  "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--remove-kept DIR ...] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]"
 
 // argparse 의 float 와 같은 꼴만 받는다. 무한대와 NaN 도 받아 범위 검사가 거부하게 한다. 수가 아니면 null 이다
 function parseFloatArg(text: string): number | null {
@@ -96,6 +100,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     'kill-holders': { type: 'boolean', default: false },
     'agent-glob': { type: 'string', default: 'agent-*' },
     'close-own-taken-over': { type: 'boolean', default: false },
+    'remove-kept': { type: 'string', multiple: true },
     'remote-branches': { type: 'boolean', default: false },
     trash: { type: 'string' },
     apply: { type: 'boolean', default: false },
@@ -105,7 +110,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
   } as const
   let values
   try {
-    const expanded = expandArgs(argv, options, ['repo', 'base', 'run', 'specs-dir', 'agent-glob', 'trash', 'wait', 'poll-interval'])
+    const expanded = expandArgs(argv, options, ['repo', 'base', 'run', 'specs-dir', 'agent-glob', 'remove-kept', 'trash', 'wait', 'poll-interval'])
     ;({ values } = parseArgs({ args: expanded, options, allowPositionals: false }))
   } catch (e) {
     err(`${USAGE}\ncleanup-sweep: ${(e as Error).message}`)
@@ -222,6 +227,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
     killHolders: values['kill-holders'],
     agentGlob: values['agent-glob'],
     closeOwnTakenOver: values['close-own-taken-over'],
+    removeKept: new Set((values['remove-kept'] ?? []).map((path) => realPath(path))),
     remoteBranches: values['remote-branches'],
     trash: trashDir(values.trash),
     apply: values.apply,
