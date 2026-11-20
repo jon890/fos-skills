@@ -199,7 +199,14 @@ export function sync(session: Session, setupErrors: Record<string, string>, forc
         byId.set(item.id, known ? { ...item, state: known.state, at: known.at } : item)
       }
     }
-    const items = [...byId.values()].filter((item) => !(Date.parse(item.at) < Date.parse(since)))
+    const exclusions = new Map(config.adapters.map((entry) => [entry.type, entry]))
+    const items = [...byId.values()].filter((item) => {
+      if (Date.parse(item.at) < Date.parse(since)) return false
+      const entry = exclusions.get(item.adapter)
+      const key = item.source === 'messenger' ? 'excludeChannels' : 'excludeProjects'
+      const values = entry?.[key]
+      return !Array.isArray(values) || !item.scope.some((scope) => values.includes(scope))
+    })
     const dismissed = store.dismissed()
     const pending = items
       .filter((item) => item.state === 'new' && !dismissed.has(item.id))
@@ -422,4 +429,3 @@ if (import.meta.main) {
     tmpDir: tmpdir(),
   })
 }
-

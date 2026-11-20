@@ -242,6 +242,19 @@ describe('답함과 넘김 (R5)', () => {
 })
 
 describe('저장소 필터 (R8, R9)', () => {
+  test('사람 단위 제외 목록은 저장된 항목까지 다음 받기에서 없앤다', () => {
+    const main = repo('main', null)
+    state.items = [item('excluded', ['proj-id', 'PROJECT']), item('keep', ['other']), item('channel', ['room-id', '개발방'], undefined, { source: 'messenger' })]
+    writeConfig({})
+    assert.equal(call('fetch', '--force'), 0)
+    assert.equal(board(main).items.length, 3)
+    writeConfig({ adapters: [{ type: 'fake', excludeProjects: ['PROJECT'], excludeChannels: ['개발방'] }] })
+    state.items = []
+    assert.equal(call('fetch', '--force'), 0)
+    assert.deepEqual(board(main).items.map((row) => row.id), ['fake:task:keep'])
+    assert.deepEqual(new Store().cache().items.map((row) => row.id), ['fake:task:keep'])
+  })
+
   test('필터가 있는 저장소는 자기 항목만, 없는 저장소는 모두 보인다', () => {
     writeConfig({})
     state.items = [item('home', ['smarthome']), item('fos', ['fos-assistant']), item('loose', ['etc'])]
