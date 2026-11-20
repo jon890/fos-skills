@@ -1,6 +1,6 @@
 // pid 생존 확인과 작업 디렉터리 점유 프로세스 찾기의 한 벌이다.
 
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { inside, real } from './fs.ts'
 import { run } from './proc.ts'
 
@@ -19,6 +19,18 @@ export function alive(pid: number, options: { keepOnUnknownError?: boolean } = {
     const code = (e as NodeJS.ErrnoException).code
     return code === 'EPERM' || (options.keepOnUnknownError === true && code !== 'ESRCH')
   }
+}
+
+// pid 의 시작 시각과 명령줄. pid 가 다른 프로세스에 다시 쓰였는지 구분하는 데 쓴다(큐 잠금, PR 실행권).
+// 죽었으면 null 이고, 살아 있는데 읽지 못하면 던진다. 읽지 못한 것을 죽음으로 보면 살아 있는 쪽의 잠금을 회수한다
+export function identity(pid: number): string | null {
+  if (!alive(pid)) return null
+  const read = run([process.env.PS || 'ps', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], { env: { LC_ALL: 'C' } })
+  if (read.code !== 0 || !read.stdout.trim()) {
+    if (!alive(pid)) return null
+    throw new Error(`pid ${pid} 의 시작 시각과 명령줄을 읽지 못했다`)
+  }
+  return read.stdout.trim()
 }
 
 // pid 파일에 적힌 프로세스가 살아 있는지. 파일이 없거나 정수가 아니면 false 다
@@ -54,24 +66,4 @@ export function cwdHolders(dir: string): { ok: true; holders: { pid: number; cwd
     }
   }
   return { ok: true, holders }
-}
-
-// 마무리(queue/finish-pr.ts --pid-file)의 다시 돌기 표시(<pid 파일>.rerun). 있으면 지우고 true. 지우기 하나라 orch followup done 과 겹쳐도 한쪽만 가져간다
-export function takeRerun(pidFile: string): boolean {
-  try {
-    unlinkSync(`${pidFile}.rerun`)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// 끝내기 전에 표시를 본다. 없으면 pid 파일을 지운 뒤 한 번 더 본다. followup done 은 표시를 먼저 쓰고 pid 를 보므로,
-// pid 가 살아 있는 것을 본 요청의 표시는 이 두 번째 확인에서 반드시 보인다(PR 558 리뷰). 다시 돌면 pid 파일을 다시 쓴다
-export function rerunAfter(pidFile: string): boolean {
-  if (takeRerun(pidFile)) return true
-  try { unlinkSync(pidFile) } catch { /* 이미 없다 */ }
-  if (!takeRerun(pidFile)) return false
-  writeFileSync(pidFile, String(process.pid))
-  return true
 }

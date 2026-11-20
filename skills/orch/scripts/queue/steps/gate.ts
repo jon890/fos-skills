@@ -1,11 +1,13 @@
 // 머지 전 조건 판정. 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 같은 함수를 쓴다.
-// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 판정, 기능 완료 근거 블록(독립 리뷰 줄 포함), 마이그레이션 번호.
+// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 판정, 기능 완료 근거 블록(독립 리뷰 줄 포함),
+// 통합 테스트 기록(queue.integration_tests 가 있을 때만), 마이그레이션 번호.
 // 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
 
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
 import { judgePrReview } from '../../lib/review-judgement.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { contractSettings } from '../../lib/contract-merge.ts'
+import { integrationNeeds, integrationProblems, integrationRules } from '../../core/integration-evidence.ts'
 import { baseMergesOnly, featureBranch, featureEvidenceProblem, planDeletionOnly } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
@@ -15,7 +17,7 @@ import type { Pr, StepContext } from './model.ts'
 import { Conflict, FAIL_SEL, HeadChanged, PENDING, ROLL_NAMES, ROLL_NAMES_NO_SKIPPED, Stop, WorkerFix } from './model.ts'
 import type { StepState } from './model.ts'
 import { fetchPrRefs } from './overlap.ts'
-import { field, prEnv } from './pr.ts'
+import { api, field, prEnv } from './pr.ts'
 import { chomp, log, namesJson, nap, stop } from './runtime.ts'
 
 // ci 는 체크, threads·evidence·migration 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
@@ -101,8 +103,9 @@ export async function loadPr(stepContext: StepContext, state: StepState, n: stri
 }
 
 // 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
+// notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다.
 // 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
-export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; fixed: string[] }> {
+export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; fixed: string[]; notes: string[] }> {
   const o = state.o
   const p = state.p
   const n = p.n
@@ -112,6 +115,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   const fixed: string[] = []
   // 미해결 스레드 수. 조회하지 못했으면 null 이라 block 을 반영 완료로 풀지 않는다
   let unresolved: number | null = null
+  const notes: string[] = []
 
   if (checks !== 'none') {
     const f = await field(stepContext, state, n, 'statusCheckRollup', state.q.failed)
@@ -171,15 +175,32 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
     throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${String(evidence.data.headRefOid ?? '').slice(0, 8)}`)
   } else {
     // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 본다
-    const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false,
-      (verified) => fetchPrRefs(stepContext, state) && (
-        baseMergesOnly(state.repoDir, p.ph, verified, p.base, contractSettings(loadConfig(state.repoDir))?.paths ?? null) ||
-        planDeletionOnly(state.repoDir, p.ph, verified, p.base)
-      ))
+    // 통합 테스트 기록의 커밋도 같은 예외로 받는다(docs/features/gate-integration-evidence/design.md)
+    const accept = (verified: string): boolean => fetchPrRefs(stepContext, state) && (
+      baseMergesOnly(state.repoDir, p.ph, verified, p.base, contractSettings(loadConfig(state.repoDir))?.paths ?? null) ||
+      planDeletionOnly(state.repoDir, p.ph, verified, p.base)
+    )
+    const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false, accept)
     if (problem) reasons.push({ kind: 'evidence', text: problem })
+    const integration = integrationReasons(stepContext, state, evidence.data.body ?? '', accept)
+    reasons.push(...integration.reasons)
+    notes.push(...integration.notes)
   }
   reasons.push(...migrationReasons(state))
-  return { reasons, summary: facts.join(' '), fixed }
+  return { reasons, summary: facts.join(' '), fixed, notes }
+}
+
+// 통합 테스트 기록(core/integration-evidence.ts). 규칙이 없으면 바뀐 파일을 읽지 않는다. 바뀐 파일은 REST 로 끝까지 읽는다(gh pr view 의 files 는 100개까지다).
+// 이름을 바꾼 파일은 옛 경로도 본다. REST 도 3000개까지라 그보다 큰 PR 은 모듈을 놓칠 수 있다
+function integrationReasons(stepContext: StepContext, state: StepState, body: string, accept: (commit: string) => boolean): { reasons: GateReason[]; notes: string[] } {
+  const rules = integrationRules(loadConfig(state.repoDir))
+  if (rules.length === 0) return { reasons: [], notes: [] }
+  const p = state.p
+  const files = api(stepContext, state, `repos/${p.owner}/${p.repo}/pulls/${p.n}/files?per_page=100`, '--paginate', '--jq', '.[] | .filename, (.previous_filename // empty)')
+  if (files.code !== 0) return { reasons: [{ kind: 'lookup', text: '통합 테스트 대상 파일 조회 실패' }], notes: [] }
+  const needs = integrationNeeds(files.stdout.split('\n').filter(Boolean), rules)
+  const judged = integrationProblems(body, p.ph, needs, accept)
+  return { reasons: judged.reasons.map((text) => ({ kind: 'evidence', text })), notes: judged.notes }
 }
 
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.

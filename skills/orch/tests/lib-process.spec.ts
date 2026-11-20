@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { alive, cwdHolders, rerunAfter, takeRerun } from '../scripts/lib/process.ts'
+import { alive, cwdHolders } from '../scripts/lib/process.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 let tmp: string
@@ -134,25 +134,4 @@ test('캐시 잠금 확인은 ESRCH 만 종료로 보고 알 수 없는 오류�
   assert.equal(alive(4242, { keepOnUnknownError: true }), true)
   kill.mock.mockImplementation(() => { throw errno('ESRCH') })
   assert.equal(alive(4242, { keepOnUnknownError: true }), false)
-})
-
-describe('마무리의 다시 돌기 표시', () => {
-  test('표시가 없으면 pid 파일을 지우고 false, 있으면 가져가 pid 파일을 지킨 채 true 다', () => {
-    const pidFile = join(tmp, 'finish-1.pid')
-    writeFileSync(pidFile, String(process.pid))
-    assert.equal(rerunAfter(pidFile), false)
-    assert.equal(existsSync(pidFile), false)
-    writeFileSync(pidFile, String(process.pid))
-    writeFileSync(`${pidFile}.rerun`, '')
-    assert.equal(rerunAfter(pidFile), true)
-    assert.equal(readFileSync(pidFile, 'utf8'), String(process.pid))
-    assert.equal(existsSync(`${pidFile}.rerun`), false)
-  })
-
-  test('표시는 한쪽만 가져간다', () => {
-    const pidFile = join(tmp, 'finish-2.pid')
-    writeFileSync(`${pidFile}.rerun`, '')
-    assert.equal(takeRerun(pidFile), true)
-    assert.equal(takeRerun(pidFile), false)
-  })
 })

@@ -70,7 +70,8 @@
 //                 줄 끝 공백과 빈 줄은 빼고 비교한다. 틀 본문의 `{{...}}` 는 아무 글자에나 맞는다. 다른 표지는 한 줄에 하나씩 낸다.
 //                 `<!-- orch-rule: 이름 keep -->` 는 저장소가 일부러 바꾼 항목이라 본문 경고를 내지 않는다.
 //                 조건부 표지(CONDITIONAL_RULES)는 조건이 맞는 저장소에서만 빠진 것을 알린다. `migration` 은 orch 설정의
-//                 migrations.dirs 나 migrations.watch 가 있는 저장소, `adr` 은 adr.dirs 가 있는 저장소다.
+//                 migrations.dirs 나 migrations.watch 가 있는 저장소, `adr` 은 adr.dirs 가 있는 저장소,
+//                 `integration-evidence` 는 queue.integration_tests 규칙이 있는 저장소다.
 //                 조건이 맞지 않아도 표지가 있으면 본문은 비교한다.
 //                 저장소가 그 규칙을 일부러 바꿨을 수 있어 경고이고 종료 코드에 넣지 않는다. 지시서 폴더에 spec-common.md 가 없으면 보지 않는다
 //     임시        지시서가 임시 폴더 아래 경로(`/tmp/…`, `/private/tmp/…`, `/var/folders/…`, `$TMPDIR/…`, `…/scratchpad/…`)를 가리킨다.

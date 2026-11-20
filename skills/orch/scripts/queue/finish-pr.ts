@@ -128,8 +128,9 @@
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
 //     --poll-interval SEC   확인 간격(초). 기본 60
 //     --worker-done-timeout MIN  머지를 알린 worker 의 dispatch 가 끝나기를 기다리는 한도(분). 기본 10. 0 이면 알리기만 한다
-//     --pid-file FILE       시작할 때 pid 를 쓰고 끝나면 지운다. 같은 PR 의 마무리가 둘 도는 것을 막을 때 쓴다.
-//                           끝날 때 다시 돌기 표시(<pid 파일>.rerun, 도는 중에 `orch followup done` 이 남긴다)가 있으면 지우고 한 번 더 돈다
+//     --pid-file FILE       같은 PR 의 마무리가 둘 도는 것을 막는다. 이 PR 의 마무리 실행권(lib/finish-claim.ts)을 잡은 뒤 pid 를 쓰고 끝나면 지운다.
+//                           다른 마무리가 쥐고 있으면 `FINISH-RUNNING <PR> pid <pid>` 를 내고 0 으로, 쥔 쪽을 확인하지 못하면 1 로 끝난다
+//                           끝날 때 다시 돌기 표시(state/finish-rerun/<PR>, 도는 중에 `orch followup done` 이 남긴다)가 있으면 지우고 한 번 더 돈다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, SEND_TO_WORKER 로 worker 에게 보내는 명령을, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
@@ -177,7 +178,9 @@ import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
-import { rerunAfter } from '../lib/process.ts'
+import { beginFinish, rerunOrRelease, retakeForRerun } from '../lib/finish-claim.ts'
+import { releaseClaim } from '../lib/pr-claim.ts'
+import type { Claim } from '../lib/pr-claim.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
@@ -1015,9 +1018,19 @@ async function executeMain(argv: string[]): Promise<number> {
   if (args.ghHost) process.env.GH_HOST = args.ghHost
   const repo = real(args.repo)
   const pidFile = args.pidFile
+  // 실행권을 쥔 마무리 하나만 돈다(lib/finish-claim.ts). 쥐지 못하면 아무것도 하지 않고 끝난다
+  let claim: Claim | null = null
   if (pidFile) {
-    mkdirSync(dirname(resolve(pidFile)), { recursive: true })
-    writeFileSync(pidFile, String(process.pid))
+    const begun = beginFinish(repo, args.pr, pidFile)
+    if (begun.kind === 'running') {
+      process.stdout.write(`FINISH-RUNNING ${args.pr} pid ${begun.holder.pid}\n`)
+      return 0
+    }
+    if (begun.kind === 'unknown') {
+      process.stderr.write(`finish-pr: 같은 PR 의 마무리가 도는지 확인하지 못해 시작하지 않았다: ${begun.reason}\n`)
+      return 1
+    }
+    claim = begun.claim
   }
   try {
     markFinishStarted(repo, args.pr)
@@ -1025,27 +1038,26 @@ async function executeMain(argv: string[]): Promise<number> {
     // 표시를 남기지 못하면 정리가 이 PR 을 FINISH-MISSING 으로 한 번 더 알릴 뿐이다
     process.stderr.write(`finish-pr: 마무리 표시를 남기지 못했다: ${(e as Error).message}\n`)
   }
-  // rerunAfter 가 false 면 pid 파일을 이미 지웠다. 그 뒤 followup done 이 새 마무리를 띄웠을 수 있어 finally 는 다시 지우지 않는다
-  let released = false
   try {
     let code = await finish(args, repo)
     // 도는 동안 후속 검증이 끝났으면(orch followup done 이 남긴 표시) 끝난 상태로 한 번 더 돌아 남긴 워크트리와 업무까지 끝낸다
-    while (pidFile && !released) {
-      if (!rerunAfter(pidFile)) {
-        released = true
-        break
+    while (pidFile && claim) {
+      if (!rerunOrRelease(repo, args.pr, pidFile, claim)) {
+        claim = null
+        const again = retakeForRerun(repo, args.pr, pidFile)
+        if (again.kind === 'lost') process.stderr.write(`finish-pr: 다시 돌기 표시가 있지만 실행권을 확인하지 못했다. 표시는 남겼다: ${again.reason}\n`)
+        if (again.kind !== 'rerun') break
+        claim = again.claim
       }
       log('다시 돌기 표시가 있어 마무리를 한 번 더 돈다')
       code = await finish(args, repo)
     }
     return code
   } finally {
-    if (pidFile && !released) {
-      try {
-        unlinkSync(pidFile)
-      } catch {
-        // 이미 없으면 지울 것이 없다
-      }
+    // 예외로 끝날 때만 남아 있다. 쥔 동안에만 pid 파일을 지운다
+    if (pidFile && claim) {
+      try { unlinkSync(pidFile) } catch { /* 이미 없다 */ }
+      releaseClaim(claim)
     }
   }
 }

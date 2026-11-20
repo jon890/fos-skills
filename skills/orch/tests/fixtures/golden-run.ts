@@ -85,6 +85,8 @@ function filesAt(root: string): Record<string, string> {
   function visit(dir: string, prefix: string) {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const name = prefix + entry.name
+      // 놓은 PR 실행권의 묘비는 내용에 시각과 명령줄이 들어 있어 기록하지 않는다
+      if (entry.isDirectory() && /\.dead-/.test(entry.name)) continue
       if (entry.isDirectory()) visit(join(dir, entry.name), name + '/')
       else if (entry.isFile()) found[name] = readFileSync(join(dir, entry.name), 'utf8')
     }

@@ -1,5 +1,6 @@
 // 차례 선택, 보류와 앞지르기.
 
+import { claimFile, releaseByToken } from '../../lib/pr-claim.ts'
 import { ConfigError } from '../../lib/config.ts'
 import { TURN_PHASES } from '../../lib/queue-turn.ts'
 import { notifyConflict, tellHeld } from './finish.ts'
@@ -86,6 +87,7 @@ export async function overtake(stepContext: StepContext, state: StepState, i: nu
       else if (result.kind === 'held') {
         hold(stepContext, state, m, result.reason)
         if (result.retryable) state.retryItems.add(item)
+        else dropClaim(state, m)
         log(state.conflicted.includes(m) ? `${m} 충돌. 큐에서 빼고 다음 PR 로 간다` : `${m} 보류. 다음 PR 로 간다`)
       }
     }
@@ -98,6 +100,12 @@ export async function overtake(stepContext: StepContext, state: StepState, i: nu
 // 차례 기록의 prs. i 부터 끝까지에서 이미 처리한 PR 을 뺀다
 export function left(stepContext: StepContext, state: StepState, i: number, handled: Set<number>): number[] {
   return state.o.items.flatMap((item, j) => (j >= i && !handled.has(j) ? [Number(item.split(':')[0])] : []))
+}
+
+// 큐에서 뺀 PR 의 실행권을 놓는다. 이 큐는 그 PR 을 다시 보지 않으므로, 보류가 풀리면 다른 호출이 바로 다시 걸 수 있어야 한다.
+// 정리 전에 한 번 다시 판정할 PR(retryItems)은 그 판정이 끝난 뒤에 놓는다
+function dropClaim(state: StepState, n: string): void {
+  if (state.claimTokens.length > 0) releaseByToken(claimFile(state.repoDir, 'queue', n), state.claimTokens)
 }
 
 export function hold(stepContext: StepContext, state: StepState, n: string, reason: string): void {
@@ -121,6 +129,7 @@ export async function selectQueue(stepContext: StepContext, state: StepState): P
       out(`SKIP ${n} 묶음의 앞 PR ${before} 가 머지되지 않았다`)
       state.held.push(n)
       state.heldReasons.push({ pr: Number(n), reason: `묶음의 앞 PR ${before} 가 머지되지 않았다` })
+      dropClaim(state, n)
       continue
     }
     let result = await attempt(stepContext, state, item, canDefer(stepContext, state, i, handled) ? 'defer' : 'normal')
@@ -139,6 +148,7 @@ export async function selectQueue(stepContext: StepContext, state: StepState): P
     if (result.kind !== 'held') continue
     hold(stepContext, state, n, result.reason)
     if (result.retryable) state.retryItems.add(item)
+    else dropClaim(state, n)
     if (state.conflicted.includes(n)) {
       log(`${n} 충돌. 큐에서 빼고 다음 PR 로 간다`)
       continue
@@ -164,6 +174,7 @@ export async function selectQueue(stepContext: StepContext, state: StepState): P
       state.heldReasons = state.heldReasons.filter((held) => held.pr !== Number(n))
     } else if (result.kind === 'held') {
       state.heldReasons = state.heldReasons.map((held) => held.pr === Number(n) ? { pr: held.pr, reason: result.reason } : held)
+      dropClaim(state, n)
     }
     state.retryItems.delete(item)
   }
