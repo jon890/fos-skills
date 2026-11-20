@@ -905,7 +905,7 @@ describe('같은 PR 의 머지 큐 중복 막기', { skip: !HAS_BASH && 'bash �
     assert.equal((await c.lines('queue ')).length, 1)
     assert.equal((await c.lines('finish ')).length, 1)
     // 앞 큐가 끝나면 실행권을 놓아 다시 걸 수 있다
-    assert.equal(existsSync(c.claims), false)
+    assert.deepEqual(readdirSync(c.claims).filter((name) => !name.includes('.dead-')), [])
     const third = await c.wrap(['--no-finish', '1'], c.slowEnv)
     assert.equal(third.code, 0, both(third))
   })
@@ -943,7 +943,7 @@ describe('같은 PR 의 머지 큐 중복 막기', { skip: !HAS_BASH && 'bash �
     assert.equal(refused.code, 4, both(refused))
     assert.equal(count(refused.stdout, 'QUEUE-DUP'), 1)
     has(refused.stdout, 'QUEUE-DUP 2 ')
-    assert.deepEqual(readdirSync(c.claims), ['queue-2'])
+    assert.deepEqual(readdirSync(c.claims).filter((name) => !name.includes('.dead-')), ['queue-2'])
     assert.equal((await c.lines('finish ')).length, 1)
   })
 
@@ -990,7 +990,7 @@ describe('같은 PR 의 머지 큐 중복 막기', { skip: !HAS_BASH && 'bash �
     const ended = await first.done
     assert.equal(ended.code, 143, both(ended))
     lacks(ended.stdout, 'QUEUE-DONE')
-    assert.equal(existsSync(c.claims), false)
+    assert.deepEqual(readdirSync(c.claims).filter((name) => !name.includes('.dead-')), [])
   })
 
   test('직접 부른 머지 큐(orch queue run)도 다른 큐가 맡은 PR 은 QUEUE-DUP 과 4 로 끝난다. 부모가 넘긴 실행권은 제 것으로 읽고, 보류로 뺀 PR 의 실행권은 놓는다', async (t) => {

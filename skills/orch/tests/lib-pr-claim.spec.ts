@@ -46,7 +46,7 @@ function plant(file: string, owner: unknown): void {
   writeFileSync(join(file, 'owner'), typeof owner === 'string' ? owner : JSON.stringify(owner))
 }
 
-test('잡고 놓으면 폴더까지 남지 않는다. 같은 token 으로 다시 잡으면 이미 내 것이다', (t) => {
+test('잡고 놓으면 실행권이 없어지고 묘비만 남는다. 같은 token 으로 다시 잡으면 이미 내 것이다', (t) => {
   const base = dir(t)
   const file = join(base, 'pr-claims', 'queue-1')
   const taken = takeClaim(file, { note: 'queue merge run=run_1', token: 'tok' })
@@ -58,7 +58,8 @@ test('잡고 놓으면 폴더까지 남지 않는다. 같은 token 으로 다시
   assert.equal(takeClaim(file, { token: 'tok' }).kind, 'mine')
   assert.equal(takeClaim(file, { inherit: 'tok' }).kind, 'mine')
   if (taken.kind === 'taken') releaseClaim(taken.claim)
-  assert.deepEqual(readdirSync(base), [])
+  assert.equal(existsSync(file), false)
+  assert.deepEqual(readdirSync(join(base, 'pr-claims')).filter((name) => !/^queue-1\.dead-/.test(name)), [])
 })
 
 test('여러 프로세스가 같은 PR 을 동시에 잡으려 하면 하나만 잡고 나머지는 쥔 쪽을 알려 준다', async (t) => {
@@ -142,6 +143,44 @@ test('같은 죽은 실행권을 늦게 회수하는 쪽은 새 주인의 실행
   assert.equal(c.kind, 'held')
 })
 
+// 리뷰의 순서: A 가 쥔다 → C 가 잡기 실패 후 A 를 읽는다 → A 가 놓는다 → B 가 잡는다 → C 가 A 의 죽음을 확인하고 회수한다
+test('놓기 전에 읽은 실행권을 늦게 회수하려 해도, 그 사이 새로 잡힌 실행권을 옮기지 못한다', (t) => {
+  const file = join(dir(t), 'pr-claims', 'queue-1')
+  const a = takeClaim(file, { token: 'a' })
+  assert.equal(a.kind, 'taken')
+  const seenByC = peek(file)!
+  if (a.kind === 'taken') releaseClaim(a.claim)
+  const b = takeClaim(file, { token: 'b' })
+  assert.equal(b.kind, 'taken')
+  assert.equal(reclaimDead(file, seenByC), false)
+  assert.equal(JSON.parse(readFileSync(join(file, 'owner'), 'utf8')).token, 'b')
+})
+
+test('token 으로 놓은 실행권도 늦은 회수가 새 주인의 실행권을 옮기지 못한다', (t) => {
+  const file = join(dir(t), 'pr-claims', 'queue-1')
+  assert.equal(takeClaim(file, { token: 'a' }).kind, 'taken')
+  const seenByC = peek(file)!
+  releaseByToken(file, ['a'])
+  assert.equal(takeClaim(file, { token: 'b' }).kind, 'taken')
+  assert.equal(reclaimDead(file, seenByC), false)
+  assert.equal(JSON.parse(readFileSync(join(file, 'owner'), 'utf8')).token, 'b')
+})
+
+// sweepClaims 의 회수도 같은 틈이 있다: 한 시간 넘은 실행권을 읽은 뒤 놓이고 새 주인이 잡는다
+test('sweepClaims 가 읽은 실행권이 그 사이 놓이고 새로 잡혀도 새 실행권을 옮기지 않는다', (t) => {
+  const base = dir(t)
+  const file = join(base, 'queue-1')
+  const a = takeClaim(file, { token: 'a' })
+  assert.equal(a.kind, 'taken')
+  const seen = peek(file)!
+  if (a.kind === 'taken') releaseClaim(a.claim)
+  assert.equal(takeClaim(file, { token: 'b' }).kind, 'taken')
+  // sweepClaims 안의 회수는 읽은 seen 으로 reclaimDead 를 부른다. 같은 호출이 실패해야 한다
+  assert.equal(reclaimDead(file, seen), false)
+  sweepClaims(base, Date.now() + 2 * 60 * 60 * 1000)
+  assert.equal(JSON.parse(readFileSync(join(file, 'owner'), 'utf8')).token, 'b')
+})
+
 test('한 시간 넘게 남은 묘비는 지우고 죽은 실행권은 묘비로 옮긴다. 살아 있는 실행권과 새 묘비는 둔다', (t) => {
   const base = dir(t)
   plant(join(base, 'queue-9'), { pid: 999999, identity: 'x', token: 'dead', at: '', note: '' })
@@ -179,7 +218,7 @@ test('claimPrs 는 하나라도 다른 쪽이 쥐었으면 아무것도 잡지 �
   assert.equal(refused.code, 4)
   assert.equal(refused.lines.length, 1)
   assert.match(refused.lines[0], new RegExp(`^QUEUE-DUP 2 이미 진행 중이다: pid ${other.result.pid} \\S+ queue merge run=run_b$`))
-  assert.deepEqual(readdirSync(claims), ['queue-2'])
+  assert.deepEqual(readdirSync(claims).filter((name) => !name.includes('.dead-')), ['queue-2'])
   await killed(other.child)
   const again = claimPrs(repo, 'queue', ['1', '2', '2', '3'])
   assert.equal(again.kind, 'ok')

@@ -11,12 +11,13 @@
 // 머지 큐 실행권은 그 PR 을 큐가 맡고 있는 동안만 쥔다. 큐가 보류로 뺀 PR 의 실행권은 그 자리에서 놓는다(queue/steps/select.ts 의 dropClaim).
 // 큐가 끝날 때까지 쥐면, 보류가 풀린 PR 을 다시 걸어도 「이미 진행 중」 으로 거절되고 앞 큐는 그 PR 을 다시 보지 않아 아무도 맡지 않는다
 // 쥔 쪽이 살아 있는지 읽지 못하면(ps 실패) 회수하지 않고 unknown 을 낸다. 부르는 쪽은 아무것도 시작하지 않고 끝낸다.
+// 놓은 실행권은 지우지 않고 묘비 이름으로 옮겨 둔다. 늦게 회수하려는 쪽의 rename 이 새 주인의 실행권을 옮기지 못하게 한다
 // 남은 것: 죽은 실행권과 묘비는 한 시간이 지나면 다음 잡기가 같은 폴더에서 치운다(sweepClaims).
 
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readdirSync, rmdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { LEFTOVER, LEFTOVER_MS, peek, reclaimDead, release, tryTake } from './owner-lock.ts'
+import { LEFTOVER, LEFTOVER_MS, peek, reclaimDead, tryTake } from './owner-lock.ts'
 import type { Seen } from './owner-lock.ts'
 import { makeParent, pathOf } from './paths.ts'
 import { alive, identity } from './process.ts'
@@ -94,8 +95,16 @@ export function takeClaim(file: string, opts: { note?: string; token?: string; i
   return { kind: 'unknown', reason: `실행권을 잡지도 쥔 쪽을 확인하지도 못했다: ${file}` }
 }
 
+// 놓을 때는 다른 쪽이 죽은 실행권을 회수할 때 쓸 묘비 이름과 같은 이름으로 옮기고 바로 지우지 않는다.
+// 바로 지우면 앞 주인의 묘비가 없어, 놓기 전에 이 실행권을 읽은 쪽이 새 주인의 실행권을 옮긴다(PR 568 리뷰).
+// 묘비가 있으면 그쪽의 rename 이 실패한다. 남은 묘비는 한 시간 뒤 sweepClaims 가 지운다
+function releaseOwned(file: string, owner: string): void {
+  const seen = peek(file)
+  if (seen && seen.owner === owner) reclaimDead(file, seen)
+}
+
 export function releaseClaim(claim: Claim): void {
-  release(claim.file, claim.owner, newToken())
+  releaseOwned(claim.file, claim.owner)
   // 비었으면 폴더도 지운다. 잡는 쪽의 임시 디렉터리가 이 폴더 안에 있어, 잡는 중에는 비지 않는다
   try { rmdirSync(dirname(claim.file)) } catch { /* 다른 실행권이 있다 */ }
 }
@@ -106,7 +115,7 @@ export function releaseClaim(claim: Claim): void {
 export function releaseByToken(file: string, tokens: string[]): void {
   const seen = peek(file)
   const holder = seen ? parseOwner(seen.owner) : null
-  if (seen && holder && tokens.includes(holder.token)) release(file, seen.owner, newToken())
+  if (seen && holder && tokens.includes(holder.token)) releaseOwned(file, seen.owner)
 }
 
 // 한 시간 넘게 남은 묘비·임시 디렉터리를 지우고, 한 시간 넘은 죽은 실행권을 묘비로 옮긴다. 묘비는 다음 정리가 지운다.
