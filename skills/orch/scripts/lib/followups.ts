@@ -3,6 +3,8 @@
 // 파일: <orch 루트>/state/followups.json. 값은 { items: Followup[] } 이다. 저장소마다 하나고 워크트리끼리 함께 쓴다.
 //     마무리 여럿과 루프, 코디네이터 명령이 함께 쓰므로 쓰기는 옆 잠금(followups.json.lock, lib/owner-lock.ts) 안에서 읽고 고쳐 rename 한다.
 //     잠금은 쥔 프로세스가 살아 있으면 넘겨받지 않는다. 보드 명령(60초까지)이 잠금 안에서 돌기 때문이다. 잡지 못하면 던진다.
+//     파일이 JSON 이 아니면 `followups.json.broken-<시각>` 으로 옮기고 빈 목록으로 다시 시작하며 stderr 에 경고 한 줄을 낸다.
+//     그대로 두면 그 저장소의 기능 PR 마무리가 모두 FINISH-FAIL 로 멈추고 고칠 명령이 없었다(PR 558 리뷰). 옮긴 파일에서 항목을 직접 되살린다
 //
 // 보드 반영(updateWithBoard): 보드 파일이 있을 때만 항목 `followup-<PR>` 을 보드 명령으로 만든다. 끝나지 않은 항목은 wait 상태,
 //     제목 「배포 뒤 확인 #<PR> <PR 제목>」, 하위 줄 하나(후속 검증 글)다. 끝낸 항목은 done 으로 바꾼다. 보드가 없으면 건너뛴다.
@@ -47,7 +49,26 @@ export function followupsFile(repo: string): string {
 export function loadFollowups(repo: string): Followup[] {
   const file = followupsFile(repo)
   if (!existsSync(file)) return []
-  return parseFollowups(JSON.parse(readFileSync(file, 'utf8')))
+  try {
+    return parseFollowups(JSON.parse(readFileSync(file, 'utf8')))
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) throw e
+    return withOwnerLock(`${file}.lock`, () => readItems(file))
+  }
+}
+
+// 잠금 안에서 부른다. 머리 주석의 「파일」 대로 깨진 파일은 옮기고 빈 목록이다
+function readItems(file: string): Followup[] {
+  if (!existsSync(file)) return []
+  try {
+    return parseFollowups(JSON.parse(readFileSync(file, 'utf8')))
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) throw e
+    const moved = `${file}.broken-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    renameSync(file, moved)
+    process.stderr.write(`배포 뒤 할 일 목록이 JSON 이 아니라 ${moved} 로 옮기고 빈 목록으로 다시 시작한다: ${e.message}\n`)
+    return []
+  }
 }
 
 type Change<T> = (items: Followup[]) => { items: Followup[]; value: T }
@@ -57,7 +78,7 @@ function locked<T, R>(repo: string, change: Change<T>, after: (items: Followup[]
   const file = followupsFile(repo)
   makeParent(file, repo)
   return withOwnerLock(`${file}.lock`, () => {
-    const before = existsSync(file) ? parseFollowups(JSON.parse(readFileSync(file, 'utf8'))) : []
+    const before = readItems(file)
     const got = change(before)
     let items = before
     if (got.items !== before) {
