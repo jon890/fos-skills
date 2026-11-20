@@ -16,6 +16,8 @@
 //     MAIN-NONE stale=<등록됐지만 살아 있지 않은 Run 을 쉼표로 또는 ->   메인이 없다. 다음 orch loop start 가 넘겨받는다
 //     MAIN-UNKNOWN <이유>                             메인을 판정하지 못했다(Orca 조회 실패)
 //     REQUESTS open=<끝나지 않은 받은 요청 수>         받은 요청이 하나라도 있을 때만 낸다. 목록은 orch request list --open
+//     FOLLOWUPS open=<끝나지 않은 배포 뒤 할 일 수>    하나라도 있을 때만 낸다. 이어서 항목마다 FOLLOWUP #<PR> <상태> <글>(core/followups.ts 의 followupLine)
+//     SKIP-FOLLOWUPS <이유>                           배포 뒤 할 일 목록을 읽지 못했다
 //     RUN <id> workers=<이 저장소 워크트리의 열린 dispatch 수> stalled=<멈춘 수>   같은 Run 의 다른 저장소 worker 는 세지 않는다
 //     SKIP-WORKERS <Run> <이유>                       그 Run 의 worker 목록을 읽지 못했다
 //     BOARD doing=<수> decide=<수>                    보드 파일이 없으면 둘 다 0 이다
@@ -24,13 +26,15 @@
 //     STALLED …, STAGE …                              멈춘 worker 와 worker 없이 멈춘 보드 단계. 꼴은 stalled-workers 와 같다(lib/movement.ts 의 workerLine, stageLine)
 //
 // 짧은 출력과 --full 이 같다. 설명 줄이 없다.
-// 종료 코드: 0 읽었다(멈춘 것이 있어도 0. MAIN-UNKNOWN 도 0), 1 worker 목록이나 보드를 하나라도 읽지 못했다, 2 사용법이나 설정 오류
+// 종료 코드: 0 읽었다(멈춘 것이 있어도 0. MAIN-UNKNOWN 도 0), 1 worker 목록이나 보드, 배포 뒤 할 일 목록을 하나라도 읽지 못했다, 2 사용법이나 설정 오류
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { existsSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
+import { followupLine, openFollowups } from '../core/followups.ts'
+import { loadFollowups } from '../lib/followups.ts'
 import { readBoard } from '../lib/board.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { FINISH_KEYS } from '../lib/finish-options.ts'
@@ -117,6 +121,14 @@ function main(argv: string[]): number {
   }
   const requests = listRequests(repo)
   if (requests.length > 0) out(`REQUESTS open=${openRequests(repo).length}`)
+  try {
+    const followups = openFollowups(loadFollowups(repo))
+    if (followups.length > 0) out(`FOLLOWUPS open=${followups.length}`)
+    for (const item of followups) out(followupLine(item))
+  } catch (e) {
+    failed = true
+    out(`SKIP-FOLLOWUPS ${(e as Error).message.replace(/\s+/g, ' ')}`)
+  }
   // 이 저장소의 워크트리에 있는 worker 만 센다(ownWorktree)
   const rowsOf = (run: string) => {
     const got = workerRows(run)

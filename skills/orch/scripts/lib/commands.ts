@@ -201,6 +201,9 @@ const ROWS: Row[] = [
     group: 'feedback', verb, script: 'feedback/feedback-candidates.ts', prepend: [verb], context: verb === 'collect' || verb === 'notify' ? [] : ['repo'],
     legacy: { name: 'feedback-candidates', flags: [verb] }, usage: `orch feedback ${verb}`,
   })),
+  // followup. 배포 뒤 할 일 목록(queue/finish-pr.ts 머리 주석의 「배포 뒤 할 일」)
+  { group: 'followup', verb: 'list', script: 'followup/orch-followup.ts', prepend: ['list'], context: ['repo', 'run'], legacy: null, usage: 'orch followup list [--all]' },
+  { group: 'followup', verb: 'done', script: 'followup/orch-followup.ts', prepend: ['done'], context: ['repo', 'run'], legacy: null, usage: 'orch followup done <PR> [--note <글>] [--no-finish]' },
   // study
   ...(['list', 'add', 'set', 'migrate'] as const).map(
     (verb): Row => ({
