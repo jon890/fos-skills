@@ -17,7 +17,9 @@ const read = (...parts: string[]) => readFileSync(join(ORCH, ...parts), 'utf8')
 
 test('자동 진행 표시와 거절 이유, 코디네이터의 다음 단계 처리는 문서와 같다', () => {
   const board = section(read('references', 'board.md'), '## 자동 진행 표시').join('\n')
-  for (const word of ['[auto]', '[ask]', '[wait]', '(스펙:', '(계획:', '(앞 사건:', 'real', '외부로 나가는 글', '범위가 바뀌는 일']) assert.ok(board.includes(word), word)
+  for (const word of ['[auto]', '[ask]', '[wait]', '(스펙:', '(계획:', '(앞 사건:', 'real', 'feature-loop.md#전이']) assert.ok(board.includes(word), word)
+  const featureLoop = section(read('references', 'feature-loop.md'), '## 전이').join('\n')
+  for (const word of ['spec → technical-design → plan → implementation', 'PR 이 머지됐거나', '결정(스펙 확인 등)에 답한 직후', '다음 지시서를 써서 바로 띄운다', '다음 worker 를 띄울지 다시 묻지 않는다', '새로 정해야 할 사용자 결정', '허락 범위 밖']) assert.ok(featureLoop.includes(word), word)
   const reply = section(read('references', 'replying.md'), '## 다음 단계 이어 가기').join('\n')
   for (const word of ['STEP-READY auto', 'STEP-READY ask', 'orch board auto-check', '다음 단계 자동 진행:', '보드 항목 id:', 'board.auto_advance', 'WORKER-LIMITED', '--on', ...Object.values(ADVANCE_REASONS)]) assert.ok(reply.includes(word), word)
   const waiting = read('references', 'waiting.md')
