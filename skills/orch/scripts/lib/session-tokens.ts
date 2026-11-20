@@ -98,13 +98,16 @@ export function codexTokens(w: Window): SessionTokens | null {
 export const sessionTokens = (agent: string, w: Window): SessionTokens | null =>
   agent === 'claude' ? claudeTokens(w) : agent === 'codex' ? codexTokens(w) : null
 
-// 워크트리의 Claude 세션 기록 가운데 since(ms) 뒤에 고친 파일에서 첫 assistant 응답의 모델 ID 를 읽는다. 없으면 null 이다.
-// launch-worker 가 계열 이름(`fable`)으로 띄운 worker 의 실제 모델을 띄우기 기록에 남기려고 부른다. `<synthetic>` 같은 가짜 응답은 건너뛴다
+// 워크트리의 Claude 세션 가운데 since(ms) 뒤에 시작한 세션의 첫 assistant 응답 모델 ID. 없거나 그런 세션이 둘 이상이면 null 이다.
+// launch-worker 가 계열 이름(`fable`)으로 띄운 worker 의 실제 모델을 띄우기 기록에 남기려고 부른다.
+// 세션의 시작은 파일의 첫 `timestamp` 다. 파일 수정 시각으로 고르지 않는다. 같은 워크트리의 옛 세션이 나중에 갱신돼도 그 세션의 모델을 읽지 않는다.
+// 응답도 since 뒤의 것만 본다. `<synthetic>` 같은 가짜 응답은 건너뛴다
 export function claudeModelOf(worktree: string, since: number): string | null {
   // Claude 는 실제 경로(/private/var/…)로 폴더 이름을 만든다. 받은 경로와 실제 경로를 모두 본다
   let real = worktree
   try { real = realpathSync(worktree) } catch { /* 없는 경로면 받은 그대로 */ }
   const projects = [...new Set([claudeProjectName(worktree), claudeProjectName(real)])]
+  const sessions = new Map<string, string | null>()
   for (const home of claudeHomes()) for (const project of projects) {
     const dir = join(home, 'projects', project)
     for (const name of names(dir)) {
@@ -112,13 +115,24 @@ export function claudeModelOf(worktree: string, since: number): string | null {
       const file = join(dir, name)
       try {
         if (statSync(file).mtimeMs < since) continue
+        let started: number | null = null
+        let model: string | null = null
         for (const line of readFileSync(file, 'utf8').split('\n')) {
-          if (!line.includes('"assistant"')) continue
-          const model = (JSON.parse(line) as { type?: unknown; message?: { model?: unknown } })
-          if (model.type === 'assistant' && typeof model.message?.model === 'string' && /^claude-/.test(model.message.model)) return model.message.model
+          if (!line.trim()) continue
+          let row: { type?: unknown; timestamp?: unknown; message?: { model?: unknown } }
+          try { row = JSON.parse(line) } catch { continue }
+          const at = typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : NaN
+          if (started === null && Number.isFinite(at)) started = at
+          if (row.type === 'assistant' && Number.isFinite(at) && at >= since && typeof row.message?.model === 'string' && /^claude-/.test(row.message.model)) { model = row.message.model; break }
         }
+        if (started !== null && started >= since) sessions.set(realPathOr(file), model)
       } catch { /* 쓰는 중인 줄이나 지워진 파일은 건너뛴다 */ }
     }
   }
-  return null
+  if (sessions.size !== 1) return null
+  return [...sessions.values()][0]
+}
+
+function realPathOr(file: string): string {
+  try { return realpathSync(file) } catch { return file }
 }
