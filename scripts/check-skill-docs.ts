@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 스킬 README 와 CHANGELOG 가 저장소 README 의 「스킬 README」, 「버전과 변경 이력」 형식을 따르는지 검사한다.
+// 스킬 README 와 CHANGELOG 가 docs/contributing.md 의 「스킬 README」, 「버전과 변경 이력」 형식을 따르는지 검사한다.
 //
 // 사용: node scripts/check-skill-docs.ts [스킬 이름 ...]
 // 저장소는 이 파일의 상위 폴더다. 인자가 없으면 SKILL.md 가 있는 모든 디렉터리(옛 배치의 저장소 루트 포함)와

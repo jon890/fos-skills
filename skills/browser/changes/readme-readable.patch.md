@@ -1,0 +1,1 @@
+- 드라이버 링크를 거는 안내가 fos-skills 저장소 `docs/contributing.md` 의 「링크로 설치」 로 옮겨 간 것을 가리켜요

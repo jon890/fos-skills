@@ -8,7 +8,7 @@ ADR 폴더와 색인 생성은 [`plan-overlay.md`](plan-overlay.md) 가 갖는�
 설명 문서를 감사할 때의 범위다. 사용자가 범위를 정하면 그쪽을 따른다.
 
 - 루트 `README.md`
-- `docs/flow.md`, `docs/code-architecture.md`, `docs/data-schema.md`
+- `docs/flow.md`, `docs/contributing.md`, `docs/code-architecture.md`, `docs/data-schema.md`
 - `skills/*/README.md`
 - `extensions/work-board/README.md`
 
