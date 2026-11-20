@@ -56,6 +56,7 @@ function installedVersion(entry: Entry): string {
 }
 
 function stateFile(dir: string): string { return join(dir, 'plugin-auto-update.json') }
+export function updateStateDir(): string { return process.env.ORCH_PLUGIN_UPDATE_STATE_DIR ?? join(homedir(), '.cache', 'fos-skills') }
 export function readUpdateReport(dir: string): UpdateReport | null {
   try {
     const value = JSON.parse(readFileSync(stateFile(dir), 'utf8'))
@@ -126,9 +127,9 @@ async function mainVersion(repository: string, exec: Exec): Promise<string> {
 }
 
 export async function updatePlugins(options: Options = {}): Promise<UpdateReport | null> {
-  const home = options.home ?? join(homedir(), '.claude')
+  const home = options.home ?? process.env.ORCH_PLUGIN_UPDATE_HOME ?? join(homedir(), '.claude')
   const profiles = options.profiles ?? profilesRoot()
-  const stateDir = options.stateDir ?? join(homedir(), '.cache', 'fos-skills')
+  const stateDir = options.stateDir ?? updateStateDir()
   const exec = options.exec ?? runAsync
   const now = options.now ?? Date.now()
   mkdirSync(stateDir, { recursive: true })
@@ -138,6 +139,9 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
   try {
     const previous = readUpdateReport(stateDir)
     if (previous && now - previous.checkedAt < UPDATE_MS) return null
+    const dirs = configDirs(home, profiles)
+    const targets = dirs.flatMap(configDir => records(configDir).filter(entry => cacheEntry(entry, dirs)).map(entry => ({ configDir, entry })))
+    if (targets.length === 0) return null
     const manifestFile = fileURLToPath(new URL('../../../../.claude-plugin/plugin.json', import.meta.url))
     const repository = options.repository ?? JSON.parse(readFileSync(manifestFile, 'utf8')).repository
     let version: string
@@ -147,33 +151,29 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
       throw e
     }
     const results: UpdateResult[] = []
-    const dirs = configDirs(home, profiles)
-    for (const configDir of dirs) {
-      for (const entry of records(configDir)) {
-        if (!cacheEntry(entry, dirs)) continue
-        const projectPath = typeof entry.projectPath === 'string' ? entry.projectPath : undefined
-        const oldVersion = installedVersion(entry)
-        const comparison = comparePluginVersion(oldVersion, version)
-        if (comparison === null) {
-          results.push({ configDir, scope: entry.scope, projectPath, oldVersion: oldVersion || '-', result: 'failed', reason: '설치본 버전을 읽지 못했다' })
-          continue
-        }
-        if (comparison >= 0) {
-          const earlier = comparison === 0 && previous?.version === version
-            ? previous.results.find(row => row.configDir === configDir && row.scope === entry.scope && row.projectPath === projectPath && row.result === 'success')
-            : undefined
-          results.push(earlier ?? { configDir, scope: entry.scope, projectPath, oldVersion, result: 'skipped', reason: comparison === 0 ? '이미 최신' : 'main 보다 높음' })
-          continue
-        }
-        if (stopping()) break
-        const cwd = entry.scope === 'user' ? configDir : String(entry.projectPath)
-        const command = await exec(['claude', 'plugin', 'update', PLUGIN, '--scope', entry.scope, '--yes'], {
-          cwd, env: { CLAUDE_CONFIG_DIR: configDir }, timeoutMs: COMMAND_MS, group: true,
-        })
-        const updated = records(configDir).find(row => row.scope === entry.scope && row.projectPath === entry.projectPath)
-        if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success' })
-        else results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'failed', reason: command.code !== 0 ? (command.stderr || command.stdout || `종료 코드 ${command.code}`).trim().split('\n').at(-1) : '설치 기록의 version 이 main 과 다르다' })
+    for (const { configDir, entry } of targets) {
+      const projectPath = typeof entry.projectPath === 'string' ? entry.projectPath : undefined
+      const oldVersion = installedVersion(entry)
+      const comparison = comparePluginVersion(oldVersion, version)
+      if (comparison === null) {
+        results.push({ configDir, scope: entry.scope, projectPath, oldVersion: oldVersion || '-', result: 'failed', reason: '설치본 버전을 읽지 못했다' })
+        continue
       }
+      if (comparison >= 0) {
+        const earlier = comparison === 0 && previous?.version === version
+          ? previous.results.find(row => row.configDir === configDir && row.scope === entry.scope && row.projectPath === projectPath && row.result === 'success')
+          : undefined
+        results.push(earlier ?? { configDir, scope: entry.scope, projectPath, oldVersion, result: 'skipped', reason: comparison === 0 ? '이미 최신' : 'main 보다 높음' })
+        continue
+      }
+      if (stopping()) break
+      const cwd = entry.scope === 'user' ? configDir : String(entry.projectPath)
+      const command = await exec(['claude', 'plugin', 'update', PLUGIN, '--scope', entry.scope, '--yes'], {
+        cwd, env: { CLAUDE_CONFIG_DIR: configDir }, timeoutMs: COMMAND_MS, group: true,
+      })
+      const updated = records(configDir).find(row => row.scope === entry.scope && row.projectPath === entry.projectPath)
+      if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success' })
+      else results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'failed', reason: command.code !== 0 ? (command.stderr || command.stdout || `종료 코드 ${command.code}`).trim().split('\n').at(-1) : '설치 기록의 version 이 main 과 다르다' })
     }
     const notifyFailure = results.some(row => row.result === 'failed') && previous?.failureNotified !== version
     const report: UpdateReport = { version, checkedAt: now, results,

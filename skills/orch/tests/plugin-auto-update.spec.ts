@@ -107,9 +107,19 @@ test('작업 폴더를 읽는 설치본에는 갱신 명령이나 폴더 안 git
     throw new Error('개발용 설치에 명령을 실행했다')
   }
   const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec, now: 1000 })
-  assert.deepEqual(report?.results, [])
-  assert.deepEqual(calls.map(call => call.argv[0]), ['git', 'curl'])
+  assert.equal(report, null)
+  assert.deepEqual(calls, [], '개발용 설치만 있으면 main 조회를 포함해 외부 명령을 부르지 않는다')
   assert.ok(calls.every(call => call.cwd !== checkout))
+})
+
+test('설치본이 없는 임시 홈과 프로필에서는 git, curl, claude 명령을 전혀 부르지 않는다', async t => {
+  const f = fixture(t)
+  const commands: string[] = []
+  const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir,
+    exec: async argv => { commands.push(argv.join(' ')); throw new Error('외부 명령 금지') },
+  })
+  assert.equal(report, null)
+  assert.deepEqual(commands, [])
 })
 
 test('main 보다 높은 설치본을 낮추지 않고 local scope 는 기록된 프로젝트에서 갱신한다', async t => {
