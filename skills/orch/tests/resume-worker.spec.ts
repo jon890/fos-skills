@@ -148,16 +148,38 @@ function codexTarget(): void {
   recordLaunch(repo, { completion: 'none', dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
 }
 const createCommand = () => { const args = calls('terminal', 'create')[0].args; return args[args.indexOf('--command') + 1] }
+function fakeModels(output: string, code = 0): string {
+  const fake = join(root, 'codex-models')
+  writeFileSync(fake, `#!/bin/sh\nprintf '%s' '${output.replaceAll("'", "'\\''")}'\nexit ${code}\n`)
+  chmodSync(fake, 0o755)
+  return fake
+}
 
 test('Codex 모델이 선택 목록에 없으면 기존 dispatch 와 터미널을 건드리지 않는다', () => {
   codexTarget()
-  const fake = join(root, 'codex-models')
-  writeFileSync(fake, '#!/bin/sh\nprintf \'%s\' \'{"models":[{"slug":"gpt-6-sol","visibility":"list","supported_reasoning_levels":[{"effort":"medium"}]}]}\'\n')
-  chmodSync(fake, 0o755)
+  const fake = fakeModels('{"models":[{"slug":"gpt-6-sol","visibility":"list","supported_reasoning_levels":[{"effort":"medium"}]}]}')
   const r = run(undefined, { CODEX_BIN: fake })
   assert.equal(r.status, 4, r.stdout + r.stderr)
   assert.match(r.stdout, /MODEL-UNAVAILABLE gpt-6-luna medium/)
   assert.deepEqual(writes(), [])
+})
+
+test('Codex effort 가 목록에 없으면 재개 전에 거부한다', () => {
+  codexTarget()
+  const fake = fakeModels('{"models":[{"slug":"gpt-6-luna","visibility":"list","supported_reasoning_levels":[{"effort":"low"}]}]}')
+  const r = run(undefined, { CODEX_BIN: fake })
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  assert.match(r.stdout, /EFFORT-UNAVAILABLE gpt-6-luna medium/)
+  assert.match(r.stdout, /Claude Haiku 5.5/)
+  assert.deepEqual(writes(), [])
+})
+
+test('Codex 모델 조회 실패는 경고하고 재개한다', () => {
+  codexTarget()
+  const r = run(undefined, { CODEX_BIN: fakeModels('', 1) })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /RESUME-WARN .*종료 코드 1/)
+  assert.equal(calls('terminal', 'create').length, 1)
 })
 
 test('worker 셸의 PATH 에 orch 가 있으면 터미널 명령에 PATH 를 더하지 않는다', () => {

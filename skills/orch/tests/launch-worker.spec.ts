@@ -584,6 +584,17 @@ describe('선택 정책과 영구 이력', () => {
     assert.deepEqual(lines('make'), [])
   })
 
+  test('같은 Task 재시도에서도 사용할 수 없는 Codex 모델은 시작 전에 거부한다', () => {
+    select()
+    recordHistory(tmp, prior({ completion: 'none' }))
+    env.CODEX_BIN = linkBin(tmp, 'codex', `console.log(JSON.stringify({ models: [{ slug: 'gpt-6-luna', visibility: 'list', supported_reasoning_levels: [{ effort: 'medium' }] }] }))`)
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 4, both(r))
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+    assert.deepEqual(lines('make '), [])
+  })
+
   test('ready Task 는 retry-of 없이도 이력에서 이어 띄운다', () => {
     select()
     recordHistory(tmp, prior())
@@ -1887,7 +1898,7 @@ describe('모델과 effort 검사', () => {
     const r = launchCodex('--model', 'gpt-5.5')
     assert.equal(r.code, 4, both(r))
     assert.match(r.stderr, /MODEL-UNAVAILABLE gpt-5.5 기본/)
-    assert.match(r.stderr, /같은 등급 대체 모델: gpt-6-sol/)
+    assert.match(r.stderr, /같은 등급 대체 모델: Claude Sonnet 5.5/)
     assert.match(r.stderr, /gpt-6\.1-sol: low, high, ultra/)
     assert.doesNotMatch(r.stderr, /gpt-hidden/)
     assert.deepEqual(lines('orca '), [])
@@ -1909,7 +1920,7 @@ describe('모델과 effort 검사', () => {
     assert.match(r.stderr, /gpt-6-luna 의 effort: low, high/)
   })
 
-  test('목록에 있는 모델과 effort 만 통과한다', () => {
+  test('목록에 있는 모델과 숨긴 모델의 effort 가 맞으면 통과한다', () => {
     fakeCodex(JSON.stringify(MODELS))
     for (const model of ['gpt-6.1-sol', 'gpt-6-sol']) {
       // 모델마다 선택 줄을 다시 채운다
@@ -1920,7 +1931,7 @@ describe('모델과 effort 검사', () => {
     }
     writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
     const hidden = launchCodex('--model', 'gpt-hidden', '--effort', 'low')
-    assert.equal(hidden.code, 4, both(hidden))
+    assert.equal(hidden.code, 0, both(hidden))
   })
 
   test('조회 명령이 실패하면 경고만 내고 띄운다', () => {

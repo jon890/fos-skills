@@ -60,11 +60,13 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
 | Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra` | Claude Haiku 5.5 |
 | `gpt-6.1-sol` | `gpt-6-sol`, Claude Sonnet 5.5 | `gpt-6-luna` |
+| `gpt-6-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
 | Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
 
 바꾼 worker 는 지시서의 `worker 선택:` 줄에 반영하고 `후보 밖: 한도 <제공자>` 를 적는다. 줄과 다르면 `launch-worker` 가 거부한다.
+시작 전 모델 검사에서 보여 주는 대체 후보도 이 표를 따른다. 구현은 `scripts/lib/model-check.ts` 의 `previousSol` 과 `otherProvider` 가 소유한다.
 
 ### 기본 후보에서 뺀 모델
 
