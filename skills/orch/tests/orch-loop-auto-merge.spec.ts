@@ -43,7 +43,7 @@ else reply({})
 const FAKE_QUEUE = `import { appendFileSync } from 'node:fs'
 appendFileSync(process.env.FAKE_DIR + '/queue-calls.jsonl', JSON.stringify({ pid: process.pid, args: process.argv.slice(2) }) + '\\n')
 setTimeout(() => {
-  process.stdout.write('QUEUE-DONE\\n정리: 워크트리 없음\\n정리: 끝\\n')
+  process.stdout.write((process.env.FAKE_QUEUE_SAY || 'QUEUE-DONE') + '\\n정리: 워크트리 없음\\n정리: 끝\\n')
 }, Number(process.env.FAKE_QUEUE_HOLD_MS || 0))
 `
 
@@ -116,6 +116,7 @@ beforeEach(() => {
   delete env.ORCH_LOOP_ALIVE_SEC
   delete env.NODE_OPTIONS
   delete env.FAKE_QUEUE_HOLD_MS
+  delete env.FAKE_QUEUE_SAY
   loopRepo(repo, { 'db/api/V2__a.sql': 'select 1;\n' })
   config()
   spec('specs', 'spec-a.md', ['feat-1'])
@@ -588,6 +589,37 @@ describe('다시 걸지 않음', () => {
     once()
     assert.deepEqual(await queued(2), queueArgs('1'))
     assert.equal(events('AUTO-MERGE').length, 2)
+  })
+})
+
+// 큐가 실행권을 잡지 못해 아무것도 걸지 않고 끝난 경우다(lib/pr-claim.ts 의 QUEUE-DUP, QUEUE-CLAIM-FAIL)
+describe('걸지 못하고 끝난 큐', () => {
+  // PR 558 리뷰: 일시 실패로 걸지 못했는데 tried 가 남아, 잠금이 풀린 뒤에도 `이미 건 HEAD` 로 멈췄다
+  test('실행권을 확인하지 못해 끝난 큐(QUEUE-CLAIM-FAIL)의 PR 은 tried 를 지워 같은 HEAD 로 다시 건다', async () => {
+    github([pr(1)])
+    once({ FAKE_QUEUE_SAY: 'QUEUE-CLAIM-FAIL 다른 머지 큐가 이 PR 을 맡았는지 확인하지 못해 아무것도 걸지 않았다' })
+    await queued()
+    const [first] = queueCalls()
+    await until(`가짜 큐 pid ${first.pid} 종료`, () => !alive(first.pid))
+    once()
+    const ends = events('AUTO-MERGE-END')
+    assert.equal(ends.length, 1, JSON.stringify(events()))
+    assert.match(String(ends[0].text), /^QUEUE-CLAIM-FAIL .* log=/)
+    assert.deepEqual(await queued(2), queueArgs('1'))
+    assert.equal(events('AUTO-MERGE').length, 2)
+  })
+
+  test('다른 큐가 맡은 PR(QUEUE-DUP)의 tried 는 두고, 함께 걸었던 다른 PR 만 다시 건다', async () => {
+    spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
+    github([pr(1), pr(2)])
+    once({ FAKE_QUEUE_SAY: 'QUEUE-DUP 1 이미 진행 중이다: pid 4242 2026-11-20T00:00:00.000Z queue merge run=run_other' })
+    assert.deepEqual(await queued(), queueArgs('1', '2'))
+    const [first] = queueCalls()
+    await until(`가짜 큐 pid ${first.pid} 종료`, () => !alive(first.pid))
+    once()
+    assert.match(String(events('AUTO-MERGE-END')[0]?.text), /^QUEUE-DUP 1 /)
+    assert.deepEqual(await queued(2), queueArgs('2'))
+    assert.deepEqual(Object.keys(autoMergeState().tried as Json).sort(), [`1@${HEAD_A}`, `2@${HEAD_A}`])
   })
 })
 
