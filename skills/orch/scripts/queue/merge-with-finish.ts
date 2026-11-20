@@ -95,7 +95,7 @@ import { repoArgProblem } from '../lib/git.ts'
 import { makeParent, pathOf, requireMigrated } from '../lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from '../lib/proc.ts'
 import { pidFileAlive } from '../lib/process.ts'
-import { claimedPrs, dropTaken, readClaims, removeClaim, writeClaim } from '../lib/queue-claims.ts'
+import { claimedPrs, dropTaken, readClaims, removeClaim, withClaimsLock, writeClaim } from '../lib/queue-claims.ts'
 import { isQueueCommand, processes } from '../lib/queue-process.ts'
 import { readTurns } from '../lib/queue-turn.ts'
 import { queueDefaults } from '../lib/queue-defaults.ts'
@@ -408,8 +408,18 @@ async function main(argv: string[]): Promise<number> {
 
 type ClaimResult = { left: PrArg[]; queue: string[]; file: string | null }
 
-// 다른 머지 큐가 맡은 PR 을 빼고, 남은 PR 을 내 기록으로 남긴다. 프로세스 목록을 읽지 못하면 빼지 않는다. 그때는 머지 큐의 잠금 확인이 QUEUE-CHECK-FAILED 로 멈춘다
+// 다른 머지 큐가 맡은 PR 을 빼고, 남은 PR 을 내 기록으로 남긴다. 프로세스 목록을 읽지 못하면 빼지 않는다. 그때는 머지 큐의 잠금 확인이 QUEUE-CHECK-FAILED 로 멈춘다.
+// 읽기부터 쓰기까지 lib/queue-claims.ts 의 「맡기의 잠금」 안에서 한다. 잠금을 잡지 못하면 빼지 않고 기록 없이 진행한다(머지 큐 잠금이 뒤를 막는다)
 function claimQueue(repo: string, prs: PrArg[], queue: string[]): ClaimResult {
+  try {
+    return withClaimsLock(repo, () => claimLocked(repo, prs, queue))
+  } catch (e) {
+    process.stderr.write(`merge-with-finish: 맡은 PR 기록의 잠금을 잡지 못했다: ${(e as Error).message}\n`)
+    return { left: prs, queue, file: null }
+  }
+}
+
+function claimLocked(repo: string, prs: PrArg[], queue: string[]): ClaimResult {
   const list = processes()
   if (list === null) return { left: prs, queue, file: null }
   const isQueue = (pid: number) => pid !== process.pid && list.some((p) => p.pid === pid && isQueueCommand(p.command))

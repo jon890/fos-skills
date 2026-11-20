@@ -9,9 +9,13 @@
 //   - 도는 머지 큐의 차례 기록(lib/queue-turn.ts)의 pr 과 prs. 이 기록 전에 시작한 큐와 `orch queue run` 으로 직접 건 큐를 본다
 //   단 도는 큐가 이번 실행에서 뺀 PR(차례 기록의 held)이고 어느 차례 기록의 prs 에도 없으면 맡지 않은 것으로 본다.
 //   보류를 고친 PR 을 그 큐가 끝나기 전에 다시 걸 수 있게 하려는 것이다.
+//
+// 맡기의 잠금(withClaimsLock): 프로세스 목록과 기록을 읽고, 맡을 PR 을 고르고, 내 기록을 쓰기까지를 저장소마다 한 잠금(queue-claims/claims.lock) 안에서 한다.
+//   잠금 없이 두 호출이 겹치면 둘 다 기록이 없는 것을 보고 같은 PR 을 맡았고, 먼저 읽은 프로세스 목록으로 뒤에 쓴 기록을 지울 수도 있었다(PR 558 리뷰).
 
 import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
 import { makeParent, pathOf } from './paths.ts'
 import type { QueueTurn } from './queue-turn.ts'
 import { QUEUE_VALUE_OPTIONS } from '../core/queue-options.ts'
@@ -109,6 +113,13 @@ export function writeClaim(repo: string, claim: Claim, isQueue: (pid: number) =>
   }
   writeFileSync(file, JSON.stringify(claim))
   return file
+}
+
+// 머리 주석의 「맡기의 잠금」. 프로세스 목록 읽기(ps)가 느릴 수 있어 잠금을 오래 기다린다. 잡지 못하면 던진다
+export function withClaimsLock<T>(repo: string, work: () => T): T {
+  const dir = claimDir(repo)
+  makeParent(join(dir, 'claims'), repo)
+  return withFileLock(join(dir, 'claims'), work, { waitMs: 60_000 })
 }
 
 export function removeClaim(file: string): void {
