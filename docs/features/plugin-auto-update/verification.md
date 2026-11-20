@@ -19,7 +19,7 @@
 | REQ6 | `version.spec.ts` 와 `network-poll.spec.ts` | 새 설치본을 먼저 표시하고 내장 명령을 세션이 쉴 때 한 번 예약 | 내장 `reload-plugins` 만 실행하고 같은 버전의 중복 예약을 막았다. 명령이 없거나 실패하면 `p` 안내와 버튼으로 돌아간다 |
 | REQ7 | `plugin-auto-update-loop.spec.ts` 와 설정 스키마 테스트 | `plugin.auto_update` 는 참거짓만 받고 false 일 때 루프가 갱신을 건너뜀 | false 면 갱신 함수를 부르지 않고 문자열 값은 거부하는 것을 테스트했다 |
 
-전체 저장소 검증 `orch slot heavy --exclusive -- node scripts/run-tests.ts` 는 테스트 파일과 타입 검사를 모두 통과했다. `claude plugin test .`, `node scripts/check-skill-docs.ts`, 한국어 변경 줄 검사도 통과했다.
+리뷰 수정 전 전체 저장소 검증 `orch slot heavy --exclusive -- node scripts/run-tests.ts` 는 테스트 파일과 타입 검사를 모두 통과했다. 리뷰 수정 뒤에는 변경된 루프 테스트 6개 묶음, `loop-steps.spec.ts`, 타입 검사, `claude plugin test .` 와 `node scripts/check-skill-docs.ts`, 한국어 변경 줄 검사가 통과했다. PR 의 마지막 커밋에 대한 전체 검증은 CI 가 맡는다.
 
 ## 독립 검토와 남은 확인
 
