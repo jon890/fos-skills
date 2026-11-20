@@ -2,19 +2,8 @@
 import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { reclaim } from './events.ts'
-import { alive } from './process.ts'
-import { run } from './proc.ts'
+import { identity } from './process.ts'
 import { isQueueCommand } from './queue-process.ts'
-
-function identity(pid: number): string | null {
-  if (!alive(pid)) return null
-  const read = run([process.env.PS || 'ps', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], { env: { LC_ALL: 'C' } })
-  if (read.code !== 0 || !read.stdout.trim()) {
-    if (!alive(pid)) return null
-    throw new Error(`pid ${pid} 의 시작 시각과 명령줄을 읽지 못했다`)
-  }
-  return read.stdout.trim()
-}
 
 function content(file: string): string | null {
   try { return readFileSync(file, 'utf8') }

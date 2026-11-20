@@ -10,6 +10,9 @@
 //   놓기: owner 가 내 토큰일 때 잠금을 <잠금>.released-<토큰> 으로 rename 한 뒤 지운다
 // 묘비와 남은 임시 디렉터리는 한 시간이 지나면 다음 잡기가 지운다. 묘비는 회수한 시각부터 센다. 회수가 그보다 오래 멈추면 막지 못한다.
 // waitMs 안에 잡지 못하면 OwnerLockBusy 를 던진다. 부르는 쪽은 실패로 끝내고 잠금 없이 넘어가지 않는다.
+//
+// tryTake, release, peek, reclaimDead 는 프로세스가 사는 동안 쥐는 PR 실행권(lib/pr-claim.ts)도 쓴다. owner 의 내용과
+// 쥔 쪽이 살아 있는지의 판정은 부르는 쪽이 정하고, 디렉터리 rename 규칙만 여기 것을 쓴다.
 
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
@@ -18,22 +21,35 @@ import { alive } from './process.ts'
 
 export class OwnerLockBusy extends Error {}
 
-const LEFTOVER_MS = 60 * 60 * 1000
+export const LEFTOVER_MS = 60 * 60 * 1000
 
 export type Seen = { owner: string; key: string }
 
-// 지금 잠금의 owner 와 묘비 이름에 쓸 key. 잠금이 없으면 null
-export function peek(lock: string): Seen | null {
-  let ino: number
-  try {
-    ino = statSync(lock).ino
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw e
+// 지금 잠금의 owner 와 묘비 이름에 쓸 key. 잠금이 없으면 null.
+// inode 를 읽고 owner 를 읽는 사이에 잠금이 놓이고 새 주인이 잡을 수 있다. 그때 앞 잠금의 inode 와 읽지 못한 owner 로 key 를 만들면
+// 회수가 새 주인의 잠금을 옮긴다(PR 568 리뷰). 그래서 owner 를 읽은 뒤 inode 가 그대로인지 다시 보고, 바뀌었으면 처음부터 읽는다.
+// owner 를 읽지 못한 잠금은 한 번 더 읽어도 같을 때만 깨진 잠금으로 본다. afterStat 은 테스트가 그 사이에 끼어드는 자리다
+export function peek(lock: string, afterStat?: () => void): Seen | null {
+  const ino = (): number | null => {
+    try {
+      return statSync(lock).ino
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw e
+    }
   }
-  let owner = ''
-  try { owner = readFileSync(join(lock, 'owner'), 'utf8') } catch { /* 깨진 잠금 */ }
-  return { owner, key: createHash('sha1').update(`${owner}\0${ino}`).digest('hex').slice(0, 16) }
+  let unread = false
+  for (;;) {
+    const before = ino()
+    if (before === null) return null
+    afterStat?.()
+    afterStat = undefined
+    let owner: string | null = null
+    try { owner = readFileSync(join(lock, 'owner'), 'utf8') } catch { /* 깨졌거나 그 사이 놓였다 */ }
+    if (ino() !== before) { unread = false; continue }
+    if (owner === null && !unread) { unread = true; continue }
+    return { owner: owner ?? '', key: createHash('sha1').update(`${owner ?? ''}\0${before}`).digest('hex').slice(0, 16) }
+  }
 }
 
 function held(seen: Seen): boolean {
@@ -55,8 +71,9 @@ export function reclaimDead(lock: string, seen: Seen): boolean {
   return true
 }
 
-function tryTake(lock: string, token: string): boolean {
-  const fresh = `${lock}.new-${randomUUID()}`
+// 머리 주석의 「잡기」. token 은 owner 파일에 쓸 내용, id 는 임시 디렉터리 이름에 붙일 나만의 값이다
+export function tryTake(lock: string, token: string, id: string = randomUUID()): boolean {
+  const fresh = `${lock}.new-${id}`
   mkdirSync(fresh, { recursive: true })
   writeFileSync(join(fresh, 'owner'), token)
   try {
@@ -69,6 +86,18 @@ function tryTake(lock: string, token: string): boolean {
     throw e
   }
 }
+
+// 머리 주석의 「놓기」. owner 가 내가 쓴 내용일 때만 놓는다. suffix 는 놓는 디렉터리 이름에 붙일 나만의 값이다
+export function release(lock: string, owner: string, suffix: string): void {
+  if (peek(lock)?.owner !== owner) return
+  const gone = `${lock}.released-${suffix}`
+  try {
+    renameSync(lock, gone)
+    rmSync(gone, { recursive: true, force: true })
+  } catch { /* 이미 없다 */ }
+}
+
+export const LEFTOVER = /\.(dead|new|released)-/
 
 function sweepLeftovers(lock: string): void {
   const dir = dirname(lock)
@@ -106,12 +135,6 @@ export function withOwnerLock<T>(lock: string, work: () => T, opts: { waitMs?: n
   try {
     return work()
   } finally {
-    if (peek(lock)?.owner === token) {
-      const gone = `${lock}.released-${token.split(' ')[1]}`
-      try {
-        renameSync(lock, gone)
-        rmSync(gone, { recursive: true, force: true })
-      } catch { /* 이미 없다 */ }
-    }
+    release(lock, token, token.split(' ')[1])
   }
 }

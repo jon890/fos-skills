@@ -192,9 +192,17 @@
 //           3 보다 우선한다),
 //           2 사용법 오류(설정 파일 오류, 삭제한 옵션, 큐에 없는 --last-of-task 포함),
 //           3 모두 머지했지만 after-merge 나 after-queue가 하나라도 실패하거나 시간을 넘겼다,
+//           4 같은 PR 을 다른 머지 큐가 이미 맡았다(QUEUE-DUP). 1 은 실행권을 확인하지 못했다(QUEUE-CLAIM-FAIL)는 뜻이기도 하다,
 //           143 SIGTERM 을 받았다, 130 SIGINT 를 받았다
 //
-// 큐 시작: 같은 저장소의 state/merge-queue.lock 을 wx 로 잡는다. 다른 큐가 돌면 QUEUE-BUSY 이유와 코드 2 로 거절한다.
+// PR 실행권: 큐를 시작하기 전에 PR 마다 머지 큐 실행권(lib/pr-claim.ts 의 queue)을 잡는다. 같은 PR 을 다른 머지 큐가 맡고 있으면
+//   `QUEUE-DUP <PR> 이미 진행 중이다: pid <pid> <시작 시각> <명령과 Run>` 을 내고 4 로, 쥔 쪽이 살아 있는지 읽지 못하면 `QUEUE-CLAIM-FAIL <이유>` 와 1 로 끝난다.
+//   둘 다 아무것도 머지하지 않고, 아래 큐 잠금을 기다리지도 않는다. 같은 PR 을 든 큐가 기다렸다가 앞 큐 뒤에 그 PR 을 다시 판정하지 않게 하려는 것이다.
+//   merge-with-finish.ts 가 띄웠으면 ORCH_QUEUE_CLAIM_TOKEN 으로 받은 부모의 실행권을 제 것으로 읽고, 놓는 것은 부모다. 직접 부른 큐는 스스로 잡고 끝날 때 놓는다.
+//   보류, 충돌, 묶음으로 큐에서 뺀 PR 의 실행권은 그 자리에서 놓는다(정리 전에 다시 판정할 PR 은 그 판정 뒤). 이 큐는 그 PR 을 다시 보지 않으므로,
+//   보류를 푼 PR 을 큐가 도는 중에 다시 걸면 새 큐가 아래 잠금을 기다렸다가 이 큐 뒤에 돈다
+//   다른 PR 을 든 큐끼리는 지금처럼 아래 잠금으로 차례를 기다린다
+// 큐 시작: 같은 저장소의 state/merge-queue.lock 을 wx 로 잡는다. 다른 큐가 돌면 `QUEUE-WAIT` 를 내고 그 큐가 끝날 때까지 기다린다(steps/setup.ts 의 lockQueue).
 //   정상 종료와 SIGTERM/SIGINT 에 잠금을 풀고, 죽은 pid 나 시작 시각·명령줄이 달라진 pid 의 잠금은 다음 실행이 회수한다. 워크트리도 주 checkout 의 잠금을 쓴다.
 //   migrations 설정이 있으면 queueOrder 로 낮은 번호부터 정렬하고 자동 --chain 을 만든다. 수동 묶음도 함께 지키되 모순되면 코드 2 다.
 //   순서가 바뀌면 QUEUE-ORDER <번호...>: <이유> 를 낸다. 설정이 없으면 입력 순서를 유지한다.
@@ -210,6 +218,8 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError } from '../lib/config.ts'
 import { repoArgProblem } from '../lib/git.ts'
+import { claimPrs, refusal, releaseClaim } from '../lib/pr-claim.ts'
+import type { Claim } from '../lib/pr-claim.ts'
 import { run, signalCode, stopChildren, withRun } from '../lib/proc.ts'
 import { TURN_PHASES } from '../lib/queue-turn.ts'
 import { afterQueue, stopOnConfig, sweep } from './steps/finish.ts'
@@ -256,6 +266,7 @@ function onSignal(signal: NodeJS.Signals): void {
     active && dropCopy(stepContext, active)
     active && endTurn(stepContext, active)
     active && unlockQueue(active)
+    dropClaims()
     process.exit(signalCode(signal))
   })
 }
@@ -265,7 +276,21 @@ export function main(argv: string[], runner?: typeof run): Promise<number> {
   return runner ? withRun(runner, () => mainImpl(argv)) : mainImpl(argv)
 }
 
+let claims: Claim[] = []
+function dropClaims(): void {
+  for (const claim of claims) releaseClaim(claim)
+  claims = []
+}
+
 async function mainImpl(argv: string[]): Promise<number> {
+  try {
+    return await claimedMain(argv)
+  } finally {
+    dropClaims()
+  }
+}
+
+async function claimedMain(argv: string[]): Promise<number> {
   let queue: StepState
   try {
     const scale = process.env.MERGE_QUEUE_SLEEP_SCALE ?? '1'
@@ -286,7 +311,19 @@ async function mainImpl(argv: string[]): Promise<number> {
       opts.sweepArgs = [...scoped, '--run', mainGuard.ownerRun]
     }
     if (opts.notMain !== undefined) opts.sweepArgs.push('--not-main', opts.notMain)
+    // 머리 주석의 「PR 실행권」. 자식 명령이 물려받지 않게 환경에서 지운다
+    const inherit = process.env.ORCH_QUEUE_CLAIM_TOKEN
+    delete process.env.ORCH_QUEUE_CLAIM_TOKEN
+    const run = opts.sweepArgs.includes('--run') ? opts.sweepArgs[opts.sweepArgs.indexOf('--run') + 1] : undefined
+    const claimed = claimPrs(opts.repo, 'queue', opts.items.map(item => item.split(':')[0]), { inherit, note: `queue run${run ? ` run=${run}` : ''}` })
+    if (claimed.kind !== 'ok') {
+      const refused = refusal(claimed)
+      for (const line of refused.lines) out(line)
+      return refused.code
+    }
+    claims = claimed.claims
     queue = new StepState(opts)
+    queue.claimTokens = [...new Set([inherit, ...claims.map(claim => claim.token)].filter((t): t is string => Boolean(t)))]
     active = queue
     const prepared = await setup(stepContext, queue)
     Object.assign(queue, prepared.changes)

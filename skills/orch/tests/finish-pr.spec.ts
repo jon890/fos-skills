@@ -8,7 +8,7 @@
 import { linesRev } from '../scripts/lib/board.ts'
 import { racingBoard } from './fixtures/board-race.ts'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,6 +19,9 @@ import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 import { copyRepo, git as templateGit, gitEnv, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
+
+// 다른 프로세스가 쥔 마무리 실행권을 흉내 낸다
+const CLAIM_HOLDER = fileURLToPath(new URL('./fixtures/claim-holder.ts', import.meta.url))
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/finish-pr-run.ts', import.meta.url))
@@ -93,6 +96,8 @@ if os.environ.get("EXPECT_ROUTING") == "1":
 if os.environ.get("FAKE_SWEEP_SAY"):
     print(os.environ["FAKE_SWEEP_SAY"].replace("<WT>", os.environ["FAKE_WORKTREE"]))
 calls = sum(1 for line in open(os.environ["FAKE_LOG"]) if line.startswith("sweep "))
+if os.environ.get("FAKE_SWEEP_RERUN") and calls == 1:
+    open(os.environ["FAKE_SWEEP_RERUN"], "w").close()
 if os.environ.get("FAKE_SWEEP_REMOVES") == "1" or (os.environ.get("FAKE_SWEEP_REMOVES") == "2" and calls >= 2):
     wt = os.environ["FAKE_WORKTREE"]
     repo = sys.argv[sys.argv.index("--repo") + 1]
@@ -756,18 +761,54 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(existsSync(join(c.tmp, 'queue')), true)
   })
 
-  test('다시 돌기 표시가 있으면 끝난 뒤 한 번 더 돌고 표시를 지운다', async (t) => {
+  test('도는 중에 들어온 다시 돌기 표시가 있으면 끝난 뒤 한 번 더 돌고 표시를 지운다', async (t) => {
     const c = setup(t)
     const pidFile = join(c.tmp, 'queue', 'finish-77.pid')
     mkdirSync(join(c.tmp, 'queue'), { recursive: true })
-    // 도는 동안 orch followup done 이 남긴 다시 돌기 표시와 같다
-    writeFileSync(`${pidFile}.rerun`, '')
-    const r = await c.finish(['--pid-file', pidFile])
+    // 첫 정리가 도는 동안 orch followup done 이 남긴 다시 돌기 표시와 같다
+    const marker = join(c.repo, '.orch', 'state', 'finish-rerun', '77')
+    mkdirSync(join(c.repo, '.orch', 'state', 'finish-rerun'), { recursive: true })
+    const r = await c.finish(['--pid-file', pidFile], { FAKE_SWEEP_RERUN: marker })
     assert.equal(r.code, 0, both(r))
     has(r.stdout + r.stderr, '다시 돌기 표시가 있어 마무리를 한 번 더 돈다')
     assert.equal(starting(c.calls(), 'sweep ').length, 2)
-    assert.equal(existsSync(`${pidFile}.rerun`), false)
+    assert.equal(existsSync(marker), false)
     assert.equal(existsSync(pidFile), false)
+    // 놓은 실행권은 묘비로 남는다. 실행권 자체는 남지 않는다
+    assert.equal(existsSync(join(c.repo, '.orch', 'state', 'pr-claims', 'finish-77')), false)
+  })
+
+  test('시작할 때 이미 있던 다시 돌기 표시는 지금 실행이 대신하므로 지우고 한 번만 돈다', async (t) => {
+    const c = setup(t)
+    const pidFile = join(c.tmp, 'queue', 'finish-77.pid')
+    mkdirSync(join(c.tmp, 'queue'), { recursive: true })
+    const marker = join(c.repo, '.orch', 'state', 'finish-rerun', '77')
+    mkdirSync(join(c.repo, '.orch', 'state', 'finish-rerun'), { recursive: true })
+    writeFileSync(marker, '')
+    const r = await c.finish(['--pid-file', pidFile])
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stdout + r.stderr, '다시 돌기 표시가 있어')
+    assert.equal(starting(c.calls(), 'sweep ').length, 1)
+    assert.equal(existsSync(marker), false)
+  })
+
+  test('같은 PR 의 마무리가 돌고 있으면 FINISH-RUNNING 을 내고 아무것도 하지 않으며 그 마무리의 pid 파일을 두고 끝난다', async (t) => {
+    const c = setup(t)
+    const pidFile = join(c.tmp, 'queue', 'finish-77.pid')
+    const holder = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', CLAIM_HOLDER, 'finish', c.repo, '77', pidFile], { stdio: ['pipe', 'pipe', 'inherit'], env: c.env })
+    t.after(() => holder.kill('SIGKILL'))
+    let text = ''
+    for await (const chunk of holder.stdout!) {
+      text += chunk
+      if (text.includes('\n')) break
+    }
+    const running = JSON.parse(text) as { pid: number; kind: string }
+    assert.equal(running.kind, 'run', text)
+    const r = await c.finish(['--pid-file', pidFile])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, `FINISH-RUNNING 77 pid ${running.pid}`)
+    assert.deepEqual(c.calls(), [])
+    assert.equal(readFileSync(pidFile, 'utf8'), String(running.pid))
   })
 })
 
