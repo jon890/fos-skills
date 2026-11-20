@@ -2,6 +2,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.3 (2026-11-20)
+
+- 드라이버 링크를 거는 안내가 fos-skills 저장소 `docs/contributing.md` 의 「링크로 설치」 로 옮겨 간 것을 가리켜요
+
 ## 3.0.2 (2026-11-17)
 
 - ego 내부 대기가 멈춰도 명령의 대기 시간에 정리 여유를 더한 뒤 실행한 자식 프로세스만 종료한다.
