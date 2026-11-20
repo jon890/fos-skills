@@ -278,7 +278,7 @@ test('지시서를 지운 뒤 온 근거 없는 완료도 띄우기 기록의 �
   recordLaunch(repo, launch)
   recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
   forgetLaunch(repo, 'merged')
-  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 785, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
+  const gh = fakeBin(repo, 'gh', [{ args: ['list', 'open'], stdout: '[]' }, { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 785, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
   process.env.GH = gh.path
   rules([done('merged')]); await watchCompletions(repo, 'R', 'main')
   assert.equal(notices().length, 0)
@@ -287,23 +287,28 @@ test('지시서를 지운 뒤 온 근거 없는 완료도 띄우기 기록의 �
 })
 test('같은 브랜치 이름의 옛 PR 이 띄우기 전에 머지됐으면 새 dispatch 의 근거 없는 완료를 알린다', async () => {
   recordHistory(repo, { dispatch: 'reused', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/reused', at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
-  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 1, state: 'MERGED', mergedAt: '2026-08-01T00:00:00Z' }]) }])
+  const gh = fakeBin(repo, 'gh', [{ args: ['list', 'open'], stdout: '[]' }, { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 1, state: 'MERGED', mergedAt: '2026-08-01T00:00:00Z' }]) }])
   process.env.GH = gh.path
   rules([done('reused')]); await watchCompletions(repo, 'R', 'main')
   assert.deepEqual(state().suspects, ['reused'])
 })
 test('띄운 시각을 모르면 같은 브랜치의 MERGED PR 이 있어도 근거 없는 완료를 알린다', async () => {
   recordLaunch(repo, { dispatch: 'no-time', terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: 'fix/no-time' })
-  const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify([{ number: 9, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
+  const gh = fakeBin(repo, 'gh', [{ args: ['list', 'open'], stdout: '[]' }, { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 9, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }])
   process.env.GH = gh.path
   rules([done('no-time')]); await watchCompletions(repo, 'R', 'main')
   assert.deepEqual(state().suspects, ['no-time'])
 })
 test('같은 브랜치에 열린 PR 이 남았거나 PR 조회가 실패하면 머지된 PR 이 있어도 알린다', async () => {
-  for (const [i, rule] of [{ stdout: JSON.stringify([{ number: 2, state: 'OPEN' }, { number: 1, state: 'MERGED' }]) }, { stderr: 'boom', code: 1 }].entries()) {
+  const merged = { args: ['list', 'merged'], stdout: JSON.stringify([{ number: 1, state: 'MERGED', mergedAt: '2026-11-10T00:00:50Z' }]) }
+  const openRules = (branch: string) => [
+    [{ args: ['list', 'open'], stdout: JSON.stringify([{ number: 2, title: 't', url: 'u', headRefName: branch }]) }, merged],
+    [{ args: ['list', 'open'], stderr: 'boom', code: 1 }, merged],
+  ]
+  for (const i of [0, 1]) {
     const dispatch = `still-${i}`
     recordHistory(repo, { dispatch, terminal: 'worker', worktree: join(repo, 'gone'), run: 'R', spec: join(repo, 'removed.md'), branch: `fix/${dispatch}`, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
-    const gh = fakeBin(repo, 'gh', [{ args: ['list'], ...rule }])
+    const gh = fakeBin(repo, 'gh', openRules(`fix/${dispatch}`)[i])
     process.env.GH = gh.path
     rules([done(dispatch, dispatch, `2026-11-10T00:0${i + 1}:00Z`)]); await watchCompletions(repo, 'R', 'main')
   }

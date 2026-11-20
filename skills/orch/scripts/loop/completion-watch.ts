@@ -28,7 +28,7 @@ import { launchHistory } from '../lib/launch-history.ts'
 import { git, mainCheckout } from '../lib/git.ts'
 import { fire } from '../lib/events.ts'
 import { notifyRun } from '../lib/run-notice.ts'
-import { continueWorker } from '../lib/continue-worker.ts'
+import { continueWorker, openPrOf } from '../lib/continue-worker.ts'
 import { dispatchRepo } from '../lib/main-guard.ts'
 import { branchesOf } from '../lib/spec.ts'
 
@@ -65,10 +65,12 @@ function branchMerged(repo: string, launch: { branch?: string | null; spec?: str
     try { branch = branchesOf(readFileSync(launch.spec, 'utf8'))[0] ?? null } catch { branch = null }
   }
   if (!branch) return false
-  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,mergedAt', '--limit', '5'], { cwd: repo })
+  // 열린 PR 은 따로 조회한다. 머지된 PR 이 많으면 한 번의 --state all 목록에서 열린 PR 이 밀려날 수 있다
+  const open = openPrOf(repo, branch)
+  if (!open.ok || open.pr) return false
+  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'merged', '--json', 'number,state,mergedAt', '--limit', '5'], { cwd: repo })
   if (!got.ok || !Array.isArray(got.data)) return false
-  const recent = (pr: Json) => Date.parse(String(pr?.mergedAt ?? '')) >= after
-  return !got.data.some(pr => pr?.state === 'OPEN') && got.data.some(pr => pr?.state === 'MERGED' && recent(pr))
+  return got.data.some(pr => Date.parse(String(pr?.mergedAt ?? '')) >= after)
 }
 
 export async function watchCompletions(repo: string, run: string, base: string, completed?: Json[]): Promise<void> {
