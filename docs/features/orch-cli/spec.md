@@ -49,6 +49,7 @@
 | | `orch worker ask` | `worker-ask` | 없음 |
 | | `orch worker adopt [--apply <터미널>]` | `adopt-sessions` | 없음 |
 | | `orch worker resume --dispatch <id>` | `resume-worker` | 없음(새 명령, docs/features/limit-resume) |
+| | `orch worker relaunch --dispatch <id> -- <worker 인자>` | (새로) | 사용 한도로 멈춘 worker 를 같은 워크트리와 지시서로 다른 모델에 다시 띄운다. Run 은 지금 코디네이터의 Run 이고 옛 dispatch 의 Run 과 다르면 거부한다 |
 | | `orch worker continue --dispatch <id>` | (새로) | 머지 전에 `worker_done` 을 보낸 worker 를 같은 워크트리에서 이어 맡긴다. Run 은 띄우기 기록의 것을 쓴다 |
 | | `orch worker worktree <저장소> --name …`, `orch worker check <워크트리> --spec …` | `make-worktree`, `make-worktree --check` | `--check` 가 동작으로 |
 | | `orch worker deny <워크트리>` | `worktree-deny` | 없음 |

@@ -307,7 +307,7 @@ function passValue(passthru: string[], name: string): string | null {
 }
 
 // 그 워크트리에 붙은 터미널(handle 과 제목). reuse 는 이어 쓸 터미널이라 뺀다. 읽지 못하면 Stop(1).
-function leftTerminals(worktree: string, reuse = ''): string {
+export function leftTerminals(worktree: string, reuse = ''): string {
   const done = orca(['terminal', 'list', '--json'])
   if (done.code !== 0) throw new Stop('거부: orca terminal list 를 읽지 못해 남은 터미널을 확인할 수 없다', 1)
   let rows: Record<string, unknown>[]
@@ -401,7 +401,7 @@ async function lintGate(a: Args, continuation: boolean, execute: typeof runAsync
 
 // 지시서의 worker 선택 줄과 WORKER_ARGS 를 대조한다. 머리 주석의 「0」. 어긋나면 거부 문구, 맞으면 null 이다.
 // 지시서를 읽지 못하면 null 이다. 그 실패는 다음 단계의 spec-line 이 사용법 오류로 알린다.
-function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean, continuation: boolean): string | null {
+export function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean, continuation: boolean): string | null {
   let text: string
   try {
     text = readFileSync(specPath, 'utf8')
@@ -433,7 +433,7 @@ const MADE_BY_LAUNCH = new Set(['.claude/settings.local.json'])
 const DIRTY_SHOWN = 50
 
 // --worktree 의 커밋 안 된 변경(porcelain 줄). git 저장소가 아니거나 읽지 못하면 빈 목록이다
-function uncommitted(worktree: string): string[] {
+export function uncommitted(worktree: string): string[] {
   const done = git(worktree, ['status', '--porcelain', '--untracked-files=all'])
   if (done.code !== 0) return []
   return done.stdout.split('\n').filter((line) => line.trim() && !MADE_BY_LAUNCH.has(line.slice(3)))

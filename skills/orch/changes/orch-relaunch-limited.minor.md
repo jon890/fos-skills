@@ -1,0 +1,4 @@
+- `orch worker relaunch --dispatch <id> -- <worker 인자>` 를 더했다. 사용 한도로 멈춘 worker 를 같은 워크트리와 지시서로 다른 모델에 다시 띄운다.
+- relaunch 는 이 Run 이 띄운 worker 인지, 커밋 안 된 변경과 남은 터미널을 먼저 본 뒤 옛 dispatch 를 abandon 하고 옛 터미널을 닫고 같은 Task 를 띄운다.
+- `worker 선택:` 줄이 새 인자와 다르면 띄우지 않고 `RELAUNCH-FIX <지시서>:<줄 번호>` 로 고칠 줄을 알린다.
+- 다시 띄우는 동안 cleanup 이 그 워크트리와 지시서를 지우지 않는다. 새 worker 가 뜨지 않으면 보존 표시가 24시간 남는다.
