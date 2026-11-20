@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  configDirOf, directoryMarketplaceOf,  directoryRefusal, installOf, parseLsRemote, rawManifestUrl, updateCommand, updateVisible, versionLabel, versionState, versionText,
+  comparePluginVersions, configDirOf, directoryMarketplaceOf, directoryRefusal, installOf, newerInstall, parseLsRemote, rawManifestUrl, runReloadIfReady, updateCommand, updateVisible, versionLabel, versionState, versionText,
 } from '../hooks/register.js'
 
 const CONFIG = '/Users/me/.claude'
@@ -115,6 +115,29 @@ test('버전 글은 「version (커밋 7자리)」 이고 빠진 쪽은 생략�
   assert.equal(versionText('1.4.0', NEW), '1.4.0 (b1e2c09)')
   assert.equal(versionText('', NEW), 'b1e2c09')
   assert.equal(versionText('1.4.0', ''), '1.4.0')
+})
+
+test('새 설치본은 main 조회와 관계없이 먼저 알리고, 낮은 설치 기록은 무시한다', () => {
+  const install = { kind: 'cache', version: '1.9.0', scope: 'user', projectPath: '', key: 'fos-skills@fos-skills' }
+  const rows = [{ scope: 'user', version: '1.10.0' }]
+  assert.equal(comparePluginVersions('1.9.0', '1.10.0'), -1)
+  assert.equal(newerInstall(install, rows), '1.10.0')
+  assert.equal(newerInstall(install, [{ scope: 'user', version: '1.8.0' }]), '')
+  assert.match(versionLabel('fos-skills', install, { error: 'offline' }, '', '1.10.0').text, /새 버전 설치됨 · 쉴 때 다시 읽음/)
+})
+
+test('내장 reload-plugins 만 입력란을 건드리지 않고 실행한다', async () => {
+  const calls: string[] = []
+  const $ = { command: {
+    list: async () => [{ name: 'reload-plugins', source: 'plugin' }],
+    run: async ({ command }) => { calls.push(command) },
+  } }
+  assert.equal(await runReloadIfReady($, '1.10.0'), false)
+  assert.deepEqual(calls, [])
+  $.command.list = async () => [{ name: 'reload-plugins', source: 'builtin' }]
+  assert.equal(await runReloadIfReady($, '1.10.0'), true)
+  assert.equal(await runReloadIfReady($, '1.10.0'), false)
+  assert.deepEqual(calls, ['reload-plugins'])
 })
 
 test('머리 줄 버전 글: 최신은 흐리게, 뒤처지면 노란색과 「p 로 갱신」, 확인하지 못하면 흐린 「최신 확인 불가」 (R2)', () => {
