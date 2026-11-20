@@ -93,8 +93,10 @@ describe('queue.auto_review.fallback 설정', () => {
 
 describe('틱', () => {
   const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+  const PASSED = { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }
+  const HEAD = 'abcdef1234567890abcdef1234567890abcdef12'
 
-  function setup(t: { after: (fn: () => void) => void }, rollup: unknown[]) {
+  function setup(t: { after: (fn: () => void) => void }, opts: { specFails?: boolean } = {}) {
     const root = tempDir('review-fallback-', t as never)
     const repo = join(root, 'repo')
     const orch = join(root, 'orch')
@@ -112,54 +114,122 @@ describe('틱', () => {
       { args: ['task-list'], stdout: reply({ tasks: [] }) },
       { stdout: reply({ messages: [] }) },
     ])
-    const pr = { number: 7, title: 'PR 7', headRefName: 'feat-7', headRefOid: 'abcdef1234567890abcdef1234567890abcdef12', isCrossRepository: false, isDraft: false, author: { login: 'me' }, url: 'https://github.com/o/r/pull/7', baseRefName: 'main', statusCheckRollup: rollup }
-    const gh = fakeBin(root, 'gh', [{ args: ['api', 'user'], stdout: 'me' }, { args: ['pr', 'list'], stdout: JSON.stringify([pr]) }, { stdout: '[]' }])
+    const gh = fakeBin(root, 'gh', [])
+    const pr = (fields: { head?: string; draft?: boolean; rollup?: unknown[] } = {}) => gh.setRules([
+      { args: ['api', 'user'], stdout: 'me' },
+      { args: ['pr', 'list'], stdout: JSON.stringify([{ number: 7, title: 'PR 7', headRefName: 'feat-7', headRefOid: fields.head ?? HEAD, isCrossRepository: false, isDraft: fields.draft ?? false, author: { login: 'me' }, url: 'https://github.com/o/r/pull/7', baseRefName: 'main', statusCheckRollup: fields.rollup ?? [PASSED, run('FAILURE', 6)] }]) },
+      { stdout: '[]' },
+    ])
+    pr()
     const noop = join(root, 'noop.ts')
     writeFileSync(noop, '')
     const reviewSpec = join(root, 'review-spec.ts')
-    writeFileSync(reviewSpec, `import { writeFileSync } from 'node:fs'
+    writeFileSync(reviewSpec, opts.specFails
+      ? `console.log('REVIEW-SPEC-FAIL 구현 worker 를 이력에서 찾지 못했다')\nprocess.exitCode = 1\n`
+      : `import { writeFileSync } from 'node:fs'
 const argv = process.argv.slice(2)
 writeFileSync(argv[argv.indexOf('--out') + 1], ${JSON.stringify(SPEC)})
 console.log('REVIEW-SPEC ' + argv[argv.indexOf('--out') + 1])
 `)
-    const launched = join(root, 'launched.json')
+    const launched = join(root, 'launched.jsonl')
     const launcher = join(root, 'launch.ts')
-    writeFileSync(launcher, `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(launched)}, JSON.stringify(process.argv.slice(2)))\n`)
-    const env = { ...process.env, ORCH_DIR: orch, ORCH_MACHINE_DIR: join(root, 'machine'), CODEX_BIN: join(root, 'no-codex'), CLAUDE_CONFIG_DIR: join(root, 'cfg'), ORCA: orca.path, GH: gh.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, SEND_TO_WORKER: noop, REVIEW_SPEC: reviewSpec, LAUNCH_WORKER: launcher, ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root }
+    writeFileSync(launcher, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(launched)}, JSON.stringify(process.argv.slice(2)) + '\\n')\n`)
+    const env: NodeJS.ProcessEnv = { ...process.env, ORCH_DIR: orch, ORCH_MACHINE_DIR: join(root, 'machine'), CODEX_BIN: join(root, 'no-codex'), CLAUDE_CONFIG_DIR: join(root, 'cfg'), ORCA: orca.path, GH: gh.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, SEND_TO_WORKER: noop, REVIEW_SPEC: reviewSpec, LAUNCH_WORKER: launcher, ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
     delete env.NODE_OPTIONS
+    const git = (cwd: string, ...args: string[]) => {
+      const done = spawnSync('git', args, { cwd, env, encoding: 'utf8' })
+      assert.equal(done.status, 0, `git ${args.join(' ')}: ${done.stderr}`)
+      return done.stdout.trim()
+    }
     const once = () => {
       const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], { env, encoding: 'utf8', timeout: 60_000 })
       assert.equal(done.status, 0, done.stdout + done.stderr)
       return readFileSync(join(orch, 'state', 'loop.log'), 'utf8')
     }
-    const launchedArgs = async (): Promise<string[] | null> => {
-      for (let i = 0; i < 100 && !existsSync(launched); i++) await new Promise((r) => setTimeout(r, 50))
-      return existsSync(launched) ? JSON.parse(readFileSync(launched, 'utf8')) : null
+    // 띄운 launch-worker 의 인자. 분리 실행이라 count 개가 쌓이기를 잠깐 기다린다
+    const launches = async (count = 1): Promise<string[][]> => {
+      const read = () => (existsSync(launched) ? readFileSync(launched, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]) : [])
+      for (let i = 0; i < 60 && read().length < count; i++) await new Promise((r) => setTimeout(r, 50))
+      return read()
     }
-    const notices = () => orca.calls().filter((call) => call.argv.includes('send')).map((call) => call.argv[call.argv.indexOf('--body') + 1])
-    return { once, launchedArgs, notices, specs, orch }
+    const notices = () => orca.calls().filter((call) => call.argv.includes('send')).map((call) => call.argv[call.argv.indexOf('--body') + 1] ?? '')
+    const records = () => JSON.parse(readFileSync(join(orch, 'state', 'review-fallback.json'), 'utf8'))
+    return { once, launches, notices, records, specs, root, repo, git, pr }
   }
 
   test('필수 체크가 통과했고 리뷰 봇이 몇 초 만에 실패하면 채운 리뷰 지시서로 worker 를 한 번 띄운다', async (t) => {
-    const env = setup(t, [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }, run('FAILURE', 6)])
-    const loopLog = env.once()
-    assert.match(loopLog, /REVIEW-FALLBACK #7 claude-review 6초/)
-    const args = await env.launchedArgs()
+    const env = setup(t)
+    assert.match(env.once(), /REVIEW-FALLBACK #7 claude-review 6초/)
+    const [args] = await env.launches()
     const spec = join(env.specs, 'spec-review-pr-7-fbabcdef12.md')
-    assert.deepEqual(args, ['--spec', spec, '--repo', args![3], '--name', 'review-pr-7-fbabcdef12', '--run', 'r', '--watch', '0', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'])
+    assert.deepEqual(args, ['--spec', spec, '--repo', args[3], '--name', 'review-pr-7-fbabcdef12', '--run', 'r', '--watch', '0', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'])
     assert.match(readFileSync(spec, 'utf8'), /## 판정 댓글/)
-    assert.ok(env.notices().some((body) => body?.includes('대체 리뷰 worker 를 띄웠다')))
-    const records = JSON.parse(readFileSync(join(env.orch, 'state', 'review-fallback.json'), 'utf8'))
-    assert.equal(records['7@abcdef1234567890abcdef1234567890abcdef12'].value, 'launched')
+    assert.ok(env.notices().some((body) => body.includes('대체 리뷰 worker 를 띄웠다')))
+    assert.equal(env.records()[`7@${HEAD}`].value, 'launched')
     // 같은 HEAD 에는 다시 띄우지 않는다
     assert.equal(env.once().match(/REVIEW-FALLBACK #7/g)?.length, 1)
+    assert.equal((await env.launches(2)).length, 1)
   })
 
-  test('필수 체크가 아직 돌거나 리뷰 봇이 오래 돌다 실패했으면 띄우지 않는다', async (t) => {
-    const pending = setup(t, [{ __typename: 'CheckRun', name: 'test', status: 'IN_PROGRESS', conclusion: null }, run('FAILURE', 6)])
-    assert.doesNotMatch(pending.once(), /REVIEW-FALLBACK/)
-    const slow = setup(t, [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }, run('FAILURE', 600)])
-    assert.doesNotMatch(slow.once(), /REVIEW-FALLBACK/)
-    assert.equal(await slow.launchedArgs(), null)
+  test('필수 체크가 아직 돌거나, 리뷰 봇이 오래 돌다 실패했거나, draft 면 띄우지 않는다', async (t) => {
+    const env = setup(t)
+    env.pr({ rollup: [{ ...PASSED, status: 'IN_PROGRESS', conclusion: null }, run('FAILURE', 6)] })
+    assert.doesNotMatch(env.once(), /REVIEW-FALLBACK/)
+    env.pr({ rollup: [PASSED, run('FAILURE', 600)] })
+    assert.doesNotMatch(env.once(), /REVIEW-FALLBACK/)
+    env.pr({ draft: true })
+    assert.doesNotMatch(env.once(), /REVIEW-FALLBACK/)
+    assert.deepEqual(await env.launches(), [])
+  })
+
+  test('지시서를 만들지 못하면 REVIEW-FALLBACK-FAIL 을 한 번 알리고 기록한다', async (t) => {
+    const env = setup(t, { specFails: true })
+    assert.match(env.once(), /REVIEW-FALLBACK-FAIL #7 REVIEW-SPEC-FAIL 구현 worker 를 이력에서 찾지 못했다/)
+    assert.ok(env.notices().some((body) => body.includes('대체 리뷰를 띄우지 못했다: REVIEW-SPEC-FAIL') && body.endsWith('독립 리뷰를 직접 맡긴다')))
+    assert.equal(env.records()[`7@${HEAD}`].value, 'failed')
+    env.once()
+    assert.equal(env.notices().filter((body) => body.includes('대체 리뷰를 띄우지 못했다')).length, 1)
+    assert.deepEqual(await env.launches(), [])
+  })
+
+  test('기준 브랜치 merge 만 더한 HEAD 에는 다시 띄우지 않고, 코드 커밋이 더해진 HEAD 에는 다시 띄운다', async (t) => {
+    const env = setup(t)
+    const origin = join(env.root, 'origin.git')
+    env.git(env.root, 'init', '-q', '--bare', '-b', 'main', origin)
+    env.git(env.repo, 'init', '-q', '-b', 'main')
+    env.git(env.repo, 'remote', 'add', 'origin', origin)
+    const commit = (file: string, body: string) => {
+      writeFileSync(join(env.repo, file), body)
+      env.git(env.repo, 'add', '-A')
+      env.git(env.repo, 'commit', '-q', '-m', file)
+    }
+    commit('a.txt', 'a\n')
+    env.git(env.repo, 'push', '-q', 'origin', 'main')
+    env.git(env.repo, 'checkout', '-q', '-b', 'feat-7')
+    commit('b.txt', 'b\n')
+    env.git(env.repo, 'push', '-q', 'origin', 'feat-7')
+    const first = env.git(env.repo, 'rev-parse', 'HEAD')
+    env.pr({ head: first })
+    env.once()
+    assert.equal((await env.launches()).length, 1)
+    // main 이 움직이고 PR 이 main 만 합쳤다
+    env.git(env.repo, 'checkout', '-q', 'main')
+    commit('c.txt', 'c\n')
+    env.git(env.repo, 'push', '-q', 'origin', 'main')
+    env.git(env.repo, 'checkout', '-q', 'feat-7')
+    env.git(env.repo, 'merge', '-q', '--no-edit', 'main')
+    env.git(env.repo, 'push', '-q', 'origin', 'feat-7')
+    const merged = env.git(env.repo, 'rev-parse', 'HEAD')
+    env.pr({ head: merged })
+    assert.match(env.once(), new RegExp(`REVIEW-FALLBACK-SKIP #7 HEAD ${merged.slice(0, 8)}: 기준 브랜치 merge 만 더한 HEAD 라 ${first.slice(0, 8)} 의 대체 리뷰를 쓴다`))
+    assert.equal(env.records()[`7@${merged}`].value, 'skipped')
+    // 코드 커밋을 더하면 새 HEAD 를 다시 판정해 띄운다
+    commit('d.txt', 'd\n')
+    env.git(env.repo, 'push', '-q', 'origin', 'feat-7')
+    const fixed = env.git(env.repo, 'rev-parse', 'HEAD')
+    env.pr({ head: fixed })
+    env.once()
+    assert.equal(env.records()[`7@${fixed}`].value, 'launched')
+    assert.equal((await env.launches(2)).length, 2)
   })
 })

@@ -2,6 +2,11 @@
 //     코디네이터를 기다리지 않고 리뷰 worker 를 띄운다. 장애 판정과 지시서 채우기는 core/review-fallback.ts 가 소유한다.
 //     기록은 state/review-fallback.json 의 { "<PR>@<HEAD>": { at, check, sec, value, spec, log, why } } 이다. 이번 틱의 내 열린 PR 이 아닌 항목은 지운다.
 //     같은 (PR, HEAD) 에는 한 번만 띄운다. 실패도 기록해 틱마다 다시 시도하지 않는다. 새 push 로 HEAD 가 바뀌면 리뷰 봇이 다시 돌므로 다시 본다.
+//     base merge 만 더한 HEAD: 같은 PR 에 앞서 띄운(launched) HEAD 가 있고 그 뒤 커밋이 기준 브랜치 merge 뿐이면(git fetch --quiet origin <브랜치> <base> 뒤
+//     lib/feature-evidence.ts 의 baseMergesOnly) 띄우지 않고 value skipped 와 `REVIEW-FALLBACK-SKIP` 로그만 남긴다. 자동 머지의 reviewScope 가 그런 HEAD 에
+//     앞 판정을 인정하므로 리뷰를 다시 받을 까닭이 없다. 최신화나 update-branch 가 HEAD 를 바꿀 때마다 리뷰 worker 가 또 뜨지 않게 한다.
+//     fetch 가 실패하면 판정하지 못한 것으로 보고 띄운다.
+//     기록은 PR 마다 바꿀 때 바로 쓴다. 알림이 실패해도 기록은 남는다. 실행 로그는 끝난 지 7일이 넘으면 지우고, 기록이 가리키는 로그는 남긴다.
 //     대상: 내 열린 PR 가운데 draft 가 아니고, 이번 틱 CI 감시의 그 HEAD 항목이 필수 체크로 passed(항목의 required, 없으면 state)이며,
 //     롤업이 장애(reviewOutage)인 PR 이다. 필수 체크가 끝나기 전에는 띄우지 않는다. 리뷰 worker 가 실패한 코드를 리뷰하지 않게 한다.
 //     띄우기:
@@ -19,12 +24,14 @@
 //     오류 이유(기록을 읽거나 쓰지 못함)는 errors 의 review-fallback 에 둔다(errors.ts 머리 주석의 「오류 줄 억제」)
 
 import { spawn } from 'node:child_process'
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isObject } from '../../core/json.ts'
 import { fallbackSpec, reviewOutage } from '../../core/review-fallback.ts'
 import type { ReviewFallback } from '../../core/auto-merge.ts'
 import { scriptPath } from '../../lib/commands.ts'
+import { baseMergesOnly } from '../../lib/feature-evidence.ts'
+import { git } from '../../lib/git.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
@@ -37,7 +44,9 @@ import type { OwnPr } from './shared.ts'
 
 const SPEC_MS = 120_000
 
-type FallbackRecord = { at: string; check: string; sec: number; value: 'launched' | 'failed'; spec?: string; log?: string; why?: string }
+const LOG_KEEP_MS = 7 * 24 * 60 * 60_000
+
+type FallbackRecord = { at: string; check: string; sec: number; value: 'launched' | 'failed' | 'skipped'; spec?: string; log?: string; why?: string }
 
 function recordFile(repo: string): string {
   return join(pathOf('state', repo), 'review-fallback.json')
@@ -99,6 +108,35 @@ async function launch(ctx: StepContext, pr: OwnPr, fallback: ReviewFallback, out
   return { spec, log: logFile }
 }
 
+// 같은 PR 에 앞서 띄운 대체 리뷰의 HEAD 가운데, 지금 HEAD 와의 사이가 기준 브랜치 merge 커밋뿐인 것. 없거나 판정하지 못하면 null 이다(머리 주석의 「base merge 만 더한 HEAD」)
+function reviewedBefore(ctx: StepContext, pr: OwnPr, records: Record<string, FallbackRecord>): string | null {
+  const earlier = Object.entries(records).filter(([key, record]) => key.startsWith(`${pr.number}@`) && record.value === 'launched').map(([key]) => key.slice(key.indexOf('@') + 1))
+  if (earlier.length === 0) return null
+  if (git(ctx.repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base]).code !== 0) return null
+  return earlier.find((head) => baseMergesOnly(ctx.repo, pr.head, head, pr.base)) ?? null
+}
+
+// 끝난 지 7일이 넘은 실행 로그를 지운다. 기록이 가리키는 로그는 남긴다
+function pruneLogs(repo: string, records: Record<string, FallbackRecord>): void {
+  const dir = join(pathOf('state', repo), 'review-fallback')
+  if (!existsSync(dir)) return
+  const kept = new Set(Object.values(records).flatMap((record) => (record.log ? [record.log] : [])))
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name)
+    if (!name.endsWith('.log') || kept.has(path)) continue
+    if (Date.now() - statSync(path).mtimeMs > LOG_KEEP_MS) unlinkSync(path)
+  }
+}
+
+// 알림을 보내지 못해도 기록은 남긴다. 기록이 빠지면 다음 틱이 같은 HEAD 에 다시 띄우려다 REVIEW-SPEC-EXISTS 로 실패한다
+function notify(kind: string, pr: number, text: string, run: string | null): void {
+  try {
+    sendNotice(kind, pr, text, run)
+  } catch (e) {
+    log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
+  }
+}
+
 export async function startReviewFallback(ctx: StepContext, state: StepState): Promise<StepResult> {
   const fallback = ctx.autoMerge.review?.fallback
   const { prs, ci } = state
@@ -107,6 +145,11 @@ export async function startReviewFallback(ctx: StepContext, state: StepState): P
   try {
     const file = recordFile(ctx.repo)
     const records = readRecords(file)
+    const save = () => {
+      makeParent(file, ctx.repo)
+      writeFileSync(`${file}.tmp`, `${JSON.stringify(records, null, 2)}\n`)
+      renameSync(`${file}.tmp`, file)
+    }
     const open = new Set(prs.mine.map((pr) => String(pr.number)))
     for (const key of Object.keys(records)) if (!open.has(key.split('@')[0])) delete records[key]
     for (const pr of prs.mine) {
@@ -116,27 +159,35 @@ export async function startReviewFallback(ctx: StepContext, state: StepState): P
       if (entry?.head !== pr.head || (entry.required ?? entry.state) !== 'passed') continue
       const outage = reviewOutage(pr.rollup, fallback.check, fallback.failWithinSec)
       if (!outage) continue
+      const base = { at: iso(), check: outage.check, sec: outage.sec }
+      const head = pr.head.slice(0, 8)
+      const before = reviewedBefore(ctx, pr, records)
+      if (before) {
+        records[key] = { ...base, value: 'skipped', why: `기준 브랜치 merge 만 더한 HEAD 라 ${before.slice(0, 8)} 의 대체 리뷰를 쓴다` }
+        save()
+        log(`REVIEW-FALLBACK-SKIP #${pr.number} HEAD ${head}: ${records[key].why}`)
+        continue
+      }
       ctx.lookup.paths ??= worktreePaths(ctx.repo)
       const path = ctx.lookup.paths.get(pr.branch)
       const owner = path ? ownerOf(path, ctx.lookup) : null
       const run = (owner?.ok && owner.found?.run) || primaryRun(ctx.lookup)
       const dir = ctx.runs.find((entry) => entry.run === run)?.specsDir ?? ctx.specsDir
-      const head = pr.head.slice(0, 8)
       const done = dir ? await launch(ctx, pr, fallback, outage, run, dir) : { why: '지시서 폴더가 없다(finish.specs_dir)' }
-      const base = { at: iso(), check: outage.check, sec: outage.sec }
       if ('why' in done) {
         records[key] = { ...base, value: 'failed', why: done.why }
+        save()
         log(`REVIEW-FALLBACK-FAIL #${pr.number} ${done.why}`)
-        sendNotice('REVIEW-FALLBACK-FAIL', pr.number, `${outage.check} 이 HEAD ${head} 에서 ${outage.sec}초 만에 실패했지만 대체 리뷰를 띄우지 못했다: ${done.why}. 독립 리뷰를 직접 맡긴다`, run)
+        notify('REVIEW-FALLBACK-FAIL', pr.number, `${outage.check} 이 HEAD ${head} 에서 ${outage.sec}초 만에 실패했지만 대체 리뷰를 띄우지 못했다: ${done.why}. 독립 리뷰를 직접 맡긴다`, run)
       } else {
         records[key] = { ...base, value: 'launched', spec: done.spec, log: done.log }
+        save()
         log(`REVIEW-FALLBACK #${pr.number} ${outage.check} ${outage.sec}초 spec=${done.spec} log=${done.log}`)
-        sendNotice('REVIEW-FALLBACK', pr.number, `${outage.check} 이 HEAD ${head} 에서 ${outage.sec}초 만에 실패해 대체 리뷰 worker 를 띄웠다. 지시서 ${done.spec}, 로그 ${done.log}`, run)
+        notify('REVIEW-FALLBACK', pr.number, `${outage.check} 이 HEAD ${head} 에서 ${outage.sec}초 만에 실패해 대체 리뷰 worker 를 띄웠다. 지시서 ${done.spec}, 로그 ${done.log}`, run)
       }
     }
-    makeParent(file, ctx.repo)
-    writeFileSync(`${file}.tmp`, `${JSON.stringify(records, null, 2)}\n`)
-    renameSync(`${file}.tmp`, file)
+    save()
+    pruneLogs(ctx.repo, records)
     report('review-fallback', null)
   } catch (e) {
     report('review-fallback', oneLine(e))
