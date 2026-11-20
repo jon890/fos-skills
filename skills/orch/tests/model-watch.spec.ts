@@ -47,6 +47,21 @@ function watch(repo: string, now: number, file = join(tmp, 'machine', 'model-wat
   return notices
 }
 
+
+// 가짜 gh. 부른 인자를 calls 에 줄마다 남기고, pr list 는 OPEN 파일의 JSON(없으면 빈 목록), pr create 는 URL 을 낸다
+function fakeGh(url: string, opts: { failCreate?: boolean } = {}): { calls: () => string[][]; open: (prs: unknown[]) => void } {
+  const calls = join(tmp, 'gh-calls')
+  const open = join(tmp, 'gh-open.json')
+  process.env.GH = linkBin(tmp, 'gh', `const fs = require('node:fs'); const a = process.argv.slice(2); fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + '\\n');
+if (a[0] === 'pr' && a[1] === 'list') { console.log(fs.existsSync(${JSON.stringify(open)}) ? fs.readFileSync(${JSON.stringify(open)}, 'utf8') : '[]'); process.exit(0) }
+if (a[0] === 'pr' && a[1] === 'create' && ${opts.failCreate ? 'true' : 'false'}) { console.error('auth required'); process.exit(1) }
+console.log(${JSON.stringify(url)})`)
+  return {
+    calls: () => { try { return readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line)) } catch { return [] } },
+    open: (prs) => writeFileSync(open, JSON.stringify(prs)),
+  }
+}
+
 describe('새 모델', () => {
   test('첫 목록을 기준점으로 두고 FIRST_COMPARE 만 새 모델로 알린다', () => {
     const state = newModels({ checked_at: null, baseline: null, models: null, found: [], repos: {} }, TODAY.map(m => ({ slug: m.slug, visibility: m.visibility, description: m.description, efforts: ['low'] })))
@@ -107,8 +122,7 @@ describe('새 세대와 표 문서', () => {
     git(repo, ['add', '-A'])
     git(repo, ['commit', '-q', '-m', 'table'])
     git(repo, ['push', '-q', 'origin', 'main'])
-    const calls = join(tmp, 'gh-calls')
-    process.env.GH = linkBin(tmp, 'gh', `require('node:fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + '\\n'); console.log('https://github.com/o/r/pull/9')`)
+    const gh = fakeGh('https://github.com/o/r/pull/9')
     codexList(NEXT)
     const notices = watch(repo, 0)
     assert.deepEqual(notices.filter(n => n.kind.startsWith('MODEL-TABLE')), [{ kind: 'MODEL-TABLE-PR', text: 'https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol' }])
@@ -117,14 +131,14 @@ describe('새 세대와 표 문서', () => {
     assert.match(pushed, /\| `impl-explore` \| [^|]+\| `codex` \| `gpt-6\.3-sol` \| `medium` \|/)
     assert.doesNotMatch(pushed.split('### 새 모델과 새 세대')[0], /`gpt-6\.2-sol`/)
     assert.match(git(origin, ['show', `${branch}:skills/orch/changes/model-table-gpt-6.3-sol.patch.md`]), /모델 표의 `gpt-6\.2-sol` 을 `gpt-6\.3-sol` 로 바꿨다/)
-    const gh = readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line))
-    assert.deepEqual(gh[0].slice(0, 6), ['pr', 'create', '--base', 'main', '--head', branch])
+    const created = gh.calls().filter(c => c[1] === 'create')
+    assert.deepEqual(created[0].slice(0, 6), ['pr', 'create', '--base', 'main', '--head', branch])
     // 임시 워크트리와 로컬 브랜치는 남기지 않는다
     assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 1)
     assert.equal(git(repo, ['branch', '--list', branch]), '')
     // 다음 날은 같은 바꿈을 다시 하지 않는다
     assert.deepEqual(watch(repo, DAY).filter(n => n.kind.startsWith('MODEL-TABLE')), [])
-    assert.equal(readFileSync(calls, 'utf8').trim().split('\n').length, 1)
+    assert.equal(gh.calls().filter(c => c[1] === 'create').length, 1)
   })
 
   test('PR 을 열지 못하면 MODEL-TABLE-FAIL 을 보내고 기록하지 않는다', () => {
@@ -134,7 +148,7 @@ describe('새 세대와 표 문서', () => {
     git(repo, ['add', '-A'])
     git(repo, ['commit', '-q', '-m', 'table'])
     git(repo, ['push', '-q', 'origin', 'main'])
-    process.env.GH = linkBin(tmp, 'gh', `console.error('auth required'); process.exit(1)`)
+    fakeGh('', { failCreate: true })
     codexList(NEXT)
     const file = join(tmp, 'machine', 'model-watch.json')
     const notices = watch(repo, 0, file)
@@ -192,10 +206,39 @@ describe('보드와 여러 저장소', () => {
     git(repo, ['add', '-A'])
     git(repo, ['commit', '-q', '-m', 'table'])
     git(repo, ['push', '-q', 'origin', 'main'])
-    process.env.GH = linkBin(tmp, 'gh', `console.log('https://github.com/o/r/pull/10')`)
+    fakeGh('https://github.com/o/r/pull/10')
     codexList([...TODAY, entry('gpt-6.3-sol', 'Fast, go-to model.')])
     assert.deepEqual(watch(other, 0).filter(n => n.kind.startsWith('MODEL-TABLE')), [])
     const notices = watch(repo, 1000)
     assert.deepEqual(notices.filter(n => n.kind.startsWith('MODEL-TABLE')), [{ kind: 'MODEL-TABLE-PR', text: 'https://github.com/o/r/pull/10 gpt-6.2-sol>gpt-6.3-sol' }])
+  })
+})
+
+describe('표 PR 은 하나', () => {
+  test('열린 표 PR 이 있으면 새로 열지 않고 기본 브랜치에서 다시 맞춰 그 PR 을 갱신한다', () => {
+    const { dir: repo, origin } = copyRepo(join(tmp, 'fos'))
+    mkdirSync(join(repo, 'skills/orch/references'), { recursive: true })
+    writeFileSync(join(repo, TABLE_PATH), readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8'))
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'table'])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Fast, go-to model.')])
+    assert.deepEqual(watch(repo, 0).filter(n => n.kind === 'MODEL-TABLE-PR').map(n => n.text), ['https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol'])
+    const branch = 'orch/model-table-gpt-6.3-sol'
+    // 다음 날 terra 의 새 세대가 나왔고 sol PR 은 아직 열려 있다
+    gh.open([{ number: 9, headRefName: branch, url: 'https://github.com/o/r/pull/9' }])
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Fast, go-to model.'), entry('gpt-6.2-terra', 'Efficient model.')])
+    const notices = watch(repo, DAY)
+    assert.deepEqual(notices.filter(n => n.kind === 'MODEL-TABLE-PR').map(n => n.text), ['https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol,gpt-6.1-terra>gpt-6.2-terra'])
+    assert.equal(gh.calls().filter(c => c[1] === 'create').length, 1)
+    const edit = gh.calls().find(c => c[1] === 'edit')
+    assert.deepEqual(edit?.slice(0, 3), ['pr', 'edit', 'https://github.com/o/r/pull/9'])
+    // 같은 브랜치 하나에 두 바꿈이 모두 있고, 브랜치는 기본 브랜치 위 커밋 하나다
+    const pushed = git(origin, ['show', `${branch}:${TABLE_PATH}`])
+    assert.match(pushed, /`gpt-6\.3-sol`/)
+    assert.match(pushed, /`gpt-6\.2-terra`/)
+    assert.equal(git(origin, ['rev-list', '--count', `main..${branch}`]), '1')
+    assert.equal(git(origin, ['branch', '--list', 'orch/model-table-*']).split('\n').filter(Boolean).length, 1)
   })
 })

@@ -15,12 +15,13 @@
 //     보내지 못해도 announced 에 넣는다. 같은 모델을 다시 알리지 않는다는 스펙을 따른다. 루프 로그에는 남는다.
 // 새 세대: 저장된 목록으로 모델 표를 planTable(lib/model-generation.ts)로 맞춘다. 자리마다 그 effort 를 지원하는 같은 계열 최신으로만 바꾼다.
 //     이 저장소에 표 문서(TABLE_PATH)가 있으면(fos-skills) 표를 새 세대로 바꾸는 PR 을 열고 `MODEL-TABLE-PR <PR 주소> <옛>><새>,...` 을 보낸다.
-//     표 문서는 origin 기본 브랜치의 것을 읽는다. PR 브랜치는 `orch/model-table-<새 세대들>` 이고, 원격에 있으면 다시 열지 않는다.
-//     PR 은 임시 워크트리에서 표 문서와 변경 조각(skills/orch/changes/model-table-<새 세대>.patch.md)을 커밋해 연다. 워크트리와 로컬 브랜치는 끝나면 지운다.
+//     표 문서는 origin 기본 브랜치의 것을 읽는다. 표 PR 은 한 번에 하나다(브랜치 `orch/model-table-<새 세대들>`).
+//     열린 표 PR 이 있으면 새로 열지 않고, 기본 브랜치에서 표 전체를 다시 맞춘 커밋으로 그 브랜치를 덮어 올리고 제목과 본문을 고친다.
+//     PR 은 임시 워크트리에서 표 문서와 변경 조각(skills/orch/changes/<브랜치의 orch/ 뒤>.patch.md)을 커밋해 연다. 워크트리와 로컬 브랜치는 끝나면 지운다.
 //     표 문서가 없는 저장소는 그 번들의 표를 읽고 `MODEL-GENERATION <옛> <새>` 만 보낸다.
 //     더 높은 세대가 그 자리의 effort 를 지원하지 않으면 그 자리는 바꾸지 않고 `MODEL-TABLE-SKIP <옛> <새> <effort>: <이유>` 를 한 번 보낸다.
 //     어느 쪽이든 그 저장소의 tables 에 기록해 같은 바꿈을 다시 하지 않는다. PR 을 열지 못하면 기록하지 않고 `MODEL-TABLE-FAIL <바꿈>: <이유>` 를 보낸다.
-//     다음 목록을 읽은 뒤 다시 한다. gh pr create 가 실패하면 올린 브랜치를 원격에서 지운다.
+//     다음 목록을 읽은 뒤 다시 한다. gh pr create 가 실패하면 올린 브랜치를 원격에서 지운다. 알림의 바꿈은 그 PR 이 담은 바꿈 전체다.
 // 테스트는 상태 파일, 시각, 명령 실행기, 알림을 주입한다. 실제 codex 와 gh 를 부르지 않는다.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -113,58 +114,74 @@ export function fragmentText(upgrades: Generation[]): string {
   return `${line.length <= 160 ? line : `- 상주 루프가 새 세대를 알아채 모델 표의 옛 세대 ${upgrades.length}개를 같은 계열의 새 세대로 바꿨다.`}\n`
 }
 
-// 표 문서를 새 세대로 바꾸는 PR 을 연다. 연 PR 주소 또는 실패 이유를 낸다
-export function openTablePr(repo: string, upgrades: Generation[], models: CodexModel[], exec: Exec, skipped: Skipped[] = []): { pr: string } | { failure: string } {
+// 표 문서를 새 세대로 바꾸는 PR 을 열거나, 열린 표 PR(브랜치 TABLE_BRANCH_PREFIX)이 있으면 그 PR 을 갱신한다. 표 PR 은 한 번에 하나다.
+// 어느 쪽이든 origin 기본 브랜치에서 새로 만든다. 표 전체를 목록으로 다시 맞춰, 앞서 연 바꿈과 새 바꿈이 같은 PR 한 곳에만 있다.
+// 갱신은 그 브랜치를 기본 브랜치 위 새 커밋으로 덮어 올린다(--force-with-lease). 연 PR 주소 또는 실패 이유를 낸다
+export const TABLE_BRANCH_PREFIX = 'orch/model-table-'
+export function openTablePr(repo: string, models: CodexModel[], exec: Exec): { pr: string; upgrades: Generation[] } | { failure: string } {
   const base = defaultBase(repo) ?? 'main'
-  const branch = `orch/model-table-${[...new Set(upgrades.map((u) => u.to))].join('-')}`
   const git = (cwd: string, args: string[]) => exec(['git', '-C', cwd, ...args], { timeoutMs: 120_000 })
+  const gh = (args: string[], cwd = repo) => exec([process.env.GH || 'gh', ...args], { cwd, timeoutMs: 120_000 })
+  const last = (r: RunResult) => (r.stderr || r.stdout).trim().split('\n').pop() ?? ''
   const fetched = git(repo, ['fetch', 'origin', base])
-  if (fetched.code !== 0) return { failure: `git fetch origin ${base} 실패: ${fetched.stderr.trim().split('\n').pop() ?? ''}` }
-  const remote = git(repo, ['ls-remote', '--heads', 'origin', branch])
-  if (remote.code === 0 && remote.stdout.trim()) return { failure: `원격에 ${branch} 가 이미 있다` }
+  if (fetched.code !== 0) return { failure: `git fetch origin ${base} 실패: ${last(fetched)}` }
+  const listed = gh(['pr', 'list', '--state', 'open', '--base', base, '--json', 'number,headRefName,url', '--limit', '100'])
+  if (listed.code !== 0) return { failure: `gh pr list 실패: ${last(listed)}` }
+  let open: { headRefName?: string; url?: string } | undefined
+  try { open = (JSON.parse(listed.stdout) as { headRefName?: string; url?: string }[]).find((pr) => pr.headRefName?.startsWith(TABLE_BRANCH_PREFIX)) }
+  catch { return { failure: 'gh pr list 출력이 JSON 이 아니다' } }
   const dir = mkdtempSync(join(tmpdir(), 'orch-model-table-'))
   rmSync(dir, { recursive: true, force: true })
-  const added = git(repo, ['worktree', 'add', '-b', branch, dir, `origin/${base}`])
-  if (added.code !== 0) return { failure: `워크트리를 만들지 못했다: ${added.stderr.trim().split('\n').pop() ?? ''}` }
+  const added = git(repo, ['worktree', 'add', '--detach', dir, `origin/${base}`])
+  if (added.code !== 0) return { failure: `워크트리를 만들지 못했다: ${last(added)}` }
   try {
     const file = join(dir, TABLE_PATH)
-    const before = readFileSync(file, 'utf8')
-    const after = planTable(before, models).text
-    if (after === before) return { failure: '표 문서에 바꿀 줄이 없다' }
-    writeFileSync(file, after)
-    const fragment = join(dir, 'skills', 'orch', 'changes', `model-table-${[...new Set(upgrades.map((u) => u.to))].join('-')}.patch.md`)
+    const plan = planTable(readFileSync(file, 'utf8'), models)
+    if (!plan.upgrades.length) return { failure: '기본 브랜치의 표 문서에 바꿀 자리가 없다' }
+    const targets = [...new Set(plan.upgrades.map((u) => u.to))]
+    const branch = open?.headRefName ?? `${TABLE_BRANCH_PREFIX}${targets.join('-')}`
+    writeFileSync(file, plan.text)
+    const fragment = join(dir, 'skills', 'orch', 'changes', `${branch.slice('orch/'.length)}.patch.md`)
     mkdirSync(dirname(fragment), { recursive: true })
-    writeFileSync(fragment, fragmentText(upgrades))
-    const title = `feat(orch): 모델 표를 새 세대 ${[...new Set(upgrades.map((u) => u.to))].join(', ')} 로 바꾼다`
-    for (const args of [['add', TABLE_PATH, fragment], ['commit', '-m', title]]) {
+    writeFileSync(fragment, fragmentText(plan.upgrades))
+    const title = `feat(orch): 모델 표를 새 세대 ${targets.join(', ')} 로 바꾼다`
+    for (const args of [['switch', '-C', branch], ['add', TABLE_PATH, fragment], ['commit', '-m', title]]) {
       const done = git(dir, args)
-      if (done.code !== 0) return { failure: `git ${args[0]} 실패: ${(done.stderr || done.stdout).trim().split('\n').pop() ?? ''}` }
+      if (done.code !== 0) return { failure: `git ${args[0]} 실패: ${last(done)}` }
     }
-    const pushed = git(dir, ['push', '-u', 'origin', branch])
-    if (pushed.code !== 0) return { failure: `push 실패: ${pushed.stderr.trim().split('\n').pop() ?? ''}` }
+    const pushed = git(dir, ['push', ...(open ? ['--force-with-lease'] : []), '-u', 'origin', branch])
+    if (pushed.code !== 0) return { failure: `push 실패: ${last(pushed)}` }
     const body = [
       '## 요약',
       '',
       '상주 루프가 `codex debug models` 에서 표의 모델보다 높은 같은 계열 세대를 알아채 모델 표와 사용 한도 표를 바꿨다.',
-      '띄우기는 이미 새 세대로 돌고 있고, 이 PR 이 머지되면 표와 실제로 띄우는 모델이 같아진다.',
+      '띄우기는 이미 새 세대로 돌고 있고, 이 PR 이 머지되면 표와 실제로 띄우는 모델이 같아진다. 새 세대가 또 나오면 루프가 이 PR 을 기본 브랜치에서 다시 만들어 덮는다.',
       '',
       '## 바꾼 모델',
       '',
-      ...upgrades.map((u) => `- \`${u.from}\` → \`${u.to}\``),
-      ...(skipped.length ? ['', '## 바꾸지 않은 자리', '', ...skipped.map((k) => `- \`${k.from}\` effort \`${k.effort ?? '기본'}\`: ${k.reason}`)] : []),
+      ...plan.upgrades.map((u) => `- \`${u.from}\` → \`${u.to}\``),
+      ...(plan.skipped.length ? ['', '## 바꾸지 않은 자리', '', ...plan.skipped.map((k) => `- \`${k.from}\` effort \`${k.effort ?? '기본'}\`: ${k.reason}`)] : []),
       '',
       '머지는 코디네이터가 한다. 계약은 `docs/features/model-auto-routing/spec.md` 의 REQ3 이다.',
     ].join('\n')
-    const gh = exec([process.env.GH || 'gh', 'pr', 'create', '--base', base, '--head', branch, '--title', title, '--body', body], { cwd: dir, timeoutMs: 120_000 })
-    if (gh.code !== 0) {
-      // 브랜치만 남으면 다음 날 「이미 있다」 로 막힌다. 올린 브랜치를 지워 다음 날 다시 열게 한다
-      git(dir, ['push', 'origin', '--delete', branch])
-      return { failure: `gh pr create 실패: ${(gh.stderr || gh.stdout).trim().split('\n').pop() ?? ''}` }
+    if (open?.url) {
+      const edited = gh(['pr', 'edit', open.url, '--title', title, '--body', body], dir)
+      if (edited.code !== 0) return { failure: `gh pr edit 실패: ${last(edited)}` }
+      return { pr: open.url, upgrades: plan.upgrades }
     }
-    return { pr: gh.stdout.trim().split('\n').pop() ?? '' }
+    const created = gh(['pr', 'create', '--base', base, '--head', branch, '--title', title, '--body', body], dir)
+    if (created.code !== 0) {
+      // 브랜치만 남으면 다음 갱신이 열린 PR 을 찾지 못한다. 올린 브랜치를 지워 다음에 다시 열게 한다
+      git(dir, ['push', 'origin', '--delete', branch])
+      return { failure: `gh pr create 실패: ${last(created)}` }
+    }
+    return { pr: created.stdout.trim().split('\n').pop() ?? '', upgrades: plan.upgrades }
   } finally {
     git(repo, ['worktree', 'remove', '--force', dir])
-    git(repo, ['branch', '-D', branch])
+    for (const line of git(repo, ['branch', '--list', `${TABLE_BRANCH_PREFIX}*`]).stdout.split('\n')) {
+      const name = line.replace(/^[*+ ]+/, '').trim()
+      if (name) git(repo, ['branch', '-D', name])
+    }
   }
 }
 
@@ -224,11 +241,11 @@ export function watchModels(repo: string, opts: WatchOptions): void {
       opts.notify({ kind: 'MODEL-TABLE-SKIP', text: `${k.from} ${k.to} ${k.effort ?? '기본'}: ${k.reason}` })
     }
     if (pending.length && table.own) {
-      const opened = openTablePr(repo, pending, models, exec, plan.skipped)
+      const opened = openTablePr(repo, models, exec)
       if ('failure' in opened) opts.notify({ kind: 'MODEL-TABLE-FAIL', text: `${key(pending)}: ${opened.failure}` })
       else {
-        for (const u of pending) mine.tables[`${u.from}>${u.to}`] = { pr: opened.pr, at: now }
-        opts.notify({ kind: 'MODEL-TABLE-PR', text: `${opened.pr} ${key(pending)}` })
+        for (const u of opened.upgrades) mine.tables[`${u.from}>${u.to}`] = { pr: opened.pr, at: now }
+        opts.notify({ kind: 'MODEL-TABLE-PR', text: `${opened.pr} ${key(opened.upgrades)}` })
       }
     } else for (const u of pending) {
       mine.tables[`${u.from}>${u.to}`] = { pr: null, at: now }
