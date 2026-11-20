@@ -19,6 +19,12 @@ const DAY = 86400
 const FAKE_GH = `const fs = require('node:fs')
 if (process.env.FAKE_GH_FAILS === '1') process.exit(1)
 const args = process.argv.slice(2)
+if (args.includes('view')) {
+  const number = args[args.indexOf('view') + 1]
+  const states = JSON.parse(process.env.FAKE_PR_STATES || '{}')
+  fs.writeSync(1, JSON.stringify({ state: states[number] || 'OPEN' }) + '\\n')
+  process.exit(0)
+}
 if (args.includes('merged')) {
   const head = args[args.indexOf('--head') + 1]
   const merged = JSON.parse(process.env.FAKE_MERGED || '{}')
@@ -88,7 +94,7 @@ beforeEach(() => {
     GH: join(bindir, 'gh'),
     ORCA: join(bindir, 'orca'),
   }
-  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_RUN_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE', 'FAKE_WORKERS', 'FAKE_RUN_REQUIRED', 'FAKE_FAILED_RUN']) delete env[key]
+  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_PR_STATES', 'FAKE_TASKS', 'FAKE_RUN_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE', 'FAKE_WORKERS', 'FAKE_RUN_REQUIRED', 'FAKE_FAILED_RUN']) delete env[key]
   const origin = join(tmp, 'origin.git')
   repo = join(tmp, 'repo')
   sh('git', 'init', '-q', '--bare', '-b', 'main', origin)
@@ -550,6 +556,28 @@ describe('handoff-cleanup', () => {
       const old = make('.orch/handoff/old-reply.md', '옛 파일\n', 9)
       const r = ok(['--apply'], { FAKE_RUN_TASKS: '{}' })
       for (const target of [body, mapping, old]) assert.equal(existsSync(target), true, target)
+      assert.doesNotMatch(r.stdout, /옮김 .*handoff/)
+    })
+
+    test('CLOSED PR 폴더만 옮기고 OPEN, MERGED, 비슷한 번호와 다른 자료는 남긴다', () => {
+      const closed = make('.orch/handoff/pr-77/body.md', '닫힌 PR')
+      const open = make('.orch/handoff/pr-78/body.md', '열린 PR')
+      const merged = make('.orch/handoff/pr-79/body.md', '머지된 PR')
+      const similar = make('.orch/handoff/pr-777/body.md', '다른 PR')
+      const pending = make('.orch/handoff/pending/worker/body.md', '대기')
+      const measurement = make('.orch/handoff/measurements/result.tsv', '측정')
+      const states = JSON.stringify({ '77': 'CLOSED', '78': 'OPEN', '79': 'MERGED', '777': 'OPEN' })
+      const r = ok(['--apply'], { FAKE_PR_STATES: states })
+      assert.match(r.stdout, /옮김 \.orch\/handoff\/pr-77/)
+      assert.equal(existsSync(closed), false)
+      assert.equal(existsSync(join(trash, '.orch/handoff/pr-77/body.md')), true)
+      for (const target of [open, merged, similar, pending, measurement]) assert.equal(existsSync(target), true, target)
+    })
+
+    test('PR 상태를 읽지 못하면 handoff 폴더를 남긴다', () => {
+      const closed = make('.orch/handoff/pr-77/body.md', '닫힌 PR', 9)
+      const r = ok(['--apply'], { FAKE_GH_FAILS: '1' })
+      assert.equal(existsSync(closed), true)
       assert.doesNotMatch(r.stdout, /옮김 .*handoff/)
     })
 

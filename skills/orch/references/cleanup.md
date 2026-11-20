@@ -472,8 +472,9 @@ Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이�
 
 ### handoff 산출물 정리
 
-끝난 작업의 큐 로그, 지시서, 오래된 orch 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다. `handoff/` 안은 보지 않는다.
-PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가 MERGED 를 확인하면 그 폴더를 바로 휴지통으로 옮긴다. 다른 PR 폴더와 규칙 밖의 옛 파일은 남기고, 옛 파일 개수만 알린다.
+끝난 작업의 큐 로그, 지시서, 오래된 orch 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
+PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가 MERGED 를 확인하면 그 폴더를 바로 휴지통으로 옮긴다. 휴지통 이동만 실패하면 원본을 남기고 경고한 뒤 다른 마무리는 계속한다.
+`orch cleanup handoff --apply` 는 GitHub 가 CLOSED 로 확인한 PR 폴더를 옮긴다. 상태를 확인할 수 없는 PR 과 OPEN·MERGED PR 의 폴더, `pending/` 과 측정 결과 폴더는 남긴다. 규칙 밖의 옛 파일도 옮기지 않고, `finish` 가 개수만 알린다.
 **사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
 **코디네이터와 핸들러는 `--run` 을 준다.** 그 Run 의 Task 가 쓴 지시서와 PR 본문만 옮겨 다른 세션의 산출물을 건드리지 않는다.
 `tick` 이나 `after-cleanup` 핸들러에서 부르면 입력의 `run` 을 넘긴다. 큐 로그, 폴더, csv 는 Run 에 묶을 수 없어 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다.
