@@ -129,6 +129,8 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 
 **새 worker 로 이어받는 순서**
 
+일하던 worker 가 사용 한도로 멈춰 같은 지시서와 Task 를 다른 모델로 넘길 때는 이 순서 대신 `orch worker relaunch` 를 쓴다. 1 과 3 을 한 뒤 부르면 터미널 닫기와 다시 띄우기를 명령이 한다([`launch.md`](launch.md) 「다른 모델로 다시 띄우기」). 아래 순서는 후속 지시서로 새 Task 를 줄 때다.
+
 1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
 2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `worker-release` 로 닫는다(안 닫히면 `cleanup.md` 의 「worker 터미널을 닫는 기본 경로」). 다른 세션이나 사용자의 터미널은 닫지 않는다
 3. 후속 지시서에 이어받는 상태를 적는다. 끝난 커밋, 커밋 안 된 변경, 앞 worker 의 마지막 status 다. 새 worker 는 앞 대화를 모른다
