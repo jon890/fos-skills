@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { bundleRoot } from './bundle.ts'
 import { ConfigError, loadConfig, ROUTING_KEYS, section } from './config.ts'
 import type { CandidateOverride } from './launched.ts'
+import { sameFamily } from './model-generation.ts'
 import type { Candidate, Selection } from './spec.ts'
 
 export const BOOST_ROWS: readonly string[] = ['impl-planned', 'impl-explore', 'small-fix', 'design']
@@ -68,23 +69,40 @@ function entryOf(text: string): Entry | null {
   return null
 }
 
-// 걸린 모델에서 같은 등급 대응 목록으로. effort 까지 맞는 줄이 먼저이고, 없으면 effort 없는 줄이다
-export function sameGradeClaude(table: string, worker: Candidate): Candidate | null {
+export type LimitRow = { from: Entry; same: Entry[]; cell: string }
+
+// 「사용 한도에 걸렸을 때」 표의 줄. 제목이나 칸 꼴이 바뀌면 빈 목록이다
+export function limitRows(table: string): LimitRow[] {
   const lines = table.split('\n')
   const start = lines.indexOf('### 사용 한도에 걸렸을 때')
-  if (start === -1) return null
-  const rows: { from: Entry; same: Entry[] }[] = []
+  if (start === -1) return []
+  const rows: LimitRow[] = []
   for (const line of lines.slice(start + 1)) {
     if (/^#{1,6} /.test(line)) break
     const cells = line.split('|').slice(1, -1).map(cell => cell.trim())
     if (cells.length !== 3) continue
     const from = entryOf(cells[0])
     if (!from) continue
-    rows.push({ from, same: cells[1].split(/,\s*/).map(entryOf).filter((e): e is Entry => e !== null) })
+    rows.push({ from, same: cells[1].split(/,\s*/).map(entryOf).filter((e): e is Entry => e !== null), cell: cells[1] })
   }
-  const matched = rows.find(r => r.from.model === worker.model && r.from.effort === worker.effort)
-    ?? rows.find(r => r.from.model === worker.model && r.from.effort === null)
-  const claude = matched?.same.find(e => e.agent === 'claude')
+  return rows
+}
+
+// 걸린 모델의 줄. effort 까지 맞는 줄이 먼저이고, 없으면 effort 없는 줄이다. 모델은 같은 계열이면 세대가 달라도 맞는 것으로 본다(model-generation.ts)
+export function limitRowOf(table: string, worker: { model: string | null; effort: string | null }): LimitRow | null {
+  const rows = limitRows(table)
+  const exact = (r: LimitRow) => r.from.model === worker.model
+  const family = (r: LimitRow) => sameFamily(r.from.model, worker.model)
+  for (const match of [exact, family]) {
+    const found = rows.find(r => match(r) && r.from.effort === worker.effort) ?? rows.find(r => match(r) && r.from.effort === null)
+    if (found) return found
+  }
+  return null
+}
+
+// 걸린 모델에서 같은 등급 대응 목록으로. 첫 Claude 모델이 답이다
+export function sameGradeClaude(table: string, worker: Candidate): Candidate | null {
+  const claude = limitRowOf(table, worker)?.same.find(e => e.agent === 'claude')
   if (!claude) return null
   return { agent: 'claude', model: claude.model, effort: claude.effort ?? worker.effort }
 }

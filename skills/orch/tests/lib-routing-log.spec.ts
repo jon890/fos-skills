@@ -214,6 +214,13 @@ test('effective 응답에 추가 필드가 있어도 실행 설정만 기록한�
   assert.ok(!JSON.stringify(f.rows()).includes('PRIVATE'))
 })
 
+test('계열 이름으로 띄운 Claude 는 세션에서 읽은 모델 ID 로 기록해 보고서가 모델을 나눈다', async () => {
+  const row = launch({ agent: 'claude', model: 'claude-opus-5-6', effective: { agent: 'claude', model: 'opus', effort: 'medium', modelId: 'claude-opus-5-6', generation: { from: 'claude-opus-5-5', to: 'opus', reason: '계열 이름으로 최신' } } })
+  writeFileSync(join(f.dir, '.orch/state/launch-history.jsonl'), JSON.stringify(row) + '\n')
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].dispatches[0].effective!.model, 'claude-opus-5-6')
+})
+
 test('조회 상한까지 창 안에서 가득 차면 값을 0으로 꾸미지 않는다', async () => {
   f.state.inbox['run:run_a'] = Array.from({ length: MAX_MESSAGE_LIMIT }, (_, i) => msg(String(i)))
   f.save()

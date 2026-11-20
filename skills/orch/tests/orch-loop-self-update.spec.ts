@@ -48,7 +48,7 @@ async function scene(t: TestContext) {
   const ps = fakeBin(root, 'ps', [{ stdout: '' }])
   const noop = join(root, 'noop.ts')
   writeFileSync(noop, '')
-  const env: NodeJS.ProcessEnv = { ...process.env, ORCH_DIR: orch, CLAUDE_CONFIG_DIR: cfg, ORCH_MACHINE_DIR: join(root, 'machine'), ORCH_PLUGIN_UPDATE_HOME: join(root, 'claude'), ORCA_CLAUDE_PROFILES: join(root, 'profiles'), ORCH_PLUGIN_UPDATE_STATE_DIR: join(root, 'plugin-update-state'), ORCA: orca.path, GH: gh.path, PS: ps.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, ORCH_LOOP_ALIVE_SEC: '1', ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root }
+  const env: NodeJS.ProcessEnv = { ...process.env, ORCH_DIR: orch, CLAUDE_CONFIG_DIR: cfg, ORCH_MACHINE_DIR: join(root, 'machine'), CODEX_BIN: join(root, 'no-codex'), ORCH_PLUGIN_UPDATE_HOME: join(root, 'claude'), ORCA_CLAUDE_PROFILES: join(root, 'profiles'), ORCH_PLUGIN_UPDATE_STATE_DIR: join(root, 'plugin-update-state'), ORCA: orca.path, GH: gh.path, PS: ps.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, ORCH_LOOP_ALIVE_SEC: '1', ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root }
   delete env.NODE_OPTIONS
   delete env.ORCH_LOOP_HANDOVER
   const previousOrch = process.env.ORCH_DIR

@@ -143,6 +143,8 @@ beforeEach(() => {
     GIT_CEILING_DIRECTORIES: tmp,
     // 사용자 입력 기록과 닫은 질문(lib/machine.ts)을 이 머신의 폴더에서 읽지 않는다
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
+    // 루프 부모의 하루 한 번 모델 감지가 실제 codex 를 부르지 않게 없는 실행 파일로 고정한다(model-watch.spec.ts 가 따로 본다)
+    CODEX_BIN: join(tmp, 'no-codex'),
     ORCH_PLUGIN_UPDATE_HOME: join(tmp, 'claude'),
     ORCA_CLAUDE_PROFILES: join(tmp, 'profiles'),
     ORCH_PLUGIN_UPDATE_STATE_DIR: join(tmp, 'plugin-update-state'),

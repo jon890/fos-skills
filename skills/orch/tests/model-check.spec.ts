@@ -13,6 +13,7 @@ test('한 프로세스에서 모델 목록을 한 번만 조회하고 읽을 수
   chmodSync(bin, 0o755)
   const previous = process.env.CODEX_BIN
   process.env.CODEX_BIN = bin
+  process.env.ORCH_WORKER_CODEX_HOME = ''
   try {
     assert.equal(checkLaunchSettings({ agent: 'codex', model: 'gpt-6-sol', effort: 'low' }).reject, null)
     assert.equal(checkLaunchSettings({ agent: 'codex', model: 'gpt-6-sol', effort: 'high' }).reject?.includes('EFFORT-UNAVAILABLE'), true)

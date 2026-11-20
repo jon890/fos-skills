@@ -113,6 +113,10 @@
 //     빠진 키가 있으면 ORCA-SHAPE 줄과 안내 줄을 낸다. Orca 가 자동 갱신으로 출력 형식을 바꾸면 스크립트는 오류 없이 빈 값으로 판정한다.
 //     orca 를 10초 안에 읽지 못했거나 행이 없으면 판정하지 않는다(다른 판정이 조회 실패를 알린다). 경고라 종료 코드를 바꾸지 않는다.
 //
+// Codex CLI 판정(늘 본다):
+//     `codex` 명령이 있는 머신에서 설치 버전이 GitHub 최신 릴리스보다 낮으면 CODEX-OUTDATED 와 다음 줄에 갱신 명령을 낸다.
+//     codex 가 없거나 버전·최신을 읽지 못하면 아무 줄도 내지 않는다. 판정과 출처는 codex-version.ts 머리 주석이 소유한다. 경고라 종료 코드를 바꾸지 않는다.
+//
 // worker 판정(--run 을 줄 때):
 //     그 Run 의 worker-list 행 가운데 살아 있는 dispatch 이고 터미널의 ownershipState 가 user_owned 인 것을 lib/worker-state.ts 로 판정한다.
 //     새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적어, 일하는 worker 가 사용자에게 넘어간 것처럼 보인다.
@@ -173,12 +177,13 @@
 //     DIRECT-PATH <파일>:<줄> <스크립트>          저장소 파일이 orch 스크립트를 파일 경로로 부른다. 다음 줄에 새 꼴이 온다
 //     WAIT-READER <파일>:<줄>                    저장소 스크립트가 대기 출력(LAST_DELIVERY)을 읽는다(위 「옛 꼴과 직접 경로 판정」). 다음 줄에 고칠 것이 온다
 //     WAIT-STALE <pid> <번들 sha 나 버전>          지금 세션의 설치본이 아닌 번들로 도는 대기. 다음 줄에 다시 거는 안내가 온다
+//     CODEX-OUTDATED <설치> <최신>                설치된 Codex CLI 가 최신보다 낮다(위 「Codex CLI 판정」). 다음 줄에 갱신 명령이 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -218,6 +223,7 @@ import { orcaJson } from '../lib/orca.ts'
 import { adoptHint } from '../lib/sessions.ts'
 import { heldDispatch, heldSince, isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
 import { emit } from '../lib/output.ts'
+import { codexOutdatedLines } from './codex-version.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
@@ -894,8 +900,9 @@ async function executeMain(argv: string[]): Promise<number> {
       : []
   const workerLines = [...(runId ? checkWorkers(runId, repo) : []), ...checkHeldWorktrees(runId, repo)]
   const shapeLines = checkOrcaShape()
+  const codexLines = await codexOutdatedLines()
   // 짧은 출력(진입점의 orch doctor)은 판정 줄과 들여 쓴 고칠 줄만 낸다. `  안내:` 줄은 --full 이다(lib/output.ts 의 emit)
-  emit(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}`, [], { fix: true })
+  emit(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines, ...codexLines].join('\n')}`, [], { fix: true })
 
   if (runId) {
     try {

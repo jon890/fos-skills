@@ -140,12 +140,20 @@ beforeEach(() => {
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(binDir, 'orca'),
     CODEX_BIN: join(tmp, 'no-codex'),
+    // Orca 계정 조회(orca account list)를 부르지 않고 셸의 codex 환경을 쓴다. 계정 홈 판정은 lib-model-generation.spec.ts 가 본다
+    ORCH_WORKER_CODEX_HOME: '',
+    // 사용량 판정이 이 기계의 실제 Claude 사용량을 읽지 않게 없는 파일로 고정한다
+    ORCH_CLAUDE_USAGE: join(tmp, 'no-usage.json'),
+    // 감지 기록도 이 기계의 것을 읽지 않는다
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     SPEC_LINT: join(binDir, 'spec-lint-ok.sh'),
     ORCA_CLAUDE_PROFILES: join(tmp, 'no-profiles'),
     ORCH_WORKER_PATH: workerPathWithOrch(tmp),
     LAUNCH_POLL: '0',
+    // 실제 Claude 세션 기록을 기다리지 않는다. 계열 이름으로 띄운 뒤의 모델 ID 읽기는 「모델 세대」 에서 본다
+    LAUNCH_MODEL_WAIT: '0',
     LAUNCH_WT_POLL: '0',
     LAUNCH_WT_WAIT: '3',
     RELAUNCH_SHELL_WAIT_MS: '0',
@@ -292,6 +300,41 @@ describe('띄우기 전 확인', () => {
     assert.equal(r.code, 3, r.out)
     assert.match(r.stdout, /^RELAUNCH-REFUSED .*gpt-nope/m)
     assert.deepEqual(touched(orcaCalls()), [])
+  })
+
+  test('사전 모델 검사는 launch 가 세대를 바꾼 뒤의 모델을 본다', () => {
+    // 목록에 새 세대만 남아도 옛 세대가 적힌 지시서를 MODEL-UNAVAILABLE 로 거부하지 않는다
+    writeSpec('codex', 'gpt-6.2-sol', 'medium')
+    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.3-sol","visibility":"list","description":"New.","supported_reasoning_levels":[{"effort":"medium"}]}]}'\n`)
+    chmodSync(join(tmp, 'codex'), 0o755)
+    env = { ...env, CODEX_BIN: join(tmp, 'codex') }
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
+    assert.doesNotMatch(r.out, /MODEL-UNAVAILABLE/)
+    assert.equal(r.code, 0, r.out)
+  })
+
+  test('`후보 밖:` 으로 직접 고른 옛 세대는 abandon 전에 MODEL-OUTDATED 로 거부한다', () => {
+    writeFileSync(spec, `# 일\n\n브랜치: \`feat/a\`\n허락: push 와 draft PR 생성은 사용자가 허락했다.\nworker 선택: \`codex\` \`gpt-6.1-sol\` effort \`medium\`. 행: impl-explore. 이유: 테스트. 후보 밖: 옛 세대.\n`)
+    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.2-sol","visibility":"list","description":"New.","supported_reasoning_levels":[{"effort":"medium"}]},{"slug":"gpt-6.1-sol","visibility":"list","description":"Previous generation.","supported_reasoning_levels":[{"effort":"medium"}]}]}'\n`)
+    chmodSync(join(tmp, 'codex'), 0o755)
+    env = { ...env, CODEX_BIN: join(tmp, 'codex') }
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'])
+    assert.equal(r.code, 3, r.out)
+    assert.match(r.stdout, /^RELAUNCH-REFUSED MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol/m)
+    assert.deepEqual(touched(orcaCalls()), [])
+  })
+
+  test('사용량 판정이 Claude 로 바꾸는 지시서는 Codex 목록에 그 effort 가 없어도 거부하지 않는다', () => {
+    // launch 와 같은 차례: 사용량 판정이 먼저라 Codex 모델 검사를 하지 않는다
+    writeSpec('codex', 'gpt-6.2-sol', 'medium')
+    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.2-sol","visibility":"list","description":"New.","supported_reasoning_levels":[{"effort":"low"}]}]}'\n`)
+    chmodSync(join(tmp, 'codex'), 0o755)
+    const usage = join(tmp, 'usage.json')
+    writeFileSync(usage, JSON.stringify({ timestamp: Date.now(), lastSuccessAt: Date.now() - 60_000, data: { weeklyPercent: 10, weeklyResetsAt: new Date(Date.now() + 24 * 3_600_000).toISOString() }, error: false }))
+    env = { ...env, CODEX_BIN: join(tmp, 'codex'), ORCH_CLAUDE_USAGE: usage }
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
+    assert.doesNotMatch(r.out, /EFFORT-UNAVAILABLE/)
+    assert.equal(r.code, 0, r.out)
   })
 
   test('launch-worker 의 띄우기 전 검사에 걸리면 옛 worker 를 건드리지 않는다', () => {

@@ -43,7 +43,7 @@ test('진입 파일은 단계 호출과 인자 해석만 갖고 구현 함수를
 test('lifecycle 은 공통 파일만, 단계 파일은 lifecycle 을 import 하지 않고 아무도 진입 파일을 import 하지 않는다', async () => {
   const imports = (text: string) => [...text.matchAll(/^import [^'\n]*'([^']+)'/gm)].map((m) => m[1])
   const lifecycle = readFileSync(join(loop, 'lifecycle.ts'), 'utf8')
-  assert.deepEqual(imports(lifecycle).filter((from) => from.startsWith('./')).sort(), [...COMMON.map((name) => `./steps/${name}`), './plugin-auto-update.ts', './self-update.ts', './takeover.ts'].sort())
+  assert.deepEqual(imports(lifecycle).filter((from) => from.startsWith('./')).sort(), [...COMMON.map((name) => `./steps/${name}`), './model-watch.ts', './plugin-auto-update.ts', './self-update.ts', './takeover.ts'].sort())
   for (const file of [...stepFiles, ...COMMON]) {
     const from = imports(readFileSync(join(loop, 'steps', file), 'utf8'))
     assert.deepEqual(from.filter((path) => /lifecycle|orch-loop/.test(path)), [], file)

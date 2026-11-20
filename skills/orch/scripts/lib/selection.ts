@@ -5,6 +5,7 @@ import { bundleRoot } from './bundle.ts'
 import { selectionsOf, type Candidate } from './spec.ts'
 import type { CandidateOverride } from './launched.ts'
 import { outsideFences } from './common-rules.ts'
+import { sameFamily } from './model-generation.ts'
 import { LINE_BREAK } from '../core/text.ts'
 
 type ModelPolicy = { workers: Candidate[] }
@@ -42,8 +43,9 @@ function readModelPolicies(file = join(bundleRoot(), 'references', 'agent-select
   return modelPolicies(readFileSync(file, 'utf8'))
 }
 
+// 모델은 같은 계열이면 세대가 달라도 같은 worker 로 본다. 띄울 때 launch-worker 가 그 계열의 최신 세대로 바꾼다(lib/model-generation.ts)
 function sameWorker(a: Candidate, b: Candidate): boolean {
-  return a.agent === b.agent && a.model === b.model && a.effort === b.effort
+  return a.agent === b.agent && sameFamily(a.model, b.model) && a.effort === b.effort
 }
 
 export function candidateOverrideOf(text: string): CandidateOverride | null {
@@ -51,7 +53,7 @@ export function candidateOverrideOf(text: string): CandidateOverride | null {
   if (!selection?.outsideReason) return null
   const workers = readModelPolicies().get(selection.row ?? '')?.workers
   if (!workers?.length || workers.some(w => sameWorker(selection, w))) return null
-  const expected = workers.find(w => w.agent === selection.agent && w.model === selection.model)
+  const expected = workers.find(w => w.agent === selection.agent && sameFamily(w.model, selection.model))
   return { row: selection.row, agent: selection.agent, model: selection.model, effort: selection.effort,
     reason: selection.outsideReason, ...(expected && expected.effort !== selection.effort ? { effortLimit: expected.effort } : {}),
   }
@@ -91,4 +93,9 @@ export function selectionVerdict(text: string, _repo: string, options: { launch?
     }
   }
   return errors
+}
+
+// 지시서의 `worker 선택:` 이 `후보 밖:` 으로 모델을 정했는지. 정했으면 launch 가 세대를 바꾸지 않는다(사람이 고른 모델을 지킨다)
+export function pinnedSelection(text: string): boolean {
+  return !!selectionsOf(text)[0]?.outsideReason
 }

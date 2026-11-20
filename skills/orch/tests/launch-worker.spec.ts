@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
+import { claudeProjectName } from '../scripts/lib/session-tokens.ts'
 import { selectionsOf } from '../scripts/lib/spec.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
@@ -135,6 +136,10 @@ beforeEach(() => {
     ORCA: join(binDir, 'orca'),
     // 실제 codex 의 모델 목록에 기대지 않게 없는 실행 파일로 고정한다(검사 불능이라 경고만 나온다)
     CODEX_BIN: join(tmp, 'no-codex'),
+    // Orca 계정 조회(orca account list)를 부르지 않고 셸의 codex 환경을 쓴다. 계정 홈 판정은 lib-model-generation.spec.ts 가 본다
+    ORCH_WORKER_CODEX_HOME: '',
+    // 직접 고른 옛 세대 판정이 이 기계의 모델 감지 기록을 읽지 않게 한다
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     MAKE_WORKTREE: make,
@@ -147,6 +152,8 @@ beforeEach(() => {
     // 이 기계의 실제 Claude 사용량 캐시에 기대지 않게 없는 파일로 고정한다. 판정은 「Claude 사용량으로 바꿔 띄우기」 에서 본다
     ORCH_CLAUDE_USAGE: join(tmp, 'no-usage.json'),
     LAUNCH_POLL: '0',
+    // 실제 Claude 세션 기록을 기다리지 않는다. 계열 이름으로 띄운 뒤의 모델 ID 읽기는 「모델 세대」 에서 본다
+    LAUNCH_MODEL_WAIT: '0',
     LAUNCH_WT_POLL: '0',
     LAUNCH_WT_WAIT: '3',
     FAKE_WT_DEFAULT: `${worktree}:${tmp}/new:${tmp}/hookwt`,
@@ -435,7 +442,7 @@ describe('worker 선택 줄 대조', () => {
       state({ next_ids: ['ctx_1'] })
       const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6-astra', '--effort', 'low'], 'bash', false)
       assert.equal(r.code, 1, both(r))
-      assert.match(r.stderr, /worker: codex gpt-6\.1-sol effort low/)
+      assert.match(r.stderr, /worker: codex gpt-6\.2-sol effort low/)
       assert.match(r.stderr, /후보 밖: <이유>/)
       assert.deepEqual(lines('orca orchestration worker-start'), [])
     })
@@ -531,7 +538,8 @@ describe('Claude 사용량으로 바꿔 띄우기', () => {
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
       const r = launch(['--worktree', worktree, '--', ...SOL_MEDIUM], 'bash', false)
       assert.equal(r.code, 0, both(r))
-      assert.match(started(), / --agent claude --model claude-opus-5-5 --effort medium(?: |$)/)
+      // Claude 는 계열 이름으로 넘긴다(모델 세대). 후보 밖 기록에는 표의 모델 ID 가 남는다
+      assert.match(started(), / --agent claude --model opus --effort medium(?: |$)/)
       assert.doesNotMatch(started(), /codex|gpt-6/)
       const expected = { row: 'design', agent: 'claude', model: 'claude-opus-5-5', effort: 'medium', reason: '사용량: 남은 78%, 남은 시간 22%' }
       assert.deepEqual(override(r), expected)
@@ -548,7 +556,7 @@ describe('Claude 사용량으로 바꿔 띄우기', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
     assert.equal(r.code, 0, both(r))
-    assert.match(started(), / --agent claude --model claude-sonnet-5-5 --effort low(?: |$)/)
+    assert.match(started(), / --agent claude --model sonnet --effort low(?: |$)/)
     assert.deepEqual(override(r), { row: 'impl-planned', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'low', reason: '사용량: 남은 90%, 남은 시간 14%' })
   })
 
@@ -590,7 +598,7 @@ describe('Claude 사용량으로 바꿔 띄우기', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
     assert.equal(r.code, 0, both(r))
-    assert.match(started(), / --agent claude --model claude-fable-5-2(?: |$)/)
+    assert.match(started(), / --agent claude --model fable(?: |$)/)
     assert.equal(override(r), undefined)
   })
 
@@ -662,7 +670,175 @@ describe('Claude 사용량으로 바꿔 띄우기', () => {
     state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
     const r = launch(['--repo', worktree, '--task', 'task_1', '--', ...SOL_LOW], 'bash', false)
     assert.equal(r.code, 0, both(r))
-    assert.match(started(), /--task task_1 .*--agent claude --model claude-sonnet-5-5 --effort low(?: |$)/)
+    assert.match(started(), /--task task_1 .*--agent claude --model sonnet --effort low(?: |$)/)
+  })
+})
+
+describe('모델 세대', () => {
+  const SOL = '# 일\n허락: push\n- **worker 선택:** `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 이유: 탐색이 필요하다.\n'
+  const NEW_SOL = SOL.replace('gpt-6.1-sol', 'gpt-6.2-sol')
+  const FABLE = '# 일\n허락: push\n- **worker 선택:** `claude` `claude-fable-5-2` effort `기본`. 행: impl-hard. 이유: 어렵다.\n'
+  const sol = (slug: string, description: string) => ({ slug, visibility: 'list', description, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }] })
+
+  // 실제 codex 를 부르지 않고 `codex debug models` 출력을 흉내 낸다
+  function codexList(models: unknown[]): void {
+    env.CODEX_BIN = linkBin(tmp, 'codex', `console.log(${JSON.stringify(JSON.stringify({ models }))})`)
+  }
+  function started(): string {
+    return lines('orca orchestration worker-start')[0] ?? ''
+  }
+  function effective(r: Launch): Record<string, unknown> | undefined {
+    const line = r.stdout.split('\n').find(line => line.startsWith('LAUNCH-EFFECTIVE '))
+    return line ? JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)) : undefined
+  }
+  function history(): Record<string, any> {
+    return JSON.parse(readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').at(-1)!)
+  }
+
+  test('지시서에 옛 세대가 적혀도 거절하지 않고 같은 계열의 새 세대로 띄운다. effort 는 그대로다', () => {
+    writeFileSync(spec, SOL)
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model for coding.'), sol('gpt-6.2-astra', 'Our most capable model.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --agent codex --model gpt-6\.2-sol --effort medium(?: |$)/)
+    const generation = { from: 'gpt-6.1-sol', to: 'gpt-6.2-sol', reason: '같은 계열 새 세대' }
+    assert.deepEqual(effective(r)?.generation, generation)
+    assert.equal(history().model, 'gpt-6.2-sol')
+    assert.deepEqual(history().effective.generation, generation)
+  })
+
+  test('새 세대를 이 계정이 받지 못하면 그 띄우기만 받을 수 있는 옛 세대로 띄우고 이유를 남긴다', () => {
+    writeFileSync(spec, NEW_SOL)
+    codexList([sol('gpt-6.1-sol', 'Fast, go-to model for coding.'), sol('gpt-6-sol', 'Legacy model.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model gpt-6\.1-sol --effort medium(?: |$)/)
+    assert.deepEqual(effective(r)?.generation, { from: 'gpt-6.2-sol', to: 'gpt-6.1-sol', reason: 'gpt-6.2-sol 를 이 계정이 받지 못해 이 띄우기만 옛 세대로 띄웠다' })
+  })
+
+  test('표의 세대가 목록의 최신이면 바꾸지 않고 기록에 남기지 않는다', () => {
+    writeFileSync(spec, NEW_SOL)
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model gpt-6\.2-sol --effort medium(?: |$)/)
+    assert.equal(effective(r), undefined)
+    assert.equal(history().effective?.generation, undefined)
+  })
+
+  test('`후보 밖:` 으로 직접 고른 옛 세대는 MODEL-OUTDATED 로 거절하고 worker 를 띄우지 않는다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 6.1 세대로 재현한다.').replace('effort `medium`', 'effort `low`'))
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model for coding.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 4, both(r))
+    assert.match(r.stderr, /MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol/)
+    assert.match(r.stderr, /지시서를 새 세대로 고친다/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('worker 계정이 새 세대를 받지 못하면 직접 고른 옛 세대를 그대로 띄운다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 계정에 6.2 가 없다.').replace('effort `medium`', 'effort `low`'))
+    codexList([sol('gpt-6.1-sol', 'Fast, go-to model for coding.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model gpt-6\.1-sol --effort low(?: |$)/)
+    assert.equal(effective(r)?.generation, undefined)
+  })
+
+  test('새 세대가 그 effort 를 지원하지 않으면 직접 고른 옛 세대를 거절하지 않는다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: ultra 가 필요하다.').replace('effort `medium`', 'effort `ultra`'))
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), { ...sol('gpt-6.1-sol', 'Previous generation.'), supported_reasoning_levels: [{ effort: 'ultra' }] }])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'ultra'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /MODEL-OUTDATED/)
+  })
+
+  test('모델 목록을 읽지 못해도 감지 기록이 새 세대를 알면 직접 고른 옛 세대를 거절한다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 옛 세대.').replace('effort `medium`', 'effort `low`'))
+    env.CODEX_BIN = linkBin(tmp, 'codex', 'process.exit(7)')
+    mkdirSync(join(tmp, 'machine'), { recursive: true })
+    writeFileSync(join(tmp, 'machine', 'model-watch.json'), JSON.stringify({ models: [{ slug: 'gpt-6.2-sol', visibility: 'list', description: 'Fast.', efforts: ['low'] }] }))
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 4, both(r))
+    assert.match(r.stderr, /MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol \(모델 목록을 읽지 못했지만 감지 기록에 gpt-6\.2-sol 가 있다\)/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('새 세대를 아는데 계정이 받지 못해 직접 고른 옛 세대로 띄우면 이유를 기록에 남긴다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 계정에 6.2 가 없다.').replace('effort `medium`', 'effort `low`'))
+    codexList([sol('gpt-6.1-sol', 'Fast, go-to model for coding.')])
+    mkdirSync(join(tmp, 'machine'), { recursive: true })
+    writeFileSync(join(tmp, 'machine', 'model-watch.json'), JSON.stringify({ models: [{ slug: 'gpt-6.2-sol', visibility: 'list', description: 'Fast.', efforts: ['low'] }] }))
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model gpt-6\.1-sol --effort low(?: |$)/)
+    assert.deepEqual(history().effective.generation, { from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', reason: 'worker 계정 목록에 gpt-6.2-sol 가 없어 직접 고른 세대 그대로 띄웠다' })
+  })
+
+  test('원격 worker 는 이 머신의 모델 목록으로 세대를 바꾸거나 직접 고른 옛 세대를 거절하지 않는다', () => {
+    const screen = ["% printf ...", '__ORCH_PROBE__ orch=/r/orch node=/r/node']
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model for coding.')])
+    writeFileSync(spec, SOL)
+    state({ next_ids: ['ctx_1'], screen, dispatches: { ctx_1: shown('input_accepted') } })
+    const plain = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium', '--on', 'macbook'], 'bash', false)
+    assert.equal(plain.code, 0, both(plain))
+    assert.match(started(), / --model gpt-6\.1-sol --effort medium /)
+    assert.match(plain.stderr, /원격 worker 라 이 머신의 Codex 모델 목록으로 세대를 바꾸지 않는다/)
+  })
+
+  test('`후보 밖:` 으로 정한 Claude 모델 ID 는 계열 이름으로 바꾸지 않는다', () => {
+    writeFileSync(spec, '# 일\n허락: push\n- **worker 선택:** `claude` `claude-opus-5-5` effort `medium`. 행: impl-explore. 이유: 탐색. 후보 밖: codex 사용 한도.\n')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --model claude-opus-5-5 --effort medium(?: |$)/)
+    assert.equal(effective(r)?.generation, undefined)
+  })
+
+  test('Claude 는 계열 이름으로 띄우고 worker 세션 기록의 실제 모델 ID 를 기록에 남긴다', () => {
+    writeFileSync(spec, FABLE)
+    const home = join(tmp, 'claude-home')
+    env.CLAUDE_CONFIG_DIR = home
+    env.LAUNCH_MODEL_WAIT = '1'
+    const project = join(home, 'projects', claudeProjectName(worktree))
+    mkdirSync(project, { recursive: true })
+    // Orca 가 띄운 worker 가 첫 응답을 쓴 것처럼 세션 기록을 미리 둔다. 띄우기 시작 뒤에 고친 파일만 읽는다
+    const session = join(project, 'session.jsonl')
+    // 띄우기 뒤에 시작한 세션처럼 시각을 앞으로 둔다. 같은 워크트리의 옛 세션은 띄우기 뒤에 갱신돼도 읽지 않는다
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString()
+    writeFileSync(session, [JSON.stringify({ type: 'user', timestamp: at(30_000), message: { content: 'hi' } }), JSON.stringify({ type: 'assistant', timestamp: at(31_000), message: { model: 'claude-fable-5-3' } })].join('\n') + '\n')
+    const old = join(project, 'old.jsonl')
+    writeFileSync(old, [JSON.stringify({ type: 'user', timestamp: at(-3_600_000), message: { content: 'old' } }), JSON.stringify({ type: 'assistant', timestamp: at(40_000), message: { model: 'claude-fable-5-2' } })].join('\n') + '\n')
+    utimesSync(old, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000))
+    const later = new Date(Date.now() + 60_000)
+    utimesSync(session, later, later)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --agent claude --model fable(?: |$)/)
+    const generation = { from: 'claude-fable-5-2', to: 'fable', reason: '계열 이름으로 최신' }
+    assert.deepEqual(effective(r)?.generation, generation)
+    assert.equal(history().model, 'claude-fable-5-3')
+    assert.equal(history().effective.modelId, 'claude-fable-5-3')
+  })
+
+  test('Claude 세션 기록을 읽지 못하면 modelId 는 null 이고 기록의 model 은 표의 모델 ID 다', () => {
+    writeFileSync(spec, FABLE)
+    env.CLAUDE_CONFIG_DIR = join(tmp, 'empty-home')
+    env.LAUNCH_MODEL_WAIT = '0.5'
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.equal(history().model, 'claude-fable-5-2')
+    assert.equal(history().effective.modelId, null)
   })
 })
 
@@ -860,7 +1036,7 @@ describe('선택 정책과 영구 이력', () => {
     recordHistory(tmp, prior({ spec }))
     const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'high'], 'bash', false)
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stderr, /의 worker: codex gpt-6\.1-sol effort medium/)
+    assert.match(r.stderr, /의 worker: codex gpt-6\.2-sol effort medium/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
   })
 
@@ -2065,7 +2241,8 @@ describe('모델과 effort 검사', () => {
     const r = launchCodex('--model', 'gpt-5.5')
     assert.equal(r.code, 4, both(r))
     assert.match(r.stderr, /MODEL-UNAVAILABLE gpt-5.5 기본/)
-    assert.match(r.stderr, /같은 등급 대체 모델: Claude Sonnet 5.5/)
+    // 한도 표에 같은 계열의 줄이 없는 모델은 대체 후보를 붙이지 않는다
+    assert.doesNotMatch(r.stderr, /같은 등급 대체 모델/)
     assert.match(r.stderr, /gpt-6\.1-sol: low, high, ultra/)
     assert.doesNotMatch(r.stderr, /gpt-hidden/)
     assert.deepEqual(lines('orca '), [])
@@ -2089,13 +2266,15 @@ describe('모델과 effort 검사', () => {
 
   test('목록에 있는 모델과 숨긴 모델의 effort 가 맞으면 통과한다', () => {
     fakeCodex(JSON.stringify(MODELS))
-    for (const model of ['gpt-6.1-sol', 'gpt-6-sol']) {
-      // 모델마다 선택 줄을 다시 채운다
-      writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
-      const r = launchCodex('--model', model, '--effort', 'low')
-      assert.equal(r.code, 0, both(r))
-      assert.doesNotMatch(r.stderr, /경고/)
-    }
+    writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
+    const r = launchCodex('--model', 'gpt-6.1-sol', '--effort', 'low')
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /경고/)
+    // 같은 계열의 새 세대가 그 effort 를 지원하는데 직접 고른 옛 세대는 거절한다(MODEL-OUTDATED)
+    writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
+    const old = launchCodex('--model', 'gpt-6-sol', '--effort', 'low')
+    assert.equal(old.code, 4, both(old))
+    assert.match(old.stderr, /MODEL-OUTDATED gpt-6-sol → gpt-6\.1-sol/)
     writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
     const hidden = launchCodex('--model', 'gpt-hidden', '--effort', 'low')
     assert.equal(hidden.code, 0, both(hidden))

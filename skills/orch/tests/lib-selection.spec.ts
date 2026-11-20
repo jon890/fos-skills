@@ -1,3 +1,4 @@
+import { sameFamily } from '../scripts/lib/model-generation.ts'
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,8 +21,16 @@ test('모든 행의 worker 가 스펙의 행과 worker 표와 같다', () => {
   assert.ok(expected.size > 0)
   for (const [id, policy] of policies) {
     if (id === 'review') {
-      assert.deepEqual(policy.workers, [{ agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' }, { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }])
-    } else assert.deepEqual(policy.workers, expected.get(id), id)
+      assert.deepEqual(policy.workers, [{ agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium' }, { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }])
+    } else {
+      // 스펙의 표는 행을 정할 때의 세대를 적는다. 모델 표는 같은 계열의 새 세대로 바뀔 수 있다(lib/model-generation.ts)
+      const want = expected.get(id)
+      assert.equal(policy.workers.length, want?.length, id)
+      policy.workers.forEach((w, i) => {
+        assert.deepEqual([w.agent, w.effort], [want![i].agent, want![i].effort], id)
+        assert.ok(sameFamily(w.model, want![i].model), `${id}: ${w.model} / ${want![i].model}`)
+      })
+    }
     for (const worker of policy.workers) {
       const text = `worker 선택: \`${worker.agent}\` \`${worker.model}\` effort \`${worker.effort}\`. 행: ${id}. 이유: 해당 작업.`
       assert.deepEqual(selectionVerdict(text, repo), [], id)

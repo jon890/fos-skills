@@ -118,7 +118,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 function run(args: string[] = ['--dispatch', 'ctx_old'], extra: Record<string, string> = {}) {
   return spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, ...args], {
-    encoding: 'utf8', env: { ...process.env, ORCA: join(bin, 'orca'), FAKE_STATE: stateFile, FAKE_LOG: logFile, FAKE_VIEW: view,
+    encoding: 'utf8', env: { ...process.env, ORCH_WORKER_CODEX_HOME: '', ORCA: join(bin, 'orca'), FAKE_STATE: stateFile, FAKE_LOG: logFile, FAKE_VIEW: view,
       CLAUDE_CONFIG_DIR: join(root, 'config'), ORCH_OUTPUT: '', ORCH_WORKER_PATH: workerPathWithOrch(root), PATH: `${bin}${delimiter}${dirname(process.execPath)}${delimiter}${process.env.PATH}`, ...extra },
   })
 }
@@ -328,7 +328,7 @@ test('정상 작업 중인 dispatch, 구조화 worker, 다른 에이전트, 더 
 function runAsync(): Promise<{ code: number | null; stdout: string }> {
   return new Promise((done) => {
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--dispatch', 'ctx_old'], {
-      env: { ...process.env, ORCA: join(bin, 'orca'), FAKE_STATE: stateFile, FAKE_LOG: logFile, FAKE_VIEW: view,
+      env: { ...process.env, ORCH_WORKER_CODEX_HOME: '', ORCA: join(bin, 'orca'), FAKE_STATE: stateFile, FAKE_LOG: logFile, FAKE_VIEW: view,
         CLAUDE_CONFIG_DIR: join(root, 'config'), ORCH_OUTPUT: '', ORCH_WORKER_PATH: workerPathWithOrch(root), PATH: `${bin}${delimiter}${dirname(process.execPath)}${delimiter}${process.env.PATH}` },
     })
     let stdout = ''
