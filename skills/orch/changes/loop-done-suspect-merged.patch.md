@@ -1,1 +1,0 @@
-- 루프가 터미널에서 보낸 준비됨(dispatch 없이 Task 만 있는 status)도 완료 근거로 보고, 브랜치 PR 이 이미 머지된 worker 와 다른 저장소가 띄운 worker 에게 DONE-SUSPECT 를 보내지 않는다.
