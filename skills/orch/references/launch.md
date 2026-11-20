@@ -123,6 +123,8 @@ worker 가 금지어가 든 `.md` 를 커밋하면 git 이 발견 줄과 권장 
 
 ## codex 준비 판정
 
+Codex launch·resume 은 워크트리나 새 터미널을 만들기 전에 현재 계정의 모델 목록을 확인하고, 모델이나 effort 가 없으면 같은 등급 대체 후보를 알리며 멈춘다. 목록 조회에 실패하면 경고하고 계속 진행한다.
+
 Orca 가 계정별로 두는 `~/Library/Application Support/orca/codex-accounts/*/home/config.toml` 에 아래 두 키를 둔다.
 `check_for_update_on_startup` 은 첫 절 머리 앞의 최상위 키이고, `terminal_title` 은 `[tui]` 절의 키다.
 

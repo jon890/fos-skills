@@ -31,6 +31,7 @@
 - `send-to-worker` 의 후속 지시서는 같은 worker 를 이어 가므로 행의 worker 대조와 옛 형식 거절을 건너뛴다. 전송 실패 뒤 다른 설정으로 새로 띄우면 launch 가 새 규칙을 검사한다.
 - 원격 조회(ssh, 홈서버 조회)가 필요한 일은 행과 관계없이 `claude` 로 고르고 `후보 밖: 원격 조회` 를 적는다. 현재 원격 조회 작업의 결과 해석과 정리를 Claude 에 맡기는 선택 규칙이다. worker 는 명령을 직접 실행하지 않고 명령과 대상을 ask 로 코디네이터에게 보낸다. `spec-lint` 는 허락 줄의 ssh 와 codex 선택이 함께 있으면 「원격」 으로 경고한다.
 - 모든 worker 의 한국어 커밋 검사는 git 훅이 맡는다. Codex 시작 설정은 [`launch.md`](launch.md) 의 「codex 준비 판정」 을 따른다.
+- Codex worker 는 launch·resume 전에 현재 계정의 `codex debug models` 목록에서 모델과 effort 를 확인하며, 조회에 실패하면 경고하고 계속 띄운다.
 
 ### 리뷰 제공자
 
@@ -58,7 +59,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | `gpt-6.1-sol` `high` | Claude Opus 5.5 | `gpt-6.1-sol` `medium` |
 | `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
 | Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra` | Claude Haiku 5.5 |
-| `gpt-6.1-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
+| `gpt-6.1-sol` | `gpt-6-sol`, Claude Sonnet 5.5 | `gpt-6-luna` |
 | Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |

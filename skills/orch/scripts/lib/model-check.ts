@@ -17,6 +17,8 @@ export type LaunchSettings = { agent: string | null; model: string | null; effor
 export type ModelCheck = { reject: string | null; warnings: string[] }
 
 type CodexModel = { slug?: unknown; visibility?: unknown; supported_reasoning_levels?: unknown }
+let cachedModels: CodexModel[] | null = null
+let cachedFailure: string | null = null
 
 function efforts(model: CodexModel): string[] {
   const levels = Array.isArray(model.supported_reasoning_levels) ? model.supported_reasoning_levels : []
@@ -25,27 +27,33 @@ function efforts(model: CodexModel): string[] {
 
 function checkCodex(settings: LaunchSettings): ModelCheck {
   const bin = process.env.CODEX_BIN || 'codex'
-  const done = run([bin, 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024 })
   const skipped = (why: string): ModelCheck => ({ reject: null, warnings: [`${bin} debug models ${why}라 --model, --effort 를 검사하지 못했다`] })
-  if (done.code !== 0) return skipped(`가 종료 코드 ${done.code} 로 끝났`)
-  let models: CodexModel[]
-  try {
-    const list = (JSON.parse(done.stdout) as { models?: unknown }).models
-    if (!Array.isArray(list)) return skipped('의 출력에 models 목록이 없었')
-    models = list as CodexModel[]
-  } catch {
-    return skipped('의 출력이 JSON 이 아니었')
+  if (!cachedModels && !cachedFailure) {
+    const done = run([bin, 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024 })
+    if (done.code !== 0) cachedFailure = `가 종료 코드 ${done.code} 로 끝났`
+    else {
+      try {
+        const list = (JSON.parse(done.stdout) as { models?: unknown }).models
+        if (!Array.isArray(list) || !list.every((m) => m && typeof m.slug === 'string' && Array.isArray(m.supported_reasoning_levels))) cachedFailure = '의 models 목록을 읽지 못했'
+        else cachedModels = list as CodexModel[]
+      } catch { cachedFailure = '의 출력이 JSON 이 아니었' }
+    }
   }
-  // 목록에 보이는 모델(visibility 가 list)만 안내한다. 숨긴 모델은 쓸 수는 있어 거절하지 않는다
+  if (cachedFailure) return skipped(cachedFailure)
+  const models = cachedModels!
+  // 이 계정의 선택 목록에 보이는 모델만 launch 대상으로 삼는다.
   const shown = models.filter((m) => m.visibility === 'list' && typeof m.slug === 'string')
   const available = shown.map((m) => `  ${m.slug}: ${efforts(m).join(', ')}`).join('\n')
-  const model = models.find((m) => m.slug === settings.model)
+  const model = shown.find((m) => m.slug === settings.model)
+  const alternative = shown.find((m) => m.slug === 'gpt-6-sol' && (!settings.effort || efforts(m).includes(settings.effort)))
+  const otherProvider = settings.model === 'gpt-6-luna' ? 'Claude Haiku 5.5' : settings.effort === 'high' ? 'Claude Opus 5.5' : 'Claude Sonnet 5.5'
+  const suggestion = alternative ? `\n같은 등급 대체 모델: ${alternative.slug} (${settings.effort || efforts(alternative)[0]}) — agent-selection.md 의 한도 표를 확인한다` : `\n같은 등급 대체 모델: ${otherProvider} — agent-selection.md 의 한도 표를 확인한다`
   if (!model) {
-    return { reject: `codex 에 없는 모델이다: ${settings.model}\n쓸 수 있는 모델과 effort:\n${available}`, warnings: [] }
+    return { reject: `MODEL-UNAVAILABLE ${settings.model} ${settings.effort || '기본'}${suggestion}\n쓸 수 있는 모델과 effort:\n${available}`, warnings: [] }
   }
   const supported = efforts(model)
   if (settings.effort && !supported.includes(settings.effort)) {
-    return { reject: `${settings.model} 이 지원하지 않는 effort 다: ${settings.effort}\n${settings.model} 의 effort: ${supported.join(', ')}\n쓸 수 있는 모델과 effort:\n${available}`, warnings: [] }
+    return { reject: `EFFORT-UNAVAILABLE ${settings.model} ${settings.effort}${suggestion}\n${settings.model} 의 effort: ${supported.join(', ')}\n쓸 수 있는 모델과 effort:\n${available}`, warnings: [] }
   }
   return { reject: null, warnings: [] }
 }

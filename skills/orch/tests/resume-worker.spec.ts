@@ -149,6 +149,17 @@ function codexTarget(): void {
 }
 const createCommand = () => { const args = calls('terminal', 'create')[0].args; return args[args.indexOf('--command') + 1] }
 
+test('Codex 모델이 선택 목록에 없으면 기존 dispatch 와 터미널을 건드리지 않는다', () => {
+  codexTarget()
+  const fake = join(root, 'codex-models')
+  writeFileSync(fake, '#!/bin/sh\nprintf \'%s\' \'{"models":[{"slug":"gpt-6-sol","visibility":"list","supported_reasoning_levels":[{"effort":"medium"}]}]}\'\n')
+  chmodSync(fake, 0o755)
+  const r = run(undefined, { CODEX_BIN: fake })
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  assert.match(r.stdout, /MODEL-UNAVAILABLE gpt-6-luna medium/)
+  assert.deepEqual(writes(), [])
+})
+
 test('worker 셸의 PATH 에 orch 가 있으면 터미널 명령에 PATH 를 더하지 않는다', () => {
   codexTarget()
   const r = run()
