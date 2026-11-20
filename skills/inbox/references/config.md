@@ -9,7 +9,7 @@
 ```json
 {
   "adapters": [
-    { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com" }
+    { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com", "excludeProjects": ["EXAMPLE-PROJECT"], "excludeChannels": ["예시 개발방"] }
   ],
   "intervalMinutes": 5,
   "days": 7,
@@ -32,6 +32,8 @@
 | --- | --- | --- |
 | `messenger` | true | false 면 메신저 멘션을 읽지 않는다 |
 | `webUrl` | 없음 | 업무 링크 앞부분. 없으면 보드에서 링크 없이 보인다 |
+| `excludeProjects` | 없음 | 받지 않을 업무 프로젝트 id 또는 코드 목록. 이미 받은 항목도 다음 받기에서 지운다 |
+| `excludeChannels` | 없음 | 받지 않을 메신저 대화방 id 또는 제목 목록. 이미 받은 항목도 다음 받기에서 지운다 |
 
 두레이 adapter 는 dooray CLI 의 인증을 쓴다. `dooray stream list` 명령이 있는 버전이 필요하다. 없으면 보드에 「두레이 업무 확인 불가」 가 보인다.
 
