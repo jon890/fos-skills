@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 2.3.0 (2026-11-20)
+
+- `survey_docker.ts` 가 런타임마다 이미지 조사 결과를 `images-*.json` 으로 남긴다.
+- `docker_cleanup.ts rmi` 가 `--images-json` 과 `--class` 로 그 파일의 한 분류를 통째로 지운다. 사용자에게 보인 목록과 지우는 목록이 한 번의 조사에서 나온다.
+
+## 2.2.1 (2026-11-20)
+
+- `docker_cleanup.ts builder-prune` 의 시간 제한을 1800초로 늘리고, 그래도 넘으면 남은 빌드 캐시를 다시 읽어 0B 면 성공으로 보인다. 끝난 정리를 실패로 보고하지 않는다.
+
 ## 2.2.0 (2026-11-16)
 
 - 개인 오버레이를 `~/.claude/overlays/mac-cleanup.md` 에서 읽는다. 파일이 없으면 옛 자리 `~/.claude/mac-cleanup-overlay.md` 를 읽는다.
