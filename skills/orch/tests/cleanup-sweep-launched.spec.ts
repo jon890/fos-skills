@@ -285,6 +285,32 @@ describe('PR 없이 끝난 워크트리', () => {
     lacks(calls(), 'terminal close')
   })
 
+  // orch worker relaunch 가 옛 dispatch 를 abandon 하고 새 dispatch 를 띄우기 전의 틈이다(lib/relaunch-hold.ts)
+  function relaunchHold(path: string, at: Date): void {
+    const dir = join(fx.repo, '.orch/state/relaunch-hold')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'ctx_o.json'), JSON.stringify({ dispatch: 'ctx_o', worktree: path, spec: null, at: at.toISOString() }))
+  }
+
+  test('다시 띄우는 중인 워크트리는 끝난 dispatch 뿐이어도 터미널과 함께 남긴다', () => {
+    const path = worktree('meas-11', { commits: 0, push: false })
+    ownTerminal(path, { status: 'abandoned', state: 'fenced' })
+    relaunchHold(path, new Date())
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    exists(path, out)
+    has(out, `남김 ${path}: 다시 띄우는 중(옛 dispatch ctx_o`)
+    lacks(calls(), 'terminal close')
+    lacks(calls(), 'worker-release')
+  })
+
+  test('24시간이 지난 보존 표시는 듣지 않는다', () => {
+    const path = worktree('meas-12', { commits: 0, push: false })
+    ownTerminal(path, { status: 'abandoned', state: 'fenced' })
+    relaunchHold(path, new Date(Date.now() - 25 * 60 * 60 * 1000))
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    gone(path, out)
+  })
+
   test('dry-run 은 치울 것만 낸다', () => {
     const path = worktree('meas-10', { commits: 0, push: false })
     ownTerminal(path)

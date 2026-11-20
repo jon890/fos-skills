@@ -32,6 +32,12 @@
 //     `남김: 사용자 보유 터미널 (<경로>). 근거: <이유>` 다. user_takeover 로 표시된 행만 그 터미널 화면을 읽는다.
 //     화면이 에이전트 작업 중이면 working 이다. 새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적는다
 //
+// 다시 띄우는 중 (--run 과 상관없이 워크트리마다 가장 먼저):
+//     `orch worker relaunch` 가 그 워크트리에 남긴 보존 표시(lib/relaunch-hold.ts)가 24시간 안이면 아무것도 하지 않고
+//     `남김 <경로>: 다시 띄우는 중(옛 dispatch <id>, <시각> 부터). …` 를 낸다. 터미널 닫기와 dispatch 반납도 하지 않는다.
+//     옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 dispatch 가 모두 끝나 보여, 아래 「PR 없이 끝난 워크트리」 가
+//     워크트리와 지시서를 지웠다(2026-11-19). 새 dispatch 가 뜨면 표시가 지워지고 「일하는 중」 이 지킨다
+//
 // 정리 대상 (브랜치마다):
 //     - 그 브랜치의 PR 이 MERGED 다
 //     - PR 이 없거나 MERGED 가 아니면, upstream 이 gone 이고 `git cherry` 로 base 에 없는 커밋이 0 개다
@@ -187,6 +193,7 @@ import { isObject } from '../../core/json.ts'
 import { liveReviewPrs, originBranch, reviewPrOf, reviewPrOfBranch } from '../../lib/review.ts'
 import { blocker as ownershipBlocker, rowHandles } from '../../lib/ownership.ts'
 import { realPath } from '../../lib/fs.ts'
+import { relaunchHoldAt } from '../../lib/relaunch-hold.ts'
 import { scriptCommand } from '../../lib/proc.ts'
 import { scriptPath } from '../../lib/commands.ts'
 
@@ -365,6 +372,9 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     log(line)
     report.skipped.push({ path, reason })
   }
+  // 머리 주석의 「다시 띄우는 중」. 옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 그 경로의 dispatch 가 모두 끝나 보인다
+  const hold = relaunchHoldAt(repo, path)
+  if (hold) return keep('다시 띄우는 중', `남김 ${path}: 다시 띄우는 중(옛 dispatch ${hold.dispatch}, ${hold.at} 부터). orch worker relaunch 가 새 worker 를 띄우면 풀린다`)
   const mine = workersAt(workers, path)
   // --run 으로 맡긴 정리는 그 Run 의 워크트리만 본다. 남의 경로를 판정하려고 전체 Run 을 읽지 않는다.
   if (args.run && mine.length === 0) {
