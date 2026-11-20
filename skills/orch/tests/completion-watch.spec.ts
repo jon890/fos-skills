@@ -349,14 +349,20 @@ test('다른 저장소에 이 Run 을 보는 루프가 없거나 죽었으면 �
     assert.ok(state().suspects.includes(`foreign-${loop}`), loop)
   }
 })
-test('띄우기 기록이 없어도 Orca 의 워크트리가 이 저장소 안이거나 지워져 저장소를 알 수 없으면 그대로 알린다', async () => {
+test('띄우기 기록이 없어도 Orca 의 워크트리가 이 저장소의 git 워크트리이거나 지워져 저장소를 알 수 없으면 그대로 알린다', async t => {
   execFileSync('git', ['init', '-q', repo])
-  bin.setRules([
-    { args: ['check', 'worker_done'], stdout: envelope([done('here')]) }, { args: ['check', 'status'], stdout: envelope([]) },
-    { args: ['inbox'], stdout: envelope([]) },
-    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: 'here', status: 'completed' }, worker: { worktreeId: `repo::${join(repo, 'worktrees', 'gone')}` } } }) },
-    { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
-  ])
-  await watchCompletions(repo, 'R', 'main')
-  assert.deepEqual(state().suspects, ['here'])
+  execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'])
+  // 저장소 폴더 밖에 만든 실제 워크트리. 경로 접두사가 아니라 git 이 알려 주는 주 checkout 으로 이 저장소의 것임을 안다
+  const linked = join(tempDir('completion-watch-linked-', t), 'wt')
+  execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'wt', linked])
+  for (const [dispatch, worktree] of [['linked', linked], ['here', join(repo, 'worktrees', 'gone')]]) {
+    bin.setRules([
+      { args: ['check', 'worker_done'], stdout: envelope([done(dispatch)]) }, { args: ['check', 'status'], stdout: envelope([]) },
+      { args: ['inbox'], stdout: envelope([]) },
+      { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: dispatch, status: 'completed' }, worker: { worktreeId: `repo::${worktree}` } } }) },
+      { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
+    ])
+    await watchCompletions(repo, 'R', 'main')
+  }
+  assert.deepEqual(state().suspects, ['linked', 'here'])
 })
