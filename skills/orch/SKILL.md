@@ -81,7 +81,7 @@ doctor·status 의 `LOOP-STALE` 은 루프가 스스로 다시 뜨기를 기다�
 - **사용자가 정할 질문은 코디네이터가 대신 답하지 않는다.** 권장안을 붙여 사용자에게 올리고 고른 답을 worker 에게 보낸다. 형식과 검사 규칙은 저장소의 `../../docs/data-schema.md` 「사용자 결정 질문 형식」 이 소유한다
 - **worker 는 모두 코디네이터가 띄운다.** worker 는 다시 worker 를 띄우지 못한다(`nested_worker_depth_exceeded`).
   일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
-- **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 가 직접 처리하고 `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 계획이 PR 여럿이면 지시서는 PR1 만 맡고, 앞 PR 이 머지되면 코디네이터가 다음 지시서를 써 새 worker 를 띄운다(worker 하나가 PR 여럿을 이어 맡지 않는다)
+- **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 리뷰를 worker 가 직접 처리하고(기준 브랜치는 충돌이나 요청이 있을 때만 합친다) `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 계획이 PR 여럿이면 지시서는 PR1 만 맡고, 앞 PR 이 머지되면 코디네이터가 다음 지시서를 써 새 worker 를 띄운다(worker 하나가 PR 여럿을 이어 맡지 않는다)
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
 - **기능 루프를 쓸지는 지시서를 쓰기 전에 정하고 `## 할 일` 아래 첫 줄에 적는다.** 새 동작, 새 계약, 여러 PR 이면 루프를 쓰고, 버그 수정·정리·설정·측정 같은 작은 일은 쓰지 않는다. 첫 줄의 꼴이 틀리거나 가리킨 스펙이 확인받지 않은 것이면 `launch-worker` 가 띄우지 않는다. 기준과 꼴은 [`references/feature-loop.md`](references/feature-loop.md) 의 「루프를 쓸지 정한다」 가 소유한다
 - **worker 의 spec 인터뷰는 코디네이터가 사용자에게 중계한다.** 결정 블록을 나눠 묻고 답을 모아 돌려주며, 스펙 확인도 사용자에게 받는다. 절차는 [`references/replying.md`](references/replying.md) 의 「spec 인터뷰를 중계한다」 가 소유한다
