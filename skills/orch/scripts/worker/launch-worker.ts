@@ -30,6 +30,11 @@
 // 차례:
 //     0. selectionVerdict 로 지시서의 행별 worker 와 후보 밖 이유를 검사한다. 새 지시서의 비교 칸과 experiment 줄은 거절한다.
 //        새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다. 같은 지시서·설정의 이어하기는 옛 형식을 허용한다.
+//     0-0. 지시서 행이 impl-planned, impl-explore, small-fix, design 의 Codex worker 이고 `후보 밖:` 이 없으면 Claude 주간 사용량을 읽는다(lib/usage-boost.ts).
+//        남은 사용량 비율이 초기화까지 남은 시간 비율보다 크면 WORKER_ARGS 의 --agent, --model, --effort 를 같은 등급의 Claude 로 바꾸고
+//        LAUNCH-EFFECTIVE 와 기록의 effective.candidateOverride 에 행·worker·이유(`사용량: 남은 N%, 남은 시간 M%`)를 남긴다. 아래 차례는 바꾼 값으로 돈다.
+//        사용량 출처가 없거나 읽지 못하거나 1시간보다 오래됐으면 `USAGE-UNKNOWN <이유>` 를 내고 그대로 띄운다. 설정 routing.usage_boost 가 false 면 보지 않는다.
+//        --terminal 로 이어 쓰면 보지 않는다
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
@@ -148,7 +153,7 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
-import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Effective } from '../lib/launched.ts'
+import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
 import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
@@ -165,6 +170,7 @@ import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { candidateOverrideOf, selectionVerdict } from '../lib/selection.ts'
+import { boostEnabled, decideBoost, readSelectionTable, readWeekly, usageCacheFile } from '../lib/usage-boost.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
 import { autoStepNumberOf, boardIdOf, branchesOf, coordinatorCommandWarning, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
@@ -419,6 +425,36 @@ function selectionReject(specPath: string, passthru: string[], repo: string, ret
   }
   if (mismatched.length === 0) return null
   return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 과 띄우는 값이 다르다: ${mismatched.join('; ')}. 지시서를 고치거나 그 값으로 띄운다`
+}
+
+// 머리 주석의 「0-0」. 지시서의 행이 바꿀 수 있는 Codex 행이고 Claude 주간 사용량이 남을 것 같으면 WORKER_ARGS 를 같은 등급의 Claude 로 바꾼다.
+// 판정은 lib/usage-boost.ts 가 소유한다. 바꾸면 후보 밖 기록을, 아니면 null 을 낸다. 사용량을 읽지 못하면 USAGE-UNKNOWN 줄만 낸다
+function applyUsageBoost(specPath: string, passthru: string[], repo: string): CandidateOverride | null {
+  let text: string
+  try {
+    text = readFileSync(specPath, 'utf8')
+  } catch {
+    return null
+  }
+  const [selection] = selectionsOf(text)
+  if (!selection) return null
+  const now = Date.now()
+  const boost = decideBoost({ selection, enabled: () => boostEnabled(repo), weekly: () => readWeekly(usageCacheFile(), now), now, table: readSelectionTable() })
+  if (boost.kind === 'keep') {
+    if (boost.notice) out(boost.notice)
+    return null
+  }
+  setOption(passthru, '--agent', boost.worker.agent)
+  setOption(passthru, '--model', boost.worker.model)
+  setOption(passthru, '--effort', boost.worker.effort === '기본' ? null : boost.worker.effort)
+  return boost.override
+}
+
+// WORKER_ARGS 의 `--name 값` 을 바꾼다. 없으면 끝에 더하고, value 가 null 이면 뺀다
+function setOption(passthru: string[], name: string, value: string | null): void {
+  const at = passthru.indexOf(name)
+  if (at >= 0) passthru.splice(at, 2, ...(value === null ? [] : [name, value]))
+  else if (value !== null) passthru.push(name, value)
 }
 
 function isDir(target: string): boolean {
@@ -706,12 +742,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
   }
+  let boostOverride: CandidateOverride | null = null
   if (!passthru.includes('--terminal')) {
     const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task, continuation)
     if (rejected) {
       err(`거부: ${rejected}`)
       return 1
     }
+    boostOverride = applyUsageBoost(a.spec, passthru, retryRepo)
   }
   const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
   for (const warning of settings.warnings) err(`경고: ${warning}`)
@@ -770,7 +808,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   const commandWarning = coordinatorCommandWarning(specText)
   if (commandWarning) err(`경고: ${a.spec}:${commandWarning.no}: ${commandWarning.command} 명령은 worker 가 직접 실행하지 않는다. 명령과 대상을 ask 로 코디네이터에게 보낸다고 허락 줄에 적는다`)
   const autoStep = autoStepNumberOf(specText)
-  const candidateOverride = candidateOverrideOf(specText)
+  const candidateOverride = boostOverride ?? candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
   let worktree: string
