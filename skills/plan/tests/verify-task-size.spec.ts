@@ -112,6 +112,23 @@ test('레포 설정의 「PR 줄 수 운영 코드」 경로를 상한 비교에
   assert.ok(r.violations.some((line) => line.includes('PR 줄 수 상한')), r.stdout)
 })
 
+test('size_exception 이 있으면 상한 초과를 경고로 낮추고, created_at 이 없는 계획도 경고다', () => {
+  const repo = new Repo('size-', true)
+  overlay(repo, `\`${NEW_FILE_LINES.production * 10}\``)
+  repo.file('docs/flow.md')
+  const entries = Array.from({ length: 11 }, (_, n): Entry => [`src/a${n}.ts`, '신규'])
+  writePlan(repo, 'plan1-a', [{ entries }], { index: { created_at: '2026-11-20', pr_scope: '파일을 더한다', deferred: [], size_exception: '신규 파일이 작은 DTO 라 추정보다 작다' } })
+  const excepted = verify(repo, ['plan1-a'])
+  assert.ok(!excepted.violations.some((line) => line.includes('PR 줄 수 상한')), excepted.stdout)
+  assert.ok(excepted.warnings.some((line) => line.includes('size_exception 으로 경고로 낮췄다: 신규 파일이 작은 DTO 라')), excepted.stdout)
+  writePlan(repo, 'plan1-a', [{ entries }], { index: { pr_scope: '파일을 더한다', deferred: [] } })
+  const undated = verify(repo, ['plan1-a'])
+  assert.ok(!undated.violations.some((line) => line.includes('PR 줄 수 상한')), undated.stdout)
+  assert.ok(undated.warnings.some((line) => line.includes('PR 줄 수 상한')), undated.stdout)
+  const audit = verify(repo, ['plan1-a', '--audit'])
+  assert.ok(!audit.stdout.includes('PR 줄 수 상한') && !audit.stdout.includes('PR 크기 추정'), audit.stdout)
+})
+
 test('PR 줄 수 상한은 JS 상수를 읽고, 읽지 못하면 경고하고 보지 않는다', () => {
   const repo = new Repo('size-', true)
   repo.file('scripts/pr-size.mjs', `export const LARGE = 400;\nexport const MAX_LINES = ${NEW_FILE_LINES.production * 10};\n`)

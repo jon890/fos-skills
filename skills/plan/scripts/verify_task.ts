@@ -1918,7 +1918,10 @@ export function main(argv: string[]): number {
         const found = lineLimitFinding(`${planDir}/index.json`, estimate, ...lineLimit)
         // 이 날짜 전에 만든 계획은 진행 중일 수 있어 상한을 넘어도 경고로만 낸다
         const current = isRecord(index) && typeof index.created_at === 'string' && pyStrCompare(index.created_at, LINE_LIMIT_FROM) >= 0
-        if (found) (found[0] === 'violation' && current ? out : warnings).push(found[1])
+        // 사람이 정한 크기 예외(index.json 의 size_exception)가 있으면 추정 오차로 생긴 초과를 경고로 낮춘다
+        const exception = isRecord(index) && typeof index.size_exception === 'string' ? pyStrip(index.size_exception) : ''
+        if (found && found[0] === 'violation' && exception) warnings.push(`${found[1]}. size_exception 으로 경고로 낮췄다: ${exception}`)
+        else if (found) (found[0] === 'violation' && current ? out : warnings).push(found[1])
       }
       checkChangedFileCount(`${planDir}/index.json`, allFiles, warnings, fileLimit, phaseEntries.map(([phase, , rels]) => [phase, new Set(rels.map(([rel]) => rel))] as [string, Set<string>]), planRel)
       if (lengthLimit && !audit) checkFileLength(`${planDir}/index.json`, allEntries, repo, lengthLimit, warnings)
