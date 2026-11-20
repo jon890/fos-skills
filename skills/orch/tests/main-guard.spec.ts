@@ -381,3 +381,36 @@ test('이미 허용된 호출의 이유는 우회 기록과 알림을 만들지 
   assert.equal(existsSync(join(pathOf('state', empty), 'launched-workers', 'not-main')), false)
   assert.equal(calls().some(args => args[1] === 'send'), false)
 })
+
+// 2026-11-18 오탐: 보드를 나눠 쓰는 저장소의 루프가 보드 저장소의 메인과 Run 이 달라 board sync 가 틱마다 NOT-MAIN 이었다
+test('루프 한 틱의 보드 동기화는 보드 파일이 다른 저장소에 있어도 루프 저장소의 메인으로 본다', () => {
+  const shared = join(root, `shared-board-${counter++}`)
+  mkdirSync(join(shared, '.omc'), { recursive: true })
+  assert.equal(spawnSync('git', ['init', '-q', shared]).status, 0)
+  registerRun(shared, 'other', null, false, 'to', '2026-11-17T00:00:00Z')
+  const board = join(shared, '.omc', 'board.json')
+  writeFileSync(board, JSON.stringify({ items: [] }))
+  mkdirSync(join(repo, '.orch'), { recursive: true })
+  writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ finish: { board } }))
+  settings({ caller: 'main' })
+  const loopModule = new URL('../scripts/lib/loop.ts', import.meta.url).href
+  const contextModule = new URL('../scripts/lib/main-guard-context.ts', import.meta.url).href
+  const script = join(root, `fake-orch-loop-${counter++}.ts`)
+  writeFileSync(script, `import { spawnSync } from 'node:child_process'
+import { writeLoop } from ${JSON.stringify(loopModule)}
+import { withLoopCaller } from ${JSON.stringify(contextModule)}
+const repo = ${JSON.stringify(repo)}
+const now = new Date().toISOString()
+writeLoop(repo, { pid: process.pid, run: 'main', repo, tick_sec: 60, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} })
+const child = () => spawnSync(process.execPath, [${JSON.stringify(join(source, 'scripts', 'board', 'board-sync.ts'))}, '--repo', repo], { encoding: 'utf8', env: process.env, timeout: 20_000 })
+const outside = child()
+const inside = await withLoopCaller(repo, 'main', async () => child())
+process.stdout.write(JSON.stringify({ outside: [outside.status, outside.stderr], inside: [inside.status, inside.stderr] }))
+`)
+  const done = spawnSync(process.execPath, [script], { encoding: 'utf8', env: process.env, timeout: 60_000 })
+  assert.equal(done.status, 0, done.stderr)
+  const { outside, inside } = JSON.parse(done.stdout) as { outside: [number, string]; inside: [number, string] }
+  assert.equal(outside[0], 1, '루프 밖 호출은 보드 저장소의 메인 기준 그대로 거절한다')
+  assert.match(outside[1], /NOT-MAIN main=other caller=main/)
+  assert.equal(inside[0], 0, inside[1])
+})

@@ -1,4 +1,5 @@
 import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
+import { loopCaller } from '../lib/main-guard-context.ts'
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
@@ -93,7 +94,7 @@ import { taggedBoardSteps, boardSteps, detailArgs, detailText as textOf, NOTE, n
 import type { BoardDetail as Detail } from '../lib/board.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import type { DeployVerdict, RunRow } from '../lib/deploy.ts'
-import { git } from '../lib/git.ts'
+import { git, mainCheckout } from '../lib/git.ts'
 import { closeUnjudged, hasActiveWorker, judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
 import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
 import type { BoardSettings } from '../lib/milestones.ts'
@@ -264,7 +265,11 @@ function main(argv: string[]): number {
   }
   const repo = resolve(values.repo ?? '.')
   if (!values['dry-run']) {
-    const mainGuard = guardWrite(boardRepo(repo, board), 'board sync', values['not-main'])
+    // 메인 확인은 보드 파일이 있는 저장소 기준이다. 단 --repo 의 루프 한 틱이 부른 동기화는 --repo 기준으로 본다.
+    // 보드를 나눠 쓰는 저장소(finish.board 를 같은 파일로 둔 저장소)의 루프는 자기 저장소의 PR 을 그 보드에 반영해야 하는데,
+    // 보드 저장소의 메인이 다른 Run 이라 틱마다 NOT-MAIN 으로 실패했다(2026-11-18)
+    const target = loopCaller(mainCheckout(repo)) ? repo : boardRepo(repo, board)
+    const mainGuard = guardWrite(target, 'board sync', values['not-main'])
     if (mainGuard.code !== 0) return mainGuard.code
   }
   const dryRun = values['dry-run'] === true
