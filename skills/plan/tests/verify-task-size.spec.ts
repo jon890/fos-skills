@@ -33,6 +33,19 @@ test('lock 파일, 빌드 결과물, 스냅샷은 설정이 없어도 세지 않
   assert.match(warnings[0], /1개 파일/)
 })
 
+test('파일째 지우는 운영 코드는 운영 코드에서 빼고, 같은 이름의 삭제와 신규는 이동으로 0줄이다', () => {
+  const repo = new Repo()
+  repo.file('src/old/Gone.java', 'x\n'.repeat(800))
+  repo.file('src/old/Moved.java', 'x\n'.repeat(900))
+  repo.file('tests/old.test.ts', 'x\n'.repeat(40))
+  const entries: Entry[] = [['src/old/Gone.java', '삭제'], ['src/old/Moved.java', '삭제'], ['src/new/Moved.java', '신규'], ['tests/old.test.ts', '삭제']]
+  const warnings: string[] = []
+  const estimate = checkEstimatedSize('plan', set(entries), repo.root, warnings)
+  assert.equal(estimate!.core, 0)
+  assert.match(warnings[0], /테스트 40줄, 문서 0줄, 전체 840줄/)
+  assert.match(warnings[0], /이동 2개는 0줄로 셌다, 파일째 지우는 운영 코드 800줄은 운영 코드에서 뺐다/)
+})
+
 test('phase 별 추정은 운영 코드만 세고 여러 phase 에 나온 파일은 처음 phase 에 센다', () => {
   const repo = new Repo()
   const first: Entry[] = [['src/a.ts', '신규'], ['tests/a.test.ts', '신규']]

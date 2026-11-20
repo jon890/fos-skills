@@ -660,7 +660,7 @@ test('PR 크기 추정은 저장소 등급과 신규 파일 추정을 알리고 
   assert.match(complete[0], /D등급.*PR 나눔 검토/)
   const small: string[] = []
   checkEstimatedSize('plan', new Set(['src/a.ts\0삭제']), repo.root, small)
-  assert.match(small[0], /D등급.*운영 코드 35줄/)
+  assert.match(small[0], /A등급.*운영 코드 0줄.*전체 35줄.*파일째 지우는 운영 코드 35줄/)
   repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 } } }))
   const invalid: string[] = []
   assert.equal(checkEstimatedSize('plan', new Set(), repo.root, invalid), null)

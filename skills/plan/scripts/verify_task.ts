@@ -1111,12 +1111,21 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
       const [rel, action] = entry.split('\0')
       if (!isGlob(rel) && !omitted(rel)) files.set(rel, `${files.get(rel) ?? ''} ${action}`)
     }
+    // 이동은 같은 이름의 파일을 한쪽에서 지우고 다른 쪽에 새로 만드는 행 한 쌍이다. 내용이 그대로면 저장소 측정에서 0줄이라 둘 다 세지 않는다
+    const onlyDeleted = (action: string) => action.includes('삭제') && !action.includes('신규') && !action.includes('수정')
+    const onlyAdded = (action: string) => action.includes('신규') && !action.includes('삭제')
+    const names = (keep: (action: string) => boolean) => new Set([...files].filter(([, action]) => keep(action)).map(([rel]) => pathName(rel)))
+    const deletedNames = names(onlyDeleted), addedNames = names(onlyAdded)
     const coreLines = new Map<string, number>()
     const byKind: Record<SizeKind, number> = { production: 0, tests: 0, docs: 0 }
-    let total = 0, count = 0, unknown = 0, added = 0
+    let total = 0, count = 0, unknown = 0, added = 0, moved = 0, removed = 0
     for (const [rel, action] of files) {
       if (!match(rel, config.core) && (match(rel, config.generated) || excludedByDefault(rel))) continue
       count++
+      if ((onlyAdded(action) && deletedNames.has(pathName(rel))) || (onlyDeleted(action) && addedNames.has(pathName(rel)))) {
+        moved++
+        continue
+      }
       const kind = kindOf(rel)
       const lines = fileLines(repo, rel, action, kind, CODE_SUFFIXES.has(pathSuffix(rel)))
       if (lines === null) {
@@ -1125,6 +1134,11 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
       }
       if (action.includes('신규') || (!action.includes('수정') && !action.includes('삭제'))) added++
       total += lines
+      // 파일째 지우는 운영 코드는 저장소의 운영 코드 상한이 세지 않는다. 테스트와 문서의 삭제는 그 분류에 센다
+      if (kind === 'production' && onlyDeleted(action)) {
+        removed += lines
+        continue
+      }
       byKind[kind] += lines
       if (kind === 'production') coreLines.set(rel, lines)
     }
@@ -1136,7 +1150,12 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
     }
     const exceeds = (grade: string) => Object.entries(config.grades![grade]).some(([key, limit]) => metrics[key] > limit)
     const grade = config.grades ? (exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A') : null
-    const notes = [added ? `신규 ${added}개는 종류별 평균 줄 수로 셌다` : '', unknown ? `줄 수 미상 ${unknown}개는 빼고 셌다` : ''].filter(Boolean).join(', ')
+    const notes = [
+      added ? `신규 ${added}개는 종류별 평균 줄 수로 셌다` : '',
+      moved ? `이동 ${moved}개는 0줄로 셌다` : '',
+      removed ? `파일째 지우는 운영 코드 ${removed}줄은 운영 코드에서 뺐다` : '',
+      unknown ? `줄 수 미상 ${unknown}개는 빼고 셌다` : '',
+    ].filter(Boolean).join(', ')
     warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: 운영 코드 ${core}줄, 테스트 ${byKind.tests}줄, 문서 ${byKind.docs}줄, 전체 ${total}줄, ${count}개 파일${notes ? ` (${notes})` : ''}.${grade === 'D' && unknown === 0 ? ' PR 나눔 검토' : ''}`)
     const seen = new Set<string>()
     const byPhase = phases.map(([phase, rels]): [string, number] => {
