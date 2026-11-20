@@ -417,6 +417,14 @@ function localBranchExists(repo: string, branch: string): boolean {
 
 // 정리 스크립트를 돌려 그 브랜치의 워크트리와 로컬 브랜치가 사라질 때까지 다시 시도한다. 사라졌으면 true.
 // 로컬 브랜치 이름이 PR 의 head 브랜치 이름과 다르면 head 이름으로는 워크트리가 보이지 않는다.
+// 정리 출력에 그 워크트리를 일부러 남긴 줄(`남김 <경로>: …` 이나 짧은 출력의 `KEPT <경로> …`)이 있는지
+export function keptOnPurpose(output: string, path: string): boolean {
+  return output.split('\n').some((line) => {
+    const text = line.trim()
+    return (text.startsWith(`남김 ${path}: `) || text.startsWith(`KEPT ${path} `)) && KEPT_ON_PURPOSE.test(text)
+  })
+}
+
 // 그래서 보이지 않아도 정리 스크립트를 한 번은 돌린다. 그 스크립트가 PR 을 upstream 이름 등으로 찾아 정리한다
 async function cleanupWorker(args: Args, repo: string, branch: string): Promise<boolean> {
   const sweep = process.env.CLEANUP_SWEEP || scriptPath('cleanup-sweep')
@@ -432,9 +440,11 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
     for (const line of (done.stdout + done.stderr).split('\n')) {
       if (line) log(`sweep: ${line.replace(/\r$/, '')}`)
     }
-    if (!worktreePath(repo, branch) && !localBranchExists(repo, branch)) return true
-    // 정리가 끊긴 worker 나 후속 검증 대기로 일부러 남겼으면 다시 돌려도 같다(cleanup/steps/worktrees.ts 의 「남기는 워크트리」)
-    if (KEPT_ON_PURPOSE.test(done.stdout)) return false
+    const left = worktreePath(repo, branch)
+    if (!left && !localBranchExists(repo, branch)) return true
+    // 이 PR 의 워크트리를 정리가 끊긴 worker 나 후속 검증 대기로 일부러 남겼으면 다시 돌려도 같다(cleanup/steps/worktrees.ts 의 「남기는 워크트리」).
+    // 다른 워크트리의 남김 줄로는 멈추지 않는다
+    if (left && keptOnPurpose(done.stdout, left)) return false
     if (attempt < CLEANUP_TRIES) await sleep(args.pollInterval * 1000)
   }
   return false
