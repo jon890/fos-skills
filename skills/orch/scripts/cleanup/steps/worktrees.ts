@@ -32,7 +32,7 @@
 //     `남김: 사용자 보유 터미널 (<경로>). 근거: <이유>` 다. user_takeover 로 표시된 행만 그 터미널 화면을 읽는다.
 //     화면이 에이전트 작업 중이면 working 이다. 새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적는다
 //
-// 다시 띄우는 중 (--run 과 상관없이 워크트리마다 가장 먼저):
+// 다시 띄우는 중 (--run 이면 그 Run 의 워크트리인지 본 바로 뒤, 아니면 워크트리마다 가장 먼저):
 //     `orch worker relaunch` 가 그 워크트리에 남긴 보존 표시(lib/relaunch-hold.ts)가 24시간 안이면 아무것도 하지 않고
 //     `남김 <경로>: 다시 띄우는 중(옛 dispatch <id>, <시각> 부터). …` 를 낸다. 터미널 닫기와 dispatch 반납도 하지 않는다.
 //     옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 dispatch 가 모두 끝나 보여, 아래 「PR 없이 끝난 워크트리」 가
@@ -372,9 +372,6 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     log(line)
     report.skipped.push({ path, reason })
   }
-  // 머리 주석의 「다시 띄우는 중」. 옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 그 경로의 dispatch 가 모두 끝나 보인다
-  const hold = relaunchHoldAt(repo, path)
-  if (hold) return keep('다시 띄우는 중', `남김 ${path}: 다시 띄우는 중(옛 dispatch ${hold.dispatch}, ${hold.at} 부터). orch worker relaunch 가 새 worker 를 띄우면 풀린다`)
   const mine = workersAt(workers, path)
   // --run 으로 맡긴 정리는 그 Run 의 워크트리만 본다. 남의 경로를 판정하려고 전체 Run 을 읽지 않는다.
   if (args.run && mine.length === 0) {
@@ -386,6 +383,9 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
     return keep('이 Run 의 워크트리가 아니다', `건너뜀 ${path}: 이 Run 의 워크트리가 아니다`)
   }
+  // 머리 주석의 「다시 띄우는 중」. 옛 dispatch 를 abandon 한 뒤 새 dispatch 가 뜨기 전에는 그 경로의 dispatch 가 모두 끝나 보인다. Run 범위 밖의 경로는 앞에서 이미 건너뛴다
+  const hold = relaunchHoldAt(repo, path)
+  if (hold) return keep('다시 띄우는 중', `남김 ${path}: 다시 띄우는 중(옛 dispatch ${hold.dispatch}, ${hold.at} 부터). orch worker relaunch 가 새 worker 를 띄우면 풀린다`)
   // 살아 있는 dispatch 의 워크트리는 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많으면 그 조회가 정리 시간을 다 쓴다(머리 주석의 「일하는 중」)
   if (mine.some(isLive)) {
     const verdict = judge({ rows: mine, screens: readScreens(screenHandles(mine)) })
