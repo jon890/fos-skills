@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { nextCron, updateSchedules, visibleSchedules, scheduleLine } from '../hooks/schedules.js'
-import { watchSchedule } from '../hooks/register.js'
+
+let moduleIndex = 0
+async function freshWatchSchedule() {
+  const module = await import('../hooks/register.js?test=' + ++moduleIndex)
+  return module.watchSchedule
+}
 
 const at = new Date(2026, 10, 20, 10, 0).getTime()
 // Claude Code 2.1.329 plugin-authoring/types/claude-code.d.ts:
@@ -52,6 +57,7 @@ test('cron 식은 로컬 시간의 범위·간격·요일을 읽는다', () => {
 })
 
 test('도구 훅은 원래 결과를 돌려주고 세션 상태만 갱신한다', async () => {
+  const watchSchedule = await freshWatchSchedule()
   let stored = []
   let conflicts = 1
   const $ = { state: { get: async () => ({ value: stored, version: 1 }), set: async (ref, rows, options) => {
@@ -72,7 +78,7 @@ test('도구 훅은 원래 결과를 돌려주고 세션 상태만 갱신한다'
 })
 
 test('세션 상태 갱신이 계속 충돌하면 화면의 예약 목록은 유지한다', async () => {
-  const { watchSchedule: watchFresh } = await import('../hooks/register.js?retry-exhausted')
+  const watchFresh = await freshWatchSchedule()
   let attempts = 0
   let invalidations = 0
   const $ = {
@@ -88,4 +94,23 @@ test('세션 상태 갱신이 계속 충돌하면 화면의 예약 목록은 유
   assert.equal(invalidations, 1)
   await watchFresh({ ...$, state: undefined }, remove, async () => ({ result: { id: 'job-1' } }))
   assert.equal(invalidations, 2)
+})
+
+test('다음 도구 이벤트에서 실행이 끝난 예약을 세션 상태에서 지운다', async () => {
+  const watchSchedule = await freshWatchSchedule()
+  const oneShot = updateSchedules([], { ...create, recurring: false },
+    { result: { ...answer.result, recurring: false } }, at)
+  let stored = oneShot
+  let writes = 0
+  const $ = {
+    state: {
+      get: async () => ({ value: stored, version: 1 }),
+      set: async (_ref, rows) => { stored = rows; writes++; return { isSet: true } },
+    },
+    clock: { now: async () => at + 300000 },
+    ui: { invalidate: () => {} },
+  }
+  await watchSchedule($, { ...remove, id: 'other' }, async () => ({ result: { id: 'other' } }))
+  assert.deepEqual(stored, [])
+  assert.equal(writes, 1)
 })
