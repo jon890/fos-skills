@@ -195,6 +195,7 @@ export function followupTick(repo: string, deps: TickDeps): TickResult {
     return result
   }
   const prs = due.map((item) => item.pr)
+  // 보낸 뒤 이 기록이 실패하면 다음 틱이 같은 알림을 다시 보낸다. 알림을 잃는 것보다 한 번 더 받는 쪽을 택했다
   updateFollowups(repo, (items) => ({ items: markNotified(items, prs, now()), value: null }))
   result.notified = prs
   return result
