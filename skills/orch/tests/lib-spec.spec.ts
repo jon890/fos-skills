@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { allLiveSpecPaths, BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, experimentOf, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
+import { copyWorkerSpec, workerSpecLine } from '../scripts/lib/worker-spec-copy.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
 const saved = { ORCA: process.env.ORCA }
@@ -454,6 +455,20 @@ describe('liveSpecPaths', () => {
       { args: ['worker-list'], stdout: envelope({ workers: [] }) },
     )
     assert.deepEqual(liveSpecPaths('run_x'), new Set([spec]))
+  })
+
+  test('사본을 읽는 Task 의 원본 지시서도 살아 있는 경로로 지킨다', () => {
+    const original = join(base, 'spec-original.md')
+    const worktree = join(base, 'worktree')
+    mkdirSync(worktree)
+    writeFileSync(original, '원본')
+    const copied = copyWorkerSpec(original, base, worktree)
+    const line = workerSpecLine(`지시서 ${original} 를 끝까지 읽는다.`, original, base, worktree, message => assert.fail(message))
+    rules(
+      { args: ['task-list'], stdout: envelope({ tasks: [{ id: 'tx', status: 'running', spec: line }] }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [] }) },
+    )
+    assert.deepEqual(liveSpecPaths('run_x'), new Set([copied, original]))
   })
 })
 

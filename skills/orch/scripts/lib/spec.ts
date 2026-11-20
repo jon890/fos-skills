@@ -215,6 +215,18 @@ export function remoteWithCodex(text: string): { no: number; phrase: string } | 
   return null
 }
 
+// 직접 실행 허락처럼 읽히는 지시서를 띄우기 전에 알린다. 코디네이터에게 ask 로
+// 넘긴다는 문구가 함께 있으면 이미 안전한 지시다.
+export function coordinatorCommandWarning(text: string): { no: number; command: string } | null {
+  for (const [index, line] of outsideFences(lines(text)).entries()) {
+    const permission = PERMISSION.exec(line)?.[1]
+    if (!permission || /ask|코디네이터에게|금지|(?:실행|조회|접속)하지\s*않/.test(permission)) continue
+    if (/(?:\bssh\b|원격|홈\s*서버).*(?:조회|접속|명령|실행)/i.test(permission)) return { no: index + 1, command: 'ssh' }
+    if (/(?:git\s+rm\b|대량\s*삭제|일괄\s*삭제)/i.test(permission)) return { no: index + 1, command: '대량 삭제' }
+  }
+  return null
+}
+
 type Page<K extends string> = { [P in K]?: unknown } & { page?: { nextCursor?: unknown }; scope?: { source?: unknown } }
 
 // 한 조회를 page.nextCursor 가 없을 때까지 이어 읽는다. 한 페이지라도 실패하면 null 이다.

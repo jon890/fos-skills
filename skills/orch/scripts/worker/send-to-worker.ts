@@ -54,6 +54,7 @@ import { registerBoard } from '../lib/board.ts'
 import { fire } from '../lib/events.ts'
 import { defaultBase, mainCheckout } from '../lib/git.ts'
 import { senderOf, threadOf } from '../core/message-fields.ts'
+import { workerSpecLine as copiedWorkerSpecLine } from '../lib/worker-spec-copy.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
@@ -548,6 +549,10 @@ async function main(argv: string[]): Promise<number> {
     if (a.spec) {
       try { spec = followUpSpec(a.spec, described.worktree || process.cwd(), a.note?.trim()) }
       catch (e) { err(`send-to-worker: ${(e as Error).message}`); return 2 }
+      const inherited = readLaunch(described.worktree || process.cwd(), a.dispatch)
+      if ((described.settings.agent || inherited?.agent || inherited?.effective?.agent) === 'claude') {
+        spec.line = copiedWorkerSpecLine(spec.line, a.spec, mainCheckout(described.worktree || process.cwd()), described.worktree, (message) => err(`경고: ${message}`))
+      }
     }
     // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다
     if (body) {

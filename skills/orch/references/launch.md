@@ -1,5 +1,7 @@
 # 3. 띄우기
 
+Claude worker 는 시작과 후속 지시를 보낼 때 지시서와 지시서가 절대경로로 가리킨 로컬 파일을 워크트리의 `.orch/worker-specs/` 에 복사한 뒤 그 사본 경로를 첫 지시 줄에 넣는다. 원본 경로도 정리 명령을 위해 같은 줄에 남긴다. Orca `worker-start` 가 Claude 의 `--add-dir` 실행 인자를 받지 않아, 워크트리 밖 지시서를 읽을 때 확인 창이 뜨지 않게 하는 방법이다. 복사에 실패하면 경고하고 원본 경로로 띄운다. 이 폴더는 git 이 무시하며 같은 워크트리에서 resume 할 때도 남는다.
+
 여러 worker 를 동시에 두면 **지금 묶인 run 하나에** 띄운다. 묶인 run 은 `run-current` 로 본다.
 새 run 을 만들면 코디네이터가 그쪽으로 옮겨 묶인다. 이전 run 의 메일도 코디네이터를 깨우지만 worker 는 묶인 run 에 띄운다.
 `check` 나 `worker-start --run` 이 `consumer_fenced` 로 거절되면 먼저 명령에 `--run <id>` 를 붙여 본다.
