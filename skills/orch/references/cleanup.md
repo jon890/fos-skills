@@ -340,7 +340,7 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 orch followup done "$PR" --note "$NOTE"
 ```
 
-`PR` 은 PR 번호, `NOTE` 는 확인 결과 한 줄이다. 끝내면 그 PR 의 마무리를 다시 띄워(`FINISH-STARTED`) 남겼던 워크트리와 브랜치, handoff 를 지우고 지시서 정리, 업무 완료, 보드 done 까지 간다. 정리 도구도 목록의 끝난 기록을 후속 검증 통과로 본다. 확인이 실패하면 끝내지 않고 고칠 일을 새 worker 로 맡긴다.
+`PR` 은 PR 번호, `NOTE` 는 확인 결과 한 줄이다. 끝내면 그 PR 의 마무리를 다시 띄워(`FINISH-STARTED`) 남겼던 워크트리와 브랜치, handoff 를 지우고 지시서 정리, 업무 완료, 보드 done 까지 간다. 정리 도구도 목록의 끝난 기록을 후속 검증 통과로 본다. PR 본문의 후속 검증을 통과로 고쳐 마무리를 다시 돌려도 목록의 그 항목을 끝낸다(`FOLLOWUP-DONE #<PR>`). 확인이 실패하면 끝내지 않고 고칠 일을 새 worker 로 맡긴다.
 
 ## 정리
 

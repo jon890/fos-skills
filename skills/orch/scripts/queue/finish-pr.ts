@@ -53,7 +53,8 @@
 //     그 PR 의 handoff 산출물도 실패로 세지 않고 함께 남긴다(사용자 결정 2026-11-20). 배포가 실패했거나 시간이 지났으면
 //     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
 //     코디네이터가 `orch followup done <PR>` 로 끝내면 그 명령이 이 마무리를 다시 띄운다. 그때는 목록의 끝난 기록을 후속 검증 통과로 보고
-//     지시서 정리, 업무 완료, 보드 done 까지 간다. 정리도 목록의 끝난 기록을 보고 남겼던 워크트리와 handoff 를 지운다. 본문의 대기를 통과로 바꿔도 같다
+//     지시서 정리, 업무 완료, 보드 done 까지 간다. 정리도 목록의 끝난 기록을 보고 남겼던 워크트리와 handoff 를 지운다. 본문의 대기를 통과로 바꿔도 같다.
+//     그때는 목록에 남은 그 PR 의 항목도 끝내고 `FOLLOWUP-DONE #<PR>` 을 낸다(보드 항목 followup-<PR> 도 done)
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -168,7 +169,7 @@ import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
 import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges, pendingFollowup } from '../lib/feature-evidence.ts'
 import { followupDone, mirrorBoard, updateFollowups } from '../lib/followups.ts'
-import { upsertFollowup } from '../core/followups.ts'
+import { markDone, upsertFollowup } from '../core/followups.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
@@ -830,6 +831,7 @@ async function finish(args: Args, repo: string): Promise<number> {
     if (waiting !== null && !followupDone(repo, args.pr)) {
       return holdForFollowup(args, repo, merged, waiting, deploy, deployed && !handoffProblem, problems)
     }
+    if (waiting === null) closeFollowup(args, repo)
   }
 
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
@@ -922,6 +924,24 @@ function holdForFollowup(args: Args, repo: string, merged: Merged, text: string,
   if (!ok) return fail(problems.join('; ') || '배포를 확인하지 못했다')
   out('FINISH-DONE')
   return 0
+}
+
+// 머리 주석의 「배포 뒤 할 일」 의 본문 통과. 앞 마무리가 목록에 옮긴 항목이 열려 있으면 끝내고 보드도 done 으로 바꾼다.
+// 끝내지 못해도 마무리는 이어 간다. 그 항목은 orch followup done 으로 끝낼 수 있다
+function closeFollowup(args: Args, repo: string): void {
+  const pr = Number(args.pr)
+  try {
+    const got = updateFollowups(repo, (items) => {
+      const made = markDone(items, pr, new Date().toISOString(), '본문의 후속 검증이 통과다')
+      return { items: made.items, value: { result: made.result, item: made.items.find((one) => one.pr === pr) ?? null } }
+    })
+    if (got.result !== 'done' || !got.item) return
+    out(`FOLLOWUP-DONE #${pr}`)
+    const board = mirrorBoard(repo, got.item, { file: args.board, bin: args.boardBin })
+    if (board.startsWith('실패:')) log(`배포 뒤 할 일의 보드를 done 으로 바꾸지 못했다: ${board.slice('실패:'.length).trim()}`)
+  } catch (e) {
+    log(`배포 뒤 할 일을 끝내지 못했다: ${oneLine((e as Error).message)}. 끝내려면: ${orchWord()} followup done ${pr}`)
+  }
 }
 
 // 요청의 자동 완료(머리 주석의 「요청 완료」). 실패해도 마무리는 FINISH-DONE 이다. 답을 직접 보낼 명령을 남긴다

@@ -400,6 +400,23 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
   })
 
+  test('대기로 목록에 옮긴 뒤 본문을 통과로 바꿔 다시 돌면 목록의 항목도 끝낸다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke')
+    const args = ['--specs-dir', c.specs, '--complete']
+    const waiting = await c.finish(args)
+    assert.match(waiting.stdout, /^FOLLOWUP-ADDED #77 /m)
+    c.state.pr.body = evidence(c, '통과 | 배포 후 smoke 결과 링크')
+    const done = await c.finish(args)
+    assert.equal(done.code, 0, both(done))
+    assert.match(done.stdout, /^FOLLOWUP-DONE #77$/m)
+    const saved = followups(c)
+    assert.equal(saved.length, 1)
+    assert.ok(saved[0].done_at)
+    assert.equal(saved[0].note, '본문의 후속 검증이 통과다')
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+  })
+
   test('후속 검증이 없음이면 배포 뒤 할 일을 만들지 않는다', async (t) => {
     const c = setup(t)
     c.state.pr.body = evidence(c, '없음 | 배포 대상 없는 도구 변경')
