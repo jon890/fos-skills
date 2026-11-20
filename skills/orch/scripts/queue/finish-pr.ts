@@ -23,7 +23,7 @@
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
 //        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 지시서만 남긴다
 //        이어서 <orch>/handoff/pr-<PR 번호>/ 만 휴지통으로 옮긴다. 규칙 밖의 옛 파일은 개수만 알리고 남긴다.
-//        worker 정리가 끝나지 않았거나 옮기지 못하면 FINISH-FAIL 로 끝내며 원본은 남긴다.
+//        worker 정리가 끝나지 않으면 FINISH-FAIL 로 끝내고 원본을 남긴다. 휴지통 이동만 실패하면 경고하고 계속한다.
 //     5. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
 //        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. skipped 만 남으면 배포 브랜치의 원격 끝 커밋으로 판정한다.
@@ -762,8 +762,6 @@ async function finish(args: Args, repo: string): Promise<number> {
       if (handoff.legacy > 0) log(`규칙 밖의 옛 handoff 파일 ${handoff.legacy}개는 남김`)
     } catch (e) {
       log(`PR ${args.pr} handoff 산출물 정리 실패: ${(e as Error).message}`)
-      problems.push(`PR ${args.pr} handoff 산출물을 옮기지 못했다`)
-      handoffProblem = true
     }
   }
 
