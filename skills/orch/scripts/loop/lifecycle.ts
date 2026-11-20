@@ -1,5 +1,6 @@
 // 상주 루프의 시작과 멈춤, 한 저장소에 하나만 돌게 하는 잠금, 틱 자식을 띄우고 결과를 loop.json 에 합치는 부모(--foreground)다.
 // 사용법과 종료 코드는 orch-loop.ts 머리 주석이, 틱 자식이 하는 일은 steps/ 의 단계 파일이 소유한다.
+// 틱 자식이 끝날 때마다(--once 가 아니면) 플러그인 자동 갱신(plugin-auto-update.ts)과 하루 한 번의 모델 감지(model-watch.ts)를 부른다. 둘의 실패는 loop.log 에만 남는다.
 //
 // 한 저장소에 하나: --foreground 는 시작할 때 state/loop.lock 을 wx 로 만들어 자기 pid 를 적고, 끝날 때 자기 pid 가 든 잠금만 지운다.
 //     죽은 pid 의 잠금은 lib/events.ts 의 reclaim 으로 회수한다. pid 가 살아 있어도 루프 프로세스(lib/loop.ts 의 isLoopProcess)가
@@ -87,6 +88,7 @@ import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
 import { announce, moveWorkers, pendingRuns, settlePending, writePending } from './takeover.ts'
 import { busyReason, decide, HANDOVER_ENV, handOver, heirEntry, newSelfUpdate, observe, pendingHeir } from './self-update.ts'
+import { watchModels } from './model-watch.ts'
 import { readUpdateReport, updatePlugins, updateStateDir, updateSummary, type UpdateReport } from './plugin-auto-update.ts'
 import { loadConfig, PLUGIN_KEYS, section } from '../lib/config.ts'
 import type { Context, TickResult } from './steps/context.ts'
@@ -804,6 +806,18 @@ export async function foreground(ctx: Context, once: boolean, interval: number, 
             }
           })
         } catch (e) { log(`PLUGIN-UPDATE-FAIL ${oneLine(e)}`) }
+        // 하루 한 번 새 모델과 같은 계열의 새 세대를 본다(model-watch.ts 머리 주석). 알림은 등록된 Run 모두에 보낸다
+        try {
+          watchModels(ctx.repo, {
+            notify: ({ kind, text }) => {
+              log(`${kind} ${text}`)
+              for (const run of registeredRuns(ctx.repo)) {
+                try { sendNotice(kind, null, text, run.run, ctx.repo) }
+                catch (e) { log(`NOTICE-FAIL ${kind} ${oneLine(e)}`) }
+              }
+            },
+          })
+        } catch (e) { log(`MODEL-WATCH-FAIL ${oneLine(e)}`) }
         const changed = observe(update, currentBundle(ownBundle(), configDir), Date.now(), ownBundle())
         if (changed) log(changed)
       }

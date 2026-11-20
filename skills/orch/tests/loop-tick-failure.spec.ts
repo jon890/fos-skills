@@ -49,7 +49,7 @@ test('설정 오류는 세 번째 실패에 한 번 바로 알리고 성공 뒤 
   const noop = join(root, 'noop.ts')
   writeFileSync(noop, '')
   const script = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
-  const env = { ...process.env, ORCH_DIR: orch, ORCH_MACHINE_DIR: join(root, 'machine'), CLAUDE_CONFIG_DIR: join(root, 'cfg'), ORCA: orca.path, GH: gh.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root }
+  const env = { ...process.env, ORCH_DIR: orch, ORCH_MACHINE_DIR: join(root, 'machine'), CODEX_BIN: join(root, 'no-codex'), CLAUDE_CONFIG_DIR: join(root, 'cfg'), ORCA: orca.path, GH: gh.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root }
   delete env.NODE_OPTIONS
   const child = spawn(process.execPath, [script, '--repo', repo, '--run', 'r', '--foreground'], { env, stdio: 'ignore' })
   const closed = new Promise<void>(resolve => child.once('close', () => resolve()))

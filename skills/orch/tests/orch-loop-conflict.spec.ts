@@ -111,6 +111,8 @@ beforeEach(() => {
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
     ORCA: join(binDir, 'orca'),
     GH: gh.path,
+    // 루프 부모의 모델 감지가 실제 codex 를 부르지 않게 한다
+    CODEX_BIN: join(tmp, 'no-codex'),
     CLEANUP_SWEEP: join(binDir, 'sweep.ts'),
     SEND_TO_WORKER: join(binDir, 'send.ts'),
     FAKE_DIR: tmp,
