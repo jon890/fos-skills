@@ -37,7 +37,7 @@ export function nextCron(cron, after) {
       time = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime()
       continue
     }
-    if (!(dayWildcard ? weekdayMatch : weekdayWildcard ? dayMatch : dayMatch || weekdayMatch)) {
+    if (!(dayWildcard || weekdayWildcard ? dayMatch && weekdayMatch : dayMatch || weekdayMatch)) {
       time = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime()
       continue
     }
