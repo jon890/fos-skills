@@ -227,3 +227,14 @@ export function resolvedCodexModel(agent: string | null, model: string | null, e
   if (list.failure !== null) return model
   return codexGeneration(model, effort, list.models)?.to ?? model
 }
+
+// 지시서가 `후보 밖:` 으로 직접 고른 Codex 모델이 낡았는지(스펙 REQ23, DECISION30). 같은 계열에 그 effort 를 지원하는 새 세대가
+// worker 계정 목록에 있으면 거절 문구, 없으면(계정이 새 세대를 받지 못한다) null 이다. 목록을 읽지 못해도 null 이다
+export function outdatedPick(agent: string | null, model: string | null, effort: string | null): string | null {
+  if (agent !== 'codex' || !model) return null
+  const list = readCodexModels()
+  if (list.failure !== null) return null
+  const found = codexGeneration(model, effort, list.models)
+  if (!found || found.reason !== '같은 계열 새 세대') return null
+  return `MODEL-OUTDATED ${found.from} → ${found.to}\n지시서를 새 세대로 고친다. \`후보 밖:\` 으로 옛 세대를 고를 수 있는 것은 worker 계정이 새 세대를 받지 못할 때뿐이다`
+}

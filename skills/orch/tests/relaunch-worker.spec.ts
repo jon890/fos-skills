@@ -309,6 +309,17 @@ describe('띄우기 전 확인', () => {
     assert.equal(r.code, 0, r.out)
   })
 
+  test('`후보 밖:` 으로 직접 고른 옛 세대는 abandon 전에 MODEL-OUTDATED 로 거부한다', () => {
+    writeFileSync(spec, `# 일\n\n브랜치: \`feat/a\`\n허락: push 와 draft PR 생성은 사용자가 허락했다.\nworker 선택: \`codex\` \`gpt-6.1-sol\` effort \`medium\`. 행: impl-explore. 이유: 테스트. 후보 밖: 옛 세대.\n`)
+    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.2-sol","visibility":"list","description":"New.","supported_reasoning_levels":[{"effort":"medium"}]},{"slug":"gpt-6.1-sol","visibility":"list","description":"Previous generation.","supported_reasoning_levels":[{"effort":"medium"}]}]}'\n`)
+    chmodSync(join(tmp, 'codex'), 0o755)
+    env = { ...env, CODEX_BIN: join(tmp, 'codex') }
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'])
+    assert.equal(r.code, 3, r.out)
+    assert.match(r.stdout, /^RELAUNCH-REFUSED MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol/m)
+    assert.deepEqual(touched(orcaCalls()), [])
+  })
+
   test('launch-worker 의 띄우기 전 검사에 걸리면 옛 worker 를 건드리지 않는다', () => {
     writeFileSync(spec, `# 일\n\n브랜치: \`feat/a\`\n${selectionLine('claude', 'claude-opus-5-5', 'medium')}\n`)
     const r = relaunch()

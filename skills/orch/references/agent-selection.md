@@ -86,7 +86,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 계열은 Codex 가 `gpt-<세대>-<계열>` 의 계열(`sol`, `terra`, `luna`, `astra`), Claude 가 `opus`, `sonnet`, `haiku`, `fable` 이다. 코디네이터는 지시서에 표의 값을 그대로 적는다. 옛 세대가 적힌 지시서도 거절하지 않는다.
 
 - Codex: 띄울 때 Orca 가 새 worker 에 쓸 계정의 `codex debug models` 에 같은 계열의 더 높은 세대가 그 effort 를 지원하면 그 세대로, 적힌 모델을 받지 못하면 받을 수 있는 같은 계열 최신으로 그 띄우기만 바꾼다. effort 는 행의 값 그대로다.
-- `후보 밖:` 으로 모델을 정한 지시서는 세대를 바꾸지 않는다. 사용자 지정이나 한도로 고른 모델을 지킨다.
+- `후보 밖:` 으로 모델을 정한 지시서는 세대를 바꾸지 않는다. 다만 고른 Codex 모델에 같은 계열의 새 세대가 있으면 `MODEL-OUTDATED <옛> → <새>` 로 거절한다. 지시서를 새 세대로 고친다. worker 계정이 새 세대를 받지 못할 때만 옛 세대를 고를 수 있다.
 - Claude: `claude-<계열>-<세대>` 를 계열 이름으로 넘긴다. Claude Code 가 그 계열의 최신 모델로 띄운다. 띄우기 기록의 model 에는 worker 세션이 실제로 쓴 모델 ID 가 남는다.
 - 기록: 바꾸면 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.generation` 에 바꾸기 전, 바꾼 뒤, 이유를 남긴다. 판정은 `scripts/lib/model-generation.ts` 머리 주석이 소유한다.
 - 감지: 상주 루프가 하루 한 번 `codex debug models` 를 읽는다. 첫 목록을 기준점으로 두고, 그 뒤에 나타난 현재 세대 모델을 저장소마다 한 번 보드의 decide 항목 「새 모델 <모델>」 과 `MODEL-NEW <모델> <설명>` 으로 알린다. 표의 모델보다 높은 같은 계열 세대가 그 자리의 effort 를 지원하면 fos-skills 저장소의 루프가 이 표를 새 세대로 바꾸는 PR 을 열고 `MODEL-TABLE-PR <PR 주소> <바꾼 모델>` 을 보낸다. 머지는 코디네이터가 한다. 다른 저장소의 루프는 `MODEL-GENERATION <옛 세대> <새 세대>` 만 보낸다. 기록과 판정은 `scripts/loop/model-watch.ts` 머리 주석이 소유한다.

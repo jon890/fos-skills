@@ -727,14 +727,34 @@ describe('모델 세대', () => {
     assert.equal(history().effective?.generation, undefined)
   })
 
-  test('`후보 밖:` 으로 정한 모델은 세대를 바꾸지 않는다', () => {
+  test('`후보 밖:` 으로 직접 고른 옛 세대는 MODEL-OUTDATED 로 거절하고 worker 를 띄우지 않는다', () => {
     writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 6.1 세대로 재현한다.').replace('effort `medium`', 'effort `low`'))
     codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), sol('gpt-6.1-sol', 'Previous generation model for coding.')])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
+    assert.equal(r.code, 4, both(r))
+    assert.match(r.stderr, /MODEL-OUTDATED gpt-6\.1-sol → gpt-6\.2-sol/)
+    assert.match(r.stderr, /지시서를 새 세대로 고친다/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('worker 계정이 새 세대를 받지 못하면 직접 고른 옛 세대를 그대로 띄운다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: 계정에 6.2 가 없다.').replace('effort `medium`', 'effort `low`'))
+    codexList([sol('gpt-6.1-sol', 'Fast, go-to model for coding.')])
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low'], 'bash', false)
     assert.equal(r.code, 0, both(r))
     assert.match(started(), / --model gpt-6\.1-sol --effort low(?: |$)/)
     assert.equal(effective(r)?.generation, undefined)
+  })
+
+  test('새 세대가 그 effort 를 지원하지 않으면 직접 고른 옛 세대를 거절하지 않는다', () => {
+    writeFileSync(spec, SOL.replace('이유: 탐색이 필요하다.', '이유: 탐색이 필요하다. 후보 밖: ultra 가 필요하다.').replace('effort `medium`', 'effort `ultra`'))
+    codexList([sol('gpt-6.2-sol', 'Fast, go-to model for coding.'), { ...sol('gpt-6.1-sol', 'Previous generation.'), supported_reasoning_levels: [{ effort: 'ultra' }] }])
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'ultra'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /MODEL-OUTDATED/)
   })
 
   test('`후보 밖:` 으로 정한 Claude 모델 ID 는 계열 이름으로 바꾸지 않는다', () => {
@@ -2204,13 +2224,15 @@ describe('모델과 effort 검사', () => {
 
   test('목록에 있는 모델과 숨긴 모델의 effort 가 맞으면 통과한다', () => {
     fakeCodex(JSON.stringify(MODELS))
-    for (const model of ['gpt-6.1-sol', 'gpt-6-sol']) {
-      // 모델마다 선택 줄을 다시 채운다
-      writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
-      const r = launchCodex('--model', model, '--effort', 'low')
-      assert.equal(r.code, 0, both(r))
-      assert.doesNotMatch(r.stderr, /경고/)
-    }
+    writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
+    const r = launchCodex('--model', 'gpt-6.1-sol', '--effort', 'low')
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /경고/)
+    // 같은 계열의 새 세대가 그 effort 를 지원하는데 직접 고른 옛 세대는 거절한다(MODEL-OUTDATED)
+    writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
+    const old = launchCodex('--model', 'gpt-6-sol', '--effort', 'low')
+    assert.equal(old.code, 4, both(old))
+    assert.match(old.stderr, /MODEL-OUTDATED gpt-6-sol → gpt-6\.1-sol/)
     writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
     const hidden = launchCodex('--model', 'gpt-hidden', '--effort', 'low')
     assert.equal(hidden.code, 0, both(hidden))

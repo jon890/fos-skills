@@ -39,7 +39,8 @@
 //        사용량 출처가 없거나 읽지 못하거나 1시간보다 오래됐으면 `USAGE-UNKNOWN <이유>` 를 내고 그대로 띄운다. 설정 routing.usage_boost 가 false 면 보지 않는다.
 //        --terminal 로 이어 쓰면 보지 않는다
 //     0-0-1. 0-0 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). --terminal 로 이어 쓰면 보지 않는다.
-//        지시서에 `후보 밖:` 이 있으면(사람이 고른 모델) 0-0 이 바꾼 경우만 본다. 모델 목록은 Orca 가 새 worker 에 쓸 Codex 계정으로 읽는다.
+//        지시서에 `후보 밖:` 이 있으면(사람이 고른 모델) 바꾸지 않는다. 그 모델이 Codex 이고 같은 계열에 그 effort 를 지원하는 새 세대가 있으면
+//        `MODEL-OUTDATED <옛> → <새>` 와 고칠 안내로 4 다. worker 계정이 새 세대를 받지 못하면 그대로 띄운다. 모델 목록은 Orca 가 새 worker 에 쓸 Codex 계정으로 읽는다.
 //        codex 는 `codex debug models` 에 같은 계열(`gpt-<세대>-<계열>` 의 계열)의 더 높은 세대가 있고 effort 를 지원하면 --model 을 그 세대로 바꾼다.
 //        적힌 모델을 이 계정이 받지 못하면(목록에 없거나 effort 를 지원하지 않는다) 받을 수 있는 같은 계열 최신으로 이 띄우기만 바꾼다. 목록을 읽지 못하면 바꾸지 않는다.
 //        claude 는 `claude-<계열>-<세대>` 를 계열 이름(opus, sonnet, haiku, fable)으로 바꿔 Claude Code 가 그 계열의 최신 모델로 띄우게 한다.
@@ -141,7 +142,7 @@
 //
 // 종료 코드: 0 LAUNCHED, 1 STALLED-START, 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 받거나 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
-//            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
+//            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort, `후보 밖:` 으로 고른 낡은 세대(MODEL-OUTDATED)(worktree 를 만들기 전에 멈춘다),
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
 //
 // 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. ORCA_CLAUDE_PROFILES 로 0-2 의 프로필 폴더를 바꾼다. ORCH_WORKER_PATH 는 0-3 이 보는 worker 셸의 PATH 를 정하고, ORCH_WORKER_SHELL 은 그 셸을 정한다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
@@ -163,7 +164,7 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { claudeGeneration, codexGeneration, readCodexModels, sameFamily, type Generation } from '../lib/model-generation.ts'
+import { claudeGeneration, codexGeneration, outdatedPick, readCodexModels, sameFamily, type Generation } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
@@ -803,6 +804,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     let pinned = false
     try { pinned = pinnedSelection(readFileSync(a.spec, 'utf8')) } catch { /* 지시서를 읽지 못하면 spec-line 이 알린다 */ }
     if (boostOverride || !pinned) generation = applyGeneration(passthru)
+    else {
+      // 직접 고른 옛 세대는 막는다. worker 계정이 새 세대를 받지 못하면 그대로 띄운다(머리 주석의 「0-0-1」)
+      const outdated = outdatedPick(passValue(passthru, '--agent'), passValue(passthru, '--model'), passValue(passthru, '--effort'))
+      if (outdated) {
+        err(`거부: ${outdated}`)
+        return 4
+      }
+    }
   }
   const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
   for (const warning of settings.warnings) err(`경고: ${warning}`)

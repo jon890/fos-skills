@@ -54,7 +54,7 @@ import { orchWord, scriptPath } from '../lib/commands.ts'
 import { real } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { resolvedCodexModel } from '../lib/model-generation.ts'
+import { outdatedPick, resolvedCodexModel } from '../lib/model-generation.ts'
 import { pinnedSelection } from '../lib/selection.ts'
 import { launchHistory } from '../lib/launch-history.ts'
 import { readLaunch } from '../lib/launched.ts'
@@ -342,6 +342,8 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
     let pinned = false
     try { pinned = pinnedSelection(readFileSync(t.spec, 'utf8')) } catch { /* 지시서 문제는 아래 선택 검사가 알린다 */ }
     const model = pinned ? passValue(a.passthru, '--model') : resolvedCodexModel(agent, passValue(a.passthru, '--model'), effort)
+    const outdated = pinned ? outdatedPick(agent, model, effort) : null
+    if (outdated) throw new Refused(outdated)
     const settings = checkLaunchSettings({ agent, model, effort })
     if (settings.reject) throw new Refused(settings.reject)
     limitCheck(t, a.workingAck)

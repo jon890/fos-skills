@@ -1,6 +1,6 @@
 # orch: 새 모델 감지와 같은 계열 자동 전환의 기술 설계 (PR 1)
 
-스펙: [spec.md](spec.md). 이 설계는 「PR 1. 새 모델 감지와 같은 계열 자동 전환」(REQ1~REQ6)만 다룬다.
+스펙: [spec.md](spec.md). 이 설계는 「PR 1. 새 모델 감지와 같은 계열 자동 전환」(REQ1~REQ6, REQ23)만 다룬다.
 
 ## 요구사항 연결
 
@@ -12,6 +12,7 @@
 | REQ4 | `codexGeneration` 은 적힌 모델을 그 계정 목록이 받지 못하면(없거나 effort 미지원) 받을 수 있는 같은 계열 최신으로 그 띄우기만 바꾸고, 이유 `<모델> 를 이 계정이 받지 못해 이 띄우기만 옛 세대로 띄웠다` 를 남긴다. 판단은 띄우기마다 다시 한다 |
 | REQ5 | `claudeGeneration` 이 `claude-<계열>-<세대>` 를 계열 이름(`fable`)으로 바꿔 넘긴다. 띄운 뒤 worker 의 Claude 세션 기록에서 첫 응답의 모델 ID 를 읽어(`lib/session-tokens.ts` 의 `claudeModelOf`) 띄우기 기록의 `model` 과 `effective.modelId` 에 남긴다 |
 | REQ6 | `doctor/codex-version.ts` 가 `codex` 명령(CODEX_BIN 또는 PATH)을 찾고, 있으면 `codex --version` 과 GitHub 최신 릴리스의 `tag_name` 을 비교해 `CODEX-OUTDATED <설치> <최신>` 과 `  codex update` 를 낸다. codex 가 없거나 둘 중 하나를 읽지 못하면 줄이 없다 |
+| REQ23 | 지시서가 `후보 밖:` 으로 Codex 모델을 직접 골랐는데 worker 계정 목록에 같은 계열의 새 세대가 그 effort 를 지원하면 `outdatedPick` 이 `MODEL-OUTDATED <옛> → <새>` 와 「지시서를 새 세대로 고친다」 를 내고 launch 는 4, relaunch 는 abandon 전에 `RELAUNCH-REFUSED` 로 멈춘다. 계정이 새 세대를 받지 못하면 그대로 띄운다. 사용량 전환은 `후보 밖` 지시서를 바꾸지 않으므로 대상이 아니다 |
 
 ## 책임과 경계
 
@@ -53,7 +54,7 @@ Claude Code 2.1.329 에서 2026-11-20 에 `claude -p --model <계열> --output-f
 
 ## 다음 PR 과의 경계
 
-PR 2(여러 계정의 사용량)는 `launch-worker` 의 차례 0-0 을 넓힌다. 고른 짝(REQ9)의 모델은 그 뒤 차례 0-0-1 이 그 계열의 최신 세대로 바꾸므로, PR 2 는 짝 표에 계열만 적으면 된다. PR 3(비교)는 `model-watch.json` 의 `announced` 에 든 같은 계열이 아닌 새 모델(`MODEL-NEW`)을 비교 후보로 읽는다. 비교 worker 는 `후보 밖` 으로 모델을 고정하므로 세대 판정이 바꾸지 않는다.
+PR 2(여러 계정의 사용량)는 `launch-worker` 의 차례 0-0 을 넓힌다. 고른 짝(REQ9)의 모델은 그 뒤 차례 0-0-1 이 그 계열의 최신 세대로 바꾸므로, PR 2 는 짝 표에 계열만 적으면 된다. PR 3(비교)는 `model-watch.json` 의 `announced` 에 든 같은 계열이 아닌 새 모델(`MODEL-NEW`)을 비교 후보로 읽는다. 비교 worker 의 모델은 표와 짝이 정하므로 REQ23 의 거절 대상이 아니다. PR 3 이 비교 worker 를 이 검사에서 빼는 표시를 더한다.
 
 ## 검증 전략
 
@@ -71,6 +72,6 @@ PR 2(여러 계정의 사용량)는 `launch-worker` 의 차례 0-0 을 넓힌다
 | 표 PR 을 여는 저장소 | 표 문서가 있는 저장소(fos-skills) | 표는 fos-skills 에 있고, 다른 저장소의 루프가 fos-skills 에 PR 을 열 권한과 체크아웃이 없다 |
 | Claude 모델 ID 확인 | 세션 기록 읽기 | 별도 호출은 사용량이 들고 띄우기마다 수 초가 늘어난다 |
 | 낡은 CLI 의 최신 출처 | GitHub 최신 릴리스 | Codex CLI 의 자체 갱신 확인이 같은 곳을 본다. `~/.codex/version.json` 은 시작 때 갱신 확인을 꺼 두어 2026-09 값에 멈춰 있었다 |
-| 사람이 고른 모델 | `후보 밖:` 이 있으면 세대를 바꾸지 않는다 | 사용자 지정이나 한도로 고른 모델을 덮지 않는다. PR 3 의 비교 worker 도 `후보 밖` 으로 모델을 고정하므로 따로 표시를 더하지 않아도 된다 |
+| 사람이 고른 모델 | `후보 밖:` 이 있으면 세대를 바꾸지 않는다. 고른 Codex 모델이 낡았으면 거절한다(DECISION30) | 조용히 바꾸면 고른 사람이 모르고, 그대로 두면 낡은 모델로 8건이 뜬 일이 되풀이된다. PR 3 의 비교 worker 는 짝이 모델을 정하므로 이 규칙 밖에 둔다 |
 | 모델 목록의 계정 | Orca 가 새 worker 에 쓸 Codex 계정 | 부른 셸의 계정과 worker 의 계정이 다르면 받지 못하는 모델을 넘기거나 새 세대를 놓친다 |
 | 대체 후보 안내 | 한도 표 칸을 그대로 | 코드에 모델 이름을 박으면 표를 바꿀 때마다 코드도 고쳐야 한다(스펙 model-table-6-2 REQ3) |
