@@ -20,6 +20,8 @@
 // 변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
 // 레포 설정에 「PR 변경 파일 상한」 이 있으면 40개 대신 그 값과 비교하고, 「파일 길이 상한」 이 있으면
 // 상한에 가까운 수정 파일을 경고한다. 값의 형식은 references/monorepo.md 의 「스크립트가 직접 읽는 값」 이 소유한다.
+// 변경 파일 표로 PR 줄 수를 추정하고(신규 파일은 종류별 평균), 「PR 줄 수 상한」 이 있으면 운영 코드 추정이
+// 상한의 80% 를 넘을 때 경고, 상한을 넘을 때 위반으로 낸다. 계수와 근거는 references/plan-size.md 가 소유한다.
 // `claude plugin test [dir]` 은 dir 아래의 `*.test.ts`, `*.test.tsx` 를 모두 실행하는 테스트 명령으로 본다.
 // 완료 표시는 요구하지 않는다. 계획의 수명은 references/plan-lifecycle.md 가 정한다.
 // 계획에 적힌 명령은 실행하지 않는다.
@@ -54,6 +56,7 @@ import { capture, isExpected, isMain, readTextFile, ValueError, write } from './
 import { type Spec, parseCli, UsageError } from './cli.ts'
 import { run as checkFeature } from './check_feature.ts'
 import * as overlayValues from './overlay_values.ts'
+import { type Estimate, type Kind as SizeKind, fileLines, lineLimitFinding } from './pr_size.ts'
 import { subprojects } from './overlay_paths.ts'
 import {
   fnmatchcase,
@@ -92,6 +95,8 @@ export const MAX_CHANGED_FILES = 40
 const FILE_LENGTH_RATIO = 0.95
 // 이 날짜 이후에 만든 plan 만 pr_scope, deferred 칸과 phase 수 상한을 위반으로 센다
 const PR_SCOPE_FROM = '2026-10-25'
+// 이 날짜 이후에 만든 plan 만 「PR 줄 수 상한」 초과를 위반으로 센다
+const LINE_LIMIT_FROM = '2026-11-20'
 const DEFERRED_KEYS = ['what', 'why', 'after']
 
 const PROFILES = new Set(['fast', 'standard', 'deep'])
@@ -1084,41 +1089,69 @@ export function checkChangedFileCount(path: string, entries: Set<string>, warnin
   }
 }
 
-// 수정은 현재 줄의 20%, 삭제는 전체 줄을 센다. 신규 파일은 아직 줄 수를 알 수 없다.
-export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[]): void {
+// 계획의 PR 크기를 추정해 경고 한 줄로 알리고, 상한 비교에 쓸 운영 코드 추정을 낸다.
+//
+// 수정은 현재 줄의 일부, 삭제는 전체 줄, 신규는 종류별 평균 줄 수로 센다. 계수는 pr_size.ts 가 갖는다.
+// 운영 코드, 테스트, 문서로 나눠 센다. 레포 설정의 PR 줄 수 상한은 운영 코드에만 비교한다.
+// `.github/pr-size.json` 이 있으면 그 분류와 등급 기준을 적용하고, 분류 목록이 없으면 테스트와 문서를 경로로 구분한다.
+// phases 는 [phase 파일, 변경 파일 목록] 이다. 파일은 처음 나온 phase 에만 센다. 설정을 읽지 못하면 null 이다
+export function checkEstimatedSize(path: string, entries: Set<string>, repo: string, warnings: string[], phases: [string, Entry[]][] = []): Estimate | null {
   const configPath = pjoin(repo, '.github/pr-size.json')
   try {
     const config = (isFile(configPath) ? JSON.parse(readTextFile(configPath)) : {}) as { grades?: Record<string, Record<string, number>>; core?: string[]; generated?: string[]; tests?: string[]; docs?: string[] }
     const match = (rel: string, patterns: string[] = []) => patterns.some((pattern) => fnmatchcase(rel, pattern))
+    const kindOf = (rel: string): SizeKind => {
+      if (match(rel, config.core)) return 'production'
+      if (config.tests ? match(rel, config.tests) : isTest(rel) || pathParts(rel).includes('e2e')) return 'tests'
+      if (config.docs ? match(rel, config.docs) : /\.mdx?$/i.test(rel) || pathParts(rel).includes('docs')) return 'docs'
+      return 'production'
+    }
     const files = new Map<string, string>()
     for (const entry of entries) {
       const [rel, action] = entry.split('\0')
       if (!isGlob(rel) && !omitted(rel)) files.set(rel, `${files.get(rel) ?? ''} ${action}`)
     }
-    let core = 0, total = 0, count = 0, unknown = 0
+    const coreLines = new Map<string, number>()
+    const byKind: Record<SizeKind, number> = { production: 0, tests: 0, docs: 0 }
+    let total = 0, count = 0, unknown = 0, added = 0
     for (const [rel, action] of files) {
       if (!match(rel, config.core) && match(rel, config.generated)) continue
       count++
-      let lines = 0
-      if (action.includes('수정') || action.includes('삭제')) {
-        try {
-          const current = pySplitLines(normalizeNewlines(readFileSync(pjoin(repo, rel), 'utf8'))).length
-          lines = action.includes('삭제') ? current : Math.ceil(current * 0.2)
-        } catch { unknown++ }
-      } else unknown++
+      const kind = kindOf(rel)
+      const lines = fileLines(repo, rel, action, kind, CODE_SUFFIXES.has(pathSuffix(rel)))
+      if (lines === null) {
+        unknown++
+        continue
+      }
+      if (action.includes('신규') || (!action.includes('수정') && !action.includes('삭제'))) added++
       total += lines
-      if (match(rel, config.core) || (!match(rel, config.tests) && !match(rel, config.docs))) core += lines
+      byKind[kind] += lines
+      if (kind === 'production') coreLines.set(rel, lines)
     }
+    const core = byKind.production
     const metrics: Record<string, number> = { core_lines: core, total_lines: total, files: count }
     if (config.grades && !['A', 'B', 'D'].every((name) => config.grades![name] && Object.entries(config.grades![name]).every(([key, value]) => key in metrics && typeof value === 'number' && Number.isFinite(value) && value >= 0))) {
       warnings.push(`${configPath} — PR 크기 등급 설정은 A, B, D 기준과 유효한 수치가 필요하다`)
-      return
+      return null
     }
     const exceeds = (grade: string) => Object.entries(config.grades![grade]).some(([key, limit]) => metrics[key] > limit)
     const grade = config.grades ? (exceeds('D') ? 'D' : exceeds('B') ? 'C' : exceeds('A') ? 'B' : 'A') : null
-    warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: ${config.grades ? `본 코드 ${core}줄, ` : ''}전체 ${total}줄, ${count}개 파일 (줄 수 미상 ${unknown}개${unknown ? ", 미상을 제외한 추정" : ""}).${grade === 'D' && unknown === 0 ? ' PR 나눔 검토' : ''}`)
+    const notes = [added ? `신규 ${added}개는 종류별 평균 줄 수로 셌다` : '', unknown ? `줄 수 미상 ${unknown}개는 빼고 셌다` : ''].filter(Boolean).join(', ')
+    warnings.push(`${path} — PR 크기 추정${grade ? ` ${grade}등급` : ''}: 운영 코드 ${core}줄, 테스트 ${byKind.tests}줄, 문서 ${byKind.docs}줄, 전체 ${total}줄, ${count}개 파일${notes ? ` (${notes})` : ''}.${grade === 'D' && unknown === 0 ? ' PR 나눔 검토' : ''}`)
+    const seen = new Set<string>()
+    const byPhase = phases.map(([phase, rels]): [string, number] => {
+      let sum = 0
+      for (const [rel] of rels) {
+        if (seen.has(rel)) continue
+        seen.add(rel)
+        sum += coreLines.get(rel) ?? 0
+      }
+      return [pathStem(phase), sum]
+    })
+    return { core, unknown, phases: byPhase }
   } catch {
     warnings.push(`${configPath} — PR 크기 설정을 읽지 못해 줄 수를 추정하지 못했다`)
+    return null
   }
 }
 
@@ -1165,12 +1198,13 @@ function checkFileLength(path: string, entries: Set<string>, repo: string, limit
   }
 }
 
-// 레포 설정의 PR 변경 파일 상한과 파일 길이 상한을 읽는다. 없으면 null, 읽지 못하면 경고를 남기고 null 이다
-function repoLimits(repo: string, planDir: string, warnings: string[]): [Limit | null, [number, string[], string] | null] {
+// 레포 설정의 PR 변경 파일 상한, 파일 길이 상한, PR 줄 수 상한을 읽는다. 없으면 null, 읽지 못하면 경고를 남기고 null 이다
+function repoLimits(repo: string, planDir: string, warnings: string[]): [Limit | null, [number, string[], string] | null, Limit | null] {
   const sub = overlayValues.targets(repo, [planDir])[0]
   const skills = ['plan']
   let files: Limit | null = null
   let length: [number, string[], string] | null = null
+  let lines: Limit | null = null
   let [value, source] = overlayValues.lookup(repo, skills, 'PR 변경 파일 상한', sub)
   if (value !== null) {
     try {
@@ -1194,7 +1228,16 @@ function repoLimits(repo: string, planDir: string, warnings: string[]): [Limit |
       length = [cap, globs ? overlayValues.codes(globs) : [], source!]
     }
   }
-  return [files, length]
+  ;[value, source] = overlayValues.lookup(repo, skills, 'PR 줄 수 상한', sub)
+  if (value !== null) {
+    try {
+      lines = [overlayValues.number(repo, value), source!]
+    } catch (error) {
+      if (!(error instanceof ValueError)) throw error
+      warnings.push(`${source} — 「PR 줄 수 상한」 을 읽지 못해 줄 수 상한을 보지 않는다: ${error.message}`)
+    }
+  }
+  return [files, length, lines]
 }
 
 // 같은 접두사와 번호를 쓰는 다른 계획 디렉터리를 찾는다.
@@ -1845,9 +1888,15 @@ export function main(argv: string[]): number {
         const verification = pjoin(planDir, index.verification_plan)
         if (isFile(verification) && !phases.includes(verification)) checkTestReferences(verification, section(readTextFile(verification), '인수 검증 계획'), testEntries, repo, testSink)
       }
-      if (!audit) checkEstimatedSize(`${planDir}/index.json`, allEntries, repo, warnings)
+      const estimate = audit ? null : checkEstimatedSize(`${planDir}/index.json`, allEntries, repo, warnings, phaseEntries.map(([phase, , entries]) => [phase, entries]))
       const planRel = `${tasksDir.replace(/\/+$/, '')}/${plan}`
-      const [fileLimit, lengthLimit] = repoLimits(repo, planRel, warnings)
+      const [fileLimit, lengthLimit, lineLimit] = repoLimits(repo, planRel, warnings)
+      if (estimate && lineLimit) {
+        const found = lineLimitFinding(`${planDir}/index.json`, estimate, ...lineLimit)
+        // 이 날짜 전에 만든 계획은 진행 중일 수 있어 상한을 넘어도 경고로만 낸다
+        const current = isRecord(index) && typeof index.created_at === 'string' && pyStrCompare(index.created_at, LINE_LIMIT_FROM) >= 0
+        if (found) (found[0] === 'violation' && current ? out : warnings).push(found[1])
+      }
       checkChangedFileCount(`${planDir}/index.json`, allFiles, warnings, fileLimit, phaseEntries.map(([phase, , rels]) => [phase, new Set(rels.map(([rel]) => rel))] as [string, Set<string>]), planRel)
       if (lengthLimit && !audit) checkFileLength(`${planDir}/index.json`, allEntries, repo, lengthLimit, warnings)
       if (!audit) {

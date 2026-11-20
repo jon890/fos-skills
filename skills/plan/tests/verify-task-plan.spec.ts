@@ -647,31 +647,30 @@ test('기능 폴더 아래 계획은 스펙과 설계를 함께 검사한다', (
 })
 
 
-test('PR 크기 추정은 저장소 등급과 미상 신규 파일을 알리고 큰 경우 경고한다', () => {
+test('PR 크기 추정은 저장소 등급과 신규 파일 추정을 알리고 큰 경우 경고한다', () => {
   const repo = new Repo()
   repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 }, D: { core_lines: 6 } }, core: [], generated: [], tests: [], docs: [] }))
   repo.file('src/a.ts', 'a\n'.repeat(35))
   const warnings: string[] = []
-  checkEstimatedSize('plan', new Set(['src/a.ts\0수정', 'src/new.ts\0신규']), repo.root, warnings)
-  assert.match(warnings[0], /D등급.*본 코드 7줄.*미상 1개/)
+  checkEstimatedSize('plan', new Set(['src/a.ts\0수정', 'src/new.ts\0신규', 'src/gone.ts\0수정']), repo.root, warnings)
+  assert.match(warnings[0], /D등급.*운영 코드 67줄.*신규 1개는 종류별 평균 줄 수로 셌다.*미상 1개/)
   assert.doesNotMatch(warnings[0], /PR 나눔 검토/)
   const complete: string[] = []
   checkEstimatedSize('plan', new Set(['src/a.ts\0수정']), repo.root, complete)
   assert.match(complete[0], /D등급.*PR 나눔 검토/)
   const small: string[] = []
-  checkEstimatedSize('plan', new Set(['src/new.ts\0신규']), repo.root, small)
-  assert.match(small[0], /A등급/)
-  assert.doesNotMatch(small[0], /PR 나눔 검토/)
+  checkEstimatedSize('plan', new Set(['src/a.ts\0삭제']), repo.root, small)
+  assert.match(small[0], /D등급.*운영 코드 35줄/)
   repo.file('.github/pr-size.json', JSON.stringify({ grades: { A: { core_lines: 2 }, B: { core_lines: 4 } } }))
   const invalid: string[] = []
-  checkEstimatedSize('plan', new Set(), repo.root, invalid)
+  assert.equal(checkEstimatedSize('plan', new Set(), repo.root, invalid), null)
   assert.match(invalid[0], /A, B, D 기준/)
   const noConfig = new Repo()
   noConfig.file('src/a.ts', 'a\nb\n')
   const estimate: string[] = []
   checkEstimatedSize('plan', new Set(['src/a.ts\0수정']), noConfig.root, estimate)
   assert.match(estimate[0], /전체 1줄/)
-  assert.doesNotMatch(estimate[0], /등급|본 코드/)
+  assert.doesNotMatch(estimate[0], /등급/)
 })
 
 test('검증 테스트 경로는 추적 파일과 신규 계획을 허용하고 없는 파일을 막는다', () => {
