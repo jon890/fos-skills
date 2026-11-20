@@ -13,10 +13,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tests:
-    name: Tests
+  shard:
+    # 테스트는 CPU 를 다 쓰는 일이라(동시 실행 수를 4에서 8로 늘려도 빨라지지 않았다, 2026-11-20 측정) job 을 나눠 runner 를 늘린다.
+    # shard 수는 아래 목록의 길이가 정한다. 실행기 인자는 job-index, job-total 에서 만든다
+    name: Tests shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,24 +32,37 @@ jobs:
           node-version: '24'
           check-latest: true
       - name: Install Claude Code CLI
+        # plugin test 는 첫 shard 만 돈다
+        if: ${{ strategy.job-index == 0 }}
         run: npm install --global @anthropic-ai/claude-code@2.1.309
       - name: Install npm dependencies
         # 테스트 실행기 단계는 plugin test 가 실패해도 돈다. 설치를 그 뒤에 두면 건너뛰어져 의존 없이 돈다
         run: npm ci --ignore-scripts
       - name: Run plugin tests from repository root
+        if: ${{ strategy.job-index == 0 }}
         run: claude plugin test .
       - name: Run repository test runner
         # 묶음 목록, TypeScript 버전, 캐시 폴더는 실행기가 소유한다(scripts/run-tests.ts 머리 주석).
         # plugin test 가 실패해도 돌려 같은 실행에서 두 결과를 함께 본다
         if: ${{ !cancelled() }}
         # 결과 폴더를 고정 경로로 둬 실패해도 아래 단계가 node.log 를 올릴 수 있게 한다
-        run: node scripts/run-tests.ts --out "$RUNNER_TEMP/run-tests"
+        # tsc 는 첫 shard 만 돈다(실행기의 --shard)
+        run: node scripts/run-tests.ts --shard "$((${{ strategy.job-index }} + 1))/${{ strategy.job-total }}" --out "$RUNNER_TEMP/run-tests"
       - name: Upload test logs
         # 실패한 테스트의 상세 로그(node.log)가 job 이 끝나면 사라지지 않게 짧게 보관한다
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: run-tests-logs
+          name: run-tests-logs-${{ matrix.shard }}
           path: ${{ runner.temp }}/run-tests/node.log
           if-no-files-found: warn
           retention-days: 7
+  tests:
+    # 모든 shard 가 통과해야 통과다. 머지 게이트의 필수 검사(queue.required)가 보는 이름 Tests 는 이 job 이 갖는다
+    name: Tests
+    needs: shard
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all shards passed
+        run: test "${{ needs.shard.result }}" = success
