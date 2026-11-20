@@ -46,6 +46,19 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+test('보드는 후보와 받은 알림을 저장소별로 세고 보류는 뺀다', () => {
+  const repos = [{ name: 'fos-skills', path: core }, { name: 'sample', path: local }]
+  candidate(local, 'core-new', '후보', 'core 스킬')
+  candidate(local, 'mine-new', '후보', '이 저장소')
+  candidate(core, 'own-new', '후보', '이 저장소')
+  candidate(local, 'received', '반영됨 #2 (1.1.0)', 'core 스킬')
+  candidate(local, 'rejected', '기각(이유)', '이 저장소')
+  candidate(local, 'held', '보류(나중)', 'core 스킬')
+  candidate(local, 'waiting', '채택 #4', 'core 스킬')
+  assert.equal(localFeedbackCount(core, repos), 2)
+  assert.equal(localFeedbackCount(local, repos), 3)
+})
+
 test('PR 머지 뒤 실제 version 변경 commit이 있어야 알림 대상으로 분류한다', () => {
   assert.equal(releasedVersion(core, merged), '1.1.0')
   const coreFile = candidate(local, 'accepted', '채택 #2')
