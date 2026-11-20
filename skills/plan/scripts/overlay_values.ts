@@ -50,6 +50,8 @@ export function number(root: string, value: string): number {
   const rel = at < 0 ? text : text.slice(0, at)
   const keys = at < 0 ? '' : text.slice(at + 1)
   if (at < 0 || !keys) throw new ValueError(`정수나 \`<JSON 파일>#<키>\` 가 아니다: ${text}`)
+  // 값은 저장소 루트 기준 경로다. 절대경로나 `..` 로 저장소 밖 파일을 읽지 않는다
+  if (rel.startsWith('/') || rel.split('/').includes('..')) throw new ValueError(`저장소 루트 아래 경로가 아니다: ${rel}`)
   if (/\.[cm]?[jt]sx?$/.test(rel)) return constant(root, rel, keys)
   let data: unknown
   try {

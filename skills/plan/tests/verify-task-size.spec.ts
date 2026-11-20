@@ -146,4 +146,6 @@ test('JS·TS 상수는 export, 타입 표기, 숫자 구분자를 받고 다른 
   assert.equal(number(repo.root, '`a.ts#MAX_LINES`'), 1500)
   assert.throws(() => number(repo.root, '`a.ts#MAX`'), /정수 상수 MAX 이 없다/)
   assert.throws(() => number(repo.root, '`a.ts#a.b`'), /상수 이름이 아니다/)
+  assert.throws(() => number(repo.root, '`../a.ts#MAX_LINES`'), /저장소 루트 아래 경로가 아니다/)
+  assert.throws(() => number(repo.root, '`/etc/a.json#x`'), /저장소 루트 아래 경로가 아니다/)
 })
