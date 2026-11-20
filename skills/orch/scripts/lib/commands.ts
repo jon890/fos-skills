@@ -120,7 +120,7 @@ const ROWS: Row[] = [
   // Run 은 지금 코디네이터의 Run(run-current)이다. 옛 dispatch 의 Run 과 다르면 스크립트가 거부해 다른 Run 의 worker 를 다시 띄우지 않는다
   {
     group: 'worker', verb: 'relaunch', script: 'worker/relaunch-worker.ts', context: ['run', 'repo'], required: ['run'], runFrom: 'run-current',
-    usage: 'orch worker relaunch --dispatch <id> [--dirty-ack <이유>] -- --agent <에이전트> --model <모델> [--effort <effort>]',
+    usage: 'orch worker relaunch --dispatch <id> [--dirty-ack <이유>] [--working-ack <이유>] -- --agent <에이전트> --model <모델> [--effort <effort>]',
   },
   // Run 은 띄우기 기록의 Run 이다. 문맥이 지금 Run 을 채우면 다른 Run 의 worker 에 후속 Task 를 잘못 붙인다
   { group: 'worker', verb: 'continue', script: 'worker/continue-worker.ts', context: ['repo'], usage: 'orch worker continue --dispatch <id>' },

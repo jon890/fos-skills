@@ -11,11 +11,15 @@
 //     holdRelaunch     표시를 쓴다. 실패하면 던진다
 //     releaseRelaunch  표시를 지운다. 없어도 통과한다
 //     relaunchHoldAt   그 워크트리를 지키는 아직 유효한 표시. 없으면 null
+//     lockRelaunch     dispatch 하나에 relaunch 실행 하나만 돌게 하는 잠금(<orch 루트>/state/relaunch-lock/<dispatch>.lock, 내용은 pid).
+//                      잡으면 null, 다른 실행이 살아 있으면 그 pid 다. pid 가 죽은 잠금은 지우고 한 번 다시 잡는다
+//     unlockRelaunch   잠금을 지운다. 내 pid 의 잠금일 때만 지운다
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { realPath } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
+import { alive } from './process.ts'
 
 export type RelaunchHold = { dispatch: string; worktree: string; spec: string | null; at: string }
 
@@ -67,4 +71,45 @@ export function relaunchHoldAt(repo: string, worktree: string, now = Date.now())
     return { dispatch: v.dispatch, worktree: v.worktree, spec: typeof v.spec === 'string' ? v.spec : null, at: v.at }
   }
   return null
+}
+
+const LOCK_DIR = 'relaunch-lock'
+
+function lockFile(repo: string, dispatch: string): string {
+  if (!/^[\w.-]+$/.test(dispatch) || dispatch.startsWith('.')) throw new Error(`dispatch id 를 파일 이름으로 쓸 수 없다: ${dispatch}`)
+  const dir = join(ensure('state', repo), LOCK_DIR)
+  mkdirSync(dir, { recursive: true })
+  return join(dir, `${dispatch}.lock`)
+}
+
+function holder(file: string): number | null {
+  try {
+    const pid = Number(readFileSync(file, 'utf8').trim())
+    return Number.isInteger(pid) && pid > 0 ? pid : null
+  } catch {
+    return null
+  }
+}
+
+export function lockRelaunch(repo: string, dispatch: string): number | null {
+  const file = lockFile(repo, dispatch)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(file, 'wx')
+      writeFileSync(fd, `${process.pid}\n`)
+      closeSync(fd)
+      return null
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+    const pid = holder(file)
+    if (pid !== null && alive(pid)) return pid
+    rmSync(file, { force: true })
+  }
+  return holder(file) ?? -1
+}
+
+export function unlockRelaunch(repo: string, dispatch: string): void {
+  const file = lockFile(repo, dispatch)
+  if (holder(file) === process.pid) rmSync(file, { force: true })
 }

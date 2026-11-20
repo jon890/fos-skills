@@ -222,10 +222,10 @@ orch worker resume --dispatch "$DISPATCH_ID"
 사용 한도로 멈춘 worker 를 같은 워크트리와 지시서로 다른 제공자나 모델에 넘길 때는 `orch worker relaunch` 를 쓴다. 같은 제공자로 이어 갈 수 있으면 위 `orch worker resume` 이 먼저다.
 
 1. 아래 「끊긴 worker 다시 띄우기」 의 2, 3 처럼 남은 커밋과 변경을 보고 지시서에 재개 절을 쓴다
-2. `orch worker relaunch --dispatch "$DISPATCH_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"` 를 부른다. 커밋 안 된 변경을 새 worker 가 이어받으면 `--dirty-ack <이유>` 를 준다
+2. `orch worker relaunch --dispatch "$DISPATCH_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"` 를 부른다. 커밋 안 된 변경을 새 worker 가 이어받으면 `--dirty-ack <이유>` 를 준다. 살아 있는 worker 의 화면이 사용 한도 안내가 아니면 멈추므로, 일부러 바꾸는 것이면 `--working-ack <이유>` 를 준다
 3. `RELAUNCH-FIX <지시서>:<줄 번호> <고칠 줄>` 이 나오면 지시서의 `worker 선택:` 줄을 그대로 고치고(행의 후보가 아니면 `후보 밖: <이유>` 도) 같은 명령을 다시 부른다
 
-명령은 옛 dispatch 가 이 Run 이 띄운 것인지 확인한 뒤 옛 dispatch 를 abandon 하고 옛 터미널을 닫고, Task 상태에 맞춰 `--retry-of` 를 붙여 같은 Task 를 띄운다. 그동안 cleanup 이 그 워크트리와 지시서를 지우지 않게 보존 표시를 둔다.
+명령은 옛 dispatch 가 이 Run 이 띄운 것인지 확인하고 `orch worker launch` 의 띄우기 전 검사(spec-lint, 허락 줄, 프로필)를 미리 돌린 뒤 옛 dispatch 를 abandon 하고 옛 터미널을 닫고, Task 상태에 맞춰 `--retry-of` 를 붙여 같은 Task 를 띄운다. 그동안 cleanup 이 그 워크트리와 지시서를 지우지 않게 보존 표시를 둔다.
 `RELAUNCH-FAIL` 이 나면 출력의 `NEXT` 를 따른다. 대개 같은 명령이고, 이미 abandon 된 dispatch 를 받아 이어서 띄운다. 출력 줄과 종료 코드, 차례의 원본은 `scripts/worker/relaunch-worker.ts` 맨 위 설명이다.
 `worker-release` 를 먼저 하지 않는다. release 뒤 cleanup 이 PR 없이 끝난 워크트리로 보고 워크트리와 지시서를 지운 일이 있다.
 
