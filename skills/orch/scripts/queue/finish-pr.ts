@@ -127,7 +127,8 @@
 //     --poll-interval SEC   확인 간격(초). 기본 60
 //     --worker-done-timeout MIN  머지를 알린 worker 의 dispatch 가 끝나기를 기다리는 한도(분). 기본 10. 0 이면 알리기만 한다
 //     --pid-file FILE       시작할 때 pid 를 쓰고 끝나면 지운다. 같은 PR 의 마무리가 둘 도는 것을 막을 때 쓴다.
-//                           끝날 때 다시 돌기 요청(lib/process.ts 의 「다시 돌기 요청」, `orch followup done` 이 남긴다)이 있으면 한 번 더 돈다
+//                           끝날 때 다시 돌기 요청(`orch followup done` 이 남긴다)이 있으면 한 번 더 돈다. 내 pid 가 적힌 pid 파일만 지운다.
+//                           pid 파일과 요청은 lib/finish-pid.ts 의 잠금 안에서 다룬다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, SEND_TO_WORKER 로 worker 에게 보내는 명령을, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
@@ -143,7 +144,7 @@ import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { gitBin } from '../lib/git.ts'
 import { mergeNotice } from '../core/merge-notice.ts'
 import { recordRouting } from '../lib/routing-log.ts'
-import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -175,7 +176,7 @@ import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
-import { takeRerun } from '../lib/process.ts'
+import { claimPid, nextOrRelease, releaseOwnPid } from '../lib/finish-pid.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
@@ -1002,7 +1003,7 @@ async function executeMain(argv: string[]): Promise<number> {
   const pidFile = args.pidFile
   if (pidFile) {
     mkdirSync(dirname(resolve(pidFile)), { recursive: true })
-    writeFileSync(pidFile, String(process.pid))
+    claimPid(pidFile)
   }
   try {
     markFinishStarted(repo, args.pr)
@@ -1012,26 +1013,25 @@ async function executeMain(argv: string[]): Promise<number> {
   }
   try {
     let code = await finish(args, repo)
-    // 도는 동안 후속 검증이 끝났으면(orch followup done) 끝난 상태로 한 번 더 돌아 남긴 워크트리와 업무까지 끝낸다
-    while (pidFile && releasePid(pidFile) && takeRerun(pidFile)) {
-      writeFileSync(pidFile, String(process.pid))
+    // 도는 동안 후속 검증이 끝났으면(orch followup done) 끝난 상태로 한 번 더 돌아 남긴 워크트리와 업무까지 끝낸다(lib/finish-pid.ts)
+    while (pidFile && again(pidFile)) {
       log('다시 돌기 요청이 있어 마무리를 한 번 더 돈다')
       code = await finish(args, repo)
     }
     return code
   } finally {
-    if (pidFile) releasePid(pidFile)
+    if (pidFile) releaseOwnPid(pidFile)
   }
 }
 
-// pid 파일을 지운다. 이미 없으면 지울 것이 없다. 늘 true 라 while 조건에 이어 쓴다
-function releasePid(pidFile: string): boolean {
+// 다시 돌기 요청을 가져갔는가. 잠금을 잡지 못하면 요청을 그대로 두고 멈춘다. 요청은 다음 followup done 이나 마무리가 이어 받는다
+function again(pidFile: string): boolean {
   try {
-    unlinkSync(pidFile)
-  } catch {
-    // 이미 없다
+    return nextOrRelease(pidFile)
+  } catch (e) {
+    log(`다시 돌기 요청을 확인하지 못했다: ${oneLine((e as Error).message)}`)
+    return false
   }
-  return true
 }
 
 export function reportError(e: unknown): void {
