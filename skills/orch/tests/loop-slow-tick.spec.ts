@@ -11,6 +11,9 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 test('느린 정리가 도는 동안에도 빠른 틱이 계속 돌고, 정리는 slow_sec 안에 한 번만 돈다', { timeout: 120_000 }, async t => {
+  // t.after 는 등록한 차례로 돈다. 루프를 멈추는 정리를 임시 폴더 정리보다 먼저 등록한다(loop-tick-failure.spec.ts 와 같다)
+  let stop = async () => {}
+  t.after(() => stop())
   const root = tempDir('loop-slow-tick-', t)
   const repo = join(root, 'repo')
   const orch = join(root, 'orch')
@@ -43,7 +46,7 @@ appendFileSync(${JSON.stringify(sweeps)}, 'end\\n')
   delete env.NODE_OPTIONS
   const child = spawn(process.execPath, [script, '--repo', repo, '--run', 'r', '--foreground'], { env, stdio: 'ignore' })
   const closed = new Promise<void>(resolve => child.once('close', () => resolve()))
-  t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); await closed })
+  stop = async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); await closed }
   const stateFile = join(orch, 'state', 'loop.json')
   const state = () => existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null
   const log = () => existsSync(sweeps) ? readFileSync(sweeps, 'utf8').split('\n').filter(Boolean) : []
