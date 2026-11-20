@@ -9,6 +9,7 @@ import { copyRepo, git, gitEnv } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { run } from '../scripts/lib/proc.ts'
 import type { RunOptions } from '../scripts/lib/proc.ts'
+import type { WorkerHomes } from '../scripts/lib/model-generation.ts'
 import { boardWriter, FIRST_COMPARE, newModels, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
 
 const DAY = WATCH_MS
@@ -30,6 +31,8 @@ let saved: NodeJS.ProcessEnv
 beforeEach(() => {
   tmp = tempDir('model-watch-')
   saved = { ...process.env }
+  // 목록은 부른 셸의 계정 하나로 읽는다. 여러 계정은 「worker 계정」 이 accounts 로 넣는다
+  process.env.ORCH_WORKER_CODEX_HOME = ''
 })
 afterEach(() => {
   process.env = saved
@@ -41,24 +44,28 @@ function codexList(models: unknown[], code = 0): void {
 
 const exec = (argv: string[], opts: RunOptions = {}) => run(argv, { ...opts, env: { ...(gitEnv() as Record<string, string>), ...opts.env } })
 
-function watch(repo: string, now: number, file = join(tmp, 'machine', 'model-watch.json'), board?: (id: string, title: string) => string | null): Notice[] {
+function watch(repo: string, now: number, file = join(tmp, 'machine', 'model-watch.json'), board?: (id: string, title: string) => string | null, accounts?: () => WorkerHomes): Notice[] {
   const notices: Notice[] = []
-  watchModels(repo, { stateFile: file, now, exec, notify: (n) => notices.push(n), ...(board ? { board } : {}) })
+  watchModels(repo, { stateFile: file, now, exec, notify: (n) => notices.push(n), ...(board ? { board } : {}), ...(accounts ? { accounts } : {}) })
   return notices
 }
 
 
-// 가짜 gh. 부른 인자를 calls 에 줄마다 남기고, pr list 는 OPEN 파일의 JSON(없으면 빈 목록), pr create 는 URL 을 낸다
-function fakeGh(url: string, opts: { failCreate?: boolean } = {}): { calls: () => string[][]; open: (prs: unknown[]) => void } {
+// 가짜 gh. 부른 인자를 calls 에 줄마다 남기고, pr list 는 OPEN 파일의 JSON(없으면 빈 목록), pr create 는 URL 을 낸다.
+// pr view 는 STATE 파일의 상태(없으면 CLOSED)를 낸다. 목록에 없는 PR 은 닫혔거나 머지된 것이다
+function fakeGh(url: string, opts: { failCreate?: boolean } = {}): { calls: () => string[][]; open: (prs: unknown[]) => void; state: (value: string) => void } {
   const calls = join(tmp, 'gh-calls')
   const open = join(tmp, 'gh-open.json')
+  const state = join(tmp, 'gh-state')
   process.env.GH = linkBin(tmp, 'gh', `const fs = require('node:fs'); const a = process.argv.slice(2); fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + '\\n');
 if (a[0] === 'pr' && a[1] === 'list') { console.log(fs.existsSync(${JSON.stringify(open)}) ? fs.readFileSync(${JSON.stringify(open)}, 'utf8') : '[]'); process.exit(0) }
+if (a[0] === 'pr' && a[1] === 'view') { console.log(JSON.stringify({ state: fs.existsSync(${JSON.stringify(state)}) ? fs.readFileSync(${JSON.stringify(state)}, 'utf8') : 'CLOSED' })); process.exit(0) }
 if (a[0] === 'pr' && a[1] === 'create' && ${opts.failCreate ? 'true' : 'false'}) { console.error('auth required'); process.exit(1) }
 console.log(${JSON.stringify(url)})`)
   return {
     calls: () => { try { return readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line)) } catch { return [] } },
     open: (prs) => writeFileSync(open, JSON.stringify(prs)),
+    state: (value) => writeFileSync(state, value),
   }
 }
 
@@ -307,5 +314,127 @@ describe('표 PR 을 매번 다시 맞춘다', () => {
     assert.deepEqual(written, ['model-new-gpt-6-2-astra'])
     assert.deepEqual(watch(a, 2 * DAY, undefined, board), [])
     assert.deepEqual(written, ['model-new-gpt-6-2-astra'])
+  })
+})
+
+// 지금 표에 gpt-6.2-sol 을 쓰는 새 행을 더해 기본 브랜치에 올린다. 표 PR 이 열려 있는 사이 다른 PR 이 행을 더한 상황이다
+function addSolRow(repo: string): void {
+  git(repo, ['pull', '-q', 'origin', 'main'])
+  const file = join(repo, TABLE_PATH)
+  const text = readFileSync(file, 'utf8')
+  const row = text.split('\n').find(line => line.startsWith('| `impl-explore` |'))!
+  writeFileSync(file, text.replace(row, `${row}\n${row.replace('`impl-explore`', '`impl-new`').replace(/`gpt-[\d.]+-sol`/, '`gpt-6.2-sol`')}`))
+  git(repo, ['commit', '-qam', 'new row'])
+  git(repo, ['push', '-q', 'origin', 'main'])
+}
+
+function fosRepoAt(name: string): { repo: string; origin: string } {
+  const { dir: repo, origin } = copyRepo(join(tmp, name))
+  mkdirSync(join(repo, 'skills/orch/references'), { recursive: true })
+  writeFileSync(join(repo, TABLE_PATH), readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8'))
+  git(repo, ['add', '-A'])
+  git(repo, ['commit', '-q', '-m', 'table'])
+  git(repo, ['push', '-q', 'origin', 'main'])
+  return { repo, origin }
+}
+
+describe('worker 계정', () => {
+  const NEXT = [...TODAY, entry('gpt-6.3-sol', 'Fast, go-to model for coding.')]
+
+  test('표는 worker 계정 모두가 받는 새 세대로만 바꾸고, 읽지 못한 계정이 있으면 PR 을 열지 않고 이유를 알린다', () => {
+    const { repo } = fosRepoAt('fos')
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    // 가짜 codex 는 CODEX_HOME 의 models.json 을 목록으로 낸다. 없으면 로그인하지 않은 계정처럼 실패한다
+    process.env.CODEX_BIN = linkBin(tmp, 'codex', `const fs = require('node:fs'); const f = require('node:path').join(process.env.CODEX_HOME || '', 'models.json'); if (!fs.existsSync(f)) { console.error('not logged in'); process.exit(1) } console.log(fs.readFileSync(f, 'utf8'))`)
+    const home = (id: string, models: unknown[] | null) => {
+      const dir = join(tmp, 'accounts', id)
+      mkdirSync(dir, { recursive: true })
+      if (models) writeFileSync(join(dir, 'models.json'), JSON.stringify({ models }))
+      return { id, home: dir }
+    }
+    // 루프가 읽는 계정에는 새 세대가 있지만 다른 worker 계정은 아직 받지 못한다
+    let homes = [home('acct-a', NEXT), home('acct-b', TODAY)]
+    const accounts = () => ({ homes, missing: [], failure: null })
+    const first = watch(repo, 0, undefined, undefined, accounts)
+    assert.deepEqual(first.filter(n => n.kind.startsWith('MODEL-TABLE')), [])
+    assert.equal(gh.calls().length, 0)
+    // 둘 다 받게 됐지만 셋째 계정의 목록을 읽지 못했다
+    homes = [home('acct-a', NEXT), home('acct-b', NEXT), home('acct-c', null)]
+    const held = watch(repo, DAY, undefined, undefined, accounts).filter(n => n.kind.startsWith('MODEL-TABLE'))
+    assert.deepEqual(held.map(n => n.kind), ['MODEL-TABLE-HOLD'])
+    assert.match(held[0].text, /acct-c: .* debug models 가 종료 코드 1 로 끝났다/)
+    assert.equal(gh.calls().length, 0)
+    // 계정 목록을 읽지 못하면 셸 계정으로 읽어 새 모델은 알리되 표는 보류한다
+    const shellFailed = watch(join(tmp, 'other-repo'), 3 * DAY, undefined, () => null, () => ({ homes: [], missing: ['acct-x: 홈을 찾지 못했다'], failure: 'Orca 의 Codex 계정 목록을 확인하지 못했다: 종료 코드 1' }))
+    // 이 저장소는 앞서 찾은 두 새 모델을 처음 알린다
+    assert.deepEqual(shellFailed.map(n => n.kind), ['MODEL-NEW', 'MODEL-NEW', 'MODEL-TABLE-HOLD'])
+    assert.match(shellFailed[2].text, /acct-x: 홈을 찾지 못했다; Orca 의 Codex 계정 목록을 확인하지 못했다: 종료 코드 1; shell: /)
+    // 모든 계정이 받으면 연다
+    homes = [home('acct-a', NEXT), home('acct-b', NEXT)]
+    assert.deepEqual(watch(repo, 4 * DAY, undefined, undefined, accounts).filter(n => n.kind.startsWith('MODEL-TABLE')), [{ kind: 'MODEL-TABLE-PR', text: 'https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol' }])
+  })
+})
+
+describe('기본 브랜치가 바뀐 뒤의 표 PR', () => {
+  const NEXT = [...TODAY, entry('gpt-6.3-sol', 'Fast.')]
+  const branch = 'orch/model-table-gpt-6.3-sol'
+
+  test('열린 표 PR 은 기본 브랜치에 같은 모델을 쓰는 행이 새로 생기면 그 행까지 맞춰 다시 올린다', () => {
+    const { repo, origin } = fosRepoAt('fos')
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    codexList(NEXT)
+    watch(repo, 0)
+    gh.open([{ number: 9, headRefName: branch, url: 'https://github.com/o/r/pull/9' }])
+    addSolRow(repo)
+    // 바꿈 목록(gpt-6.2-sol>gpt-6.3-sol)은 같지만 기본 브랜치의 표가 달라졌다
+    assert.deepEqual(watch(repo, DAY).filter(n => n.kind.startsWith('MODEL-TABLE')), [{ kind: 'MODEL-TABLE-PR', text: 'https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol' }])
+    const pushed = git(origin, ['show', `${branch}:${TABLE_PATH}`])
+    assert.match(pushed, /\| `impl-new` \| [^|]+\| `codex` \| `gpt-6\.3-sol` \| `medium` \|/)
+    assert.equal(git(origin, ['rev-list', '--count', `main..${branch}`]), '1')
+    assert.equal(gh.calls().filter(c => c[1] === 'create').length, 1)
+    // 표가 같아지면 다시 올리지 않는다
+    const edits = gh.calls().filter(c => c[1] === 'edit').length
+    assert.deepEqual(watch(repo, 2 * DAY).filter(n => n.kind.startsWith('MODEL-TABLE')), [])
+    assert.equal(gh.calls().filter(c => c[1] === 'edit').length, edits)
+  })
+
+  test('열린 표 PR 브랜치 끝에 사람이 올린 커밋이 있으면 덮지 않고 MODEL-TABLE-FAIL 로 알린다', () => {
+    const { repo, origin } = fosRepoAt('fos')
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    codexList(NEXT)
+    watch(repo, 0)
+    gh.open([{ number: 9, headRefName: branch, url: 'https://github.com/o/r/pull/9' }])
+    const hand = join(tmp, 'hand')
+    git(tmp, ['clone', '-q', '--branch', branch, origin, hand])
+    writeFileSync(join(hand, 'note.md'), 'reviewer\n')
+    git(hand, ['add', '-A'])
+    git(hand, ['commit', '-qm', 'docs: 리뷰어 손질'])
+    git(hand, ['push', '-q', 'origin', branch])
+    const head = git(origin, ['rev-parse', branch])
+    addSolRow(repo)
+    const notices = watch(repo, DAY).filter(n => n.kind.startsWith('MODEL-TABLE'))
+    assert.deepEqual(notices.map(n => n.kind), ['MODEL-TABLE-FAIL'])
+    assert.match(notices[0].text, /루프가 만들지 않은 커밋\(docs: 리뷰어 손질\)/)
+    assert.equal(git(origin, ['rev-parse', branch]), head)
+  })
+
+  test('표 PR 이 머지되기 전에 생긴 행이 기본 브랜치에 옛 세대로 남으면 새 PR 로 맞추고, 사람이 닫은 PR 은 다시 열지 않는다', () => {
+    const { repo, origin } = fosRepoAt('fos')
+    const gh = fakeGh('https://github.com/o/r/pull/9')
+    codexList(NEXT)
+    watch(repo, 0)
+    // 표 PR 이 머지됐다. 그 사이 다른 PR 이 옛 세대를 쓰는 행을 더했다
+    git(repo, ['fetch', '-q', 'origin', branch])
+    git(repo, ['push', '-q', 'origin', 'FETCH_HEAD:main'])
+    addSolRow(repo)
+    gh.state('MERGED')
+    fakeGh('https://github.com/o/r/pull/11').state('MERGED')
+    assert.deepEqual(watch(repo, DAY).filter(n => n.kind.startsWith('MODEL-TABLE')), [{ kind: 'MODEL-TABLE-PR', text: 'https://github.com/o/r/pull/11 gpt-6.2-sol>gpt-6.3-sol' }])
+    assert.match(git(origin, ['show', `${branch}:${TABLE_PATH}`]), /\| `impl-new` \| [^|]+\| `codex` \| `gpt-6\.3-sol` \| `medium` \|/)
+    // 사람이 닫은 같은 바꿈의 PR 은 다시 열지 않는다
+    gh.state('CLOSED')
+    const created = gh.calls().filter(c => c[1] === 'create').length
+    assert.deepEqual(watch(repo, 2 * DAY).filter(n => n.kind.startsWith('MODEL-TABLE')), [])
+    assert.equal(gh.calls().filter(c => c[1] === 'create').length, created)
   })
 })

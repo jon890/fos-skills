@@ -1,9 +1,12 @@
 // 루프 부모가 하루 한 번 설치된 Codex CLI 의 모델 목록을 읽어 새 모델과 같은 계열의 새 세대를 알아챈다(스펙 REQ1, REQ3).
 // 계약은 docs/features/model-auto-routing/spec.md 와 design.md 다. 이름 꼴과 세대 비교는 lib/model-generation.ts 가 소유한다.
 //
-// 기록: <머신 폴더>/model-watch.json(lib/machine.ts). Codex CLI 와 계정이 머신에 하나라 목록 읽기는 머신에 한 번이다.
-//     { checked_at, baseline, models, found, repos: { <저장소>: { checked_at, announced, tables: { "<키>": { pr, at } } } } }
+// 기록: <머신 폴더>/model-watch.json(lib/machine.ts). Codex CLI 와 계정이 머신에 있어 목록 읽기는 머신에 한 번이고, 그때 계정마다 읽는다.
+//     { checked_at, baseline, models, found, unread, repos: { <저장소>: { checked_at, announced, tables: { "<키>": { pr, at } } } } }
 //     checked_at 은 목록을 마지막으로 읽은 시각(ms), models 는 그때 읽은 목록, found 는 기준점 뒤에 나타난 현재 세대 모델이다.
+//     목록은 Orca 가 Codex worker 에 쓸 수 있는 계정마다(workerCodexHomes) CODEX_HOME 을 바꿔 읽고, 모든 계정이 받는 모델만 models 에 둔다(commonModels).
+//     unread 는 그때 읽지 못한 계정과 이유다. 비어 있지 않으면 새 모델 알림은 하되 표는 바꾸지 않고 `MODEL-TABLE-HOLD <이유>` 를 보낸다.
+//     루프와 launch 가 다른 계정을 보면 worker 가 받지 못하는 모델로 표가 바뀌기 때문이다.
 //     repos 는 저장소마다 마지막으로 본 시각, 알린 모델(announced), 보드에 쓴 모델(boarded), 표에서 다룬 바꿈이다. 옆 잠금 파일 안에서 읽고 rename 으로 쓴다.
 // 주기: 머신의 checked_at 에서 WATCH_MS(24시간)가 지나면 어느 저장소의 루프든 목록을 다시 읽는다. 읽지 못해도(codex 없음, 실패) checked_at 을 쓴다.
 //     저장소의 checked_at 이 머신의 checked_at 보다 이르면 그 저장소의 루프가 저장된 목록으로 자기 일(알림, 보드, 표)을 한다.
@@ -22,7 +25,10 @@
 //     표 문서가 없는 저장소는 그 번들의 표를 읽고 `MODEL-GENERATION <옛> <새>` 만 보낸다.
 //     더 높은 세대가 그 자리의 effort 를 지원하지 않으면 그 자리는 바꾸지 않고 `MODEL-TABLE-SKIP <옛> <새> <effort>: <이유>` 를 한 번 보낸다.
 //     표 PR 의 내용은 기본 브랜치의 표와 저장된 목록 전체로 매번 다시 정한다. 앞서 PR 에 담았다는 기록으로 바꿈을 거르지 않는다.
-//     그 저장소의 tables 의 `table-pr` 에 마지막으로 올린 PR 과 바꿈 목록(keys)을 둔다. 열린 PR 이 같은 바꿈을 담았거나 같은 바꿈의 PR 을 사람이 닫았으면 다시 올리지 않는다.
+//     그 저장소의 tables 의 `table-pr` 에 마지막으로 올린 PR 과 바꿈 목록(keys)을 둔다.
+//     열린 PR 은 그 브랜치의 표가 기본 브랜치에서 다시 맞춘 표와 같을 때만 다시 올리지 않는다. PR 을 연 뒤 기본 브랜치에 같은 모델을 쓰는 행이 생기는 등 표 파일이 바뀌면 다시 올린다.
+//     브랜치 끝 커밋이 루프가 만든 것(제목 TITLE_PREFIX)이 아니면 사람이 손본 것이라 덮지 않고 MODEL-TABLE-FAIL 이다.
+//     열린 PR 이 없고 같은 바꿈의 PR 이 닫혔으면 사람이 닫은 것이라 다시 열지 않는다. 머지됐는데 바꿀 자리가 남았으면 새 PR 을 연다.
 //     열린 PR 을 덮어 올릴 때는 그 브랜치를 받아 head 를 lease 에 적는다. MODEL-GENERATION 과 MODEL-TABLE-SKIP 은 같은 바꿈을 한 번만 알린다.
 //     PR 을 열지 못하면 기록하지 않고 `MODEL-TABLE-FAIL <바꿈>: <이유>` 를 보낸다.
 //     다음 목록을 읽은 뒤 다시 한다. gh pr create 가 실패하면 올린 브랜치를 원격에서 지운다. 알림의 바꿈은 그 PR 이 담은 바꿈 전체다.
@@ -33,7 +39,7 @@ import { dirname, join } from 'node:path'
 import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
 import { defaultBase } from '../lib/git.ts'
 import { machineDir } from '../lib/machine.ts'
-import { codexBin, isCurrent, parseCodexModels, planTable, type CodexModel, type Generation, type Skipped } from '../lib/model-generation.ts'
+import { codexBin, commonModels, isCurrent, parseCodexModels, planTable, workerCodexHomes, type CodexModel, type Generation, type WorkerHomes } from '../lib/model-generation.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { BOARD_BIN } from '../lib/board.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
@@ -51,11 +57,14 @@ export type WatchState = {
   models: CodexModel[] | null
   found: string[]
   repos: Record<string, RepoWatch>
+  // 마지막으로 목록을 읽을 때 읽지 못한 worker 계정과 이유. 비어 있지 않으면 표를 새 세대로 바꾸지 않는다
+  unread?: string[]
 }
 export type Notice = { kind: string; text: string }
 type Exec = (argv: string[], opts?: RunOptions) => RunResult
 // board 는 보드에 새 모델 항목을 더한다. 실패하면 이유를, 보드가 없어 건너뛰었거나 성공하면 null 을 낸다
-export type WatchOptions = { stateFile?: string; now?: number; exec?: Exec; notify: (notice: Notice) => void; board?: (id: string, title: string) => string | null }
+// accounts 는 목록을 읽을 worker 계정의 홈이다(기본 workerCodexHomes)
+export type WatchOptions = { stateFile?: string; now?: number; exec?: Exec; notify: (notice: Notice) => void; board?: (id: string, title: string) => string | null; accounts?: () => WorkerHomes }
 
 export function watchFile(): string {
   return join(machineDir(), 'model-watch.json')
@@ -78,6 +87,7 @@ export function readWatch(file: string): WatchState {
     models: Array.isArray(raw.models) ? raw.models as CodexModel[] : null,
     found: list(raw.found) ?? [],
     repos,
+    unread: list(raw.unread) ?? [],
   }
 }
 
@@ -95,6 +105,22 @@ export function newModels(state: WatchState, models: CodexModel[]): WatchState {
   const found = [...state.found]
   for (const model of models.filter(isCurrent)) if (!baseline.includes(model.slug) && !found.includes(model.slug)) found.push(model.slug)
   return { ...state, baseline, found, models }
+}
+
+// worker 계정마다 목록을 읽고 모두가 받는 모델만 남긴다. 읽은 계정이 하나도 없으면 models 는 null 이다.
+// 계정 목록을 확인하지 못하면 부른 셸의 계정으로 읽되 unread 에 이유를 둔다(새 모델 알림은 하고 표는 바꾸지 않는다)
+export function readAccounts(exec: Exec, accounts: WorkerHomes): { models: CodexModel[] | null; unread: string[] } {
+  const unread = [...accounts.missing]
+  const homes = accounts.failure ? [{ id: 'shell', home: null }] : accounts.homes
+  if (accounts.failure) unread.push(accounts.failure)
+  const lists: CodexModel[][] = []
+  for (const { id, home } of homes) {
+    const done = exec([codexBin(), 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024, ...(home ? { env: { CODEX_HOME: home } } : {}) })
+    const parsed = done.code === 0 ? parseCodexModels(done.stdout) : null
+    if (parsed && parsed.failure === null) lists.push(parsed.models)
+    else unread.push(`${id}: ${codexBin()} debug models ${parsed ? `${parsed.failure}다` : `가 종료 코드 ${done.code} 로 끝났다`}`)
+  }
+  return { models: lists.length ? commonModels(lists) : null, unread }
 }
 
 // 보드에 새 모델 항목을 더한다. 보드 파일이 없는 저장소는 건너뛴다
@@ -122,6 +148,7 @@ export function fragmentText(upgrades: Generation[]): string {
 // 어느 쪽이든 origin 기본 브랜치에서 새로 만든다. 표 전체를 목록으로 다시 맞춰, 앞서 연 바꿈과 새 바꿈이 같은 PR 한 곳에만 있다.
 // 갱신은 그 브랜치를 기본 브랜치 위 새 커밋으로 덮어 올린다(--force-with-lease). 연 PR 주소 또는 실패 이유를 낸다
 export const TABLE_BRANCH_PREFIX = 'orch/model-table-'
+const TITLE_PREFIX = 'feat(orch): 모델 표를 새 세대 '
 export type TableRecord = { pr: string | null; at: number; keys?: string }
 export function openTablePr(repo: string, models: CodexModel[], exec: Exec, previous: TableRecord | null = null): { pr: string; upgrades: Generation[]; unchanged: boolean } | { failure: string } {
   const base = defaultBase(repo) ?? 'main'
@@ -141,8 +168,30 @@ export function openTablePr(repo: string, models: CodexModel[], exec: Exec, prev
   const wanted = planTable(shown.stdout, models)
   if (!wanted.upgrades.length) return { failure: '기본 브랜치의 표 문서에 바꿀 자리가 없다' }
   const keys = key(wanted.upgrades)
-  // 열린 PR 이 이미 같은 바꿈을 담았거나, 같은 바꿈의 PR 을 사람이 닫았으면 다시 올리지 않는다
-  if (previous && previous.keys === keys && (open?.url ? open.url === previous.pr : true)) return { pr: open?.url ?? previous.pr ?? '', upgrades: wanted.upgrades, unchanged: true }
+  // 열린 PR 은 그 브랜치의 표가 기본 브랜치에서 다시 맞춘 표와 같을 때만 그대로 둔다.
+  // 바꿈 목록이 같아도 PR 을 연 뒤 기본 브랜치에 같은 모델을 쓰는 행이 새로 생기면 표가 달라져 다시 올린다
+  let openSha = ''
+  if (open?.headRefName) {
+    const head = git(repo, ['fetch', 'origin', open.headRefName])
+    openSha = head.code === 0 ? git(repo, ['rev-parse', 'FETCH_HEAD']).stdout.trim() : ''
+    if (!openSha) return { failure: `열린 표 PR 의 브랜치 ${open.headRefName} 를 받지 못했다: ${last(head)}` }
+    const current = git(repo, ['show', `${openSha}:${TABLE_PATH}`])
+    if (current.code === 0 && current.stdout === wanted.text) return { pr: open.url ?? previous?.pr ?? '', upgrades: wanted.upgrades, unchanged: true }
+    // 브랜치 끝이 루프가 만든 커밋이 아니면 사람이 손본 것이라 덮지 않는다
+    const subject = git(repo, ['log', '-1', '--format=%s', openSha]).stdout.trim()
+    if (!subject.startsWith(TITLE_PREFIX)) return { failure: `열린 표 PR 의 브랜치 ${open.headRefName} 끝에 루프가 만들지 않은 커밋(${subject})이 있어 덮지 않았다` }
+  } else if (previous?.pr && previous.keys === keys) {
+    // 같은 바꿈의 PR 이 닫혔다. 사람이 닫았으면 다시 열지 않는다.
+    // 머지됐는데 기본 브랜치에 바꿀 자리가 남았으면 그 PR 이 열려 있는 사이 새로 생긴 행이라 새 PR 로 맞춘다
+    const viewed = gh(['pr', 'view', previous.pr, '--json', 'state'])
+    if (viewed.code !== 0) return { failure: `gh pr view 실패: ${last(viewed)}` }
+    let state = ''
+    try { state = String((JSON.parse(viewed.stdout) as { state?: unknown }).state ?? '') } catch { return { failure: 'gh pr view 출력이 JSON 이 아니다' } }
+    if (state !== 'MERGED') return { pr: previous.pr, upgrades: wanted.upgrades, unchanged: true }
+    // 머지된 PR 의 브랜치가 원격에 남았으면 같은 이름으로 다시 쓰므로 그 head 를 lease 에 적는다
+    const merged = git(repo, ['fetch', 'origin', `${TABLE_BRANCH_PREFIX}${[...new Set(wanted.upgrades.map((u) => u.to))].join('-')}`])
+    if (merged.code === 0) openSha = git(repo, ['rev-parse', 'FETCH_HEAD']).stdout.trim()
+  }
   const dir = mkdtempSync(join(tmpdir(), 'orch-model-table-'))
   rmSync(dir, { recursive: true, force: true })
   const added = git(repo, ['worktree', 'add', '--detach', dir, `origin/${base}`])
@@ -157,19 +206,13 @@ export function openTablePr(repo: string, models: CodexModel[], exec: Exec, prev
     const fragment = join(dir, 'skills', 'orch', 'changes', `${branch.slice('orch/'.length)}.patch.md`)
     mkdirSync(dirname(fragment), { recursive: true })
     writeFileSync(fragment, fragmentText(plan.upgrades))
-    const title = `feat(orch): 모델 표를 새 세대 ${targets.join(', ')} 로 바꾼다`
+    const title = `${TITLE_PREFIX}${targets.join(', ')} 로 바꾼다`
     for (const args of [['switch', '-C', branch], ['add', TABLE_PATH, fragment], ['commit', '-m', title]]) {
       const done = git(dir, args)
       if (done.code !== 0) return { failure: `git ${args[0]} 실패: ${last(done)}` }
     }
-    // 열린 PR 의 head 를 받아 lease 에 그 값을 적는다. 기본 브랜치만 받은 체크아웃에서도 덮어 올릴 수 있다
-    let lease: string[] = []
-    if (open) {
-      const head = git(repo, ['fetch', 'origin', branch])
-      const sha = head.code === 0 ? git(repo, ['rev-parse', 'FETCH_HEAD']).stdout.trim() : ''
-      if (!sha) return { failure: `열린 표 PR 의 브랜치 ${branch} 를 받지 못했다: ${last(head)}` }
-      lease = [`--force-with-lease=${branch}:${sha}`]
-    }
+    // 위에서 받은 열린 PR 의 head 를 lease 에 적는다. 기본 브랜치만 받은 체크아웃에서도 덮어 올릴 수 있다
+    const lease = openSha ? [`--force-with-lease=${branch}:${openSha}`] : []
     const pushed = git(dir, ['push', ...lease, '-u', 'origin', branch])
     if (pushed.code !== 0) return { failure: `push 실패: ${last(pushed)}` }
     const body = [
@@ -229,10 +272,9 @@ export function watchModels(repo: string, opts: WatchOptions): void {
   withFileLock(file, () => {
     let state = readWatch(file)
     if (state.checked_at === null || now - state.checked_at >= WATCH_MS) {
-      state = { ...state, checked_at: now }
-      const listed = exec([codexBin(), 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024 })
-      const parsed = listed.code === 0 ? parseCodexModels(listed.stdout) : null
-      if (parsed && parsed.failure === null) state = newModels(state, parsed.models)
+      const read = readAccounts(exec, (opts.accounts ?? workerCodexHomes)())
+      state = { ...state, checked_at: now, unread: read.unread }
+      if (read.models) state = newModels(state, read.models)
       writeWatch(file, state)
     }
     const mine: RepoWatch = state.repos[repo] ?? { checked_at: null, announced: [], boarded: [], tables: {} }
@@ -256,6 +298,11 @@ export function watchModels(repo: string, opts: WatchOptions): void {
     state = { ...state, repos: { ...state.repos, [repo]: mine } }
     writeWatch(file, state)
     for (const notice of notices) opts.notify(notice)
+    // 표는 worker 계정 모두가 받는 모델로만 바꾼다. 읽지 못한 계정이 있으면 그 계정이 받지 못하는 모델로 바꿀 수 있어 표를 건드리지 않는다
+    if (state.unread?.length) {
+      opts.notify({ kind: 'MODEL-TABLE-HOLD', text: `읽지 못한 Codex 계정이 있어 표를 바꾸지 않았다: ${state.unread.join('; ')}` })
+      return
+    }
     const table = tableOf(repo, exec)
     if (!table) return
     const plan = planTable(table.text, models)
@@ -272,6 +319,10 @@ export function watchModels(repo: string, opts: WatchOptions): void {
         else if (!opened.unchanged) {
           mine.tables['table-pr'] = { pr: opened.pr, at: now, keys: key(opened.upgrades) }
           opts.notify({ kind: 'MODEL-TABLE-PR', text: `${opened.pr} ${key(opened.upgrades)}` })
+        } else if (opened.pr) {
+          // 열린 PR 이 그대로여도 기록을 맞춰 둔다. 기록이 낡으면 사람이 그 PR 을 닫은 뒤 다시 열게 된다
+          const previous = mine.tables['table-pr']
+          if (previous?.pr !== opened.pr || previous?.keys !== key(opened.upgrades)) mine.tables['table-pr'] = { pr: opened.pr, at: now, keys: key(opened.upgrades) }
         }
       }
     } else for (const u of plan.upgrades.filter((g) => !mine.tables[`${g.from}>${g.to}`])) {

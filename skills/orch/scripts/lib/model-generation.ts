@@ -11,6 +11,7 @@
 //     계정은 Orca 가 새 Codex worker 에 쓸 계정이다(workerCodexHome). `orca account list --agent codex` 의 activeAccountId 의 홈
 //     (ORCA_CODEX_ACCOUNTS, 없으면 ~/Library/Application Support/Orca/codex-accounts 아래 <id>/home)을 CODEX_HOME 으로 주고 부른다.
 //     Orca 관리 계정이 없거나(system) 조회하지 못하면 부른 셸의 환경 그대로다. ORCH_WORKER_CODEX_HOME 으로 홈을 정한다(빈 값이면 셸 그대로, 테스트).
+//     모델 표를 바꾸는 판단(loop/model-watch.ts)은 계정 하나가 아니라 Orca 의 Codex 계정 모두(workerCodexHomes)가 받는 모델(commonModels)로 한다.
 //     현재 세대는 목록에 보이고 설명이 `Legacy` 나 `Previous generation` 으로 시작하지 않는 것이다(스펙 REQ1).
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -105,6 +106,48 @@ export function workerCodexHome(): WorkerHome {
   }
   workerHome = value
   return value
+}
+
+// Orca 가 Codex worker 에 쓸 수 있는 계정 모두의 홈. 모델 표를 바꾸는 판단은 이 계정들이 모두 받는 모델로만 한다(loop/model-watch.ts).
+//     관리 계정(accounts[].id)마다 <root>/<id>/home 이고, 관리 계정이 없거나 지금 쓰는 계정이 system(activeAccountId null)이면 Codex 기본 홈도 든다.
+//     홈이 없는 관리 계정은 missing 에 이유와 함께 둔다. 계정을 조회하지 못하거나 accounts 가 배열이 아니면 failure(완결 문장)다. ORCH_WORKER_CODEX_HOME 이 있으면 그 홈 하나다
+export type WorkerHomes = { homes: { id: string; home: string | null }[]; missing: string[]; failure: string | null }
+export function workerCodexHomes(): WorkerHomes {
+  const fixed = process.env.ORCH_WORKER_CODEX_HOME
+  if (fixed !== undefined) return { homes: [{ id: 'worker', home: fixed || null }], missing: [], failure: null }
+  const listed = orcaJson<Record<string, any>>(['account', 'list', '--agent', 'codex'], { timeoutMs: 10_000 })
+  if (!listed.ok) return { homes: [], missing: [], failure: `Orca 의 Codex 계정 목록을 확인하지 못했다: ${listed.error}` }
+  const codex = listed.data?.codex ?? listed.data
+  // 모양이 달라 계정을 셀 수 없으면 기본 홈 하나로 읽고 표를 바꾸는 일을 막으려고 읽지 못한 것으로 본다
+  if (!Array.isArray(codex?.accounts)) return { homes: [], missing: [], failure: 'Orca 의 Codex 계정 목록 모양(accounts 배열)을 읽지 못했다' }
+  const root = process.env.ORCA_CODEX_ACCOUNTS || join(homedir(), 'Library/Application Support/Orca/codex-accounts')
+  const ids = (codex.accounts as { id?: unknown }[]).map((a) => a?.id).filter((id: unknown): id is string => typeof id === 'string')
+  const homes: { id: string; home: string | null }[] = []
+  const missing: string[] = []
+  for (const id of ids) {
+    if (/^[\w-]+$/.test(id) && existsSync(join(root, id, 'home'))) homes.push({ id, home: join(root, id, 'home') })
+    else missing.push(`${id}: 홈을 찾지 못했다`)
+  }
+  if (!ids.length || typeof codex?.activeAccountId !== 'string') homes.push({ id: 'system', home: process.env.ORCH_SYSTEM_CODEX_HOME || join(homedir(), '.codex') })
+  return { homes, missing, failure: null }
+}
+
+// 여러 계정의 목록에서 모두가 받는 모델만 남긴다. 목록에 보이는 것은 모든 계정에서 보일 때, effort 는 모든 계정이 지원하는 것만이다
+export function commonModels(lists: CodexModel[][]): CodexModel[] {
+  if (!lists.length) return []
+  const [first, ...rest] = lists
+  const common: CodexModel[] = []
+  for (const model of first) {
+    const others = rest.map((list) => list.find((m) => m.slug === model.slug))
+    if (others.some((m) => !m)) continue
+    const hidden = [model, ...others].find((m) => m!.visibility !== 'list')
+    common.push({
+      ...model,
+      visibility: hidden ? hidden.visibility : 'list',
+      efforts: model.efforts.filter((effort) => others.every((m) => m!.efforts.includes(effort))),
+    })
+  }
+  return common
 }
 
 // 실패는 `<실행 파일> debug models <failure>다` 로 읽히는 조각이다(model-check 의 경고 문장)

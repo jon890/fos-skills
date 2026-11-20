@@ -5,7 +5,7 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import {
-  claudeGeneration, codexGeneration, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, planTable, pinnedCheck, readCodexModels, sameFamily, workerCodexHome, type CodexModel,
+  claudeGeneration, codexGeneration, commonModels, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, planTable, pinnedCheck, readCodexModels, sameFamily, workerCodexHome, workerCodexHomes, type CodexModel,
 } from '../scripts/lib/model-generation.ts'
 import { limitRowOf } from '../scripts/lib/usage-boost.ts'
 
@@ -177,6 +177,44 @@ describe('계정', () => {
     delete process.env.CODEX_HOME
     forgetCodexModels()
     assert.equal(readCodexModels().models?.[0].description, 'shell')
+  })
+})
+
+describe('여러 계정', () => {
+  test('Orca 의 Codex 계정 모두의 홈을 낸다. 홈이 없는 계정은 이유와 함께 따로 둔다', (t) => {
+    const dir = tempDir('model-homes-', t)
+    const saved = { ...process.env }
+    t.after(() => { process.env = saved })
+    const accounts = join(dir, 'accounts')
+    mkdirSync(join(accounts, 'acct-1', 'home'), { recursive: true })
+    mkdirSync(join(accounts, 'acct-2', 'home'), { recursive: true })
+    process.env.ORCA_CODEX_ACCOUNTS = accounts
+    process.env.ORCH_SYSTEM_CODEX_HOME = join(dir, 'system-home')
+    delete process.env.ORCH_WORKER_CODEX_HOME
+    // Orca 1.x 의 모양(result 바로 아래 accounts)
+    process.env.ORCA = linkBin(dir, 'orca', `console.log(JSON.stringify({ ok: true, result: { activeAccountId: 'acct-1', accounts: [{ id: 'acct-1' }, { id: 'acct-2' }, { id: 'acct-gone' }] } }))`)
+    assert.deepEqual(workerCodexHomes(), {
+      homes: [{ id: 'acct-1', home: join(accounts, 'acct-1', 'home') }, { id: 'acct-2', home: join(accounts, 'acct-2', 'home') }],
+      missing: ['acct-gone: 홈을 찾지 못했다'],
+      failure: null,
+    })
+    // 지금 쓰는 계정이 system 이면 Codex 기본 홈도 worker 계정이다
+    process.env.ORCA = linkBin(dir, 'orca-system', `console.log(JSON.stringify({ ok: true, result: { codex: { activeAccountId: null, accounts: [{ id: 'acct-1' }] } } }))`)
+    assert.deepEqual(workerCodexHomes().homes.map(h => h.id), ['acct-1', 'system'])
+    process.env.ORCA = linkBin(dir, 'orca-fail', 'process.exit(1)')
+    assert.match(workerCodexHomes().failure ?? '', /Codex 계정 목록을 확인하지 못했/)
+    // 모양이 달라 계정을 셀 수 없으면 기본 홈 하나로 읽지 않고 읽지 못한 것으로 본다
+    process.env.ORCA = linkBin(dir, 'orca-shape', `console.log(JSON.stringify({ ok: true, result: { activeAccountId: null } }))`)
+    assert.deepEqual(workerCodexHomes(), { homes: [], missing: [], failure: 'Orca 의 Codex 계정 목록 모양(accounts 배열)을 읽지 못했다' })
+  })
+
+  test('모든 계정이 받는 모델만 남기고 effort 는 모두가 지원하는 것만 둔다', () => {
+    const a = [model('gpt-6.3-sol', 'Fast.', ['low', 'medium']), model('gpt-6.2-sol'), model('gpt-6.2-astra')]
+    const b = [model('gpt-6.3-sol', 'Fast.', ['medium', 'high']), model('gpt-6.2-sol'), model('gpt-6.2-astra', 'Current model.', ['low'], 'hide')]
+    const common = commonModels([a, b])
+    assert.deepEqual(common.map(m => [m.slug, m.visibility, m.efforts.join(',')]), [['gpt-6.3-sol', 'list', 'medium'], ['gpt-6.2-sol', 'list', 'low,medium,high'], ['gpt-6.2-astra', 'hide', 'low']])
+    // 한 계정에만 있는 새 세대로는 표를 바꾸지 않는다
+    assert.equal(planTable(TABLE, commonModels([[...TODAY, model('gpt-6.3-sol')], TODAY])).upgrades.length, 0)
   })
 })
 
