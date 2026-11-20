@@ -617,6 +617,23 @@ describe('큐가 도는 동안', () => {
     assert.match(output, /^AUTO-MERGE-HELD pid 99999 차례 기록 없음: node merge_queue\.ts 9$/m)
   })
 
+  test('다른 저장소의 큐(--repo 가 다른 경로)는 막지 않고, 이 저장소를 가리키는 큐는 막는다', () => {
+    writeFileSync(join(tmp, 'ps-lines.txt'), `99999 node /p/scripts/queue/merge-with-finish.ts --repo ${join(tmp, 'other-repo')} 9\n`)
+    github([pr(1)])
+    const output = once()
+    assert.doesNotMatch(output, /AUTO-MERGE-HELD/)
+    assert.equal(events('AUTO-MERGE').length, 1)
+    assert.equal(queueCalls().length, 1)
+  })
+
+  test('명령줄의 --repo 가 이 저장소면 차례 기록이 없어도 걸지 않는다', () => {
+    writeFileSync(join(tmp, 'ps-lines.txt'), `99999 node merge_queue.ts --repo ${repo} 9\n`)
+    github([pr(1)])
+    const output = once()
+    assert.deepEqual(queueCalls(), [])
+    assert.match(output, /^AUTO-MERGE-HELD pid 99999 차례 기록 없음: /m)
+  })
+
   test('묶음 폴더 경로(scripts/queue/merge_queue.ts)로 도는 큐도 merge_queue. 로 가려 걸지 않는다', () => {
     writeFileSync(join(tmp, 'ps-lines.txt'), '99999 node --disable-warning=ExperimentalWarning /p/fos-skills/5.13.0/skills/orch/scripts/queue/merge_queue.ts 9\n')
     github([pr(1)])

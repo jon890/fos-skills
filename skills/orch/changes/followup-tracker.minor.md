@@ -1,3 +1,4 @@
 - 기능 PR 의 `후속 검증: 대기` 를 마무리가 저장소별 배포 뒤 할 일 목록으로 옮기고 PR 정리를 끝낸다. `orch status`, `orch followup list`, 보드의 `followup-<PR>` 항목에서 보인다.
 - 상주 루프가 배포를 확인하면 배포 뒤 할 일을 `FOLLOWUP-READY` 로 한 번 묶어 알리고, `orch followup done <PR>` 이 항목을 끝낸 뒤 마무리를 다시 띄워 업무 완료와 보드 done 까지 간다.
 - `orch queue merge` 가 다른 머지 큐가 이미 맡은 PR 을 `QUEUE-SKIP` 한 줄로 알리고 건너뛴다. `queue.auto_merge` 저장소에서는 머지를 루프에 맡긴다는 규칙을 문서에 둔다.
+- 상주 루프의 자동 머지가 같은 저장소의 머지 큐만 기다린다. 다른 저장소의 `orch queue merge` 나 테스트가 띄운 큐에 막히지 않는다.
