@@ -7,6 +7,8 @@
 //     제목 「배포 뒤 확인 #<PR> <PR 제목>」, 하위 줄 하나(후속 검증 글)다. 끝낸 항목은 done 으로 바꾼다. 보드가 없으면 건너뛴다.
 //     보드에는 항목을 새로 만드는 orch 명령이 없어(orch board set 은 있는 항목만 받는다) 이 경로가 만든다.
 //     보드 반영이 실패해도 목록은 그대로 쓴다. 목록이 원본이고 보드는 보여 주는 자리다.
+//     보드 쓰기는 저장소마다 한 잠금(followups.json.board.lock) 안에서 하고, 잠금을 잡은 뒤 목록의 그 항목을 다시 읽어 그 상태로 쓴다.
+//     받은 항목은 목록에 없을 때만 쓴다. 마무리가 받아 둔 대기 값을 followup done 이 끝남으로 바꾼 뒤에 쓰면 보드가 대기로 돌아갔다(PR 558 리뷰)
 //
 // 루프 확인(followupTick): 상주 루프가 틱마다 부른다(loop/steps/followups.ts).
 //     1. 배포를 확인하지 못한 항목(failure, timeout)은 배포 설정(finish.deploy_workflow 와 deploy_branch)이 있으면 그 머지 커밋이
@@ -83,6 +85,25 @@ export function mirrorBoard(repo: string, item: Followup, options: BoardOptions 
     return `실패: 보드 경로를 정하지 못했다: ${(e as Error).message}`
   }
   if (!existsSync(file)) return '보드 없음'
+  const lock = followupsFile(repo) + '.board'
+  try {
+    makeParent(lock, repo)
+    return withFileLock(lock, () => writeBoard(repo, latest(repo, item), file, options), { waitMs: 90_000 })
+  } catch (e) {
+    return `실패: 보드 ${boardItemId(item.pr)}: ${(e as Error).message.replace(/\s+/g, ' ').trim()}`
+  }
+}
+
+// 목록의 그 항목. 목록을 읽지 못하거나 없으면 받은 항목이다
+function latest(repo: string, item: Followup): Followup {
+  try {
+    return loadFollowups(repo).find((one) => one.pr === item.pr) ?? item
+  } catch {
+    return item
+  }
+}
+
+function writeBoard(repo: string, item: Followup, file: string, options: BoardOptions): string {
   const id = boardItemId(item.pr)
   const argv = item.done_at
     ? ['set', id, 'done']

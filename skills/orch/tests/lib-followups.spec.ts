@@ -118,8 +118,25 @@ test('보드 파일이 있으면 followup-<PR> 항목을 wait 로 만들고 끝�
   assert.equal(saved.status, 'wait')
   assert.equal(saved.title, '배포 뒤 확인 #787 제목 787')
   assert.match(JSON.stringify(saved.details), /smoke 787/)
-  const done = markDone([item], 787, AT, null).items[0]
-  assert.equal(mirrorBoard(dir, done), '보드 followup-787 done')
+  // 보드는 목록의 상태를 따른다. 목록을 끝낸 뒤 쓴다
+  updateFollowups(dir, (items) => ({ items: markDone(items, 787, AT, null).items, value: null }))
+  assert.equal(mirrorBoard(dir, loadFollowups(dir)[0]), '보드 followup-787 done')
   saved = JSON.parse(readFileSync(board, 'utf8')).items.find((one: { id: string }) => one.id === 'followup-787')
+  assert.equal(saved.status, 'done')
+})
+
+test('목록에서 끝난 항목은 받아 둔 옛 대기 값으로 보드에 써도 done 을 지킨다', (t) => {
+  const dir = repo(t)
+  add(dir, 787, 'success')
+  const stale = loadFollowups(dir)[0]
+  const board = join(dir, '.omc', 'board.json')
+  mkdirSync(join(dir, '.omc'), { recursive: true })
+  writeFileSync(board, JSON.stringify({ items: [] }))
+  // 마무리가 대기 항목을 받아 둔 사이 followup done 이 목록과 보드를 끝냈다
+  updateFollowups(dir, (items) => ({ items: markDone(items, 787, AT, null).items, value: null }))
+  assert.equal(mirrorBoard(dir, loadFollowups(dir)[0]), '보드 followup-787 done')
+  // 이어서 마무리가 옛 대기 값으로 보드를 써도 목록의 끝남을 따른다
+  assert.equal(mirrorBoard(dir, stale), '보드 followup-787 done')
+  const saved = JSON.parse(readFileSync(board, 'utf8')).items.find((one: { id: string }) => one.id === 'followup-787')
   assert.equal(saved.status, 'done')
 })
