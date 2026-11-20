@@ -393,7 +393,7 @@ function noPrDoneProblem(lines: string[]): number | null {
       if (completionLevel && heading[1].length <= completionLevel) completionLevel = 0
       if (heading[2] === '완료 기준') completionLevel = heading[1].length
     }
-    if (completionLevel && /worker_done\s+첫 줄.*완료\s*:`?/i.test(line)) hasMarker = true
+    if (completionLevel && /`?worker_done`?\s+첫 줄.*완료\s*:`?/i.test(line)) hasMarker = true
   })
   return hasMarker ? null : permission + 1
 }

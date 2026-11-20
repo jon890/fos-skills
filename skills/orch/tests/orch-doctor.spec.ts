@@ -697,6 +697,26 @@ describe('저장소 판정', () => {
     assert.doesNotMatch(r.stdout, /INVALID-CONFIG/)
   })
 
+  test('plan 오버레이가 ADR 색인을 만들면 예약 설정과 고칠 명령을 알리되 진행을 막지 않는다', () => {
+    write(join(tmp, '.claude', 'plan-overlay.md'), '| 값 | 값 |\n| --- | --- |\n| ADR 색인 생성 | 한다 |\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^ADR-RESERVE-MISSING /m)
+    assert.match(r.stdout, /config set adr\.dirs '\{"docs":"docs\/adr"\}' --json/)
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ adr: { dirs: { docs: 'docs/adr' } } }))
+    assert.doesNotMatch(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, /ADR-RESERVE-MISSING/)
+  })
+
+  test('번호 붙은 ADR 파일을 발견하고, 일반 문서와 색인 파일만 있으면 알리지 않는다', () => {
+    write(join(tmp, 'docs', 'adr', 'INDEX.md'), '# ADR\n')
+    write(join(tmp, 'docs', 'adr', 'notes.md'), '# notes\n')
+    assert.doesNotMatch(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, /ADR-RESERVE-MISSING/)
+    write(join(tmp, 'docs', 'adr', '023-version.md'), '# ADR\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(r.stdout.split('ADR-RESERVE-MISSING').length - 1, 1)
+  })
+
   test('검사표를 불러오지 못하면 CLI-DEPS-MISSING 을 내고 설정 검사만 건너뛰며 다른 줄은 지금처럼 나온다', () => {
     write(join(tmp, '.orch', 'config.json'), JSON.stringify({ pipeline: { tick_sec: '60' } }))
     write(join(tmp, '.orch', 'hooks', 'befor-merge.ts'), '')

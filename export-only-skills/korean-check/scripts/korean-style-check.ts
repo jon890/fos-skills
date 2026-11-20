@@ -67,11 +67,13 @@ const CODE_PLACEHOLDER = '\x00'
 const SPACE = PY_SPACE.slice(1, -1)
 
 // 「표」 와 「칸」 은 문서 표를 가리킬 때도 쓰여 금지어 목록에 올릴 수 없다.
-// 그래서 DB 테이블과 컬럼을 가리키는 문맥만 패턴으로 막는다. 코드 스팬이 남은 줄에 건다.
+// 그래서 코드 스팬 뒤의 「표」·「칸」은 같은 줄에 DB·테이블·컬럼·SQL 이 있을 때만 막는다.
+// 다른 줄의 낱말은 문서 문맥일 수 있으므로 근거로 삼지 않는다. 코드 스팬이 남은 줄에 건다.
 // 파일 이름 뒤의 「`remote.md` 표」 는 문서 표라서 확장자로 끝나는 코드 스팬은 뺀다.
 // 「DB 표준」, 「표시」 가 걸리지 않도록 뒤에 조사나 공백, 문장 부호가 올 때만 건다.
 const AFTER = `(?=[을를이가는은의에로와과도만]|[${SPACE}.,;:)]|$)`
 const IDENT = '`(?![^`]*\\.(?:md|py|sh|json|ya?ml|txt|toml|[jt]sx?)`)[^`]+`'
+const DB_WORD = /(?:DB|SQL|테이블|컬럼)/i
 const DB_CONTEXT_PATTERNS: [string, RegExp][] = [
   ['DB 표', new RegExp(`DB 표${AFTER}`)],
   ['`식별자` 표', new RegExp(`${IDENT} 표${AFTER}`)],
@@ -365,6 +367,7 @@ export function scan(path: string, matchers: Matcher[]): [string[], string[]] {
       if (match) found.push(describe(path, n, raw, term, match, 'korean-style 매핑 표의 권장 표현으로'))
     }
     for (const [term, pattern] of DB_CONTEXT_PATTERNS) {
+      if (term !== 'DB 표' && !DB_WORD.test(withSpans)) continue
       const match = pattern.exec(withSpans)
       if (match) found.push(describe(path, n, raw, term, match, 'DB 의 표는 테이블, 칸은 컬럼으로'))
     }
