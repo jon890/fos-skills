@@ -146,6 +146,8 @@ beforeEach(() => {
     ORCA_CLAUDE_PROFILES: join(tmp, 'no-profiles'),
     ORCH_WORKER_PATH: workerPathWithOrch(tmp),
     LAUNCH_POLL: '0',
+    // 실제 Claude 세션 기록을 기다리지 않는다. 계열 이름으로 띄운 뒤의 모델 ID 읽기는 「모델 세대」 에서 본다
+    LAUNCH_MODEL_WAIT: '0',
     LAUNCH_WT_POLL: '0',
     LAUNCH_WT_WAIT: '3',
     RELAUNCH_SHELL_WAIT_MS: '0',
@@ -331,7 +333,7 @@ describe('다시 띄우기', () => {
     assert.match(order[0], /worker-abandon --dispatch ctx_old/)
     assert.match(order[1], /terminal close --terminal term_old/)
     // abandon 뒤 Task 가 ready 라 --retry-of 를 붙이지 않는다
-    assert.match(order[2], /worker-start --run run_1 --task task_1 --worktree path:.*--agent claude --model claude-opus-5-5 --effort medium/)
+    assert.match(order[2], /worker-start --run run_1 --task task_1 --worktree path:.*--agent claude --model opus --effort medium/)
     assert.doesNotMatch(order[2], /--retry-of/)
     assert.ok(!existsSync(holdFile()))
   })

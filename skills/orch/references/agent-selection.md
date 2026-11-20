@@ -13,15 +13,15 @@ Claude 사용량이 남아 `launch-worker` 가 스스로 바꾸는 경우만 지
 
 | id | Task 성격 | 에이전트 | 모델 | effort |
 | --- | --- | --- | --- | --- |
-| `impl-planned` | 계획서가 수정 위치와 검증 명령을 정한 구현 | `codex` | `gpt-6.1-sol` | `low` |
-| `impl-explore` | 저장소를 탐색해야 하는 여러 파일 구현 | `codex` | `gpt-6.1-sol` | `medium` |
-| `small-fix` | 수정 위치가 정해진 작은 코드 수정. 분기나 상태가 있는 것 | `codex` | `gpt-6.1-sol` | `low` |
+| `impl-planned` | 계획서가 수정 위치와 검증 명령을 정한 구현 | `codex` | `gpt-6.2-sol` | `low` |
+| `impl-explore` | 저장소를 탐색해야 하는 여러 파일 구현 | `codex` | `gpt-6.2-sol` | `medium` |
+| `small-fix` | 수정 위치가 정해진 작은 코드 수정. 분기나 상태가 있는 것 | `codex` | `gpt-6.2-sol` | `low` |
 | `simple-apply` | 정해진 문구나 줄만 바꾸는 문서 수정, 설정 한 줄, 리뷰 지적 단순 반영 | `claude` | `claude-haiku-5-5` | `기본` |
-| `design` | 일반 기능의 technical-design, spec 인터뷰, 문단이나 규칙을 새로 쓰는 문서 일 | `codex` | `gpt-6.1-sol` | `medium` |
+| `design` | 일반 기능의 technical-design, spec 인터뷰, 문단이나 규칙을 새로 쓰는 문서 일 | `codex` | `gpt-6.2-sol` | `medium` |
 | `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | `claude` | `claude-fable-5-2` | `기본` |
 | `impl-hard` | 여러 모듈에 걸친 큰 구조 정리처럼 정말 어려운 구현 | `claude` | `claude-fable-5-2` | `기본` |
 | `visual` | 화면이나 이미지를 보고 판정, 브라우저나 앱 조작 | `codex` | `gpt-6.1-terra` | `low` |
-| `review` | 리뷰와 검증. Claude 가 만들었으면 앞 조합, Codex 가 만들었으면 뒤 조합 | `codex` / `claude` | `gpt-6.1-sol` / `claude-sonnet-5-5` | `medium` / `medium` |
+| `review` | 리뷰와 검증. Claude 가 만들었으면 앞 조합, Codex 가 만들었으면 뒤 조합 | `codex` / `claude` | `gpt-6.2-sol` / `claude-sonnet-5-5` | `medium` / `medium` |
 | `security-review` | 공격 경로를 재현하는 보안 리뷰 | `claude` | `claude-sonnet-5-5` | `medium` |
 
 - `spec-lint` 와 `launch-worker` 는 에이전트·모델·effort 전체를 정확히 대조한다. 낮은 effort 로 바꾸는 경우도 후보 밖 이유가 필요하다.
@@ -56,18 +56,17 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 | 걸린 모델 | 같은 등급 대응 | 한 단계 아래 |
 | --- | --- | --- |
-| Claude Opus 5.5 | `gpt-6.1-sol` `high`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
-| `gpt-6.1-sol` `high` | Claude Opus 5.5 | `gpt-6.1-sol` `medium` |
-| `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
-| Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra` | Claude Haiku 5.5 |
-| `gpt-6.1-sol` | `gpt-6-sol`, Claude Sonnet 5.5 | `gpt-6-luna` |
-| `gpt-6-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
-| Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
+| Claude Opus 5.5 | `gpt-6.2-sol` `high`, `gpt-6.2-sol` `medium` | Claude Sonnet 5.5 |
+| `gpt-6.2-sol` `high` | Claude Opus 5.5 | `gpt-6.2-sol` `medium` |
+| `gpt-6.2-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
+| Claude Sonnet 5.5 | `gpt-6.2-sol`, `gpt-6.1-terra` | Claude Haiku 5.5 |
+| `gpt-6.2-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
+| Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.2-astra` `medium`, `gpt-6.2-sol` `medium` | Claude Sonnet 5.5 |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
 
 바꾼 worker 는 지시서의 `worker 선택:` 줄에 반영하고 `후보 밖: 한도 <제공자>` 를 적는다. 줄과 다르면 `launch-worker` 가 거부한다.
-시작 전 모델 검사에서 보여 주는 대체 후보도 이 표를 따른다. 구현은 `scripts/lib/model-check.ts` 의 `previousSol` 과 `otherProvider` 가 소유한다.
+시작 전 모델 검사에서 보여 주는 대체 후보는 이 표의 「같은 등급 대응」 칸이다. 같은 계열이면 세대가 달라도 그 줄을 쓴다. 구현은 `scripts/lib/model-check.ts` 와 `scripts/lib/usage-boost.ts` 의 `limitRowOf` 가 소유한다.
 
 ### Claude 사용량이 남을 때
 
@@ -80,6 +79,17 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 - 출처: 상태 줄과 같은 값인 oh-my-claudecode 사용량 캐시다. 출처가 없거나 읽지 못하거나 1시간보다 오래된 값이면 `USAGE-UNKNOWN <이유>` 를 내고 행 그대로 띄운다. 위치와 판정은 `scripts/lib/usage-boost.ts` 머리 주석이 소유한다.
 - 끄기: 저장소 설정 `routing.usage_boost` 가 `false` 면 보지 않는다. 값이 없으면 켜진 것이다.
 - `--terminal` 이어 쓰기와 `orch worker resume` 은 같은 세션을 잇는 일이라 바꾸지 않는다. `--task` 로 새로 띄우는 재시도는 다시 판정한다.
+
+### 새 모델과 새 세대
+
+**표의 모델은 계열을 가리킨다. 같은 계열의 새 세대가 나오면 표를 고치기 전부터 `launch-worker` 가 새 세대로 띄운다.**
+계열은 Codex 가 `gpt-<세대>-<계열>` 의 계열(`sol`, `terra`, `luna`, `astra`), Claude 가 `opus`, `sonnet`, `haiku`, `fable` 이다. 코디네이터는 지시서에 표의 값을 그대로 적는다. 옛 세대가 적힌 지시서도 거절하지 않는다.
+
+- Codex: 띄울 때 그 계정의 `codex debug models` 에 같은 계열의 더 높은 세대가 있으면 그 세대로, 적힌 모델을 받지 못하면 받을 수 있는 같은 계열 최신으로 그 띄우기만 바꾼다. effort 는 행의 값 그대로다.
+- Claude: `claude-<계열>-<세대>` 를 계열 이름으로 넘긴다. Claude Code 가 그 계열의 최신 모델로 띄운다. 띄우기 기록의 model 에는 worker 세션이 실제로 쓴 모델 ID 가 남는다.
+- 기록: 바꾸면 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.generation` 에 바꾸기 전, 바꾼 뒤, 이유를 남긴다. 판정은 `scripts/lib/model-generation.ts` 머리 주석이 소유한다.
+- 감지: 상주 루프가 하루 한 번 `codex debug models` 를 읽는다. 첫 목록을 기준점으로 두고, 그 뒤에 나타난 현재 세대 모델을 `MODEL-NEW <모델> <설명>` 으로 한 번 알린다. 표의 모델보다 높은 같은 계열 세대가 있으면 fos-skills 저장소의 루프가 이 표를 새 세대로 바꾸는 PR 을 열고 `MODEL-TABLE-PR <PR 주소> <바꾼 모델>` 을 보낸다. 머지는 코디네이터가 한다. 다른 저장소의 루프는 `MODEL-GENERATION <옛 세대> <새 세대>` 만 보낸다. 기록과 판정은 `scripts/loop/model-watch.ts` 머리 주석이 소유한다.
+- 낡은 Codex CLI: CLI 가 낡으면 새 세대가 목록에 나오지 않는다. `orch doctor` 가 `CODEX-OUTDATED <설치> <최신>` 으로 알린다. 갱신은 사용자가 한다.
 
 ### 기본 후보에서 뺀 모델
 

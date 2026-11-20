@@ -21,13 +21,15 @@
 //     launchesAt     그 워크트리를 가리키는 기록 전부. 폴더가 없으면 빈 목록
 //     latestTaskLaunch  같은 Task 의 가장 최근 기록. 영구 이력 도입 전 ready Task 의 호환에 쓴다
 
+import type { Generation } from './model-generation.ts'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { realPath } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
 
 export type CandidateOverride = { row: string | null; agent: string | null; model: string | null; effort: string | null; reason: string; effortLimit?: string | null }
-export type Effective = { agent?: string | null; model?: string | null; effort?: string | null; candidateOverride?: CandidateOverride }
+// generation 은 띄울 때 바꾼 모델 세대(lib/model-generation.ts), modelId 는 Claude 를 계열 이름으로 띄웠을 때 세션 기록에서 읽은 실제 모델 ID 다
+export type Effective = { agent?: string | null; model?: string | null; effort?: string | null; candidateOverride?: CandidateOverride; generation?: Generation; modelId?: string | null }
 export type MainGuardStamp = { version: 1; main: string | null; caller_repo: string; target_repo: string }
 
 export type Launch = {
@@ -78,7 +80,10 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
       ? { row: text(override.row), agent: text(override.agent), model: text(override.model), effort: text(override.effort), reason: override.reason,
           ...(override.effortLimit !== undefined ? { effortLimit: text(override.effortLimit) } : {}) }
       : null
-    const effective = raw ? { agent: text(raw.agent), model: text(raw.model), effort: text(raw.effort), ...(candidateOverride ? { candidateOverride } : {}) } : null
+    const gen = raw?.generation
+    const generation = gen && typeof gen === 'object' && typeof gen.from === 'string' && typeof gen.to === 'string' ? { from: gen.from, to: gen.to, reason: typeof gen.reason === 'string' ? gen.reason : '' } : null
+    const effective = raw ? { agent: text(raw.agent), model: text(raw.model), effort: text(raw.effort), ...(candidateOverride ? { candidateOverride } : {}),
+      ...(generation ? { generation } : {}), ...(raw.modelId !== undefined ? { modelId: text(raw.modelId) } : {}) } : null
     return { ...extras, ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective, experiment: text(v.experiment) }
   } catch {
     return null

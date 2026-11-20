@@ -38,6 +38,13 @@
 //        LAUNCH-EFFECTIVE 와 기록의 effective.candidateOverride 에 행·worker·이유(`사용량: 남은 N%, 남은 시간 M%`)를 남긴다. 아래 차례는 바꾼 값으로 돈다.
 //        사용량 출처가 없거나 읽지 못하거나 1시간보다 오래됐으면 `USAGE-UNKNOWN <이유>` 를 내고 그대로 띄운다. 설정 routing.usage_boost 가 false 면 보지 않는다.
 //        --terminal 로 이어 쓰면 보지 않는다
+//     0-0-1. 0-0 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). --terminal 로 이어 쓰면 보지 않는다.
+//        codex 는 `codex debug models` 에 같은 계열(`gpt-<세대>-<계열>` 의 계열)의 더 높은 세대가 있고 effort 를 지원하면 --model 을 그 세대로 바꾼다.
+//        적힌 모델을 이 계정이 받지 못하면(목록에 없거나 effort 를 지원하지 않는다) 받을 수 있는 같은 계열 최신으로 이 띄우기만 바꾼다. 목록을 읽지 못하면 바꾸지 않는다.
+//        claude 는 `claude-<계열>-<세대>` 를 계열 이름(opus, sonnet, haiku, fable)으로 바꿔 Claude Code 가 그 계열의 최신 모델로 띄우게 한다.
+//        바꾸면 LAUNCH-EFFECTIVE 와 기록의 effective.generation 에 from, to, reason 을 남긴다. 지시서의 `worker 선택:` 에 옛 세대가 적혀도 거절하지 않는다(lib/selection.ts).
+//        claude 는 띄운 뒤 worker 세션 기록의 첫 응답 모델을 LAUNCH_MODEL_WAIT 초(기본 60, 0 이면 보지 않음)까지 기다려 기록의 model 과 effective.modelId 에 남긴다.
+//        못 읽으면 effective.modelId 는 null 이고 기록의 model 은 표의 모델 ID 다
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
@@ -137,7 +144,7 @@
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
 //
 // 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. ORCA_CLAUDE_PROFILES 로 0-2 의 프로필 폴더를 바꾼다. ORCH_WORKER_PATH 는 0-3 이 보는 worker 셸의 PATH 를 정하고, ORCH_WORKER_SHELL 은 그 셸을 정한다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
-//            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2 가 기본값이다. 소수도 받는다.
+//            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2, LAUNCH_MODEL_WAIT=60 이 기본값이다. 소수도 받는다.
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
@@ -155,6 +162,8 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
+import { claudeGeneration, codexGeneration, readCodexModels, type Generation } from '../lib/model-generation.ts'
+import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
 import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
@@ -270,6 +279,19 @@ function worktreeSnapshot(worktree: string): string {
 }
 
 // 머리 주석의 「일하는 흔적」. 흔적 근거와 터미널·화면 관측을 함께 돌려 멈춤 보고에 쓴다.
+// worker 의 Claude 세션 기록에 첫 응답 모델이 적힐 때까지 LAUNCH_MODEL_WAIT 초(기본 60)를 LAUNCH_POLL 간격으로 기다린다. 0 이면 보지 않는다.
+// 끝내 못 읽으면 null 이다. 띄우기는 이미 끝났으므로 결과와 종료 코드에 영향이 없다
+async function claudeModelId(worktree: string, since: number): Promise<string | null> {
+  const wait = seconds('LAUNCH_MODEL_WAIT', '60')
+  if (wait <= 0) return null
+  const poll = Math.max(seconds('LAUNCH_POLL', '5'), 0.5)
+  for (let spent = 0; ; spent += poll) {
+    const found = claudeModelOf(worktree, since)
+    if (found || spent >= wait) return found
+    await sleep(poll * 1000)
+  }
+}
+
 async function signsOfLife(
   show: string,
   worktree: string,
@@ -458,6 +480,22 @@ function setOption(passthru: string[], name: string, value: string | null): void
   const at = passthru.indexOf(name)
   if (at >= 0) passthru.splice(at, 2, ...(value === null ? [] : [name, value]))
   else if (value !== null) passthru.push(name, value)
+}
+
+// 머리 주석의 「0-0-1」. 사용량 판정 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). 바꾸면 그 기록을, 아니면 null 을 낸다.
+// Codex 는 모델 목록을 읽지 못하면 바꾸지 않는다(0-1 이 경고한다). Claude 는 계열 이름으로 넘겨 Claude Code 가 최신으로 띄운다
+function applyGeneration(passthru: string[]): Generation | null {
+  const agent = passValue(passthru, '--agent')
+  const model = passValue(passthru, '--model')
+  if (!model) return null
+  let found: Generation | null = null
+  if (agent === 'claude') found = claudeGeneration(model)
+  else if (agent === 'codex') {
+    const list = readCodexModels()
+    if (list.failure === null) found = codexGeneration(model, passValue(passthru, '--effort'), list.models)
+  }
+  if (found) setOption(passthru, '--model', found.to)
+  return found
 }
 
 function isDir(target: string): boolean {
@@ -750,6 +788,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     return 1
   }
   let boostOverride: CandidateOverride | null = null
+  let generation: Generation | null = null
   if (!passthru.includes('--terminal')) {
     const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task, continuation)
     if (rejected) {
@@ -757,6 +796,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       return 1
     }
     boostOverride = applyUsageBoost(a.spec, passthru, retryRepo)
+    generation = applyGeneration(passthru)
   }
   const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
   for (const warning of settings.warnings) err(`경고: ${warning}`)
@@ -958,13 +998,13 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       }
       out(result.stdout + result.stderr)
       // 짧은 출력은 worker-start JSON 을 내지 않는다. 코디네이터가 고른 값과 대조하는 launch.effective 만 판정 줄로 남긴다(references/launch.md 「띄운 직후 확인」)
-      if (result.code === 0 && candidateOverride) {
+      if (result.code === 0 && (candidateOverride || generation)) {
         let effective = {}
         try {
           const value = JSON.parse(result.stdout)?.result?.launch?.effective
           if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
         } catch { /* receipt 가 손상돼도 후보 밖 이유는 남긴다 */ }
-        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...effective, candidateOverride })}`)
+        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...effective, ...(candidateOverride ? { candidateOverride } : {}), ...(generation ? { generation } : {}) })}`)
       } else if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
       // 실패한 시작의 receipt(failedStage, 남은 자원, request id)는 다시 불러 볼 수 없다. 다시 부르면 Task 가 하나 더 생긴다.
       // 그래서 짧은 출력에서도 receipt 전체를 한 줄로 남긴다
@@ -997,6 +1037,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     }
 
     const runArgs = a.run ? ['--run', a.run] : []
+    const launchedAt = Date.now()
     const result = await start([...runArgs, ...(a.task ? ['--task', a.task, ...(a.retryOf ? ['--retry-of', a.retryOf] : [])] : ['--spec', workerSpecLine]), '--worktree', `path:${worktree}`, ...passthru])
     if (result.code !== 0) {
       const output = result.stdout + result.stderr
@@ -1037,6 +1078,9 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
     if (candidateOverride) effective = { ...effective, candidateOverride }
+    // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」)
+    const modelId = !stalled && generation && passValue(passthru, '--agent') === 'claude' ? await claudeModelId(worktree, launchedAt) : null
+    if (generation) effective = { ...effective, generation, ...(passValue(passthru, '--agent') === 'claude' ? { modelId } : {}) }
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
@@ -1047,7 +1091,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,
       spec: resolve(a.spec),
       agent: reused ? inherited?.agent ?? null : common.agent,
-      model: reused ? inherited?.model ?? null : common.model,
+      // Claude 를 계열 이름으로 띄웠으면 읽은 실제 모델 ID, 못 읽었으면 표의 모델 ID 다. 가격 집계(routing-report)가 모델 ID 로 단가를 찾는다
+      model: reused ? inherited?.model ?? null : modelId ?? (generation && passValue(passthru, '--agent') === 'claude' ? generation.from : common.model),
       effort: reused ? inherited?.effort ?? null : common.effort,
       effective,
       experiment: experimentOf(text)?.name ?? null,

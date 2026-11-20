@@ -17,6 +17,8 @@
 import { basename } from 'node:path'
 import type { LaunchHistory } from './launch-history.ts'
 import { reviewPrOfBranch } from './review.ts'
+import { modelPolicies } from './selection.ts'
+import { readSelectionTable } from './usage-boost.ts'
 
 export type Implementer = { agent: string; model: string | null; effort: string | null; dispatch: string }
 export type Reviewer = { agent: string; model: string; effort: string; reason: string }
@@ -34,15 +36,22 @@ export function implementerOf(history: LaunchHistory[], branch: string): { found
   return { found: known.at(-1) ?? null, agents: [...new Set(known.map((row) => row.agent))] }
 }
 
-// 구현 제공자와 다른 제공자의 리뷰 worker. 고를 수 없으면 null 이다
-export function reviewerFor(agent: string): Reviewer | null {
-  if (agent === 'claude') {
-    return { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium', reason: '구현 worker 가 Claude 라 다른 제공자인 Codex 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다' }
-  }
-  if (agent === 'codex') {
-    return { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', reason: '구현 worker 가 Codex 라 다른 제공자인 Claude 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다' }
-  }
-  return null
+// 구현 제공자와 다른 제공자의 리뷰 worker. 고를 수 없으면 null 이다.
+// 모델과 effort 는 모델 표(agent-selection.md)의 review 행에서 읽는다. 표가 새 세대로 바뀌면 리뷰 지시서도 따라간다. 표를 읽지 못하면 아래 기본값이다
+export function reviewerFor(agent: string, table: string | null = null): Reviewer | null {
+  const other = agent === 'claude' ? 'codex' : agent === 'codex' ? 'claude' : null
+  if (!other) return null
+  let row: { agent: string | null; model: string | null; effort: string | null } | undefined
+  try {
+    row = modelPolicies(table ?? readSelectionTable()).get('review')?.workers.find(w => w.agent === other)
+  } catch { /* 표를 읽지 못하면 기본값을 쓴다 */ }
+  const fallback = other === 'codex' ? { model: 'gpt-6.2-sol', effort: 'medium' } : { model: 'claude-sonnet-5-5', effort: 'medium' }
+  const model = row?.model ?? fallback.model
+  const effort = row?.effort ?? fallback.effort
+  const reason = other === 'codex'
+    ? '구현 worker 가 Claude 라 다른 제공자인 Codex 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다'
+    : '구현 worker 가 Codex 라 다른 제공자인 Claude 로 고른다. review 행은 구현한 쪽과 다른 제공자의 모델을 medium 으로 쓴다'
+  return { agent: other, model, effort, reason }
 }
 
 const TAILED_SPEC = /^spec-review-pr-(\d+)-([A-Za-z0-9][A-Za-z0-9_-]*)\.md$/
