@@ -9,7 +9,8 @@
 // 리뷰 dispatch 는 띄우기 기록이 지워져도 영구 이력의 spec 으로 알아본다(lib/review.ts).
 // 다른 저장소의 dispatch: 한 Run 에 저장소마다 루프가 있으면 모든 루프가 같은 worker_done 을 읽는다. 이 저장소에 띄우기 기록이 없고
 //   Orca 의 worker 워크트리가 다른 저장소의 것이고 그 저장소에 이 Run 을 보는 살아 있는 루프가 있으면, 근거 없는 보고를 알리지 않고 본 것으로만 남긴다.
-//   띄운 저장소의 루프가 맡는다. 그 저장소에 루프가 없으면 이 루프가 알린다.
+//   띄운 저장소의 루프가 맡는다. 그 저장소에 루프가 없으면 이 루프가 알린다. finish 가 워크트리를 지웠으면 worktreeId 앞부분의 Orca 저장소 id 로
+//   `orca repo list` 에서 저장소를 찾는다.
 //   띄운 루프는 지시서를 지운 뒤 「(지시서를 읽지 못했다)」 를 붙여 본문이 달라, Run 알림의 중복 억제(lib/run-notice.ts)를 지나 두 번 갔다(2026-11-19).
 // 머지된 dispatch: 근거 없는 보고라도 띄우기 기록의 브랜치(없으면 지시서의 첫 `브랜치:` 줄)에 열린 PR 이 없고 MERGED PR 이 있으면
 //   이미 끝난 일이라 DONE-SUSPECT 를 보내지 않는다. PR 조회가 실패하면 판단하지 않고 그대로 알린다.
@@ -47,12 +48,26 @@ export function completionMessages(run: string): Json[] {
   return messages(['check', '--run', run, '--all', '--types', 'worker_done']).filter(m => m.type === 'worker_done')
 }
 
+// finish 가 워크트리를 지웠으면 worktreeId 의 앞부분(`<Orca 저장소 id>::<경로>`)으로 Orca 에 등록된 저장소를 찾는다. 모르면 null
+function orcaRepoOf(dispatch: string): string | null {
+  const shown = orcaJson<Json>(['orchestration', 'worker-show', '--dispatch', dispatch])
+  const worker = shown.ok ? shown.data?.worker : null
+  const id = String(worker?.worktreeId ?? worker?.startOptions?.resolvedWorktreeId ?? '')
+  if (!id.includes('::')) return null
+  const repoId = id.slice(0, id.indexOf('::'))
+  const listed = orcaJson<Json>(['repo', 'list'])
+  const repos = listed.ok && Array.isArray(listed.data?.repos) ? listed.data.repos : []
+  const found = repos.find((row: Json) => row?.id === repoId)?.path
+  return typeof found === 'string' && existsSync(found) ? mainCheckout(found) : null
+}
+
 // Orca 의 worker 워크트리가 다른 저장소의 것이고 그 저장소에 이 Run 을 보는 살아 있는 루프가 있는지.
-// 조회하지 못하거나 워크트리가 지워져 저장소를 알 수 없으면 모른다(false). 그 저장소에 루프가 없으면 어디서도 알리지 않게 되므로 false 다
+// 워크트리가 지워졌으면 Orca 저장소 id 로 찾는다. 그래도 저장소를 알 수 없으면 모른다(false). 그 저장소에 루프가 없으면 어디서도 알리지 않게 되므로 false 다
 function foreignDispatch(repo: string, run: string, dispatch: string): boolean {
   if (!dispatch) return false
-  const owner = dispatchRepo(repo, dispatch)
-  if (owner === null || !existsSync(owner)) return false
+  const found = dispatchRepo(repo, dispatch)
+  const owner = found !== null && existsSync(found) ? found : orcaRepoOf(dispatch)
+  if (owner === null) return false
   const mine = mainCheckout(repo)
   if (owner === mine || owner.startsWith(`${mine}/`)) return false
   return isRegistered(owner, run) && loopStatus(owner, Date.now()).alive

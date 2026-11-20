@@ -317,7 +317,7 @@ test('같은 브랜치에 열린 PR 이 남았거나 PR 조회가 실패하면 �
   assert.deepEqual(state().suspects, ['still-0', 'still-1'])
 })
 // 다른 저장소의 루프 상태는 그 저장소의 .orch 에 있다. ORCH_DIR 을 상대 경로로 두어 저장소마다 따로 읽게 한다
-function foreignSetup(t: Parameters<Parameters<typeof test>[1]>[0], dispatch: string, loop: 'live' | 'dead' | 'none') {
+function foreignSetup(t: Parameters<Parameters<typeof test>[1]>[0], dispatch: string, loop: 'live' | 'dead' | 'none', deleted = false) {
   const other = tempDir('completion-watch-other-', t)
   execFileSync('git', ['init', '-q', repo])
   execFileSync('git', ['init', '-q', other])
@@ -331,7 +331,8 @@ function foreignSetup(t: Parameters<Parameters<typeof test>[1]>[0], dispatch: st
   bin.setRules([
     { args: ['check', 'worker_done'], stdout: envelope([done(`${dispatch}-done`, dispatch)]) }, { args: ['check', 'status'], stdout: envelope([]) },
     { args: ['inbox'], stdout: envelope([]) },
-    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: dispatch, status: 'completed' }, worker: { worktreeId: `repo::${other}` } } }) },
+    { args: ['worker-show'], stdout: JSON.stringify({ ok: true, result: { dispatch: { id: dispatch, status: 'completed' }, worker: { worktreeId: deleted ? `other-id::${join(other, 'worktrees', 'gone')}` : `repo::${other}` } } }) },
+    { args: ['repo', 'list'], stdout: JSON.stringify({ ok: true, result: { repos: [{ id: 'mine-id', path: repo }, { id: 'other-id', path: other }] } }) },
     { args: ['send'], stdout: JSON.stringify({ ok: true, result: { message: { id: 'notice' } } }) },
   ])
 }
@@ -341,6 +342,12 @@ test('띄우기 기록이 없고 Orca 의 worker 워크트리가 이 Run 을 보
   assert.equal(notices().length, 0)
   assert.deepEqual(state().suspects, [])
   assert.ok(state().ids.includes('foreign-done'))
+})
+test('finish 가 다른 저장소의 워크트리를 지웠어도 Orca 저장소 id 로 그 저장소를 찾아 그 루프에 맡긴다', async t => {
+  foreignSetup(t, 'foreign-gone', 'live', true)
+  await watchCompletions(repo, 'R', 'main')
+  assert.equal(notices().length, 0)
+  assert.ok(state().ids.includes('foreign-gone-done'))
 })
 test('다른 저장소에 이 Run 을 보는 루프가 없거나 죽었으면 이 루프가 알린다', async t => {
   for (const loop of ['none', 'dead'] as const) {
