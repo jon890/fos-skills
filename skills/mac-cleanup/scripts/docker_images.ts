@@ -2,21 +2,25 @@
 // Docker 이미지를 사용 중, 미사용, 최근 생성으로 나눈다. 읽기 전용이다.
 //
 // 사용법:
-//   docker_images.ts [--context NAME] [--recent-hours 24]
+//   docker_images.ts [--context NAME] [--recent-hours 24] [--json-out FILE]
 //
 // --context NAME 은 그 docker context 의 엔진을 조사한다. 현재 context 설정은 바꾸지 않는다. 주면 출력 첫 줄에 `## context: NAME` 이 붙는다.
+// --json-out FILE 은 텍스트를 출력하면서 같은 조사 결과를 JSON 으로 파일에 쓴다. `docker_cleanup.ts rmi --images-json` 이 이 파일을 읽는다.
+// 파일은 {context?, recent_hours, images: [{class, size, size_bytes, ref, rmi, id, created, created_since}]} 이다. context 는 --context 를 줬을 때만 있다.
 //
-// 종료 코드: 0 조사 완료, 1 docker 를 쓸 수 없음.
+// 종료 코드: 0 조사 완료, 1 docker 를 쓸 수 없거나 --json-out 파일을 쓸 수 없음.
 // 각 줄 끝의 rmi= 값을 `docker rmi` 에 그대로 넘긴다. 태그가 있으면 repo:tag, 저장소나 태그가 <none> 이거나 repo:tag 로 조회되지 않으면(repo:tag@digest 로 저장된 이미지) 이미지 ID 다.
 // 컨테이너의 Image 값과 repo:tag 를 비교할 때 태그 생략(:latest)을 맞춘다.
 
+import { writeFileSync } from 'node:fs'
 import { readArgs, type Entry } from './cli.ts'
 import { isMain, ljust, rjust, runText, write } from './io.ts'
 import { pySplitLines } from './kit/py.ts'
-import { loadJson, mktimeLocal, parsePyFloat, pyTime, splitWhitespace } from './pylike.ts'
-import { docker, dockerArgv, useContext } from './docker_volumes.ts'
+import { dumpJson, loadJson, mktimeLocal, osErrorMessage, parsePyFloat, pyTime, splitWhitespace } from './pylike.ts'
+import { docker, dockerArgv, parseSize, useContext } from './docker_volumes.ts'
 
 const USAGE = `usage: docker_images.ts [-h] [--context CONTEXT] [--recent-hours RECENT_HOURS]
+                        [--json-out FILE]
 `
 
 // argparse 가 만든 도움말(80칸)과 같다. 옵션 이름 대신 파일 이름이 .ts 다
@@ -27,13 +31,14 @@ options:
   -h, --help            show this help message and exit
   --context CONTEXT
   --recent-hours RECENT_HOURS
+  --json-out FILE
 `
 
 const ENTRY: Entry = {
   prog: 'docker_images.ts',
   usage: USAGE,
   help: HELP,
-  spec: { options: [{ name: 'context', value: true }, { name: 'recent-hours', value: true, float: true }], positionals: [] },
+  spec: { options: [{ name: 'context', value: true }, { name: 'recent-hours', value: true, float: true }, { name: 'json-out', value: true }], positionals: [] },
 }
 
 // 태그가 없으면 :latest 를 붙인다. digest(@sha256) 가 있으면 그대로 둔다. 레지스트리 포트의 ':' 는 태그로 보지 않는다
@@ -69,6 +74,9 @@ export function dockerRefResolves(ref: string): boolean {
   return done.code === 0
 }
 
+// --json-out 파일의 이미지 한 줄. 텍스트 출력의 한 줄과 같은 값이다
+export type ImageRow = { class: string; size: string; size_bytes: number | null; ref: string; rmi: string; id: string; created: string; created_since: string }
+
 const jsonLines = (text: string): Record<string, any>[] => pySplitLines(text).filter((l) => l).map((l) => loadJson(l) as Record<string, any>)
 
 export function main(argv: string[]): number {
@@ -76,6 +84,7 @@ export function main(argv: string[]): number {
   if (typeof args === 'number') return args
   const recentHours = args.options['recent-hours'] === undefined ? 24 : parsePyFloat(args.options['recent-hours'] as string)
   const context = (args.options.context as string | undefined) ?? null
+  const jsonOut = args.options['json-out'] as string | undefined
   useContext(context)
   let containers: Record<string, any>[]
   let images: Record<string, any>[]
@@ -93,6 +102,7 @@ export function main(argv: string[]): number {
   const usedRefs = new Set(containers.map((c) => normalizeImage(c.Image)))
   const usedIds = new Set<string | undefined>(inspect.map((c) => c.Image))
   const now = pyTime()
+  const rows: ImageRow[] = []
   for (const img of images) {
     const ref = img.Repository === '<none>' ? '<none>' : `${img.Repository}:${img.Tag}`
     const inspected = (loadJson(docker(['inspect', img.ID], 60)) as Record<string, any>[])[0]
@@ -102,6 +112,16 @@ export function main(argv: string[]): number {
     const resolves = img.Repository === '<none>' || img.Tag === '<none>' || dockerRefResolves(ref)
     const target = rmiTarget(img.Repository, img.Tag, img.ID, resolves)
     write(1, `${ljust(cls, 22)} ${rjust(img.Size, 9)}  ${ref}  (${img.CreatedSince})  rmi=${target} id=${shortId(img.ID)}\n`)
+    rows.push({ class: cls, size: img.Size, size_bytes: parseSize(img.Size), ref, rmi: target, id: shortId(img.ID), created: inspected.Created ?? '', created_since: img.CreatedSince })
+  }
+  if (jsonOut) {
+    const payload = { ...(context ? { context } : {}), recent_hours: recentHours, images: rows }
+    try {
+      writeFileSync(jsonOut, `${dumpJson(payload)}\n`)
+    } catch (error) {
+      write(2, `--json-out 파일을 쓸 수 없다: ${osErrorMessage(error, jsonOut)}\n`)
+      return 1
+    }
   }
   return 0
 }

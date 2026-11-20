@@ -1,6 +1,8 @@
 // docker_images 의 명령 경계 테스트. docker 는 가짜 실행 파일이다.
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
 import { Sandbox } from './helpers.ts'
@@ -139,6 +141,38 @@ describe('rmi 대상', () => {
   test('이미지 ID 가 sha256: 접두 없이 와도 12자리로 줄인다', () => {
     const { run } = setup([{ repo: '<none>', tag: '<none>', id: 'd'.repeat(64), created: old() }])
     assert.ok(run().stdout.includes(` rmi=${'d'.repeat(12)} id=${'d'.repeat(12)}`))
+  })
+})
+
+describe('--json-out', () => {
+  test('텍스트 줄과 같은 분류, 크기, rmi 값, 생성 시각을 파일에 쓰고 context 를 남긴다', () => {
+    const now = Date.now()
+    const images: Img[] = [
+      { repo: 'alpine', tag: 'latest', id: sha('a'), size: '8MB', since: '2 weeks ago', created: '2026-01-02T03:04:05.123456789Z' },
+      { repo: '<none>', tag: '<none>', id: sha('c'), size: '1.2GB', since: '3 months ago', created: new Date(now - 90 * 24 * HOUR) },
+    ]
+    const { box, run } = setup(images, [{ image: 'alpine', id: 'c1' }])
+    const out = join(box.root, 'images.json')
+    const done = run(['--context', 'orbstack', '--json-out', out])
+    assert.equal(done.code, 0, done.stderr)
+    assert.equal(done.stdout.split('\n').filter((l) => l.includes(' rmi=')).length, 2, '텍스트 출력도 그대로 낸다')
+    const data = JSON.parse(readFileSync(out, 'utf8'))
+    assert.equal(data.context, 'orbstack')
+    assert.equal(data.recent_hours, 24)
+    assert.deepEqual(data.images[0], { class: '사용 중', size: '8MB', size_bytes: 8_000_000, ref: 'alpine:latest', rmi: 'alpine:latest', id: 'a'.repeat(12), created: '2026-01-02T03:04:05.123456789Z', created_since: '2 weeks ago' })
+    assert.equal(data.images[1].class, '미사용')
+    assert.equal(data.images[1].rmi, 'c'.repeat(12))
+    assert.equal(data.images[1].size_bytes, 1_200_000_000)
+  })
+
+  test('context 를 주지 않으면 context 필드가 없고, 파일을 쓸 수 없으면 1 이다', () => {
+    const { box, run } = setup([])
+    const out = join(box.root, 'images.json')
+    assert.equal(run(['--json-out', out]).code, 0)
+    assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')), { recent_hours: 24, images: [] })
+    const bad = run(['--json-out', join(box.root, 'no-such-dir', 'x.json')])
+    assert.equal(bad.code, 1)
+    assert.ok(bad.stderr.startsWith('--json-out 파일을 쓸 수 없다: '), bad.stderr)
   })
 })
 

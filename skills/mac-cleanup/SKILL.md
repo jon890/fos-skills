@@ -58,7 +58,7 @@ node "$SKILL_DIR/scripts/survey_gradle.ts"
   표에 없는 이 맥의 엔진은 「알 수 없는 런타임」 이고, ssh·tcp 엔드포인트는 크기만 보이는 「이 맥 밖의 엔진」 이다. 맥 밖의 엔진은 승인 묶음과 삭제에 넣지 않는다.
 - `survey_docker.ts` 는 켜진 런타임마다 context 를 지정해 이미지(`docker_images.ts`)와 volume(`docker_volumes.ts --peek all --json-out`)을 따로 조사한다. 같은 소켓을 가리키는 context 는 런타임 하나로 합쳐 한 번만 본다. 사용자의 현재 docker context 는 바꾸지 않는다.
   한 런타임의 조사가 실패해도 나머지를 계속하고 종료 코드 1 로 끝난다. 실패한 런타임은 조사하지 않았다고 적는다.
-  `docker_volumes.ts` 의 옵션(`--peek all`, `--json-out`)과 후보 기준은 머리 주석이 소유한다. 사용자에게 보인 목록과 `delete_volumes.ts` 에 넘길 목록이 한 번의 조사에서 나오므로 따로 `--json` 을 돌리지 않는다.
+  `docker_volumes.ts` 의 옵션(`--peek all`, `--json-out`)과 후보 기준은 머리 주석이 소유한다. 이미지와 volume 모두 조사 파일(`이미지 조사 파일:`, `volume 조사 파일:`)을 남기므로, 사용자에게 보인 목록과 지울 목록이 한 번의 조사에서 나온다. 따로 `--json` 을 돌리지 않는다.
 - **꺼진 런타임을 건너뛰고 끝내지 않는다.** 꺼진 채로 건너뛴 실제 세션에서 켜 보니 전체 확보량의 절반이 Docker 에서 나왔다(실측은 `references/runtimes.md`). `container_runtimes.ts` 가 꺼진 런타임의 VM 디스크 크기와 켜는 명령을 보이므로 3단계에서 런타임마다 켜서 조사할지 묻는다.
 - 정리 전 수치는 `survey_system.ts` 첫 절의 디스크 여유, 스왑 사용량, `memory_pressure` 의 여유 비율이다.
   5단계에서 같은 값을 다시 읽으므로 지금 적어 둔다.
@@ -98,6 +98,7 @@ node "$SKILL_DIR/scripts/survey_docker.ts" "$RUNTIMES" --out-dir "$DOCKER_DIR" -
 
 Docker 는 승인한 런타임의 엔진에만 지운다. `$CONTEXT` 는 그 런타임의 context(조사 출력의 `context=`)이고, `docker context use` 로 사용자의 현재 context 를 바꾸지 않는다.
 이미지와 빌드 캐시는 `docker_cleanup.ts` 가, volume 은 `delete_volumes.ts` 가 보낸다. 둘 다 그 런타임의 context 로만 보내고, 이 맥 밖의 엔진이면 종료 코드 5 로 거부한다. 이미지와 빌드 캐시 명령은 `references/targets.md` 가 소유한다.
+이미지는 1단계의 `이미지 조사 파일:` 과 승인한 분류를 `docker_cleanup.ts rmi` 에 넘긴다. 조사 출력의 `rmi=` 값을 옮겨 적지 않는다.
 
 ## 5. 재측정과 보고
 
