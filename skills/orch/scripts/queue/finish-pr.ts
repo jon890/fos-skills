@@ -125,7 +125,8 @@
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
 //     --poll-interval SEC   확인 간격(초). 기본 60
 //     --worker-done-timeout MIN  머지를 알린 worker 의 dispatch 가 끝나기를 기다리는 한도(분). 기본 10. 0 이면 알리기만 한다
-//     --pid-file FILE       시작할 때 pid 를 쓰고 끝나면 지운다. 같은 PR 의 마무리가 둘 도는 것을 막을 때 쓴다
+//     --pid-file FILE       시작할 때 pid 를 쓰고 끝나면 지운다. 같은 PR 의 마무리가 둘 도는 것을 막을 때 쓴다.
+//                           끝날 때 다시 돌기 요청(lib/process.ts 의 「다시 돌기 요청」, `orch followup done` 이 남긴다)이 있으면 한 번 더 돈다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, SEND_TO_WORKER 로 worker 에게 보내는 명령을, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
@@ -173,6 +174,7 @@ import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
+import { takeRerun } from '../lib/process.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
@@ -989,16 +991,27 @@ async function executeMain(argv: string[]): Promise<number> {
     process.stderr.write(`finish-pr: 마무리 표시를 남기지 못했다: ${(e as Error).message}\n`)
   }
   try {
-    return await finish(args, repo)
-  } finally {
-    if (pidFile) {
-      try {
-        unlinkSync(pidFile)
-      } catch {
-        // 이미 없으면 지울 것이 없다
-      }
+    let code = await finish(args, repo)
+    // 도는 동안 후속 검증이 끝났으면(orch followup done) 끝난 상태로 한 번 더 돌아 남긴 워크트리와 업무까지 끝낸다
+    while (pidFile && releasePid(pidFile) && takeRerun(pidFile)) {
+      writeFileSync(pidFile, String(process.pid))
+      log('다시 돌기 요청이 있어 마무리를 한 번 더 돈다')
+      code = await finish(args, repo)
     }
+    return code
+  } finally {
+    if (pidFile) releasePid(pidFile)
   }
+}
+
+// pid 파일을 지운다. 이미 없으면 지울 것이 없다. 늘 true 라 while 조건에 이어 쓴다
+function releasePid(pidFile: string): boolean {
+  try {
+    unlinkSync(pidFile)
+  } catch {
+    // 이미 없다
+  }
+  return true
 }
 
 export function reportError(e: unknown): void {

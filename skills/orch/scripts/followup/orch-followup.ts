@@ -10,7 +10,8 @@
 //         보드 파일이 있으면 항목 followup-<PR> 을 done 으로 바꾼다. 실패해도 목록은 끝낸 채 둔다.
 //         이어서 그 PR 의 마무리(finish-pr.ts)를 백그라운드로 다시 띄워 지시서 정리, 업무 완료, 보드 done 까지 가게 한다.
 //         출력은 <orch 루트>/queue/finish-<PR>.out 이고 `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
-//         `FINISH-RUNNING <PR> <pid 파일>` 이다. --no-finish 면 다시 띄우지 않는다. 띄우지 못하면 FINISH-START-FAIL 과 종료 코드 1 이다.
+//         그 마무리에 다시 돌기 요청(lib/process.ts 의 「다시 돌기 요청」)을 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
+//         도는 마무리가 끝날 때 그 요청을 보고 끝난 후속 검증으로 한 번 더 돈다. --no-finish 면 다시 띄우지 않는다. 띄우지 못하면 FINISH-START-FAIL 과 종료 코드 1 이다.
 //         --run 은 마무리에 그대로 넘긴다. 없으면 마무리가 설정의 finish.run 을 읽는다
 //
 // 종료 코드: 0 성공, 1 없는 항목이나 마무리를 띄우지 못함, 2 사용법이나 설정 오류
@@ -29,7 +30,7 @@ import { mainCheckout, repoArgProblem } from '../lib/git.ts'
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { makeParent, pathOf } from '../lib/paths.ts'
 import { scriptCommand } from '../lib/proc.ts'
-import { pidFileAlive } from '../lib/process.ts'
+import { requestRerun } from '../lib/process.ts'
 
 const USAGE = `사용법:
   orch followup list [--all] [--repo DIR]
@@ -64,7 +65,8 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
   const dir = pathOf('queue', repo)
   makeParent(join(dir, 'x'), repo)
   const pidFile = join(dir, `finish-${pr}.pid`)
-  if (pidFileAlive(pidFile)) {
+  // 도는 마무리가 이미 대기 경로를 지났어도 끝난 뒤 한 번 더 돌게 요청을 남긴다(PR 558 리뷰)
+  if (requestRerun(pidFile) === 'queued') {
     console.log(`FINISH-RUNNING ${pr} ${pidFile}`)
     return 0
   }

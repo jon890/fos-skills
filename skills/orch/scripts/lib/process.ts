@@ -1,6 +1,6 @@
 // pid 생존 확인과 작업 디렉터리 점유 프로세스 찾기의 한 벌이다.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { inside, real } from './fs.ts'
 import { run } from './proc.ts'
 
@@ -18,6 +18,30 @@ export function alive(pid: number, options: { keepOnUnknownError?: boolean } = {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code
     return code === 'EPERM' || (options.keepOnUnknownError === true && code !== 'ESRCH')
+  }
+}
+
+// 다시 돌기 요청: pid 파일로 하나만 도는 명령(마무리)에 「끝난 뒤 한 번 더 돌라」 를 남긴다. 표시는 `<pid 파일>.rerun` 이다.
+//   요청하는 쪽(requestRerun)은 표시를 먼저 쓰고 pid 를 본다. 살아 있으면 'queued' 로, 도는 쪽이 끝나기 전에 표시를 가져간다.
+//   죽었으면 표시를 스스로 가져가 'start' 를 낸다. 그 사이 도는 쪽이 먼저 가져갔으면 'queued' 다.
+//   도는 쪽(takeRerun)은 pid 파일을 지운 뒤 표시를 가져간다. 가져갔으면 pid 파일을 다시 쓰고 한 번 더 돈다.
+//   표시 가져가기는 파일 지우기 하나라서 양쪽이 겹쳐도 한쪽만 가져간다. 그래서 요청이 사라지지도 두 번 돌지도 않는다
+export function rerunFile(pidFile: string): string {
+  return `${pidFile}.rerun`
+}
+
+export function requestRerun(pidFile: string): 'queued' | 'start' {
+  writeFileSync(rerunFile(pidFile), '')
+  if (pidFileAlive(pidFile)) return 'queued'
+  return takeRerun(pidFile) ? 'start' : 'queued'
+}
+
+export function takeRerun(pidFile: string): boolean {
+  try {
+    rmSync(rerunFile(pidFile))
+    return true
+  } catch {
+    return false
   }
 }
 

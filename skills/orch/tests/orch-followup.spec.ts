@@ -1,7 +1,7 @@
 // orch-followup.ts(orch followup list, done)를 임시 저장소와 가짜 마무리로 본다. Orca 와 GitHub 에는 닿지 않는다.
 // 가짜 마무리는 받은 인자를 FAKE_LOG 에 적는 python 스크립트다. 확장자대로 python3 로 돈다.
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,6 +61,21 @@ test('done 은 항목을 끝내고 그 PR 의 마무리를 다시 띄운다', { 
   const deadline = Date.now() + 5000
   while (!existsSync(c.log) && Date.now() < deadline) await sleep(50)
   assert.match(readFileSync(c.log, 'utf8'), /^finish 787 --repo \S+ --pid-file \S+finish-787\.pid --run run_1 --not-main 테스트$/m)
+})
+
+test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기 요청을 남긴다', (t) => {
+  const c = setup(t)
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
+  t.after(() => child.kill('SIGKILL'))
+  const pidFile = join(c.repo, '.orch', 'queue', 'finish-787.pid')
+  mkdirSync(join(c.repo, '.orch', 'queue'), { recursive: true })
+  writeFileSync(pidFile, String(child.pid))
+  const r = c.run(['done', '787', '--not-main', '테스트'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /^FINISH-RUNNING 787 /m)
+  // 도는 마무리가 끝날 때 이 표시를 보고 한 번 더 돈다(finish-pr.spec.ts 의 「다시 돌기 요청」)
+  assert.equal(existsSync(`${pidFile}.rerun`), true)
+  assert.equal(existsSync(c.log), false)
 })
 
 test('--no-finish 면 마무리를 띄우지 않고, 이미 끝난 항목은 ALREADY, 없는 항목은 MISSING 과 1 이다', (t) => {
