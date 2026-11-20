@@ -80,31 +80,40 @@ export function parseCodexModels(stdout: string): CodexList {
   return { models, failure: null }
 }
 
-let workerHome: { value: string | null } | null = null
+// home 은 CODEX_HOME 으로 줄 폴더다. null 이면 부른 셸의 환경 그대로다(ORCH_WORKER_CODEX_HOME 이 빈 값일 때뿐). failure 면 어느 계정인지 모른다
+export type WorkerHome = { home: string | null; failure: string | null }
+let workerHome: WorkerHome | null = null
 
-// Orca 가 새 Codex worker 에 쓸 계정의 홈. 모르면 null(부른 셸의 계정)이다
-export function workerCodexHome(): string | null {
+// Orca 가 새 Codex worker 에 쓸 계정의 홈.
+//     관리 계정(activeAccountId)이면 ORCA_CODEX_ACCOUNTS(없으면 ~/Library/Application Support/Orca/codex-accounts) 아래 <id>/home 이다.
+//     system(activeAccountId 가 null)이면 Codex 의 기본 홈(ORCH_SYSTEM_CODEX_HOME, 없으면 ~/.codex)이다. 부른 셸에 남은 CODEX_HOME 을 쓰지 않는다.
+//     계정을 조회하지 못했거나 관리 계정의 홈이 없으면 failure 다. 그때 모델 목록은 읽지 못한 것으로 본다
+export function workerCodexHome(): WorkerHome {
   const fixed = process.env.ORCH_WORKER_CODEX_HOME
-  if (fixed !== undefined) return fixed || null
-  if (workerHome) return workerHome.value
-  let value: string | null = null
+  if (fixed !== undefined) return { home: fixed || null, failure: null }
+  if (workerHome) return workerHome
   const listed = orcaJson<Record<string, any>>(['account', 'list', '--agent', 'codex'], { timeoutMs: 10_000 })
-  if (listed.ok) {
+  let value: WorkerHome
+  if (!listed.ok) value = { home: null, failure: 'Orca 가 새 worker 에 쓸 Codex 계정을 확인하지 못했' }
+  else {
     const codex = listed.data?.codex ?? listed.data
     const id = typeof codex?.activeAccountId === 'string' ? codex.activeAccountId : null
     const root = process.env.ORCA_CODEX_ACCOUNTS || join(homedir(), 'Library/Application Support/Orca/codex-accounts')
-    if (id && /^[\w-]+$/.test(id) && existsSync(join(root, id, 'home'))) value = join(root, id, 'home')
+    if (id === null) value = { home: process.env.ORCH_SYSTEM_CODEX_HOME || join(homedir(), '.codex'), failure: null }
+    else if (/^[\w-]+$/.test(id) && existsSync(join(root, id, 'home'))) value = { home: join(root, id, 'home'), failure: null }
+    else value = { home: null, failure: `Orca 의 Codex 계정 ${id} 의 홈을 찾지 못했` }
   }
-  workerHome = { value }
+  workerHome = value
   return value
 }
 
-// 실패는 `<실행 파일><failure>다` 로 읽히는 조각이다(model-check 의 경고 문장)
-export function readCodexModels(bin = codexBin(), home: string | null = workerCodexHome()): CodexList {
-  const cacheKey = `${bin}\0${home ?? ''}`
+// 실패는 `<실행 파일> debug models <failure>다` 로 읽히는 조각이다(model-check 의 경고 문장)
+export function readCodexModels(bin = codexBin(), worker: WorkerHome = workerCodexHome()): CodexList {
+  if (worker.failure) return { models: null, failure: `를 부르지 않았다. ${worker.failure}` }
+  const cacheKey = `${bin}\0${worker.home ?? ''}`
   const hit = cache.get(cacheKey)
   if (hit) return hit
-  const done = run([bin, 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024, ...(home ? { env: { CODEX_HOME: home } } : {}) })
+  const done = run([bin, 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024, ...(worker.home ? { env: { CODEX_HOME: worker.home } } : {}) })
   const list: CodexList = done.code !== 0 ? { models: null, failure: `가 종료 코드 ${done.code} 로 끝났` } : parseCodexModels(done.stdout)
   cache.set(cacheKey, list)
   return list
@@ -131,20 +140,33 @@ export function newestOfFamily(slug: string, effort: string | null, models: Code
 }
 
 export type Generation = { from: string; to: string; reason: string }
+export type Choice = { kind: 'upgrade' | 'kept' | 'fallback'; generation: Generation }
 
-// 띄울 Codex 모델의 세대를 정한다(스펙 REQ2, REQ4). 바꾸지 않으면 null 이다.
-//     목록의 같은 계열 최신이 더 높으면 그 세대로 올린다.
-//     적힌 모델을 목록이 받지 못하면(없거나 effort 를 지원하지 않는다) 받을 수 있는 같은 계열 최신으로 이 띄우기만 내린다.
-export function codexGeneration(slug: string, effort: string | null, models: CodexModel[]): Generation | null {
+// 「계열의 지금 세대」 를 고르는 하나뿐인 기준이다. 띄울 때(codexGeneration), 직접 고른 옛 세대 판정(pinnedCheck), 표 문서(planTable)가 함께 쓴다.
+//     upgrade   목록의 현재 세대(isCurrent) 가운데 같은 계열에서 그 effort 를 지원하는 가장 높은 세대가 적힌 모델보다 높다. 그 세대로 바꾼다
+//     kept      더 높은 현재 세대가 있지만 그 effort 를 지원하지 않고, 적힌 모델은 받을 수 있다. 바꾸지 않고 이유를 남긴다(to 는 from 과 같다)
+//     fallback  적힌 모델을 이 계정이 받지 못한다(목록에 없거나 effort 미지원). 받을 수 있는 같은 계열 최신으로 그 띄우기만 바꾼다(스펙 REQ4)
+// 현재 세대가 아닌(Previous generation, Legacy) 더 높은 세대로는 올리지 않는다. 표와 띄우기가 같은 세대를 고르게 하려는 것이다
+export function chooseGeneration(slug: string, effort: string | null, models: CodexModel[]): Choice | null {
   const name = parseModel(slug)
   if (!name || name.provider !== 'codex') return null
-  const target = newestOfFamily(slug, effort, models)
-  if (!target || target.slug === slug) return null
+  const current = models.filter(isCurrent)
+  const up = (m: CodexModel | null) => !!m && compareGeneration(parseModel(m.slug)!.generation, name.generation) > 0
+  const target = newestOfFamily(slug, effort, current)
+  if (up(target)) return { kind: 'upgrade', generation: { from: slug, to: target!.slug, reason: '같은 계열 새 세대' } }
   const accepted = models.some((m) => m.slug === slug && m.visibility === 'list' && (!effort || m.efforts.includes(effort)))
-  const higher = compareGeneration(parseModel(target.slug)!.generation, name.generation) > 0
-  if (higher) return { from: slug, to: target.slug, reason: '같은 계열 새 세대' }
-  if (!accepted) return { from: slug, to: target.slug, reason: `${slug} 를 이 계정이 받지 못해 이 띄우기만 옛 세대로 띄웠다` }
+  if (!accepted) {
+    const fallback = newestOfFamily(slug, effort, models)
+    return fallback ? { kind: 'fallback', generation: { from: slug, to: fallback.slug, reason: `${slug} 를 이 계정이 받지 못해 이 띄우기만 옛 세대로 띄웠다` } } : null
+  }
+  const newest = newestOfFamily(slug, null, current)
+  if (up(newest)) return { kind: 'kept', generation: { from: slug, to: slug, reason: `${newest!.slug} 가 effort ${effort ?? '기본'} 를 지원하지 않아 ${slug} 그대로 띄웠다` } }
   return null
+}
+
+// 띄울 Codex 모델의 세대(스펙 REQ2, REQ4). to 가 from 과 같으면 바꾸지 않고 이유만 남긴다. 판정은 chooseGeneration 이다
+export function codexGeneration(slug: string, effort: string | null, models: CodexModel[]): Generation | null {
+  return chooseGeneration(slug, effort, models)?.generation ?? null
 }
 
 // Claude 는 모델 목록을 내는 명령이 없다. 계열 이름(`fable`)으로 넘기면 Claude Code 가 그 계열의 최신 모델로 띄운다(스펙 REQ5, 근거는 design.md)
@@ -193,13 +215,17 @@ export function planTable(table: string, models: CodexModel[]): TablePlan {
     for (const at of occurrences(line, section === '## 모델').reverse()) {
       const name = parseModel(at.slug)
       if (!name || name.provider !== 'codex') continue
-      const target = newestOfFamily(at.slug, at.effort, current)
-      const newest = newestOfFamily(at.slug, null, current)
-      if (target && compareGeneration(parseModel(target.slug)!.generation, name.generation) > 0) {
-        upgrades.set(`${at.slug}>${target.slug}`, { from: at.slug, to: target.slug, reason: '같은 계열 새 세대' })
-        line = `${line.slice(0, at.start)}\`${target.slug}\`${line.slice(at.end)}`
-      } else if (newest && compareGeneration(parseModel(newest.slug)!.generation, name.generation) > 0) {
-        skipped.set(`${at.slug}>${newest.slug}@${at.effort}`, { from: at.slug, to: newest.slug, effort: at.effort, reason: `${newest.slug} 가 effort ${at.effort} 를 지원하지 않아 바꾸지 않았다` })
+      // 띄울 때와 같은 기준(chooseGeneration)이다. 목록에 없는 표의 모델(fallback)은 표를 바꿀 근거가 아니다
+      const choice = chooseGeneration(at.slug, at.effort, models)
+      if (choice?.kind === 'upgrade') {
+        const to = choice.generation.to
+        upgrades.set(`${at.slug}>${to}`, { from: at.slug, to, reason: '같은 계열 새 세대' })
+        line = `${line.slice(0, at.start)}\`${to}\`${line.slice(at.end)}`
+      } else if (choice?.kind === 'kept' || (!choice && name)) {
+        const newest = newestOfFamily(at.slug, null, current)
+        if (newest && compareGeneration(parseModel(newest.slug)!.generation, name.generation) > 0) {
+          skipped.set(`${at.slug}>${newest.slug}@${at.effort}`, { from: at.slug, to: newest.slug, effort: at.effort, reason: `${newest.slug} 가 effort ${at.effort} 를 지원하지 않아 바꾸지 않았다` })
+        }
       }
     }
     lines[i] = line
@@ -246,10 +272,9 @@ export function pinnedCheck(agent: string | null, model: string | null, effort: 
   const list = opts.remote ? { models: null, failure: '원격 worker 라 이 머신의 목록을 쓰지 않았' } as CodexList : readCodexModels()
   const outdated = (to: string, why: string) => ({ kind: 'outdated' as const, message: `MODEL-OUTDATED ${model} → ${to}${why}\n지시서를 새 세대로 고친다. \`후보 밖:\` 으로 옛 세대를 고를 수 있는 것은 worker 계정이 새 세대를 받지 못할 때뿐이다` })
   if (list.failure === null) {
-    const target = newestOfFamily(model, effort, list.models)
-    if (higher(target, model)) return outdated(target!.slug, '')
-    const listed = newestOfFamily(model, null, list.models)
-    if (higher(listed, model)) return { kind: 'kept', generation: { from: model, to: model, reason: `${listed!.slug} 가 effort ${effort ?? '기본'} 를 지원하지 않아 직접 고른 세대 그대로 띄웠다` } }
+    const choice = chooseGeneration(model, effort, list.models)
+    if (choice?.kind === 'upgrade') return outdated(choice.generation.to, '')
+    if (choice?.kind === 'kept') return { kind: 'kept', generation: choice.generation }
     const recorded = newestOfFamily(model, null, known)
     if (higher(recorded, model)) return { kind: 'kept', generation: { from: model, to: model, reason: `worker 계정 목록에 ${recorded!.slug} 가 없어 직접 고른 세대 그대로 띄웠다` } }
     return { kind: 'none', warning: null }

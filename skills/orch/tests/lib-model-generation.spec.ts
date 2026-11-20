@@ -76,7 +76,8 @@ describe('띄울 세대', () => {
 
   test('새 세대가 그 effort 를 지원하지 않으면 지원하는 세대로 띄운다', () => {
     const list = [model('gpt-6.2-sol', 'New.', ['low']), model('gpt-6.1-sol', 'Previous generation.', ['low', 'medium'])]
-    assert.equal(codexGeneration('gpt-6.1-sol', 'medium', list), null)
+    // 받을 수 있는 세대 그대로 두고 이유만 남긴다(to 가 from 과 같다)
+    assert.equal(codexGeneration('gpt-6.1-sol', 'medium', list)?.to, 'gpt-6.1-sol')
     assert.deepEqual(codexGeneration('gpt-6.2-sol', 'medium', list), { from: 'gpt-6.2-sol', to: 'gpt-6.1-sol', reason: 'gpt-6.2-sol 를 이 계정이 받지 못해 이 띄우기만 옛 세대로 띄웠다' })
   })
 
@@ -118,6 +119,18 @@ describe('표 문서', () => {
   })
 })
 
+describe('표와 띄우기가 같은 세대', () => {
+  test('현재 세대가 그 effort 를 지원하지 않으면 이전 세대로 올리지 않고 표와 띄우기 모두 그대로 둔다', () => {
+    // 6.3 은 Previous generation 이지만 low 를 지원하고, 현재 세대 6.4 는 medium 만 지원한다
+    const list = [model('gpt-6.4-sol', 'Current.', ['medium']), model('gpt-6.3-sol', 'Previous generation model.', ['low']), model('gpt-6.2-sol', 'Previous generation model.', ['low', 'medium'])]
+    assert.deepEqual(codexGeneration('gpt-6.2-sol', 'low', list), { from: 'gpt-6.2-sol', to: 'gpt-6.2-sol', reason: 'gpt-6.4-sol 가 effort low 를 지원하지 않아 gpt-6.2-sol 그대로 띄웠다' })
+    assert.equal(codexGeneration('gpt-6.2-sol', 'medium', list)?.to, 'gpt-6.4-sol')
+    const plan = planTable(TABLE, list)
+    assert.match(plan.text, /\| `impl-planned` \| [^|]+\| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
+    assert.match(plan.text, /\| `impl-explore` \| [^|]+\| `codex` \| `gpt-6\.4-sol` \| `medium` \|/)
+  })
+})
+
 describe('표 문서의 effort', () => {
   test('새 세대가 그 자리의 effort 를 지원하지 않으면 그 자리는 바꾸지 않고 이유를 남긴다. 띄울 때의 판정과 같다', () => {
     // 6.2 는 low 만, 6.3 은 medium 만 지원한다
@@ -126,7 +139,7 @@ describe('표 문서의 effort', () => {
     assert.match(plan.text, /\| `impl-planned` \| [^|]+\| `codex` \| `gpt-6\.2-sol` \| `low` \|/)
     assert.match(plan.text, /\| `impl-explore` \| [^|]+\| `codex` \| `gpt-6\.3-sol` \| `medium` \|/)
     assert.ok(plan.skipped.some(k => k.from === 'gpt-6.2-sol' && k.to === 'gpt-6.3-sol' && k.effort === 'low' && /effort low 를 지원하지 않아/.test(k.reason)))
-    assert.equal(codexGeneration('gpt-6.2-sol', 'low', list), null)
+    assert.equal(codexGeneration('gpt-6.2-sol', 'low', list)?.to, 'gpt-6.2-sol')
     assert.equal(codexGeneration('gpt-6.2-sol', 'medium', list)?.to, 'gpt-6.3-sol')
   })
 })
@@ -144,13 +157,22 @@ describe('계정', () => {
     // 가짜 codex 는 CODEX_HOME 을 모델 설명으로 돌려준다
     process.env.CODEX_BIN = linkBin(dir, 'codex', `console.log(JSON.stringify({ models: [{ slug: 'gpt-6.3-sol', visibility: 'list', description: process.env.CODEX_HOME || 'shell', supported_reasoning_levels: [{ effort: 'medium' }] }] }))`)
     forgetCodexModels()
-    assert.equal(workerCodexHome(), join(accounts, 'acct-1', 'home'))
+    assert.deepEqual(workerCodexHome(), { home: join(accounts, 'acct-1', 'home'), failure: null })
     assert.equal(readCodexModels().models?.[0].description, join(accounts, 'acct-1', 'home'))
     assert.equal(codexGeneration('gpt-6.2-sol', 'medium', readCodexModels().models!)?.to, 'gpt-6.3-sol')
     // 조회하지 못하거나 관리 계정이 없으면 부른 셸 그대로다
+    // system 계정을 고르면 부른 셸에 남은 CODEX_HOME 이 아니라 Codex 기본 홈으로 읽는다
+    process.env.ORCA = linkBin(dir, 'orca-system', `console.log(JSON.stringify({ ok: true, result: { codex: { activeAccountId: null, accounts: [] } } }))`)
+    process.env.CODEX_HOME = join(accounts, 'acct-1', 'home')
+    process.env.ORCH_SYSTEM_CODEX_HOME = join(dir, 'system-home')
+    forgetCodexModels()
+    assert.deepEqual(workerCodexHome(), { home: join(dir, 'system-home'), failure: null })
+    assert.equal(readCodexModels().models?.[0].description, join(dir, 'system-home'))
+    // 계정을 조회하지 못하면 셸 계정으로 읽지 않고 목록을 읽지 못한 것으로 본다
     process.env.ORCA = linkBin(dir, 'orca-fail', 'process.exit(1)')
     forgetCodexModels()
-    assert.equal(workerCodexHome(), null)
+    assert.match(workerCodexHome().failure ?? '', /Codex 계정을 확인하지 못했/)
+    assert.equal(readCodexModels().models, null)
     process.env.ORCH_WORKER_CODEX_HOME = ''
     delete process.env.CODEX_HOME
     forgetCodexModels()
@@ -191,7 +213,7 @@ describe('직접 고른 옛 세대', () => {
   test('새 세대를 알지만 계정이 받지 못하거나 effort 를 지원하지 않으면 그대로 두고 이유를 남긴다', (t) => {
     withCodex(t, list([entry('gpt-6.2-sol', ['low']), entry('gpt-6.1-sol', ['ultra'], 'Previous generation.')]))
     const effort = pinnedCheck('codex', 'gpt-6.1-sol', 'ultra', { known: [] })
-    assert.deepEqual(effort, { kind: 'kept', generation: { from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', reason: 'gpt-6.2-sol 가 effort ultra 를 지원하지 않아 직접 고른 세대 그대로 띄웠다' } })
+    assert.deepEqual(effort, { kind: 'kept', generation: { from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', reason: 'gpt-6.2-sol 가 effort ultra 를 지원하지 않아 gpt-6.1-sol 그대로 띄웠다' } })
     forgetCodexModels()
     process.env.CODEX_BIN = linkBin(tempDir('pinned-only-', t), 'codex', list([entry('gpt-6.1-sol', ['low'])]))
     const account = pinnedCheck('codex', 'gpt-6.1-sol', 'low', { known: [model('gpt-6.2-sol', 'Fast.', ['low'])] })
