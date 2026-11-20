@@ -169,7 +169,7 @@ import { gh } from '../lib/gh.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
 import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges, pendingFollowup } from '../lib/feature-evidence.ts'
-import { followupDone, mirrorBoard, updateFollowups } from '../lib/followups.ts'
+import { followupDone, loadFollowups, updateWithBoard } from '../lib/followups.ts'
 import { markDone, upsertFollowup } from '../core/followups.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
@@ -906,18 +906,14 @@ function holdForFollowup(args: Args, repo: string, merged: Merged, text: string,
   const pr = Number(args.pr)
   let line: string
   try {
-    const got = updateFollowups(repo, (items) => {
+    const { value: got, board } = updateWithBoard(repo, pr, (items) => {
       const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy }, new Date().toISOString())
       return { items: made.items, value: made }
-    })
-    const item = got.items.find((one) => one.pr === pr)
+    }, { file: args.board, bin: args.boardBin })
     line = got.result === 'added' ? `FOLLOWUP-ADDED #${pr} ${oneLine(text)}` : `FOLLOWUP-KEPT #${pr} ${oneLine(text)}`
     out(line)
-    if (item) {
-      const board = mirrorBoard(repo, item, { file: args.board, bin: args.boardBin })
-      if (board.startsWith('실패:')) log(`배포 뒤 할 일을 보드에 보이지 못했다: ${board.slice('실패:'.length).trim()}`)
-      else if (board !== '보드 없음') log(board)
-    }
+    if (board.startsWith('실패:')) log(`배포 뒤 할 일을 보드에 보이지 못했다: ${board.slice('실패:'.length).trim()}`)
+    else if (board !== '보드 없음') log(board)
   } catch (e) {
     return fail(`배포 뒤 할 일 목록에 옮기지 못했다: ${oneLine((e as Error).message)}. 후속 검증 이 완료되지 않았다: 대기 | ${text}`)
   }
@@ -932,13 +928,14 @@ function holdForFollowup(args: Args, repo: string, merged: Merged, text: string,
 function closeFollowup(args: Args, repo: string): void {
   const pr = Number(args.pr)
   try {
-    const got = updateFollowups(repo, (items) => {
+    // 끝난 항목이 없으면 고치지 않는다(보드도 쓰지 않는다). 있으면 같은 잠금 안에서 보드를 done 으로 쓴다
+    if (!loadFollowups(repo).some((one) => one.pr === pr && one.done_at === null)) return
+    const { value: result, board } = updateWithBoard(repo, pr, (items) => {
       const made = markDone(items, pr, new Date().toISOString(), '본문의 후속 검증이 통과다')
-      return { items: made.items, value: { result: made.result, item: made.items.find((one) => one.pr === pr) ?? null } }
-    })
-    if (got.result !== 'done' || !got.item) return
+      return { items: made.items, value: made.result }
+    }, { file: args.board, bin: args.boardBin })
+    if (result !== 'done') return
     out(`FOLLOWUP-DONE #${pr}`)
-    const board = mirrorBoard(repo, got.item, { file: args.board, bin: args.boardBin })
     if (board.startsWith('실패:')) log(`배포 뒤 할 일의 보드를 done 으로 바꾸지 못했다: ${board.slice('실패:'.length).trim()}`)
   } catch (e) {
     log(`배포 뒤 할 일을 끝내지 못했다: ${oneLine((e as Error).message)}. 끝내려면: ${orchWord()} followup done ${pr}`)

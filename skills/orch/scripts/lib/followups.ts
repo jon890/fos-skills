@@ -1,14 +1,15 @@
 // 배포 뒤 할 일 목록의 파일과 보드 반영, 루프 알림. 값을 정하는 규칙은 core/followups.ts 가 소유한다.
 //
 // 파일: <orch 루트>/state/followups.json. 값은 { items: Followup[] } 이다. 저장소마다 하나고 워크트리끼리 함께 쓴다.
-//     마무리 여럿과 루프, 코디네이터 명령이 함께 쓰므로 쓰기는 옆 잠금(work-board 의 withFileLock) 안에서 읽고 고쳐 rename 한다.
+//     마무리 여럿과 루프, 코디네이터 명령이 함께 쓰므로 쓰기는 옆 잠금(followups.json.lock, lib/owner-lock.ts) 안에서 읽고 고쳐 rename 한다.
+//     잠금은 쥔 프로세스가 살아 있으면 넘겨받지 않는다. 보드 명령(60초까지)이 잠금 안에서 돌기 때문이다. 잡지 못하면 던진다.
 //
-// 보드 반영(mirrorBoard): 보드 파일이 있을 때만 항목 `followup-<PR>` 을 보드 명령으로 만든다. 끝나지 않은 항목은 wait 상태,
+// 보드 반영(updateWithBoard): 보드 파일이 있을 때만 항목 `followup-<PR>` 을 보드 명령으로 만든다. 끝나지 않은 항목은 wait 상태,
 //     제목 「배포 뒤 확인 #<PR> <PR 제목>」, 하위 줄 하나(후속 검증 글)다. 끝낸 항목은 done 으로 바꾼다. 보드가 없으면 건너뛴다.
 //     보드에는 항목을 새로 만드는 orch 명령이 없어(orch board set 은 있는 항목만 받는다) 이 경로가 만든다.
 //     보드 반영이 실패해도 목록은 그대로 쓴다. 목록이 원본이고 보드는 보여 주는 자리다.
-//     보드 쓰기는 저장소마다 한 잠금(followups.json.board.lock) 안에서 하고, 잠금을 잡은 뒤 목록의 그 항목을 다시 읽어 그 상태로 쓴다.
-//     받은 항목은 목록에 없을 때만 쓴다. 마무리가 받아 둔 대기 값을 followup done 이 끝남으로 바꾼 뒤에 쓰면 보드가 대기로 돌아갔다(PR 558 리뷰)
+//     보드는 목록을 쓴 같은 잠금 안에서, 방금 쓴 목록의 그 항목 값으로만 쓴다. 받아 둔 값으로 보드를 쓰는 경로는 없다.
+//     따로 쓰면 늦게 끝난 대기 쓰기가 followup done 의 끝남을 덮어 보드가 대기로 돌아갔다(PR 558 리뷰)
 //
 // 루프 확인(followupTick): 상주 루프가 틱마다 부른다(loop/steps/followups.ts).
 //     1. 배포를 확인하지 못한 항목(failure, timeout)은 배포 설정(finish.deploy_workflow 와 deploy_branch)이 있으면 그 머지 커밋이
@@ -21,7 +22,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withOwnerLock } from './owner-lock.ts'
 import {
   boardItemId, boardTitle, dueFollowups, markDeployed, markNotified, noticeText, parseFollowups, pruneFollowups, undeployedFollowups,
 } from '../core/followups.ts'
@@ -49,19 +50,35 @@ export function loadFollowups(repo: string): Followup[] {
   return parseFollowups(JSON.parse(readFileSync(file, 'utf8')))
 }
 
-// 잠금 안에서 읽고 고쳐 쓴다. change 가 같은 배열을 돌려주면 쓰지 않는다
-export function updateFollowups<T>(repo: string, change: (items: Followup[]) => { items: Followup[]; value: T }): T {
+type Change<T> = (items: Followup[]) => { items: Followup[]; value: T }
+
+// 잠금 안에서 읽고 고쳐 쓴 뒤 after 에 지금 목록을 준다. change 가 같은 배열을 돌려주면 쓰지 않는다
+function locked<T, R>(repo: string, change: Change<T>, after: (items: Followup[], value: T) => R): R {
   const file = followupsFile(repo)
   makeParent(file, repo)
-  return withFileLock(file, () => {
+  return withOwnerLock(`${file}.lock`, () => {
     const before = existsSync(file) ? parseFollowups(JSON.parse(readFileSync(file, 'utf8'))) : []
     const got = change(before)
+    let items = before
     if (got.items !== before) {
-      const items = pruneFollowups(got.items, Date.now())
+      items = pruneFollowups(got.items, Date.now())
       writeFileSync(`${file}.tmp`, `${JSON.stringify({ items }, null, 2)}\n`)
       renameSync(`${file}.tmp`, file)
     }
-    return got.value
+    return after(items, got.value)
+  }, { waitMs: 90_000 })
+}
+
+export function updateFollowups<T>(repo: string, change: Change<T>): T {
+  return locked(repo, change, (_items, value) => value)
+}
+
+// 목록을 고치고, 같은 잠금 안에서 그 PR 의 보드 항목을 방금 쓴 목록의 값으로 쓴다(머리 주석의 「보드 반영」).
+// board 는 반영한 줄이나 건너뛴 이유다. 실패는 `실패:` 로 시작한다. 목록에 그 PR 이 없으면 `항목 없음` 이다
+export function updateWithBoard<T>(repo: string, pr: number, change: Change<T>, options: BoardOptions = {}): { value: T; board: string } {
+  return locked(repo, change, (items, value) => {
+    const item = items.find((one) => one.pr === pr)
+    return { value, board: item ? mirrorBoard(repo, item, options) : '항목 없음' }
   })
 }
 
@@ -76,8 +93,8 @@ export function followupDone(repo: string, pr: number | string): boolean {
 
 export type BoardOptions = { file?: string | null; bin?: string | null }
 
-// 머리 주석의 「보드 반영」. 반영한 줄이나 건너뛴 이유를 돌려준다. 실패는 `실패:` 로 시작한다
-export function mirrorBoard(repo: string, item: Followup, options: BoardOptions = {}): string {
+// 머리 주석의 「보드 반영」. 목록의 잠금 안에서만 부른다(updateWithBoard)
+function mirrorBoard(repo: string, item: Followup, options: BoardOptions): string {
   let file: string
   try {
     file = boardPath(repo, options.file ?? null)
@@ -85,25 +102,6 @@ export function mirrorBoard(repo: string, item: Followup, options: BoardOptions 
     return `실패: 보드 경로를 정하지 못했다: ${(e as Error).message}`
   }
   if (!existsSync(file)) return '보드 없음'
-  const lock = followupsFile(repo) + '.board'
-  try {
-    makeParent(lock, repo)
-    return withFileLock(lock, () => writeBoard(repo, latest(repo, item), file, options), { waitMs: 90_000 })
-  } catch (e) {
-    return `실패: 보드 ${boardItemId(item.pr)}: ${(e as Error).message.replace(/\s+/g, ' ').trim()}`
-  }
-}
-
-// 목록의 그 항목. 목록을 읽지 못하거나 없으면 받은 항목이다
-function latest(repo: string, item: Followup): Followup {
-  try {
-    return loadFollowups(repo).find((one) => one.pr === item.pr) ?? item
-  } catch {
-    return item
-  }
-}
-
-function writeBoard(repo: string, item: Followup, file: string, options: BoardOptions): string {
   const id = boardItemId(item.pr)
   const argv = item.done_at
     ? ['set', id, 'done']

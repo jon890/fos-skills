@@ -25,7 +25,7 @@ import { parseArgs } from 'node:util'
 import { followupLine, markDone, openFollowups } from '../core/followups.ts'
 import { expandArgs } from '../lib/args.ts'
 import { scriptPath } from '../lib/commands.ts'
-import { loadFollowups, mirrorBoard, updateFollowups } from '../lib/followups.ts'
+import { loadFollowups, updateWithBoard } from '../lib/followups.ts'
 import { real } from '../lib/fs.ts'
 import { mainCheckout, repoArgProblem } from '../lib/git.ts'
 import { guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
@@ -95,19 +95,17 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
 async function done(repo: string, pr: number, values: { note?: string; run?: string; 'no-finish'?: boolean; 'not-main'?: string }): Promise<number> {
   const guard = guardWrite(repo, 'followup done', values['not-main'], { prs: [String(pr)] })
   if (guard.code !== 0) return guard.code
-  const got = updateFollowups(repo, (items) => {
+  // 목록을 끝내고 같은 잠금 안에서 보드를 목록의 값(done)으로 쓴다(lib/followups.ts 의 「보드 반영」)
+  const { value: result, board } = updateWithBoard(repo, pr, (items) => {
     const made = markDone(items, pr, new Date().toISOString(), values.note?.trim() || null)
-    return { items: made.items, value: { result: made.result, item: made.items.find((one) => one.pr === pr) ?? null } }
+    return { items: made.items, value: made.result }
   })
-  if (got.result === 'missing') {
+  if (result === 'missing') {
     console.log(`FOLLOWUP-MISSING #${pr}`)
     return 1
   }
-  console.log(got.result === 'done' ? `FOLLOWUP-DONE #${pr}` : `FOLLOWUP-ALREADY #${pr}`)
-  if (got.item) {
-    const board = mirrorBoard(repo, got.item)
-    if (board.startsWith('실패:')) console.log(`FOLLOWUP-BOARD-FAIL #${pr} ${board.slice('실패:'.length).trim()}`)
-  }
+  console.log(result === 'done' ? `FOLLOWUP-DONE #${pr}` : `FOLLOWUP-ALREADY #${pr}`)
+  if (board.startsWith('실패:')) console.log(`FOLLOWUP-BOARD-FAIL #${pr} ${board.slice('실패:'.length).trim()}`)
   if (values['no-finish']) return 0
   return restartFinish(repo, pr, values.run, values['not-main'])
 }
