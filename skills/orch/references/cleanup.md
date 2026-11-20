@@ -469,6 +469,16 @@ Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이�
 
 - PR 이 열려 있는 워크트리. 리뷰 반영에 필요하고, 머지된 뒤에 지운다
 - `release/*` 브랜치. 머지 여부와 무관하게 릴리스 이력이다
+- 재부팅이나 Orca 재시작으로 끊긴 worker 의 워크트리, 터미널, 지시서. PR 이 MERGED 여도 남긴다. 코디네이터가 `orch worker resume` 으로 이어 간다
+- 기능 PR 의 후속 검증이 대기인 워크트리와 지시서. 근거가 빠졌거나 실패했거나 읽지 못해도 남긴다. 근거를 갱신하면 다음 정리가 지운다
+
+끊김인지 오류인지, 어느 dispatch 를 볼지는 `scripts/lib/worker-state.ts` 머리 주석의 「failed 의 이유」 가, 남기는 조건과 줄은 `scripts/cleanup/steps/worktrees.ts` 머리 주석의 「남기는 워크트리」 가 소유한다.
+**다시 띄우지 않기로 정한 워크트리는 `--remove-kept` 로 지운다.** 커밋 안 된 변경과 원격에 없는 커밋은 그래도 막는다. 그 워크트리만 지우는 옵션이 아니라, 다른 정리 대상도 평소처럼 함께 정리한다.
+끊긴 지 하루가 넘으면 `orch doctor` 가 `KEPT-LOST` 줄과 이 명령을 낸다. 자동으로 지우지 않는다.
+
+```bash
+orch cleanup sweep --repo "$REPO" --run "$RUN_ID" --remove-kept "$WORKTREE" --apply
+```
 
 ### handoff 산출물 정리
 
@@ -483,4 +493,4 @@ PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가
 orch cleanup handoff --apply
 ```
 
-기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. finish-pr 은 기능 PR 도 배포 확인 전에 워크트리·브랜치·빈 터미널을 지운다. 근거 누락이나 대기면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 로 끝난다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다.
+기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. 근거 누락이나 대기면 정리가 워크트리와 지시서를 남기고, finish-pr 은 업무 완료와 보드도 남긴 채 FINISH-FAIL 로 끝난다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다.

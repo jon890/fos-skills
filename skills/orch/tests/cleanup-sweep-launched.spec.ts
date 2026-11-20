@@ -27,6 +27,8 @@ function ownTerminal(path: string, opts: Own = {}): void {
     workerState: opts.state ?? 'succeeded',
     agentTerminalHandle: 'term_o',
     resource: { worktreeId: `x::${path}`, terminalHandle: 'term_o', ownershipState: 'user_owned', retainedReason: 'user_takeover' },
+    // failed 는 이유가 알려진 오류(worker 보고)로 둔다. 이유를 모르는 failed 는 끊김처럼 남긴다(lib/worker-state.ts 의 「failed 의 이유」)
+    ...(opts.status === 'failed' ? { projection: { stage: { detail: 'settled' } } } : {}),
   }
   fx.terminals = [{ handle: 'term_o', worktreePath: path }]
   fx.allWorkers = [worker]

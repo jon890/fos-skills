@@ -39,7 +39,8 @@ export function trashLaunchedSpecs(repo: string, specsDir: string | null, path: 
 }
 
 // 기능 PR 의 후속 검증이 끝나지 않았으면 지시서를 남긴다. 남기면 true 다.
-// 지울 지시서 후보가 있을 때만 PR 본문을 읽는다. 워크트리와 브랜치는 후속 검증과 상관없이 지운다
+// 지울 지시서 후보가 있을 때만 PR 본문을 읽는다. 기능 PR 의 후속 검증이 대기면 worktrees.ts 가 그 앞에서 워크트리까지 남기므로,
+// 여기는 기능 PR 로 알아보지 못한 PR 의 지시서를 지키는 자리다
 export function specsKept(s: Sweep, path: string, name: string, branch: string, pr: Pr | null): boolean {
   const { repo, specsDir, log } = s
   if (!specsDir || pr?.state !== 'MERGED') return false

@@ -21,7 +21,7 @@
 //     3. worker 종료 대기 뒤 lib/routing-log.ts로 PR 관측값을 기록한다. 기록 실패는 정리를 막지 않는다.
 //     4. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
-//        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 지시서만 남긴다
+//        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 워크트리와 지시서를 함께 남긴다(사용자 결정 2026-11-20)
 //        이어서 <orch>/handoff/pr-<PR 번호>/ 만 휴지통으로 옮긴다. 규칙 밖의 옛 파일은 개수만 알리고 남긴다.
 //        worker 정리가 끝나지 않으면 FINISH-FAIL 로 끝내고 원본을 남긴다. 휴지통 이동만 실패하면 경고하고 계속한다.
 //     5. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
@@ -44,7 +44,7 @@
 //     10. 보드 항목을 고친다(아래 「보드 항목」)
 //
 // 기능 PR(지시서가 기능 루프이거나 본문에 완료 근거 블록이 있다): 단계 6 의 판정 뒤, after-deploy 앞에서 PR 본문을 새로 읽어 완료 근거를 검사한다.
-//     근거가 빠졌거나 후속 검증이 대기·실패면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 워크트리는 단계 4 에서 이미 지웠다.
+//     근거가 빠졌거나 후속 검증이 대기·실패면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 정리는 그 워크트리도 남긴다(단계 4).
 //     근거를 갱신한 뒤 같은 명령으로 재개한다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
@@ -173,6 +173,7 @@ import { orchWord, scriptPath } from '../lib/commands.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const CLEANUP_TRIES = 5
+const KEPT_ON_PURPOSE = /끊긴 worker |끊김인지 확인하지 못한 |기능 후속 검증이 끝나지 않았다/
 // 옛 명령의 자식 실행 시간 제한(초). 정리 스크립트만 600초였다
 const RUN_TIMEOUT_MS = 300_000
 const SWEEP_TIMEOUT_MS = 600_000
@@ -432,6 +433,8 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
       if (line) log(`sweep: ${line.replace(/\r$/, '')}`)
     }
     if (!worktreePath(repo, branch) && !localBranchExists(repo, branch)) return true
+    // 정리가 끊긴 worker 나 후속 검증 대기로 일부러 남겼으면 다시 돌려도 같다(cleanup/steps/worktrees.ts 의 「남기는 워크트리」)
+    if (KEPT_ON_PURPOSE.test(done.stdout)) return false
     if (attempt < CLEANUP_TRIES) await sleep(args.pollInterval * 1000)
   }
   return false
@@ -746,7 +749,7 @@ async function finish(args: Args, repo: string): Promise<number> {
   const problems: string[] = []
   let handoffProblem = false
   // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
-  // 기능 PR 도 같다. 후속 검증이 대기여도 cleanup-sweep 은 워크트리와 브랜치만 지우고 지시서를 남긴다(사용자 결정 2026-11-04)
+  // 기능 PR 도 같다. 후속 검증이 대기거나 끊긴 worker 의 워크트리면 cleanup-sweep 이 남기고, 여기서는 「정리 남음」 만 알린다(사용자 결정 2026-11-20)
   const workerClean = await cleanupWorker(args, repo, branch)
   if (!workerClean) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)

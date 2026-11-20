@@ -1,0 +1,2 @@
+- 재부팅이나 Orca 재시작으로 끊긴 worker 와 기능 후속 검증이 대기인 워크트리를 정리가 지우지 않는다.
+- 남긴 워크트리는 `orch cleanup sweep --remove-kept` 로 지우고, 끊긴 지 하루가 넘으면 `orch doctor` 가 `KEPT-LOST` 로 알린다.

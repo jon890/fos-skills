@@ -120,6 +120,15 @@
 //     worker-list 를 30초 안에 읽지 못하면 SKIP-WORKERS 다. 경고라 종료 코드를 바꾸지 않는다.
 //     실패한 dispatch 나 작업 중이 아닌 user_owned 터미널이 있으면 `orch worker adopt` 를 안내한다.
 //
+// 남긴 끊긴 worker 판정(늘 본다):
+//     마지막 dispatch 가 끊긴 워크트리(정리 도구가 남기는 것. cleanup/steps/worktrees.ts 파일 맨 위 설명의 「남기는 워크트리」)가 쌓이지 않게 알린다.
+//     PR 이 열려 있어 다른 이유로 남는 워크트리도 걸린다. 그때는 resume 으로 이어 가거나 worker 를 새로 맡긴다.
+//     --run 의 worker-list 행(없으면 호출 터미널의 Run, 그것도 없으면 모든 Run)을 경로마다 모아 lib/worker-state.ts 의 heldDispatch 로 본다.
+//     --repo 의 git 워크트리 가운데 그 결과가 있고 끊긴 지 하루(HELD_NOTICE_MS)가 넘은 것마다 KEPT-LOST 줄과 직접 정리 명령 한 줄을 낸다.
+//     끊긴 시각은 heldSince, 없으면 worker-show 의 dispatch.completedAt 이다. 둘 다 없으면 내지 않는다.
+//     자동으로 지우지 않는다(사용자 결정 2026-11-20. 쉬던 worker 는 다음 날 오전까지 기다리기도 한다). 경고라 종료 코드를 바꾸지 않는다.
+//     --run 을 주면 그 Run 의 행만 본다. worker-list 를 읽지 못하면 내지 않는다(--run 이 있으면 worker 판정의 SKIP-WORKERS 가 알린다)
+//
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
 //                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 `orch loop start` 명령을 낸다. 종료 코드는 바꾸지 않는다.
@@ -153,6 +162,7 @@
 //     LOOP-STALE <repo> <pid> <번들 sha 나 버전>  지금 세션의 설치본이 아닌 번들로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
 //     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
 //     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
+//     KEPT-LOST <경로> <dispatch> <끊긴 시각>      끊긴 worker 로 남긴 워크트리가 하루 넘게 있다(위 「남긴 끊긴 worker 판정」). 다음 줄에 직접 정리 명령이 온다
 //     FEEDBACK-OPEN <개수> <폴더>                 이 저장소 몫 또는 fos-skills 의 core 몫 개선 후보가 있다
 //     FEEDBACK-NOTICE <제목>: <결과>             받은 반영·기각 결과. 출력 뒤 휴지통으로 옮긴다
 //     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
@@ -168,7 +178,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -203,10 +213,10 @@ import { shQuote } from '../lib/py.ts'
 import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { ageSeconds, closedReason, snapshot } from '../lib/questions.ts'
 import { waiterPids as findWaiters } from '../lib/waiters.ts'
-import { missingRowKeys, workerRows } from '../lib/workers.ts'
+import { missingRowKeys, workerRows, worktreePaths } from '../lib/workers.ts'
 import { orcaJson } from '../lib/orca.ts'
 import { adoptHint } from '../lib/sessions.ts'
-import { isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
+import { heldDispatch, heldSince, isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
 import { emit } from '../lib/output.ts'
 
 const USAGE =
@@ -220,6 +230,8 @@ const GIT_TIMEOUT_MS = 20_000
 const OVERDUE_SEC = 600
 const WORKERS_TIMEOUT_MS = 30_000
 const SHAPE_TIMEOUT_MS = 10_000
+// 끊긴 worker 로 남긴 워크트리를 알리기까지 기다리는 시간. 쉬던 worker 가 다음 날 오전까지 기다리기도 한다(스펙 DECISION3)
+export const HELD_NOTICE_MS = 24 * 60 * 60 * 1000
 
 type Checked = { lines: string[]; code: number }
 
@@ -606,6 +618,38 @@ function checkWorkers(runId: string, repo: string): string[] {
   return lines
 }
 
+// 머리 주석의 「남긴 끊긴 worker 판정」. now 는 테스트가 바꾼다
+export function checkHeldWorktrees(runId: string | null, repo: string, now = Date.now()): string[] {
+  const got = workerRows(runId, { timeoutMs: WORKERS_TIMEOUT_MS })
+  if (!got.ok) return []
+  const lines: string[] = []
+  for (const path of new Set(worktreePaths(repo).values())) {
+    const target = realPath(path)
+    if (target === realPath(repo)) continue
+    const rows = got.rows.filter((row) => {
+      const id = String(isObject(row.resource) ? row.resource.worktreeId ?? '' : '')
+      const at = id.indexOf('::')
+      return at >= 0 && realPath(id.slice(at + 2)) === target
+    })
+    const held = heldDispatch(rows)
+    if (!held) continue
+    let since = heldSince(held.row)
+    if (since === null) {
+      const shown = orcaJson<{ dispatch?: { completedAt?: unknown } }>(['orchestration', 'worker-show', '--dispatch', held.dispatch], { timeoutMs: WORKERS_TIMEOUT_MS })
+      const at = shown.ok && typeof shown.data?.dispatch?.completedAt === 'string' ? Date.parse(shown.data.dispatch.completedAt) : Number.NaN
+      since = Number.isFinite(at) ? at : null
+    }
+    if (since === null || now - since <= HELD_NOTICE_MS) continue
+    const run = typeof held.row.runId === 'string' && held.row.runId ? held.row.runId : runId
+    lines.push(
+      `KEPT-LOST ${path} ${held.dispatch} ${new Date(since).toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
+      `  고칠 명령: ${orchWord()} cleanup sweep --repo ${shQuote(repo)}${run ? ` --run ${shQuote(run)}` : ''} --remove-kept ${shQuote(path)} --apply`,
+      `  안내: 다시 띄우려면 ${orchWord()} worker resume --dispatch ${shQuote(held.dispatch)}. 다시 띄우지 않을 것이면 위 명령으로 지운다`,
+    )
+  }
+  return lines
+}
+
 // 머리 주석의 「orch 명령 판정」. Claude 세션의 Bash 는 플러그인 bin/ 이 PATH 에 있어 사람 셸의 PATH 를 볼 수 없다.
 // 그래서 ~/.local/bin/orch 사본이 있는지, 지금 실행기와 같은지, 플러그인 bin/ 을 뺀 PATH 에 그 폴더가 있는지를 본다
 function checkCli(skillDir: string): string[] {
@@ -848,7 +892,7 @@ async function executeMain(argv: string[]): Promise<number> {
           `  ${orchWord()} loop start --repo ${shQuote(repo)} --run ${shQuote(runId as string)}`,
         ]
       : []
-  const workerLines = runId ? checkWorkers(runId, repo) : []
+  const workerLines = [...(runId ? checkWorkers(runId, repo) : []), ...checkHeldWorktrees(runId, repo)]
   const shapeLines = checkOrcaShape()
   // 짧은 출력(진입점의 orch doctor)은 판정 줄과 들여 쓴 고칠 줄만 낸다. `  안내:` 줄은 --full 이다(lib/output.ts 의 emit)
   emit(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}`, [], { fix: true })
