@@ -110,7 +110,15 @@ export type CommandTable = {
 
 export function checkOrchCommands(md: string, table: CommandTable): Omit<Drift, 'doc'>[] {
   const out: Omit<Drift, 'doc'>[] = []
+  let fence = false
   md.split('\n').forEach((l, i) => {
+    if (/^\s*```/.test(l)) fence = !fence
+    // 코드로 적은 명령(인라인 코드의 맨 앞, 코드 펜스 줄의 맨 앞)은 묶음 이름이 없으면 오타다. 본문의 `orch 루트` 같은 말은 보지 않는다
+    const asCode = [...l.matchAll(/`orch ([a-z][a-z-]*)/g)].map((m) => m[1])
+    if (fence) asCode.push(...[...l.matchAll(/^\s*(?:\$ )?orch ([a-z][a-z-]*)/g)].map((m) => m[1]))
+    for (const group of new Set(asCode)) {
+      if (!table.groups.includes(group)) out.push({ line: i + 1, message: `\`orch ${group}\` 의 묶음 ${group} 가 orch 명령 표에 없다` })
+    }
     for (const m of l.matchAll(/(?<![\w./-])orch ([a-z][a-z-]*)((?: [a-z][a-z-]*){0,2})/g)) {
       const group = m[1]
       if (!table.groups.includes(group)) continue
@@ -181,7 +189,8 @@ export function checkConfig(schema: string, keys: Map<string, readonly string[]>
 }
 
 // 6. 문서가 백틱으로 적은 이 저장소의 경로가 있는지
-// 스킬 README 와 전역 문서는 그 스킬 폴더 기준 경로(`scripts/lib/x.ts`)도 쓴다. 그래서 루트, 문서 폴더, 모든 스킬 폴더 가운데 한 곳에 있으면 있는 것으로 본다.
+// 스킬 README 의 상대 경로는 루트나 그 스킬 폴더 기준이다(pathBases).
+// 전역 문서(루트 README, docs/)는 어느 스킬인지 문맥으로 정하는 경로(`scripts/lib/x.ts`)를 쓰므로 루트와 모든 스킬 폴더 가운데 한 곳에 있으면 있는 것으로 본다.
 // `.claude/`, `.orch/` 는 다른 저장소나 각자의 PC 에 있는 자리를 가리키는 일이 많아 보지 않는다
 // 팀 저장소의 배치를 가리키는 경로는 이 저장소에 없는 것이 맞다(scripts/export-to-team.ts 의 SHARED_TOOLS)
 const ELSEWHERE = ['tools/browser-driver']
@@ -212,6 +221,12 @@ export function componentDirs(root: string): string[] {
     for (const name of readdirSync(join(root, parent)).sort()) out.push(`${parent}/${name}`)
   }
   return out
+}
+
+// 문서 하나의 경로를 풀 기준 폴더. 스킬과 확장 README 는 루트와 자기 폴더만, 전역 문서는 루트와 모든 스킬 폴더다
+export function pathBases(doc: string, components: string[]): string[] {
+  const dir = dirname(doc)
+  return components.includes(dir) ? ['', dir] : ['', ...components]
 }
 
 export function targetDocs(root: string): string[] {
@@ -245,7 +260,7 @@ export async function collect(root: string): Promise<Drift[]> {
   for (const doc of targetDocs(root)) {
     const md = read(doc)
     add(doc, checkOrchCommands(md, table))
-    add(doc, checkPaths(md, ['', dirname(doc), ...components], (p) => existsSync(join(root, p))))
+    add(doc, checkPaths(md, pathBases(doc, components), (p) => existsSync(join(root, p))))
   }
   return drifts
 }

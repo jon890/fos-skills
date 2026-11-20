@@ -14,6 +14,7 @@ import {
   checkOrchCommands,
   checkPaths,
   checkSkillList,
+  pathBases,
   eventSpecs,
   sectionTable,
   splitRow,
@@ -74,6 +75,14 @@ describe('orch 명령', () => {
     const md = '`orch worker launch`\n`orch worker spawn`\n`orch worker nudge`\n`orch worker` 묶음\n`orch doctor --run`\n`orch 루트`\n'
     assert.deepEqual(checkOrchCommands(md, table).map((d) => d.line), [2, 3])
   })
+
+  test('코드로 적은 명령의 모르는 묶음을 알리고 본문의 말은 둔다', () => {
+    const md = '`orch wroker launch`\norch 루트와 orch wroker 는 본문이다\n```bash\norch slto heavy\n```\n'
+    assert.deepEqual(checkOrchCommands(md, table).map((d) => [d.line, d.message]), [
+      [1, '`orch wroker` 의 묶음 wroker 가 orch 명령 표에 없다'],
+      [4, '`orch slto` 의 묶음 slto 가 orch 명령 표에 없다'],
+    ])
+  })
 })
 
 describe('이벤트 목록', () => {
@@ -102,6 +111,15 @@ describe('경로', () => {
   test('루트, 문서 폴더, 스킬 폴더 가운데 한 곳에 있으면 둔다', () => {
     const md = '`references/x.md` `scripts/lib/y.ts` `tools/` `skills/<이름>/` `tools/browser-driver` `.claude/z.md`\n```\n`tools/`\n```\n'
     assert.deepEqual(checkPaths(md, ['', 'skills/a', 'skills/orch'], exists).map((d) => d.message), ['경로 tools/ 가 없다'])
+  })
+
+  test('스킬 README 는 자기 폴더 기준으로만 풀어 다른 스킬의 같은 경로로 통과하지 않는다', () => {
+    const components = ['skills/orch', 'skills/spec']
+    const bases = pathBases('skills/spec/README.md', components)
+    assert.deepEqual(bases, ['', 'skills/spec'])
+    const only = (p: string) => p === 'skills/orch/references/board.md'
+    assert.deepEqual(checkPaths('`references/board.md`\n', bases, only).map((d) => d.line), [1])
+    assert.deepEqual(pathBases('docs/flow.md', components), ['', 'skills/orch', 'skills/spec'])
   })
 })
 
