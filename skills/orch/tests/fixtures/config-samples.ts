@@ -46,6 +46,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     update_behind_drafts: flag,
     idle_exited: flag,
     tick_sec: timer,
+    slow_sec: timer,
     digest_sec: timer,
     request_ack_sec: timer,
     ready_slots: { good: [1, 3], bad: [0, 1.5, '2', -1] },

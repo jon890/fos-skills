@@ -88,6 +88,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `hooks` | `timeouts` | 이벤트 이름에서 양수이며 타이머 상한 이하의 초로 가는 객체. 모르는 이벤트 이름은 받지 않는다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | 양수, 타이머 상한 이하 | 300 | 틱 간격 |
+| `pipeline` | `slow_sec` | 양수, 타이머 상한 이하 | 없음(느린 단계도 틱마다 함께 돈다) | 느린 단계(보드 동기화, 사용자 결정 알림, 업무 주소 채우기, 정리)를 빠른 틱과 따로 도는 주기. 있으면 부모가 느린 틱 자식을 따로 띄워 빠른 틱을 막지 않는다. 동작은 `loop/orch-loop.ts` 머리 주석의 「느린 단계」 가 소유한다 |
 | `pipeline` | `digest_sec` | 양수, 타이머 상한 이하 | 1800 | 안내성 루프 알림(WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED)을 DIGEST 하나로 모아 보내는 주기(초) |
 | `pipeline` | `request_ack_sec` | 양수, 타이머 상한 이하 | 1800 | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 REQUEST-NO-ACK 를 한 번 보내기까지의 시간(초). 틱마다 다시 읽는다([ADR-035](adr/035-orch-main-coordinator.md)) |
 | `pipeline` | `ready_slots` | 1 이상의 정수 | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |

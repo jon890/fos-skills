@@ -60,7 +60,7 @@ orch config unset contracts.merge_command contracts.paths
 - `unset` 은 오타 키와 모르는 절도 지우고 빈 객체를 정리한다. 옛 명령 칸은 지우지 않고 `orch doctor migrate-hooks --apply` 로 옮긴다.
 - 경로는 점으로 나눈다. 점이 든 이름이나 목록 항목은 경로로 고르지 않고 윗 객체나 목록 전체를 `set --json` 으로 바꾼다. 중간 값이 이미 객체가 아닌 경우에는 그 윗 값을 먼저 고친다.
 - 성공 줄 `CONFIG-SET`, `CONFIG-UNSET` 은 이전 값을 보여 준다. 거절은 종료 코드 1, 인자 오류는 2 다. `set` 과 `unset` 은 잠금 안에서 다시 읽고 검사한 뒤 옆 파일을 이름 바꿔 저장한다.
-- 대부분의 값은 다음 틱에 반영된다. 살아 있는 루프의 `pipeline.tick_sec` 을 바꾸면 다시 시작하라는 안내가 나온다. `finish.run`, `finish.specs_dir` 은 루프를 `--run` 없이 띄운 경우에 다시 시작한다. 명령이 루프를 자동으로 다시 시작하지는 않는다.
+- 대부분의 값은 다음 틱에 반영된다. 살아 있는 루프의 `pipeline.tick_sec` 이나 `pipeline.slow_sec` 을 바꾸면 다시 시작하라는 안내가 나온다. `finish.run`, `finish.specs_dir` 은 루프를 `--run` 없이 띄운 경우에 다시 시작한다. 명령이 루프를 자동으로 다시 시작하지는 않는다.
 
 ## 마무리 설정 파일
 
@@ -107,6 +107,7 @@ orch config unset contracts.merge_command contracts.paths
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 비지 않은 문자열 목록(빈 목록 허용). 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이며 타이머 상한 이하이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
+| `pipeline` | `slow_sec` | 보드 동기화와 정리 같은 느린 단계를 따로 도는 주기(초)다. 양수이며 타이머 상한 이하이고 기본은 없음(틱마다 함께 돈다)이다. 주면 느린 단계가 빠른 틱(머지, CI, 메시지 확인)을 막지 않아 `tick_sec` 을 짧게 둘 수 있다. 예: `tick_sec` 60, `slow_sec` 600 |
 | `pipeline` | `request_ack_sec` | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 알리기까지의 시간(초)이다. 양수이며 타이머 상한 이하이고 기본 1800 이다. 루프가 틱마다 읽는다([`requests.md`](requests.md)) |
 | `pipeline` | `digest_sec` | 안내성 루프 알림을 DIGEST 하나로 모아 보내는 주기(초)다. 양수이며 타이머 상한 이하이고 기본 1800 이다. `orch-loop.ts` 가 읽는다 |
 | `pipeline` | `stall_error_retries` | 저장소에 `worker-stalled` 핸들러가 없을 때 상주 루프가 모델 오류로 멈춘 worker 에게 멈춤마다 「계속 진행해」 를 보내는 최대 횟수다. 0 이상의 정수이고 기본 3 이며 0 이면 끄고 바로 코디네이터에게 알린다. 아래 `references/hooks.md` 의 「멈춘 worker 다시 시도시키기」 |

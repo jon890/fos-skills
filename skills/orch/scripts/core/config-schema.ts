@@ -59,7 +59,7 @@ export type Pair = { keys: readonly string[]; check: (body: Record<string, unkno
 export const TIMER_MAX_SEC = 2147483
 
 // 바꾸면 상주 루프를 다시 띄워야 반영되는 키
-export const RESTART_KEYS: readonly string[] = ['board.task', 'pipeline.tick_sec', 'finish.run', 'finish.specs_dir']
+export const RESTART_KEYS: readonly string[] = ['board.task', 'pipeline.tick_sec', 'pipeline.slow_sec', 'finish.run', 'finish.specs_dir']
 
 const KO = { error: z.locales.ko().localeError }
 
@@ -230,6 +230,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
   pipeline: {
     enabled: zodCheck(bool),
     tick_sec: zodCheck(timer),
+    slow_sec: zodCheck(timer),
     digest_sec: zodCheck(timer),
     request_ack_sec: zodCheck(timer),
     ready_slots: zodCheck(z.number().int().min(1)),
