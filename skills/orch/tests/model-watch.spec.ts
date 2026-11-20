@@ -107,7 +107,7 @@ describe('새 세대와 표 문서', () => {
     git(repo, ['commit', '-q', '-m', 'table'])
     git(repo, ['push', '-q', 'origin', 'main'])
     const calls = join(tmp, 'gh-calls')
-    process.env.GH = linkBin(tmp, 'gh', `require('fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + '\\n'); console.log('https://github.com/o/r/pull/9')`)
+    process.env.GH = linkBin(tmp, 'gh', `require('node:fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + '\\n'); console.log('https://github.com/o/r/pull/9')`)
     codexList(NEXT)
     const notices = watch(repo, 0)
     assert.deepEqual(notices.filter(n => n.kind.startsWith('MODEL-TABLE')), [{ kind: 'MODEL-TABLE-PR', text: 'https://github.com/o/r/pull/9 gpt-6.2-sol>gpt-6.3-sol' }])
