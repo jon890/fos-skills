@@ -87,7 +87,7 @@ function good(section: string, key: string): unknown[] {
 // 이 키의 good 값이 설정에서 따로 설 수 있게 짝 규칙을 채운 queue 절
 function queueBody(key: string, value: unknown): Record<string, unknown> {
   const body: Record<string, unknown> = { [key]: value }
-  if (key === 'up_to_date_when' || key === 'shared_paths' || key === 'unit_groups') {
+  if (key === 'up_to_date_when' || key === 'shared_paths' || key === 'shared_groups' || key === 'unit_groups') {
     body.up_to_date_when = 'overlap'
     body.require_up_to_date = true
   }
@@ -121,7 +121,7 @@ describe('queue 키: 머지 큐 옵션과 사용법 검사', () => {
 })
 
 describe('최신화 설정(refreshSettings)', () => {
-  for (const key of ['docs_glob', 'shared_paths', 'unit_groups', 'sweep_args', 'up_to_date_when', 'unit_prefix', 'require_up_to_date']) {
+  for (const key of ['docs_glob', 'shared_paths', 'shared_groups', 'unit_groups', 'sweep_args', 'up_to_date_when', 'unit_prefix', 'require_up_to_date']) {
     test(`queue.${key}`, () => {
       for (const value of good('queue', key)) {
         const config = { queue: queueBody(key, value), pipeline: { refresh_slots: 1 } } as Config

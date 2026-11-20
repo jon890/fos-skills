@@ -3,7 +3,8 @@
 
 import { ConfigError, QUEUE_KEYS, section } from './config.ts'
 import type { Config } from './config.ts'
-import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_NUMBERS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './queue-options.ts'
+import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_NAMED, QUEUE_NUMBERS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './queue-options.ts'
+import { sharedGroupsOf } from '../core/refresh.ts'
 
 // 문자열 목록도 받는 queue 키와 목록을 잇는 구분자. 키와 옵션의 대응은 lib/queue-options.ts 의 QUEUE_VALUES 들이다
 const QUEUE_LISTS: Readonly<Record<string, string>> = { docs_glob: ',', shared_paths: '|' }
@@ -65,6 +66,16 @@ export function queueDefaults(path: string, queue: string[], config: Config): st
       groups.every((g) => Array.isArray(g) && g.length >= 2 && g.every((m) => typeof m === 'string' && m && !m.includes(',')))
     if (!ok) throw new ConfigError(`${path} 의 queue.${key} 는 단위 이름이 둘 이상인 문자열 목록의 목록이어야 한다`)
     if (!given.has(option)) for (const members of groups as string[][]) extra.push(option, members.join(','))
+  }
+  for (const [key, option] of Object.entries(QUEUE_NAMED)) {
+    if (!(key in body) || given.has(option)) continue
+    let groups
+    try {
+      groups = sharedGroupsOf(body[key], `queue.${key}`)
+    } catch (e) {
+      throw new ConfigError(`${path} 의 ${(e as Error).message.replace(/^설정 파일의 /, '')}`)
+    }
+    for (const group of groups) extra.push(option, `${group.name}=${group.pattern}`)
   }
   return extra
 }

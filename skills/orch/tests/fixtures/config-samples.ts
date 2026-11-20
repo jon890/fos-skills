@@ -24,6 +24,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     method: { good: ['merge', 'squash', 'rebase'], bad: ['fast', '', 1] },
     up_to_date_when: { good: ['always', 'overlap'], bad: ['sometimes', 1] },
     shared_paths: { good: ['^shared/', ['^a/', '^b/']], bad: ['(', '', [], 5] },
+    shared_groups: { good: [{ migration: '^db/migration/' }, { contract: ['^docs/contract\\.md$', '^tests/contract/'], e2e: '^test/e2e/' }], bad: [{}, { 'a b': '^x/' }, { m: '(' }, { m: '' }, { m: [] }, ['^x/'], 5] },
     unit_prefix: { good: ['modules/'], bad: ['', 1] },
     skipped_is_missing: flag,
     update_docs_on_overlap: flag,

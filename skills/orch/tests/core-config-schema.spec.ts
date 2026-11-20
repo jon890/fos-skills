@@ -120,6 +120,11 @@ describe('짝 규칙', () => {
     })
   }
 
+  test('queue shared_groups 도 overlap 일 때만 둔다. 문제 경로는 그 규칙의 첫 키(shared_paths)다', () => {
+    assert.deepEqual(problems({ queue: { shared_groups: { m: '^a/' } } }).map((problem) => [problem.path, problem.kind]), [['queue.shared_paths', 'pair']])
+    assert.deepEqual(problems({ queue: { shared_groups: { m: '^a/' }, up_to_date_when: 'overlap', require_up_to_date: true } }), [])
+  })
+
   test('같은 절의 오타 키나 다른 키의 틀린 값이 있어도 짝 규칙 문제가 나온다', () => {
     const found = problems({ queue: { poll_min_sec: 400, poll_max_sec: 300, poll_min_secs: 1, method: 'fast' } })
     assert.deepEqual(found.map((problem) => `${problem.kind} ${problem.path}`).sort(), ['pair queue.poll_min_sec', 'unknown queue.poll_min_secs', 'value queue.method'])

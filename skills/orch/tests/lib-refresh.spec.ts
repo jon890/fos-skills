@@ -43,6 +43,7 @@ describe('refreshSettings', () => {
     assert.deepEqual(got.judge.docsGlobs, ['docs/*', '*.md'])
     assert.deepEqual(got.judge.groups, [['web', 'bff']])
     assert.equal(got.judge.unitPrefix, 'modules/')
+    assert.deepEqual(settings({ queue: { shared_groups: { migration: ['^db/a/', '^db/b/'] } } }).judge.sharedGroups, [{ name: 'migration', pattern: '^db/a/|^db/b/' }])
     assert.ok(got.workerPaths?.test('contracts/version.txt'))
     assert.ok(got.workerPaths?.test('modules/api/VERSION'))
   })
@@ -51,7 +52,7 @@ describe('refreshSettings', () => {
     for (const pipeline of [{ refresh_slots: -1 }, { refresh_slots: 1.5 }, { refresh_slots: '2' }, { refresh_slots: 1, refresh_worker_paths: '(' }]) {
       assert.throws(() => refreshSettings({ pipeline }), ConfigError, JSON.stringify(pipeline))
     }
-    for (const queue of [{ up_to_date_when: 'never' }, { require_up_to_date: 'yes' }, { shared_paths: '(' }, { unit_groups: [['web']] }]) {
+    for (const queue of [{ up_to_date_when: 'never' }, { require_up_to_date: 'yes' }, { shared_paths: '(' }, { unit_groups: [['web']] }, { shared_groups: { m: '(' } }, { shared_groups: [] }]) {
       assert.throws(() => refreshSettings({ pipeline: { refresh_slots: 1 }, queue }), ConfigError, JSON.stringify(queue))
     }
   })

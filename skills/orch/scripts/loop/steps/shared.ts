@@ -89,7 +89,7 @@ export function ciEntries(value: unknown): Record<string, CiEntry> {
   if (!isObject(value)) return entries
   for (const [number, entry] of Object.entries(value)) {
     if (isObject(entry) && typeof entry.head === 'string' && (entry.state === 'passed' || entry.state === 'failed' || entry.state === 'pending')) {
-      const required = entry.required === 'passed' || entry.required === 'failed' || entry.required === 'pending' ? { required: entry.required } : {}
+      const required = entry.required === 'passed' || entry.required === 'failed' || entry.required === 'pending' ? { required: entry.required as CiEntry['state'] } : {}
       entries[number] = { head: entry.head, state: entry.state, ...required }
     }
   }

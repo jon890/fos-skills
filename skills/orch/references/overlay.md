@@ -97,6 +97,7 @@ orch config unset contracts.merge_command contracts.paths
 | `queue` | `skipped_is_missing` | `--skipped-is-missing`. true 나 false 다 |
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `unit_prefix` 는 비지 않은 문자열이다. `shared_paths` 는 비지 않은 Python 정규식 문자열이나 그 비지 않은 목록이고 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
+| `queue` | `shared_groups` | 이름마다 `--shared-group 이름=정규식` 하나. 값은 이름(영문, 숫자, `_`, `-`)에서 비지 않은 Python 정규식 문자열이나 그 목록(`\|` 로 잇는다)으로 가는 비지 않은 객체다. PR 과 base 가 같은 묶음을 둘 다 바꿨을 때만 겹침이다. 의미와 전제는 [`cleanup.md`](cleanup.md) 의 「언제 overlap 을 쓰는가」 가 소유한다 |
 | `queue` | `poll_min_sec`, `poll_max_sec`, `ci_expected_sec` | 머지 큐가 진행 중인 체크를 다시 보는 간격(초, 1 이상이며 타이머 상한 이하의 정수). `poll_min_sec`(기본 60)에서 시작해 두 배씩 늘리고 `poll_max_sec`(기본 300)에서 멈춘다. `ci_expected_sec`(기본 없음)는 그 저장소의 보통 PR CI 시간이다. 주면 지금 도는 체크가 시작된 뒤 그 초가 지나는 시각을 넘겨 자지 않고, 그 뒤로는 `poll_min_sec` 마다 본다. 없으면 지금 동작과 같다. 각각 `--poll-min-sec`, `--poll-max-sec`, `--ci-expected-sec` 가 된다 |
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 바깥 목록은 비지 않고 안쪽은 항목이 2개 이상이다. 항목은 쉼표 없는 비지 않은 문자열이며 중복 단위는 둘 수 없다. 안쪽 목록마다 `--unit-group a,b` 가 된다 |
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 비지 않은 문자열 목록(빈 목록 허용). 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
@@ -126,7 +127,7 @@ orch config unset contracts.merge_command contracts.paths
 | `review` | `prepare` | 리뷰 worker 를 띄울 때 PR head 의 워크트리에서 한 번 돌리는 생성물 준비 명령(bash 문자열). 쓰는 법은 [`spec-writing.md`](spec-writing.md) 의 「리뷰 worker 지시서」 가 소유한다 |
 | `worker` | `commit_check` | worker 워크트리에 한국어 커밋 검사 훅을 걸지(bool, 기본 true). false 면 그 저장소의 worker 에는 걸지 않는다. 동작은 [`launch.md`](launch.md) 의 「한국어 커밋 검사」 가 소유한다 |
 
-짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`unit_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
+짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`shared_groups`·`unit_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
 
 아래는 저장된 파일의 모양이다. 값 변경은 위 「설정 바꾸기」 의 명령을 쓴다.
 
@@ -160,7 +161,7 @@ orch config unset contracts.merge_command contracts.paths
 ### 뒤처진 PR 미리 최신화
 
 **`pipeline.refresh_slots` 는 상주 루프가 건 최신화 가운데 동시에 CI 가 도는 PR 수의 상한이다. 기본 0 이고 0 이면 끈다.**
-동작과 효과는 [`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」 가 소유한다. 최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
+동작과 효과는 [`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」 가 소유한다. 최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `shared_groups`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
 대상과 미루는 경우는 `loop/steps/refresh.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
 
 **값은 CI runner 수보다 작게 둔다.** 최신화 하나가 PR CI 한 벌을 돌린다. worker 의 push, 머지 큐 차례의 CI, base 브랜치의 CI 도 같은 runner 를 쓰므로 runner 를 모두 주면 그쪽이 줄을 선다.

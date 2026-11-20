@@ -42,7 +42,7 @@ import { isObject } from './json.ts'
 import { stallTicks } from './loop.ts'
 import { boardSettingsFromConfig } from './milestones.ts'
 import { groupMap } from './overlap.ts'
-import { joined } from './refresh.ts'
+import { joined, sharedGroupsOf } from './refresh.ts'
 import { pyRegExp } from './regexp.ts'
 import { adrDirs } from './reservations.ts'
 
@@ -189,6 +189,15 @@ const unitGroups = leaf((value) => {
   }
 }, 'queue.unit_groups 는 단위 이름이 둘 이상인 문자열 목록의 목록이어야 하고 한 단위가 두 묶음에 들 수 없다')
 
+const sharedGroups = leaf((value) => {
+  try {
+    sharedGroupsOf(value)
+    return value !== undefined
+  } catch {
+    return false
+  }
+}, 'queue.shared_groups 는 이름(영문, 숫자, _, -)에서 비지 않은 정규식 문자열이나 그 목록으로 가는 비지 않은 객체여야 하고 정규식으로 읽혀야 한다')
+
 const requiredChecks = leaf((value) => {
   if (typeof value === 'string') return value.split(',').some((piece) => piece) && !/["\\]/.test(value)
   return isNonEmptyList(value) && !value.some((name) => /["\\]/.test(name))
@@ -205,6 +214,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     method: zodCheck(z.enum(['merge', 'squash', 'rebase'])),
     up_to_date_when: zodCheck(z.enum(['always', 'overlap'])),
     shared_paths: zodCheck(regexpSource('queue.shared_paths', '|')),
+    shared_groups: zodCheck(sharedGroups),
     unit_prefix: zodCheck(nonEmptyText),
     skipped_is_missing: zodCheck(bool),
     update_docs_on_overlap: zodCheck(bool),
@@ -355,10 +365,10 @@ export const PAIRS: Readonly<Partial<Record<Section, readonly Pair[]>>> = {
       check: (body) => (body.up_to_date_when === 'overlap' && body.require_up_to_date !== true ? 'up_to_date_when 이 overlap 이면 require_up_to_date 가 true 여야 한다' : null),
     },
     {
-      keys: ['shared_paths', 'unit_groups', 'up_to_date_when'],
+      keys: ['shared_paths', 'shared_groups', 'unit_groups', 'up_to_date_when'],
       check: (body) =>
-        (present(body, 'shared_paths') || present(body, 'unit_groups')) && (body.up_to_date_when ?? 'always') !== 'overlap'
-          ? 'shared_paths 와 unit_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다'
+        (present(body, 'shared_paths') || present(body, 'shared_groups') || present(body, 'unit_groups')) && (body.up_to_date_when ?? 'always') !== 'overlap'
+          ? 'shared_paths, shared_groups, unit_groups 는 up_to_date_when 이 overlap 일 때만 둘 수 있다'
           : null,
     },
     {

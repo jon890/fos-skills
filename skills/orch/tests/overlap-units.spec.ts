@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { groupMap, judge as judgeRaw, unitOf, verdictText } from '../scripts/lib/overlap.ts'
+import { groupMap, judge as judgeRaw, parseSharedGroup, unitOf, verdictText } from '../scripts/lib/overlap.ts'
 import type { JudgeOptions } from '../scripts/lib/overlap.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/overlap_units.ts', import.meta.url))
@@ -116,6 +116,26 @@ describe('judge', () => {
   test('한 단위가 두 묶음에 들면 오류다. 같은 묶음을 두 번 적은 것은 모호하지 않다', () => {
     assert.throws(() => groupMap([['a', 'b'], ['b', 'c']]), /단위 b 가 묶음 둘에 들어 있다/)
     assert.deepEqual(Object.fromEntries(groupMap([['a', 'b'], ['a', 'b']])), { a: 'a+b', b: 'a+b' })
+  })
+
+  test('공용 묶음은 PR 과 base 가 둘 다 그 묶음을 바꿨을 때만 갱신 필요다', () => {
+    const sharedGroups = [parseSharedGroup('migration=^db/migration/'), parseSharedGroup('e2e=^test/e2e/')]
+    // 한쪽만 바꿨으면 바로 머지다
+    assert.equal(judge(['db/migration/V2__a.sql'], ['modules/web/C.java'], { sharedGroups }).update, false)
+    assert.equal(judge(['modules/api/A.java'], ['test/e2e/fake.ts'], { sharedGroups }).update, false)
+    // 서로 다른 묶음을 한쪽씩 바꾼 것도 겹침이 아니다
+    assert.equal(judge(['db/migration/V2__a.sql'], ['test/e2e/fake.ts'], { sharedGroups }).update, false)
+    assert.equal(text(['db/migration/V2__a.sql'], ['db/migration/V3__b.sql'], { sharedGroups }), '갱신 필요(공용 묶음 migration: PR db/migration/V2__a.sql, base db/migration/V3__b.sql)')
+  })
+
+  test('공용 경로는 공용 묶음이 있어도 한쪽만 맞으면 갱신 필요다', () => {
+    const sharedGroups = [parseSharedGroup('migration=^db/migration/')]
+    assert.equal(text(['modules/api/A.java'], ['build.gradle'], { sharedGroups }), '갱신 필요(공용 경로: build.gradle)')
+  })
+
+  test('공용 묶음 값은 이름=정규식 꼴이다', () => {
+    assert.deepEqual(parseSharedGroup('a-b_1=^x/(y|z)='), { name: 'a-b_1', pattern: '^x/(y|z)=' })
+    for (const bad of ['=^x/', 'a=', 'a b=^x/', '^x/', 'a=(']) assert.throws(() => parseSharedGroup(bad), bad)
   })
 
   test('긴 이름 목록은 줄인다', () => {
@@ -227,6 +247,18 @@ describe('overlap_units 명령', () => {
     const [code, out] = cli()
     assert.equal(code, 1)
     assert.match(out, /공용 경로: build\.gradle/)
+  })
+
+  test('--shared-group 은 양쪽이 같은 묶음을 바꿨을 때만 1 이고, 틀린 값은 2 다', () => {
+    diverge('db/migration/V2.sql', 'modules/web/C.java')
+    assert.deepEqual(cli(['--shared-group', 'migration=^db/migration/']), [0, '바로 머지', ''])
+    git('checkout', '-q', 'main')
+    write('db/migration/V3.sql', 'base')
+    commit('base migration')
+    assert.deepEqual(cli(['--shared-group', 'migration=^db/migration/']), [1, '갱신 필요(공용 묶음 migration: PR db/migration/V2.sql, base db/migration/V3.sql)', ''])
+    const [code, , err] = cli(['--shared-group', 'migration'])
+    assert.equal(code, 2)
+    assert.match(err, /^오류: 공용 묶음은 이름=정규식 꼴/)
   })
 
   test('Python 의 이름 붙은 묶음으로 쓴 --shared-paths 가 공용 경로로 맞는다', () => {
