@@ -18,6 +18,15 @@ export const MODIFIED_RATIO = 0.2
 export const LINE_LIMIT_WARN_RATIO = 0.8
 
 const DOC_SUFFIXES = /\.(?:md|mdx)$/i
+// 저장소 설정 없이도 줄 수에서 빼는 파일이다. 의존 lock, 빌드 결과물, 스냅샷처럼 사람이 쓰지 않는 파일이다.
+// 저장소의 크기 검사가 흔히 빼는 목록(fos-assistant `scripts/pr/pr-size.mjs` 의 `excluded()`)을 따랐다
+const LOCK_FILE = /(?:^|\/)(?:pnpm-lock\.yaml|bun\.lockb?|package-lock\.json|yarn\.lock|npm-shrinkwrap\.json|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|composer\.lock|Gemfile\.lock|go\.sum)$/
+const BUILD_DIR = /(?:^|\/)(?:dist|build|\.next|coverage|__snapshots__|[^/]+-snapshots)\//
+const BUILD_FILE = /\.(?:snap|min\.js|bundle\.js|js\.map|css\.map)$/
+
+export function excludedByDefault(rel: string): boolean {
+  return LOCK_FILE.test(rel) || BUILD_DIR.test(rel) || BUILD_FILE.test(rel)
+}
 
 // 파일 하나의 추정 줄 수다. action 은 그 파일이 phase 들에서 받은 변경 종류를 이은 것이다.
 // 한 phase 에서 만들고 뒤 phase 에서 고친 파일은 신규로 센다. 읽지 못한 수정·삭제 파일은 null 이다

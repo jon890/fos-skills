@@ -78,6 +78,7 @@ phase 별 추정 줄 수를 보고 앞 plan 이 끝나야 의미가 생기는 �
 
 추정은 운영 코드, 테스트, 문서로 나눠 낸다. 「PR 줄 수 상한」 은 운영 코드에만 비교한다.
 `.github/pr-size.json` 이 있으면 그 분류(`core`, `generated`, `tests`, `docs`)를 쓴다. 없으면 테스트는 테스트 경로와 이름, `e2e` 폴더로, 문서는 `.md` 와 `docs/` 폴더로 구분한다.
+의존 lock 파일(`pnpm-lock.yaml` 등), 빌드 결과물(`dist/`, `build/`, `.next/`, `coverage/`), 스냅샷과 압축·묶음 JS 는 설정이 없어도 세지 않는다.
 glob 행과 읽지 못한 수정 파일은 「줄 수 미상」 으로 빼고 센다. 한 phase 에서 만들고 뒤 phase 에서 고친 파일은 신규로 센다.
 
 `.github/pr-size.json` 의 `grades` 는 A·B·D 상한을 읽는다. A 이하면 A, A 초과는 B, B 초과는 C, D 초과는 D 이며 각 등급의 어느 항목이든 넘으면 그 기준을 넘은 것이다.

@@ -22,6 +22,17 @@ test('신규 파일은 미상이 아니라 운영 코드, 테스트, 문서의 �
   assert.equal(estimate!.unknown, 0)
 })
 
+test('lock 파일, 빌드 결과물, 스냅샷은 설정이 없어도 세지 않는다', () => {
+  const repo = new Repo()
+  repo.file('web/pnpm-lock.yaml', 'x\n'.repeat(9000))
+  repo.file('web/__snapshots__/a.snap', 'x\n'.repeat(500))
+  const entries: Entry[] = [['web/pnpm-lock.yaml', '수정'], ['web/__snapshots__/a.snap', '수정'], ['web/dist/app.js', '신규'], ['web/app.min.js', '신규'], ['web/src/a.ts', '신규']]
+  const warnings: string[] = []
+  const estimate = checkEstimatedSize('plan', set(entries), repo.root, warnings)
+  assert.equal(estimate!.core, NEW_FILE_LINES.production)
+  assert.match(warnings[0], /1개 파일/)
+})
+
 test('phase 별 추정은 운영 코드만 세고 여러 phase 에 나온 파일은 처음 phase 에 센다', () => {
   const repo = new Repo()
   const first: Entry[] = [['src/a.ts', '신규'], ['tests/a.test.ts', '신규']]

@@ -56,7 +56,7 @@ import { capture, isExpected, isMain, readTextFile, ValueError, write } from './
 import { type Spec, parseCli, UsageError } from './cli.ts'
 import { run as checkFeature } from './check_feature.ts'
 import * as overlayValues from './overlay_values.ts'
-import { type Estimate, type Kind as SizeKind, fileLines, lineLimitFinding } from './pr_size.ts'
+import { type Estimate, type Kind as SizeKind, excludedByDefault, fileLines, lineLimitFinding } from './pr_size.ts'
 import { subprojects } from './overlay_paths.ts'
 import {
   fnmatchcase,
@@ -1115,7 +1115,7 @@ export function checkEstimatedSize(path: string, entries: Set<string>, repo: str
     const byKind: Record<SizeKind, number> = { production: 0, tests: 0, docs: 0 }
     let total = 0, count = 0, unknown = 0, added = 0
     for (const [rel, action] of files) {
-      if (!match(rel, config.core) && match(rel, config.generated)) continue
+      if (!match(rel, config.core) && (match(rel, config.generated) || excludedByDefault(rel))) continue
       count++
       const kind = kindOf(rel)
       const lines = fileLines(repo, rel, action, kind, CODE_SUFFIXES.has(pathSuffix(rel)))
