@@ -154,9 +154,11 @@ test('접힌 보기는 제목 줄, 담당·PR 줄, 지금 단계 줄, worker 줄
 test('끝낸 단계와 남은 단계는 누른 목록만 펼쳐 적힌 순서대로 그리고, 끝낸 줄에 취소선을 긋는다', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // 참고 줄은 접힌 보기에 없다가 항목의 목록을 펼치면 함께 보인다
+  expect((await keys(ui, 'a')).includes('fn-3')).toBe(false)
   await pressDrawn(ui, 'fold-a-done')
   await pressDrawn(ui, 'fold-a-todo')
-  expect((await keys(ui, 'a')).slice(0, 6)).toEqual(['head', 'bar', 'meta', 'fd-0', 'steps', 'ft-0'])
+  expect((await keys(ui, 'a')).slice(0, 7)).toEqual(['head', 'bar', 'meta', 'fd-0', 'steps', 'ft-0', 'fn-3'])
   const done = stepParts(await ui.find({ type: 'Box', key: 'fd-0' }))
   const now = stepParts(await ui.find({ type: 'Box', key: 'steps' }))
   const todo = stepParts(await ui.find({ type: 'Box', key: 'ft-0' }))
@@ -172,8 +174,9 @@ test('끝낸 단계와 남은 단계는 누른 목록만 펼쳐 적힌 순서대
   expect(done.body.props).toMatchObject({ strikethrough: true, dimColor: true })
   expect((now.body.children as Drawn[])[0].props.bold).toBe(true)
   expect(todo.body.props ?? {}).toEqual({})
-  // 참고 줄은 어느 보기에도 없다
-  expect(await ui.find({ type: 'Text', text: /참고: 머지 뒤 갱신/ })).toBeUndefined()
+  const note = stepParts(await ui.find({ type: 'Box', key: 'fn-3' }))
+  expect(note.bodyText).toBe('참고: 머지 뒤 갱신')
+  expect(note.body.props.dimColor).toBe(true)
   await ui.unmount()
 })
 

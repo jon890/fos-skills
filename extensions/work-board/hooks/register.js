@@ -697,7 +697,7 @@ export function stepSummary(rows, progress) {
   }
 }
 
-// 요약 줄을 눌러 펼칠 줄. 번호 있는 단계 줄만이고 참고 줄은 빠진다
+// 요약 줄을 눌러 펼칠 줄. 번호 있는 단계 줄만이고 참고 줄은 빠진다(참고 줄은 foldedSteps 가 목록을 펼친 항목에서만 함께 그린다)
 // 위아래는 지금 단계 줄보다 앞에 적혔는지 뒤에 적혔는지로 정한다(foldedSteps). 줄이 없으면 그 요약은 단추가 아니다
 export function foldLists(rows) {
   return {
@@ -2047,7 +2047,10 @@ export function register(on) {
         return foldButton(item, part.kind, nbsp(part.text), '\u00a0')
       })
       const nowAt = rows.findIndex((row) => row.state === 'now')
+      // 참고 줄(번호 없는 줄)은 항목의 끝낸 단계나 남은 단계 목록을 하나라도 펼치면 함께 보인다. 접힌 보기에서는 그리지 않는다
+      const anyOpen = pressable && (folded.has(item.id + ':done') || folded.has(item.id + ':todo'))
       const opened = rows.flatMap((row, at) => {
+        if (!row.step && row.state === 'note') return anyOpen ? [{ at, line: stepLine('fn-' + rows.indexOf(row), row) }] : []
         const kind = row.step && row.state === 'done' ? 'done' : row.step && row.state === 'todo' ? 'todo' : null
         return kind && pressable && folded.has(item.id + ':' + kind)
           ? [{ at, line: stepLine('f' + kind[0] + '-' + lists[kind].indexOf(row), row) }] : []
