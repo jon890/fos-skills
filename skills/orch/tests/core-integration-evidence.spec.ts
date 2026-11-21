@@ -39,6 +39,15 @@ describe('integrationNeeds', () => {
   test('경로 전체가 맞아야 하고 모듈 자리는 경로 조각 하나다', () => {
     assert.deepEqual(integrationNeeds(['x/modules/core/src/main/A.kt', 'modules/a/b/src/main/A.kt'], rules), [])
   })
+
+  test('**/ 는 시작과 경로 중간에서 폴더 0개 이상과 맞는다', () => {
+    const nested = integrationRules({ queue: { integration_tests: [{
+      ...RULE,
+      paths: ['**/<모듈>/src/main/**', 'modules/**/<모듈>/x/**'],
+    }] } })
+    const files = ['core/src/main/A.kt', 'apps/deep/api/src/main/A.kt', 'modules/data/x/A.kt', 'modules/apps/deep/web/x/A.kt', 'modules/ignored/y/A.kt']
+    assert.deepEqual(integrationNeeds(files, nested), [need('api'), need('core'), need('data'), need('web')])
+  })
 })
 
 describe('integrationProblems', () => {
@@ -56,10 +65,12 @@ describe('integrationProblems', () => {
     assert.deepEqual(integrationProblems(body('- 단위 테스트 통과'), HEAD, [need('core')]).reasons, ['통합 테스트 기록 없음: core (./gradlew :core:integrationTest)'])
   })
 
-  test('검증 절 밖이나 코드 블록 안의 기록은 기록이 아니다', () => {
+  test('검증 절 밖에서 찾은 기록은 위치를 알리고 코드 블록 안의 기록은 읽지 않는다', () => {
     const outside = `${record('core')}\n${body()}`
     const fenced = body('```', record('core'), '```')
-    for (const text of [outside, fenced]) assert.match(integrationProblems(text, HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
+    assert.deepEqual(integrationProblems(outside, HEAD, [need('core')]).reasons, ['통합 테스트 기록이 검증 절 밖에 있다: core (./gradlew :core:integrationTest)'])
+    assert.match(integrationProblems(fenced, HEAD, [need('core')]).reasons.join(), /기록 없음: core/)
+    assert.deepEqual(integrationProblems(`${body(record('core'))}\n${record('core')}`, HEAD, [need('core')]).reasons, [])
   })
 
   test('커밋이 head 와 다르면 head 가 아니라고 알린다. accept 가 받으면 통과다', () => {
