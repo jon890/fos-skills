@@ -20,7 +20,7 @@ import { ciState, requiredNames } from '../../lib/gh.ts'
 import { mainCheckout } from '../../lib/git.ts'
 import { collectStages, collectWorkers, idleNotices, markScreen, readRecords, stageNotices, tailHash } from '../../lib/movement.ts'
 import type { ScreenMark } from '../../lib/movement.ts'
-import { makeParent, pathOf } from '../../lib/paths.ts'
+import { makeParent, orchDir, pathOf } from '../../lib/paths.ts'
 import { inFlight, readRefresh, refreshFile } from '../../lib/refresh.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { backgroundWork } from '../../lib/screen.ts'
@@ -32,8 +32,7 @@ import { openPrs } from './prs.ts'
 import { log, oneLine, rowsOf } from './shared.ts'
 import type { CiEntry, Lookup, OwnPr, Prs, Waiting } from './shared.ts'
 
-function mergeWaits(repo: string, paths: Map<string, string>, prs: Prs, now: number, stateOf: (pr: OwnPr) => CiEntry['state'] | null): (worktree: string) => boolean {
-  const refresh = readRefresh(refreshFile(repo))
+function mergeWaits(paths: Map<string, string>, prs: Prs, now: number, refresh: ReturnType<typeof readRefresh>, stateOf: (pr: OwnPr) => CiEntry['state'] | null): (worktree: string) => boolean {
   const ready = new Map<string, OwnPr[]>()
   if (prs.ok) {
     for (const pr of prs.mine) {
@@ -53,15 +52,18 @@ function mergeWaits(repo: string, paths: Map<string, string>, prs: Prs, now: num
   })
 }
 
-function foreignMergeWaits(repo: string, now: number): (worktree: string) => boolean {
+function foreignMergeWaits(repo: string, localOrchDir: string, now: number): (worktree: string) => boolean {
   const paths = worktreePaths(repo)
   if (paths.size === 0) return () => false
-  const skipped = loadConfig(repo).queue?.skipped_is_missing === true
+  // 절대경로 ORCH_DIR 을 물려받아도 다른 저장소에서 이 루프의 설정이나 PR 번호 기록을 읽지 않는다.
+  const override = real(orchDir(repo)) === localOrchDir ? '' : undefined
+  const config = loadConfig(repo, { file: pathOf('config', repo, override) })
+  const skipped = config.queue?.skipped_is_missing === true
   const states = new Map<number, CiEntry['state'] | null>()
-  return mergeWaits(repo, paths, openPrs(repo), now, (pr) => {
+  return mergeWaits(paths, openPrs(repo, config), now, readRefresh(refreshFile(repo, override)), (pr) => {
     if (!states.has(pr.number)) {
       try {
-        const names = requiredNames(repo, pr.host, pr.slug, pr.base)
+        const names = requiredNames(repo, pr.host, pr.slug, pr.base, config)
         states.set(pr.number, names.ok ? ciState(pr.rollup, names.names, skipped, pr.head).state : null)
       } catch {
         states.set(pr.number, null)
@@ -96,8 +98,9 @@ function watchMovement(
   for (const [dispatch, tail] of tails) screens[dispatch] = markScreen(previous.screens[dispatch], tailHash(tail), now, backgroundWork(tail))
   lookup.paths ??= worktreePaths(ctx.repo)
   const repo = mainCheckout(ctx.repo)
+  const localOrchDir = real(orchDir(repo))
   const localPaths = new Set([...lookup.paths.values()].map(real))
-  const waits = new Map([[repo, mergeWaits(repo, lookup.paths, prs, now, (pr) => {
+  const waits = new Map([[repo, mergeWaits(lookup.paths, prs, now, readRefresh(refreshFile(repo)), (pr) => {
     const entry = ci?.[String(pr.number)]
     return entry?.head === pr.head ? entry.state : null
   })]])
@@ -110,7 +113,7 @@ function watchMovement(
     const path = real(worktree)
     const target = localPaths.has(path) ? repo : mainCheckout(path)
     if (!waits.has(target)) {
-      try { waits.set(target, foreignMergeWaits(target, now)) }
+      try { waits.set(target, foreignMergeWaits(target, localOrchDir, now)) }
       catch { waits.set(target, () => false) }
     }
     return waits.get(target)?.(path) ? '머지를 기다린다' : null

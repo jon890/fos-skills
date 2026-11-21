@@ -46,8 +46,8 @@ export function forkFiles(repo: string, base: string, head: string): { ok: true;
   return { ok: true, files: { behind: ancestor.code === 1, pr, base: theirs } }
 }
 
-export function refreshFile(repo: string): string {
-  return join(pathOf('state', repo), 'refresh.json')
+export function refreshFile(repo: string, override?: string): string {
+  return join(pathOf('state', repo, override), 'refresh.json')
 }
 
 export function readRefresh(file: string): Record<string, RefreshRecord> {

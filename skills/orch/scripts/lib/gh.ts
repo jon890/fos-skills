@@ -18,7 +18,7 @@ import { budgetGh } from './gh-budget.ts'
 import type { BudgetOptions } from './gh-budget.ts'
 import { git, mainCheckout } from './git.ts'
 
-type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean } & Pick<BudgetOptions, 'cacheKey' | 'ttlSeconds' | 'refresh'>
+type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean; repoFromCwd?: boolean } & Pick<BudgetOptions, 'cacheKey' | 'ttlSeconds' | 'refresh'>
 const contexts = new Map<string, { root: string; origin: string; expires: number }>()
 
 export function ghBin(): string {
@@ -32,11 +32,12 @@ export function gh(args: string[], opts: GhOptions = {}): RunResult {
     context = { root: mainCheckout(repo), origin: git(repo, ['remote', 'get-url', 'origin']).stdout.trim(), expires: Date.now() + 60_000 }
     contexts.set(repo, context)
   }
-  const identity = [ghBin(), context.root, context.origin, opts.host ?? process.env.GH_HOST, process.env.GH_REPO, process.env.GH_CONFIG_DIR,
+  const identity = [ghBin(), context.root, context.origin, opts.host ?? process.env.GH_HOST, opts.repoFromCwd ? undefined : process.env.GH_REPO, process.env.GH_CONFIG_DIR,
     process.env.GH_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_ENTERPRISE_TOKEN, process.env.GITHUB_ENTERPRISE_TOKEN,
     // 브랜치에서 PR 을 추론하는 호출은 다른 워크트리와 섞지 않는다.
     args[0] === 'pr' && ['view', 'checks'].includes(args[1]) && (!args[2] || args[2].startsWith('-')) ? repo : null]
-  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env: { ...(opts.host ? { GH_HOST: opts.host } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }), { passthrough: opts.cache === false, cacheKey: opts.cacheKey, ttlSeconds: opts.ttlSeconds, refresh: opts.refresh })
+  const env = { ...(opts.host ? { GH_HOST: opts.host } : {}), ...(opts.repoFromCwd ? { GH_REPO: undefined } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }
+  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }), { passthrough: opts.cache === false, cacheKey: opts.cacheKey, ttlSeconds: opts.ttlSeconds, refresh: opts.refresh })
 }
 
 export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T } | { ok: false; error: string } {
@@ -68,8 +69,8 @@ export function apiTarget(url: string): { host: string; slug: string } | null {
 // 없거나 빈 목록이면 그 호스트의 gh 현재 사용자 하나다. 그것도 읽지 못하면 null 이다.
 // 부르는 쪽은 null 을 조회 실패로 다룬다. 누가 내 PR 인지 모른 채 다른 사람 PR 에 알리거나 ready 로 바꾸지 않는다.
 // authors 의 타입이 틀리면 ConfigError 다.
-export function ownAuthors(repo: string, host: string): string[] | null {
-  const pipeline = section<{ authors?: unknown }>(loadConfig(repo), 'pipeline', PIPELINE_KEYS)
+export function ownAuthors(repo: string, host: string, config = loadConfig(repo)): string[] | null {
+  const pipeline = section<{ authors?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
   const authors = pipeline.authors
   if (authors !== undefined) {
     if (!Array.isArray(authors) || !authors.every((author) => typeof author === 'string' && author)) {
@@ -154,8 +155,8 @@ export function ruleChecks(host: string, slug: string, base: string): Names {
 
 // 필수 체크 이름. config.json 의 queue.required 가 있으면 그것(목록이면 그대로이고 이름에 쉼표가 있어도 나누지 않는다, 문자열이면 쉼표로 나눈다)이고 규칙 API 를 부르지 않는다.
 // 없으면 ruleChecks 다. required 를 받는 꼴은 merge-with-finish 가 머지 큐에 넘길 때와 같고, 틀리면 ConfigError 다.
-export function requiredNames(repo: string, host: string, slug: string, base: string): Names {
-  const queue = section<{ required?: unknown }>(loadConfig(repo), 'queue', QUEUE_KEYS)
+export function requiredNames(repo: string, host: string, slug: string, base: string, config = loadConfig(repo)): Names {
+  const queue = section<{ required?: unknown }>(config, 'queue', QUEUE_KEYS)
   const value = queue.required
   if (value === undefined) return ruleChecks(host, slug, base)
   if (Array.isArray(value) && value.every((name) => typeof name === 'string')) {

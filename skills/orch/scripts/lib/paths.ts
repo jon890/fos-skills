@@ -77,17 +77,16 @@ function expandUser(value: string): string {
   return value.startsWith('~/') ? join(homedir(), value.slice(2)) : value
 }
 
-export function orchDir(repo: string): string {
+export function orchDir(repo: string, env = process.env.ORCH_DIR): string {
   const root = mainCheckout(repo)
-  const env = process.env.ORCH_DIR
   if (!env) return join(root, DEFAULT_ROOT)
   const dir = expandUser(env)
   return isAbsolute(dir) ? dir : join(root, dir)
 }
 
-export function pathOf(name: string, repo: string): string {
+export function pathOf(name: string, repo: string, override?: string): string {
   if (!Object.hasOwn(NAMES, name)) throw new Error(`모르는 이름: ${name}. ${Object.keys(NAMES).join(', ')} 중 하나다`)
-  return join(orchDir(repo), NAMES[name])
+  return join(orchDir(repo, override), NAMES[name])
 }
 
 const ignoredMemo = new Map<string, 'ignored' | 'no-git'>()

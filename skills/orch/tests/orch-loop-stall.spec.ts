@@ -698,18 +698,26 @@ describe('움직임 확인', () => {
   test('다른 저장소 worker 는 자기 저장소의 열린 PR 과 CI 로 머지 대기를 판정한다', () => {
     const foreign = join(tmp, 'foreign')
     loopRepo(foreign)
-    const config = JSON.stringify({ pipeline: { authors: ['me'] }, queue: { required: 'Tests' } })
-    write(orchFile('config.json'), config)
-    write(join(foreign, '.orch', 'config.json'), config)
+    env.ORCH_DIR = orchFile()
+    env.GH_REPO = 'test/repo'
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { authors: ['me'] }, queue: { required: 'Tests' } }))
+    write(join(foreign, '.orch', 'config.json'), JSON.stringify({ pipeline: { authors: ['them'] }, queue: { required: 'Foreign tests' } }))
+    write(orchFile('state', 'refresh.json'), JSON.stringify({
+      2: { action: 'update', value: 'updated', base: 'c'.repeat(40), from: 'b'.repeat(40), at: new Date().toISOString() },
+    }))
     const source = join(tmp, 'gh-source')
     const passed = { statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
     write(join(source, 'repo.json'), JSON.stringify([openPr(1, 'local', passed), openPr(2, 'foreign-work', passed)]))
-    write(join(source, 'foreign.json'), JSON.stringify([openPr(1, 'foreign-ready', passed), openPr(2, 'foreign-work')]))
+    const author = { login: 'them' }
+    write(join(source, 'foreign.json'), JSON.stringify([
+      openPr(1, 'foreign-ready', { author, statusCheckRollup: [{ name: 'Foreign tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }),
+      openPr(2, 'foreign-work', { author, statusCheckRollup: [{ name: 'Foreign tests', status: 'IN_PROGRESS' }] }),
+    ]))
     env.GH = linkBin(tmp, 'gh-repos', `
 const fs = require('node:fs')
 const path = require('node:path')
 if (process.argv[2] === 'pr' && process.argv[3] === 'list') {
-  const repo = path.basename(process.cwd())
+  const repo = process.env.GH_REPO?.split('/').at(-1) ?? path.basename(process.cwd())
   fs.appendFileSync(path.join(process.env.FAKE_DIR, 'gh-repos.log'), repo + '\\n')
   process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_DIR, 'gh-source', repo + '.json')))
 }
