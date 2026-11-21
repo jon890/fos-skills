@@ -10,7 +10,7 @@
 | REQ2 | 「다시 뜨는 차례」. 옛 루프가 새 설치본의 `orch-loop.ts` 를 `--foreground` 인자와 넘겨받기 모드로 띄우고 잠금을 넘긴다. 새 루프는 등록을 지우지 않고, 새 루프가 `loop.json` 을 쓴 것을 본 뒤에 옛 루프가 끝난다 |
 | REQ3 | 「다시 뜨는 때」. 이 저장소의 마무리 pid 파일과 이 저장소를 대상으로 도는 머지 큐 프로세스를 본다. 처음 알아챈 때부터 60분이 지났거나 방금 틱이 종료 코드 2 면 기다리지 않는다. 마무리 프로세스에는 신호를 보내지 않는다 |
 | REQ4 | 옛 루프가 새 루프를 확인한 뒤 끝나기 전에, 등록된 Run 마다 `LOOP-UPDATED` 를 바로 보낸다(모아 보내기 kind 가 아니다) |
-| REQ5 | 새 루프가 시작 대기 한도(`ORCH_LOOP_START_WAIT_SEC`, 기본 10초) 안에 `loop.json` 에 자기 pid 를 쓰지 않으면 옛 루프가 새 루프를 끝내고 잠금을 되찾아 계속 돈다. `LOOP-UPDATE-FAIL` 을 바로 보내고, 그 진입점을 메모리에 기억해 다시 시도하지 않는다 |
+| REQ5 | 새 루프가 시작 대기 한도(`ORCH_LOOP_START_WAIT_SEC`, 기본 30초) 안에 `loop.json` 에 자기 pid 를 쓰지 않으면 옛 루프가 새 루프를 끝내고 잠금을 되찾아 계속 돈다. `LOOP-UPDATE-FAIL` 을 바로 보내고, 그 진입점을 메모리에 기억해 다시 시도하지 않는다 |
 | REQ6 | 부모의 `tick` 출처에 `watchStreak` 를 쓴다. 이유는 틱 출력의 원인 줄로 정하고 숫자 묶음을 지운 꼴로 비교한다. `STREAK_LIMIT` 판정을 「넘으면」 에서 「닿으면」 으로 바꿔 단계 출처도 3번째 틱에 보낸다 |
 | REQ7 | 루프가 시작할 때 자기 번들의 `plugin.json` 버전을 `loop.json` 의 `bundle_version` 에 적는다. `orch loop status` 와 `orch status` 가 `LOOP-ALIVE` 줄 끝에 `bundle=<값 또는 ->` 를 더한다 |
 | REQ8 | `references/waiting.md`, `SKILL.md`, `docs/data-schema.md`, `orch-loop.ts`·`lifecycle.ts` 의 파일 맨 위 설명을 고치고, 변경 조각 `skills/orch/changes/loop-self-update.minor.md` 에 첫 배포의 한 번 수동 재시작을 적는다 |

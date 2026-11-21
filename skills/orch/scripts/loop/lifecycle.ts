@@ -101,7 +101,7 @@ import type { Context, TickResult } from './steps/context.ts'
 import { dropStaleErrors } from './steps/errors.ts'
 import { ciEntries, iso, lines, log, oneLine, setLogFile, stallEntries } from './steps/shared.ts'
 
-function startWaitMs(): number { return envMs('ORCH_LOOP_START_WAIT_SEC', 10) }
+function startWaitMs(): number { return envMs('ORCH_LOOP_START_WAIT_SEC', 30) }
 
 const STOP_WAIT_MS = 20_000
 

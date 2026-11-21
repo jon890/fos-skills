@@ -14,6 +14,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
+import { envMs } from './env.ts'
 import { mainCheckout } from './git.ts'
 import { ghJson } from './gh.ts'
 import { allLaunches, readLaunch } from './launched.ts'
@@ -54,7 +55,11 @@ export function dispatchRepo(repo: string, dispatch: string, shown?: ReturnType<
 // --run 은 대상 Run 이다. 호출자의 신원은 실제 run-current 로 읽는다.
 // 조회가 실패하고 ORCA_TERMINAL_HANDLE 도 없으면 Run 없는 사람 셸로 본다.
 export function callerRun(): Caller {
-  const got = orcaJson<{ run?: { id?: unknown } | null; runId?: unknown }>(['orchestration', 'run-current'], { timeoutMs: 5_000 })
+  // 부하가 높으면 조회가 5초를 넘긴다(load average 300 에서 7.7초). 한도를 늘리고 시간 초과일 때만 한 번 다시 조회한다
+  const args = ['orchestration', 'run-current']
+  const options = { timeoutMs: envMs('ORCH_RUN_CURRENT_TIMEOUT_SEC', 15) }
+  let got = orcaJson<{ run?: { id?: unknown } | null; runId?: unknown }>(args, options)
+  if (!got.ok && got.timedOut) got = orcaJson<{ run?: { id?: unknown } | null; runId?: unknown }>(args, options)
   if (!got.ok) return process.env.ORCA_TERMINAL_HANDLE ? { kind: 'unknown', error: got.error } : { kind: 'caller', run: null }
   const value = got.data?.run?.id ?? got.data?.runId
   if (typeof value === 'string' && value) return { kind: 'caller', run: value }
