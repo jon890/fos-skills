@@ -87,14 +87,17 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 | --- | --- |
 | 터미널이 열려 있고 에이전트가 있다 | `WORKER-NOT-MOVED <터미널> <dispatch> 터미널 없음` |
 | 화면이 idle, error, interrupted 다(lib/screen 의 classify) | `… 작업 중`. 작업 중인 dispatch 를 끊으면 그 턴의 보고가 사라진다 |
-| 띄우기 기록(`state/launched-workers/<dispatch>.json`)의 지시서가 있다 | `… 지시서 모름` |
+| 현재 dispatch 의 띄우기 기록에 지시서가 있거나, 같은 브랜치·워크트리의 이전 띄우기 기록에 있다 | `… 지시서 모름` |
 | `worker-start` 가 `--terminal` 을 받는다 | `… CLI 가 이어 붙이기를 모른다` |
 
 확인을 마치면 `worker-abandon --dispatch <앞 dispatch>` 뒤 `worker-start --terminal <터미널> --worktree path:<워크트리> --run <새 Run> --spec "지시서 <이어받기 파일> 를 …"` 를 부른다.
 이어받기 파일은 `lib/sessions.ts` 의 `handover` 를 쓴다. 새 dispatch 는 앞 기록을 복사해 `recordLaunch` 로 남기고 앞 기록은 지운다.
 보드의 worker 줄은 `board.ts worker-add <항목> <역할> --dispatch <새 dispatch>` 로 다시 잇는다. 앞 dispatch 는 abandoned 라, 줄을 그대로 두면 끊긴 worker 로 보인다.
 `worker-start` 가 실패하면 다시 시도하지 않고 `WORKER-MOVE-FAIL <터미널> <이어받기 파일>` 을 낸다. 그 터미널은 dispatch 가 없어 `orch worker adopt` 로 잇는다. 성공하면 `WORKER-MOVED <터미널> <앞 dispatch> <새 dispatch>` 다.
-옮기지 못한 worker(`WORKER-NOT-MOVED`, `WORKER-LIST-FAIL`)가 남은 앞 Run 은 `state/takeover.json` 에 남는다. 작업 중이던 worker 가 쉬면 메인이 `orch loop start --take-over` 로 같은 확인을 거쳐 다시 옮긴다. `orch worker adopt` 는 살아 있는 dispatch 의 터미널을 받지 않으므로 이 길을 쓴다.
+현재 dispatch 의 지시서 파일이 없으면 같은 브랜치와 워크트리의 이전 띄우기 기록 중 가장 최근에 쓴 지시서 파일을 고른다.
+옮기지 못한 worker 와 Run 은 `state/takeover.json` 에 남는다. 작업 중이던 worker 가 쉬면 메인이 `orch loop start --take-over` 로 다시 옮긴다. 살아 있는 dispatch 에 묶인 터미널은 이 경로로만 옮긴다.
+
+`orch status` 와 빠른 루프 틱은 옛 Run 의 코디네이터 메일함을 읽는다. 마지막 보고는 최근 메일 가운데 그 dispatch 의 상태·완료·질문·상향 보고·머지 요청 중 최신 메시지다. 메시지에 dispatch id 가 없으면 그 Run 에서 터미널을 쓴 dispatch 가 하나일 때만 연결한다. Orca 가 자동으로 보내는 조용한 종료 알림은 건너뛴다. `OLD-RUN-WORKER` 줄에 옛 Run, dispatch, 워크트리, 마지막 보고를 표시한다. 넘겨받을 때 기록한 dispatch 는 이미 끝났어도 다음 넘겨받기 시도 전까지 보여 준다. 루프는 목록이나 마지막 보고가 바뀌면 새 메인에게 같은 내용을 알린다. 보고 전문과 답할 대상은 옛 Run 메일함에 있다.
 
 ### 요청 기록
 

@@ -15,6 +15,7 @@
 //     MAIN <Run> terminal=<터미널>                   저장소의 메인 코디네이터(lib/main-coordinator.ts 의 findMain, ADR-035)
 //     MAIN-NONE stale=<등록됐지만 살아 있지 않은 Run 을 쉼표로 또는 ->   메인이 없다. 다음 orch loop start 가 넘겨받는다
 //     MAIN-UNKNOWN <이유>                             메인을 판정하지 못했다(Orca 조회 실패)
+//     OLD-RUN-WORKER …, OLD-RUN-READ-FAIL …          옛 Run 에 남은 worker 의 마지막 보고 또는 조회 실패
 //     REQUESTS open=<끝나지 않은 받은 요청 수>         받은 요청이 하나라도 있을 때만 낸다. 목록은 orch request list --open
 //     FOLLOWUPS open=<끝나지 않은 배포 뒤 할 일 수>    하나라도 있을 때만 낸다. 이어서 항목마다 FOLLOWUP #<PR> <상태> <글>(core/followups.ts 의 followupLine)
 //     SKIP-FOLLOWUPS <이유>                           배포 뒤 할 일 목록을 읽지 못했다
@@ -47,6 +48,7 @@ import { listRequests, openRequests } from '../lib/requests.ts'
 import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine, worktreeOf } from '../lib/movement.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { workerRows } from '../lib/workers.ts'
+import { oldWorkerReports } from '../loop/takeover.ts'
 
 const USAGE = '사용법: orch-status.ts --repo DIR [--run ID]...'
 
@@ -119,6 +121,9 @@ function main(argv: string[]): number {
   else {
     out(`MAIN-UNKNOWN ${main.error.replace(/\s+/g, ' ').slice(0, 200)}`)
   }
+  const old = oldWorkerReports(repo)
+  for (const line of [...old.lines, ...old.errors]) out(line)
+  failed ||= old.errors.length > 0
   const requests = listRequests(repo)
   if (requests.length > 0) out(`REQUESTS open=${openRequests(repo).length}`)
   try {

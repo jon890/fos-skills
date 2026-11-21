@@ -415,7 +415,7 @@ async function judgeAndTake(ctx: Context, entrypoint: string, options: StartOpti
       const tried = pendingRuns(ctx.repo)
       const moved = moveWorkers(ctx.repo, tried, run)
       for (const line of moved.lines) log(line)
-      settlePending(ctx.repo, tried, moved.remaining)
+      settlePending(ctx.repo, tried, moved.remaining, moved.workers)
     }
     // 메인은 이 Run 인데 루프가 다른 Run 의 명의로 묶였다(배포 전부터 등록된 앞 Run 이 죽었다). 이 Run 의 명의로 다시 띄운다
     return misbound ? takeOver(ctx, entrypoint, registered.filter((r) => r !== run && !main.alive.includes(r)), null, null) : null
@@ -474,7 +474,7 @@ async function takeOver(ctx: Context, entrypoint: string, drop: string[], confir
   const tried = pendingRuns(ctx.repo)
   const moved = moveWorkers(ctx.repo, tried, run)
   for (const line of moved.lines) log(line)
-  settlePending(ctx.repo, tried, moved.remaining)
+  settlePending(ctx.repo, tried, moved.remaining, moved.workers)
   return 0
 }
 

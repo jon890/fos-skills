@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
-import { moveWorkers, pendingRuns, settlePending, writePending } from '../scripts/loop/takeover.ts'
+import { moveWorkers, notifyOldWorkers, oldWorkerReports, pendingRuns, settlePending, writePending } from '../scripts/loop/takeover.ts'
 
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -22,6 +22,8 @@ else if (argv[1] === 'worker-list') {
   if (!rows) { say({ ok: false, error: { code: 'x', message: 'offline' } }); process.exitCode = 1 }
   else say({ ok: true, result: { workers: rows, page: {} } })
 }
+else if (argv[1] === 'inbox') say({ ok: true, result: { messages: (st.inboxes?.[value('--terminal')] || []).slice(0, Number(value('--limit'))) } })
+else if (argv[1] === 'send') say({ ok: true, result: { message: { id: 'msg_1' } } })
 else if (argv[1] === 'worker-start' && argv.includes('--help')) process.stdout.write('Usage: worker-start --terminal <handle> --worktree <sel>\\n')
 else if (argv[1] === 'worker-abandon') say({ ok: true, result: { dispatch: { id: value('--dispatch'), status: 'abandoned' } } })
 else if (argv[1] === 'worker-start') say({ ok: true, result: { dispatch: { id: 'new_' + value('--terminal'), taskId: 'task_new' } } })
@@ -115,6 +117,64 @@ test('지시서를 모르는 worker 는 끊지 않는다', () => {
   const moved = moveWorkers(repo, ['r_old'], 'r_new')
   assert.equal(moved.lines[0], 'WORKER-NOT-MOVED h1 d1 지시서 모름')
   assert.equal(calls().some((argv) => argv[1] === 'worker-abandon'), false)
+})
+
+test('현재 띄우기 기록이 없으면 같은 브랜치와 워크트리의 이전 지시서를 찾는다', () => {
+  const a = scene()
+  const previous = readLaunch(repo, 'd1')!
+  rmSync(join(repo, '.orch/state/launched-workers/d1.json'))
+  recordLaunch(repo, { ...previous, dispatch: 'd_before' })
+  const moved = moveWorkers(repo, ['r_old'], 'r_new')
+  assert.equal(moved.lines[0], 'WORKER-MOVED h1 d1 new_h1')
+  assert.equal(readLaunch(repo, 'new_h1')?.spec, previous.spec)
+})
+
+test('브랜치나 워크트리가 다른 이전 지시서는 사용하지 않는다', () => {
+  scene()
+  const previous = readLaunch(repo, 'd1')!
+  rmSync(join(repo, '.orch/state/launched-workers/d1.json'))
+  recordLaunch(repo, { ...previous, dispatch: 'd_wrong_branch', branch: 'feat/b' })
+  recordLaunch(repo, { ...previous, dispatch: 'd_wrong_worktree', worktree: join(repo, 'worktrees', 'b') })
+  assert.equal(moveWorkers(repo, ['r_old'], 'r_new').lines[0], 'WORKER-NOT-MOVED h1 d1 지시서 모름')
+  assert.ok(!calls().some(argv => argv[1] === 'worker-abandon'))
+})
+
+test('옛 Run 에 남은 worker 의 마지막 보고를 보여 주고 새 메인에 바뀐 보고만 알린다', () => {
+  scene()
+  const moved = moveWorkers(repo, ['r_old'], 'r_new')
+  settlePending(repo, ['r_old'], moved.remaining, moved.workers)
+  const file = join(tmp, 'orca.json')
+  const state = JSON.parse(readFileSync(file, 'utf8'))
+  // 마무리 직후에도 옛 Run 에 남은 완료 보고를 읽는다.
+  state.workers.r_old = state.workers.r_old.filter((worker: Json) => worker.dispatchId !== 'd1')
+  state.workers.r_old[0].dispatchStatus = 'completed'
+  state.inboxes = { 'run:r_old': [
+    ...Array.from({ length: 200 }, () => ({ type: 'status', dispatch_id: 'd3', body: '다른 저장소' })),
+    { type: 'escalation', dispatch_id: 'd2', payload: { stopReason: 'finished' }, body: 'Orca 가 만든 대기 알림' },
+    { type: 'heartbeat', dispatch_id: 'd2', body: '보고가 아님' },
+    { id: 'msg_done', type: 'worker_done', payload: { dispatchId: 'd2' }, body: '준비됨 #42' },
+    { type: 'status', dispatch_id: 'd2', body: '오래된 보고' },
+  ] }
+  writeFileSync(file, JSON.stringify(state))
+  const report = oldWorkerReports(repo)
+  assert.deepEqual(report.errors, [])
+  assert.equal(report.lines.length, 1)
+  assert.match(report.lines[0], /^OLD-RUN-WORKER run=r_old dispatch=d2 worktree=.*\/b" 마지막 보고=worker_done msg_done 준비됨 #42$/)
+  assert.deepEqual(notifyOldWorkers(repo, 'r_new'), [])
+  assert.deepEqual(notifyOldWorkers(repo, 'r_new'), [])
+  assert.equal(calls().filter(argv => argv[1] === 'send').length, 1)
+  state.inboxes['run:r_old'].unshift({ id: 'msg_ready', type: 'status', from_handle: 'h2', body: '새 보고' })
+  writeFileSync(file, JSON.stringify(state))
+  assert.deepEqual(notifyOldWorkers(repo, 'r_new'), [])
+  const sends = calls().filter(argv => argv[1] === 'send')
+  assert.equal(sends.length, 2)
+  assert.equal(sends[1][sends[1].indexOf('--to') + 1], 'run:r_new')
+  assert.match(sends[1][sends[1].indexOf('--body') + 1], /msg_ready 새 보고/)
+  // 같은 터미널을 앞 dispatch 가 썼다면 id 가 빠진 보고를 어느 쪽에도 붙이지 않는다.
+  state.workers.r_old.push({ ...row('d_before', join(repo, 'worktrees', 'b'), 'h2'), dispatchStatus: 'completed' })
+  writeFileSync(file, JSON.stringify(state))
+  assert.match(oldWorkerReports(repo).lines[0], /worker_done msg_done 준비됨 #42$/)
+  assert.ok(!calls().some(argv => argv[1] === 'check'))
 })
 
 test('앞 Run 의 worker 목록을 읽지 못하면 그 Run 을 남겨 다시 옮긴다', () => {

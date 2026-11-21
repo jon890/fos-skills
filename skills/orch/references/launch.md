@@ -189,6 +189,8 @@ orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$
 
 ## 이전 세션 이어받기
 
+메인을 넘겨받은 뒤 `orch status` 에 `OLD-RUN-WORKER` 로 보이는 worker 는 옛 Run 에 보고한다. 쉬는 화면이 되면 `orch loop start --take-over` 로 다시 옮긴다. 현재 띄우기 기록에 지시서가 없으면 같은 브랜치와 워크트리의 이전 기록에서 찾는다. [메인 넘겨받기](requests.md#orch-loop-start-가-막을-때)를 참고한다.
+
 코디네이터가 바뀌거나 계정을 전환한 뒤에는 `orch worker adopt` 로 기존 터미널을 먼저 확인한다. 기본 실행은 다른 Run 의 살아 있는 dispatch 를 제외한 목록을 내며 터미널에 입력하거나 닫지 않는다.
 
 `$TERMINAL` 은 목록에서 고른 handle 이다. 저장소는 작업 폴더에서, `--apply` 의 Run 은 코디네이터 터미널에서 읽는다.

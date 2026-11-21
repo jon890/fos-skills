@@ -20,6 +20,7 @@ const st = JSON.parse(fs.readFileSync(process.env.FAKE_DIR + '/orca.json', 'utf8
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 const rows = (st.workers_by_run || {})[run]
 if (argv[1] === 'worker-list' && rows) process.stdout.write(JSON.stringify({ ok: true, result: { workers: rows, page: {} } }) + '\\n')
+else if (argv[1] === 'inbox' && st.inboxes) process.stdout.write(JSON.stringify({ ok: true, result: { messages: st.inboxes[argv[argv.indexOf('--terminal') + 1]] || [] } }) + '\\n')
 else if (argv[1] === 'run-list' && st.runs) process.stdout.write(JSON.stringify({ ok: true, result: { runs: st.runs } }) + '\\n')
 else if (argv[0] === 'terminal' && argv[1] === 'list' && st.terminals) process.stdout.write(JSON.stringify({ ok: true, result: { terminals: st.terminals } }) + '\\n')
 else { process.stdout.write(JSON.stringify({ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } }) + '\\n'); process.exitCode = 1 }
@@ -207,4 +208,20 @@ describe('orch status', () => {
     assert.match(done.stdout, /^RUN r2 /m)
     assert.doesNotMatch(done.stderr, /run=/)
   })
+})
+
+test('status 는 옛 Run 에 남은 worker 의 마지막 보고를 읽기만 한다', () => {
+  scene()
+  const path = join(repo, 'worktrees', 'old-run')
+  write('.orch/state/takeover.json', { from: ['r_old'], workers: { r_old: [{ dispatch: 'd_old', worktree: path }] } })
+  const file = join(tmp, 'orca.json')
+  const state = JSON.parse(readFileSync(file, 'utf8'))
+  state.workers_by_run.r_old = []
+  state.inboxes = { 'run:r_old': [{ type: 'status', dispatch_id: 'd_old', body: '준비됨 #42' }] }
+  writeFileSync(file, JSON.stringify(state))
+  const before = snapshot()
+  const result = status()
+  assert.equal(result.code, 0, result.stderr)
+  assert.ok(result.lines.includes(`OLD-RUN-WORKER run=r_old dispatch=d_old worktree=${JSON.stringify(path)} 마지막 보고=status 준비됨 #42`), result.stdout)
+  assert.deepEqual(snapshot(), before)
 })
