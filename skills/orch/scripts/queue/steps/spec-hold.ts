@@ -1,6 +1,7 @@
 // 루프와 수동 큐가 같은 지시서에서 보류를 읽는다. 같은 브랜치는 앞 Run 의 첫 지시서가 정한다.
 import { isAbsolute, join } from 'node:path'
 import { prHold, specHold } from '../../lib/auto-merge.ts'
+import { readPrivateWords, redactLine } from '../../lib/private-words.ts'
 import { gh } from '../../lib/gh.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { specFiles } from '../../lib/last-pr.ts'
@@ -39,10 +40,15 @@ function prBody(state: StepState): string | null {
   return got.code === 0 ? got.stdout : null
 }
 
-// 지시서 보류가 먼저고, 없으면 PR 본문의 보류다. gate 는 본문을 읽지 못해도 보류 없음으로 두고, merge(refuseSpecHold)는 멈춘다
+// 지시서 보류가 먼저고, 없으면 PR 본문의 보류다. gate 는 본문을 읽지 못해도 보류 없음으로 두고, merge(refuseSpecHold)는 멈춘다.
+// 이유에 비공개 낱말(lib/private-words.ts)이 있으면 값 대신 위치를 돌려준다. 이 값은 gate 의 HOLD 줄과 큐 로그에 그대로 나간다
 export function mergeHold(state: StepState, body: string | null = prBody(state)): string | null {
-  const spec = state.pr?.branch ? specTargets(state.repoDir).get(state.p.branch)?.hold : null
-  return spec ?? (body === null ? null : prHold(body))
+  const target = state.pr?.branch ? specTargets(state.repoDir).get(state.p.branch) : undefined
+  const spec = target?.hold ?? null
+  const words = readPrivateWords()
+  if (spec !== null) return words.length === 0 ? spec : redactLine(spec, words, '지시서', target?.text ?? '')
+  const hold = body === null ? null : prHold(body)
+  return hold === null || words.length === 0 ? hold : redactLine(hold, words, 'PR 본문', body ?? '')
 }
 
 export function refuseSpecHold(state: StepState): void {

@@ -1,5 +1,8 @@
 // 실제 시간 대신 틱마다 상태를 바꾸는 가짜 gh 는 응답 캐시를 쓰지 않는다.
 process.env.ORCH_GH_CACHE = '0'
+// 사용자의 실제 비공개 낱말 목록이 있어도 관문이 댓글 조회를 더하지 않게 빈 목록으로 떼어 놓는다(lib/private-words.ts 의 ORCH_PRIVATE_WORDS).
+// 목록을 쓰는 테스트는 자기 env 에 이 값을 목록 파일 경로로 바꿔 둔다. 이 모듈을 불러오는 실행기 자식이 그 값을 덮지 않게 비었을 때만 둔다
+process.env.ORCH_PRIVATE_WORDS ??= '/dev/null'
 
 // merge-queue.spec.ts 와 merge-queue-overlap.spec.ts 가 함께 쓰는 가짜 gh, git 과 실행 helper 다. GitHub 에는 닿지 않는다.
 //
@@ -10,7 +13,8 @@ process.env.ORCH_GH_CACHE = '0'
 //   head_from(bare 저장소 경로. pr view 가 그 저장소의 headRefName 브랜치 끝을 headRefOid 로 읽고, 바뀌었으면 _behind 를 0 으로 둔다)),
 //   그리고 _behind, _behind_after_update, _api_fails, _rules, _rules_error, _view_fails, _remote_head, _base_head, _ls_remote_fails.
 //   쌓인 PR 칸: _based(`pr list --base` 가 내는 열린 PR 목록. `pr edit <n> --base` 가 그 PR 을 뺀다), _list_fails,
-//   _edit_fails, _user(`api user` 의 login. 기본 me).
+//   _edit_fails, _user(`api user` 의 login. 기본 me), _visibility(`repo view --json visibility` 의 값. 기본 PUBLIC, _visibility_fails 면 1).
+//   비공개 낱말 검사가 읽는 PR 의 글(REST): issue_comments, reviews_rest, review_comments(각 {id, body} 목록. 없으면 빈 목록), comments_fail.
 // 가짜 git 은 rev-parse --verify 와 ls-remote 만 상태로 답하고 나머지는 0 으로 끝난다. 그 밖의 rev-parse 는 저장소 밖처럼
 // 128 로 끝난다. 이벤트 실행기가 주 checkout 을 찾을 때 --repo 를 그대로 쓰게 하기 위해서다. merge-queue.spec.ts 만 쓰고,
 // merge-queue-overlap.spec.ts 는 진짜 git 과 임시 저장소를 쓴다.
@@ -87,6 +91,15 @@ if (args[0] === 'api') {
     process.exit(0)
   }
   if (state._api_fails) process.exit(1)
+  // 비공개 낱말 검사가 읽는 일반 댓글, 리뷰, 코드 줄 댓글
+  const talk = new RegExp('/(issues|pulls)/([0-9]+)/(comments|reviews)').exec(path)
+  if (talk) {
+    const pr = state[talk[2]] ?? {}
+    if (pr.comments_fail) process.exit(1)
+    const key = talk[1] === 'issues' ? 'issue_comments' : talk[3] === 'reviews' ? 'reviews_rest' : 'review_comments'
+    const at = args.indexOf('--jq')
+    jq(at >= 0 ? args[at + 1] : '.', pr[key] ?? [])
+  }
   // 바뀐 파일 목록(REST pulls/<n>/files). pr.files 의 path 를 filename 으로 돌려준다
   const files = new RegExp('/pulls/([0-9]+)/files').exec(path)
   if (files) {
@@ -102,6 +115,11 @@ if (args[0] === 'api') {
   }
   const at = args.indexOf('--jq')
   jq(at >= 0 ? args[at + 1] : '.', rules ? state._rules ?? [] : { behind_by: state._behind ?? 0 })
+}
+if (args[0] === 'repo' && args[1] === 'view') {
+  if (state._visibility_fails) process.exit(1)
+  say(JSON.stringify({ visibility: state._visibility ?? 'PUBLIC' }))
+  process.exit(0)
 }
 if (args[0] === 'pr' && args[1] === 'view') {
   // 앞의 몇 번은 일시 실패를 흉내 낸다

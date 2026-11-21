@@ -17,6 +17,8 @@ import type { RunResult } from './proc.ts'
 import { budgetGh } from './gh-budget.ts'
 import type { BudgetOptions } from './gh-budget.ts'
 import { git, mainCheckout } from './git.ts'
+import type { Visibility } from './private-words.ts'
+import { parseVisibility } from './private-words.ts'
 
 type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean; repoFromCwd?: boolean } & Pick<BudgetOptions, 'cacheKey' | 'ttlSeconds' | 'refresh'>
 const contexts = new Map<string, { root: string; origin: string; expires: number }>()
@@ -49,6 +51,12 @@ export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T
   } catch {
     return { ok: false, error: `${command} 의 출력이 JSON 이 아니다` }
   }
+}
+
+// 저장소의 공개 여부(lib/private-words.ts 의 Visibility). 읽지 못하면 unknown 이다. repo view 라 공유 캐시를 쓴다
+export function ghRepoVisibility(cwd: string): Visibility {
+  const got = ghJson<{ visibility?: unknown }>(['repo', 'view', '--json', 'visibility'], { cwd })
+  return got.ok ? parseVisibility(got.data?.visibility) : 'unknown'
 }
 
 export function currentUser(host?: string, cwd?: string): string | null {

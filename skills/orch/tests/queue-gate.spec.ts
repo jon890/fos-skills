@@ -469,4 +469,80 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.deepEqual(gateLines('7', []), ['GATE-OK 7'])
     assert.deepEqual(gateLines('7', [{ kind: 'ci', text: 'a' }, { kind: 'threads', text: 'b' }]), ['GATE-FAIL 7', '  a', '  b'])
   })
+
+  // 가상 낱말만 쓴다. 실제 목록(~/.config/orch/private-words.txt)은 읽지 않는다
+  describe('비공개 낱말', () => {
+    const WORD = 'example-secret'
+    function withWords(c: Ctx): Ctx {
+      const home = join(c.tmp, 'home')
+      mkdirSync(join(home, '.config', 'orch'), { recursive: true })
+      writeFileSync(join(home, '.config', 'orch', 'private-words.txt'), `# 가상 목록\n\n${WORD}\n`)
+      c.env.ORCH_PRIVATE_WORDS = join(home, '.config', 'orch', 'private-words.txt')
+      c.env.ORCH_MACHINE_DIR = join(c.tmp, 'machine')
+      return c
+    }
+
+    test('본문과 댓글에 낱말이 있으면 GATE-FAIL 이고 위치만 알린다', async (t) => {
+      const c = withWords(setup(t))
+      const state = { '1': pr({
+        body: `${BLOCK}\n배경: /srv/${WORD}/data\n`,
+        issue_comments: [{ id: 11, body: '괜찮은 댓글' }, { id: 12, body: `경로는 ${WORD.toUpperCase()} 다` }],
+        reviews_rest: [{ id: 21, body: null }],
+        review_comments: [{ id: 31, body: `첫 줄\n${WORD}` }],
+      }) }
+      const g = await gate(c, state, 0)
+      assert.equal(g.code, 1, both(g))
+      assert.match(g.stdout, /^GATE-FAIL 1$/m)
+      const reason = gateReason(g)
+      assert.match(reason, /PR 본문 8번째 줄\(목록 3번째 줄\)/)
+      assert.match(reason, /일반 댓글 12 1번째 줄/)
+      assert.match(reason, /코드 줄 댓글 31 2번째 줄/)
+      assert.doesNotMatch(reason, /일반 댓글 11/)
+      assert.ok(!`${g.stdout}${g.stderr}`.toLowerCase().includes(WORD), both(g))
+      const q = await queue(c, state, 0)
+      assert.equal(q.code, 1, both(q))
+      assert.ok(!`${q.stdout}${q.stderr}`.toLowerCase().includes(WORD), both(q))
+      assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+    })
+
+    test('낱말이 없거나 비공개 저장소거나 목록이 없으면 통과한다', async (t) => {
+      const clean = await gate(withWords(setup(t)), { '1': pr({ issue_comments: [{ id: 1, body: '문제 없음' }] }) }, 0)
+      assert.equal(clean.code, 0, both(clean))
+      const hidden = await gate(withWords(setup(t)), { '1': pr({ body: `${BLOCK}\n${WORD}\n` }), _visibility: 'PRIVATE' }, 0)
+      assert.equal(hidden.code, 0, both(hidden))
+      const c = setup(t)
+      c.env.ORCH_PRIVATE_WORDS = join(c.tmp, 'empty-home', 'private-words.txt')
+      c.env.ORCH_MACHINE_DIR = join(c.tmp, 'machine')
+      const none = await gate(c, { '1': pr({ body: `${BLOCK}\n${WORD}\n` }) }, 0)
+      assert.equal(none.code, 0, both(none))
+      assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /repo view|issues\/1\/comments/)
+    })
+
+    test('공개 여부를 읽지 못하면 공개로 보고, 댓글을 읽지 못하면 조회 실패다', async (t) => {
+      const unknown = await gate(withWords(setup(t)), { '1': pr({ body: `${BLOCK}\n${WORD}\n` }), _visibility_fails: true }, 0)
+      assert.equal(unknown.code, 1, both(unknown))
+      assert.match(gateReason(unknown), /PR 본문 8번째 줄/)
+      const failed = await gate(withWords(setup(t)), { '1': pr({ comments_fail: true }) }, 0)
+      assert.equal(failed.code, 1, both(failed))
+      assert.match(gateReason(failed), /비공개 낱말 검사: 일반 댓글, 리뷰, 코드 줄 댓글 조회 실패/)
+    })
+
+    test('본문에서 옮긴 다른 이유 줄의 낱말도 가린다', async (t) => {
+      const c = withWords(setup(t))
+      const body = BLOCK.replace('인수 검증: 통과 | REQ1 실행 기록', `인수 검증: 대기 | ${WORD} 서버에서 확인`)
+      const g = await gate(c, { '1': pr({ body }), _visibility: 'PRIVATE' }, 0)
+      assert.equal(g.code, 1, both(g))
+      assert.match(gateReason(g), /\*\*\*/)
+      assert.ok(!g.stdout.toLowerCase().includes(WORD), both(g))
+    })
+
+    test('보류 이유에 낱말이 있으면 값 대신 위치를 쓴다', async (t) => {
+      const c = withWords(setup(t))
+      const body = `${BLOCK}\n\n- 머지 보류: ${WORD} 서버 확인 전\n`
+      const g = await gate(c, { '1': pr({ body }), _visibility: 'PRIVATE' }, 0)
+      assert.equal(g.code, 0, both(g))
+      assert.match(g.stdout, /^HOLD 비공개 낱말이 있어 값을 생략한다\(PR 본문 9번째 줄\)$/m)
+      assert.ok(!g.stdout.includes(WORD), both(g))
+    })
+  })
 })

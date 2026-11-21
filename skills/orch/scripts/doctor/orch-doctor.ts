@@ -53,6 +53,12 @@
 //     ADR-RESERVE-MISSING 은 plan 오버레이 표에서 `ADR 색인 생성 | 한다` 이거나 docs/adr 바로 아래에 번호로 시작하는 .md 가 있는데
 //     config.json 의 adr.dirs 가 없을 때 낸다. 색인 생성이나 번호 붙은 ADR 은 병렬 PR 의 번호 충돌 가능성을 드러내며, 경고라 종료 코드를 바꾸지 않는다.
 //
+// 비공개 낱말 목록 판정(늘 본다):
+//     비공개 낱말 목록(lib/private-words.ts 의 privateWordsPath)에 낱말이 없고 --repo 가 GitHub 공개 저장소면 PRIVATE-WORDS-MISSING 을 낸다.
+//     목록이 없으면 worker 커밋 검사와 머지 관문이 비공개 낱말을 보지 않는다(스펙 docs/features/private-leak-guard/spec.md 의 REQ2).
+//     공개 여부는 머지 관문과 같은 조회와 기억(lib/gh.ts 의 ghRepoVisibility)을 쓴다. 목록이 있으면 조회하지 않는다.
+//     읽지 못했거나 비공개면 내지 않는다. 알림일 뿐이라 검사처럼 공개로 보지 않는다. 경고라 종료 코드를 바꾸지 않는다.
+//
 // 개선 후보 판정(늘 본다):
 //     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 저장소 몫 후보·보류를 센다.
 //     fos-skills 에서는 Orca 등록 저장소의 core 몫 후보·보류와 옛 메모도 센다.
@@ -167,6 +173,7 @@
 //     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
 //     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
 //     KEPT-LOST <경로> <dispatch> <끊긴 시각>      끊긴 worker 로 남긴 워크트리가 하루 넘게 있다(위 「남긴 끊긴 worker 판정」). 다음 줄에 직접 정리 명령이 온다
+//     PRIVATE-WORDS-MISSING <목록 경로>           공개 저장소인데 비공개 낱말 목록이 없거나 비었다. 다음 줄에 목록 형식이 온다
 //     FEEDBACK-OPEN <개수> <폴더>                 이 저장소 몫 또는 fos-skills 의 core 몫 개선 후보가 있다
 //     FEEDBACK-NOTICE <제목>: <결과>             받은 반영·기각 결과. 출력 뒤 휴지통으로 옮긴다
 //     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
@@ -183,7 +190,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -224,6 +231,9 @@ import { adoptHint } from '../lib/sessions.ts'
 import { heldDispatch, heldSince, isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
 import { emit } from '../lib/output.ts'
 import { codexOutdatedLines } from './codex-version.ts'
+import type { Visibility } from '../lib/private-words.ts'
+import { privateWordsPath, readPrivateWords, repoVisibility } from '../lib/private-words.ts'
+import { ghRepoVisibility } from '../lib/gh.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
@@ -473,6 +483,16 @@ function checkRepo(repo: string, schema: Schema | null): string[] {
   lines.push(...legacyInboxFilter(repo, config))
   lines.push(...missingAdrReservation(repo, config))
   return lines
+}
+
+// 머리 주석의 「비공개 낱말 목록 판정」. lookup 은 테스트가 공개 여부를 바꾸는 자리다
+export function privateWordsLines(repo: string, lookup: (cwd: string) => Visibility = ghRepoVisibility): string[] {
+  if (readPrivateWords().length > 0) return []
+  if (repoVisibility(repo, lookup) !== 'public') return []
+  return [
+    `PRIVATE-WORDS-MISSING ${privateWordsPath()}`,
+    '  공개 저장소라 worker 커밋과 머지 관문이 비공개 낱말을 검사해야 하는데 목록이 없다. 한 줄에 낱말 하나씩 적으면 검사한다(# 줄과 빈 줄은 건너뛴다)',
+  ]
 }
 
 function missingAdrReservation(repo: string, config: Config): string[] {
@@ -870,7 +890,7 @@ async function executeMain(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
   const { schema, problem: schemaProblem } = await loadSchema()
-  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...shellSshAgentLines(), ...mainDoctorLines(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
+  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...shellSshAgentLines(), ...mainDoctorLines(repo), ...privateWordsLines(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
   const hookDir = join(pathOf('hooks', repo))
   if (existsSync(hookDir)) {
     for (const name of readdirSync(hookDir)) {
