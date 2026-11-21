@@ -22,9 +22,8 @@
 //   configured_images  설정이 가리키는 이미지를 찾을 자리(checkout 상대 glob 목록). { compose[], dockerfile[], settings[],
 //                      content_tags[]: { name, files[], length } } 내용 해시로 태그를 정하는 이미지
 //   repos[]            조사할 git 저장소. { path, survey_only?: true 면 조사만, build_worktrees?: 빌드 스크립트가 만드는 워크트리 경로 glob[] }
-//   hermes             { container, data: 호스트의 Hermes 데이터 폴더, delete: 세션 삭제 argv, optimize: 세션 DB 공간 회수 argv,
-//                        linked: assistant 연결 세션 조회 argv }
-//                      delete 의 "{profile}", "{session}", optimize 의 "{profile}" 낱말은 그 값으로 바뀐다. linked 는 세션 id 를 줄마다 낸다(탭이나 공백으로 여럿 가능).
+//   hermes             { container, data: 호스트의 Hermes 데이터 폴더, delete: 세션 삭제 argv, linked: assistant 연결 세션 조회 argv }
+//                      delete 의 "{profile}", "{session}" 낱말은 그 값으로 바뀐다. linked 는 세션 id 를 줄마다 낸다(탭이나 공백으로 여럿 가능).
 //                      argv 는 셸을 거치지 않는다. 자격 증명 값은 두지 않고, 컨테이너 안 환경 변수를 쓰는 꼴로 적는다.
 //
 // 종료 코드: 0 통과, 1 오버레이를 찾지 못함(개인 오버레이나 그 줄, 가리킨 파일이 없음), 2 사용법 오류, 3 형식 오류.
@@ -93,9 +92,8 @@ export function validate(value: unknown): Json {
     'repos', '{ path, survey_only?, build_worktrees? } 가 하나 이상 있어야 한다',
   )
   const h = value.hermes
-  need(isObj(h) && isStr(h.container) && isStr(h.data) && isStrList(h.delete) && h.delete.length > 0 && isStrList(h.optimize) && h.optimize.length > 0 && isStrList(h.linked) && h.linked.length > 0, 'hermes', 'container, data 문자열과 delete, optimize, linked argv 목록이 있어야 한다')
+  need(isObj(h) && isStr(h.container) && isStr(h.data) && isStrList(h.delete) && h.delete.length > 0 && isStrList(h.linked) && h.linked.length > 0, 'hermes', 'container, data 문자열과 delete, linked argv 목록이 있어야 한다')
   if (isObj(h) && isStrList(h.delete)) need(h.delete.includes('{session}'), 'hermes.delete', '"{session}" 낱말이 있어야 한다')
-  if (isObj(h) && isStrList(h.optimize)) need(h.optimize.includes('{profile}'), 'hermes.optimize', '"{profile}" 낱말이 있어야 한다')
   if (errors.length) throw new OverlayError(errors.join('\n'))
   return value
 }

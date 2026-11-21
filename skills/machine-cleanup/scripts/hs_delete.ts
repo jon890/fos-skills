@@ -7,7 +7,6 @@
 //   remote.ts --host HOST --lock LOCK --input GIT hs_delete.ts worktrees --survey GIT [--apply] PATH...
 //   remote.ts --host HOST hs_delete.ts trash [--apply] NAME...
 //   remote.ts --host HOST --input CONFIG hs_delete.ts hermes --config CONFIG [--apply] PROFILE:SESSION...
-//   remote.ts --host HOST --lock LOCK --input CONFIG hs_delete.ts hermes-optimize --config CONFIG [--apply] PROFILE...
 //
 // images   태그나 이미지 ID 를 하나씩 `docker image rm` 한다. 지우기 직전에 컨테이너가 쓰는지 다시 보고, 쓰면 남긴다.
 //          다른 이름이 가리켜 docker 가 거절한 것은 남김으로 센다. `docker image prune -a`, `docker system prune -a` 는 쓰지 않는다.
@@ -18,9 +17,9 @@
 // hermes   고른 세션 트리의 루트를 CONFIG 의 hermes.delete 명령으로 지운다. 보내기 직전에 세션 DB 와 assistant 연결 목록을
 //          다시 읽어, 트리 안에 연결된 세션이나 30일 안에 활동한 세션이 생겼거나 다시 읽기가 실패하면 건너뛴다.
 //          지운 뒤 연결된 세션이 세션 DB 에 모두 남았는지 확인해 낸다.
-// hermes-optimize  세션을 지운 profile 의 세션 DB 를 CONFIG 의 hermes.optimize 명령으로 공간 회수한다. 전후 DB 파일 크기(-wal 포함)를 낸다.
-//          도는 동안 Hermes 응답이 늦어질 수 있어 따로 승인받은 profile 만 넘긴다.
-// images, backup, worktrees, hermes-optimize 의 --apply 는 운영 작업 잠금 아래(remote.ts --lock 이 주는 FOS_INFRA_LOCK_HELD=1)에서만 돈다.
+//          세션을 지운 profile 마다 세션 DB 파일 크기(-wal 포함)를 낸다. 지워도 파일은 줄지 않는다. 공간 회수(optimize)는
+//          Hermes 를 멈춰야 해서 이 스크립트가 하지 않고 사용자 몫으로 보고한다.
+// images, backup, worktrees 의 --apply 는 운영 작업 잠금 아래(remote.ts --lock 이 주는 FOS_INFRA_LOCK_HELD=1)에서만 돈다.
 // sudo 가 필요한 정리는 이 스크립트가 하지 않는다.
 //
 // 종료 코드: 0 실패 없음, 1 실패나 없음이 하나라도 있음, 2 사용법 오류, 4 잠금 없이 --apply 를 받음(아무것도 지우지 않음).
@@ -223,6 +222,7 @@ function hermes(cfg: Json, picks: string[], apply: boolean): number {
   const ok = new Set(judged.candidates.map((c) => `${c.profile}:${c.root}`))
   let bad = 0
   let removed = 0
+  const touched = new Set<string>()
   for (const pick of picks) {
     const colon = pick.indexOf(':')
     if (colon <= 0) {
@@ -244,6 +244,7 @@ function hermes(cfg: Json, picks: string[], apply: boolean): number {
     if (done.code === 0) {
       write(1, `지움 ${pick}\n`)
       removed += 1
+      touched.add(profile)
     } else {
       write(2, `실패 ${pick}: ${(done.stderr.trim() || done.message).slice(0, 200)}\n`)
       bad += 1
@@ -260,6 +261,11 @@ function hermes(cfg: Json, picks: string[], apply: boolean): number {
       write(2, `연결된 세션이 사라짐 ${lost.length}개: ${lost.join(', ')}\n`)
       bad += 1
     } else write(1, `연결된 세션 ${[...linkedBefore].filter((id) => existed.has(id)).length}개가 모두 남음\n`)
+    const dbs = new Map(hermesDbs(expandHome(cfg.hermes.data)).map((d) => [d.profile, d.db]))
+    for (const profile of touched) {
+      const db = dbs.get(profile)
+      if (db) write(1, `세션 DB 크기 ${profile}: ${mb(dbBytes(db))}. 공간 회수는 Hermes 를 멈춘 점검 시간에 사용자가 한다\n`)
+    }
   }
   return bad ? 1 : 0
 }
@@ -274,32 +280,6 @@ const dbBytes = (db: string): number => ['', '-wal'].reduce((n, ext) => {
 
 const mb = (n: number): string => `${(n / 1024 / 1024).toFixed(1)}M`
 
-function hermesOptimize(cfg: Json, profiles: string[], apply: boolean): number {
-  const dbs = new Map(hermesDbs(expandHome(cfg.hermes.data)).map((d) => [d.profile, d.db]))
-  let bad = 0
-  for (const profile of profiles) {
-    const db = dbs.get(profile)
-    if (!db) {
-      write(2, `없음 ${profile}: 세션 DB 가 없다\n`)
-      bad += 1
-      continue
-    }
-    const before = dbBytes(db)
-    if (!apply) {
-      write(1, `회수할 것 ${profile}: 지금 ${mb(before)}\n`)
-      continue
-    }
-    const done = run(cfg.hermes.optimize.map((a: string) => (a === '{profile}' ? profile : a)), 1800)
-    const after = dbBytes(db)
-    if (done.code === 0) write(1, `회수 ${profile}: ${mb(before)} -> ${mb(after)}\n`)
-    else {
-      write(2, `실패 ${profile}: ${(done.stderr.trim() || done.message).slice(0, 200)} (${mb(before)} -> ${mb(after)})\n`)
-      bad += 1
-    }
-  }
-  return bad ? 1 : 0
-}
-
 export function main(argv: string[]): number {
   const [sub, ...rest] = argv
   let parsed
@@ -311,11 +291,11 @@ export function main(argv: string[]): number {
   }
   const { values, positionals } = parsed
   const apply = Boolean(values.apply)
-  if (!['images', 'backup', 'worktrees', 'trash', 'hermes', 'hermes-optimize'].includes(sub ?? '') || positionals.length === 0) {
-    write(2, 'usage: hs_delete.ts {images|backup|worktrees|trash|hermes|hermes-optimize} [--config FILE] [--survey FILE] [--apply] ITEM...\n')
+  if (!['images', 'backup', 'worktrees', 'trash', 'hermes'].includes(sub ?? '') || positionals.length === 0) {
+    write(2, 'usage: hs_delete.ts {images|backup|worktrees|trash|hermes} [--config FILE] [--survey FILE] [--apply] ITEM...\n')
     return 2
   }
-  if (apply && ['images', 'backup', 'worktrees', 'hermes-optimize'].includes(sub) && !lockHeld()) {
+  if (apply && ['images', 'backup', 'worktrees'].includes(sub) && !lockHeld()) {
     write(2, '운영 작업 잠금 없이 지우지 않는다. remote.ts --lock 으로 돌린다\n')
     return LOCK_REQUIRED
   }
@@ -339,7 +319,6 @@ export function main(argv: string[]): number {
   }
   const cfg = readJson(values.config, 'config')
   if (!cfg) return 2
-  if (sub === 'hermes-optimize') return hermesOptimize(cfg, positionals, apply)
   return sub === 'backup' ? backup(cfg, positionals, apply) : hermes(cfg, positionals, apply)
 }
 

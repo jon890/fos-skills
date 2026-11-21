@@ -20,7 +20,7 @@ export function sampleConfig(root: string, extra: Json = {}): Json {
     owned_paths: [{ path: '~/ci/logs', owner: 'CI 실행 스크립트' }],
     configured_images: { compose: ['services/*/compose.yaml'], dockerfile: ['services/*/Dockerfile'], settings: ['services/*/settings.json'], content_tags: [] },
     repos: [{ path: join(root, 'checkout') }],
-    hermes: { container: 'agent', data: join(root, 'hermes-data'), delete: ['hermes-delete', '{profile}', '{session}'], optimize: ['hermes-optimize', '{profile}'], linked: ['linked-sessions'] },
+    hermes: { container: 'agent', data: join(root, 'hermes-data'), delete: ['hermes-delete', '{profile}', '{session}'], linked: ['linked-sessions'] },
     ...extra,
   }
 }

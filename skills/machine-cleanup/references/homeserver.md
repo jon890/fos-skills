@@ -43,19 +43,18 @@ node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY" --config "$CFG" --git-out "$G
 승인 질문은 맥과 따로 둔다. 질문과 묶음 이름에 「홈서버」 를 붙인다.
 선택지마다 확보 예상량, 되돌릴 수 있는지, sudo 가 필요한지를 적는다. 확인 필요 등급은 묶음 안에서도 항목별로 이름과 날짜를 보인다.
 
-묶음 예: 안전한 도구 캐시, 명시적 정리 명령이 있는 백업, 사람이 정하는 백업, 쓰지 않는 이미지, 휴지통, 머지된 브랜치와 워크트리, 대화 기록, Hermes 세션, Hermes 공간 회수, sudo 정리.
+묶음 예: 안전한 도구 캐시, 명시적 정리 명령이 있는 백업, 사람이 정하는 백업, 쓰지 않는 이미지, 휴지통, 머지된 브랜치와 워크트리, 대화 기록, Hermes 세션, sudo 정리.
 
 - 유지 등급, 조사만 하는 저장소의 항목, 원인 수정 제안, 메모리 제안은 질문에 넣지 않는다. 5단계 보고에 둔다.
 - **표에 없는 백업 용도는 용도마다 지울지와 보관 규칙 표에 올릴지를 함께 묻는다.**
 - **Hermes 세션은 출처별 묶음으로 묻는다.** `hs_classify.ts` 가 출처(cron, cli, tui 등)마다 묶어 보인다. 채팅 출처(discord)는 사람이 스레드에서 다시 이어 쓰는 대화일 수 있어 권장 묶음에서 빼고 따로 묻는다.
-- Hermes 세션을 지우기로 한 profile 마다 「공간 회수」 를 따로 묻는다. 세션을 지워도 세션 DB 파일은 줄지 않는다. 도는 동안 Hermes 응답이 잠깐 늦어질 수 있다고 선택지에 적는다.
 
 ## 4. 실행
 
 승인한 묶음의 명령만 돌리고 명령마다 종료 코드를 기록한다. 지우는 명령은 모두 dry-run 을 먼저 돌려 목록을 보인 뒤 `--apply` 를 붙인다.
 **Docker 이미지, 백업, 운영 checkout 의 브랜치와 워크트리는 `--lock "$LOCK"` 으로 돌린다.** 배포가 복구본과 복구 이미지를 만드는 동안 지우면, 그 배포가 실패했을 때 되돌릴 복구본이 사라진다.
 
-`$REFS` 는 승인한 이미지의 태그(태그가 없으면 조사 결과의 ID), `$LABEL` 은 백업 용도 하나, `$WT` 는 워크트리 경로, `$NAME` 은 휴지통 항목, `$PICKS` 는 승인한 출처 묶음의 Hermes 루트(`awk -F'\t' '$1 == "cron" { print $2 }' "$HERMES"` 처럼 `$HERMES` 에서 고른 `profile:세션` 목록), `$PROFILES` 는 공간 회수를 승인한 profile, `$DAYS` 는 사용자가 정한 기준 일수다.
+`$REFS` 는 승인한 이미지의 태그(태그가 없으면 조사 결과의 ID), `$LABEL` 은 백업 용도 하나, `$WT` 는 워크트리 경로, `$NAME` 은 휴지통 항목, `$PICKS` 는 승인한 출처 묶음의 Hermes 루트(`awk -F'\t' '$1 == "cron" { print $2 }' "$HERMES"` 처럼 `$HERMES` 에서 고른 `profile:세션` 목록), `$DAYS` 는 사용자가 정한 기준 일수다.
 
 ```bash
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" hs_delete.ts images $REFS
@@ -66,7 +65,6 @@ node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$GIT"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" hs_delete.ts trash "$NAME"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --input "$ORPHANS" delete_sessions.ts "$ORPHANS" --older-than-days "$DAYS"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --input "$CFG" hs_delete.ts hermes --config "$CFG" $PICKS
-node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$CFG" hs_delete.ts hermes-optimize --config "$CFG" $PROFILES
 ```
 
 - 위 명령은 dry-run 꼴이다. 승인한 것만 같은 명령에 `--apply` 를 붙여 다시 돌린다.
@@ -75,7 +73,7 @@ node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$CFG"
 - 이미지 출력의 `남김 <이름>: 다른 이름이 가리킴` 은 남겨 둔 복구본의 태그가 그 이미지를 가리킨다는 뜻이다. 실패가 아니다.
 - 브랜치 분류와 `PR 확인 필요(-D)` 판정은 맥과 같다(`git-and-sessions.md` 의 「브랜치」). 점검은 `check_pr_branches.ts` 를 같은 방식으로 `--input "$GIT"` 와 함께 보낸다.
 - Hermes 는 보내기 직전에 세션과 연결 목록을 다시 읽어, 조사 뒤 연결됐거나 최근 활동한 트리를 `건너뜀` 으로 남긴다. 출력의 「연결된 세션 N개가 모두 남음」 을 보고에 옮긴다.
-- Hermes 공간 회수는 세션을 지운 뒤 잠금 아래에서 돈다. 출력의 `회수 <profile>: 전 -> 후` 크기를 보고에 옮긴다.
+- Hermes 세션을 지워도 세션 DB 파일은 줄지 않는다. 공간 회수(`hermes sessions optimize`)는 Hermes 가 DB 를 쥐고 있으면 돌지 않아 Hermes 를 멈춰야 한다. 그래서 스킬은 돌리지 않는다. `--force` 는 쓰지 않는다. 출력의 `세션 DB 크기 <profile>` 줄을 보고에 옮긴다.
 - 도구 캐시는 `ssh "$HOST" 'npm cache clean --force'` 처럼 `homeserver-targets.md` 의 명령을 그대로 보낸다.
 
 ### sudo 넘기기
@@ -97,8 +95,8 @@ node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY.after" --config "$CFG"
 - 메모리와 스왑: 진단 수치와 `hs_classify.ts` 의 제안. 스킬은 컨테이너 재시작이나 한도 변경을 하지 않는다. 바꿀 것은 fos-home-infra 변경으로 제안한다
 - 원인 수정 제안: 2단계에서 `원인:` 으로 판정한 것, 빌드 스크립트가 남긴 워크트리
 - 표에 올릴 용도: 남기기로 하고 보관 규칙 표에 올리기로 한 백업 용도
-- Hermes: 지운 루트 수, 「연결된 세션이 모두 남음」 줄, 공간 회수를 고른 profile 의 회수 전후 DB 크기
-- 사용자가 직접 할 일: 넘긴 sudo 명령 가운데 결과를 받지 못한 것, journal 상한처럼 설정으로 막아야 하는 것
+- Hermes: 지운 루트 수, 「연결된 세션이 모두 남음」 줄
+- 사용자가 직접 할 일: 넘긴 sudo 명령 가운데 결과를 받지 못한 것, journal 상한처럼 설정으로 막아야 하는 것, 「Hermes 를 멈춘 점검 시간에 profile 마다 `hermes sessions optimize` 를 돌린다」 와 세션을 지운 DB 의 지금 크기
 
 ## 실패 처리
 
