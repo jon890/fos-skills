@@ -21,6 +21,7 @@
 //     띄웠으면 value 가 launched 이고 REVIEW-FALLBACK(pr 그 PR, text `<check> 이 HEAD <앞 8자리> 에서 <초>초 만에 실패해 대체 리뷰 worker 를 띄웠다.
 //     지시서 <경로>, 로그 <경로>`)를 그 Run 에 쓴다. 실패면 value 가 failed 이고 REVIEW-FALLBACK-FAIL(text `<check> 이 HEAD <앞 8자리> 에서 <초>초 만에
 //     실패했지만 대체 리뷰를 띄우지 못했다: <이유>. 독립 리뷰를 직접 맡긴다`)을 쓴다. 코디네이터는 지금처럼 독립 리뷰를 맡긴다.
+//     최신화(refresh.ts)는 launched 기록이 있는 HEAD 에 판정이 달릴 때까지 HEAD 를 옮기지 않는다. 리뷰 worker 가 HEAD 가 달라져 멈추지 않게 한다.
 //     오류 이유(기록을 읽거나 쓰지 못함)는 errors 의 review-fallback 에 둔다(errors.ts 머리 주석의 「오류 줄 억제」)
 
 import { spawn } from 'node:child_process'
@@ -46,13 +47,13 @@ const SPEC_MS = 120_000
 
 const LOG_KEEP_MS = 7 * 24 * 60 * 60_000
 
-type FallbackRecord = { at: string; check: string; sec: number; value: 'launched' | 'failed' | 'skipped'; spec?: string; log?: string; why?: string }
+export type FallbackRecord = { at: string; check: string; sec: number; value: 'launched' | 'failed' | 'skipped'; spec?: string; log?: string; why?: string }
 
-function recordFile(repo: string): string {
+export function recordFile(repo: string): string {
   return join(pathOf('state', repo), 'review-fallback.json')
 }
 
-function readRecords(file: string): Record<string, FallbackRecord> {
+export function readRecords(file: string): Record<string, FallbackRecord> {
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'))
     return isObject(raw) ? (raw as Record<string, FallbackRecord>) : {}

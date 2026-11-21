@@ -19,7 +19,9 @@
 //     `보냈다 <dispatch>`, `깨우지 못했다(종료 코드 4)`, `보내지 못했다(종료 코드 <n>)`, `살아 있는 dispatch 없음`, `Run id 없음`,
 //     `worker 목록을 읽지 못했다` 가운데 하나다.
 //     실패한 체크가 모두 CANCELLED 면 코디네이터가 일부러 취소한 CI 일 수 있어 worker 에게 보내지 않는다. worker 결과는 `취소만 있음` 이고
-//     CI-FAILED 는 그 PR 의 worker 를 띄운 Run 에 쓴다. 같은 체크 이름과 워크플로에 더 늦게 시작한 실행이 있으면 옛 취소는 애초에 실패로 세지 않는다(lib/gh.ts 의 currentChecks).
+//     CI-FAILED 는 그 PR 의 worker 를 띄운 Run 에 쓴다. queue.auto_review.fallback 이 있고 실패한 체크가 모두 그 리뷰 봇 체크(fallback.check)면
+//     리뷰 결과나 봇 장애라 코드를 고칠 일이 아니다. worker 에게 보내지 않고 worker 결과는 `리뷰 봇 체크만 실패` 다. 장애면 대체 리뷰가 맡는다.
+//     같은 체크 이름과 워크플로에 더 늦게 시작한 실행이 있으면 옛 취소는 애초에 실패로 세지 않는다(lib/gh.ts 의 currentChecks).
 
 import { scriptPath } from '../../lib/commands.ts'
 import { SEND_MS } from '../../lib/conflicts.ts'
@@ -40,6 +42,8 @@ function prInput(pr: OwnPr): Record<string, unknown> {
 
 // 실패한 체크가 모두 CANCELLED 일 때 CI-FAILED 의 worker 결과(머리 주석의 「CI 감시」)
 const CANCELLED_ONLY = '취소만 있음'
+// 실패한 체크가 모두 대체 리뷰가 설정된 리뷰 봇 체크일 때의 worker 결과(머리 주석의 「CI 감시」)
+const REVIEW_ONLY = '리뷰 봇 체크만 실패'
 
 // 체크가 실패한 PR 의 살아 있는 dispatch 에 보낸다. text 는 CI-FAILED 의 text 에 붙일 말, run 은 그 worker 를 띄운 Run 이다
 // (모르면 null. 알림은 주 Run 에 간다. 머리 주석의 「CI 감시」)
@@ -133,8 +137,10 @@ async function watchCi(
       try {
         // 취소만 있으면 코드 실패가 아니다. worker 에게 고치라고 보내지 않고 코디네이터에게만 알린다
         const cancelled = cancelledOnly(failed)
+        const reviewCheck = ctx.autoMerge.review?.fallback?.check
+        const reviewOnly = reviewCheck !== undefined && failed.length > 0 && failed.every((check) => check.name === reviewCheck)
         let baseFailed = false
-        if (!cancelled) {
+        if (!cancelled && !reviewOnly) {
           try {
             baseFailed = baseWorkflowFailed(ctx.repo, pr.host, pr.slug, pr.base, failed)
           } catch (e) {
@@ -142,6 +148,7 @@ async function watchCi(
           }
         }
         told = cancelled ? { text: CANCELLED_ONLY, run: runOfPr(ctx, pr, lookup) }
+          : reviewOnly ? { text: REVIEW_ONLY, run: runOfPr(ctx, pr, lookup) }
           : baseFailed ? { text: `${pr.base} 도 실패`, run: runOfPr(ctx, pr, lookup) }
             : await tellWorker(ctx, pr, failed, lookup)
       } catch (e) {

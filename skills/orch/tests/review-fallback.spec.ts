@@ -11,7 +11,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import { autoMergeConfig } from '../scripts/core/auto-merge.ts'
 import type { Config } from '../scripts/core/config.ts'
 import { ConfigError } from '../scripts/core/config.ts'
-import { fallbackSpec, reviewOutage } from '../scripts/core/review-fallback.ts'
+import { fallbackSpec, reviewOutage, reviewRunning, verdictSince } from '../scripts/core/review-fallback.ts'
 
 const T0 = '2026-11-20T01:51:00Z'
 const after = (sec: number) => new Date(Date.parse(T0) + sec * 1000).toISOString()
@@ -31,6 +31,37 @@ describe('reviewOutage', () => {
   test('다시 돌린 실행이 있으면 가장 늦게 시작한 것만 본다', () => {
     assert.equal(reviewOutage([run('FAILURE', 8), run('SUCCESS', 300, after(60))], 'claude-review', 120), null)
     assert.ok(reviewOutage([run('SUCCESS', 300), run('FAILURE', 5, after(600))], 'claude-review', 120))
+  })
+})
+
+describe('reviewRunning', () => {
+  const going = (status: string, startedAt = T0) => ({ __typename: 'CheckRun', name: 'claude-review', status, conclusion: null, startedAt })
+  test('마지막 리뷰 체크가 끝나지 않았을 때만 도는 중이다', () => {
+    assert.equal(reviewRunning([going('IN_PROGRESS')], 'claude-review'), true)
+    assert.equal(reviewRunning([going('QUEUED')], 'claude-review'), true)
+    assert.equal(reviewRunning([run('FAILURE', 8)], 'claude-review'), false)
+    assert.equal(reviewRunning([going('IN_PROGRESS')], 'other'), false)
+    assert.equal(reviewRunning([], 'claude-review'), false)
+    assert.equal(reviewRunning(null, 'claude-review'), false)
+  })
+
+  test('다시 돌린 실행이 있으면 가장 늦게 시작한 것을 보고, StatusContext 는 state 로 본다', () => {
+    assert.equal(reviewRunning([run('FAILURE', 8), going('IN_PROGRESS', after(60))], 'claude-review'), true)
+    assert.equal(reviewRunning([going('IN_PROGRESS'), run('SUCCESS', 30, after(60))], 'claude-review'), false)
+    assert.equal(reviewRunning([{ __typename: 'StatusContext', context: 'claude-review', state: 'PENDING' }], 'claude-review'), true)
+    assert.equal(reviewRunning([{ __typename: 'StatusContext', context: 'claude-review', state: 'FAILURE' }], 'claude-review'), false)
+  })
+})
+
+describe('verdictSince', () => {
+  const rule = { pass: /^판정: 머지 가능/m, block: /^판정: 반영 필요/m }
+  test('기준 시각 뒤에 판정 문구가 든 본문이 있을 때만 참이다', () => {
+    assert.equal(verdictSince([{ body: '판정: 머지 가능', at: after(10) }], T0, rule), true)
+    assert.equal(verdictSince([{ body: '판정: 반영 필요', at: after(10) }], T0, rule), true)
+    assert.equal(verdictSince([{ body: '판정: 머지 가능', at: after(-10) }], T0, rule), false)
+    assert.equal(verdictSince([{ body: '좋아 보인다', at: after(10) }], T0, rule), false)
+    assert.equal(verdictSince([{ body: '판정: 머지 가능', at: '' }], T0, rule), false)
+    assert.equal(verdictSince([{ body: '판정: 머지 가능', at: after(10) }], '', rule), false)
   })
 })
 

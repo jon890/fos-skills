@@ -9,7 +9,8 @@ import { git } from './git.ts'
 
 const REVIEW_CHAIN_LIMIT = 50
 
-function reviewNotes(rows: unknown, at: string): ReviewNote[] {
+// gh pr view --json reviews,comments 의 행을 본문 목록으로 바꾼다. at 은 시각 필드 이름이다(리뷰 submittedAt, 댓글 createdAt)
+export function reviewNotes(rows: unknown, at: string): ReviewNote[] {
   if (!Array.isArray(rows)) return []
   return rows.filter(isObject).map((row) => {
     const commit = isObject(row.commit) && typeof row.commit.oid === 'string' && row.commit.oid ? row.commit.oid : null
