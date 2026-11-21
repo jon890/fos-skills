@@ -6,6 +6,8 @@
 
 - 호환성: 스킬 이름을 `mac-cleanup` 에서 `machine-cleanup` 으로 바꿨다. `/fos-skills:machine-cleanup` 으로 부르고, 옛 명령 `/fos-skills:mac-cleanup` 은 남기지 않는다
 - 호환성: 번들 경로가 `skills/machine-cleanup/` 으로 바뀌었다. 링크로 설치했으면 `~/.claude/skills/mac-cleanup` 링크를 새 경로로 다시 건다
+- 개인 오버레이를 `~/.claude/overlays/machine-cleanup.md` 에서 먼저 읽고, 없으면 옛 자리 `overlays/mac-cleanup.md`, `mac-cleanup-overlay.md` 를 차례로 읽는다. 자리에 있는 것을 읽지 못하면 멈춘다
+- 정리할 머신을 요청에서 고른다. 홈서버만 말하면 아직 지원하지 않는다고 알리고 끝낸다. 「둘 다」 면 홈서버는 같은 안내를 남기고 이 맥만 정리한다
 
 ## 2.x
 
