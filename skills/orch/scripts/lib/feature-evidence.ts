@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { ghJson } from './gh.ts'
 import { loadConfig } from './config.ts'
+import { contractSettings } from '../core/contracts.ts'
 import { git } from './git.ts'
 import { pathOf } from './paths.ts'
 import { followupDone } from './followups.ts'
@@ -81,7 +82,7 @@ export const BASE_MERGE_LIMIT = 50
 
 // 검증 뒤 이 PR 계획 폴더만 삭제한 커밋을 받아들인다. 각 커밋은 삭제만 해야 하고,
 // 검증 시점 index.json 이 가리키는 tracked 파일 전체가 같은 폴더에서 제거되어야 한다.
-export function planDeletionOnly(repo: string, head: string, verified: string, base: string): boolean {
+export function planDeletionOnly(repo: string, head: string, verified: string, base: string, mergedAt?: string): boolean {
   const line = (args: string[]): string | null => {
     const done = git(repo, args)
     return done.code === 0 ? done.stdout.trim() : null
@@ -91,7 +92,10 @@ export function planDeletionOnly(repo: string, head: string, verified: string, b
     if (done.code !== 0) return null
     return done.stdout.split('\n').filter(Boolean)
   }
-  const basePoint = line(['merge-base', `refs/remotes/origin/${base}`, verified])
+  const baseRef = `refs/remotes/origin/${base}`
+  // 일반 머지 뒤에는 base 가 검증 커밋도 포함하므로 PR 을 머지하기 직전의 base 와 비교한다.
+  const beforeMerge = mergedAt && line(['rev-parse', `${mergedAt}^2`]) === head ? `${mergedAt}^1` : baseRef
+  const basePoint = line(['merge-base', beforeMerge, verified])
   if (!basePoint) return false
   const before = git(repo, ['-c', 'core.quotepath=false', 'diff', '--no-renames', '--name-status', basePoint, verified])
   if (before.code !== 0) return false
@@ -139,13 +143,6 @@ export function planDeletionOnly(repo: string, head: string, verified: string, b
   return record.phases.every((phase) => tracked.includes(`${folder}/${(phase as { file: string }).file}`))
 }
 
-export function fetchedPlanDeletion(repo: string, head: string, verified: string, base: string): boolean {
-  if (!base) return false
-  git(repo, ['fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`])
-  if (git(repo, ['cat-file', '-e', `${head}^{commit}`]).code !== 0) git(repo, ['fetch', '-q', 'origin', head])
-  return planDeletionOnly(repo, head, verified, base)
-}
-
 // 충돌한 합친 tree 와 커밋 tree 사이에서 바뀐 파일과 충돌 파일이 모두 resolved 에 맞는지
 function resolvedOnly(repo: string, merged: string, tree: string, conflicted: string[], resolved: RegExp): boolean {
   if (conflicted.length === 0 || !conflicted.every((file) => resolved.test(file))) return false
@@ -176,7 +173,7 @@ export function baseMergesOnly(repo: string, head: string, verified: string, bas
   return false
 }
 
-// acceptVerified 는 검증 커밋이 현재 HEAD 와 다를 때 그 검증 커밋을 받아들일지 정한다(baseMergesOnly 를 감싼 것).
+// acceptVerified 는 검증 커밋이 현재 HEAD 와 다를 때 그 검증 커밋을 받아들일지 정한다(base 합치기 또는 계획 폴더 삭제).
 export function featureEvidenceProblem(
   body: string,
   head: string,
@@ -224,9 +221,9 @@ export function featureCompletionProblem(repo: string, number: string, branch = 
   const head = String(got.data.headRefOid ?? '')
   // base 는 검증 커밋이 HEAD 와 다를 때만 따로 읽는다
   const accept = (verified: string): boolean => {
-    const got = ghJson<{ baseRefName?: unknown }>(['pr', 'view', number, '--json', 'baseRefName'], { cwd: repo, cache: false })
+    const got = ghJson<{ baseRefName?: unknown; mergeCommit?: { oid?: string } }>(['pr', 'view', number, '--json', 'baseRefName,mergeCommit'], { cwd: repo, cache: false })
     const base = got.ok && got.data && typeof got.data.baseRefName === 'string' ? got.data.baseRefName : ''
-    return fetchedBaseMerges(repo, head, verified, base) || fetchedPlanDeletion(repo, head, verified, base)
+    return acceptsVerifiedCommit(repo, head, verified, base, { fetch: true, mergedAt: got.ok ? got.data?.mergeCommit?.oid : undefined })
   }
   // 코디네이터가 배포 뒤 할 일을 끝낸 PR(lib/followups.ts)은 본문의 「후속 검증: 대기」 를 끝난 것으로 본다
   return featureEvidenceProblem(body, head, true, !followupDone(repo, number), accept)
@@ -243,10 +240,19 @@ export function pendingFollowup(body: string): string | null {
   return null
 }
 
-// origin/<base> 와 HEAD 를 받은 뒤 baseMergesOnly 로 본다. 정리와 마무리처럼 미리 받아 두지 않은 쪽이 쓴다
-export function fetchedBaseMerges(repo: string, head: string, verified: string, base: string, resolved: RegExp | null = null): boolean {
+// 관문은 PR ref 를 먼저 받는다. 다른 경로는 필요할 때 여기서 받는다.
+export function acceptsVerifiedCommit(
+  repo: string,
+  head: string,
+  verified: string,
+  base: string,
+  options: { fetch?: boolean; mergedAt?: string } = {},
+): boolean {
   if (!base) return false
-  git(repo, ['fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`])
-  if (git(repo, ['cat-file', '-e', `${head}^{commit}`]).code !== 0) git(repo, ['fetch', '-q', 'origin', head])
-  return baseMergesOnly(repo, head, verified, base, resolved)
+  if (options.fetch) {
+    git(repo, ['fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`])
+    if (git(repo, ['cat-file', '-e', `${head}^{commit}`]).code !== 0) git(repo, ['fetch', '-q', 'origin', head])
+  }
+  return baseMergesOnly(repo, head, verified, base, contractSettings(loadConfig(repo))?.paths ?? null) ||
+    planDeletionOnly(repo, head, verified, base, options.mergedAt)
 }

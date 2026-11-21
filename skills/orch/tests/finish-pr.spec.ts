@@ -8,6 +8,7 @@
 import { linesRev } from '../scripts/lib/board.ts'
 import { racingBoard } from './fixtures/board-race.ts'
 import assert from 'node:assert/strict'
+import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -342,6 +343,21 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
   const followups = (c: Ctx) => {
     const file = join(c.repo, '.orch', 'state', 'followups.json')
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).items : null
+  }
+
+  for (const extraChange of [false, true]) {
+    test(`머지 뒤 마무리의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, async (t) => {
+      const c = setup(t)
+      const { verified, head } = verifiedPlan(c.wt, extraChange)
+      c.git('merge', '-q', '--no-ff', '-m', 'merge plan PR', head)
+      c.git('push', '-q', 'origin', 'main')
+      c.state.pr.merge = c.git('rev-parse', 'HEAD')
+      c.state.pr.head = head
+      c.state.pr.body = verifiedPlanEvidence(verified)
+      const result = await c.finish(['--specs-dir', c.specs])
+      assert.equal(result.code, extraChange ? 1 : 0, both(result))
+      assert.ok(both(result).includes(extraChange ? HEAD_MISMATCH : 'FINISH-DONE'), both(result))
+    })
   }
 
   test('기능 후속 검증이 대기면 워크트리와 handoff 를 남긴 채 배포 뒤 할 일로 옮겨 FINISH-DONE 이고, 끝낸 뒤 다시 돌면 워크트리와 업무까지 끝낸다', async (t) => {
