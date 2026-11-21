@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readdirSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
@@ -160,6 +160,18 @@ describe('hs_survey 명령', () => {
     assert.deepEqual(s.backups.rows.map((r: any) => [r.label, r.rule]).sort(), [['db', '최신 1개'], ['oneoff-20261001', null]])
     assert.ok(s.paths.some((p: any) => p.path === '~/ci/logs' && p.owner === 'CI 실행 스크립트'))
     assert.equal(s.trash[0].moved, '2026-11-01T10:00:00')
+  })
+
+  test('docker ps 가 실패하면 Docker 절을 오류로 두고, 분류는 그 범주를 실행 차단으로 3 을 낸다(REQ12, 리뷰 P2)', () => {
+    const h = homeserver()
+    h.box.fake('docker', [{ args: ['ps', '-aq'], code: 1, stderr: 'down' }, ...DOCKER])
+    const s = survey(h, ['--no-fetch'])
+    assert.equal(s.docker.error, 'docker ps 가 실패했다')
+    const file = write(join(h.box.root, 'survey.json'), JSON.stringify(s))
+    const c = h.box.run('hs_classify', [file, '--config', h.cfgFile, '--images-out', join(h.box.root, 'images.tsv')])
+    assert.equal(c.code, 3, c.stderr)
+    assert.match(c.stdout, /## 실행 차단 .*\n- Docker 이미지: docker ps 가 실패했다/)
+    assert.equal(readFileSync(join(h.box.root, 'images.tsv'), 'utf8'), '')
   })
 
   test('조사 전후로 파일 목록이 같다(REQ5)', () => {

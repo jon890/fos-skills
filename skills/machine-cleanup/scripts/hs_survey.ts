@@ -186,7 +186,9 @@ export function isConfigured(tags: string[], digests: string[], refs: Iterable<s
 function dockerSection(refs: Set<string>): Json {
   if (run(['docker', 'info', '--format', '{{.ServerVersion}}']) === null) return { error: 'docker 에 닿지 못했다' }
   const summary = (run(['docker', 'system', 'df', '--format', '{{json .}}']) ?? '').split('\n').filter(Boolean).map((l) => JSON.parse(l))
-  const ids = (run(['docker', 'ps', '-aq', '--no-trunc']) ?? '').split(/\s+/).filter(Boolean)
+  const ps = run(['docker', 'ps', '-aq', '--no-trunc'])
+  if (ps === null) return { error: 'docker ps 가 실패했다' }
+  const ids = ps.split(/\s+/).filter(Boolean)
   const inUse = new Map<string, string>()
   if (ids.length) {
     // 그 사이 사라진 컨테이너가 있으면 inspect 가 1 로 끝나도 남은 결과는 낸다
@@ -197,8 +199,13 @@ function dockerSection(refs: Set<string>): Json {
     }
     if (inUse.size === 0) return { error: `docker inspect 가 실패했다: ${done.stderr.trim()}` }
   }
-  const imageIds = [...new Set((run(['docker', 'image', 'ls', '-q', '--no-trunc']) ?? '').split(/\s+/).filter(Boolean))].sort()
-  const details: Json[] = imageIds.length ? JSON.parse(runText(['docker', 'image', 'inspect', ...imageIds], { timeoutSec: 120, closeStdin: true }).stdout || '[]') : []
+  const ls = run(['docker', 'image', 'ls', '-q', '--no-trunc'])
+  if (ls === null) return { error: 'docker image ls 가 실패했다' }
+  const imageIds = [...new Set(ls.split(/\s+/).filter(Boolean))].sort()
+  // 그 사이 지워진 이미지가 있으면 1 로 끝나도 남은 것은 낸다. 하나도 못 읽으면 실패다
+  const inspected = imageIds.length ? runText(['docker', 'image', 'inspect', ...imageIds], { timeoutSec: 120, closeStdin: true }) : null
+  const details: Json[] = inspected ? JSON.parse(inspected.stdout.trim() || '[]') : []
+  if (inspected && details.length === 0) return { error: `docker image inspect 가 실패했다: ${inspected.stderr.trim()}` }
   const runningRepos = new Set(inUse.values())
   const unused = details.filter((d) => !inUse.has(d.Id)).map((d) => {
     const tags: string[] = d.RepoTags ?? []
@@ -210,8 +217,8 @@ function dockerSection(refs: Set<string>): Json {
       running_other_version: repos.some((r) => runningRepos.has(r)),
     }
   })
-  const volumes = (run(['docker', 'volume', 'ls', '-q', '--filter', 'dangling=true']) ?? '').split(/\s+/).filter(Boolean)
-  return { summary, unused_images: unused, dangling_volumes: volumes.length, containers_in_use: ids.length }
+  const volumes = run(['docker', 'volume', 'ls', '-q', '--filter', 'dangling=true'])
+  return { summary, unused_images: unused, dangling_volumes: volumes === null ? null : volumes.split(/\s+/).filter(Boolean).length, containers_in_use: ids.length }
 }
 
 // ---------- 백업 ----------
@@ -401,17 +408,18 @@ export function containerMemory(statsJsonLines: string, inspectLines: string): J
   }).sort((a, b) => (b.usage ?? 0) - (a.usage ?? 0))
 }
 
-const procPids = (): string[] => {
+// /proc 의 pid 목록. 읽지 못하면 null 이다. 빈 목록으로 다루면 「쓰는 프로세스 없음」 으로 잘못 읽힌다
+const procPids = (): string[] | null => {
   try {
     return readdirSync(sys('/proc')).filter((n) => /^\d+$/.test(n))
   } catch {
-    return []
+    return null
   }
 }
 
 export function swapTop(limit = SWAP_TOP): Json[] {
   const rows: Json[] = []
-  for (const pid of procPids()) {
+  for (const pid of procPids() ?? []) {
     const status = readText(sys(`/proc/${pid}/status`))
     if (!status) continue
     const swap = /^VmSwap:\s+(\d+)\s*kB/m.exec(status)
@@ -435,14 +443,25 @@ function memorySection(): Json {
 
 // ---------- git ----------
 
-// 이 uid 의 프로세스 cwd 목록. 같은 uid 인데 cwd 를 읽지 못한 프로세스 수를 함께 낸다
+// 이 uid 의 프로세스 cwd 목록. 같은 uid 인데 cwd 를 읽지 못한 프로세스 수를 함께 낸다.
+// /proc 목록을 읽지 못하면 unreadable 을 1 이상으로 두어 「확인하지 못함」 이 되게 한다
 export function procCwds(uid: number): { cwds: Set<string>; unreadable: number; unreadableNames: string[] } {
   const cwds = new Set<string>()
   let unreadable = 0
   const unreadableNames: string[] = []
-  for (const pid of procPids()) {
+  const pids = procPids()
+  if (pids === null) return { cwds, unreadable: 1, unreadableNames: ['/proc 목록'] }
+  for (const pid of pids) {
     const status = readText(sys(`/proc/${pid}/status`))
-    const owner = status ? /^Uid:\s+(\d+)/m.exec(status) : null
+    if (status === null) {
+      // 그 사이 끝난 프로세스면 디렉터리도 없다. 디렉터리가 있는데 status 를 못 읽으면 확인하지 못한 것이다
+      if (mtimeOf(sys(`/proc/${pid}`)) !== null) {
+        unreadable += 1
+        unreadableNames.push(`pid ${pid}`)
+      }
+      continue
+    }
+    const owner = /^Uid:\s+(\d+)/m.exec(status)
     if (!owner || Number(owner[1]) !== uid) continue
     try {
       cwds.add(readlinkSync(sys(`/proc/${pid}/cwd`)))

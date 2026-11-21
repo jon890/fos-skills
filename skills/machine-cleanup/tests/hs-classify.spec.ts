@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Sandbox, write } from './helpers.ts'
 import { DAY, sampleConfig } from './hs-helpers.ts'
-import { backupGrade, backupOverRetention, classify, hermesBySource, hermesCandidates, imageGrade, imageOverRetention, memorySuggestions, report } from '../scripts/hs_classify.ts'
+import { backupGrade, backupOverRetention, blockedOf, classify, imageItems, hermesBySource, hermesCandidates, imageGrade, imageOverRetention, memorySuggestions, report } from '../scripts/hs_classify.ts'
 
 const PRUNE = 1_800_000_000
 const before = PRUNE - DAY
@@ -80,6 +80,17 @@ describe('Hermes 후보(REQ10)', () => {
   })
 })
 
+describe('실행 차단(REQ12)', () => {
+  test('필수 조사가 실패한 범주를 모은다', () => {
+    const blocked = blockedOf({ docker: { error: 'docker 에 닿지 못했다' }, backups: { rows: [] }, sessions: {}, git: { repos: [{ path: '~/r', error: 'git 저장소가 아니다' }] }, hermes: { profiles: [{ profile: 'p', error: 'x' }], linked_error: 'db down' } })
+    assert.deepEqual(blocked.map((b) => b.category), ['Docker 이미지', 'git 저장소 ~/r', 'Hermes 세션', 'Hermes 세션 p'])
+  })
+
+  test('유지가 아닌 이미지만 태그=ID 로 승인 목록에 낸다', () => {
+    assert.deepEqual(imageItems([{ grade: '유지', id: 'sha256:a', tags: ['k:1'] }, { grade: '확인 필요', id: 'sha256:b', tags: ['x:1', 'x:2'] }, { grade: '확인 필요', id: 'sha256:c', tags: [] }]), [['확인 필요', 'x:1=sha256:b'], ['확인 필요', 'x:2=sha256:b'], ['확인 필요', 'sha256:c']])
+  })
+})
+
 describe('메모리 제안(REQ8)', () => {
   test('한도에 가까운 컨테이너와 스왑 상위 프로세스를 제안으로만 낸다', () => {
     const s = memorySuggestions({ mem_total: 100, mem_available: 50, swap_used: 2048, swap_top: [{ name: 'java', swap: 2048 }], containers: [{ name: 'web', usage: 95, limit: 100 }] })
@@ -132,6 +143,7 @@ describe('hs_classify 명령', () => {
     assert.match(r.stdout, /~\/agents \(조사만\. 승인 후보에 넣지 않는다\)/)
     assert.match(r.stdout, /원인 수정 제안: 빌드 스크립트가 남긴 워크트리 1개/)
     assert.equal(readFileSync(hermesOut, 'utf8'), 'cron\tdefault:old\n')
+    assert.doesNotMatch(r.stdout, /실행 차단/)
     const git = JSON.parse(readFileSync(gitOut, 'utf8'))
     assert.deepEqual(git.map((x: any) => x.repo), [join(box.root, 'ops')])
   })

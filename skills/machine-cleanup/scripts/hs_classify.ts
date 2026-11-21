@@ -2,7 +2,7 @@
 // 홈서버 조사 JSON 에 등급과 원인 판정을 붙여 보고한다. 이 맥에서 돈다. 읽기 전용이다.
 //
 // 사용법:
-//   hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE]
+//   hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE]
 //
 // SURVEY 는 hs_survey.ts 의 출력, CONFIG 는 hs_overlay.ts 의 출력이다. 등급 규칙은 references/homeserver-targets.md 가 소유하고,
 // 이 스크립트는 그 규칙대로 후보마다 등급(유지, 안전, 확인 필요)과 이유를 붙인다.
@@ -15,8 +15,13 @@
 // 채팅 출처(discord)는 권장 묶음에서 뺀다. --hermes-out 은 `출처<탭>profile:세션` 줄을 써서 묶음별로 hs_delete.ts 에 넘기게 한다.
 // --git-out 은 브랜치 삭제 입력(delete_branches.ts 가 읽는 survey_git 형식, 조사만 하는 저장소 제외),
 // --orphans-out 은 워크트리가 사라진 대화 기록 삭제 입력(delete_sessions.ts 형식)을 쓴다. 둘 다 홈서버 경로를 담는다.
+// --images-out 은 `등급<탭>태그=이미지ID` 줄(태그가 없으면 이미지 ID)을 쓴다. 승인한 줄을 hs_delete.ts images 에 그대로 넘겨
+// 실행 때 태그가 조사 때의 이미지를 가리키는지 확인하게 한다.
 //
-// 종료 코드: 0 완료, 2 입력 오류.
+// 필수 조사가 실패한 범주(Docker 접속, 백업 루트, git 저장소, 대화 기록, Hermes 세션과 연결 조회, 휴지통, 경로)는 「실행 차단」 절에 적고
+// 종료 코드 3 으로 끝낸다. 그 범주는 승인 묶음에 올리지 않고 그 범주의 삭제를 돌리지 않는다. 나머지 범주의 보고는 그대로 낸다.
+//
+// 종료 코드: 0 완료, 2 입력 오류, 3 완료했으나 실행 차단된 범주가 있음.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
@@ -181,6 +186,35 @@ export function memorySuggestions(memory: Json): string[] {
   return out
 }
 
+// 승인 목록에 쓸 [등급, 「태그=이미지ID」 또는 이미지 ID]. 유지 등급은 넣지 않는다
+export function imageItems(images: Json[]): [string, string][] {
+  return images.filter((i) => i.grade !== '유지').flatMap((i) => (i.tags?.length ? i.tags.map((t: string) => [i.grade, `${t}=${i.id}`]) : [[i.grade, i.id]]) as [string, string][])
+}
+
+// ---------- 실행 차단 ----------
+
+const isErr = (x: any): string | null => (x && typeof x === 'object' && !Array.isArray(x) && x.error ? String(x.error) : null)
+
+// 필수 조사가 실패해 삭제를 돌리면 안 되는 범주와 이유
+export function blockedOf(survey: Json): { category: string; reason: string }[] {
+  const out: { category: string; reason: string }[] = []
+  const add = (category: string, reason: string | null) => {
+    if (reason) out.push({ category, reason })
+  }
+  add('Docker 이미지', isErr(survey.docker) ?? (survey.docker ? null : '조사 결과가 없다'))
+  add('백업', isErr(survey.backups) ?? (survey.backups ? null : '조사 결과가 없다'))
+  add('휴지통', isErr(survey.trash))
+  add('경로', isErr(survey.paths) ?? isErr(survey.cache_dirs))
+  add('대화 기록', isErr(survey.sessions) ?? (survey.sessions ? null : '조사 결과가 없다'))
+  const git = survey.git
+  add('git 저장소', isErr(git) ?? (git ? null : '조사 결과가 없다'))
+  for (const r of git?.repos ?? []) add(`git 저장소 ${r.path}`, r.error ?? null)
+  const h = survey.hermes
+  add('Hermes 세션', isErr(h) ?? (h ? h.linked_error ?? null : '조사 결과가 없다'))
+  for (const p of h?.profiles ?? []) add(`Hermes 세션 ${p.profile}`, p.error ?? null)
+  return out
+}
+
 // ---------- 보고 ----------
 
 export function classify(survey: Json, cfg: Json): Json {
@@ -201,6 +235,7 @@ export function classify(survey: Json, cfg: Json): Json {
   })
   const hermes = hermesCandidates(survey.hermes, survey.now)
   return {
+    blocked: blockedOf(survey),
     images,
     image_over: imageOverRetention(docker.unused_images ?? [], cfg.owned_images, lastPrune),
     backups,
@@ -217,6 +252,11 @@ export function report(survey: Json, cfg: Json, c: Json): string {
   const out: string[] = []
   const err = (x: any) => (x && typeof x === 'object' && !Array.isArray(x) && x.error ? x.error : null)
   const mem = survey.memory ?? {}
+  if (c.blocked.length) {
+    out.push('## 실행 차단 (필수 조사가 실패했다. 이 범주는 승인 묶음에 올리지 않고 지우지 않는다)')
+    for (const b of c.blocked) out.push(`- ${b.category}: ${b.reason}`)
+    out.push('')
+  }
   out.push('## 정리 전 수치')
   out.push(`디스크 여유 ${human(survey.host?.disk_free)} / ${human(survey.host?.disk_total)}, 메모리 available ${human(mem.mem_available)} / ${human(mem.mem_total)}, 스왑 사용 ${human(mem.swap_used)} / ${human(mem.swap_total)}`)
   for (const row of survey.docker?.summary ?? []) out.push(`Docker ${row.Type}: ${row.Size} (회수 가능 ${row.Reclaimable})`)
@@ -240,7 +280,7 @@ export function report(survey: Json, cfg: Json, c: Json): string {
   out.push('\n## Docker 이미지 (컨테이너가 쓰지 않는 것. 크기는 공유 layer 를 겹쳐 센 값이다)')
   if (err(survey.docker)) out.push(`읽지 못함: ${err(survey.docker)}`)
   else {
-    out.push(`dangling volume ${survey.docker.dangling_volumes}개`)
+    out.push(`dangling volume ${survey.docker.dangling_volumes ?? '읽지 못함'}${survey.docker.dangling_volumes === null ? '' : '개'}`)
     out.push('| 등급 | 이미지 | 이름 | 만든 날 | 크기 | 이유 |')
     out.push('| --- | --- | --- | --- | --- | --- |')
     for (const i of c.images) out.push(`| ${i.grade} | ${String(i.id).slice(7, 19)} | ${(i.tags.length ? i.tags : i.repos).join(', ') || '<none>'} | ${String(i.created).slice(0, 10)} | ${human(i.size)} | ${i.reason} |`)
@@ -320,14 +360,14 @@ export function report(survey: Json, cfg: Json, c: Json): string {
 export function main(argv: string[]): number {
   let parsed
   try {
-    parsed = parseArgs({ args: argv, allowPositionals: true, options: { config: { type: 'string' }, 'json-out': { type: 'string' }, 'git-out': { type: 'string' }, 'orphans-out': { type: 'string' }, 'hermes-out': { type: 'string' } } })
+    parsed = parseArgs({ args: argv, allowPositionals: true, options: { config: { type: 'string' }, 'json-out': { type: 'string' }, 'git-out': { type: 'string' }, 'orphans-out': { type: 'string' }, 'hermes-out': { type: 'string' }, 'images-out': { type: 'string' } } })
   } catch (error) {
-    write(2, `usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE]\n${(error as Error).message}\n`)
+    write(2, `usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE]\n${(error as Error).message}\n`)
     return 2
   }
   const { values, positionals } = parsed
   if (positionals.length !== 1 || !values.config) {
-    write(2, 'usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE]\n')
+    write(2, 'usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE]\n')
     return 2
   }
   let survey: Json
@@ -345,10 +385,11 @@ export function main(argv: string[]): number {
     const repos = c.repos.filter((r: Json) => !r.survey_only && !r.error).map((r: Json) => ({ repo: r.repo, base: r.base, gh_errors: r.gh_errors, worktrees: r.worktrees, branches: r.branches }))
     writeFileSync(values['git-out'], `${JSON.stringify(repos, null, 2)}\n`)
   }
+  if (values['images-out']) writeFileSync(values['images-out'], imageItems(c.images).map(([g, item]) => `${g}\t${item}\n`).join(''))
   if (values['hermes-out']) writeFileSync(values['hermes-out'], 'candidates' in c.hermes ? c.hermes.candidates.map((h: HermesCandidate) => `${h.source}\t${h.profile}:${h.root}\n`).join('') : '')
   if (values['orphans-out'] && survey.sessions?.orphans) writeFileSync(values['orphans-out'], JSON.stringify(survey.sessions.orphans))
   write(1, `${report(survey, cfg, c)}\n`)
-  return 0
+  return c.blocked.length ? 3 : 0
 }
 
 if (isMain(import.meta.url, import.meta.main)) process.exitCode = main(process.argv.slice(2))

@@ -2,20 +2,23 @@
 // 승인받은 홈서버 정리 후보를 지운다. 홈서버에서 돈다. 기본은 dry-run 이고 --apply 일 때만 지운다.
 //
 // 사용법(이 맥에서, 잠금이 필요한 것은 --lock 으로 돌린다):
-//   remote.ts --host HOST --lock LOCK hs_delete.ts images [--apply] REF...
+//   remote.ts --host HOST --lock LOCK hs_delete.ts images [--apply] TAG=IMAGE_ID...
 //   remote.ts --host HOST --lock LOCK --input CONFIG hs_delete.ts backup --config CONFIG [--apply] LABEL...
 //   remote.ts --host HOST --lock LOCK --input GIT hs_delete.ts worktrees --survey GIT [--apply] PATH...
 //   remote.ts --host HOST hs_delete.ts trash [--apply] NAME...
 //   remote.ts --host HOST --input CONFIG hs_delete.ts hermes --config CONFIG [--apply] PROFILE:SESSION...
 //
-// images   태그나 이미지 ID 를 하나씩 `docker image rm` 한다. 지우기 직전에 컨테이너가 쓰는지 다시 보고, 쓰면 남긴다.
+// images   `태그=이미지ID`(태그가 없으면 이미지 ID 자체)를 하나씩 `docker image rm` 한다. 항목마다 지우기 직전에 태그가 조사 때의
+//          이미지 ID 를 그대로 가리키는지, 컨테이너가 쓰는지 다시 본다. 다르거나 컨테이너 조회가 실패하면 건너뛴다.
 //          다른 이름이 가리켜 docker 가 거절한 것은 남김으로 센다. `docker image prune -a`, `docker system prune -a` 는 쓰지 않는다.
 // backup   백업 루트 바로 아래 용도 폴더를 지운다. 이름은 [A-Za-z0-9][A-Za-z0-9._-]* 만 받고 심볼릭 링크는 지우지 않는다.
-// worktrees  hs_classify.ts --git-out 파일에서 제거 후보인 워크트리만 지운다. 지우기 직전에 끝 커밋, 미커밋 변경,
-//          이 사용자 uid 의 프로세스 cwd 를 다시 본다. 확인하지 못한 프로세스가 있으면 지우지 않는다. --force 는 쓰지 않는다.
+// worktrees  hs_classify.ts --git-out 파일에서 제거 후보인 워크트리만 지운다. 항목마다 지우기 직전에 끝 커밋, 미커밋 변경,
+//          이 사용자 uid 의 프로세스 cwd 를 다시 본다. 읽지 못하거나 확인하지 못한 프로세스가 있으면 지우지 않는다. --force 는 쓰지 않는다.
+//          기록만 남은 워크트리는 그 저장소의 남은 기록이 모두 승인 목록에 있을 때만 `git worktree prune` 한다.
 // trash    ~/.local/share/Trash 의 files/NAME 과 info/NAME.trashinfo 를 함께 지운다.
-// hermes   고른 세션 트리의 루트를 CONFIG 의 hermes.delete 명령으로 지운다. 보내기 직전에 세션 DB 와 assistant 연결 목록을
-//          다시 읽어, 트리 안에 연결된 세션이나 30일 안에 활동한 세션이 생겼거나 다시 읽기가 실패하면 건너뛴다.
+// hermes   고른 세션 트리의 루트를 CONFIG 의 hermes.delete 명령으로 지운다. 루트마다 보내기 직전에 세션 DB 와 assistant 연결 목록을
+//          다시 읽는다. 트리 안에 연결된 세션이나 30일 안에 활동한 세션이 생겼으면 그 루트를 건너뛰고,
+//          다시 읽기가 실패하면 그 루트와 남은 루트를 모두 지우지 않는다.
 //          지운 뒤 연결된 세션이 세션 DB 에 모두 남았는지 확인해 낸다.
 //          세션을 지운 profile 마다 세션 DB 파일 크기(-wal 포함)를 낸다. 지워도 파일은 줄지 않는다. 공간 회수(optimize)는
 //          Hermes 를 멈춰야 해서 이 스크립트가 하지 않고 사용자 몫으로 보고한다.
@@ -29,6 +32,7 @@ import { parseArgs } from 'node:util'
 import { gitRun, isMain, runText, write } from './io.ts'
 import { HERMES_DAYS, hermesCandidates } from './hs_classify.ts'
 import { expandHome, hermesDbs, procCwds, readHermesDb, readLinked } from './hs_survey.ts'
+import { parseWorktrees } from './lib/git_survey.ts'
 
 type Json = Record<string, any>
 
@@ -43,14 +47,49 @@ const lockHeld = (): boolean => process.env.FOS_INFRA_LOCK_HELD === '1'
 
 const run = (argv: string[], timeoutSec = 120) => runText(argv, { timeoutSec, closeStdin: true })
 
-function images(refs: string[], apply: boolean): number {
-  const ids = run(['docker', 'ps', '-aq', '--no-trunc']).stdout.split(/\s+/).filter(Boolean)
-  const used = new Set(ids.length ? run(['docker', 'inspect', '--format', '{{.Image}}', ...ids]).stdout.split(/\s+/).filter(Boolean) : [])
+// 지금 컨테이너가 쓰는 이미지 ID. docker ps 나 inspect 가 실패하면 null 이다(빈 목록으로 다루지 않는다)
+export function usedImages(): Set<string> | null {
+  const ps = run(['docker', 'ps', '-aq', '--no-trunc'])
+  if (ps.failure || ps.code !== 0) return null
+  const ids = ps.stdout.split(/\s+/).filter(Boolean)
+  if (!ids.length) return new Set()
+  const inspect = run(['docker', 'inspect', '--format', '{{.Image}}', ...ids])
+  if (inspect.failure || inspect.code !== 0) return null
+  return new Set(inspect.stdout.split(/\s+/).filter(Boolean))
+}
+
+// 승인 항목 `태그=이미지ID` 나 `sha256:...`(ID 자체)를 [넘길 이름, 기대하는 ID] 로 나눈다. 꼴이 아니면 null
+export function parseImageItem(item: string): [string, string] | null {
+  if (/^sha256:[0-9a-f]{12,}$/.test(item)) return [item, item]
+  const eq = item.lastIndexOf('=')
+  if (eq <= 0) return null
+  const ref = item.slice(0, eq)
+  const id = item.slice(eq + 1)
+  return /^sha256:[0-9a-f]{12,}$/.test(id) ? [ref, id] : null
+}
+
+const sameId = (a: string, b: string): boolean => a === b || a.startsWith(b) || b.startsWith(a)
+
+function images(items: string[], apply: boolean): number {
   let removed = 0
   let kept = 0
   let failed = 0
   let missing = 0
-  for (const ref of refs) {
+  for (const item of items) {
+    const parsed = parseImageItem(item)
+    if (!parsed) {
+      write(2, `거부 ${item}: 「태그=이미지ID」 나 이미지 ID 꼴이 아니다. 조사 때의 이미지 ID 를 함께 넘긴다\n`)
+      failed += 1
+      continue
+    }
+    const [ref, expected] = parsed
+    // 항목마다 지우기 직전에 다시 본다. 앞 항목을 지우는 동안 작업이 컨테이너를 띄웠을 수 있다
+    const used = usedImages()
+    if (used === null) {
+      write(1, `건너뜀 ${ref}: 컨테이너가 쓰는 이미지를 읽지 못함\n`)
+      kept += 1
+      continue
+    }
     const found = run(['docker', 'image', 'inspect', '--format', '{{.Id}} {{join .RepoTags " "}}', ref])
     if (found.code !== 0) {
       write(2, `없음 ${ref}: ${found.stderr.trim()}\n`)
@@ -58,6 +97,11 @@ function images(refs: string[], apply: boolean): number {
       continue
     }
     const [image, ...tags] = found.stdout.trim().split(/\s+/)
+    if (!sameId(image, expected)) {
+      write(1, `건너뜀 ${ref}: 조사 뒤 다른 이미지를 가리킨다(조사 ${expected.slice(7, 19)}, 지금 ${image.slice(7, 19)})\n`)
+      kept += 1
+      continue
+    }
     const others = tags.filter((t) => t !== ref)
     if (used.has(image)) {
       write(1, `남김 ${ref}: 컨테이너가 쓰는 중\n`)
@@ -65,10 +109,10 @@ function images(refs: string[], apply: boolean): number {
       continue
     }
     if (!apply) {
-      if (others.length && (ref.startsWith('sha256:') || image.includes(ref)) && tags.length > 1) {
+      if (others.length && ref.startsWith('sha256:') && tags.length > 1) {
         write(1, `남김 ${ref}: 다른 이름이 가리킴 ${others.join(' ')}\n`)
         kept += 1
-      } else if (others.length && ref.includes(':') && !ref.startsWith('sha256:')) write(1, `태그만 뗌 ${ref}: 이미지는 ${others.join(' ')} 로 남음\n`)
+      } else if (others.length && !ref.startsWith('sha256:')) write(1, `태그만 뗌 ${ref}: 이미지는 ${others.join(' ')} 로 남음\n`)
       else write(1, `지울 것 ${ref}\n`)
       continue
     }
@@ -126,9 +170,17 @@ function backup(cfg: Json, labels: string[], apply: boolean): number {
   return bad ? 1 : 0
 }
 
+// 저장소의 지금 「기록만 남음」 워크트리 경로. 목록을 읽지 못하면 null
+function prunablePaths(repo: string): Set<string> | null {
+  const done = gitRun(repo, ['worktree', 'list', '--porcelain'])
+  if (done.code !== 0) return null
+  return new Set(parseWorktrees(done.stdout).filter((w) => w.prunable).map((w) => w.path))
+}
+
 function worktrees(survey: Json[], paths: string[], apply: boolean): number {
-  const { cwds, unreadable } = procCwds(process.getuid?.() ?? -1)
   let bad = 0
+  const approved = new Set(paths)
+  const pruned = new Set<string>()
   for (const path of paths) {
     const repo = survey.find((r) => (r.worktrees ?? []).some((w: Json) => w.path === path))
     const wt = repo?.worktrees.find((w: Json) => w.path === path)
@@ -138,17 +190,47 @@ function worktrees(survey: Json[], paths: string[], apply: boolean): number {
       continue
     }
     if (wt.class === '기록만 남음') {
-      if (apply) {
-        const done = gitRun(repo.repo, ['worktree', 'prune'])
-        write(done.code === 0 ? 1 : 2, `${done.code === 0 ? '정리' : '실패'} ${path}: worktree prune ${done.stderr.trim()}\n`)
-        if (done.code !== 0) bad += 1
-      } else write(1, `정리할 것 ${path}: 기록만 남음(worktree prune)\n`)
+      // git worktree prune 은 저장소 전체의 기록을 지운다. 지금 남은 기록이 모두 승인한 경로일 때만 돌린다
+      if (pruned.has(repo.repo)) {
+        write(1, `정리 ${path}: 같은 저장소의 prune 에 포함됨\n`)
+        continue
+      }
+      const current = prunablePaths(repo.repo)
+      if (current === null) {
+        write(1, `건너뜀 ${path}: 워크트리 목록을 읽지 못함\n`)
+        continue
+      }
+      if (!current.has(path)) {
+        write(1, `건너뜀 ${path}: 지금은 기록만 남은 워크트리가 아니다\n`)
+        continue
+      }
+      const extra = [...current].filter((p) => !approved.has(p))
+      if (extra.length) {
+        write(1, `건너뜀 ${path}: prune 하면 승인하지 않은 기록 ${extra.length}개(${extra.join(', ')})도 함께 지워진다\n`)
+        continue
+      }
+      if (!apply) {
+        write(1, `정리할 것 ${path}: 기록만 남음(worktree prune)\n`)
+        continue
+      }
+      const done = gitRun(repo.repo, ['worktree', 'prune'])
+      write(done.code === 0 ? 1 : 2, `${done.code === 0 ? '정리' : '실패'} ${path}: worktree prune ${done.stderr.trim()}\n`)
+      if (done.code === 0) pruned.add(repo.repo)
+      else bad += 1
       continue
     }
-    const tip = gitRun(path, ['rev-parse', 'HEAD']).stdout.trim()
-    const dirty = gitRun(path, ['status', '--porcelain']).stdout.split('\n').filter(Boolean).length
+    // 항목마다 지우기 직전에 다시 본다. 앞 워크트리를 지우는 동안 이 경로에서 프로세스가 시작됐을 수 있다
+    const { cwds, unreadable } = procCwds(process.getuid?.() ?? -1)
+    const head = gitRun(path, ['rev-parse', 'HEAD'])
+    const status = gitRun(path, ['status', '--porcelain'])
+    const dirty = status.stdout.split('\n').filter(Boolean).length
     const busy = [...cwds].some((c) => c === path || c.startsWith(`${path}/`))
-    const reason = unreadable ? `사용 여부를 확인하지 못함(프로세스 ${unreadable}개의 cwd 를 읽지 못함)` : busy ? '안에서 도는 프로세스가 있다' : tip !== wt.tip ? '끝 커밋이 조사 때와 다르다' : dirty ? `미커밋 변경 ${dirty}개` : null
+    const reason = unreadable
+      ? `사용 여부를 확인하지 못함(프로세스 ${unreadable}개를 읽지 못함)`
+      : busy ? '안에서 도는 프로세스가 있다'
+      : head.code !== 0 || status.code !== 0 ? '끝 커밋이나 변경 상태를 읽지 못함'
+      : head.stdout.trim() !== wt.tip ? '끝 커밋이 조사 때와 다르다'
+      : dirty ? `미커밋 변경 ${dirty}개` : null
     if (reason) {
       write(1, `남김 ${path}: ${reason}\n`)
       continue
@@ -210,27 +292,35 @@ function hermesSnapshot(cfg: Json): Json {
   return { profiles, ...('ids' in linked ? { linked: linked.ids } : { linked_error: linked.error }) }
 }
 
+const sessionIds = (snap: Json): string[] => (snap.profiles ?? []).flatMap((p: Json) => (p.sessions ?? []).map((x: any[]) => x[0]))
+
 function hermes(cfg: Json, picks: string[], apply: boolean): number {
-  const before = hermesSnapshot(cfg)
-  const now = Date.now() / 1000
-  const judged = hermesCandidates(before, now, HERMES_DAYS)
-  if ('error' in judged) {
-    write(2, `다시 읽기 실패로 아무것도 지우지 않는다: ${judged.error}\n`)
-    return 1
-  }
-  for (const p of before.profiles) if (p.error) write(2, `${p.profile}: 세션 DB 를 읽지 못했다: ${p.error}\n`)
-  const ok = new Set(judged.candidates.map((c) => `${c.profile}:${c.root}`))
+  const now = () => Date.now() / 1000
   let bad = 0
   let removed = 0
   const touched = new Set<string>()
-  for (const pick of picks) {
+  const linkedSeen = new Set<string>()
+  const existed = new Set<string>()
+  for (const [i, pick] of picks.entries()) {
     const colon = pick.indexOf(':')
     if (colon <= 0) {
       write(2, `거부 ${pick}: PROFILE:SESSION 꼴이 아니다\n`)
       bad += 1
       continue
     }
-    if (!ok.has(pick)) {
+    const [profile, session] = [pick.slice(0, colon), pick.slice(colon + 1)]
+    // 세션마다 보내기 직전에 세션 DB 와 연결 목록을 다시 읽는다. 앞 세션을 지우는 동안 연결되거나 활동했을 수 있다
+    const snap = hermesSnapshot(cfg)
+    const judged = hermesCandidates(snap, now(), HERMES_DAYS)
+    const profileError = (snap.profiles ?? []).find((p: Json) => p.profile === profile)?.error
+    if ('error' in judged || profileError) {
+      write(2, `다시 읽기 실패로 남은 ${picks.length - i}개를 지우지 않는다: ${'error' in judged ? judged.error : profileError}\n`)
+      bad += 1
+      break
+    }
+    for (const id of snap.linked ?? []) linkedSeen.add(id)
+    for (const id of sessionIds(snap)) existed.add(id)
+    if (!judged.candidates.some((c) => c.profile === profile && c.root === session)) {
       write(1, `건너뜀 ${pick}: 지금은 후보가 아니다(조사 뒤 연결됐거나 ${HERMES_DAYS}일 안에 활동했거나 이미 없음)\n`)
       continue
     }
@@ -238,7 +328,6 @@ function hermes(cfg: Json, picks: string[], apply: boolean): number {
       write(1, `지울 것 ${pick}\n`)
       continue
     }
-    const [profile, session] = [pick.slice(0, colon), pick.slice(colon + 1)]
     const argv = cfg.hermes.delete.map((a: string) => (a === '{profile}' ? profile : a === '{session}' ? session : a))
     const done = run(argv)
     if (done.code === 0) {
@@ -251,16 +340,21 @@ function hermes(cfg: Json, picks: string[], apply: boolean): number {
     }
   }
   if (apply && removed) {
-    // assistant 대화가 가리키는 세션이 그대로 남았는지 본다
-    const linkedBefore = new Set<string>(before.linked)
-    const existed = new Set<string>(before.profiles.flatMap((p: Json) => (p.sessions ?? []).map((s: any[]) => s[0])))
+    // assistant 대화가 가리키는 세션이 그대로 남았는지 본다. 마지막으로 읽은 연결 목록까지 합친다
     const after = hermesSnapshot(cfg)
-    const present = new Set<string>(after.profiles.flatMap((p: Json) => (p.sessions ?? []).map((s: any[]) => s[0])))
-    const lost = [...linkedBefore].filter((id) => existed.has(id) && !present.has(id))
-    if (lost.length) {
-      write(2, `연결된 세션이 사라짐 ${lost.length}개: ${lost.join(', ')}\n`)
+    if (after.linked_error || (after.profiles ?? []).some((p: Json) => p.error)) {
+      write(2, `지운 뒤 확인하지 못함: ${after.linked_error ?? 'Hermes 세션 DB 를 읽지 못함'}\n`)
       bad += 1
-    } else write(1, `연결된 세션 ${[...linkedBefore].filter((id) => existed.has(id)).length}개가 모두 남음\n`)
+    } else {
+      for (const id of after.linked ?? []) linkedSeen.add(id)
+      const present = new Set(sessionIds(after))
+      const kept = [...linkedSeen].filter((id) => existed.has(id))
+      const lost = kept.filter((id) => !present.has(id))
+      if (lost.length) {
+        write(2, `연결된 세션이 사라짐 ${lost.length}개: ${lost.join(', ')}\n`)
+        bad += 1
+      } else write(1, `연결된 세션 ${kept.length}개가 모두 남음\n`)
+    }
     const dbs = new Map(hermesDbs(expandHome(cfg.hermes.data)).map((d) => [d.profile, d.db]))
     for (const profile of touched) {
       const db = dbs.get(profile)
