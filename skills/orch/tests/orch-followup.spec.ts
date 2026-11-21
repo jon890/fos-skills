@@ -78,6 +78,31 @@ test('같은 PR 의 마무리가 돌고 있으면 띄우지 않고 다시 돌기
   assert.equal(existsSync(c.log), false)
 })
 
+test('처음 마무리가 다른 pid 파일을 썼으면 그 파일로 도는 마무리를 알아보고, 죽었으면 그 옆에 로그를 쓴다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {
+  const c = setup(t)
+  const logDir = join(c.repo, 'other-logs')
+  mkdirSync(logDir)
+  const pidFile = join(logDir, 'finish-787.pid')
+  const file = join(c.repo, '.orch', 'state', 'followups.json')
+  writeFileSync(file, JSON.stringify({ items: saved(c).map((one: { pr: number }) => (one.pr === 787 ? { ...one, pid_file: pidFile } : one)) }))
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
+  t.after(() => child.kill('SIGKILL'))
+  writeFileSync(pidFile, String(child.pid))
+  const running = c.run(['done', '787', '--no-finish', '--not-main', '테스트'])
+  assert.equal(running.code, 0, running.stdout + running.stderr)
+  // 끝난 항목을 다시 끝내도 마무리는 다시 띄울 수 있다. 도는 마무리를 알아봐야 둘이 함께 돌지 않는다
+  const again = c.run(['done', '787', '--not-main', '테스트'])
+  assert.match(again.stdout, new RegExp(`^FINISH-RUNNING 787 ${pidFile}$`, 'm'))
+  assert.equal(existsSync(c.log), false)
+  child.kill('SIGKILL')
+  await sleep(200)
+  const started = c.run(['done', '787', '--not-main', '테스트'])
+  assert.match(started.stdout, new RegExp(`^FINISH-STARTED 787 ${join(logDir, 'finish-787.out')}$`, 'm'))
+  const deadline = Date.now() + 5000
+  while (!existsSync(c.log) && Date.now() < deadline) await sleep(50)
+  assert.match(readFileSync(c.log, 'utf8'), new RegExp(`--pid-file ${pidFile} `))
+})
+
 test('done 은 처음 마무리가 쓴 보드에 done 을 쓰고, 다시 띄우는 마무리에 처음 옵션을 그대로 준다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {
   const c = setup(t)
   const board = join(c.repo, 'boards', 'team.json')

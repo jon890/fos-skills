@@ -50,6 +50,7 @@
 // 배포 뒤 할 일: 기능 PR 의 근거가 「후속 검증: 대기 | <글>」 하나만 남았으면 그 글을 배포 뒤 할 일 목록(lib/followups.ts)에 옮기고
 //     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드 파일이 있으면 항목 followup-<PR> 을 wait 로 보인다.
 //     이 마무리에 준 옵션(보드, 마지막 PR 표시 같은 것, replayArgs)을 항목의 finish_args 에 남긴다. followup done 이 그 값을 그대로 쓴다.
+//     --pid-file 의 절대 경로도 항목의 pid_file 에 남긴다. followup done 이 그 파일로 도는 마무리를 알아본다.
 //     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 단계 4 의 정리는 워크트리를 남기고,
 //     그 PR 의 handoff 산출물도 실패로 세지 않고 함께 남긴다(사용자 결정 2026-11-20). 배포가 실패했거나 시간이 지났으면
 //     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
@@ -910,7 +911,7 @@ function holdForFollowup(args: Args, repo: string, merged: Merged, text: string,
   let line: string
   try {
     const { value: got, board } = updateWithBoard(repo, pr, (items) => {
-      const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy, finish_args: replayArgs(args) }, new Date().toISOString())
+      const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy, finish_args: replayArgs(args), pid_file: args.pidFile ? resolve(args.pidFile) : null }, new Date().toISOString())
       return { items: made.items, value: made }
     }, { file: args.board, bin: args.boardBin })
     line = got.result === 'added' ? `FOLLOWUP-ADDED #${pr} ${oneLine(text)}` : `FOLLOWUP-KEPT #${pr} ${oneLine(text)}`

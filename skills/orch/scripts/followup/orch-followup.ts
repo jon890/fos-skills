@@ -9,7 +9,8 @@
 //         이미 끝났으면 `FOLLOWUP-ALREADY #<PR>`, 목록에 없으면 `FOLLOWUP-MISSING #<PR>` 과 종료 코드 1 이다.
 //         보드 파일이 있으면 항목 followup-<PR> 을 done 으로 바꾼다. 실패해도 목록은 끝낸 채 둔다.
 //         이어서 그 PR 의 마무리(finish-pr.ts)를 백그라운드로 다시 띄워 지시서 정리, 업무 완료, 보드 done 까지 가게 한다.
-//         출력은 <orch 루트>/queue/finish-<PR>.out 이고 `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
+//         pid 파일은 처음 마무리가 쓴 것(항목의 pid_file)이고, 없으면 <orch 루트>/queue/finish-<PR>.pid 다. 출력은 그 옆 finish-<PR>.out 이다.
+//         `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
 //         다시 돌기 표시(state/finish-rerun/<PR>)를 남기고 `FINISH-RUNNING <PR> <pid 파일>` 이다.
 //         도는 마무리가 끝날 때 그 요청을 보고 끝난 후속 검증으로 한 번 더 돈다. --no-finish 면 다시 띄우지 않는다. 띄우지 못하면 FINISH-START-FAIL 과 종료 코드 1 이다.
 //         다시 띄우는 마무리에는 처음 마무리의 옵션(항목의 finish_args: 보드, --complete 같은 마지막 PR 표시, 지시서 폴더, 배포 설정)을 그대로 준다.
@@ -21,9 +22,10 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { closeSync, openSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { followupLine, markDone, openFollowups } from '../core/followups.ts'
+import type { Followup } from '../core/followups.ts'
 import { expandArgs } from '../lib/args.ts'
 import { scriptPath } from '../lib/commands.ts'
 import { loadFollowups, updateWithBoard } from '../lib/followups.ts'
@@ -74,10 +76,11 @@ function withoutRun(args: string[]): string[] {
   return out
 }
 
-async function restartFinish(repo: string, pr: number, run: string | undefined, notMain: string | undefined, finishArgs: string[]): Promise<number> {
-  const dir = pathOf('queue', repo)
+async function restartFinish(repo: string, pr: number, run: string | undefined, notMain: string | undefined, item: Followup | null): Promise<number> {
+  // 처음 마무리가 --finish-log-dir 로 다른 pid 파일을 썼으면 그 파일을 봐야 도는 마무리를 알아본다(PR 558 리뷰)
+  const pidFile = item?.pid_file ?? join(pathOf('queue', repo), `finish-${pr}.pid`)
+  const dir = dirname(pidFile)
   makeParent(join(dir, 'x'), repo)
-  const pidFile = join(dir, `finish-${pr}.pid`)
   // 도는 마무리가 이미 대기 경로를 지났을 수 있어, 끝날 때 한 번 더 돌게 표시를 남긴다(규칙은 lib/finish-claim.ts 머리 주석).
   // 표시를 먼저 쓰고 pid 를 본다. 살아 있으면 그 마무리가 끝내기 전에 표시를 본다. 아니면 표시를 둔 채 새 마무리를 띄운다.
   // 새 마무리는 실행권을 잡으면 표시를 지우고, 끝나던 마무리가 아직 쥐고 있어 잡지 못하면 그 마무리가 놓은 뒤 표시를 보고 한 번 더 돈다
@@ -87,6 +90,7 @@ async function restartFinish(repo: string, pr: number, run: string | undefined, 
     return 0
   }
   const outFile = join(dir, `finish-${pr}.out`)
+  const finishArgs = item?.finish_args ?? []
   const replay = run ? withoutRun(finishArgs) : finishArgs
   const args = [String(pr), '--repo', repo, '--pid-file', pidFile, ...replay, ...(run ? ['--run', run] : []), ...(notMain !== undefined ? ['--not-main', notMain] : [])]
   const cmd = scriptCommand(process.env.FINISH_PR || scriptPath('finish-pr'), args)
@@ -110,9 +114,9 @@ async function done(repo: string, pr: number, values: { note?: string; run?: str
   const guard = guardWrite(repo, 'followup done', values['not-main'], { prs: [String(pr)] })
   if (guard.code !== 0) return guard.code
   // 목록을 끝내고 같은 잠금 안에서 보드를 목록의 값(done)으로 쓴다(lib/followups.ts 의 「보드 반영」). 보드는 처음 마무리가 쓴 곳이다
-  const { value: { result, finishArgs }, board } = updateWithBoard(repo, pr, (items) => {
+  const { value: { result, item }, board } = updateWithBoard(repo, pr, (items) => {
     const made = markDone(items, pr, new Date().toISOString(), values.note?.trim() || null)
-    return { items: made.items, value: { result: made.result, finishArgs: made.items.find((one) => one.pr === pr)?.finish_args ?? [] } }
+    return { items: made.items, value: { result: made.result, item: made.items.find((one) => one.pr === pr) ?? null } }
   })
   if (result === 'missing') {
     console.log(`FOLLOWUP-MISSING #${pr}`)
@@ -121,7 +125,7 @@ async function done(repo: string, pr: number, values: { note?: string; run?: str
   console.log(result === 'done' ? `FOLLOWUP-DONE #${pr}` : `FOLLOWUP-ALREADY #${pr}`)
   if (board.startsWith('실패:')) console.log(`FOLLOWUP-BOARD-FAIL #${pr} ${board.slice('실패:'.length).trim()}`)
   if (values['no-finish']) return 0
-  return restartFinish(repo, pr, values.run, values['not-main'], finishArgs)
+  return restartFinish(repo, pr, values.run, values['not-main'], item)
 }
 
 async function main(argv: string[]): Promise<number> {

@@ -1,7 +1,7 @@
 // lib/followups.ts 의 목록 파일, 루프 확인(followupTick), 보드 반영을 임시 git 저장소로 본다. gh 와 Orca 에는 닿지 않는다.
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -173,4 +173,22 @@ test('늦게 끝난 대기 쓰기가 끝냄을 덮지 않는다', async (t) => {
   delete process.env.SLOW_LOG
   assert.equal(done.board, '보드 followup-787 done')
   assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['wait', 'done'])
+})
+
+test('목록 파일이 JSON 이 아니면 옮겨 두고 빈 목록으로 다시 시작한다', (t) => {
+  const dir = repo(t)
+  const file = followupsFile(dir)
+  mkdirSync(join(file, '..'), { recursive: true })
+  writeFileSync(file, '{')
+  const warned: string[] = []
+  t.mock.method(process.stderr, 'write', (text: string) => { warned.push(text); return true })
+  assert.deepEqual(loadFollowups(dir), [])
+  assert.equal(existsSync(file), false)
+  const moved = readdirSync(join(file, '..')).filter((name) => name.startsWith('followups.json.broken-'))
+  assert.equal(moved.length, 1)
+  assert.equal(readFileSync(join(file, '..', moved[0]), 'utf8'), '{')
+  assert.match(warned.join(''), /배포 뒤 할 일 목록이 JSON 이 아니라 .*broken-/)
+  writeFileSync(file, '{')
+  add(dir, 787, 'success')
+  assert.deepEqual(loadFollowups(dir).map((item) => item.pr), [787])
 })
