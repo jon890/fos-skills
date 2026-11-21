@@ -24,15 +24,16 @@
 //     WORKER-NOT-MOVED <터미널 또는 -> <dispatch> <이유> 다.
 //       터미널이 열려 있고 에이전트가 있다(이유: 터미널 없음)
 //       화면이 idle, error, interrupted 다(이유: 작업 중. 작업 중인 dispatch 를 끊으면 그 턴의 보고가 사라진다)
-//       띄우기 기록의 지시서 파일이 있다(이유: 지시서 모름)
+//       현재 또는 같은 브랜치·워크트리의 이전 띄우기 기록에 지시서 파일이 있다(이유: 지시서 모름)
 //       worker-start 가 --terminal 과 --worktree 를 받는다(이유: CLI 가 이어 붙이기를 모른다)
 //     abandon 이 실패하면 WORKER-NOT-MOVED <터미널> <dispatch> abandon 실패. worker-start 가 실패하면 다시 시도하지 않고
 //     WORKER-MOVE-FAIL <터미널> <이어받기 파일> 이다. 그 터미널은 dispatch 가 없어 orch worker adopt 로 잇는다.
 //     성공하면 앞 기록을 복사해 새 dispatch 로 띄우기 기록을 남기고 앞 기록은 지운다. 보드의 그 worker 줄은 새 dispatch 로 다시 잇는다
 //     (끊긴 worker 로 보지 않게 한다). WORKER-MOVED <터미널> <앞 dispatch> <새 dispatch> 다.
 //     옮길 Run 의 worker 목록을 읽지 못하면 WORKER-LIST-FAIL <Run> <이유> 다.
-//     옮기지 못한 worker(WORKER-NOT-MOVED, WORKER-LIST-FAIL)가 남은 Run 만 takeover.json 에 남긴다.
+//     옮기지 못한 worker 와 조회에 실패한 Run 은 takeover.json 에 남긴다. 새 메인은 마지막 보고를 읽기 전용으로 확인한다.
 
+import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
@@ -40,9 +41,13 @@ import { boardWorkerRows } from '../core/board-workers.ts'
 import { isObject, objectOr } from '../core/json.ts'
 import { LIVE_DISPATCH } from '../core/workers.ts'
 import { classify, screenLines, screenTail } from '../core/screen.ts'
+import { context } from '../core/completion.ts'
+import { senderOf, subjectOf } from '../core/message-fields.ts'
+import { isQuietStop } from '../core/stop-reports.ts'
+import { isFile } from '../lib/fs.ts'
 import { BOARD_BIN, readBoard } from '../lib/board.ts'
 import { boardPath } from '../lib/board-file.ts'
-import { forgetLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
+import { allLaunches, forgetLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
 import { terminalFacts } from '../lib/main-coordinator.ts'
 import { orca, orcaJson } from '../lib/orca.ts'
 import { rowHandles } from '../lib/ownership.ts'
@@ -57,26 +62,41 @@ import { log, oneLine } from './steps/shared.ts'
 
 type Json = Record<string, unknown>
 
+type PendingWorker = { dispatch: string; worktree: string }
+type Pending = { from: string[]; workers?: Record<string, PendingWorker[]> }
+
 function pendingFile(repo: string): string {
   return join(pathOf('state', repo), 'takeover.json')
 }
 
-// 옮기지 못한 worker 가 남은 앞 Run 목록
-export function pendingRuns(repo: string): string[] {
+function readPending(repo: string): Pending {
   try {
-    const parsed = JSON.parse(readFileSync(pendingFile(repo), 'utf8')) as { from?: unknown }
-    return Array.isArray(parsed.from) ? parsed.from.filter((r): r is string => typeof r === 'string' && r !== '') : []
+    const parsed = objectOr(JSON.parse(readFileSync(pendingFile(repo), 'utf8')))
+    const from = Array.isArray(parsed.from) ? parsed.from.filter((r): r is string => typeof r === 'string' && r !== '') : []
+    const workers = Object.fromEntries(from.map(run => {
+      const rows = objectOr(parsed.workers)[run]
+      return [run, Array.isArray(rows) ? rows.filter(row => isObject(row) && typeof row.dispatch === 'string' && typeof row.worktree === 'string') : []]
+    }))
+    return { from, workers }
   } catch {
-    return []
+    return { from: [] }
   }
 }
 
-export function writePending(repo: string, runs: string[]): void {
-  const file = pendingFile(repo)
+export function pendingRuns(repo: string): string[] {
+  return readPending(repo).from
+}
+
+function writeState(file: string, repo: string, data: unknown): void {
   makeParent(file, repo)
   const temporary = `${file}.${process.pid}.tmp`
-  writeFileSync(temporary, `${JSON.stringify({ from: [...new Set(runs)] })}\n`)
+  writeFileSync(temporary, `${JSON.stringify(data)}\n`)
   renameSync(temporary, file)
+}
+
+export function writePending(repo: string, runs: string[], workers = readPending(repo).workers ?? {}): void {
+  const from = [...new Set(runs)]
+  writeState(pendingFile(repo), repo, { from, workers: Object.fromEntries(from.filter(run => workers[run]?.length).map(run => [run, workers[run]])) })
 }
 
 function rowWorktree(row: Json): string {
@@ -114,15 +134,17 @@ function relinkBoard(repo: string, worktree: string, branch: string, before: str
   return null
 }
 
-export function moveWorkers(repo: string, fromRuns: string[], toRun: string): { lines: string[]; remaining: string[] } {
+export function moveWorkers(repo: string, fromRuns: string[], toRun: string): { lines: string[]; remaining: string[]; workers: Record<string, PendingWorker[]> } {
   const lines: string[] = []
   const remaining = new Set<string>()
-  if (fromRuns.length === 0) return { lines, remaining: [] }
+  const workers: Record<string, PendingWorker[]> = {}
+  if (fromRuns.length === 0) return { lines, remaining: [], workers }
   const branches = new Map([...worktreePaths(repo)].map(([branch, directory]) => [resolve(directory), branch]))
   branches.delete(resolve(repo))
   const terminals = terminalFacts()
-  if (typeof terminals === 'string') return { lines: [`WORKER-LIST-FAIL terminals ${oneLine(terminals).slice(0, 200)}`], remaining: fromRuns.filter((r) => r !== toRun) }
+  if (typeof terminals === 'string') return { lines: [`WORKER-LIST-FAIL terminals ${oneLine(terminals).slice(0, 200)}`], remaining: fromRuns.filter((r) => r !== toRun), workers }
   let canAttach: boolean | null = null
+  let launches: ReturnType<typeof allLaunches> | undefined
   for (const from of fromRuns) {
     if (from === toRun) continue
     const listed = workerRows(from)
@@ -131,6 +153,7 @@ export function moveWorkers(repo: string, fromRuns: string[], toRun: string): { 
       remaining.add(from)
       continue
     }
+    workers[from] = []
     for (const row of listed.rows) {
       const dispatch = typeof row.dispatchId === 'string' ? row.dispatchId : ''
       if (!dispatch || !LIVE_DISPATCH.has(String(row.dispatchStatus))) continue
@@ -144,14 +167,25 @@ export function moveWorkers(repo: string, fromRuns: string[], toRun: string): { 
       const notMoved = (who: string, why: string) => {
         lines.push(`WORKER-NOT-MOVED ${who} ${dispatch} ${why}`)
         remaining.add(from)
+        workers[from].push({ dispatch, worktree })
       }
       const handle = handles.find((h) => !!terminals.get(h)?.agent && !!terminals.get(h)?.connected)
       if (!handle) { notMoved('-', '터미널 없음'); continue }
       const screen = orcaJson<Json>(['terminal', 'read', '--terminal', handle, '--screen', '--limit', '40'])
       const state = screen.ok ? classify(screenTail(screenLines(screen.data), 20)) : 'unknown'
       if (!MOVABLE.has(state)) { notMoved(handle, `작업 중(${state})`); continue }
-      const launch = readLaunch(repo, dispatch)
-      const spec = launch?.spec && existsSync(launch.spec) ? launch.spec : null
+      const recorded = readLaunch(repo, dispatch)
+      const launch = recorded && resolve(recorded.worktree) === worktree && (!recorded.branch || recorded.branch === branch) ? recorded : null
+      let spec = launch?.spec && isFile(launch.spec) ? launch.spec : null
+      if (!spec) {
+        try {
+          launches ??= allLaunches(repo)
+          spec = launches.find(candidate => candidate.branch === branch && resolve(candidate.worktree) === worktree && candidate.spec && isFile(candidate.spec))?.spec ?? null
+        } catch (e) {
+          notMoved(handle, `띄우기 기록 읽기 실패: ${oneLine(e).slice(0, 160)}`)
+          continue
+        }
+      }
       if (!spec) { notMoved(handle, '지시서 모름'); continue }
       if (canAttach === null) {
         const help = orca(['orchestration', 'worker-start', '--help'])
@@ -168,7 +202,12 @@ export function moveWorkers(repo: string, fromRuns: string[], toRun: string): { 
       const started = orca(['orchestration', 'worker-start', '--spec', `지시서 ${JSON.stringify(file)} 를 끝까지 읽고 수행한다.`,
         '--terminal', handle, '--worktree', `path:${worktree}`, '--run', toRun, '--json'])
       const moved = started.code === 0 ? receiptValue(started.stdout, ['dispatch.id', 'dispatchId', 'worker.dispatchId']) : ''
-      if (!moved) { lines.push(`WORKER-MOVE-FAIL ${handle} ${file}`); continue }
+      if (!moved) {
+        lines.push(`WORKER-MOVE-FAIL ${handle} ${file}`)
+        remaining.add(from)
+        workers[from].push({ dispatch, worktree })
+        continue
+      }
       try {
         recordLaunch(repo, { ...(launch ?? {}), dispatch: moved, task: receiptValue(started.stdout, ['dispatch.taskId', 'taskId', 'task.id']) || null, terminal: handle, worktree, run: toRun, spec, branch })
         forgetLaunch(repo, dispatch)
@@ -178,13 +217,91 @@ export function moveWorkers(repo: string, fromRuns: string[], toRun: string): { 
       lines.push(`WORKER-MOVED ${handle} ${dispatch} ${moved}`)
     }
   }
-  return { lines, remaining: [...remaining] }
+  return { lines, remaining: [...remaining], workers }
 }
 
 // 옮기고 남은 Run 을 takeover.json 에 둔다. 옮긴 Run 목록 밖의 남은 항목은 그대로 둔다
-export function settlePending(repo: string, tried: string[], remaining: string[]): void {
-  const keep = pendingRuns(repo).filter((r) => !tried.includes(r))
-  writePending(repo, [...keep, ...remaining])
+export function settlePending(repo: string, tried: string[], remaining: string[], workers: Record<string, PendingWorker[]> = {}): void {
+  const before = readPending(repo)
+  const keep = before.from.filter((r) => !tried.includes(r))
+  writePending(repo, [...keep, ...remaining], { ...before.workers, ...workers })
+}
+
+const REPORT_TYPES = new Set(['status', 'worker_done', 'question', 'escalation', 'merge_ready'])
+
+// 최근 메일부터 읽는다. 다른 worker 보고에 밀렸으면 조회 범위를 넓혀 필요한 dispatch 를 찾는다.
+function lastReports(run: string, workers: Map<string, string>, senders: Map<string, string | null>): { reports: Map<string, Json>; error?: string } {
+  const reports = new Map<string, Json>()
+  for (const limit of [200, 3000]) {
+    const inbox = orcaJson<{ messages?: unknown }>(['orchestration', 'inbox', '--terminal', `run:${run}`, '--limit', String(limit)], { timeoutMs: 10_000 })
+    if (!inbox.ok) return { reports, error: oneLine(inbox.error).slice(0, 160) }
+    if (!Array.isArray(inbox.data?.messages)) return { reports, error: '메시지 목록 없음' }
+    for (const message of inbox.data.messages) {
+      if (!isObject(message) || !REPORT_TYPES.has(String(message.type)) || isQuietStop(message)) continue
+      const [, linked] = context(message)
+      const sender = senderOf(message)
+      const dispatch = linked ?? (sender.startsWith('dispatch:') ? sender.slice('dispatch:'.length) : senders.get(sender))
+      if (typeof dispatch === 'string' && workers.has(dispatch) && !reports.has(dispatch)) reports.set(dispatch, message)
+    }
+    if (reports.size === workers.size || inbox.data.messages.length < limit) break
+  }
+  return { reports }
+}
+
+// 옛 Run 을 소비하지 않고 코디네이터 메일함만 읽는다. 이미 끝난 추적 대상도 마지막 보고를 보여 준다.
+export function oldWorkerReports(repo: string): { lines: string[]; errors: string[] } {
+  const pending = readPending(repo)
+  const lines: string[] = []
+  const errors: string[] = []
+  if (!pending.from.length) return { lines, errors }
+  const worktrees = new Set([...worktreePaths(repo).values()].map(path => resolve(path)))
+  worktrees.delete(resolve(repo))
+  for (const run of pending.from) {
+    const workers = new Map((pending.workers?.[run] ?? []).map(worker => [worker.dispatch, worker.worktree]))
+    const listed = workerRows(run)
+    const senders = new Map<string, string | null>()
+    if (!listed.ok) errors.push(`OLD-RUN-READ-FAIL ${run} workers ${oneLine(listed.error).slice(0, 160)}`)
+    else for (const row of listed.rows) {
+      const dispatch = row.dispatchId
+      if (typeof dispatch !== 'string') continue
+      for (const handle of rowHandles(row)) {
+        if (typeof handle !== 'string') continue
+        const previous = senders.get(handle)
+        senders.set(handle, previous === undefined || previous === dispatch ? dispatch : null)
+      }
+      const worktree = rowWorktree(row)
+      if (LIVE_DISPATCH.has(String(row.dispatchStatus)) && worktrees.has(worktree)) workers.set(dispatch, worktree)
+    }
+    if (!workers.size) continue
+    const { reports, error } = lastReports(run, workers, senders)
+    if (error) errors.push(`OLD-RUN-READ-FAIL ${run} inbox ${error}`)
+    for (const [dispatch, worktree] of workers) {
+      const report = reports.get(dispatch)
+      const summary = report ? [
+        report.type, report.created_at ?? report.createdAt, report.id, subjectOf(report), report.body,
+      ].filter(part => typeof part === 'string' && part).join(' ') : '-'
+      lines.push(`OLD-RUN-WORKER run=${run} dispatch=${dispatch} worktree=${JSON.stringify(worktree)} 마지막 보고=${oneLine(summary).slice(0, 320)}`)
+    }
+  }
+  return { lines: lines.sort(), errors }
+}
+
+// 메인 Run 이 바뀌거나 목록·마지막 보고가 바뀌면 다시 알린다. 전송 성공 뒤에만 기록한다.
+export function notifyOldWorkers(repo: string, run: string): string[] {
+  const { lines, errors } = oldWorkerReports(repo)
+  const file = join(pathOf('state', repo), 'takeover-notice.json')
+  const text = lines.length ? [...lines, ...errors].join('\n') : ''
+  const current = { run, hash: text ? createHash('sha256').update(text).digest('hex') : null }
+  let previous: unknown
+  try { previous = JSON.parse(readFileSync(file, 'utf8')) } catch { /* 처음 확인한다 */ }
+  const before = objectOr(previous)
+  if (current.run === before.run && current.hash === before.hash) return errors
+  if (text) {
+    const sent = notifyRun(run, 'OLD-RUN-WORKER', `옛 Run 에 남은 worker\n${text}`, null, { repo, subject: 'OLD-RUN-WORKER 옛 Run 에 남은 worker' })
+    if (!sent.ok) return [...errors, `NOTICE-FAIL OLD-RUN-WORKER ${oneLine(sent.error).slice(0, 160)}`]
+  } else if (errors.length || !before.hash) return errors
+  writeState(file, repo, current)
+  return errors
 }
 
 // 넘겨받은 뒤의 출력과 알림. confirmed 가 있으면 명시적 넘겨받기다

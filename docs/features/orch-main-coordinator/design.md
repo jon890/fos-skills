@@ -11,9 +11,9 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 | REQ2 | 메인이 없으면 `loop start` 가 넘겨받기를 한다. 도는 루프를 멈추고 옛 등록을 지운 뒤 자기 Run 으로 루프를 띄우고, 옛 Run 의 이 저장소 worker 를 새 Run 으로 옮긴다. 옮기지 못한 worker 와 열린 요청을 줄로 낸다. 작업 중이라 남은 worker 는 메인의 `loop start --take-over` 가 다시 옮긴다 |
 | REQ3 | `--take-over` 는 `--confirmed "<사용자 답>"` 이 있어야 진행한다. 없으면 `TAKEOVER-CONFIRM` 과 6 이다. 진행하면 REQ2 와 같은 넘겨받기를 하고 앞 메인 Run 에 `MAIN-TAKEN` 을 보낸다 |
 | REQ4 | 새 명령 `orch request send --to <저장소>` 가 받는 저장소의 메인을 찾고, 그 저장소의 요청 번호(`R<n>`)를 잡아 기록을 쓴 뒤 메인 Run 에 Orca 메시지를 보낸다. 메인이 없으면 보내지 않고 `REQUEST-NO-MAIN` 과 직접 띄우는 명령을 낸다 |
-| REQ5 | 보낼 때 받는 저장소 보드에 `req-<n>` 항목을, 다른 저장소면 보낸 저장소 보드에 `req-<받는 저장소 이름>-<n>` 항목을 만든다. 같은 저장소면 받는 쪽 항목 하나다 |
+| REQ5 | 양쪽 보드에 `req-<받는 저장소 이름>-<n>` 항목을 만든다. 같은 파일을 쓰면 받는 쪽 항목 하나다. 새 항목의 id 가 이미 있으면 `BOARD-FAIL` 을 낸다 |
 | REQ6 | `orch request accept|hold|reject <번호>` 가 기록과 양쪽 보드 항목을 바꾸고 답을 보낸다. `hold`, `reject` 는 `--reason` 이 없으면 사용법 오류다 |
-| REQ7 | `finish-pr` 이 `FINISH-DONE` 직전에, 찾은 보드 항목이 요청 항목(`req-<n>`)이고 마지막 PR 이며 이번 마무리가 그 항목을 done 으로 닫았으면 그 요청을 완료로 보낸다. 같은 요청의 다른 PR 이나 끝나지 않은 단계가 남으면 `REQUEST-OPEN` 줄만 낸다. 보내지 못하면 기록에 `pending_done` 을 남기고 루프가 다음 틱에 다시 보낸다. 그 밖은 `orch request done|fail <번호>` 로 직접 보낸다(`fail` 은 `--reason` 필수) |
+| REQ7 | `finish-pr` 이 `FINISH-DONE` 직전에, 찾은 보드 항목이 요청 기록의 받는 쪽 항목이고 마지막 PR 이며 이번 마무리가 그 항목을 done 으로 닫았으면 그 요청을 완료로 보낸다. 같은 요청의 다른 PR 이나 끝나지 않은 단계가 남으면 `REQUEST-OPEN` 줄만 낸다. 보내지 못하면 기록에 `pending_done` 을 남기고 루프가 다음 틱에 다시 보낸다. 그 밖은 `orch request done|fail <번호>` 로 직접 보낸다(`fail` 은 `--reason` 필수) |
 | REQ8 | 답의 대상은 보낸 Run 의 코디네이터 터미널에 에이전트가 있으면 그 Run, 없으면 보낸 저장소의 지금 메인, 그것도 없으면 보낸 Run 이다. 요청 기록이 받는 저장소에 있으므로 메인이 바뀌어도 지금 메인이 `orch request list` 와 넘겨받기 출력으로 이어 맡는다 |
 | REQ9 | 새 루프 단계 `steps/requests.ts` 가 틱마다 받은 지 `pipeline.request_ack_sec`(기본 1800초)가 지난 `sent` 요청을 찾아 REQ8 의 대상에 `REQUEST-NO-ACK` 를 한 번 보낸다 |
 | REQ10 | 코드 변경 없음. 요청으로 띄운 worker 는 받은 메인의 Run 에 묶이므로 질문도 받은 메인에게 간다. `references/requests.md` 에 적는다 |
@@ -87,14 +87,17 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 | --- | --- |
 | 터미널이 열려 있고 에이전트가 있다 | `WORKER-NOT-MOVED <터미널> <dispatch> 터미널 없음` |
 | 화면이 idle, error, interrupted 다(lib/screen 의 classify) | `… 작업 중`. 작업 중인 dispatch 를 끊으면 그 턴의 보고가 사라진다 |
-| 띄우기 기록(`state/launched-workers/<dispatch>.json`)의 지시서가 있다 | `… 지시서 모름` |
+| 현재 dispatch 의 띄우기 기록에 지시서가 있거나, 같은 브랜치·워크트리의 이전 띄우기 기록에 있다 | `… 지시서 모름` |
 | `worker-start` 가 `--terminal` 을 받는다 | `… CLI 가 이어 붙이기를 모른다` |
 
 확인을 마치면 `worker-abandon --dispatch <앞 dispatch>` 뒤 `worker-start --terminal <터미널> --worktree path:<워크트리> --run <새 Run> --spec "지시서 <이어받기 파일> 를 …"` 를 부른다.
 이어받기 파일은 `lib/sessions.ts` 의 `handover` 를 쓴다. 새 dispatch 는 앞 기록을 복사해 `recordLaunch` 로 남기고 앞 기록은 지운다.
 보드의 worker 줄은 `board.ts worker-add <항목> <역할> --dispatch <새 dispatch>` 로 다시 잇는다. 앞 dispatch 는 abandoned 라, 줄을 그대로 두면 끊긴 worker 로 보인다.
 `worker-start` 가 실패하면 다시 시도하지 않고 `WORKER-MOVE-FAIL <터미널> <이어받기 파일>` 을 낸다. 그 터미널은 dispatch 가 없어 `orch worker adopt` 로 잇는다. 성공하면 `WORKER-MOVED <터미널> <앞 dispatch> <새 dispatch>` 다.
-옮기지 못한 worker(`WORKER-NOT-MOVED`, `WORKER-LIST-FAIL`)가 남은 앞 Run 은 `state/takeover.json` 에 남는다. 작업 중이던 worker 가 쉬면 메인이 `orch loop start --take-over` 로 같은 확인을 거쳐 다시 옮긴다. `orch worker adopt` 는 살아 있는 dispatch 의 터미널을 받지 않으므로 이 길을 쓴다.
+현재 dispatch 의 지시서 파일이 없으면 같은 브랜치와 워크트리의 이전 띄우기 기록 중 가장 최근에 쓴 지시서 파일을 고른다.
+옮기지 못한 worker 와 Run 은 `state/takeover.json` 에 남는다. 작업 중이던 worker 가 쉬면 메인이 `orch loop start --take-over` 로 다시 옮긴다. 살아 있는 dispatch 에 묶인 터미널은 이 경로로만 옮긴다.
+
+`orch status` 와 빠른 루프 틱은 옛 Run 의 코디네이터 메일함을 읽는다. 마지막 보고는 최근 메일 가운데 그 dispatch 의 상태·완료·질문·상향 보고·머지 요청 중 최신 메시지다. 메시지에 dispatch id 가 없으면 그 Run 에서 터미널을 쓴 dispatch 가 하나일 때만 연결한다. Orca 가 자동으로 보내는 조용한 종료 알림은 건너뛴다. `OLD-RUN-WORKER` 줄에 옛 Run, dispatch, 워크트리, 마지막 보고를 표시한다. 넘겨받을 때 기록한 dispatch 는 이미 끝났어도 다음 넘겨받기 시도 전까지 보여 준다. 루프는 목록이나 마지막 보고가 바뀌면 새 메인에게 같은 내용을 알린다. 보고 전문과 답할 대상은 옛 Run 메일함에 있다.
 
 ### 요청 기록
 
@@ -121,16 +124,16 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 
 ### 보드 항목
 
-`board.ts set` 을 부른다. 보드 파일이 없으면 건너뛰고 `BOARD-SKIP <저장소>` 를 낸다.
+`board.ts set --create-only` 로 새 항목을 만든다. 보드 잠금 안에서 id 를 확인하고, 이미 있으면 `BOARD-FAIL` 을 낸다. 보드 파일이 없으면 건너뛰고 `BOARD-SKIP <저장소> <id>` 를 낸다.
 
 | 쪽 | id | 상태 | 제목 |
 | --- | --- | --- | --- |
-| 받는 저장소 | `req-<n>` | 처음 `wait`, 끝 상태면 `done` | `요청 R<n>: <제목>`(다른 저장소면 뒤에 `(<보낸 저장소 이름>)`) |
-| 보낸 저장소(다른 저장소일 때만) | `req-<받는 저장소 이름>-<n>` | 같은 규칙 | `<받는 저장소 이름> 요청 R<n> 기다림: <제목>` |
+| 받는 저장소 | `req-<받는 저장소 이름>-<n>` | 처음 `wait`, 끝 상태면 `done` | `요청 R<n>: <제목>`(다른 저장소면 뒤에 `(<보낸 저장소 이름>)`) |
+| 보낸 저장소(다른 보드 파일을 쓸 때) | 받는 쪽과 같은 id | 같은 규칙 | `<받는 저장소 이름> 요청 R<n> 기다림: <제목>` |
 
-새 항목은 마일스톤 단계(`lib/milestones.ts`, 기본 PR·머지)와 `stages` 를 갖고 만든다. 받은 메인이 그 요청으로 worker 를 띄울 때 지시서에 `보드 항목 id: req-<n>` 을 두면 `lib/board.ts` 의 기존 항목 분기가 worker 줄을 붙이고 doing 으로 바꾼다. 그 뒤 `finish-pr` 은 보통의 마일스톤 항목처럼 머지와 배포를 반영하고, 마지막 PR 이면 자동 완료를 보낸다.
+새 항목은 마일스톤 단계(`lib/milestones.ts`, 기본 PR·머지)와 `stages` 를 갖고 만든다. 받은 메인이 그 요청으로 worker 를 띄울 때 지시서에 메시지에서 받은 보드 항목 id 를 두면 `lib/board.ts` 의 기존 항목 분기가 worker 줄을 붙이고 doing 으로 바꾼다. 그 뒤 `finish-pr` 은 보통의 마일스톤 항목처럼 머지와 배포를 반영하고, 마지막 PR 이면 자동 완료를 보낸다.
 답마다 이력 한 줄을 `detail-add` 로 더한다. `set --detail` 은 하위 줄 전체를 바꿔 단계를 지우므로 쓰지 않는다. 끝 상태면 done 으로 바꾸되, worker 가 붙은 받는 쪽 항목은 상태를 마무리에 맡긴다.
-받는 저장소 이름(폴더 이름)이 같은 두 저장소에서 보낸 쪽 항목 id 가 겹칠 수 있다. 번호가 저장소마다 따로라 실제로 겹치려면 이름과 번호가 함께 같아야 한다.
+옛 요청의 `req-<n>` 항목은 기록에 있는 id 로 읽고 갱신한다. 같은 파일을 쓰는지 확인할 때는 심볼릭 링크를 푼 경로를 비교한다. 항목 생성에 실패하면 기록에 남겨 다음 답에서도 생성만 시도한다. 먼저 있던 항목은 요청의 자동 완료 대상에서 뺀다.
 
 ### 메시지
 

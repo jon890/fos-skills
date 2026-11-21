@@ -68,7 +68,7 @@ function requestText(record: RequestRecord): string {
     record.body,
     '',
     `답(받음·보류·거절 가운데 하나): ${word} request accept ${record.id} --repo ${repo} | ${word} request hold ${record.id} --reason "<이유>" --repo ${repo} | ${word} request reject ${record.id} --reason "<이유>" --repo ${repo}`,
-    `끝낼 때: 이 요청으로 띄우는 worker 지시서에 \`보드 항목 id: ${record.board.to}\` 를 두면 마지막 PR 마무리가 완료를 보낸다. 그 밖은 ${word} request done ${record.id} --repo ${repo} 나 ${word} request fail ${record.id} --reason "<이유>" --repo ${repo}`,
+    `끝낼 때: 이 요청의 보드 항목을 확인한 뒤 worker 지시서에 \`보드 항목 id: ${record.board.to}\` 를 두면 마지막 PR 마무리가 완료를 보낸다. 그 밖은 ${word} request done ${record.id} --repo ${repo} 나 ${word} request fail ${record.id} --reason "<이유>" --repo ${repo}`,
   ].join('\n')
 }
 

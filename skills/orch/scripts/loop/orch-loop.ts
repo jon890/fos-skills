@@ -163,6 +163,7 @@ import { checkStalls } from './steps/stalls.ts'
 import { fireTick } from './steps/tick-event.ts'
 import { checkUnanswered } from './steps/unanswered.ts'
 import { notifyUnacked } from './steps/requests.ts'
+import { notifyOldWorkers } from './takeover.ts'
 import { notifyFollowups } from './steps/followups.ts'
 
 const USAGE = [
@@ -185,8 +186,19 @@ async function tick(config: Context, n: number, kind: TickKind): Promise<number>
   return withLoopCaller(ctx.repo, ctx.primary ?? ctx.run, async () => {
     const state = initialState()
     const fast = kind !== 'slow'
-    if (fast) collect(state, await checkQuestions(ctx, state))
-    else loadCompletions(ctx)
+    if (fast) {
+      collect(state, await checkQuestions(ctx, state))
+      if (ctx.primary) {
+        try {
+          const errors = notifyOldWorkers(ctx.repo, ctx.primary)
+          for (const error of errors) log(error)
+          if (errors.length || typeof ctx.previous?.takeover === 'string') state.errors.takeover = errors.join(' | ') || null
+        } catch (e) {
+          state.errors.takeover = (e as Error).message
+          log(`OLD-RUN-READ-FAIL ${ctx.primary} ${state.errors.takeover}`)
+        }
+      }
+    } else loadCompletions(ctx)
     collect(state, await readOpenPrs(ctx, state))
     const slow = kind !== 'fast'
     if (slow) collect(state, await syncBoard(ctx, state))

@@ -3,7 +3,7 @@
 //
 // 위치: 받는 저장소의 <orch 루트>/state/requests/. seq.json 은 {"next": n} 이고 seq.json.lock 파일 잠금 안에서만 읽고 올린다.
 //     R<n>.json 이 요청 하나다. 옆 파일에 쓰고 rename 한다. 요청 기록은 받는 저장소에만 있고 보낸 저장소는 보드 항목만 갖는다.
-// 보드: 받는 저장소 항목 req-<n>, 다른 저장소에서 보냈으면 보낸 저장소 항목 req-<받는 저장소 이름>-<n>. 끝 상태면 done, 아니면 wait.
+// 보드: 양쪽 항목 id 는 req-<받는 저장소 이름>-<n> 이다. 보드를 함께 쓰면 받는 쪽 하나만 쓴다. 옛 id 는 기록에서 읽는다.
 //     하위 줄은 기록의 이력을 한 줄씩 다시 쓴다. 보드 파일이 없으면 건너뛴다. 보드 쓰기 실패는 던지지 않고 결과로 알린다.
 // 메시지: lib/run-notice.ts 의 notifyRun 으로 `orca orchestration send --to run:<Run>` 을 보낸다. payload 의 source 는 orch-request 다.
 //     답의 대상은 core 의 replyTarget 이다. 보낸 Run 이 살아 있는지는 lib/main-coordinator.ts 의 runAlive 로 본다.
@@ -18,6 +18,7 @@ import { BOARD_BIN } from './board.ts'
 import { boardSettings, DEFAULT_STEPS, milestoneLines, stagesText } from './milestones.ts'
 import type { MilestoneStep } from './milestones.ts'
 import { boardPath } from './board-file.ts'
+import { realPath } from './fs.ts'
 import { findMain, runAlive } from './main-coordinator.ts'
 import { makeParent, pathOf } from './paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
@@ -37,7 +38,7 @@ export type RequestRecord = {
   created_at: string
   updated_at: string
   ack_notice_at: string | null
-  board: { to: string; from: string | null }
+  board: { to: string; from: string | null; pending?: Array<'to' | 'from'> }
   history: RequestHistory[]
   // 마무리의 자동 완료를 보내지 못했을 때 남긴다. 루프의 steps/requests.ts 가 다음 틱에 다시 보낸다
   pending_done?: { reason: string; at: string } | null
@@ -129,11 +130,12 @@ export function repoName(repo: string): string {
 }
 
 export function newRecord(input: { repo: string; number: number; title: string; body: string; from: RequestRecord['from']; toRun: string; now: string }): RequestRecord {
-  const same = input.from.repo === input.repo
+  const same = input.from.repo === input.repo || realPath(boardPath(input.from.repo)) === realPath(boardPath(input.repo))
+  const board = boardIds(input.number, repoName(input.repo), same)
   return {
     id: requestId(input.number), number: input.number, repo: input.repo, title: input.title, body: input.body,
     state: 'sent', reason: null, from: input.from, to_run: input.toRun, created_at: input.now, updated_at: input.now, ack_notice_at: null,
-    board: boardIds(input.number, repoName(input.repo), same),
+    board: { ...board, pending: board.from ? ['to', 'from'] : ['to'] },
     history: [{ at: input.now, state: 'sent', reason: null, run: input.from.run }],
   }
 }
@@ -172,8 +174,7 @@ function failure(repo: string, item: string, done: { code: number; stdout: strin
 // lib/board.ts 의 기존 항목 분기가 doing 으로 바꾸고, finish-pr 이 마일스톤 항목으로 머지와 배포를 반영한다.
 // 있는 항목은 이력 한 줄만 detail-add 로 더한다. 단계 줄을 지우지 않으려는 것이다. 끝 상태면 done 으로 바꾸되
 // worker 가 붙은 받는 쪽 항목(workers 칸이 있다)은 상태를 마무리(finish-pr)에 맡긴다
-function writeItem(repo: string, item: string, title: string, head: string, line: string, closed: boolean, created: boolean): BoardOutcome {
-  const file = boardPath(repo)
+function writeItem(repo: string, file: string, item: string, title: string, head: string, line: string, closed: boolean, created: boolean): BoardOutcome {
   if (!existsSync(file)) return { repo, item, result: 'skipped' }
   let workersOf: unknown = null
   // send 때 보드가 없어 건너뛴 항목은 지금 만든다
@@ -189,7 +190,7 @@ function writeItem(repo: string, item: string, title: string, head: string, line
     try { steps = boardSettings(repo).steps ?? steps } catch { /* 설정을 읽지 못하면 기본 단계 */ }
     const fresh = milestoneLines(steps)
     const stages = stagesText(fresh.stages)
-    const done = boardRun(file, ['set', item, 'wait', '--title', title, ...(stages ? ['--stages', stages] : []),
+    const done = boardRun(file, ['set', item, closed ? 'done' : 'wait', '--create-only', '--title', title, ...(stages ? ['--stages', stages] : []),
       ...fresh.details.flatMap((d) => ['--detail', d]), '--detail', head, '--detail', line])
     return done.code === 0 ? { repo, item, result: 'written' } : failure(repo, item, done)
   }
@@ -198,25 +199,30 @@ function writeItem(repo: string, item: string, title: string, head: string, line
   if (closed) {
     const attached = Array.isArray(workersOf) && workersOf.length > 0
     if (!attached) {
-      const done = boardRun(file, ['set', item, 'done'])
+      const done = boardRun(file, ['set', item, 'done', '--exact'])
       if (done.code !== 0) return failure(repo, item, done)
     }
   }
   return { repo, item, result: 'written' }
 }
 
-// 양쪽 보드 항목을 기록에 맞춘다. created 는 send 의 첫 쓰기다
-export function syncBoards(record: RequestRecord, created = false): BoardOutcome[] {
+// 아직 만들지 못한 항목은 다음 답에서도 생성만 시도한다. 같은 id 의 다른 항목에 이력을 붙이지 않는다.
+function syncBoards(record: RequestRecord): BoardOutcome[] {
   const closed = isClosed(record.state)
   const fromName = repoName(record.from.repo)
   const toName = repoName(record.repo)
   const line = historyLine(record.history.at(-1)!)
-  const outcomes = [writeItem(record.repo, record.board.to, `요청 ${record.id}: ${record.title}${record.board.from ? ` (${fromName})` : ''}`,
-    `보낸 곳: ${fromName} Run ${record.from.run}`, line, closed, created)]
-  if (record.board.from) {
-    outcomes.push(writeItem(record.from.repo, record.board.from, `${toName} 요청 ${record.id} 기다림: ${record.title}`, `받는 곳: ${record.repo}`, line, closed, created))
-  }
-  return outcomes
+  const toFile = realPath(boardPath(record.repo))
+  const fromFile = record.board.from ? realPath(boardPath(record.from.repo)) : null
+  const pending = record.board.pending ?? []
+  const to = writeItem(record.repo, toFile, record.board.to, `요청 ${record.id}: ${record.title}${record.repo !== record.from.repo ? ` (${fromName})` : ''}`,
+    `보낸 곳: ${fromName} Run ${record.from.run}`, line, closed, pending.includes('to'))
+  const from = record.board.from && fromFile && fromFile !== toFile
+    ? writeItem(record.from.repo, fromFile, record.board.from, `${toName} 요청 ${record.id} 기다림: ${record.title}`, `받는 곳: ${record.repo}`, line, closed, pending.includes('from'))
+    : null
+  const left = pending.filter(side => (side === 'to' ? to : from)?.result !== 'written')
+  if (left.length !== pending.length) writeRequest({ ...record, board: { ...record.board, pending: left } })
+  return from ? [to, from] : [to]
 }
 
 // 답을 보낼 Run(스펙 REQ8). 보낸 Run 이 살아 있는지 읽지 못하면 살아 있는 것으로 본다. 메시지는 Run 메일함에 남는다
@@ -268,7 +274,7 @@ function answerLocked(repo: string, number: number, action: RequestAction, reaso
 
 // 보드 항목 id 로 받은 요청을 찾는다. finish-pr 의 자동 완료가 쓴다
 export function requestOfItem(repo: string, item: string): RequestRecord | null {
-  return listRequests(repo).find((r) => r.board.to === item) ?? null
+  return listRequests(repo).find((r) => r.board.to === item && !r.board.pending?.includes('to')) ?? null
 }
 
 export function boardLines(boards: BoardOutcome[]): string[] {
@@ -305,6 +311,6 @@ export function openRequest(record: RequestRecord, notify: () => { ok: true } | 
       forgetRequest(record.repo, record.number)
       return sent
     }
-    return { ok: true as const, boards: syncBoards(record, true) }
+    return { ok: true as const, boards: syncBoards(record) }
   }, { waitMs: 60_000, staleMs: 180_000 })
 }

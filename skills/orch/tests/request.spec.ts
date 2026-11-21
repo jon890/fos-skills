@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
@@ -106,7 +106,7 @@ test('다른 저장소의 메인에게 요청 번호를 붙여 보내고 양쪽 
   assert.match(sent[0][sent[0].indexOf('--body') + 1], /로그인 오류를 고쳐 달라/)
   assert.match(JSON.parse(sent[0][sent[0].indexOf('--payload') + 1]).source, /^orch-request$/)
   const mine = board(receiver)
-  assert.deepEqual(mine.map((item) => [item.id, item.status]), [['req-1', 'wait']])
+  assert.deepEqual(mine.map((item) => [item.id, item.status]), [['req-receiver-1', 'wait']])
   assert.match(String(mine[0].title), /^요청 R1: 로그인 고침 \(sender\)$/)
   assert.ok(mine[0].stages, JSON.stringify(mine[0]))
   const theirs = board(sender)
@@ -135,8 +135,62 @@ test('같은 저장소 안의 요청은 보드 항목 하나만 만든다', () =
   orca({ runs: [{ id: 'rA', coordinator_handle: 'tA' }, { id: 'rS', coordinator_handle: 'tS' }], terminals: [{ handle: 'tA', agentIdentity: 'claude' }, { handle: 'tS', agentIdentity: 'codex' }] })
   const r = request(['send', '--to', sender, '--title', '정리', '--body', '본문', '--repo', sender, '--run', 'rA'])
   assert.equal(r.code, 0, r.lines.join('\n') + r.stderr)
-  assert.deepEqual(board(sender).map((item) => item.id), ['req-1'])
+  assert.deepEqual(board(sender).map((item) => item.id), ['req-sender-1'])
   assert.equal(record(sender, 'R1').board.from, null)
+})
+
+test('보드를 함께 쓰는 두 저장소의 R1 은 각각 남고 같은 보드에는 이력을 한 번만 쓴다', () => {
+  const file = join(sender, '.omc/board.json')
+  const alias = join(tmp, 'shared.json')
+  symlinkSync(file, alias)
+  writeFileSync(join(receiver, '.orch/config.json'), JSON.stringify({ finish: { board: alias } }))
+  register(sender, 'rA')
+  assert.deepEqual(send().lines, [`REQUEST-SENT R1 repo=${receiver} main=rB`])
+  const back = request(['send', '--to', sender, '--title', '다른 요청', '--body', '본문', '--repo', receiver, '--run', 'rB'])
+  assert.deepEqual(back.lines, [`REQUEST-SENT R1 repo=${sender} main=rA`])
+  assert.deepEqual(board(sender).map(item => item.id), ['req-receiver-1', 'req-sender-1'])
+  assert.equal(record(receiver, 'R1').board.from, null)
+  assert.equal(record(sender, 'R1').board.from, null)
+  assert.equal(request(['done', '--id', 'R1', '--repo', receiver, '--run', 'rB']).code, 0)
+  const [closed, open] = board(sender)
+  assert.equal(closed.status, 'done')
+  assert.equal(open.status, 'wait')
+  assert.equal(closed.details.filter((d: Json) => d.text.includes('요청 완료')).length, 1)
+})
+
+test('같은 id 가 있으면 새 요청과 다음 답의 보드 쓰기가 모두 실패로 표시된다', () => {
+  const file = join(receiver, '.omc/board.json')
+  const existing = { items: [{ id: 'req-receiver-1', status: 'wait', title: '기존 항목' }] }
+  writeFileSync(file, JSON.stringify(existing))
+  const sent = send()
+  assert.ok(sent.lines.some(line => line.startsWith(`BOARD-FAIL ${receiver} req-receiver-1`)), sent.lines.join('\n'))
+  assert.deepEqual(board(receiver), existing.items)
+  assert.deepEqual(record(receiver, 'R1').board.pending, ['to'])
+  const answered = request(['done', '--id', 'R1', '--repo', receiver, '--run', 'rB'])
+  assert.ok(answered.lines.some(line => line.startsWith(`BOARD-FAIL ${receiver} req-receiver-1`)), answered.lines.join('\n'))
+  assert.deepEqual(board(receiver), existing.items)
+  assert.equal(board(sender)[0].status, 'done')
+})
+
+test('보드가 뒤늦게 생기면 다음 답에서 요청 항목을 끝 상태로 만든다', () => {
+  const file = join(receiver, '.omc/board.json')
+  rmSync(file)
+  assert.ok(send().lines.some(line => line.startsWith('BOARD-SKIP ')))
+  writeFileSync(file, '{"items":[]}')
+  assert.deepEqual(request(['done', '--id', 'R1', '--repo', receiver, '--run', 'rB']).lines, ['REQUEST-DONE R1 to=rA'])
+  assert.equal(board(receiver)[0].status, 'done')
+  assert.deepEqual(record(receiver, 'R1').board.pending, [])
+})
+
+test('옛 요청은 기록에 있는 req-<n> 항목으로 답한다', () => {
+  assert.equal(send().code, 0)
+  const file = join(receiver, '.orch/state/requests/R1.json')
+  const old = record(receiver, 'R1')
+  old.board = { to: 'req-1', from: 'req-receiver-1' }
+  writeFileSync(file, JSON.stringify(old))
+  writeFileSync(join(receiver, '.omc/board.json'), JSON.stringify({ items: [{ ...board(receiver)[0], id: 'req-1' }] }))
+  assert.deepEqual(request(['done', '--id', 'R1', '--repo', receiver]).lines, ['REQUEST-DONE R1 to=rA'])
+  assert.deepEqual(board(receiver).map(item => [item.id, item.status]), [['req-1', 'done']])
 })
 
 test('메인이 없는 저장소에는 보내지 않고 직접 띄우라고 알린다', () => {
