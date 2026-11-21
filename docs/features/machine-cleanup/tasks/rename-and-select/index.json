@@ -1,0 +1,22 @@
+{
+  "name": "rename-and-select",
+  "description": "mac-cleanup 을 machine-cleanup 으로 바꾸고, 개인 오버레이 자리 고르기와 머신 고르기 절차를 더한다. 맥 동작은 그대로다",
+  "pr_scope": "스펙 REQ1, REQ2, REQ3(머신 고르기 절차, 홈서버는 PR2 에서 지원으로 막음), REQ4 를 PR 하나로 구현한다(스펙 DECISION7 의 PR1).",
+  "deferred": [
+    "PR2(fos-skills): 홈서버 조사·정리·메모리 진단. REQ3(홈서버 절차), REQ5, REQ6, REQ7, REQ8, REQ9, REQ10, REQ11(스킬 쪽), REQ12. 설계 docs/features/machine-cleanup/design.md 의 「홈서버 실행 방식」, 「fos-home-infra 오버레이」, 「Hermes 세션 판정」 을 따른다. 첫 작업은 코디네이터에게 홈서버 node --version 과 형식 제거 지원 확인을 맡기는 것이다",
+    "PR3(fos-home-infra): .claude/machine-cleanup-overlay.md 추가와 homeserver-cleanup 스킬 삭제. REQ11(오버레이 쪽), REQ13",
+    "PR2, PR3 머지 뒤: 실제 홈서버 적용과 보고. REQ14"
+  ],
+  "status": "pending",
+  "created_at": "2026-11-21",
+  "spec": "docs/features/machine-cleanup/spec.md",
+  "design": "docs/features/machine-cleanup/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": ["REQ1", "REQ2", "REQ3", "REQ4"],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ4"] },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["REQ2", "REQ3"] }
+  ]
+}
