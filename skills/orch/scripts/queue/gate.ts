@@ -2,7 +2,7 @@
 //
 // 머지 큐가 머지 전에 보는 조건을 머지 없이 한 번 돌려 본다. worker 는 「준비됨」 을 보내기 전에 이 명령이 통과해야 한다.
 // 조건은 머지 큐와 같은 함수(steps/gate.ts 의 gateReasons)가 판정한다. 규칙을 두 곳에 두지 않는다.
-//   1. 필수 체크가 모두 나타나 끝났고 실패가 없다(기다리지 않는다. 진행 중이면 걸린다)
+//   1. 필수 체크가 모두 나타나 끝났고 실패가 없다. 기본은 현재 상태만 보고, --wait 를 주면 필수 체크가 나타나 끝날 때까지 기다린다.
 //   2. 미해결 리뷰 스레드가 없다
 //   3. base 와 충돌하지 않는다(mergeable 이 MERGEABLE)
 //   4. 리뷰 설정이 있으면 설정한 리뷰 판정 조건을 충족한다
@@ -12,6 +12,7 @@
 //
 // 옵션은 머지 큐와 같은 이름과 뜻이다(--repo, --required, --required-check, --allow-fail, --allow-fail-check, --threads-cmd, --skipped-is-missing).
 // 명령줄에 없는 옵션은 머지 큐(merge-with-finish.ts)와 같은 길로 설정 파일의 queue 절(queue.required 등)에서 채운다. 명령줄에 준 옵션이 우선한다.
+// --wait 는 머지 큐와 같은 --check-timeout, --missing-timeout, --poll-min-sec, --poll-max-sec 를 쓴다.
 // 머지 큐 전용 옵션을 주어도 받지만 쓰지 않는다. PR 은 하나만 받고 `PR:명령` 꼴은 받지 않는다.
 //
 // 출력(판정 줄은 `orch --full` 이어도 그대로다):
@@ -37,10 +38,11 @@ import { pathOf } from '../lib/paths.ts'
 import type { run } from '../lib/proc.ts'
 import { withRun } from '../lib/proc.ts'
 import { queueDefaults } from '../lib/queue-defaults.ts'
+import { waitChecks } from './steps/checks.ts'
 import type { GateReason } from './steps/gate.ts'
 import { gateReasons, loadPr } from './steps/gate.ts'
 import type { StepContext } from './steps/model.ts'
-import { Stop, StepState, Usage } from './steps/model.ts'
+import { CheckStop, Stop, StepState, Usage } from './steps/model.ts'
 import { parseArgs, usageText } from './steps/options.ts'
 import { readQueueEnv } from './steps/setup.ts'
 import { mergeHold } from './steps/spec-hold.ts'
@@ -62,7 +64,17 @@ export function gateLines(n: string, reasons: GateReason[], fixed: string[] = []
 async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[]; fixed: string[]; notes: string[] }> {
   try {
     if ((await loadPr(stepContext, state, n)) === 'merged') return { reasons: [{ kind: 'lookup', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }], fixed: [], notes: [] }
-    const { reasons, fixed, notes } = await gateReasons(stepContext, state, 'all')
+    let ci: GateReason | null = null
+    if (state.o.wait) {
+      try {
+        await waitChecks(stepContext, state)
+      } catch (e) {
+        if (!(e instanceof CheckStop)) throw e
+        ci = { kind: 'ci', text: e.reason }
+      }
+    }
+    const { reasons, fixed, notes } = await gateReasons(stepContext, state, ci ? 'none' : 'all')
+    if (ci) reasons.unshift(ci)
     return { reasons, fixed, notes }
   } catch (e) {
     if (!(e instanceof Stop)) throw e
@@ -88,7 +100,7 @@ async function mainImpl(argv: string[]): Promise<number> {
     const repoPre = repoArgProblem(repoArg)
     if (repoPre) throw new Usage(repoPre)
     const config = loadConfig(repoArg)
-    const opts = parseArgs([...queueDefaults(pathOf('config', repoArg), argv, config), ...argv])
+    const opts = parseArgs([...queueDefaults(pathOf('config', repoArg), argv, config), ...argv], 'gate')
     if (opts.items.length !== 1 || opts.items[0].includes(':')) throw new Usage('PR 번호를 하나만 준다(PR:명령 꼴은 받지 않는다)')
     n = opts.items[0]
     const repoProblem = repoArgProblem(opts.repo)

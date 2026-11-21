@@ -1,7 +1,7 @@
 # gh 호출 예산
 
 자동 조회로 GitHub 서버에 주는 부하를 줄이기 위한 규칙이다. 코디네이터와 worker 가 직접 CI 를 기다릴 때는
-`gh pr checks --watch --interval 60` 이상을 쓴다. `gh run watch` 도 `--interval 60` 이상을 준다.
+`orch queue gate "$PR" --wait` 를 쓴다. `gh run watch` 도 `--interval 60` 이상을 준다.
 
 ## 공유 캐시
 

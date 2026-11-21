@@ -14,7 +14,7 @@
 - 커밋 메시지 끝에는 세션이 받은 attribution 지침(`Co-Authored-By` 줄)을 그대로 붙인다. 모델 이름은 이 파일에 적지 않는다. 지침이 없으면 그 줄을 붙이지 않는다.
 - 확정된 변경은 코드와 책임 문서에 함께 반영한다. 문서와 구현의 의미가 다르면 원인을 확인하고, 새 제품 결정만 spec 으로 돌려보낸다.
 - 끝까지 진행하고 판단이 필요한 것만 ask 로 묻는다. 검증 명령(`{{VERIFY_CMD}}`)을 실제로 실행한다.
-- CI 를 기다릴 때는 `gh pr checks --watch --interval 60` 이상을 쓴다. `gh run watch` 에도 `--interval 60` 이상을 준다.
+- CI 를 기다릴 때는 `orch queue gate "$PR" --wait` 로 필수 체크가 나타나 끝날 때까지 기다린다. `gh run watch` 에도 `--interval 60` 이상을 준다.
 - 파일 수정은 `sed -i` 대신 Edit 나 python 으로 한다.
 - 의존성이 필요하면 워크트리 안에서 lockfile 로 설치한다. 원래 저장소의 의존성 폴더를 링크로 걸지 않는다.
 - **PR 생성은 지시서의 `허락:` 줄이 허락한 경우에만 한다. 허락이 없으면 push 까지만 하고 status 로 알린다.** base 는 {{BASE}} 다. 다른 PR 브랜치를 base 로 두지 않는다. 제목과 본문은 {{PR_FORMAT}} 을 따른다. 지시서가 정한 PR 만 연다.
@@ -96,7 +96,7 @@
 6. **머지될 때까지 맡는다.** CI 실패, 충돌, 리뷰를 직접 처리한다. 기준 브랜치가 앞서 나간 것만으로는 합치지 않는다. 고쳐 push 하면 5 의 gate 를 다시 통과한 뒤 바뀐 head 로 「준비됨 status」를 다시 보낸다. 코디네이터가 머지한다.
 7. PR 이 MERGED 인 것을 확인한다. `worker_done` 을 보내기 전에 지시서의 완료 기준을 다시 읽는다. 이 PR 밖의 PR 머지나 확인이 남았으면 보내지 않는다. 완료 기준에 머지 뒤에 할 일(dev 확인, 배포 뒤 검증)이 남았으면 그 일을 마친 뒤에, 없으면 바로 `worker_done` 을 보낸다. PR 번호와 머지 커밋, 아래 「스킬 개선 후보 보고」 와 「공부 후보 보고」 의 줄을 적는다. 머지 없이 닫혔으면 ask 로 알린다. <!-- orch-rule: done-after-merged -->
 - 계획에서 PR 을 여럿으로 나눴으면 `worker_done` 본문에 남은 PR 목록을 PR 마다 한 줄(이름과 계획 경로)로 적는다. 보드에는 코디네이터가 단계로 올린다. <!-- orch-rule: remaining-prs -->
-- PR 을 연 뒤나 고쳐 push 한 뒤에는 CI 결과를 그 턴 안에서 기다린다. `gh pr checks <PR 번호> --watch --interval 60` 을 전경으로 돌려 끝까지 기다리고, 도구 시간 제한에 걸리면 같은 명령을 다시 부른다. CI 가 끝나고 `orch queue gate <PR 번호>` 이 통과한 뒤 `준비됨` status 를 한 번 보내고 턴을 끝낸다. CI 를 기다리며 턴을 끝내거나 「CI 를 기다리는 중」 status 를 보내지 않는다. 이유: 턴을 끝내면 Orca 가 코디네이터를 깨운다. 실측(Run run_67445446b89f, haiku, 케이스당 1회, 표본이 적다): 아무것도 안 보내고 끝내면 escalation 1건, status 를 보낸 뒤 끝내면 status 1건과 escalation 1건, ask 뒤 끝내면 question 1건, worker_done 뒤 끝내면 worker_done 1건이다. 전경에서 오래 도는 명령 동안에는 깨우지 않는다. 그래서 진행 소식은 보내지 않고, 판단이 필요하면 status 대신 ask 로 묻고 턴을 끝낸다. <!-- orch-rule: wait-in-turn -->
+- PR 을 연 뒤나 고쳐 push 한 뒤에는 CI 결과를 그 턴 안에서 기다린다. `orch queue gate "$PR" --wait` 에 PR 번호를 넘겨 전경에서 돌린다. 도구 시간 제한에 걸리면 같은 명령을 다시 부른다. `GATE-OK` 가 나오면 `준비됨` status 를 한 번 보내고 턴을 끝낸다. CI 를 기다리며 턴을 끝내거나 「CI 를 기다리는 중」 status 를 보내지 않는다. 이유: 턴을 끝내면 Orca 가 코디네이터를 깨운다. 실측(Run run_67445446b89f, haiku, 케이스당 1회, 표본이 적다): 아무것도 안 보내고 끝내면 escalation 1건, status 를 보낸 뒤 끝내면 status 1건과 escalation 1건, ask 뒤 끝내면 question 1건, worker_done 뒤 끝내면 worker_done 1건이다. 전경에서 오래 도는 명령 동안에는 깨우지 않는다. 그래서 진행 소식은 보내지 않고, 판단이 필요하면 status 대신 ask 로 묻고 턴을 끝낸다. <!-- orch-rule: wait-in-turn -->
 
 ## 설계와 구현을 맡길 때
 

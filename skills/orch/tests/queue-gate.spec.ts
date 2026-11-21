@@ -371,6 +371,28 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(gateReason(r), /체크가 아직 끝나지 않았다\(진행 중 1/)
   })
 
+  test('--wait 는 필수 체크가 늦게 붙어도 기다린 뒤 관문을 확인한다', async (t) => {
+    const c = setup(t)
+    const completed = (name: string) => ({ name, status: 'COMPLETED', conclusion: 'SUCCESS' })
+    const state = { '1': pr({ statusCheckRollup: [completed('label')], appear: { left: 11, checks: [completed('Tests')] } }) }
+    const required = ['--required-check', 'Tests']
+    const immediate = await gate(c, state, 0, required)
+    assert.equal(immediate.code, 1, both(immediate))
+    assert.match(gateReason(immediate), /나타나지 않은 필수 체크 Tests/)
+
+    const waited = await gate(c, state, 0, [...required, '--wait'])
+    assert.equal(waited.code, 0, both(waited))
+    assert.match(waited.stdout, /^GATE-OK 1$/m)
+  })
+
+  test('--wait 는 늦게 붙는 필수 체크의 대기 한도를 지키고 다른 이유도 알린다', async (t) => {
+    const c = setup(t)
+    const r = await gate(c, { '1': pr() }, 2, ['--wait', '--missing-timeout', '1', '--required-check', 'Tests'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(gateReason(r), /필수 체크가 1분째 나타나지 않는다.*Tests/)
+    assert.match(gateReason(r), /미해결 리뷰 스레드 2 개/)
+  })
+
   test('PR 을 읽지 못하거나 이미 MERGED 이면 통과로 보지 않는다', async (t) => {
     const c = setup(t)
     let r = await gate(c, { '1': pr({ state: 'MERGED' }) }, 0)
