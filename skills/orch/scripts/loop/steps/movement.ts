@@ -4,8 +4,8 @@
 //     pipeline.idle_min 이 0 이고 pipeline.idle_exited 가 false 면 돌지 않는다.
 //     화면: 멈춤 확인이 이번 틱에 읽은 화면 끝 줄의 hash 를 state/movement.json 의 screens[<dispatch>] 에 바뀐 시각과 함께 둔다. 화면을 다시 읽지 않는다.
 //     같은 화면의 백그라운드 작업 표시(lib/screen.ts 의 backgroundWork)도 background 로 둔다. 판정은 그 표시가 있으면 멈춤으로 보지 않는다(lib/movement.ts).
-//     기다리는 이유: 그 Run 의 질문을 읽지 못했거나, 그 dispatch(또는 터미널)가 보낸 미답변 질문이 있거나, 그 워크트리 브랜치의 내 열린 PR 이
-//     이번 틱의 CI 감시에서 지금 HEAD 로 passed 면 멈춤으로 보지 않는다. 코디네이터의 차례다. exited 는 이유가 있어도 알린다.
+//     기다리는 이유: 그 Run 의 질문을 읽지 못했거나, 그 dispatch(또는 터미널)가 보낸 미답변 질문이 있거나, 그 워크트리의 열린 Ready PR 이
+//     지금 HEAD 로 CI 를 통과했거나 루프 최신화 뒤 CI 를 기다리는 중이면 멈춤으로 보지 않는다. exited 는 이유가 있어도 알린다.
 //     worker: 새로 멈춘 dispatch 마다 그 worker 를 띄운 Run 의 Run 에 Orca 메시지로 WORKER-IDLE(text `<dispatch> <idle 또는 exited> <움직임 뒤 분 또는 ->분
 //     <워크트리 이름 또는 -> <터미널 또는 ->`)을 쓴다. 다시 알리는 때는 lib/movement.ts 의 「알림 기록」 이다.
 //     단계: 맡은 Run 의 worker 목록을 모두 읽은 틱에만 본다. 새로 멈춘 단계마다 주 Run 에 Orca 메시지로 STAGE-STALLED(text `<보드 항목 id>
@@ -13,18 +13,63 @@
 //     보드를 읽지 못했거나 movement.json 을 쓰지 못하면 errors 의 movement 에 이유를 둔다(errors.ts 머리 주석의 「오류 줄 억제」).
 
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
+import { loadConfig } from '../../lib/config.ts'
+import { real } from '../../lib/fs.ts'
+import { ciState, requiredNames } from '../../lib/gh.ts'
+import { mainCheckout } from '../../lib/git.ts'
 import { collectStages, collectWorkers, idleNotices, markScreen, readRecords, stageNotices, tailHash } from '../../lib/movement.ts'
 import type { ScreenMark } from '../../lib/movement.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
+import { inFlight, readRefresh, refreshFile } from '../../lib/refresh.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { backgroundWork } from '../../lib/screen.ts'
 import { liveSteps } from '../../lib/step-ready.ts'
 import { worktreePaths } from '../../lib/workers.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
+import { openPrs } from './prs.ts'
 import { log, oneLine, rowsOf } from './shared.ts'
-import type { CiEntry, Lookup, Prs, Waiting } from './shared.ts'
+import type { CiEntry, Lookup, OwnPr, Prs, Waiting } from './shared.ts'
+
+function mergeWaits(repo: string, paths: Map<string, string>, prs: Prs, now: number, stateOf: (pr: OwnPr) => CiEntry['state'] | null): (worktree: string) => boolean {
+  const refresh = readRefresh(refreshFile(repo))
+  const ready = new Map<string, OwnPr[]>()
+  if (prs.ok) {
+    for (const pr of prs.mine) {
+      const path = paths.get(pr.branch)
+      if (!path || pr.draft || !pr.head) continue
+      const key = real(path)
+      const matches = ready.get(key) ?? []
+      matches.push(pr)
+      ready.set(key, matches)
+    }
+  }
+  return (worktree) => (ready.get(worktree) ?? []).some((pr) => {
+    const state = stateOf(pr)
+    const record = refresh[String(pr.number)]
+    return state === 'passed' || (record?.action === 'update' && record.value === 'updated' &&
+      pr.head !== record.from && inFlight(record, pr.head, state, now))
+  })
+}
+
+function foreignMergeWaits(repo: string, now: number): (worktree: string) => boolean {
+  const paths = worktreePaths(repo)
+  if (paths.size === 0) return () => false
+  const skipped = loadConfig(repo).queue?.skipped_is_missing === true
+  const states = new Map<number, CiEntry['state'] | null>()
+  return mergeWaits(repo, paths, openPrs(repo), now, (pr) => {
+    if (!states.has(pr.number)) {
+      try {
+        const names = requiredNames(repo, pr.host, pr.slug, pr.base)
+        states.set(pr.number, names.ok ? ciState(pr.rollup, names.names, skipped, pr.head).state : null)
+      } catch {
+        states.set(pr.number, null)
+      }
+    }
+    return states.get(pr.number) ?? null
+  })
+}
 
 // 머리 주석의 「움직임 확인」. tails 는 멈춤 확인이 이번 틱에 읽은 dispatch 마다의 화면 끝 줄이다. 결과는 errors 의 movement 에 둘 이유다
 function watchMovement(
@@ -50,16 +95,25 @@ function watchMovement(
   const screens: Record<string, ScreenMark> = { ...previous.screens }
   for (const [dispatch, tail] of tails) screens[dispatch] = markScreen(previous.screens[dispatch], tailHash(tail), now, backgroundWork(tail))
   lookup.paths ??= worktreePaths(ctx.repo)
-  const branchOf = new Map([...lookup.paths].map(([branch, path]) => [path, branch]))
-  // CI 를 통과한 내 열린 PR 의 브랜치. 이번 틱의 판정이 지금 HEAD 의 것일 때만 센다
-  const passed = new Set(prs.ok ? prs.mine.filter((pr) => ci?.[String(pr.number)]?.state === 'passed' && ci[String(pr.number)].head === pr.head).map((pr) => pr.branch) : [])
+  const repo = mainCheckout(ctx.repo)
+  const localPaths = new Set([...lookup.paths.values()].map(real))
+  const waits = new Map([[repo, mergeWaits(repo, lookup.paths, prs, now, (pr) => {
+    const entry = ci?.[String(pr.number)]
+    return entry?.head === pr.head ? entry.state : null
+  })]])
   const waitingOf = (run: string, row: Record<string, unknown>, worktree: string | null): string | null => {
     const asked = waiting.get(run)
     // 질문을 읽지 못한 Run 은 질문을 기다리는지 모른다. 모르는 것을 멈춤으로 알리지 않는다
     if (!asked) return '질문을 읽지 못했다'
     if (asked.dispatches.has(String(row.dispatchId)) || asked.terminals.has(String(row.agentTerminalHandle ?? ''))) return '질문의 답을 기다린다'
-    const branch = worktree ? branchOf.get(worktree) : undefined
-    return branch && passed.has(branch) ? 'CI 를 통과해 머지를 기다린다' : null
+    if (settings.idleMin === 0 || !worktree || !isAbsolute(worktree)) return null
+    const path = real(worktree)
+    const target = localPaths.has(path) ? repo : mainCheckout(path)
+    if (!waits.has(target)) {
+      try { waits.set(target, foreignMergeWaits(target, now)) }
+      catch { waits.set(target, () => false) }
+    }
+    return waits.get(target)?.(path) ? '머지를 기다린다' : null
   }
   const runs = lookup.runs.map((entry) => entry.run).filter((run): run is string => Boolean(run))
   const workers = collectWorkers({ runs, rowsOf: (run) => rowsOf(run, lookup), settings, now, screens, waiting: waitingOf })

@@ -14,6 +14,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import { tailHash } from '../scripts/lib/movement.ts'
 import { screenLines, screenTail } from '../scripts/lib/screen.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { git, gitEnv } from '../../../modules/testkit/git.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
 import { queuedNotices } from './fixtures/queued-notices.ts'
 
@@ -652,6 +653,77 @@ describe('움직임 확인', () => {
       .filter((row) => row.kind === 'WORKER-IDLE')
       .map((row) => String(row.text).replace(/ \d+분 /, ' N분 '))
   }
+
+  function idleBranch(source: string, branch: string): string {
+    const path = join(tmp, branch)
+    git(source, ['worktree', 'add', '-qb', branch, path])
+    const old = new Date(Date.now() - 45 * MIN)
+    git(path, ['commit', '--allow-empty', '-qm', 'old'], { ...gitEnv(), GIT_COMMITTER_DATE: old.toISOString() })
+    utimesSync(join(path, '.git'), old, old)
+    return path
+  }
+
+  function openPr(number: number, branch: string, extra: Json = {}): Json {
+    return {
+      number, headRefName: branch, headRefOid: 'a'.repeat(40), isDraft: false,
+      baseRefName: 'main', author: { login: 'me' }, url: `https://github.com/test/repo/pull/${number}`,
+      statusCheckRollup: [{ name: 'Tests', status: 'IN_PROGRESS' }], ...extra,
+    }
+  }
+
+  test('루프가 최신화한 Ready PR 만 새 HEAD 의 CI 대기 중 머지 대기로 본다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { authors: ['me'] }, queue: { required: 'Tests' } }))
+    const prs = [
+      openPr(1, 'refreshed'),
+      openPr(2, 'same-head'),
+      openPr(3, 'draft', { isDraft: true }),
+      openPr(4, 'failed', { statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'FAILURE' }] }),
+      openPr(5, 'no-refresh'),
+      openPr(6, 'expired'),
+    ]
+    env.GH = fakeBin(tmp, 'gh', [{ args: ['pr', 'list'], stdout: JSON.stringify(prs) }]).path
+    const updated = { action: 'update', value: 'updated', base: 'c'.repeat(40), from: 'b'.repeat(40), at: new Date().toISOString() }
+    write(orchFile('state', 'refresh.json'), JSON.stringify({
+      1: updated, 2: { ...updated, from: prs[1].headRefOid }, 3: updated, 4: updated,
+      6: { ...updated, at: new Date(Date.now() - 4 * 60 * MIN).toISOString() },
+    }))
+    orca({ workers_by_run: { A: prs.map((pr) => moving(`d${pr.number}`, `t${pr.number}`, idleBranch(repo, String(pr.headRefName)))) } })
+    tick()
+    assert.deepEqual(idleEvents('A'), [
+      'd2 idle N분 same-head t2', 'd3 idle N분 draft t3', 'd4 idle N분 failed t4',
+      'd5 idle N분 no-refresh t5', 'd6 idle N분 expired t6',
+    ])
+  })
+
+  test('다른 저장소 worker 는 자기 저장소의 열린 PR 과 CI 로 머지 대기를 판정한다', () => {
+    const foreign = join(tmp, 'foreign')
+    loopRepo(foreign)
+    const config = JSON.stringify({ pipeline: { authors: ['me'] }, queue: { required: 'Tests' } })
+    write(orchFile('config.json'), config)
+    write(join(foreign, '.orch', 'config.json'), config)
+    const source = join(tmp, 'gh-source')
+    const passed = { statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
+    write(join(source, 'repo.json'), JSON.stringify([openPr(1, 'local', passed), openPr(2, 'foreign-work', passed)]))
+    write(join(source, 'foreign.json'), JSON.stringify([openPr(1, 'foreign-ready', passed), openPr(2, 'foreign-work')]))
+    env.GH = linkBin(tmp, 'gh-repos', `
+const fs = require('node:fs')
+const path = require('node:path')
+if (process.argv[2] === 'pr' && process.argv[3] === 'list') {
+  const repo = path.basename(process.cwd())
+  fs.appendFileSync(path.join(process.env.FAKE_DIR, 'gh-repos.log'), repo + '\\n')
+  process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_DIR, 'gh-source', repo + '.json')))
+}
+`)
+    orca({ workers_by_run: { A: [
+      moving('d1', 't1', idleBranch(repo, 'local')),
+      moving('d2', 't2', idleBranch(foreign, 'foreign-ready')),
+      moving('d3', 't3', idleBranch(foreign, 'foreign-work')),
+    ] } })
+    tick()
+    assert.deepEqual(idleEvents('A'), ['d3 idle N분 foreign-work t3'])
+    const queried = readFileSync(join(tmp, 'gh-repos.log'), 'utf8').trim().split('\n')
+    assert.equal(queried.filter((name) => name === 'foreign').length, 1)
+  })
 
   test('파일과 화면이 기준 분 넘게 그대로인 worker 를 그 Run 에 WORKER-IDLE 로 한 번만 알린다', () => {
     const path = worktree('wt-a', 45)

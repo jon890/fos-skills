@@ -9,7 +9,7 @@ import type { OwnPr, Prs } from './shared.ts'
 
 const PR_FIELDS = 'number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup'
 
-function openPrs(repo: string): Prs {
+export function openPrs(repo: string): Prs {
   const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo, cache: false })
   if (!got.ok) return got
   if (!Array.isArray(got.data)) return { ok: false, error: 'gh pr list 의 출력이 목록이 아니다' }
