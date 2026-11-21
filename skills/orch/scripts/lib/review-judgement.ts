@@ -1,7 +1,10 @@
 // 자동 머지와 gate 가 같은 리뷰 범위와 조건을 쓴다.
+import { contractSettings } from '../core/contracts.ts'
 import { isObject } from '../core/json.ts'
 import { judgeReview, reviewScope } from './auto-merge.ts'
 import type { ChainCommit, ReviewConfig, ReviewNote, ReviewJudgement } from './auto-merge.ts'
+import { loadConfig } from './config.ts'
+import { baseMergesOnly } from './feature-evidence.ts'
 import { git } from './git.ts'
 
 const REVIEW_CHAIN_LIMIT = 50
@@ -28,7 +31,13 @@ export function judgePrReview(repo: string, pr: { head: string; branch: string; 
     const [oid, parents, at] = row.split('\t')
     return { oid, parents: parents ? parents.split(' ') : [], at: at ?? '' }
   }) : []
-  const scope = reviewScope(pr.head, chain, (oid) => git(repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0)
+  let resolved: RegExp | null | undefined
+  const scope = reviewScope(pr.head, chain,
+    (oid) => git(repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0,
+    (head, reviewed) => {
+      if (resolved === undefined) resolved = contractSettings(loadConfig(repo))?.paths ?? null
+      return baseMergesOnly(repo, head, reviewed, pr.base, resolved)
+    })
   const rule = featureReviewRule(review, feature)
   return judgeReview({ notes: [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], scope, chain, threads }, rule)
 }

@@ -89,6 +89,7 @@ export type Attempt =
   | { kind: 'not-ready'; reason: string }
 
 export type Options = {
+  wait?: boolean
   notMain?: string
   repo: string
   method: string

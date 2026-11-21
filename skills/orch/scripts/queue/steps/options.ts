@@ -16,7 +16,7 @@ export function usageText(stepContext: StepContext): string {
   }
   return lines.join('\n')
 }
-export function parseArgs(argv: string[]): Options {
+export function parseArgs(argv: string[], command: 'merge' | 'gate' = 'merge'): Options {
   const o: Options = {
     repo: '.',
     method: 'merge',
@@ -88,7 +88,8 @@ export function parseArgs(argv: string[]): Options {
       else if (arg === '--ci-expected-sec') o.ciExpectedSec = value
       continue
     }
-    if (arg === '--require-up-to-date') o.upToDate = true
+    if (arg === '--wait' && command === 'gate') o.wait = true
+    else if (arg === '--require-up-to-date') o.upToDate = true
     else if (arg === '--keep-branch') o.keepBranch = true
     else if (arg === '--continue-on-hold') o.continueOnHold = true
     else if (arg === '--stop-on-hold') o.continueOnHold = false

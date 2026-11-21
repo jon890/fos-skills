@@ -19,6 +19,7 @@
 //   기록의 커밋이 모두 40자리가 아니면 `통합 테스트 기록의 커밋이 40자리가 아니다: <모듈>`
 //   기록은 있는데 그 커밋이 아니면 `통합 테스트 기록이 head 가 아니다: <모듈>`
 //   기록이 없으면 `통합 테스트 기록 없음: <모듈> (<명령>)`
+//   맞는 기록이 「검증」 절 밖에만 있으면 `통합 테스트 기록이 검증 절 밖에 있다: <모듈> (<명령>)`
 // accept 는 기능 완료 근거의 검증 커밋과 같은 예외(base 만 합친 merge, 계획 폴더 삭제)를 받는다.
 
 import { ConfigError, QUEUE_KEYS, section } from './config.ts'
@@ -33,7 +34,13 @@ export type IntegrationNeed = { module: string; command: string }
 function globSource(glob: string, key: string): string {
   const pieces = glob.split(MODULE_MARK)
   if (pieces.length !== 2) throw new ConfigError(`설정 파일의 ${key} 에는 ${MODULE_MARK} 가 꼭 하나 있어야 한다: ${glob}`)
-  const part = (text: string): string => text.replace(/\*\*|[*?]|[.+^${}()|[\]\\]/g, (m) => (m === '**' ? '.*' : m === '*' ? '[^/]*' : m === '?' ? '[^/]' : `\\${m}`))
+  const part = (text: string): string => text.replace(/\*\*\/|\*\*|[*?]|[.+^${}()|[\]\\]/g, (match) => {
+    if (match === '**/') return '(?:.*/)?'
+    if (match === '**') return '.*'
+    if (match === '*') return '[^/]*'
+    if (match === '?') return '[^/]'
+    return `\\${match}`
+  })
   return `^${part(pieces[0])}([^/]+)${part(pieces[1])}$`
 }
 
@@ -93,22 +100,19 @@ function plainLines(body: string): string[] {
   })
 }
 
-// 「검증」 절의 줄. 같은 제목이 여럿이면 모두 모은다
-function verificationLines(lines: string[]): string[] {
-  const picked: string[] = []
+// 각 줄이 「검증」 절에 속하는지 표시한다. 같은 제목이 여럿이면 모두 인정한다
+function verificationLines(lines: string[]): { line: string; inside: boolean }[] {
   let level = 0
-  for (const line of lines) {
+  return lines.map((line) => {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line)
     if (heading) {
       if (level && heading[1].length <= level) level = 0
       if (!level && /^검증/.test(heading[2].replace(/[*_]/g, '').trim())) {
         level = heading[1].length
-        continue
       }
     }
-    if (level) picked.push(line)
-  }
-  return picked
+    return { line, inside: level !== 0 }
+  })
 }
 
 // 앞에 붙여도 되는 목록 표시: `- `, `* `, `+ `, `1. `, `1) `, 체크박스 `[ ] `, `[x] `
@@ -129,9 +133,9 @@ export function integrationProblems(
     const reason = m?.[2]?.trim()
     if (m && reason && !skips.has(cell(m[1]))) skips.set(cell(m[1]), reason)
   }
-  const records = verificationLines(lines).flatMap((line) => {
+  const records = verificationLines(lines).flatMap(({ line, inside }) => {
     const m = new RegExp(`${LIST.source}통합 테스트 통과:\\s*(\\S+)\\s*\\|\\s*(.+?)\\s*\\|\\s*(\\S+)\\s*$`).exec(line)
-    return m ? [{ module: cell(m[1]), command: cell(m[2]), commit: cell(m[3]).toLowerCase() }] : []
+    return m ? [{ module: cell(m[1]), command: cell(m[2]), commit: cell(m[3]).toLowerCase(), inside }] : []
   })
   const reasons: string[] = []
   const notes: string[] = []
@@ -150,9 +154,11 @@ export function integrationProblems(
       noted.add(need.module)
       continue
     }
-    const mine = records.filter((r) => r.module === need.module && r.command === need.command)
+    const matching = records.filter((r) => r.module === need.module && r.command === need.command)
+    const mine = matching.filter((r) => r.inside)
     if (mine.some((r) => passes(r.commit))) continue
-    if (mine.length === 0) reasons.push(`통합 테스트 기록 없음: ${need.module} (${need.command})`)
+    if (mine.length === 0 && matching.length > 0) reasons.push(`통합 테스트 기록이 검증 절 밖에 있다: ${need.module} (${need.command})`)
+    else if (mine.length === 0) reasons.push(`통합 테스트 기록 없음: ${need.module} (${need.command})`)
     else if (mine.every((r) => !/^[0-9a-f]{40}$/.test(r.commit))) reasons.push(`통합 테스트 기록의 커밋이 40자리가 아니다: ${need.module}`)
     else reasons.push(`통합 테스트 기록이 head 가 아니다: ${need.module}`)
   }

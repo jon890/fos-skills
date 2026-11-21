@@ -71,11 +71,11 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
 
 // 검증 커밋 뒤 HEAD 까지 base 를 합친 merge 커밋만 있는지. 머지 큐 차례와 상주 루프의 최신화가 부르는 update-branch 는
 // 검증 커밋 위에 base 를 합친 merge 커밋을 더해 HEAD 를 바꾼다. 그 merge 가 base 쪽 변경만 들여왔으면 검증한 코드는 그대로다.
-// HEAD 부터 첫 부모를 따라 BASE_MERGE_LIMIT 개까지 보고, 지나는 커밋이 모두 아래를 채우고 검증 커밋에 닿으면 true 다.
-//   부모가 둘이다. 둘째 부모가 origin/<base> 에 든다(base 쪽이다).
+// HEAD 부터 BASE_MERGE_LIMIT 개까지 보고, 지나는 커밋이 모두 아래를 채우고 검증 커밋에 닿으면 true 다.
+//   부모가 둘이다. 첫째 부모는 검증 커밋으로 이어지고, 둘째 부모는 origin/<base> 에 들거나 같은 규칙으로 검증 커밋에 이어진다.
 //   커밋의 tree 가 두 부모를 `git merge-tree --write-tree` 로 합친 tree 와 같다. 충돌을 풀거나 merge 커밋에 손댄 변경은 다르다.
 //   resolved(config.json 의 contracts.paths)를 주면, 합친 tree 가 충돌했고 충돌 파일과 커밋 tree 와 다른 파일이 모두 resolved 에 맞는
-//   merge 도 받아들인다. 계약 머리 자동 합치기(lib/contract-merge.ts)나 worker 가 계약 파일 충돌만 푼 merge 다
+//   base 직접 merge 도 받아들인다. 계약 머리 자동 합치기(lib/contract-merge.ts)나 worker 가 계약 파일 충돌만 푼 merge 다
 // 커밋이 로컬에 없거나 git 이 실패하면 false 다. 부르는 쪽은 origin/<base> 와 PR HEAD 를 받아 둔다.
 // 이 경우 머지 조건은 지금 HEAD 의 CI 통과로 대신한다. 머지 큐와 자동 머지는 지금 HEAD 의 필수 체크 통과를 따로 본다.
 export const BASE_MERGE_LIMIT = 50
@@ -156,21 +156,30 @@ export function baseMergesOnly(repo: string, head: string, verified: string, bas
     const done = git(repo, args)
     return done.code === 0 ? done.stdout.trim() : null
   }
-  let commit = head
-  for (let i = 0; i < BASE_MERGE_LIMIT; i++) {
-    if (commit === verified) return i > 0
+  const checked = new Map<string, boolean>()
+  const check = (commit: string): boolean => {
+    if (commit === verified) return true
+    const previous = checked.get(commit)
+    if (previous !== undefined) return previous
+    if (checked.size >= BASE_MERGE_LIMIT) return false
+    checked.set(commit, false)
     const parents = line(['rev-list', '--parents', '-n', '1', commit])?.split(/\s+/) ?? []
     if (parents.length !== 3) return false
     const [, first, second] = parents
-    if (git(repo, ['merge-base', '--is-ancestor', second, `refs/remotes/origin/${base}`]).code !== 0) return false
+    if (!check(first)) return false
+    const inBase = git(repo, ['merge-base', '--is-ancestor', second, `refs/remotes/origin/${base}`])
+    if (inBase.code !== 0 && (inBase.code !== 1 || !check(second))) return false
     const tree = line(['rev-parse', `${commit}^{tree}`])
     const result = git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', first, second])
     const [merged, ...conflicted] = result.stdout.split('\n').filter((x) => x)
     if (!tree || !merged || !/^[0-9a-f]{40,64}$/.test(merged)) return false
-    if (tree !== merged && !(resolved && result.code === 1 && resolvedOnly(repo, merged, tree, conflicted, resolved))) return false
-    commit = first
+    const clean = result.code === 0 && tree === merged
+    const contract = inBase.code === 0 && result.code === 1 && resolved && resolvedOnly(repo, merged, tree, conflicted, resolved)
+    const accepted = clean || Boolean(contract)
+    checked.set(commit, accepted)
+    return accepted
   }
-  return false
+  return head !== verified && check(head)
 }
 
 // acceptVerified 는 검증 커밋이 현재 HEAD 와 다를 때 그 검증 커밋을 받아들일지 정한다(base 합치기 또는 계획 폴더 삭제).

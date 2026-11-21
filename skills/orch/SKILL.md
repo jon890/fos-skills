@@ -141,7 +141,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 ### gh 호출 예산
 
 자동 조회로 GitHub 서버에 주는 부하를 줄이기 위해 같은 읽기 조회는 프로세스 사이에서 캐시를 공유한다.
-코디네이터가 직접 CI 를 기다릴 때는 `gh pr checks --watch --interval 60` 이상을 쓴다.
+코디네이터가 직접 CI 를 기다릴 때는 `orch queue gate "$PR" --wait` 로 필수 체크가 나타나 끝날 때까지 기다린다.
 TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`](references/gh-call-budget.md) 를 따른다.
 
 ## 5. 답하고 지시 보내기
