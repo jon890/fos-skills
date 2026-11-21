@@ -57,6 +57,16 @@ test('끝난 지 30일이 지난 항목만 뺀다', () => {
   assert.deepEqual(pruneFollowups(items, Date.parse(AT)).map((item) => item.pr), [2, 3])
 })
 
+test('배포 설정이 없는 항목은 알림에서 배포를 확인하지 않았다고 쓴다', () => {
+  const mixed = [entry(787), { ...entry(789), deploy: 'none' as const }].reduce((list, one) => upsertFollowup(list, one, AT).items, [] as Followup[])
+  const text = noticeText(mixed)
+  assert.match(text, /^- #789 .*\(머지됨, 배포는 확인하지 않음: 배포 설정 없음\)/m)
+  assert.doesNotMatch(text.split('\n').find((line) => line.startsWith('- #787')) ?? '', /배포는 확인하지 않음/)
+  const only = noticeText(mixed.filter((item) => item.pr === 789))
+  assert.match(only, /^배포 뒤 할 일 1건이 머지됐다\. 배포 설정이 없어/)
+  assert.doesNotMatch(only, /배포까지 끝났다/)
+})
+
 test('파일 값의 형식이 틀린 항목은 버리고 모르는 배포 값은 timeout 으로 읽는다', () => {
   const items = parseFollowups({ items: [{ pr: 'x', text: 'a' }, { pr: 3, text: '' }, { pr: 4, text: '글', deploy: '???' }, null] })
   assert.deepEqual(items.map((item) => [item.pr, item.deploy]), [[4, 'timeout']])

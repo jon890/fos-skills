@@ -123,8 +123,10 @@ const flat = (text: string, max = 120): string => {
 
 // 루프가 코디네이터에게 한 번 보내는 묶은 알림. 항목마다 한 줄이다
 export function noticeText(items: Followup[]): string {
-  const lines = items.map((item) => `- #${item.pr} ${flat(item.title, 60)}: ${flat(item.text)}`)
-  return [`배포 뒤 할 일 ${items.length}건이 배포까지 끝났다. 확인한 뒤 PR 마다 orch followup done <PR> 로 끝내면 업무 완료와 보드 done 이 이어서 돈다.`, ...lines].join('\n')
+  const lines = items.map((item) => `- #${item.pr} ${flat(item.title, 60)}${item.deploy === 'none' ? '(머지됨, 배포는 확인하지 않음: 배포 설정 없음)' : ''}: ${flat(item.text)}`)
+  const unchecked = items.filter((item) => item.deploy === 'none').length
+  const head = unchecked === 0 ? `배포 뒤 할 일 ${items.length}건이 배포까지 끝났다.` : unchecked === items.length ? `배포 뒤 할 일 ${items.length}건이 머지됐다. 배포 설정이 없어 배포는 확인하지 않았다.` : `배포 뒤 할 일 ${items.length}건이 머지됐다. ${items.length - unchecked}건은 배포까지 끝났고 ${unchecked}건은 배포 설정이 없어 배포를 확인하지 않았다.`
+  return [`${head} 확인한 뒤 PR 마다 orch followup done <PR> 로 끝내면 업무 완료와 보드 done 이 이어서 돈다.`, ...lines].join('\n')
 }
 
 // orch status 와 orch followup list 의 한 줄

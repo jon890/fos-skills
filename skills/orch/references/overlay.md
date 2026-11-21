@@ -29,7 +29,7 @@
 | 비밀값 규칙 | 읽지 않을 파일, 비밀값을 넘기는 방법 | 2 |
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
-| 지시서 폴더 | `orch cleanup sweep --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서를 지운다. PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
+| 지시서 폴더 | `orch cleanup sweep --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서를 지운다. PR 본문 파일은 이 폴더에 두지 않는다(게시가 막혔을 때만 `handoff/pending/<워크트리 이름>/`) (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 공부 후보 | 사용자가 고른 후보를 글로 쓸 스킬 이름과 글이 놓일 저장소. 없으면 글을 쓸 때 어디에 쓸지 묻는다. 절차는 [`study-candidates.md`](study-candidates.md) | - |
 | 진행 보드 | 보드 파일 위치 | 4, 7 |
@@ -216,7 +216,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | --- | --- |
 | `overlay.md` | 이 문서가 다루는 저장소 규칙 |
 | `config.json` | 위 「마무리 설정 파일」 |
-| `specs/` | 지시서와 `spec-common.md`. PR 본문 파일은 worker 세션 임시 폴더에 둔다 |
+| `specs/` | 지시서와 `spec-common.md`. PR 본문 파일은 두지 않는다. 게시가 막혔을 때만 `handoff/pending/<워크트리 이름>/` 에 둔다 |
 | `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
 | `state/` | 상주 루프와 충돌 알림이 기억하는 것. 생존·완료·끊김·미답변 기록과 무거운 검사 대기열이 있다. 알림은 Orca Run 메일함이 소유한다([`data-schema.md`](../../../docs/data-schema.md)) |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |

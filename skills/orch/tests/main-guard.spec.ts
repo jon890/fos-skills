@@ -30,6 +30,7 @@ if (a[1] === 'worker-show' && s.showFailOnce) { s.showFailOnce = false; fs.write
 let result = {}
 if (a[1] === 'run-list') result = { runs: [{ id: 'main', coordinator_handle: 'tm' }, { id: 'other', coordinator_handle: 'to' }] }
 else if (a[0] === 'terminal' && a[1] === 'list') result = { terminals: [{ handle: 'tm', agentIdentity: 'codex' }, { handle: 'to', agentIdentity: 'codex' }] }
+else if (a[1] === 'run-current' && s.slowOnce) { s.slowOnce = false; fs.writeFileSync(process.env.GUARD_STATE, JSON.stringify(s)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000); result = {} }
 else if (a[1] === 'run-current') result = { run: s.caller === null ? null : { id: s.caller } }
 else if (a[1] === 'send') result = { message: { id: 'notice' } }
 else if (a[1] === 'worker-show') result = { dispatch: { id: 'old', runId: 'other', status: 'running' }, worker: { worktreeId: s.worktree, agentTerminalHandle: 'tw' } }
@@ -94,6 +95,15 @@ test('Run 이 묶인 세션의 메인 조회 실패와 호출자 조회 실패�
   assert.equal(guardWrite(repo, 'board set', undefined).code, 1)
   settings({ fail: 'run-current' })
   assert.equal(guardWrite(repo, 'board set', undefined).code, 1)
+})
+
+test('run-current 가 시간 초과로 한 번 느려도 다시 조회해 쓰기를 통과시킨다', () => {
+  process.env.ORCH_RUN_CURRENT_TIMEOUT_SEC = '1'
+  settings({ caller: 'main', slowOnce: true })
+  try {
+    assert.equal(guardWrite(repo, 'board set', undefined).code, 0)
+    assert.equal(calls().filter(call => call[1] === 'run-current').length, 2)
+  } finally { delete process.env.ORCH_RUN_CURRENT_TIMEOUT_SEC }
 })
 
 test('Orca 가 꺼져도 터미널 handle 없는 사람 셸의 쓰기는 통과한다', () => {

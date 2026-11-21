@@ -24,7 +24,7 @@
 //                    그다음 등록한다(lib/loop.ts 의 registerRun). 살아 있는 루프가 없으면 자기 자신을 --foreground 로
 //                    분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에 자기 pid 를 쓸 때까지 10초까지 기다린다.
 //                    하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다.
-//                    LOOP-STARTED <pid> run=<Run id 또는 -> 와 0. 10초 안에 쓰지 않으면 자식을 끝내고 LOOP-START-FAIL <이유> 와 1.
+//                    LOOP-STARTED <pid> run=<Run id 또는 -> 와 0. 30초 안에 쓰지 않으면 자식을 끝내고 LOOP-START-FAIL <이유> 와 1.
 //                    살아 있는 루프가 없을 때의 등록은 registered_at 을 지금으로 새로 쓴다(lifecycle.ts 머리 주석의 「Run」).
 //                    자식이 4(다른 --start 가 띄운 루프가 먼저 잠금을 쥐었다)로 끝나면 그 루프가 살아 있는지 다시 보고, 있으면 아래 합류와 같다.
 //                    살아 있는 루프가 있으면 띄우지 않는다. 그 Run 이 아직 등록되지 않았으면 등록하고 LOOP-JOINED <pid> run=<Run id> 와 0.
