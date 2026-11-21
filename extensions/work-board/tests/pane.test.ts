@@ -108,6 +108,12 @@ const BAR_BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items
 
 // 항목 Box 의 자식 key 를 위에서 아래로
 const keys = async (ui, id) => ((await ui.find({ type: 'Box', key: 'item-' + id }))?.children as Drawn[]).map((child) => child.props.key)
+// 누르기 전에 단추가 그려질 때까지 기다린다. 보드를 읽는 동안에는 단추가 아직 없다
+const pressDrawn = async (ui, key) => {
+  const until = Date.now() + 3000
+  while (!(await ui.find({ type: 'Button', key })) && Date.now() < until) await new Promise((done) => setTimeout(done, 50))
+  await ui.press({ key })
+}
 
 test('막대는 제목이 짧든 길든 제목 바로 아래 줄에 그리고, 완료 항목에는 그리지 않는다', async ($, on) => {
   await start($, on, undefined, BAR_BOARD)
@@ -121,9 +127,8 @@ test('막대는 제목이 짧든 길든 제목 바로 아래 줄에 그리고, �
     expect(barBox.props.paddingLeft).toBe(2)
   }
   expect(textOf((await ui.find({ type: 'Box', key: 'item-n' })).children[1])).toBe('진행률 없음')
-  // 펼친 보기에서도 막대가 담당·PR 줄보다 앞이고, 완료 항목에는 막대가 없다. 완료 칸은 펼쳐야 보인다
-  await ui.press({ key: 'toggle-done' })
-  expect((await keys(ui, 's')).slice(0, 3)).toEqual(['head', 'bar', 'meta'])
+  // 완료 항목에는 막대가 없다. 완료 칸은 눌러서 펼쳐야 보인다
+  await pressDrawn(ui, 'done-open')
   expect((await keys(ui, 'd')).includes('bar')).toBe(false)
   expect((await keys(ui, 'd'))[0]).toBe('head')
   await ui.unmount()
@@ -145,37 +150,29 @@ test('접힌 보기는 제목 줄, 지금 단계 줄, worker 줄만 그리고 �
   await ui.unmount()
 })
 
-test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 본문 열에 맞춰 그리고 끝낸 줄에 취소선을 긋는다', async ($, on) => {
+test('끝낸 단계와 남은 단계는 누른 목록만 펼쳐 적힌 순서대로 그리고, 끝낸 줄에 취소선을 긋는다', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'toggle-done' })
-  expect(await lines(ui, 'a')).toBe(8)
-  const rows = []
-  for (const key of ['s-0', 's-1', 's-2', 's-3']) rows.push(stepParts(await ui.find({ type: 'Box', key })))
-  expect(rows.map((row) => [row.markText, row.bodyText])).toEqual([
-    ['✓', '1. 구현'], ['▶', '2. 리뷰'], [' ', '3. 머지'], [' ', '참고: 머지 뒤 갱신'],
-  ])
-  // 정렬: 모든 줄이 같은 왼쪽 여백과 같은 폭의 표시 칸을 갖고, 표시 칸은 줄지 않는다.
-  // 본문은 표시 칸 옆의 Text 하나라 줄바꿈된 뒷줄도 본문 열에서 시작한다
-  for (const row of rows) {
+  await pressDrawn(ui, 'fold-a-done')
+  await pressDrawn(ui, 'fold-a-todo')
+  expect((await keys(ui, 'a')).slice(0, 5)).toEqual(['head', 'bar', 'fd-0', 'steps', 'ft-0'])
+  const done = stepParts(await ui.find({ type: 'Box', key: 'fd-0' }))
+  const now = stepParts(await ui.find({ type: 'Box', key: 'steps' }))
+  const todo = stepParts(await ui.find({ type: 'Box', key: 'ft-0' }))
+  expect([done.markText, done.bodyText]).toEqual(['✓', '1. 구현'])
+  expect([now.markText]).toEqual(['▶'])
+  expect([todo.markText, todo.bodyText]).toEqual([' ', '3. 머지'])
+  // 정렬: 모든 줄이 같은 왼쪽 여백과 같은 폭의 표시 칸을 갖는다
+  for (const row of [done, now, todo]) {
     expect(row.row).toMatchObject({ flexDirection: 'row', paddingLeft: 2 })
     expect(row.mark.props).toMatchObject({ width: 2, flexShrink: 0 })
     expect(row.body.type).toBe('Text')
   }
-  expect(rows[0].body.props).toMatchObject({ strikethrough: true, dimColor: true })
-  expect(rows[1].body.props.bold).toBe(true)
-  expect(rows[1].body.props.strikethrough).toBeUndefined()
-  expect(rows[2].body.props ?? {}).toEqual({})
-  expect(rows[3].body.props.dimColor).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /worker  ·  \[PR #9\]/ })).toBeTruthy()
-  // details 의 끝낸 단계도 같은 모양이다
-  const wait = await ui.find({ type: 'Box', key: 'item-c' })
-  const first = stepParts((wait.children as Drawn[]).find((child) => child.props.key === 's-0'))
-  expect([first.markText, first.bodyText]).toEqual(['✓', '1 a'])
-  expect(first.body.props.strikethrough).toBe(true)
-  // 다시 누르면 접힌 보기로 돌아간다
-  await ui.press({ key: 'toggle-done' })
-  expect(await lines(ui, 'a')).toBe(4)
+  expect(done.body.props).toMatchObject({ strikethrough: true, dimColor: true })
+  expect((now.body.children as Drawn[])[0].props.bold).toBe(true)
+  expect(todo.body.props ?? {}).toEqual({})
+  // 참고 줄은 어느 보기에도 없다
+  expect(await ui.find({ type: 'Text', text: /참고: 머지 뒤 갱신/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -221,7 +218,6 @@ test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를
     : { exitCode: 1, stdout: '', stderr: '없음' }
   await start($, on, repo, board)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'toggle-done' })
   // 저장소 주소는 실제 상태를 읽을 때 채워지므로 PR 링크가 그려질 때까지 기다린다
   let prLink
   for (let i = 0; i < 50 && !prLink; i++) prLink = await ui.find({ type: 'Link', text: '[PR #877]' })
@@ -238,14 +234,32 @@ test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를
   await ui.unmount()
 })
 
-test('새로 읽기 버튼은 없고 오늘 시작, 정할 것 묻기, 펼치기 버튼을 보인다', async ($, on) => {
+test('새로 읽기 버튼은 없고 오늘 시작, 정할 것 묻기 버튼을 보인다', async ($, on) => {
   await start($, on)
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Button', text: /새로 읽기|읽는 중/ })).toBeFalsy()
   expect(await ui.find({ type: 'Button', text: /오늘 시작/ })).toBeTruthy()
   expect(await ui.find({ type: 'Button', text: /정할 것 묻기/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Button', text: /펼치기/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', text: /눌러서 펼치기/ })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'toggle-done' })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('완료 칸은 기본으로 접혀 있고, 누르면 펴지고, 펴진 칸의 맨 위 줄을 누르면 접힌다', async ($, on) => {
+  await start($, on, undefined, JSON.stringify({ items: [
+    { id: 'a', title: '진행', status: 'doing' },
+    { id: 'd', title: '끝난 항목', status: 'done', details: [{ text: '1. 구현', done: true }] },
+  ] }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Box', key: 'item-d' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', text: /눌러서 펼치기/ })).toBeTruthy()
+  await pressDrawn(ui, 'done-open')
+  expect(await ui.find({ type: 'Box', key: 'item-d' })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', text: /눌러서 접기/ })).toBeTruthy()
+  await pressDrawn(ui, 'done-close')
+  expect(await ui.find({ type: 'Box', key: 'item-d' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', text: /눌러서 펼치기/ })).toBeTruthy()
   await ui.unmount()
 })
 
@@ -389,7 +403,7 @@ for (const [name, boardAt, liveAt] of [
     expect(shortcuts.props.borderStyle).toBe('round')
     expect(await ui.find({ type: 'Text', text: /^단축키$/ })).toBeTruthy()
     const buttons = (shortcuts.children as Drawn[])[1].children as Drawn[]
-    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'q', 'a', 'd'])
+    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'q', 'a'])
     await ui.unmount()
   })
 }
@@ -574,8 +588,8 @@ test('진행 중·대기 항목의 제목 줄을 누르면 상태 확인 요청�
   await ui.press({ key: 'check-a' })
   expect(filled[1]).toContain('끝나지 않은 단계: 2. 리뷰')
 
-  // 펼친 보기에서도 머리 줄만 Button 이고 상세 줄은 Button 이 아니다
-  await ui.press({ key: 'toggle-done' })
+  // 끝낸 단계를 펼쳐도 머리 줄만 Button 이고 상세 줄은 Button 이 아니다
+  await pressDrawn(ui, 'fold-a-done')
   expect((await ui.findAll({ type: 'Button' })).map((b) => b.props.key).filter((k) => String(k).startsWith('check-')).sort())
     .toEqual(['check-a', 'check-w'])
   await ui.unmount()
@@ -610,8 +624,8 @@ test('대기 항목의 제목 줄은 9개를 넘어도 눌리고 재개 요청�
   await ui.press({ key: 'check-d0' })
   expect(filled[1]).toContain('보드 항목 d0 의 지금 상태를 확인하고 다음 단계를 이어 가 줘.')
 
-  // 펼친 보기에서도 대기 항목의 제목 줄은 눌린다
-  await ui.press({ key: 'toggle-done' })
+  // 단계를 펼친 뒤에도 대기 항목의 제목 줄은 눌린다
+  await pressDrawn(ui, 'fold-w-done')
   await ui.press({ key: 'check-w' })
   expect(filled[2]).toContain('대기 사유를 다시 확인하고 조사를 재개해 줘')
   await ui.unmount()
@@ -667,7 +681,7 @@ test('번호만 있는 흐린 칩, 주소만 있는 링크와 결정·완료 줄
   ] })
   await start($, on, argv => String(argv[2]).endsWith('/task-tool.ts') ? { exitCode: 0, stdout: '{"name":"Jira","error":null}', stderr: '' } : { exitCode: 1, stdout: '', stderr: '' }, board)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'toggle-done' })
+  await pressDrawn(ui, 'done-open')
   const chip = await ui.find({ type: 'Text', text: '[Jira PROJ-1]' })
   expect(chip?.props.dimColor).toBe(true)
   expect((await ui.find({ type: 'Link', text: '[Jira]' }))?.props.href).toBe('https://example.dooray.com/task/1')
@@ -769,15 +783,6 @@ test('접힌 보기는 작업 중 worker 를 한 줄씩, 끊김을 빨간 줄로
   await ui.unmount()
 })
 
-test('펼친 보기는 모든 worker 줄을 at 순으로 그린다', async ($, on) => {
-  await start($, on, liveWorkers, WORKER_BOARD([{ id: 'a', title: 'w', status: 'doing', worktree: 'wa', details: [{ text: '1. 구현', done: false }], workers: ROWS }]))
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'toggle-done' })
-  const got = (await texts(ui, 'a')).filter((line) => /^w-/.test(line))
-  expect(got).toEqual(['w-0:⚙ 구현 wa', 'w-1:⚙ 리뷰 wr  PR #7  busy', 'w-2:✓ 후속 wf', 'w-3:✓ 리뷰 wg  PR #7', 'w-4:⚠ 끊김 검증 wl'])
-  await ui.unmount()
-})
-
 test('리뷰 줄만 작업 중인 항목에는 「worker 없음」 이 없고, 작업 중 줄이 없으면 그린다', async ($, on) => {
   const items = [
     { id: 'r', title: '리뷰만', status: 'doing', worktree: 'wa', details: [{ text: '1. 구현', done: false }], workers: [row({ status: 'done', endedAt: '2026-11-13T02:00:00Z' }), row({ role: 'review', worktree: 'wr', dispatch: 'd2', pr: 7, at: '2026-11-13T02:00:00Z' })] },
@@ -796,7 +801,7 @@ test('완료 항목은 작업 중 줄만 그리고 끝난 줄과 끊김 줄은 �
   const done = { id: 'x', title: '끝', status: 'done', details: [{ text: '1. 구현', done: true }], workers: [row({ status: 'done', endedAt: '2026-11-13T02:00:00Z' }), row({ role: 'review', worktree: 'wr', dispatch: 'd2', pr: 7, at: '2026-11-13T02:00:00Z' }), row({ role: 'verify', worktree: 'wl', dispatch: 'd5', status: 'lost', at: '2026-11-13T03:00:00Z' })] }
   await start($, on, liveWorkers, WORKER_BOARD([done]))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'toggle-done' })
+  await pressDrawn(ui, 'done-open')
   const got = (await texts(ui, 'x')).filter((line) => /^w/.test(line))
   expect(got).toEqual(['w-0:⚙ 리뷰 wr  PR #7  busy'])
   await ui.unmount()
@@ -908,20 +913,6 @@ test('줄이 없는 요약은 단추가 아니고, 단계가 없는 항목에는
   await ui.unmount()
 })
 
-test('d 로 펼친 보기에는 요약 단추가 없고, 다시 접으면 항목별로 펼친 상태가 돌아온다 (REQ4)', async ($, on) => {
-  await start($, on, liveWorkers, FOLD_BOARD())
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'fold-a-todo' })
-  await ui.press({ key: 'fold-b-workers' })
-  await ui.press({ key: 'toggle-done' })
-  expect(await folds(ui)).toEqual([])
-  expect((await texts(ui, 'a')).filter((line) => /^s-/.test(line)).length).toBe(6)
-  await ui.press({ key: 'toggle-done' })
-  expect((await foldTexts(ui, 'a')).map((line) => line.split(':')[0])).toEqual(['steps', 'ft-0', 'ft-1', 'wd'])
-  expect((await foldTexts(ui, 'b')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd', 'wd-0', 'wd-1'])
-  await ui.unmount()
-})
-
 test('넘기기(x) 모드에서는 요약 단추를 눌러도 펼쳐지지 않는다 (REQ5)', async ($, on) => {
   on('prompt.fill', () => ({ isFilled: true }))
   on('ui.toast', () => ({ value: undefined }))
@@ -936,7 +927,7 @@ test('넘기기(x) 모드에서는 요약 단추를 눌러도 펼쳐지지 않�
   await ui.unmount()
 })
 
-test('완료 항목과 결정 항목에는 접힌 보기에도 요약 단추가 없고 글만 보인다', async ($, on) => {
+test('완료 항목과 결정 항목에는 요약 단추가 없고, 완료 칸을 펼쳐도 그렇다',  async ($, on) => {
   await start($, on, liveWorkers, WORKER_BOARD([
     { id: 'd', title: '끝', status: 'done', details: [{ text: '1. 구현', done: true }] },
     { id: 'q', title: '결정', status: 'decide', details: FOLD_STEPS, workers: FOLD_ROWS },
@@ -944,7 +935,7 @@ test('완료 항목과 결정 항목에는 접힌 보기에도 요약 단추가 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await folds(ui)).toEqual([])
   expect(await foldTexts(ui, 'q')).toEqual(['steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개', 'wd:✓ 끝난 worker 2'])
-  await ui.press({ key: 'toggle-done' })
+  await pressDrawn(ui, 'done-open')
   expect(await folds(ui)).toEqual([])
   await ui.unmount()
 })

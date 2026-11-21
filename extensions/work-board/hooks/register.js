@@ -13,7 +13,7 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 //      workers 는 항목 아래 worker 줄 목록이다(docs/data-schema.md 「보드 항목의 worker 줄」). 창은 저장된 status 를 읽기만 하고 판정하지 않는다.
 //        작업 중(working) 줄은 한 줄씩 「⚙ 역할 워크트리  PR #N CI …  Orca 상태」 로 그린다(리뷰·검증 줄의 PR 은 줄의 pr, 곧 대상 PR).
 //        끊김(lost) 줄은 접힌 보기에서도 한 줄씩 빨간 「⚠ 끊김 역할 워크트리」 로, 끝남(done) 줄은 접힌 보기에서 「✓ 끝난 worker N」 한 줄로 묶는다. 그 줄은 단추라 누르면 끝남 줄만 그 아래에 펼친다.
-//        펼친 보기(d)는 모든 줄을 at 순으로 그린다. 완료 항목은 두 보기 모두 작업 중 줄만 그린다. 작업 중 줄이 있으면 「worker 없음」 을 그리지 않는다.
+//        완료 항목은 작업 중 줄만 그린다. 작업 중 줄이 있으면 「worker 없음」 을 그리지 않는다.
 //        workers 칸이 없는 옛 항목은 worktree 칸의 worker 하나를 붙인다(workerRowsFor).
 //      status: decide(결정 필요), doing(진행 중), wait(대기), done(완료)
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
@@ -21,7 +21,7 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
 //      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. 요약 줄(「✓ n개」, 「남은 단계 n개」, 「✓ 끝난 worker N」)을 누르면 그 항목의 그 목록만 펼친다.
-//      d 로 펼치면 모든 줄을 보이고 끝낸 줄을 취소선으로 보인다.
+//      완료 칸은 기본으로 접혀 있고 눌러서 펼치고 접는다. 펼친 줄의 끝낸 줄은 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 //      결정 필요 상자에는 worker 의 question 과 worker 가 직접 보낸 escalation 만 넣는다. Orca 자동 알림(autoAlertKind)은 빼고,
 //      그 worker 의 줄에 상태로 붙인다(docs/features/board-decision-box/spec.md).
@@ -175,7 +175,7 @@ let board = null
 let boardPath = ''
 let raw = ''
 let now = 0
-let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
+let doneOpen = false // 완료 칸을 펼친다. 눌러서 펼치고 접는다. 창 메모리에만 둔다
 let folded = new Set() // 접힌 보기에서 요약 줄을 눌러 펼친 목록. 「<항목 id>:<종류>」 (종류: done, todo, workers). 창 메모리에만 둔다
 let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈 값은 전체다
 
@@ -697,7 +697,7 @@ export function stepSummary(rows, progress) {
   }
 }
 
-// 요약 줄을 눌러 펼칠 줄. 번호 있는 단계 줄만이고 참고 줄은 빠진다(d 로 펼친 보기에서만 보인다)
+// 요약 줄을 눌러 펼칠 줄. 번호 있는 단계 줄만이고 참고 줄은 빠진다
 // 위아래는 지금 단계 줄보다 앞에 적혔는지 뒤에 적혔는지로 정한다(foldedSteps). 줄이 없으면 그 요약은 단추가 아니다
 export function foldLists(rows) {
   return {
@@ -2032,7 +2032,7 @@ export function register(on) {
 
     // 접힌 보기의 단계 한 줄: 지금 단계 뒤에 끝낸 단계와 남은 단계의 수를 붙인다
     // 수는 줄이 있으면 단추다. 누르면 그 줄들을 적힌 순서대로 지금 단계 줄 위아래에 끼운다
-    // 지금 단계 줄보다 앞에 적힌 줄은 위, 뒤에 적힌 줄은 아래다. 단계를 순서와 다르게 끝내도 d 로 펼친 보기와 순서가 같다
+    // 지금 단계 줄보다 앞에 적힌 줄은 위, 뒤에 적힌 줄은 아래다. 단계를 순서와 다르게 끝내도 적힌 순서를 지킨다
     // 줄이 없으면(수가 progress 값에서 났다) 지금처럼 글만 그린다. 진행 중과 대기 항목만 단추를 그린다
     const foldedSteps = (item, rows) => {
       const summary = stepSummary(rows, item.progress)
@@ -2089,12 +2089,9 @@ export function register(on) {
         ],
       })
     }
-    // 접힌 보기는 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다
-    // 펼친 보기(d)는 「표시 제목」, 막대, 담당·PR, 모든 단계 줄을 적힌 순서대로 그린다
+    // 항목은 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다. 끝낸 단계와 남은 단계는 수 단추로 접는다
     // 완료 항목은 막대 줄이 없다
     const itemView = (item, section) => {
-      // board.ts 는 PR 번호 하나를 숫자로 저장한다. 옛 값(「#9」)과 같게 # 를 붙여 그린다
-      const meta = [item.owner, typeof item.pr === 'number' ? '#' + item.pr : item.pr].filter(Boolean)
       const done = section.status === 'done'
       const bar = progressBar(itemProgress(item), 10)
       const rows = done ? [] : stepRows(item)
@@ -2114,7 +2111,7 @@ export function register(on) {
         if (row.status === 'lost') return indent(key, 2, Text({ key, color: 'red', wrap: 'wrap', children: ['⚠ 끊김 ' + (ROLE_LABELS[row.role] || row.role) + ' ' + row.worktree] }))
         return indent(key, 2, Text({ key, dimColor: true, wrap: 'wrap', children: ['✓ ' + workerRowLine({ ...row, live: null }, live.prs)] }))
       }
-      // 끝난 worker 는 요약 한 줄이고 단추다. 펼치면 그 줄 아래에 끝난 줄만 펼친 보기와 같은 모양으로 그린다(작업 중과 끊김 줄은 그대로다)
+      // 끝난 worker 는 요약 한 줄이고 단추다. 펼치면 그 줄 아래에 끝난 줄만 그린다(작업 중과 끊김 줄은 그대로다)
       const ended = allRows.filter((row) => row.status === 'done')
       const pressable = !done && checkable(item)
       const endedOpen = pressable && folded.has(item.id + ':workers')
@@ -2128,13 +2125,11 @@ export function register(on) {
       ]
       const workerViews = done
         ? working.map((row, i) => rowView('w-' + i, row))
-        : expanded
-          ? allRows.map((row, i) => rowView('w-' + i, row))
-          : [
-            ...working.map((row, i) => rowView('w-' + i, row)),
-            ...allRows.filter((row) => row.status === 'lost').map((row, i) => rowView('wl-' + i, row)),
-            ...endedViews,
-          ]
+        : [
+          ...working.map((row, i) => rowView('w-' + i, row)),
+          ...allRows.filter((row) => row.status === 'lost').map((row, i) => rowView('wl-' + i, row)),
+          ...endedViews,
+        ]
       return Box({
         key: 'item-' + item.id,
         flexDirection: 'column',
@@ -2143,11 +2138,7 @@ export function register(on) {
           ...(done ? [] : [indent('bar', 2, bar
             ? Text({ color: section.color, wrap: 'truncate', children: [bar] })
             : Text({ dimColor: true, children: ['진행률 없음'] }))]),
-          ...(expanded && meta.length ? [indent('meta', 2, Text({ key: 'meta', dimColor: true, wrap: 'wrap', children: [
-            ...(item.owner ? [item.owner] : []),
-            ...prNumbers(item.pr).flatMap((n, i) => [...(item.owner || i > 0 ? ['  ·  '] : []), prLink(n)]),
-          ] }))] : []),
-          ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(item, rows)),
+          ...foldedSteps(item, rows),
           ...workerViews,
           ...(!done && working.length === 0 && item.worktree ? [indent('w', 2, idleView(item, rows))] : []),
         ],
@@ -2393,22 +2384,33 @@ export function register(on) {
             })
           })])]
 
-    // 수동 항목: 진행, 대기, 완료
+    // 수동 항목: 진행, 대기, 완료. 완료 칸은 기본으로 접혀 있고 눌러서 펼치고 접는다
+    const doneToggle = (key, text) => Button({
+      key,
+      plain: true,
+      onPress: () => {
+        doneOpen = !doneOpen
+        $.ui.invalidate('ui.render')
+      },
+      children: [Text({ dimColor: true, children: [text] })],
+    })
     const manualView = (section) => {
       const rows = items.filter((item) => item.status === section.status)
       if (rows.length === 0) return []
-      const collapsed = section.status === 'done' && !expanded
-      return [box('section-' + section.status, section.color, section.label + '  ' + rows.length,
-        collapsed ? [dim('fold', 'd 를 누르면 펼쳐요')] : rows.map((item) => itemView(item, section)))]
+      const views = section.status !== 'done' ? rows.map((item) => itemView(item, section))
+        : doneOpen
+          ? [doneToggle('done-close', '눌러서 접기'), ...rows.map((item) => itemView(item, section))]
+          : [doneToggle('done-open', '눌러서 펼치기')]
+      return [box('section-' + section.status, section.color, section.label + '  ' + rows.length, views)]
     }
 
     // 접힌 보기에서 단추가 사라진 목록(줄이 비었거나 항목이 사라짐)은 펼침 상태를 버린다. 다시 생기면 접힌 채 나온다
-    // 펼친 보기(d)는 단추를 그리지 않으므로 지우지 않고, 보드를 읽지 못한 동안에도 지우지 않는다
+    // 보드를 읽지 못한 동안에는 지우지 않는다
     const sectionViews = SECTIONS.slice(1).flatMap(manualView)
     const activeSchedules = visibleSchedules(schedules, await $.clock.now())
     const scheduleView = activeSchedules.length ? [box('schedules', 'blue', '예약  ' + activeSchedules.length,
       activeSchedules.map((row) => Text({ key: 'schedule-' + row.id, wrap: 'wrap', children: [scheduleLine(row)] })))] : []
-    if (!expanded && board && !board.error) for (const id of [...folded]) if (!shownFolds.has(id)) folded.delete(id)
+    if (board && !board.error) for (const id of [...folded]) if (!shownFolds.has(id)) folded.delete(id)
 
     // 전체 진행률: 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합
     const overall = overallProgress(items)
@@ -2510,16 +2512,6 @@ export function register(on) {
                 plain: true,
                 onPress: () => {
                   authorFilter = nextAuthor(live.prs, authorFilter)
-                  $.ui.invalidate('ui.render')
-                },
-              }),
-              Button({
-                key: 'toggle-done',
-                label: expanded ? '접기' : '단계와 완료 펼치기',
-                hotkey: 'd',
-                plain: true,
-                onPress: () => {
-                  expanded = !expanded
                   $.ui.invalidate('ui.render')
                 },
               }),
