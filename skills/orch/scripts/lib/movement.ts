@@ -49,7 +49,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { boardOwnership, readBoard } from './board.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
-import { git, mainCheckout } from './git.ts'
+import { inside } from './fs.ts'
+import { git, gitMayFind, mainCheckout } from './git.ts'
 import { boardPath } from './board-file.ts'
 import { boardRepo } from './main-guard.ts'
 import { pathOf } from './paths.ts'
@@ -119,7 +120,7 @@ export function collectWorkers(input: {
   settings: MovementSettings
   now: number
   screens?: Readonly<Record<string, ScreenMark>>
-  waiting?: (run: string, row: Json, worktree: string | null) => string | null
+  waiting?: (run: string, row: Json, worktree: string | null, wouldBeIdle: boolean) => string | null
 }): { verdicts: WorkerVerdict[]; read: Set<string>; errors: Map<string, string>; live: Set<string> } {
   const verdicts: WorkerVerdict[] = []
   const read = new Set<string>()
@@ -146,7 +147,7 @@ export function collectWorkers(input: {
           mtime: exists ? latestMtime(path as string) : null,
           commit: exists ? lastCommitMs(path as string) : null,
           screen: input.screens?.[dispatch],
-          waiting: input.waiting?.(run, row, path) ?? null,
+          waiting: (wouldBeIdle) => input.waiting?.(run, row, path, wouldBeIdle) ?? null,
         }),
       )
     }
@@ -160,7 +161,9 @@ export function collectStages(repo: string, live: ReadonlySet<string>, settings:
   if (settings.idleMin === 0 || !existsSync(file)) return []
   const rows = readBoard(file) as Json[]
   const { ownItems, foreignWorktrees } = boardOwnership(repo, rows)
-  const localBoard = mainCheckout(repo) === boardRepo(repo, file)
+  const root = mainCheckout(repo)
+  const owner = boardRepo(repo, file)
+  const localBoard = owner === root || (!gitMayFind(owner) && inside(owner, root))
   const items = rows.filter((item) => ownItems.has(String(item.id)) || (localBoard &&
     !boardWorkerRows(item).some((row) => row.dispatch) && !foreignWorktrees.has(basename(String(item.worktree ?? '')))))
   const recent = (path: string) => {

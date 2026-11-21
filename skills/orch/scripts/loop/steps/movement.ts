@@ -104,12 +104,12 @@ function watchMovement(
     const entry = ci?.[String(pr.number)]
     return entry?.head === pr.head ? entry.state : null
   })]])
-  const waitingOf = (run: string, row: Record<string, unknown>, worktree: string | null): string | null => {
+  const waitingOf = (run: string, row: Record<string, unknown>, worktree: string | null, wouldBeIdle: boolean): string | null => {
     const asked = waiting.get(run)
     // 질문을 읽지 못한 Run 은 질문을 기다리는지 모른다. 모르는 것을 멈춤으로 알리지 않는다
     if (!asked) return '질문을 읽지 못했다'
     if (asked.dispatches.has(String(row.dispatchId)) || asked.terminals.has(String(row.agentTerminalHandle ?? ''))) return '질문의 답을 기다린다'
-    if (settings.idleMin === 0 || !worktree || !isAbsolute(worktree)) return null
+    if (!wouldBeIdle || !worktree || !isAbsolute(worktree)) return null
     const path = real(worktree)
     const target = localPaths.has(path) ? repo : mainCheckout(path)
     if (!waits.has(target)) {
