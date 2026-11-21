@@ -127,17 +127,18 @@ test('막대는 제목이 짧든 길든 제목 바로 아래 줄에 그리고, �
     expect(barBox.props.paddingLeft).toBe(2)
   }
   expect(textOf((await ui.find({ type: 'Box', key: 'item-n' })).children[1])).toBe('진행률 없음')
-  // 완료 항목에는 막대가 없다. 완료 칸은 눌러서 펼쳐야 보인다
+  // 담당·PR 줄은 막대 아래, 단계 줄 위에 있다. 완료 항목에는 막대가 없다. 완료 칸은 눌러서 펼쳐야 보인다
+  expect((await keys(ui, 's')).slice(0, 3)).toEqual(['head', 'bar', 'meta'])
   await pressDrawn(ui, 'done-open')
   expect((await keys(ui, 'd')).includes('bar')).toBe(false)
   expect((await keys(ui, 'd'))[0]).toBe('head')
   await ui.unmount()
 })
 
-test('접힌 보기는 제목 줄, 지금 단계 줄, worker 줄만 그리고 끝낸 단계와 남은 단계는 수로 접는다', async ($, on) => {
+test('접힌 보기는 제목 줄, 담당·PR 줄, 지금 단계 줄, worker 줄을 그리고 끝낸 단계와 남은 단계는 수로 접는다', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await lines(ui, 'a')).toBe(4)
+  expect(await lines(ui, 'a')).toBe(5)
   const now = stepParts(await ui.find({ type: 'Box', key: 'steps' }))
   expect(now.markText).toBe('▶')
   expect(now.bodyText).toBe('2. 리뷰  ✓\u00a01개  ·  남은\u00a0단계\u00a01개')

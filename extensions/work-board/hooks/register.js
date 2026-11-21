@@ -2089,9 +2089,11 @@ export function register(on) {
         ],
       })
     }
-    // 항목은 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다. 끝낸 단계와 남은 단계는 수 단추로 접는다
+    // 항목은 「표시 제목」, 제목 아래 막대, 담당·PR 줄(있을 때), 「▶ 지금 단계」, worker 줄을 그린다. 끝낸 단계와 남은 단계는 수 단추로 접는다
     // 완료 항목은 막대 줄이 없다
     const itemView = (item, section) => {
+      // board.ts 는 PR 번호 하나를 숫자로 저장한다. 옛 값(「#9」)과 같게 # 를 붙여 그린다
+      const meta = [item.owner, typeof item.pr === 'number' ? '#' + item.pr : item.pr].filter(Boolean)
       const done = section.status === 'done'
       const bar = progressBar(itemProgress(item), 10)
       const rows = done ? [] : stepRows(item)
@@ -2138,6 +2140,10 @@ export function register(on) {
           ...(done ? [] : [indent('bar', 2, bar
             ? Text({ color: section.color, wrap: 'truncate', children: [bar] })
             : Text({ dimColor: true, children: ['진행률 없음'] }))]),
+          ...(meta.length ? [indent('meta', 2, Text({ key: 'meta', dimColor: true, wrap: 'wrap', children: [
+            ...(item.owner ? [item.owner] : []),
+            ...prNumbers(item.pr).flatMap((n, i) => [...(item.owner || i > 0 ? ['  ·  '] : []), prLink(n)]),
+          ] }))] : []),
           ...foldedSteps(item, rows),
           ...workerViews,
           ...(!done && working.length === 0 && item.worktree ? [indent('w', 2, idleView(item, rows))] : []),
