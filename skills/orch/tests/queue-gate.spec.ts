@@ -374,7 +374,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
   test('--wait 는 필수 체크가 늦게 붙어도 기다린 뒤 관문을 확인한다', async (t) => {
     const c = setup(t)
     const completed = (name: string) => ({ name, status: 'COMPLETED', conclusion: 'SUCCESS' })
-    const state = { '1': pr({ statusCheckRollup: [completed('label')], appear: { left: 11, checks: [completed('Tests')] } }) }
+    const state = { '1': pr({ statusCheckRollup: [completed('label')], appear: { left: 12, checks: [completed('Tests')] } }) }
     const required = ['--required-check', 'Tests']
     const immediate = await gate(c, state, 0, required)
     assert.equal(immediate.code, 1, both(immediate))
