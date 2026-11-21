@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Repo, Sandbox, write } from './helpers.ts'
-import { DAY, fakeProc, hermesDb, nowSec, sampleConfig } from './hs-helpers.ts'
+import { applyArgs, DAY, fakeProc, hermesDb, nowSec, sampleConfig } from './hs-helpers.ts'
 import { keptReason, parseImageItem } from '../scripts/hs_delete.ts'
 
 const LOCKED = { FOS_INFRA_LOCK_HELD: '1' }
@@ -57,7 +57,7 @@ describe('이미지(REQ7)', () => {
 
   test('쓰는 중인 이미지는 남기고, 없는 이름은 실패로 세며, prune 은 부르지 않는다', () => {
     const { box, env, state } = setup({})
-    const r = box.run('hs_delete', ['images', '--apply', `app:0=${ID('b')}`, `app:1=${ID('a')}`, `gone:1=${ID('d')}`], { env: env(LOCKED) })
+    const r = box.run('hs_delete', ['images', ...applyArgs(box), `app:0=${ID('b')}`, `app:1=${ID('a')}`, `gone:1=${ID('d')}`], { env: env(LOCKED) })
     assert.equal(r.code, 1)
     assert.match(r.stdout, /지움 1개, 남김 1개, 실패 0개, 없음 1개/)
     assert.deepEqual(state().removed, ['app:0'])
@@ -67,7 +67,7 @@ describe('이미지(REQ7)', () => {
   test('컨테이너 조회(ps 나 inspect)가 실패하면 그 이미지는 건너뛴다', () => {
     for (const fail of [{ psFails: true }, { inspectFails: true }]) {
       const { box, env, state } = setup(fail)
-      const r = box.run('hs_delete', ['images', '--apply', `app:0=${ID('b')}`], { env: env(LOCKED) })
+      const r = box.run('hs_delete', ['images', ...applyArgs(box), `app:0=${ID('b')}`], { env: env(LOCKED) })
       assert.match(r.stdout, /건너뜀 app:0: 컨테이너가 쓰는 이미지를 읽지 못함/)
       assert.equal(state().removed, undefined)
     }
@@ -75,7 +75,7 @@ describe('이미지(REQ7)', () => {
 
   test('조사 뒤 태그가 다른 이미지를 가리키면 건너뛰고, ID 없이 태그만 넘기면 거부한다', () => {
     const { box, env, state } = setup({})
-    const r = box.run('hs_delete', ['images', '--apply', `app:0=${ID('e')}`, 'app:2'], { env: env(LOCKED) })
+    const r = box.run('hs_delete', ['images', ...applyArgs(box), `app:0=${ID('e')}`, 'app:2'], { env: env(LOCKED) })
     assert.equal(r.code, 1)
     assert.match(r.stdout, /건너뜀 app:0: 조사 뒤 다른 이미지를 가리킨다/)
     assert.match(r.stderr, /거부 app:2/)
@@ -84,14 +84,21 @@ describe('이미지(REQ7)', () => {
 
   test('앞 이미지를 지우는 동안 뒤 이미지를 컨테이너가 쓰게 되면 남긴다', () => {
     const { box, env, state } = setup({ onRm: { 'app:0': ID('c') } })
-    const r = box.run('hs_delete', ['images', '--apply', `app:0=${ID('b')}`, `app:2=${ID('c')}`], { env: env(LOCKED) })
+    const r = box.run('hs_delete', ['images', ...applyArgs(box), `app:0=${ID('b')}`, `app:2=${ID('c')}`], { env: env(LOCKED) })
     assert.match(r.stdout, /남김 app:2: 컨테이너가 쓰는 중/)
     assert.deepEqual(state().removed, ['app:0'])
   })
 
+  test('지금 이미지 ID 조회가 성공 코드와 빈 값을 내면 건너뛴다(리뷰 P2)', () => {
+    const { box, env, state } = setup({ images: { 'app:0': [] } })
+    const r = box.run('hs_delete', ['images', ...applyArgs(box), `app:0=${ID('b')}`], { env: env(LOCKED) })
+    assert.match(r.stdout, /건너뜀 app:0: 지금 이미지 ID 를 읽지 못함/)
+    assert.equal(state().removed, undefined)
+  })
+
   test('잠금 없이 --apply 하면 지우지 않고 4 로 끝난다', () => {
     const { box, env, state } = setup({})
-    assert.equal(box.run('hs_delete', ['images', '--apply', `app:0=${ID('b')}`], { env: env() }).code, 4)
+    assert.equal(box.run('hs_delete', ['images', ...applyArgs(box), `app:0=${ID('b')}`], { env: env() }).code, 4)
     assert.equal(state().removed, undefined)
   })
 
@@ -116,7 +123,7 @@ describe('백업과 휴지통(REQ7)', () => {
     const cfgFile = write(join(box.root, 'cfg.json'), JSON.stringify(cfg))
     write(join(cfg.backup.root, 'oneoff/x'), 'x')
     write(join(cfg.backup.root, 'keep/x'), 'x')
-    const r = box.run('hs_delete', ['backup', '--config', cfgFile, '--apply', 'oneoff', '../keep', ''], { env: box.env(LOCKED) })
+    const r = box.run('hs_delete', ['backup', '--config', cfgFile, ...applyArgs(box), 'oneoff', '../keep', ''], { env: box.env(LOCKED) })
     assert.equal(r.code, 1)
     assert.ok(!existsSync(join(cfg.backup.root, 'oneoff')))
     assert.ok(existsSync(join(cfg.backup.root, 'keep/x')))
@@ -128,7 +135,7 @@ describe('백업과 휴지통(REQ7)', () => {
     const file = write(join(box.home, '.local/share/Trash/files/f'), 'x')
     assert.match(box.run('hs_delete', ['trash', 'f']).stdout, /지울 것 f/)
     assert.ok(existsSync(file))
-    assert.equal(box.run('hs_delete', ['trash', '--apply', 'f']).code, 0)
+    assert.equal(box.run('hs_delete', ['trash', ...applyArgs(box), 'f']).code, 0)
     assert.ok(!existsSync(file) && !existsSync(info))
   })
 })
@@ -149,14 +156,14 @@ describe('워크트리(REQ9)', () => {
 
   test('안에서 도는 프로세스가 있으면 남긴다', () => {
     const { box, survey, real } = setup(true)
-    const r = box.run('hs_delete', ['worktrees', '--survey', survey, '--apply', real], { env: box.env({ ...LOCKED, HS_ROOT: box.root }) })
+    const r = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), real], { env: box.env({ ...LOCKED, HS_ROOT: box.root }) })
     assert.match(r.stdout, /남김 .*: 안에서 도는 프로세스가 있다/)
     assert.ok(existsSync(real))
   })
 
   test('쓰는 프로세스가 없으면 지운다. 조사 파일에 없는 경로는 거부한다', () => {
     const { box, survey, real } = setup(false)
-    const r = box.run('hs_delete', ['worktrees', '--survey', survey, '--apply', real, join(box.root, 'other')], { env: box.env({ ...LOCKED, HS_ROOT: box.root }) })
+    const r = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), real, join(box.root, 'other')], { env: box.env({ ...LOCKED, HS_ROOT: box.root }) })
     assert.equal(r.code, 1)
     assert.match(r.stdout, /지움 /)
     assert.match(r.stderr, /거부 .*other: 조사 파일의 제거 후보가 아니다/)
@@ -196,7 +203,7 @@ describe('Hermes 세션(REQ10)', () => {
 
   test('후보 트리를 지우고 연결된 세션이 남았는지 확인한다', () => {
     const h = setup()
-    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, '--apply', 'default:a'], { env: h.env })
+    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, ...applyArgs(h.box), 'default:a'], { env: h.env })
     assert.equal(r.code, 0, r.stderr)
     assert.match(r.stdout, /연결된 세션 1개가 모두 남음/)
     assert.match(r.stdout, /세션 DB 크기 default: [\d.]+M\. 공간 회수는 Hermes 를 멈춘 점검 시간에 사용자가 한다/)
@@ -206,7 +213,7 @@ describe('Hermes 세션(REQ10)', () => {
   test('조사 뒤 트리 안의 세션이 연결되면 그 루트를 지우지 않는다', () => {
     const h = setup()
     h.linked.setRules([{ stdout: 'linked-1\na1\n' }])
-    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, '--apply', 'default:a'], { env: h.env })
+    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, ...applyArgs(h.box), 'default:a'], { env: h.env })
     assert.match(r.stdout, /건너뜀 default:a/)
     assert.deepEqual(h.ids(), ['a', 'a1', 'b', 'linked-1'])
   })
@@ -216,7 +223,7 @@ describe('Hermes 세션(REQ10)', () => {
     const d = new DatabaseSync(h.db)
     d.prepare('UPDATE sessions SET last_activity_at = ? WHERE id = ?').run(nowSec(), 'a1')
     d.close()
-    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, '--apply', 'default:a'], { env: h.env })
+    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, ...applyArgs(h.box), 'default:a'], { env: h.env })
     assert.match(r.stdout, /건너뜀 default:a/)
     assert.ok(h.ids().includes('a'))
   })
@@ -224,7 +231,7 @@ describe('Hermes 세션(REQ10)', () => {
   test('연결 목록을 다시 읽지 못하면 아무것도 지우지 않는다', () => {
     const h = setup()
     h.linked.setRules([{ code: 1, stderr: 'db down' }])
-    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, '--apply', 'default:a', 'default:b'], { env: h.env })
+    const r = h.box.run('hs_delete', ['hermes', '--config', h.cfgFile, ...applyArgs(h.box), 'default:a', 'default:b'], { env: h.env })
     assert.equal(r.code, 1)
     assert.match(r.stderr, /다시 읽기 실패로 남은 2개를 지우지 않는다/)
     assert.equal(h.ids().length, 4)
@@ -256,7 +263,7 @@ describe('Hermes 세션을 루트마다 다시 확인한다(REQ10, 리뷰 P1)', 
     const linked = write(join(box.root, 'linked.txt'), '')
     box.script('linked-sessions', LINKED_FROM_FILE)
     box.script('hermes-delete', DELETE_AND_LINK)
-    const r = box.run('hs_delete', ['hermes', '--config', cfgFile, '--apply', 'default:a', 'default:b'], { env: box.env({ FAKE_HERMES_DATA: cfg.hermes.data, FAKE_LINKED: linked }) })
+    const r = box.run('hs_delete', ['hermes', '--config', cfgFile, ...applyArgs(box), 'default:a', 'default:b'], { env: box.env({ FAKE_HERMES_DATA: cfg.hermes.data, FAKE_LINKED: linked }) })
     assert.equal(r.code, 0, r.stderr)
     assert.match(r.stdout, /지움 default:a/)
     assert.match(r.stdout, /건너뜀 default:b/)
@@ -304,7 +311,7 @@ describe('워크트리 다시 확인(REQ9, 리뷰 P2)', () => {
     const { box, survey, w1, w2 } = setup()
     box.script('git', GIT_STARTS_PROC)
     const env = box.env({ ...LOCKED, HS_ROOT: box.root, REAL_GIT: join(box.tools, 'git'), FIRST_WT: w1, SECOND_WT: w2 })
-    const r = box.run('hs_delete', ['worktrees', '--survey', survey, '--apply', w1, w2], { env })
+    const r = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), w1, w2], { env })
     assert.match(r.stdout, /지움 .*w1/)
     assert.match(r.stdout, /남김 .*w2: 안에서 도는 프로세스가 있다/)
     assert.ok(existsSync(w2))
@@ -313,7 +320,7 @@ describe('워크트리 다시 확인(REQ9, 리뷰 P2)', () => {
   test('/proc 목록을 읽지 못하면 남긴다', () => {
     const { box, survey, w1 } = setup()
     rmSync(join(box.root, 'proc'), { recursive: true })
-    const r = box.run('hs_delete', ['worktrees', '--survey', survey, '--apply', w1], { env: box.env({ ...LOCKED, HS_ROOT: box.root }) })
+    const r = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), w1], { env: box.env({ ...LOCKED, HS_ROOT: box.root }) })
     assert.match(r.stdout, /남김 .*w1: 사용 여부를 확인하지 못함/)
     assert.ok(existsSync(w1))
   })
@@ -321,11 +328,83 @@ describe('워크트리 다시 확인(REQ9, 리뷰 P2)', () => {
   test('기록만 남은 워크트리는 남은 기록이 모두 승인됐을 때만 prune 한다', () => {
     const { box, repo, survey, gone1, gone2 } = setup()
     const env = box.env({ ...LOCKED, HS_ROOT: box.root })
-    const one = box.run('hs_delete', ['worktrees', '--survey', survey, '--apply', gone1], { env })
+    const one = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), gone1], { env })
     assert.match(one.stdout, /건너뜀 .*gone1: prune 하면 승인하지 않은 기록 1개/)
     assert.match(repo.git('worktree', 'list', '--porcelain'), /prunable/)
-    const both = box.run('hs_delete', ['worktrees', '--survey', survey, '--apply', gone1, gone2], { env })
+    const both = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), gone1, gone2], { env })
     assert.equal(both.code, 0, both.stderr)
     assert.doesNotMatch(repo.git('worktree', 'list', '--porcelain'), /prunable/)
+  })
+})
+
+describe('실행 차단(REQ12, 리뷰 P2)', () => {
+  test('clearance 가 없거나 차단 범주가 있으면 어떤 하위 명령도 지우지 않고 5 로 끝난다', () => {
+    const box = new Sandbox('hsd-')
+    const file = write(join(box.home, '.local/share/Trash/files/f'), 'x')
+    write(join(box.home, '.local/share/Trash/info/f.trashinfo'), '[Trash Info]\n')
+    const none = box.run('hs_delete', ['trash', '--apply', 'f'])
+    assert.equal(none.code, 5)
+    assert.match(none.stderr, /--clearance 가 없다/)
+    const blocked = write(join(box.root, 'blocked.json'), JSON.stringify({ blocked: [{ category: 'Docker 이미지', reason: 'docker ps 가 실패했다' }] }))
+    const r = box.run('hs_delete', ['trash', '--clearance', blocked, '--apply', 'f'])
+    assert.equal(r.code, 5)
+    assert.match(r.stderr, /실행 차단: 필수 조사가 실패했다\(Docker 이미지\)\. 홈서버는 아무것도 지우지 않는다/)
+    assert.ok(existsSync(file))
+  })
+})
+
+// 연결 조회가 도는 동안 대상 세션이 활동한 것처럼 세션 DB 를 고치는 가짜 조회
+const LINKED_TOUCHES = `
+const { DatabaseSync } = require('node:sqlite')
+const db = new DatabaseSync(process.env.FAKE_HERMES_DATA + '/state.db')
+db.prepare('UPDATE sessions SET last_activity_at = ? WHERE id = ?').run(Date.now() / 1000, 'a')
+db.close()
+`
+
+describe('Hermes 확인 순서(리뷰 P1)', () => {
+  test('연결 목록을 읽는 동안 활동한 세션은 지우지 않는다', () => {
+    const box = new Sandbox('hsd-')
+    const cfg = sampleConfig(box.root)
+    const cfgFile = write(join(box.root, 'cfg.json'), JSON.stringify(cfg))
+    hermesDb(join(cfg.hermes.data, 'state.db'), [['a', null, 'cron', nowSec() - 40 * DAY]])
+    box.script('linked-sessions', LINKED_TOUCHES)
+    box.script('hermes-delete', HERMES_DELETE)
+    const r = box.run('hs_delete', ['hermes', '--config', cfgFile, ...applyArgs(box), 'default:a'], { env: box.env({ FAKE_HERMES_DATA: cfg.hermes.data }) })
+    assert.match(r.stdout, /건너뜀 default:a/)
+    const d = new DatabaseSync(join(cfg.hermes.data, 'state.db'), { readOnly: true })
+    assert.equal((d.prepare('SELECT count(*) n FROM sessions').get() as any).n, 1)
+    d.close()
+  })
+})
+
+// git status 가 도는 동안 그 워크트리 안에서 프로세스가 시작된 것처럼 가짜 /proc 을 고친다
+const GIT_STATUS_STARTS_PROC = `
+const { spawnSync } = require('node:child_process')
+const fs = require('node:fs')
+const a = process.argv.slice(2)
+if (a.includes('status') && !fs.existsSync(process.env.HS_ROOT + '/proc/88')) {
+  const dir = process.env.HS_ROOT + '/proc/88'
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(dir + '/status', 'Name:\\tnew\\nUid:\\t' + process.getuid() + '\\t0\\t0\\t0\\n')
+  fs.symlinkSync(a.includes('-C') ? a[a.indexOf('-C') + 1] : process.cwd(), dir + '/cwd')
+}
+const done = spawnSync(process.env.REAL_GIT, a, { stdio: 'inherit' })
+process.exit(done.status ?? 1)
+`
+
+describe('워크트리 확인 순서(리뷰 P2)', () => {
+  test('git 상태를 읽는 동안 시작한 프로세스도 잡아 남긴다', () => {
+    const box = new Sandbox('hsd-')
+    const repo = new Repo(join(box.root, 'ops'))
+    const tip = repo.commit('init', 1_700_000_000)
+    repo.git('branch', 'w1')
+    repo.git('worktree', 'add', '-q', join(box.root, 'w1'), 'w1')
+    const w1 = repo.git('worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9)).find((l) => l.endsWith('/w1'))!
+    fakeProc(box.root, [{ pid: 20, uid: process.getuid!(), cwd: box.home }])
+    const survey = write(join(box.root, 'git.json'), JSON.stringify([{ repo: repo.dir, base: 'origin/main', worktrees: [{ path: w1, class: '제거 후보', tip }], branches: [] }]))
+    box.script('git', GIT_STATUS_STARTS_PROC)
+    const r = box.run('hs_delete', ['worktrees', '--survey', survey, ...applyArgs(box), w1], { env: box.env({ ...LOCKED, HS_ROOT: box.root, REAL_GIT: join(box.tools, 'git') }) })
+    assert.match(r.stdout, /남김 .*w1: 안에서 도는 프로세스가 있다/)
+    assert.ok(existsSync(w1))
   })
 })

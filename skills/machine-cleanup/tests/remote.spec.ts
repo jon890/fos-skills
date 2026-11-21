@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Sandbox, write } from './helpers.ts'
+import { okClearance } from './hs-helpers.ts'
 import { importClosure, remoteScript } from '../scripts/remote.ts'
 
 const SSH = `
@@ -63,7 +64,7 @@ describe('remote 명령', () => {
     const b = box()
     const target = write(join(b.root, 'srv/backup/old/x'), 'x')
     const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
-    const r = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, 'hs_delete.ts', 'backup', '--config', cfg, '--apply', 'old'], { env: b.env({ FAKE_FLOCK_BUSY: '1' }) })
+    const r = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'], { env: b.env({ FAKE_FLOCK_BUSY: '1' }) })
     assert.equal(r.code, 75)
     assert.match(r.stderr, /잠금을 300초 안에 얻지 못함/)
     assert.ok(existsSync(target))
@@ -73,10 +74,10 @@ describe('remote 명령', () => {
     const b = box()
     const target = write(join(b.root, 'srv/backup/old/x'), 'x')
     const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
-    const bare = b.run('remote', ['--host', 'example-host', '--input', cfg, 'hs_delete.ts', 'backup', '--config', cfg, '--apply', 'old'])
+    const bare = b.run('remote', ['--host', 'example-host', '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'])
     assert.equal(bare.code, 4)
     assert.ok(existsSync(target))
-    const locked = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, 'hs_delete.ts', 'backup', '--config', cfg, '--apply', 'old'])
+    const locked = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'])
     assert.equal(locked.code, 0, locked.stderr)
     assert.ok(!existsSync(target))
   })
@@ -85,7 +86,7 @@ describe('remote 명령', () => {
     const b = box()
     const target = write(join(b.root, 'srv/backup/old/x'), 'x')
     const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
-    const r = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, 'hs_delete.ts', 'backup', '--config', cfg, '--apply', 'old'], { env: b.env({ FAKE_SSH_CODE: '255' }) })
+    const r = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'], { env: b.env({ FAKE_SSH_CODE: '255' }) })
     assert.equal(r.code, 255)
     assert.match(r.stderr, /홈서버에 접속하지 못함/)
     assert.ok(existsSync(target))

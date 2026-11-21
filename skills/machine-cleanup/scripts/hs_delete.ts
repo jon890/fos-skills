@@ -25,7 +25,10 @@
 // images, backup, worktrees 의 --apply 는 운영 작업 잠금 아래(remote.ts --lock 이 주는 FOS_INFRA_LOCK_HELD=1)에서만 돈다.
 // sudo 가 필요한 정리는 이 스크립트가 하지 않는다.
 //
-// 종료 코드: 0 실패 없음, 1 실패나 없음이 하나라도 있음, 2 사용법 오류, 4 잠금 없이 --apply 를 받음(아무것도 지우지 않음).
+// --apply 는 hs_classify.ts --clearance-out 파일을 --clearance 로 받아야 돈다. 그 파일에 실행 차단 범주가 하나라도 있으면
+// 어떤 하위 명령도 지우지 않는다(스펙 REQ12: 홈서버 조사가 실패하면 홈서버는 아무것도 지우지 않는다).
+//
+// 종료 코드: 0 실패 없음, 1 실패나 없음이 하나라도 있음, 2 사용법 오류, 4 잠금 없이 --apply 를 받음, 5 실행 차단(둘 다 아무것도 지우지 않음).
 
 import { lstatSync, readFileSync, rmSync } from 'node:fs'
 import { parseArgs } from 'node:util'
@@ -37,6 +40,21 @@ import { parseWorktrees } from './lib/git_survey.ts'
 type Json = Record<string, any>
 
 export const LOCK_REQUIRED = 4
+export const BLOCKED = 5
+
+// hs_classify.ts --clearance-out 파일을 본다. 없거나, 못 읽거나, 실행 차단 범주가 있으면 그 이유를 돌려준다
+export function clearanceProblem(path: string | undefined): string | null {
+  if (!path) return '--clearance 가 없다(hs_classify.ts --clearance-out 파일을 넘긴다)'
+  let data: Json
+  try {
+    data = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    return `--clearance 를 읽지 못했다: ${(error as Error).message}`
+  }
+  if (!Array.isArray(data.blocked)) return '--clearance 형식이 아니다'
+  if (data.blocked.length) return `필수 조사가 실패했다(${data.blocked.map((b: Json) => b.category).join(', ')})`
+  return null
+}
 const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const KEPT = ['referenced in multiple repositories', 'image is being used by', 'is using its referenced image']
 const REMOVABLE = new Set(['제거 후보', '제거 후보(PR 머지됨)', '기록만 남음'])
@@ -59,16 +77,16 @@ export function usedImages(): Set<string> | null {
 }
 
 // 승인 항목 `태그=이미지ID` 나 `sha256:...`(ID 자체)를 [넘길 이름, 기대하는 ID] 로 나눈다. 꼴이 아니면 null
+export const FULL_ID = /^sha256:[0-9a-f]{64}$/
+
 export function parseImageItem(item: string): [string, string] | null {
-  if (/^sha256:[0-9a-f]{12,}$/.test(item)) return [item, item]
+  if (FULL_ID.test(item)) return [item, item]
   const eq = item.lastIndexOf('=')
   if (eq <= 0) return null
   const ref = item.slice(0, eq)
   const id = item.slice(eq + 1)
-  return /^sha256:[0-9a-f]{12,}$/.test(id) ? [ref, id] : null
+  return FULL_ID.test(id) ? [ref, id] : null
 }
-
-const sameId = (a: string, b: string): boolean => a === b || a.startsWith(b) || b.startsWith(a)
 
 function images(items: string[], apply: boolean): number {
   let removed = 0
@@ -78,7 +96,7 @@ function images(items: string[], apply: boolean): number {
   for (const item of items) {
     const parsed = parseImageItem(item)
     if (!parsed) {
-      write(2, `거부 ${item}: 「태그=이미지ID」 나 이미지 ID 꼴이 아니다. 조사 때의 이미지 ID 를 함께 넘긴다\n`)
+      write(2, `거부 ${item}: 「태그=이미지ID」 나 이미지 ID(sha256: 뒤 64자리) 꼴이 아니다. 조사 때의 이미지 ID 를 함께 넘긴다\n`)
       failed += 1
       continue
     }
@@ -97,7 +115,12 @@ function images(items: string[], apply: boolean): number {
       continue
     }
     const [image, ...tags] = found.stdout.trim().split(/\s+/)
-    if (!sameId(image, expected)) {
+    if (!FULL_ID.test(image ?? '')) {
+      write(1, `건너뜀 ${ref}: 지금 이미지 ID 를 읽지 못함\n`)
+      kept += 1
+      continue
+    }
+    if (image !== expected) {
       write(1, `건너뜀 ${ref}: 조사 뒤 다른 이미지를 가리킨다(조사 ${expected.slice(7, 19)}, 지금 ${image.slice(7, 19)})\n`)
       kept += 1
       continue
@@ -220,9 +243,10 @@ function worktrees(survey: Json[], paths: string[], apply: boolean): number {
       continue
     }
     // 항목마다 지우기 직전에 다시 본다. 앞 워크트리를 지우는 동안 이 경로에서 프로세스가 시작됐을 수 있다
-    const { cwds, unreadable } = procCwds(process.getuid?.() ?? -1)
     const head = gitRun(path, ['rev-parse', 'HEAD'])
     const status = gitRun(path, ['status', '--porcelain'])
+    // git 조회가 끝난 뒤 프로세스를 본다. 지우기 직전 마지막 확인이 프로세스가 되어 git 조회 중 시작한 작업도 잡는다
+    const { cwds, unreadable } = procCwds(process.getuid?.() ?? -1)
     const dirty = status.stdout.split('\n').filter(Boolean).length
     const busy = [...cwds].some((c) => c === path || c.startsWith(`${path}/`))
     const reason = unreadable
@@ -279,7 +303,9 @@ function trash(names: string[], apply: boolean): number {
 }
 
 // 세션 DB 와 연결 목록을 다시 읽어 조사 JSON 의 hermes 절과 같은 꼴로 만든다
+// 연결 목록을 먼저 읽고 세션 DB 를 그 뒤에 읽는다. 삭제 직전 마지막 확인이 세션 활동이 되어, 연결 조회 동안 활동한 세션을 놓치지 않는다
 function hermesSnapshot(cfg: Json): Json {
+  const linked = readLinked(cfg.hermes.linked)
   const data = expandHome(cfg.hermes.data)
   const profiles = hermesDbs(data).map(({ profile, db }) => {
     try {
@@ -288,7 +314,6 @@ function hermesSnapshot(cfg: Json): Json {
       return { profile, error: (error as Error).message }
     }
   })
-  const linked = readLinked(cfg.hermes.linked)
   return { profiles, ...('ids' in linked ? { linked: linked.ids } : { linked_error: linked.error }) }
 }
 
@@ -378,7 +403,7 @@ export function main(argv: string[]): number {
   const [sub, ...rest] = argv
   let parsed
   try {
-    parsed = parseArgs({ args: rest, allowPositionals: true, options: { apply: { type: 'boolean' }, config: { type: 'string' }, survey: { type: 'string' } } })
+    parsed = parseArgs({ args: rest, allowPositionals: true, options: { apply: { type: 'boolean' }, config: { type: 'string' }, survey: { type: 'string' }, clearance: { type: 'string' } } })
   } catch (error) {
     write(2, `${(error as Error).message}\n`)
     return 2
@@ -386,8 +411,15 @@ export function main(argv: string[]): number {
   const { values, positionals } = parsed
   const apply = Boolean(values.apply)
   if (!['images', 'backup', 'worktrees', 'trash', 'hermes'].includes(sub ?? '') || positionals.length === 0) {
-    write(2, 'usage: hs_delete.ts {images|backup|worktrees|trash|hermes} [--config FILE] [--survey FILE] [--apply] ITEM...\n')
+    write(2, 'usage: hs_delete.ts {images|backup|worktrees|trash|hermes} [--config FILE] [--survey FILE] [--clearance FILE --apply] ITEM...\n')
     return 2
+  }
+  if (apply) {
+    const blocked = clearanceProblem(values.clearance)
+    if (blocked) {
+      write(2, `실행 차단: ${blocked}. 홈서버는 아무것도 지우지 않는다\n`)
+      return BLOCKED
+    }
   }
   if (apply && ['images', 'backup', 'worktrees'].includes(sub) && !lockHeld()) {
     write(2, '운영 작업 잠금 없이 지우지 않는다. remote.ts --lock 으로 돌린다\n')

@@ -162,16 +162,24 @@ describe('hs_survey 명령', () => {
     assert.equal(s.trash[0].moved, '2026-11-01T10:00:00')
   })
 
-  test('docker ps 가 실패하면 Docker 절을 오류로 두고, 분류는 그 범주를 실행 차단으로 3 을 낸다(REQ12, 리뷰 P2)', () => {
+  test('docker ps 가 실패하면 실행 차단(3)이 되고 홈서버의 어떤 삭제도 돌지 않는다(REQ12, 리뷰 P2)', () => {
     const h = homeserver()
     h.box.fake('docker', [{ args: ['ps', '-aq'], code: 1, stderr: 'down' }, ...DOCKER])
     const s = survey(h, ['--no-fetch'])
     assert.equal(s.docker.error, 'docker ps 가 실패했다')
     const file = write(join(h.box.root, 'survey.json'), JSON.stringify(s))
-    const c = h.box.run('hs_classify', [file, '--config', h.cfgFile, '--images-out', join(h.box.root, 'images.tsv')])
+    const out = (n: string) => join(h.box.root, n)
+    const c = h.box.run('hs_classify', [file, '--config', h.cfgFile, '--images-out', out('images.tsv'), '--git-out', out('git.json'), '--hermes-out', out('hermes.tsv'), '--orphans-out', out('orphans.json'), '--clearance-out', out('clear.json')])
     assert.equal(c.code, 3, c.stderr)
-    assert.match(c.stdout, /## 실행 차단 .*\n- Docker 이미지: docker ps 가 실패했다/)
-    assert.equal(readFileSync(join(h.box.root, 'images.tsv'), 'utf8'), '')
+    assert.match(c.stdout, /## 실행 차단 \(필수 조사가 실패했다\. 홈서버는 아무것도 지우지 않는다\)\n- Docker 이미지: docker ps 가 실패했다/)
+    // 다른 범주의 삭제 입력도 비어 있고, clearance 가 차단을 담아 hs_delete --apply 가 거부한다
+    assert.equal(readFileSync(out('images.tsv'), 'utf8'), '')
+    assert.equal(readFileSync(out('hermes.tsv'), 'utf8'), '')
+    assert.deepEqual(JSON.parse(readFileSync(out('git.json'), 'utf8')), [])
+    assert.deepEqual(JSON.parse(readFileSync(out('orphans.json'), 'utf8')).orphans, [])
+    assert.equal(JSON.parse(readFileSync(out('clear.json'), 'utf8')).blocked[0].category, 'Docker 이미지')
+    const del = h.box.run('hs_delete', ['trash', '--clearance', out('clear.json'), '--apply', 'f'])
+    assert.equal(del.code, 5)
   })
 
   test('조사 전후로 파일 목록이 같다(REQ5)', () => {

@@ -3,6 +3,7 @@
 //
 // 사용법:
 //   hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE]
+//                  [--clearance-out FILE]
 //
 // SURVEY 는 hs_survey.ts 의 출력, CONFIG 는 hs_overlay.ts 의 출력이다. 등급 규칙은 references/homeserver-targets.md 가 소유하고,
 // 이 스크립트는 그 규칙대로 후보마다 등급(유지, 안전, 확인 필요)과 이유를 붙인다.
@@ -18,8 +19,10 @@
 // --images-out 은 `등급<탭>태그=이미지ID` 줄(태그가 없으면 이미지 ID)을 쓴다. 승인한 줄을 hs_delete.ts images 에 그대로 넘겨
 // 실행 때 태그가 조사 때의 이미지를 가리키는지 확인하게 한다.
 //
-// 필수 조사가 실패한 범주(Docker 접속, 백업 루트, git 저장소, 대화 기록, Hermes 세션과 연결 조회, 휴지통, 경로)는 「실행 차단」 절에 적고
-// 종료 코드 3 으로 끝낸다. 그 범주는 승인 묶음에 올리지 않고 그 범주의 삭제를 돌리지 않는다. 나머지 범주의 보고는 그대로 낸다.
+// 필수 조사가 실패한 범주(Docker 접속, 백업 루트, git 저장소, 대화 기록, Hermes 세션과 연결 조회, 휴지통, 경로)가 하나라도 있으면
+// 「실행 차단」 절에 적고 종료 코드 3 으로 끝낸다. 이때 홈서버는 아무것도 지우지 않는다(스펙 REQ12). 보고는 그대로 내지만
+// 삭제 입력 파일(--git-out, --orphans-out, --hermes-out, --images-out)은 비워 쓰고, --clearance-out 에 차단 범주를 적어
+// hs_delete.ts --apply 가 어떤 범주도 지우지 않게 한다.
 //
 // 종료 코드: 0 완료, 2 입력 오류, 3 완료했으나 실행 차단된 범주가 있음.
 
@@ -253,7 +256,7 @@ export function report(survey: Json, cfg: Json, c: Json): string {
   const err = (x: any) => (x && typeof x === 'object' && !Array.isArray(x) && x.error ? x.error : null)
   const mem = survey.memory ?? {}
   if (c.blocked.length) {
-    out.push('## 실행 차단 (필수 조사가 실패했다. 이 범주는 승인 묶음에 올리지 않고 지우지 않는다)')
+    out.push('## 실행 차단 (필수 조사가 실패했다. 홈서버는 아무것도 지우지 않는다)')
     for (const b of c.blocked) out.push(`- ${b.category}: ${b.reason}`)
     out.push('')
   }
@@ -360,14 +363,14 @@ export function report(survey: Json, cfg: Json, c: Json): string {
 export function main(argv: string[]): number {
   let parsed
   try {
-    parsed = parseArgs({ args: argv, allowPositionals: true, options: { config: { type: 'string' }, 'json-out': { type: 'string' }, 'git-out': { type: 'string' }, 'orphans-out': { type: 'string' }, 'hermes-out': { type: 'string' }, 'images-out': { type: 'string' } } })
+    parsed = parseArgs({ args: argv, allowPositionals: true, options: { config: { type: 'string' }, 'json-out': { type: 'string' }, 'git-out': { type: 'string' }, 'orphans-out': { type: 'string' }, 'hermes-out': { type: 'string' }, 'images-out': { type: 'string' }, 'clearance-out': { type: 'string' } } })
   } catch (error) {
-    write(2, `usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE]\n${(error as Error).message}\n`)
+    write(2, `usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE] [--clearance-out FILE]\n${(error as Error).message}\n`)
     return 2
   }
   const { values, positionals } = parsed
   if (positionals.length !== 1 || !values.config) {
-    write(2, 'usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE]\n')
+    write(2, 'usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE] [--images-out FILE] [--clearance-out FILE]\n')
     return 2
   }
   let survey: Json
@@ -381,13 +384,15 @@ export function main(argv: string[]): number {
   }
   const c = classify(survey, cfg)
   if (values['json-out']) writeFileSync(values['json-out'], `${JSON.stringify(c, null, 2)}\n`)
+  const blocked = c.blocked.length > 0
+  if (values['clearance-out']) writeFileSync(values['clearance-out'], `${JSON.stringify({ survey_now: survey.now, blocked: c.blocked })}\n`)
   if (values['git-out']) {
-    const repos = c.repos.filter((r: Json) => !r.survey_only && !r.error).map((r: Json) => ({ repo: r.repo, base: r.base, gh_errors: r.gh_errors, worktrees: r.worktrees, branches: r.branches }))
+    const repos = blocked ? [] : c.repos.filter((r: Json) => !r.survey_only && !r.error).map((r: Json) => ({ repo: r.repo, base: r.base, gh_errors: r.gh_errors, worktrees: r.worktrees, branches: r.branches }))
     writeFileSync(values['git-out'], `${JSON.stringify(repos, null, 2)}\n`)
   }
-  if (values['images-out']) writeFileSync(values['images-out'], imageItems(c.images).map(([g, item]) => `${g}\t${item}\n`).join(''))
-  if (values['hermes-out']) writeFileSync(values['hermes-out'], 'candidates' in c.hermes ? c.hermes.candidates.map((h: HermesCandidate) => `${h.source}\t${h.profile}:${h.root}\n`).join('') : '')
-  if (values['orphans-out'] && survey.sessions?.orphans) writeFileSync(values['orphans-out'], JSON.stringify(survey.sessions.orphans))
+  if (values['images-out']) writeFileSync(values['images-out'], blocked ? '' : imageItems(c.images).map(([g, item]) => `${g}\t${item}\n`).join(''))
+  if (values['hermes-out']) writeFileSync(values['hermes-out'], !blocked && 'candidates' in c.hermes ? c.hermes.candidates.map((h: HermesCandidate) => `${h.source}\t${h.profile}:${h.root}\n`).join('') : '')
+  if (values['orphans-out'] && survey.sessions?.orphans) writeFileSync(values['orphans-out'], JSON.stringify(blocked ? { ...survey.sessions.orphans, orphans: [] } : survey.sessions.orphans))
   write(1, `${report(survey, cfg, c)}\n`)
   return c.blocked.length ? 3 : 0
 }

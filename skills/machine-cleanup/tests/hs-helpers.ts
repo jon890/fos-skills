@@ -53,3 +53,7 @@ export function hermesDb(path: string, rows: [string, string | null, string, num
 
 export const DAY = 86400
 export const nowSec = (): number => Date.now() / 1000
+
+// hs_delete.ts --apply 에 붙일 인자. 실행 차단이 없는 clearance 파일을 쓴다
+export const okClearance = (root: string): string => write(join(root, 'clearance.json'), '{"survey_now":0,"blocked":[]}\n')
+export const applyArgs = (box: { root: string }): string[] => ['--clearance', okClearance(box.root), '--apply']
