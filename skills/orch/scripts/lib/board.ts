@@ -42,6 +42,26 @@ export function readBoard(file: string): BoardItem[] {
   return items
 }
 
+// 띄우기 이력으로 공유 보드의 항목 주인을 찾는다. 워크트리 이름이 겹치거나 이력을 읽지 못하면 끊김 판정에서 남의 워크트리라고 단정하지 않는다.
+export function boardOwnership(repo: string, items: Record<string, unknown>[]): { ownItems: Set<string>; foreignWorktrees: Set<string> } {
+  const ownItems = new Set<string>()
+  const foreignWorktrees = new Set<string>()
+  let dispatches: Set<string>
+  try { dispatches = new Set(launchHistory(repo).map((row) => row.dispatch)) }
+  catch { return { ownItems, foreignWorktrees } }
+  if (dispatches.size === 0) return { ownItems, foreignWorktrees }
+  const localWorktrees = new Set<string>()
+  for (const item of items) {
+    for (const row of boardWorkerRows(item)) {
+      if (row.dispatch && dispatches.has(row.dispatch)) ownItems.add(String(item.id))
+      if (!row.dispatch || dispatches.has(row.dispatch)) localWorktrees.add(row.worktree)
+      else foreignWorktrees.add(row.worktree)
+    }
+  }
+  for (const worktree of localWorktrees) foreignWorktrees.delete(worktree)
+  return { ownItems, foreignWorktrees }
+}
+
 // 지시서 머리의 `중간 과정:` 줄은 lib/spec.ts 의 interimOf 가 읽는다. spec-lint 도 같은 판정을 써서 그쪽에 둔다
 export { interimOf }
 

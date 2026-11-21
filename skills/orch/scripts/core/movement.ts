@@ -66,7 +66,7 @@ export function judgeWorker(input: {
   mtime: number | null
   commit: number | null
   screen?: ScreenMark
-  waiting?: string | null
+  waiting?: string | null | ((wouldBeIdle: boolean) => string | null)
 }): WorkerVerdict {
   const { row, now, settings } = input
   const moves = [input.mtime, input.commit, input.screen?.changedAt ?? null].filter((v): v is number => typeof v === 'number')
@@ -85,10 +85,11 @@ export function judgeWorker(input: {
     waiting: null,
   }
   if (settings.exited && liveness === 'exited') return { ...verdict, reason: 'exited' }
-  if (input.waiting) return { ...verdict, waiting: input.waiting }
+  const idle = settings.idleMin > 0 && movedAt !== null && now - movedAt >= settings.idleMin * 60_000 && !input.screen?.background
+  const waiting = typeof input.waiting === 'function' ? input.waiting(idle) : input.waiting
+  if (waiting) return { ...verdict, waiting }
   if (input.screen?.background) return { ...verdict, waiting: `백그라운드 작업을 기다린다(${input.screen.background})` }
-  if (settings.idleMin === 0 || movedAt === null) return verdict
-  return now - movedAt >= settings.idleMin * 60_000 ? { ...verdict, reason: 'idle' } : verdict
+  return idle ? { ...verdict, reason: 'idle' } : verdict
 }
 
 // 열린 dispatch 행만 고른다

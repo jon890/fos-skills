@@ -14,6 +14,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import { tailHash } from '../scripts/lib/movement.ts'
 import { screenLines, screenTail } from '../scripts/lib/screen.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { git, gitEnv } from '../../../modules/testkit/git.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
 import { queuedNotices } from './fixtures/queued-notices.ts'
 
@@ -653,6 +654,85 @@ describe('움직임 확인', () => {
       .map((row) => String(row.text).replace(/ \d+분 /, ' N분 '))
   }
 
+  function idleBranch(source: string, branch: string): string {
+    const path = join(tmp, branch)
+    git(source, ['worktree', 'add', '-qb', branch, path])
+    const old = new Date(Date.now() - 45 * MIN)
+    git(path, ['commit', '--allow-empty', '-qm', 'old'], { ...gitEnv(), GIT_COMMITTER_DATE: old.toISOString() })
+    utimesSync(join(path, '.git'), old, old)
+    return path
+  }
+
+  function openPr(number: number, branch: string, extra: Json = {}): Json {
+    return {
+      number, headRefName: branch, headRefOid: 'a'.repeat(40), isDraft: false,
+      baseRefName: 'main', author: { login: 'me' }, url: `https://github.com/test/repo/pull/${number}`,
+      statusCheckRollup: [{ name: 'Tests', status: 'IN_PROGRESS' }], ...extra,
+    }
+  }
+
+  test('루프가 최신화한 Ready PR 만 새 HEAD 의 CI 대기 중 머지 대기로 본다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { authors: ['me'] }, queue: { required: 'Tests' } }))
+    const prs = [
+      openPr(1, 'refreshed'),
+      openPr(2, 'same-head'),
+      openPr(3, 'draft', { isDraft: true }),
+      openPr(4, 'failed', { statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'FAILURE' }] }),
+      openPr(5, 'no-refresh'),
+      openPr(6, 'expired'),
+    ]
+    env.GH = fakeBin(tmp, 'gh', [{ args: ['pr', 'list'], stdout: JSON.stringify(prs) }]).path
+    const updated = { action: 'update', value: 'updated', base: 'c'.repeat(40), from: 'b'.repeat(40), at: new Date().toISOString() }
+    write(orchFile('state', 'refresh.json'), JSON.stringify({
+      1: updated, 2: { ...updated, from: prs[1].headRefOid }, 3: updated, 4: updated,
+      6: { ...updated, at: new Date(Date.now() - 4 * 60 * MIN).toISOString() },
+    }))
+    orca({ workers_by_run: { A: prs.map((pr) => moving(`d${pr.number}`, `t${pr.number}`, idleBranch(repo, String(pr.headRefName)))) } })
+    tick()
+    assert.deepEqual(idleEvents('A'), [
+      'd2 idle N분 same-head t2', 'd3 idle N분 draft t3', 'd4 idle N분 failed t4',
+      'd5 idle N분 no-refresh t5', 'd6 idle N분 expired t6',
+    ])
+  })
+
+  test('다른 저장소 worker 는 자기 저장소의 열린 PR 과 CI 로 머지 대기를 판정한다', () => {
+    const foreign = join(tmp, 'foreign')
+    loopRepo(foreign)
+    env.ORCH_DIR = orchFile()
+    env.GH_REPO = 'test/repo'
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { authors: ['me'] }, queue: { required: 'Tests' } }))
+    write(join(foreign, '.orch', 'config.json'), JSON.stringify({ pipeline: { authors: ['them'] }, queue: { required: 'Foreign tests' } }))
+    write(orchFile('state', 'refresh.json'), JSON.stringify({
+      2: { action: 'update', value: 'updated', base: 'c'.repeat(40), from: 'b'.repeat(40), at: new Date().toISOString() },
+    }))
+    const source = join(tmp, 'gh-source')
+    const passed = { statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
+    write(join(source, 'repo.json'), JSON.stringify([openPr(1, 'local', passed), openPr(2, 'foreign-work', passed)]))
+    const author = { login: 'them' }
+    write(join(source, 'foreign.json'), JSON.stringify([
+      openPr(1, 'foreign-ready', { author, statusCheckRollup: [{ name: 'Foreign tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }),
+      openPr(2, 'foreign-work', { author, statusCheckRollup: [{ name: 'Foreign tests', status: 'IN_PROGRESS' }] }),
+    ]))
+    env.GH = linkBin(tmp, 'gh-repos', `
+const fs = require('node:fs')
+const path = require('node:path')
+if (process.argv[2] === 'pr' && process.argv[3] === 'list') {
+  const repo = process.env.GH_REPO?.split('/').at(-1) ?? path.basename(process.cwd())
+  fs.appendFileSync(path.join(process.env.FAKE_DIR, 'gh-repos.log'), repo + '\\n')
+  process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_DIR, 'gh-source', repo + '.json')))
+}
+`)
+    orca({ workers_by_run: { A: [
+      moving('d1', 't1', idleBranch(repo, 'local')),
+      moving('d2', 't2', idleBranch(foreign, 'foreign-ready')),
+      moving('d3', 't3', idleBranch(foreign, 'foreign-work')),
+    ] } })
+    tick()
+    assert.deepEqual(idleEvents('A'), ['d3 idle N분 foreign-work t3'])
+    const queried = readFileSync(join(tmp, 'gh-repos.log'), 'utf8').trim().split('\n')
+    assert.equal(queried.filter((name) => name === 'foreign').length, 1)
+  })
+
   test('파일과 화면이 기준 분 넘게 그대로인 worker 를 그 Run 에 WORKER-IDLE 로 한 번만 알린다', () => {
     const path = worktree('wt-a', 45)
     orca({ workers_by_run: { A: [moving('d1', 'tA', path)] }, screens: { tA: CLAUDE_WORKING } })
@@ -724,6 +804,34 @@ describe('움직임 확인', () => {
       ['eval wt-gone N분 평가 결과 확인'],
     )
   })
+
+  for (const remoteBoard of [false, true]) {
+    test(`${remoteBoard ? '다른' : '이'} 저장소에 있는 공유 보드에서 이 저장소가 띄운 항목만 알린다`, () => {
+      const boardRepo = remoteBoard ? join(tmp, 'shared-board') : repo
+      if (remoteBoard) loopRepo(boardRepo)
+      const board = join(boardRepo, '.omc', 'board.json')
+      write(orchFile('config.json'), JSON.stringify({ finish: { board } }))
+      const item = (id: string) => ({
+        id, status: 'doing', worktree: id, details: [{ text: '결과 확인', done: false }],
+        workers: [{ dispatch: `d-${id}`, worktree: id, status: 'done' }],
+      })
+      write(board, JSON.stringify({ items: [item('mine'), item('theirs')] }))
+      write(orchFile('state', 'launch-history.jsonl'), JSON.stringify({
+        dispatch: 'd-mine', worktree: join(tmp, 'mine'), at: new Date().toISOString(),
+      }) + '\n')
+      const since = Date.now() - 31 * MIN
+      write(orchFile('state', 'movement.json'), JSON.stringify({ stages: {
+        mine: { step: '결과 확인', since, fired: false }, theirs: { step: '결과 확인', since, fired: false },
+      } }))
+      orca({ workers_by_run: { A: [] } })
+      tick()
+      tick()
+      const notices = runEvents('A').filter((row) => row.kind === 'STAGE-STALLED')
+      assert.deepEqual(notices.map((row) => String(row.text).replace(/ \d+분 /, ' N분 ')), ['mine mine N분 결과 확인'])
+      const saved = JSON.parse(readFileSync(orchFile('state', 'movement.json'), 'utf8'))
+      assert.deepEqual(Object.keys(saved.stages), ['mine'])
+    })
+  }
 
   test('pipeline.idle_min 이 틀리면 설정 오류다', () => {
     write(orchFile('config.json'), JSON.stringify({ pipeline: { idle_min: 'x' } }))

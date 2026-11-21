@@ -13,7 +13,7 @@
 // 멈춤 판정(judgeWorker. 위에서부터 처음 걸린 것):
 //   1. Orca 의 liveness(projection.liveness.verdict)가 exited 이고 settings.exited 가 true 면 exited. 프로세스가 끝났는데 dispatch 가 열려 있다
 //   2. 부르는 쪽이 기다리는 이유(waiting)를 주면 멈춤이 아니다. 루프는 그 Run 의 질문을 읽지 못한 것, 그 dispatch 가 보낸 미답변 질문,
-//      그 워크트리 브랜치의 열린 PR 의 CI 가 통과한 것(머지를 기다린다)을 준다. 뒤의 둘은 코디네이터의 차례다.
+//      그 워크트리 저장소의 열린 Ready PR 이 CI 를 통과했거나 루프에서 최신화한 뒤 CI 를 기다리는 것을 준다.
 //      이유가 없어도 화면 기록(screen.background)에 백그라운드 작업 표시가 있으면 `백그라운드 작업을 기다린다(<표시>)` 로 멈춤이 아니다.
 //      백그라운드 셸이나 모니터가 끝나면 하네스가 worker 의 턴을 깨운다(lib/screen.ts 의 「백그라운드 작업」). 2026-11-04 에 멈춤 16건 가운데
 //      13건이 이런 worker 였다
@@ -22,6 +22,7 @@
 //   4. 움직임을 하나도 모르면(워크트리가 없고 화면 기록도 없다) 멈춤이 아니다. 모르는 것을 멈춤으로 알리지 않는다
 //   5. 움직임에서 idleMin 분이 지났으면 idle
 // 멈춘 단계(stalledStages): 표시 없는 줄은 아래 규칙을 따른다. 단계는 details 에서 done 이 아닌 첫 줄이다.
+//   - 이 저장소가 띄운 worker 의 항목을 본다. 보드가 있는 저장소는 dispatch 기록이 없는 옛 항목도 본다.
 //   - status 가 doing 이다. todo, wait, done, decide 는 보지 않는다(wait 는 일부러 기다리는 항목이다)
 //   - 끝나지 않은 단계가 있다
 //   - worktree 나 branch 칸이 있다. 둘 다 없는 항목은 worker 를 띄운 적이 없는, 코디네이터나 사용자가 맡은 일이다
@@ -39,16 +40,19 @@
 
 import { DEFAULT_IDLE_MIN, worktreeOf, judgeWorker, openRows, stalledStages, readRecords } from '../core/movement.ts'
 import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } from '../core/movement.ts'
+import { boardWorkerRows } from '../core/board-workers.ts'
 import { firstPendingStep, mayHaveStepMark } from './auto-advance.ts'
 import { autoAdvanceOf } from '../core/auto-advance.ts'
 import { stepLaunches } from './step-launches.ts'
 import type { StageOptions } from '../core/movement.ts'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { readBoard } from './board.ts'
+import { basename, join } from 'node:path'
+import { boardOwnership, readBoard } from './board.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
-import { git } from './git.ts'
+import { inside } from './fs.ts'
+import { git, gitMayFind, mainCheckout } from './git.ts'
 import { boardPath } from './board-file.ts'
+import { boardRepo } from './main-guard.ts'
 import { pathOf } from './paths.ts'
 import { worktreePaths } from './workers.ts'
 import type { workerRows } from './workers.ts'
@@ -116,7 +120,7 @@ export function collectWorkers(input: {
   settings: MovementSettings
   now: number
   screens?: Readonly<Record<string, ScreenMark>>
-  waiting?: (run: string, row: Json, worktree: string | null) => string | null
+  waiting?: (run: string, row: Json, worktree: string | null, wouldBeIdle: boolean) => string | null
 }): { verdicts: WorkerVerdict[]; read: Set<string>; errors: Map<string, string>; live: Set<string> } {
   const verdicts: WorkerVerdict[] = []
   const read = new Set<string>()
@@ -143,7 +147,7 @@ export function collectWorkers(input: {
           mtime: exists ? latestMtime(path as string) : null,
           commit: exists ? lastCommitMs(path as string) : null,
           screen: input.screens?.[dispatch],
-          waiting: input.waiting?.(run, row, path) ?? null,
+          waiting: (wouldBeIdle) => input.waiting?.(run, row, path, wouldBeIdle) ?? null,
         }),
       )
     }
@@ -155,7 +159,13 @@ export function collectWorkers(input: {
 export function collectStages(repo: string, live: ReadonlySet<string>, settings: MovementSettings, now: number, context: { openPrs?: StageOptions['openPrs']; dispatches?: ReadonlySet<string>; branches?: Map<string, string> } = {}): StageVerdict[] {
   const file = boardPath(repo)
   if (settings.idleMin === 0 || !existsSync(file)) return []
-  const items = readBoard(file) as Json[]
+  const rows = readBoard(file) as Json[]
+  const { ownItems, foreignWorktrees } = boardOwnership(repo, rows)
+  const root = mainCheckout(repo)
+  const owner = boardRepo(repo, file)
+  const localBoard = owner === root || (!gitMayFind(owner) && inside(owner, root))
+  const items = rows.filter((item) => ownItems.has(String(item.id)) || (localBoard &&
+    !boardWorkerRows(item).some((row) => row.dispatch) && !foreignWorktrees.has(basename(String(item.worktree ?? '')))))
   const recent = (path: string) => {
     const ms = latestMtime(path)
     return ms !== null && now - ms < settings.idleMin * 60_000

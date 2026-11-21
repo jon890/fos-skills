@@ -1,6 +1,7 @@
 // 열린 PR 조회(틱 2): gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리, 최신화가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 
 import { isObject } from '../../core/json.ts'
+import type { Config } from '../../lib/config.ts'
 import { apiTarget, ghJson, isOwnPr, ownAuthors } from '../../lib/gh.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
@@ -9,8 +10,8 @@ import type { OwnPr, Prs } from './shared.ts'
 
 const PR_FIELDS = 'number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup'
 
-function openPrs(repo: string): Prs {
-  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo, cache: false })
+export function openPrs(repo: string, foreignConfig?: Config): Prs {
+  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo, cache: false, repoFromCwd: foreignConfig !== undefined })
   if (!got.ok) return got
   if (!Array.isArray(got.data)) return { ok: false, error: 'gh pr list 의 출력이 목록이 아니다' }
   const authors = new Map<string, string[]>()
@@ -22,7 +23,7 @@ function openPrs(repo: string): Prs {
     const host = target?.host
     if (!target || !host) return { ok: false, error: `PR #${pr.number} 의 URL 을 읽지 못했다` }
     if (!authors.has(host)) {
-      const own = ownAuthors(repo, host)
+      const own = ownAuthors(repo, host, foreignConfig)
       if (!own) return { ok: false, error: `내 PR 의 작성자를 정하지 못했다(${host} 의 gh api user 실패). config.json 의 pipeline.authors 로 준다` }
       authors.set(host, own)
     }
