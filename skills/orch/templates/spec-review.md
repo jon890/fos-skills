@@ -21,6 +21,9 @@ worker 선택: `{{에이전트}}` `{{모델}}` effort `{{effort}}`. 행: review.
 루프 없이: 남의 PR 리뷰라 기능 구현이 아니다
 
 1. worker 는 fetch 하지 않고 준비된 HEAD(PR head)를 리뷰한다. 브랜치를 만들거나 `git fetch origin pull/{{N}}/head` 를 부르지 않는다.
+   등록할 때 PR 의 지금 HEAD 가 준비된 HEAD 와 다르면 그 사이 커밋을 본다. 기준 브랜치 merge 만 더한 HEAD 면 묻지 않고 그대로 진행해 지금 PR 에 등록한다.
+   자동 머지가 그런 HEAD 에 앞 판정을 인정한다. `git log --no-merges <준비된 HEAD>..<지금 HEAD> --not origin/<기준 브랜치>` 가 비었으면 merge 만 더한 것이다. 이 확인에 필요한 fetch 는 해도 된다.
+   다른 커밋이 끼었으면 ask 로 알린다.
 2. 변경 파일과 그 호출 쪽을 읽고 정확성, 회귀, 누락된 테스트와 문서를 본다. 코드를 고치거나 커밋하지 않는다.
 3. 리뷰를 PR 에 COMMENT 로 등록한다. 본문은 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 쓰고 저장소에는 두지 않는다.
    `pr-review` 스킬의 `gh-review-post.ts` 로 등록하고 `--human-reviewed` 는 붙이지 않는다. 사람이 보지 않고 등록하므로 끝 안내가 「AI 가 작성했습니다」 만 말해야 한다. 「사람이 확인했습니다」 는 사실과 다르다.
