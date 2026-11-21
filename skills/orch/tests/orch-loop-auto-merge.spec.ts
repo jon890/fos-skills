@@ -6,6 +6,7 @@
 // 큐는 분리 실행이라 틱이 끝난 뒤에도 돈다. 테스트는 인자 파일이 생기기를, 다시 걸지 않음은 pid 가 끝나기를 기다린 뒤 다음 틱을 돌린다.
 
 import assert from 'node:assert/strict'
+import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -956,6 +957,23 @@ describe('여러 Run', () => {
     assert.deepEqual(autoMergeState().blocked, {})
   })
 })
+
+for (const extraChange of [false, true]) {
+  test(`자동 머지의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, async () => {
+    config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
+    git(['switch', '-qc', 'feat-1'])
+    const { verified, head } = verifiedPlan(repo, extraChange)
+    github([pr(1, { headRefOid: head })], { views: { 1: { body: verifiedPlanEvidence(verified), headRefOid: head,
+      reviews: [{ body: 'PASS', commit: { oid: head }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
+    const output = once()
+    if (extraChange) {
+      assert.ok(output.includes(HEAD_MISMATCH), output)
+      assert.equal(queueCalls().length, 0)
+    } else {
+      await queued(1)
+    }
+  })
+}
 
 // 기능 경로는 리뷰 설정이 없어도 인수·문서 근거를 확인한다.
 test('기능 지시서의 근거 누락은 자동 큐를 막고 현재 커밋의 근거로 다시 건다', async () => {

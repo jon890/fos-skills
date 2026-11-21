@@ -2,6 +2,7 @@
 // 가짜 gh, git 은 merge-queue.spec.ts 와 같은 것을 쓴다(tests/fixtures/merge-queue-fakes.ts).
 
 import assert from 'node:assert/strict'
+import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -12,6 +13,8 @@ import { fileURLToPath } from 'node:url'
 import { gateLines } from '../scripts/queue/gate.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
+
+import { copyRepo, git as templateGit } from '../../../modules/testkit/git.ts'
 
 const GATE_RUNNER = fileURLToPath(new URL('./fixtures/queue-gate-run.ts', import.meta.url))
 const QUEUE_RUNNER = fileURLToPath(new URL('./fixtures/merge-queue-run.ts', import.meta.url))
@@ -76,6 +79,22 @@ function pr(over: Json = {}): Json {
     body: BLOCK,
     ...over,
   }
+}
+
+for (const extraChange of [false, true]) {
+  test(`관문의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, { skip: !HAS_TOOLS }, async (t) => {
+    const c = setup(t)
+    const repo = copyRepo(join(c.tmp, 'repo')).dir
+    c.env.PATH = process.env.PATH
+    c.env.GH = join(bindir, 'gh')
+    delete c.env.MERGE_QUEUE_FAKE_GIT
+    templateGit(repo, ['switch', '-qc', 'feat'])
+    const { verified, head } = verifiedPlan(repo, extraChange)
+    templateGit(repo, ['push', '-qu', 'origin', 'feat'])
+    const result = await gate({ ...c, tmp: repo }, { '1': pr({ headRefOid: head, body: verifiedPlanEvidence(verified) }) }, 0)
+    assert.equal(result.code, extraChange ? 1 : 0, both(result))
+    assert.ok(result.stdout.includes(extraChange ? HEAD_MISMATCH : 'GATE-OK 1'), both(result))
+  })
 }
 
 const FAILED = [{ status: 'COMPLETED', conclusion: 'FAILURE' }]

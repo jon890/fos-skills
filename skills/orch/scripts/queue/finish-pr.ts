@@ -170,7 +170,7 @@ import { real, realPath } from '../lib/fs.ts'
 import { gh } from '../lib/gh.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
-import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges, pendingFollowup } from '../lib/feature-evidence.ts'
+import { EVIDENCE_START, featureBranch, featureEvidenceProblem, acceptsVerifiedCommit, pendingFollowup } from '../lib/feature-evidence.ts'
 import { followupDone, loadFollowups, updateWithBoard } from '../lib/followups.ts'
 import { markDone, upsertFollowup } from '../core/followups.ts'
 import { boardPath } from '../lib/board-file.ts'
@@ -829,8 +829,9 @@ async function finish(args: Args, repo: string): Promise<number> {
     let body = ''
     try { if (fresh.code === 0) body = JSON.parse(fresh.stdout).body } catch { /* 아래 검사로 실패 */ }
     // 후속 검증의 대기는 여기서 막지 않고(afterMerge false) 아래에서 배포 뒤 할 일 목록으로 옮긴다
-    const problem = typeof body === 'string' ? featureEvidenceProblem(body, String(merged.pr.head ?? ''), true, false,
-      (verified) => fetchedBaseMerges(repo, String(merged.pr.head ?? ''), verified, merged.base)) : '기능 완료 근거 조회 실패'
+    const head = String(merged.pr.head ?? '')
+    const problem = typeof body === 'string' ? featureEvidenceProblem(body, head, true, false,
+      (verified) => acceptsVerifiedCommit(repo, head, verified, merged.base, { fetch: true, mergedAt: merged.merge })) : '기능 완료 근거 조회 실패'
     if (problem) return fail(problem)
     const waiting = pendingFollowup(body)
     if (waiting !== null && !followupDone(repo, args.pr)) {

@@ -6,9 +6,8 @@
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
 import { judgePrReview } from '../../lib/review-judgement.ts'
 import { loadConfig } from '../../lib/config.ts'
-import { contractSettings } from '../../lib/contract-merge.ts'
 import { integrationNeeds, integrationProblems, integrationRules } from '../../core/integration-evidence.ts'
-import { baseMergesOnly, featureBranch, featureEvidenceProblem, planDeletionOnly } from '../../lib/feature-evidence.ts'
+import { acceptsVerifiedCommit, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
 import { migrationReasons } from './migrations.ts'
@@ -174,12 +173,9 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   } else if (evidence.data.headRefOid !== p.ph) {
     throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${String(evidence.data.headRefOid ?? '').slice(0, 8)}`)
   } else {
-    // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 본다
-    // 통합 테스트 기록의 커밋도 같은 예외로 받는다(docs/features/gate-integration-evidence/design.md)
-    const accept = (verified: string): boolean => fetchPrRefs(stepContext, state) && (
-      baseMergesOnly(state.repoDir, p.ph, verified, p.base, contractSettings(loadConfig(state.repoDir))?.paths ?? null) ||
-      planDeletionOnly(state.repoDir, p.ph, verified, p.base)
-    )
+    // 통합 테스트 기록의 커밋도 기능 완료 근거와 같은 예외로 받는다.
+    const accept = (verified: string): boolean => fetchPrRefs(stepContext, state) &&
+      acceptsVerifiedCommit(state.repoDir, p.ph, verified, p.base)
     const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false, accept)
     if (problem) reasons.push({ kind: 'evidence', text: problem })
     const integration = integrationReasons(stepContext, state, evidence.data.body ?? '', accept)
