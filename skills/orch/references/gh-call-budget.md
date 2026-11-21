@@ -16,6 +16,9 @@ orch 의 gh 실행은 `scripts/lib/gh.ts` 를 거친다. 같은 인자의 읽기
 | 표시용 브랜치 규칙 GET | 300초 | 자주 바뀌지 않는 규칙을 함께 쓴다 |
 | `repo view` | 300초 | 저장소 URL 은 PR 상태보다 드물게 바뀐다 |
 
+비공개 낱말 검사(worker 훅, 머지 관문, doctor)의 저장소 공개 여부는 이 캐시와 따로 머신 폴더의 `repo-visibility.json` 에 저장소마다 1시간(읽지 못한 결과는 10분) 기억한다.
+훅 사본은 `scripts/lib/gh.ts` 를 쓰지 못해 gh 를 직접 부르므로, 같은 저장소의 연속 커밋이 커밋마다 묻지 않게 하려는 것이다. 목록이 비었으면 묻지 않는다.
+
 실패 응답은 캐시하지 않는다. 표시용 `pr checks` 의 진행 중 응답(종료 코드 8)은 캐시한다.
 GraphQL 은 인자에 직접 쓴 query 만 캐시한다. mutation 이거나 query 파일·stdin 처럼 읽기 여부를
 확인할 수 없는 호출은 매번 실행한다. merge, create, comment, update-branch 등 쓰기는 캐시하지 않는다.

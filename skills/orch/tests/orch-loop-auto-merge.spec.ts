@@ -106,6 +106,8 @@ beforeEach(() => {
     BOARD_SYNC: join(binDir, 'noop.ts'),
     FAKE_DIR: tmp,
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
+    // 사용자의 실제 비공개 낱말 목록과 떼어 놓는다(lib/private-words.ts)
+    ORCH_PRIVATE_WORDS: join(tmp, 'no-private-words.txt'),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: tmp,
     GIT_AUTHOR_NAME: 't',
@@ -519,6 +521,23 @@ describe('보류 표시', () => {
     const output = once()
     assert.match(output, /AUTO-MERGE-WAIT #1 PR 본문 보류: 본문의 배포 대기/)
     assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  // 코디네이터가 허락한 범위(2026-11-21): 목록에 걸린 보류 이유는 값 없이 위치만 로그에 남긴다. 걸리지 않은 이유는 위 테스트처럼 그대로다.
+  // 가상 낱말만 쓴다
+  test('보류 이유에 비공개 낱말이 있으면 루프 로그에 값 대신 위치를 쓴다', () => {
+    const home = join(tmp, 'home')
+    mkdirSync(join(home, '.config', 'orch'), { recursive: true })
+    writeFileSync(join(home, '.config', 'orch', 'private-words.txt'), 'example-secret\n')
+    github([pr(1)], { views: { 1: { body: '## 요약\n\n- 머지 보류: example-secret 서버 확인 전\n' } } })
+    const words = { ORCH_PRIVATE_WORDS: join(home, '.config', 'orch', 'private-words.txt') }
+    const body = once(words)
+    assert.match(body, /AUTO-MERGE-WAIT #1 PR 본문 보류: 비공개 낱말이 있어 값을 생략한다\(PR 본문 3번째 줄\)/)
+    spec('specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: EXAMPLE-SECRET 배포 뒤'])
+    const held = once(words)
+    assert.match(held, /AUTO-MERGE-WAIT #1 지시서 보류: 비공개 낱말이 있어 값을 생략한다\(지시서 \d+번째 줄\)/)
+    for (const output of [body, held]) assert.ok(!output.toLowerCase().includes('example-secret'), output)
     assert.deepEqual(queueCalls(), [])
   })
 
