@@ -1,9 +1,11 @@
 // 보드 상태와 단계 명령. 검사와 저장은 board.ts 에 맡기고 결과 JSON 을 짧게 보인다.
 // 사용법: orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
 //         orch board add-step <항목> "<글>" | show <항목>
+//         orch board clear-done <항목> | clear-done --all (끝난 단계를 지우고 남은 단계를 1번부터 다시 매긴다. 번호를 쓰는 기록은 아래 clearDone 이 맞춘다)
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
 // 경고(stderr)는 board.ts 가 낸다: 단계 줄이 progress 의 전체 값을 넘으면 progress 를 지우고, 글에 #번호 와 머지 낱말이 있는데 --on 이 없으면 알린다.
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
+// clear-done 은 고친 항목마다 BOARD-CLEAR <항목> <지운 수> 0/<남은 수>, 없으면 BOARD-NONE. 건너뛴 이유는 stderr 다.
 // 진입점의 --full 은 모든 줄도 낸다. 종료 코드: 0 성공, 1 거절, 2 사용법·설정 오류.
 import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { unmatchedRecords, unmatchedLine, unmatchedResolved } from '../lib/board-unmatched.ts'
@@ -15,6 +17,9 @@ import { BOARD_BIN, GET_FIELDS, itemTitle } from '../lib/board.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { fullAsked } from '../lib/output.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from '../lib/proc.ts'
+import { readApprovals } from '../lib/approvals.ts'
+import { appendStepLaunch, stepLaunches } from '../lib/step-launches.ts'
+import { hideEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 
 const USAGE = `사용법:
   orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
@@ -29,12 +34,14 @@ const USAGE = `사용법:
   orch board list [--status <상태>[,<상태>…]] [--json]
   orch board del <항목> [--force]
   orch board del --done
+  orch board clear-done <항목>
+  orch board clear-done --all
   공통: [--repo <폴더>] [--board <파일>] [--full]
   - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
 const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   task: { type: 'string' }, 'task-ref': { type: 'string' },
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
-  json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' },
+  json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' }, all: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 } as const
 
@@ -60,6 +67,8 @@ function main(argv: string[]): number {
   const usage = () => { process.stderr.write(`${USAGE}\n`); return 2 }
   if ((values.task !== undefined || values['task-ref'] !== undefined) && verb !== 'set') return usage()
   if ((values.done || values.force) && verb !== 'del') return usage()
+  if (values.all && verb !== 'clear-done') return usage()
+  if (verb === 'clear-done' && (values.json || values.status !== undefined || values.on !== undefined)) return usage()
   if (verb === 'del' && (values.json || values.status !== undefined || values.on !== undefined)) return usage()
   if ((values.json && !['get', 'list', 'show'].includes(verb)) || (values.status !== undefined && verb !== 'list') || (values.on !== undefined && ['get', 'list', 'show'].includes(verb))) return usage()
   if (verb === 'del' && args.length === 2 && !values.done) command = values.force ? ['del', id, '--exact'] : ['del-done', id]
@@ -76,6 +85,8 @@ function main(argv: string[]): number {
   }
   else if (verb === 'show' && args.length === 2 && values.on === undefined) command = [values.json ? 'item' : 'view', id]
   else if (verb === 'add-step' && args.length === 3) command = ['step-add', id, third]
+  else if (verb === 'clear-done' && args.length === 2 && !values.all) command = ['clear-done', id]
+  else if (verb === 'clear-done' && args.length === 1 && values.all) command = ['clear-done', '--all']
   else if (verb === 'step' && /^\d+$/.test(third ?? '')) {
     if (action === 'text' && args.length === 5) command = ['step-edit', id, third, text]
     else if (['done', 'undo'].includes(action) && args.length === 4 && values.on === undefined) {
@@ -91,6 +102,17 @@ function main(argv: string[]): number {
     const mainGuard = guardWrite(boardRepo(values.repo ?? process.cwd(), command[command.indexOf('--file') + 1]), 'board ' + verb, values['not-main'])
     if (mainGuard.code !== 0) return mainGuard.code
   }
+  if (verb === 'clear-done') {
+    // 열린 단계 승인은 id 와 칸에 단계 번호를 담는다(step-<항목>-<번호>). 번호를 다시 매기면 다른 단계를 가리키므로 그 항목은 고치지 않는다
+    let held: Set<string>
+    try { held = new Set(readApprovals(values.repo ?? process.cwd()).entries.filter((row) => row.state === 'open' && row.kind === 'step' && row.item !== null).map((row) => String(row.item))) }
+    catch (e) { process.stderr.write(`승인 대기 파일을 읽지 못해 끝난 단계를 지우지 않았다: ${(e as Error).message}\n`); return 1 }
+    if (!values.all && held.has(id)) {
+      process.stderr.write(`${id} 에 열린 단계 승인이 있어 끝난 단계를 지우지 않았다. 번호를 다시 매기면 승인이 다른 단계를 가리킨다. orch board approval list 로 보고 처리하거나 거둔 뒤 다시 부른다\n`)
+      return 1
+    }
+    if (values.all && held.size) command.push('--except', [...held].join(','))
+  }
   command.push(...trailing)
   const result = run(scriptCommand(process.env.BOARD_BIN || BOARD_BIN, command), { timeoutMs: NO_LIMIT_MS })
   process.stderr.write(result.stderr)
@@ -100,6 +122,7 @@ function main(argv: string[]): number {
     console.log(deleted.length ? deleted.map((id) => `BOARD-DEL ${String(id)}`).join('\n') : 'BOARD-NONE')
     return 0
   }
+  if (verb === 'clear-done') return clearDone(values.repo ?? process.cwd(), result.stdout)
   if (verb === 'get') {
     if (values.json) process.stdout.write(result.stdout)
     else { const value = JSON.parse(result.stdout).value; if (value !== null) console.log(value) }
@@ -134,6 +157,24 @@ function main(argv: string[]): number {
   const lines = fullAsked() ? view.lines : verb === 'show' ? view.lines.filter((line) => line.number !== null && !line.done) : []
   const unmatched = verb === 'show' ? pending(view, unmatchedRecords(values.repo ?? process.cwd())).map((pr) => unmatchedLine(id, pr)) : []
   console.log([heading, ...unmatched, ...lines.map((line) => `${line.done ? '✓ ' : ''}${line.text}`)].join('\n'))
+  return 0
+}
+
+type Cleared = { id: string; removed: number; progress: [number, number] | null; renumbered: { from: number; to: number; was: string; now: string }[] }
+
+// board.ts clear-done 의 결과를 짧게 내고, 단계 글을 열쇠로 쓰는 띄운 기록을 새 글로 잇는다.
+// 자동 진행은 띄운 기록을 단계 글(번호 포함)로 찾는다. 이어 두지 않으면 이미 띄운 [auto] 단계를 다시 띄울 수 있다.
+// 기록 파일은 덧붙이기만 하므로 옛 글의 줄을 새 글로 한 줄 더 적는다. 다음 단계 알림 기록은 고치지 않아 같은 단계를 한 번 더 알릴 수 있다
+function clearDone(repo: string, stdout: string): number {
+  const { cleared, skipped } = JSON.parse(stdout) as { cleared: Cleared[]; skipped: { id: string; reason: string }[] }
+  for (const row of skipped) process.stderr.write(`${row.id}: ${row.reason}\n`)
+  for (const row of cleared) {
+    for (const step of row.renumbered) {
+      const [was, now] = [hideEventTag(step.was), hideEventTag(step.now)]
+      for (const launch of stepLaunches(repo, String(row.id), was)) appendStepLaunch(repo, { item: String(row.id), number: step.to, step: now, ...launch })
+    }
+  }
+  console.log(cleared.length ? cleared.map((row) => `BOARD-CLEAR ${row.id} ${row.removed} ${row.progress ? row.progress.join('/') : '진행률 없음'}`).join('\n') : 'BOARD-NONE')
   return 0
 }
 

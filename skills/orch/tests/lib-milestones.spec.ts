@@ -205,6 +205,12 @@ describe('PR 묶음', () => {
     assert.deepEqual([...eventNumbers(plain)].sort(), [1, 2, 3])
   })
 
+  test('끝난 PR 단계를 지워 merge 만 남은 줄도 그 PR 의 머지 단계를 갖는다', () => {
+    const cleared = { ...item, stages: 'deploy=1', workers: [{ ...row, stages: 'merge=2' }] }
+    assert.deepEqual(prStages(cleared, '9'), { deploy: 1, merge: 2 })
+    assert.deepEqual([...eventKinds(cleared)], [[1, 'deploy'], [2, 'merge']])
+  })
+
   test('사건 단계의 번호와 종류는 항목과 모든 줄을 합친다', () => {
     assert.deepEqual([...eventKinds(item)], [[1, 'pr'], [2, 'merge'], [3, 'deploy'], [4, 'pr'], [5, 'merge']])
     assert.deepEqual([...eventNumbers(item)].sort(), [1, 2, 3, 4, 5])

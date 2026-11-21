@@ -116,7 +116,7 @@ describe('표의 행', () => {
 
 describe('인자 바꾸기', () => {
   test('보드 수정 명령은 동작 이름과 repo 문맥을 같은 스크립트에 넘긴다', () => {
-    for (const verb of ['set', 'step', 'add-step', 'show', 'get', 'list', 'del']) {
+    for (const verb of ['set', 'step', 'add-step', 'show', 'get', 'list', 'del', 'clear-done']) {
       const result = ok(['board', verb, 'x'])
       assert.equal(result.command.script, 'board/board-edit.ts')
       assert.deepEqual(result.command.context, ['repo'])

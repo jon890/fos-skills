@@ -165,10 +165,11 @@ export function stagesOf(item: BoardItem | Record<string, unknown>): Stages | nu
   return Object.keys(stages).length > 0 ? stages : null
 }
 
-// worker 줄의 stages(`pr=3,merge=4`). 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. pr 와 merge 둘이 아니면 null 이다
-function rowStages(row: { stages?: unknown }): { pr: number; merge: number } | null {
+// worker 줄의 stages(`pr=3,merge=4`). 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. merge 가 없으면 null 이다.
+// 끝난 단계 지우기(board.ts clear-done)가 끝난 PR 단계를 지우면 `merge=1` 만 남는다. 그때도 그 PR 의 머지는 줄의 단계를 끝낸다
+function rowStages(row: { stages?: unknown }): { pr?: number; merge: number } | null {
   const stages = stagesOf({ stages: row.stages })
-  return stages && stages.pr !== undefined && stages.merge !== undefined ? { pr: stages.pr, merge: stages.merge } : null
+  return stages && stages.merge !== undefined ? { ...(stages.pr === undefined ? {} : { pr: stages.pr }), merge: stages.merge } : null
 }
 
 // 그 PR 을 pr 로 가진 줄 가운데 stages 가 있는 가장 최근(at) 줄. 없으면 undefined 다
@@ -190,7 +191,7 @@ export function prStages(item: BoardItem | Record<string, unknown>, pr: string):
   const row = groupRow(item, pr)
   const own = row ? rowStages(row) : null
   if (!own) return base
-  return { ...(base?.deploy !== undefined ? { deploy: base.deploy } : {}), ...(base?.release !== undefined ? { release: base.release } : {}), pr: own.pr, merge: own.merge }
+  return { ...(base?.deploy !== undefined ? { deploy: base.deploy } : {}), ...(base?.release !== undefined ? { release: base.release } : {}), ...(own.pr === undefined ? {} : { pr: own.pr }), merge: own.merge }
 }
 
 // 항목 stages 와 모든 줄 stages 의 번호 → 사건 종류. 사건 단계가 아닌 수동 단계는 없다

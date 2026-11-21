@@ -68,6 +68,8 @@ orch board get <항목> step <번호> [--json]
 orch board list [--status <상태>[,<상태>…]] [--json]
 orch board del <항목> [--force]
 orch board del --done
+orch board clear-done <항목>
+orch board clear-done --all
 공통: [--board <파일>] [--repo <폴더>] [--full]
 ```
 
@@ -78,6 +80,12 @@ orch board del --done
 `list` 는 항목마다 `BOARD <항목> <상태> <끝낸>/<전체> <제목>` 을 내고, 없으면 `BOARD-NONE` 을 낸다. `--status` 에 쉼표로 상태를 여럿 줄 수 있고 모르는 상태는 종료 코드 1 이다. `--full` 은 모든 줄과 안 풀린 머지 기록도 낸다.
 
 `del` 은 `done` 항목만 지우며 다른 상태는 `--force` 가 필요하다. `--done` 은 끝난 항목 전부를 지운다. 묻지 않고 지우므로 먼저 보려면 `orch board list --status done` 을 쓴다. 지운 항목마다 `BOARD-DEL <항목>` 을 내고 없으면 `BOARD-NONE` 이다. 지우기 전 파일은 `<보드 파일>.bak` 에 한 세대 남으며 다음 통째 저장이나 삭제가 덮는다. 진행 중 항목을 강제로 지우면 동기화가 같은 id 를 다시 만들 수 있다.
+
+`clear-done` 은 항목 안의 끝난 단계 줄을 지우고 남은 단계를 1번부터 다시 매겨 진행률을 `0/<남은 수>` 로 만든다. `del --done` 이 끝난 항목을 지운다면 `clear-done` 은 진행 중 항목의 끝난 단계만 지운다.
+`--all` 은 done 이 아닌 모든 항목에 한 번에 적용한다. 고친 항목마다 `BOARD-CLEAR <항목> <지운 수> 0/<남은 수>` 를 내고 없으면 `BOARD-NONE` 이다. 건너뛴 항목과 이유는 stderr 로 낸다.
+번호 없는 참고 줄은 그대로 둔다. 명시 진행률(N/M)은 `0/(M-N)` 이 된다. 모든 단계가 끝난 항목은 끝난 항목 표시(n/n)를 그대로 두고, done 항목과 같은 번호 단계가 둘 이상인 항목도 건너뛴다.
+`stages` 칸과 worker 줄의 `stages` 는 새 번호로 바꾸고 지운 단계의 짝은 뺀다. 항목의 짝이 모두 빠지면 칸을 지워 그 뒤로는 사건 단계가 없는 항목으로 동기화한다. worker 줄은 merge 단계가 남아 있을 때만 `stages` 를 둔다.
+열린 단계 승인(`--kind step`)이 있는 항목은 승인 id 의 번호가 다른 단계를 가리키게 되므로 고치지 않는다. 한 항목이면 종료 코드 1, `--all` 이면 건너뛴다. 이미 띄운 `[auto]` 단계의 기록은 새 단계 글로 이어 두어 다시 띄우지 않는다. 다음 단계 알림은 같은 단계를 한 번 더 낼 수 있다. 지우기 전 파일은 `<보드 파일>.bak` 에 남는다.
 
 `get`, `list`, `show` 는 잠금을 잡지 않는다. `--json` 은 저장된 칸과 계산된 `progress`, `lines` 를 담은 항목 객체를 내며 `show` 는 `unmatched` 도 낸다. `get` 은 `{"id", "field", "value"}` 를 내고 빈 값은 `null` 이다. 거절하면 stdout 은 비고 이유는 stderr 에 나온다.
 
