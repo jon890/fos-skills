@@ -80,7 +80,7 @@ import { reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } fr
 import { loadNotified, saveNotified, staleKey, textRev } from '../lib/board-stale.ts'
 import { prTaskRef } from '../lib/board.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
-import { readBoard } from '../lib/board.ts'
+import { boardOwnership, readBoard } from '../lib/board.ts'
 import type { BoardStep } from '../core/board.ts'
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
 import { readFileSync } from 'node:fs'
@@ -105,7 +105,6 @@ import type { WorkerRow } from '../core/board-workers.ts'
 import { gh, ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { pathOf } from '../lib/paths.ts'
-import { launchHistory } from '../lib/launch-history.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
 import { waitTimeMs } from '../core/step-ready.ts'
@@ -166,27 +165,6 @@ function worktreeNames(repo: string): Set<string> | null {
   const done = git(repo, ['worktree', 'list', '--porcelain'])
   if (done.code !== 0) return null
   return new Set(done.stdout.split('\n').flatMap((line) => (line.startsWith('worktree ') ? [basename(line.slice('worktree '.length))] : [])))
-}
-
-// 다른 저장소의 루프와 보드를 나눠 쓰면(finish.board 를 같은 파일로 둔 저장소들) 그쪽에서 띄운 worker 의 줄도 보인다.
-// 그 워크트리는 이 저장소의 git 목록에 없으니 「워크트리가 사라졌다」 로 보면 살아 있는 줄을 매 틱 끊김으로 쓴다.
-// 이 저장소의 띄우기 이력에 없는 dispatch 의 줄만 남의 것으로 보고, 이력이 비었으면 구분하지 못해 모든 줄을 이 저장소의 것으로 본다
-function foreignWorktrees(repo: string, items: Record<string, unknown>[]): Set<string> {
-  let own: Set<string>
-  try { own = new Set(launchHistory(repo).map((row) => row.dispatch)) }
-  catch { return new Set() }
-  if (own.size === 0) return new Set()
-  const rows = items.flatMap((item) => boardWorkerRows(item))
-  const mine = new Set(rows.filter((row) => !row.dispatch || own.has(row.dispatch)).map((row) => row.worktree))
-  return new Set(rows.filter((row) => row.dispatch && !own.has(row.dispatch) && !mine.has(row.worktree)).map((row) => row.worktree))
-}
-
-// 이 저장소의 띄우기 이력에 있는 dispatch 를 worker 줄로 가진 항목. 이력을 읽지 못하면 아무 항목도 고치지 않는다
-function ownItems(repo: string, items: Record<string, unknown>[]): Set<string> {
-  let own: Set<string>
-  try { own = new Set(launchHistory(repo).map((row) => row.dispatch)) }
-  catch { return new Set() }
-  return new Set(items.filter((item) => boardWorkerRows(item).some((row) => row.dispatch && own.has(row.dispatch))).map((item) => String(item.id)))
 }
 
 // 머지 커밋이 배포됐는지(lib/deploy.ts). 배포 실행 목록은 한 번만 읽어 runs 에 둔다. 머지 커밋을 읽지 못하면 wait 이다
@@ -349,9 +327,9 @@ function main(argv: string[]): number {
   const reviewOrigins = reviewOriginsByItem(repo, items)
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
   const names = worktreeNames(repo)
-  const foreign = foreignWorktrees(repo, items)
+  const { ownItems, foreignWorktrees } = boardOwnership(repo, items)
   // 워크트리가 사라졌는지. 목록을 읽지 못했거나 다른 저장소의 worker 면 사라졌다고 보지 않는다
-  const gone = (worktree: string): boolean => names !== null && !names.has(worktree) && !foreign.has(worktree)
+  const gone = (worktree: string): boolean => names !== null && !names.has(worktree) && !foreignWorktrees.has(worktree)
   const liveBranches = new Set(branches.values())
   let rules: LastPrRules | null | undefined
   let reviewItems: Map<string, number | null> | undefined
@@ -373,11 +351,10 @@ function main(argv: string[]): number {
   const notified = loadNotified(repo)
   let notifiedChanged = false
   const now = Date.now()
-  const owned = sharedLoop ? ownItems(repo, items) : null
   itemsLoop:
   for (const item of items) {
     const id = String(item.id)
-    if (owned && !owned.has(id)) continue
+    if (sharedLoop && !ownItems.has(id)) continue
     const cmds: string[][] = []
     const after: string[][] = []
     let finish = false

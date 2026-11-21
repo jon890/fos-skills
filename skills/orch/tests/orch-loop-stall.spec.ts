@@ -797,6 +797,34 @@ if (process.argv[2] === 'pr' && process.argv[3] === 'list') {
     )
   })
 
+  for (const remoteBoard of [false, true]) {
+    test(`${remoteBoard ? '다른' : '이'} 저장소에 있는 공유 보드에서 이 저장소가 띄운 항목만 알린다`, () => {
+      const boardRepo = remoteBoard ? join(tmp, 'shared-board') : repo
+      if (remoteBoard) loopRepo(boardRepo)
+      const board = join(boardRepo, '.omc', 'board.json')
+      write(orchFile('config.json'), JSON.stringify({ finish: { board } }))
+      const item = (id: string) => ({
+        id, status: 'doing', worktree: id, details: [{ text: '결과 확인', done: false }],
+        workers: [{ dispatch: `d-${id}`, worktree: id, status: 'done' }],
+      })
+      write(board, JSON.stringify({ items: [item('mine'), item('theirs')] }))
+      write(orchFile('state', 'launch-history.jsonl'), JSON.stringify({
+        dispatch: 'd-mine', worktree: join(tmp, 'mine'), at: new Date().toISOString(),
+      }) + '\n')
+      const since = Date.now() - 31 * MIN
+      write(orchFile('state', 'movement.json'), JSON.stringify({ stages: {
+        mine: { step: '결과 확인', since, fired: false }, theirs: { step: '결과 확인', since, fired: false },
+      } }))
+      orca({ workers_by_run: { A: [] } })
+      tick()
+      tick()
+      const notices = runEvents('A').filter((row) => row.kind === 'STAGE-STALLED')
+      assert.deepEqual(notices.map((row) => String(row.text).replace(/ \d+분 /, ' N분 ')), ['mine mine N분 결과 확인'])
+      const saved = JSON.parse(readFileSync(orchFile('state', 'movement.json'), 'utf8'))
+      assert.deepEqual(Object.keys(saved.stages), ['mine'])
+    })
+  }
+
   test('pipeline.idle_min 이 틀리면 설정 오류다', () => {
     write(orchFile('config.json'), JSON.stringify({ pipeline: { idle_min: 'x' } }))
     orca({})
