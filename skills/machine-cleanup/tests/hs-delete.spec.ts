@@ -177,3 +177,36 @@ describe('Hermes 세션(REQ10)', () => {
     assert.equal(h.ids().length, 4)
   })
 })
+
+// 가짜 공간 회수: 그 profile DB 를 VACUUM 한다
+const HERMES_OPTIMIZE = `
+const { DatabaseSync } = require('node:sqlite')
+const [profile] = process.argv.slice(2)
+const data = process.env.FAKE_HERMES_DATA
+const db = new DatabaseSync(profile === 'default' ? data + '/state.db' : data + '/profiles/' + profile + '/state.db')
+db.exec('VACUUM')
+db.close()
+`
+
+describe('Hermes 공간 회수(REQ10)', () => {
+  test('dry-run 은 크기만 보이고, 잠금 없이 --apply 하면 돌지 않으며, 잠금 아래에서는 전후 크기를 낸다', () => {
+    const box = new Sandbox('hsd-')
+    const cfg = sampleConfig(box.root)
+    const cfgFile = write(join(box.root, 'cfg.json'), JSON.stringify(cfg))
+    const db = join(cfg.hermes.data, 'state.db')
+    hermesDb(db, Array.from({ length: 300 }, (_, i) => [`s${i}`, null, 'cron', nowSec()] as [string, null, string, number]))
+    const d = new DatabaseSync(db)
+    d.exec("UPDATE sessions SET source = hex(randomblob(500)); DELETE FROM sessions WHERE id != 's0'")
+    d.close()
+    box.script('hermes-optimize', HERMES_OPTIMIZE)
+    const env = { FAKE_HERMES_DATA: cfg.hermes.data }
+    assert.match(box.run('hs_delete', ['hermes-optimize', '--config', cfgFile, 'default'], { env: box.env(env) }).stdout, /회수할 것 default: 지금 /)
+    assert.equal(box.run('hs_delete', ['hermes-optimize', '--config', cfgFile, '--apply', 'default'], { env: box.env(env) }).code, 4)
+    const r = box.run('hs_delete', ['hermes-optimize', '--config', cfgFile, '--apply', 'default', 'none'], { env: box.env({ ...env, ...LOCKED }) })
+    assert.equal(r.code, 1)
+    const m = /회수 default: ([\d.]+)M -> ([\d.]+)M/.exec(r.stdout)
+    assert.ok(m, r.stdout)
+    assert.ok(Number(m[2]) < Number(m[1]), r.stdout)
+    assert.match(r.stderr, /없음 none/)
+  })
+})
