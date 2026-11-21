@@ -474,7 +474,7 @@ Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이�
 **아래는 orch 가 지우지 않는다.** 귀속을 알 수 없거나 운영 데이터일 수 있다.
 
 - 이름 있는 볼륨. compose 가 만든 데이터 볼륨도 여기 든다
-- build cache, `docker system prune`, 귀속 없는 dangling 이미지와 볼륨. `mac-cleanup` 스킬이 맡는다
+- build cache, `docker system prune`, 귀속 없는 dangling 이미지와 볼륨. `machine-cleanup` 스킬이 맡는다
 - 규칙에 맞지 않는 컨테이너와 이미지. 줄도 내지 않는다
 
 규칙 칸의 형식은 [`overlay.md`](overlay.md) 의 「마무리 설정 파일」 표가 소유한다.

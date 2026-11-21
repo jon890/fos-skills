@@ -17,7 +17,7 @@
 | 영역 | Python 소스 줄 | Python 테스트 줄 | 셸 |
 | --- | --- | --- | --- |
 | `skills/plan` | 2,369 | 2,404 | `plan_number.sh` |
-| `skills/mac-cleanup` | 2,091 | 1,541 | `survey_gradle.sh` |
+| `skills/machine-cleanup` | 2,091 | 1,541 | `survey_gradle.sh` |
 | `skills/harness-cleanup` | 2,190 | 998 | 없음 |
 | `tools/browser-driver` | 1,669 | 1,130 | 없음 |
 | `export-only-skills/korean-check` | 847 | 1,147 | `check.sh` |

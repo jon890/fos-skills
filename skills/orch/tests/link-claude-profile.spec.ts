@@ -147,7 +147,7 @@ describe('연결', () => {
   test('백업 이름의 시각은 YYYYMMDDHHMMSS 다', () => {
     assert.equal(stamp(new Date(2026, 9, 30, 7, 5, 9)), '20261030070509')
   })
-  test('실제 홈을 읽는 browser.config.json 과 mac-cleanup 오버레이는 프로필로 복사하지 않는다', () => {
-    for (const name of ['browser.config.json', 'mac-cleanup-overlay.md', 'mac-cleanup.md']) assert.ok(!COPY_FILES.includes(name), name)
+  test('실제 홈을 읽는 browser.config.json 과 machine-cleanup 오버레이는 프로필로 복사하지 않는다', () => {
+    for (const name of ['browser.config.json', 'machine-cleanup.md', 'mac-cleanup-overlay.md', 'mac-cleanup.md']) assert.ok(!COPY_FILES.includes(name), name)
   })
 })

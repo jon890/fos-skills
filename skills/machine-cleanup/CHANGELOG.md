@@ -1,40 +1,21 @@
-# CHANGELOG: mac-cleanup
-
+# CHANGELOG: machine-cleanup
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
-## 2.3.0 (2026-11-20)
+## 3.0.0 (2026-11-21)
 
-- `survey_docker.ts` 가 런타임마다 이미지 조사 결과를 `images-*.json` 으로 남긴다.
-- `docker_cleanup.ts rmi` 가 `--images-json` 과 `--class` 로 그 파일의 한 분류를 통째로 지운다. 사용자에게 보인 목록과 지우는 목록이 한 번의 조사에서 나온다.
+- 호환성: 스킬 이름을 `mac-cleanup` 에서 `machine-cleanup` 으로 바꿨다. `/fos-skills:machine-cleanup` 으로 부르고, 옛 명령 `/fos-skills:mac-cleanup` 은 남기지 않는다
+- 호환성: 번들 경로가 `skills/machine-cleanup/` 으로 바뀌었다. 링크로 설치했으면 `~/.claude/skills/mac-cleanup` 링크를 새 경로로 다시 건다
 
-## 2.2.1 (2026-11-20)
+## 2.x
 
-- `docker_cleanup.ts builder-prune` 의 시간 제한을 1800초로 늘리고, 그래도 넘으면 남은 빌드 캐시를 다시 읽어 0B 면 성공으로 보인다. 끝난 정리를 실패로 보고하지 않는다.
-
-## 2.2.0 (2026-11-16)
-
-- 개인 오버레이를 `~/.claude/overlays/mac-cleanup.md` 에서 읽는다. 파일이 없으면 옛 자리 `~/.claude/mac-cleanup-overlay.md` 를 읽는다.
-
-## 2.1.1 (2026-11-12)
-
-- 정리 후보 문서에서 표본 수치와 사고 기록을 지우고 도구 동작만 남겼다.
-- 이미지 지우기와 브랜치 지우기의 세부 조건은 각 스크립트 설명을 가리키게 줄였다.
-
-## 2.1.0 (2026-11-12)
-
-- 컨테이너 런타임(Docker Desktop, Colima, OrbStack)을 감지해 런타임마다 켜짐 여부, context, VM 디스크 크기를 조사한다. 꺼진 런타임은 런타임마다 승인받아 켜고 조사한다
-- 표에 없는 로컬 엔진은 「알 수 없는 런타임」 으로 조사와 정리만 하고, ssh·tcp 엔진은 크기만 보인다. `delete_volumes.ts` 와 이미지·빌드 캐시 삭제용 `docker_cleanup.ts` 는 맥 밖 엔진을 종료 코드 5 로 거부한다
-- 이미지와 volume 조사·삭제가 `--context` 로 런타임을 나눈다. `runtime_reclaim.ts` 가 정리 뒤 VM 디스크를 런타임별로 회수한다(Colima 는 기존 fstrim 반복)
-- 5단계 보고가 호스트 여유 전후(확보량), 런타임별 디스크 파일 전후(참고), 정리하지 않은 런타임을 따로 요구한다. 런타임별 값은 `references/runtimes.md` 가 소유한다
-- `survey_system.ts` 의 Colima 전용 Docker 절을 `container_runtimes.ts` 로 옮겼다
-
-## 2.0.0 (2026-11-08)
-
-- 호환성: 스크립트 열하나(Python 열, 셸 하나)를 Node 24 의 `.ts` 로 바꿨다. `node "$SKILL_DIR/scripts/survey_system.ts"` 처럼 확장자만 바꿔 부른다. `survey_gradle.sh` 는 `survey_gradle.ts` 다
-- 옵션, 출력, 쓰는 JSON 파일, 종료 코드는 그대로다. 조사 JSON 을 넘기는 `--json-out` 파일도 같은 바이트다
-- `survey_gradle.ts` 는 버전 이름을 읽지 못한 `dists` 폴더를 삭제 후보에 올리지 않는다. 전에는 그런 폴더가 있으면 `~/.gradle/caches/` 와 `~/.gradle/daemon/` 전체를 지우는 `rm -rf` 줄을 냈다
-- 옛 `python3 …/<이름>.py`, `bash …/survey_gradle.sh` 호출(허용 규칙 포함)은 새 이름으로 바꿔야 한다. Python 은 더 필요하지 않고 Node 24 이상이 필요하다
+- 컨테이너 런타임(Docker Desktop, Colima, OrbStack)을 감지해 런타임마다 조사하고, 꺼진 런타임은 승인받아 켠다
+- 표에 없는 로컬 엔진은 조사와 정리만 하고, ssh·tcp 엔진은 크기만 보이며 삭제 스크립트가 종료 코드 5 로 거부한다
+- 이미지와 volume 조사·삭제가 `--context` 로 런타임을 나누고, `runtime_reclaim.ts` 가 정리 뒤 VM 디스크를 회수한다
+- 이미지 조사 결과를 파일로 남기고 `docker_cleanup.ts rmi --images-json` 이 그 목록을 지운다
+- `builder-prune` 의 시간 제한을 1800초로 늘렸다
+- 개인 오버레이를 `~/.claude/overlays/mac-cleanup.md` 에서 읽고, 없으면 옛 자리 `~/.claude/mac-cleanup-overlay.md` 를 읽는다
+- 호환성: 스크립트를 Node 24 의 `.ts` 로 바꿨다. 옵션, 출력, JSON 파일, 종료 코드는 그대로다
 
 ## 1.x
 
