@@ -3,12 +3,13 @@
 // 실행: node --test extensions/work-board/tests/board.spec.ts
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { defaultBoardPath } from '../bin/board.ts'
 
 const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
@@ -46,6 +47,20 @@ beforeEach(() => {
 })
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+
+test('같은 id 를 동시에 만들면 먼저 쓴 항목 하나만 남는다', async () => {
+  write()
+  const execute = promisify(execFile)
+  const titles = ['첫 요청', '둘째 요청']
+  const results = await Promise.allSettled(titles.map(title => execute(process.execPath,
+    ['--disable-warning=ExperimentalWarning', BOARD, 'set', 'req-repo-1', 'wait', '--create-only', '--title', title, '--file', file])))
+  const winner = results.findIndex(result => result.status === 'fulfilled')
+  assert.ok(winner >= 0)
+  const loser = results[1 - winner]
+  assert.equal(loser.status, 'rejected')
+  assert.match(loser.reason.stderr, /이미 있는 항목이다: req-repo-1/)
+  assert.deepEqual(items().map(({ id, title }) => [id, title]), [['req-repo-1', titles[winner]]])
+})
 
 describe('step 과 steps', () => {
   test('사건 꼬리표는 steps 출력과 단계 완료 뒤에도 남는다', () => {

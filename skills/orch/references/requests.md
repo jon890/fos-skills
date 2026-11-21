@@ -40,7 +40,7 @@
 orch request send --to <저장소 경로> --title "<제목>" --body-file <본문 파일>
 ```
 
-`REQUEST-SENT R<n> …` 이면 보냈다. 보낸 저장소 보드에 기다리는 항목이 생긴다. 답(받음, 보류, 거절, 완료, 실패)은 Orca 메시지로 온다. 받음·보류·거절 답이 30분(`pipeline.request_ack_sec`) 없으면 `REQUEST-NO-ACK` 가 한 번 온다. 다시 보낼지는 보낸 쪽이 정한다.
+`REQUEST-SENT R<n> …` 이면 보냈다. 두 저장소가 같은 보드 파일을 쓸 때는 받는 쪽 항목 하나가 생긴다. 다른 보드를 쓰면 보낸 쪽에도 기다리는 항목이 생긴다. `BOARD-FAIL` 이면 보드 쓰기가 막혔다. 요청 메시지는 이미 갔다. 답(받음, 보류, 거절, 완료, 실패)은 Orca 메시지로 온다. 받음·보류·거절 답이 30분(`pipeline.request_ack_sec`) 없으면 `REQUEST-NO-ACK` 가 한 번 온다. 다시 보낼지는 보낸 쪽이 정한다.
 `REQUEST-NO-MAIN` 이면 그 저장소에 메인이 없다. 지금처럼 worker 를 직접 띄운다.
 
 ## 요청 받기
@@ -53,7 +53,7 @@ orch request hold R<n> --reason "<이유>"
 orch request reject R<n> --reason "<이유>"
 ```
 
-받은 일로 worker 를 띄울 때는 지시서에 `보드 항목 id: req-<n>` 을 둔다. worker 가 그 요청 항목에 붙고, 마지막 PR 의 마무리가 그 항목을 done 으로 닫고 `FINISH-DONE` 이면 orch 가 완료를 자동으로 보낸다. 다른 PR 이나 단계가 남으면 보내지 않는다(`REQUEST-OPEN` 줄).
+받은 일로 worker 를 띄울 때는 보드 항목을 확인하고, 메시지에 적힌 id 를 지시서의 `보드 항목 id:` 에 둔다. 새 요청은 `req-<받는 저장소 이름>-<n>` 을 쓰고, 기존 요청은 기록된 id 를 쓴다. worker 가 그 요청 항목에 붙고, 마지막 PR 의 마무리가 그 항목을 done 으로 닫고 `FINISH-DONE` 이면 orch 가 완료를 자동으로 보낸다. 다른 PR 이나 단계가 남으면 보내지 않는다(`REQUEST-OPEN` 줄).
 PR 없는 일, 메인이 직접 처리한 일, 마무리가 실패한 일은 직접 끝낸다.
 
 ```bash

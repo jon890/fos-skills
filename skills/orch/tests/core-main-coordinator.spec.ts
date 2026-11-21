@@ -56,9 +56,9 @@ test('요청 상태 전이와 이유가 필요한 동작', () => {
   assert.equal(replyKind('held'), 'REQUEST-HELD')
 })
 
-test('보드 항목 id 는 받는 쪽 req-<n>, 다른 저장소면 보낸 쪽 req-<받는 저장소 이름>-<n>', () => {
-  assert.deepEqual(boardIds(12, 'fos-skills', false), { to: 'req-12', from: 'req-fos-skills-12' })
-  assert.deepEqual(boardIds(3, 'my repo', true), { to: 'req-3', from: null })
+test('보드의 두 항목은 받는 저장소 이름을 쓰며 같은 보드에서는 항목 하나를 쓴다', () => {
+  assert.deepEqual(boardIds(12, 'fos-skills', false), { to: 'req-fos-skills-12', from: 'req-fos-skills-12' })
+  assert.deepEqual(boardIds(3, 'my repo', true), { to: 'req-my-repo-3', from: null })
 })
 
 test('답 없음 알림은 sent 이고 알리지 않았고 기한이 지났을 때만이다', () => {

@@ -86,7 +86,7 @@
 //
 //     업무 완료는 hooks/after-deploy.ts 가 이벤트의 last_of_task 와 deploy 를 보고 처리한다.
 //
-// 요청 완료(ADR-035): 찾은 보드 항목이 받은 요청의 항목(lib/requests.ts 의 requestOfItem, req-<n>)이고 마지막 PR 이면, FINISH-DONE 직전에
+// 요청 완료(ADR-035): 찾은 보드 항목이 받은 요청의 항목(lib/requests.ts 의 requestOfItem)이고 마지막 PR 이면, FINISH-DONE 직전에
 //     이번 마무리가 그 항목을 done 으로 닫았을 때만(같은 요청의 다른 PR 이나 끝나지 않은 단계가 남으면 REQUEST-OPEN <번호> 줄만 낸다) 그 요청을 done 으로 바꾸고 답 대상에 REQUEST-DONE 을 보낸다(lib/requests.ts 의 answerRequest). REQUEST-DONE <번호> to=<Run> 을 낸다.
 //     이미 끝난 요청은 건드리지 않는다. 보내지 못하면 REQUEST-DONE-FAIL <번호> <이유> 를 내고 기록에 pending_done 을 남긴다.
 //     루프의 steps/requests.ts 가 다음 틱에 다시 보낸다. 마무리는 그대로 FINISH-DONE 이다

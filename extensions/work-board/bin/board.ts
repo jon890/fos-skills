@@ -106,7 +106,7 @@ const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
   '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,clear-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--create-only] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
@@ -374,6 +374,7 @@ type Args = {
   fill?: boolean
   ifTaskRef?: string
   ifRev?: string
+  createOnly?: boolean
   event?: string
   condition?: string
   dispatch?: string
@@ -397,6 +398,7 @@ function parse(argv: string[]): Args | 'help' {
     all: { type: 'boolean' },
     except: { type: 'string' },
     'if-rev': { type: 'string' },
+    'create-only': { type: 'boolean' },
     event: { type: 'string' },
     title: { type: 'string' },
     owner: { type: 'string' },
@@ -414,7 +416,7 @@ function parse(argv: string[]): Args | 'help' {
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help', 'clear'])
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help', 'clear', 'create-only'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
@@ -439,6 +441,7 @@ function parse(argv: string[]): Args | 'help' {
   if (['del-done', 'clear-done'].includes(cmd) && id === undefined && !values.all) throw new Error(`${cmd} 에는 id 또는 --all 이 필요하다`)
   if (values.except !== undefined && (cmd !== 'clear-done' || !values.all)) throw new Error('--except 는 clear-done --all 에만 쓴다')
   if (values.exact !== undefined && !['set', 'step', 'del'].includes(cmd)) throw new Error('--exact 는 set, step, del 에만 쓴다')
+  if (values['create-only'] && (cmd !== 'set' || values.exact || values['if-rev'] !== undefined)) throw new Error('--create-only 는 --exact, --if-rev 없이 set 에만 쓴다')
   if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
   if (cmd === 'get') {
@@ -452,7 +455,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], createOnly: values['create-only'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -933,6 +936,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   }
   let item = find(board, id)
   const was = item?.status
+  if (item && a.createOnly) throw new Refused(`이미 있는 항목이다: ${id}`)
   if (!item && (a.exact || a.ifRev !== undefined)) throw new Refused(`항목이 없다: ${id}`)
   if (a.ifRev !== undefined && linesRev(item) !== a.ifRev) throw new Refused(`읽은 뒤 ${id} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`)
   if (!item) {

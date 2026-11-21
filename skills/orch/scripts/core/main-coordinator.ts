@@ -80,9 +80,10 @@ export function replyKind(state: RequestState): string {
   return `REQUEST-${state.toUpperCase()}`
 }
 
-// 받는 저장소 보드 항목 id 와 보낸 저장소 보드 항목 id. 같은 저장소면 보낸 쪽은 null(스펙 REQ5)
-export function boardIds(number: number, toName: string, sameRepo: boolean): { to: string; from: string | null } {
-  return { to: `req-${number}`, from: sameRepo ? null : `req-${toName.replace(/[^A-Za-z0-9_.-]/g, '-')}-${number}` }
+// 받는 저장소 이름으로 양쪽 보드의 항목 id 를 정한다. 보드를 함께 쓰면 항목 하나로 남긴다.
+export function boardIds(number: number, toName: string, sameBoard: boolean): { to: string; from: string | null } {
+  const id = `req-${toName.replace(/[^A-Za-z0-9_.-]/g, '-')}-${number}`
+  return { to: id, from: sameBoard ? null : id }
 }
 
 // 답 없음 알림을 보낼 때인가(스펙 REQ9)
