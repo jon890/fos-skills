@@ -862,7 +862,9 @@ test('요약 줄은 단추이고 누른 항목의 그 목록만 펼쳐진다 (RE
   await ui.press({ key: 'fold-a-todo' })
   expect(await foldTexts(ui, 'a')).toEqual([
     'steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개\u00a0접기', 'ft-0: 4. 머지', 'ft-1: 5. 배포', 'wd:✓ 끝난 worker 2'])
-  expect(await ui.find({ type: 'Text', text: /참고: 메모/ })).toBeUndefined()
+  // 참고 줄은 목록을 펼친 항목에서만 보인다
+  expect(await ui.find({ type: 'Text', text: /참고: 메모/ })).toBeTruthy()
+  expect((await foldTexts(ui, 'b')).some((line) => /참고/.test(line))).toBe(false)
   // 다른 항목과 같은 항목의 다른 목록은 그대로다
   expect(await foldTexts(ui, 'b')).toEqual(closed)
   expect(await foldTexts(ui, 'w')).toEqual(['steps:▶3. 리뷰  ✓\u00a02개  ·  남은\u00a0단계\u00a02개'])
