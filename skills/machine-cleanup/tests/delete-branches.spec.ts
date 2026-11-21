@@ -41,7 +41,7 @@ describe('dry-run', () => {
     const ok = run([br('feature', b, D)])
     assert.ok(ok.stdout.includes(`${row('삭제 예정', 'feature', '-d')}\n`))
     const mismatch = run([br('feature', a, D)])
-    assert.ok(mismatch.stdout.includes(`${row('삭제 예정', 'feature', `-d (거절되면 유지: tip 불일치(조사 ${a.slice(0, 8)}, 지금 ${b.slice(0, 8)}))`)}\n`))
+    assert.ok(mismatch.stdout.includes(`${row('유지', 'feature', `tip 불일치(조사 ${a.slice(0, 8)}, 지금 ${b.slice(0, 8)})`)}\n`))
   })
 
   test('기준에 포함되지 않으면 거절되면 유지라고 보인다', () => {
@@ -53,6 +53,14 @@ describe('dry-run', () => {
 })
 
 describe('--apply', () => {
+  test('조사 뒤 끝 커밋이 바뀐 삭제 후보는 -d 가 통과할 브랜치여도 지우지 않는다', () => {
+    const { repo, a, b, br, run, row } = setup()
+    const done = run([br('merged', b, D)], ['--apply'])
+    assert.equal(done.code, 0)
+    assert.ok(done.stdout.includes(`${row('유지', 'merged', `tip 불일치(조사 ${b.slice(0, 8)}, 지금 ${a.slice(0, 8)})`)}\n`))
+    assert.ok(repo.has('merged'))
+  })
+
   test('삭제 후보는 git branch -d 로 지운다', () => {
     const { repo, a, br, run, row } = setup()
     const done = run([br('merged', a, D)], ['--apply'])
@@ -68,10 +76,10 @@ describe('--apply', () => {
     assert.ok(!repo.has('feature'))
   })
 
-  test('-d 가 거절되고 tip 이 다르면 유지한다', () => {
-    const { repo, a, br, run, row } = setup()
+  test('tip 이 다르면 -d 를 부르기 전에 유지한다', () => {
+    const { repo, a, b, br, run, row } = setup()
     const done = run([br('feature', a, D)], ['--apply'])
-    assert.ok(done.stdout.includes(`${row('유지', 'feature', `-d 거절, tip 불일치(조사 ${a.slice(0, 8)}, 지금 `)}`))
+    assert.ok(done.stdout.includes(`${row('유지', 'feature', `tip 불일치(조사 ${a.slice(0, 8)}, 지금 ${b.slice(0, 8)})`)}`))
     assert.ok(repo.has('feature'))
     assert.equal(done.code, 0)
   })
