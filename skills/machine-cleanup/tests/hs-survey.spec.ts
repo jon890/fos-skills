@@ -200,7 +200,7 @@ describe('hs_survey 명령', () => {
 
   test('같은 사용자의 cwd 를 읽지 못하면 확인하지 못함으로 두고 지우지 않는다(REQ9)', () => {
     const s = survey(homeserver({ unreadable: true }), ['--no-fetch'])
-    assert.match(s.git.cwd_check, /확인하지 못함/)
+    assert.match(s.git.cwd_check, /확인하지 못함\(같은 사용자 프로세스 1개의 cwd 를 읽지 못함: mine\./)
     assert.deepEqual(s.git.repos[0].worktrees, [])
   })
 

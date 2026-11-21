@@ -2,7 +2,7 @@
 // 홈서버 조사 JSON 에 등급과 원인 판정을 붙여 보고한다. 이 맥에서 돈다. 읽기 전용이다.
 //
 // 사용법:
-//   hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE]
+//   hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE]
 //
 // SURVEY 는 hs_survey.ts 의 출력, CONFIG 는 hs_overlay.ts 의 출력이다. 등급 규칙은 references/homeserver-targets.md 가 소유하고,
 // 이 스크립트는 그 규칙대로 후보마다 등급(유지, 안전, 확인 필요)과 이유를 붙인다.
@@ -11,7 +11,8 @@
 // 보관 규칙 표에 없는 백업 용도는 「표에 올릴 용도」 로 따로 낸다. sudo 가 필요한 정리는 사용자 터미널용 명령 문자열만 낸다.
 // 메모리 절은 제안만 낸다. 조사만 하는 저장소(survey_only)의 항목은 승인 후보에 넣지 않는다.
 // Hermes 세션은 부모·자식 트리 단위로 보고, 트리 안에 assistant 에 연결된 세션이나 30일 안에 활동한 세션이 있으면 트리 전체를 뺀다.
-// 연결 조회가 실패했으면 Hermes 후보를 하나도 내지 않는다.
+// 연결 조회가 실패했으면 Hermes 후보를 하나도 내지 않는다. 후보는 출처(source)별 묶음으로 보이고, 사람이 다시 이어 쓰는
+// 채팅 출처(discord)는 권장 묶음에서 뺀다. --hermes-out 은 `출처<탭>profile:세션` 줄을 써서 묶음별로 hs_delete.ts 에 넘기게 한다.
 // --git-out 은 브랜치 삭제 입력(delete_branches.ts 가 읽는 survey_git 형식, 조사만 하는 저장소 제외),
 // --orphans-out 은 워크트리가 사라진 대화 기록 삭제 입력(delete_sessions.ts 형식)을 쓴다. 둘 다 홈서버 경로를 담는다.
 //
@@ -24,6 +25,8 @@ import { isMain, write } from './io.ts'
 type Json = Record<string, any>
 
 export const HERMES_DAYS = 30
+// 사람이 채팅 스레드에서 다시 이어 쓸 수 있는 출처. 후보여도 권장 묶음에 넣지 않는다
+export const CHAT_SOURCES = new Set(['discord'])
 const DAY = 86400
 
 export function human(size: number | null | undefined): string {
@@ -153,6 +156,13 @@ export function hermesCandidates(hermes: Json, now: number, days = HERMES_DAYS):
     }
   }
   return { candidates: out.sort((a, b) => a.activity - b.activity) }
+}
+
+// 출처별 묶음. 권장 묶음(채팅 출처가 아닌 것)을 앞에 두고 개수가 많은 순서다
+export function hermesBySource(candidates: HermesCandidate[]): [string, HermesCandidate[]][] {
+  const groups = new Map<string, HermesCandidate[]>()
+  for (const c of candidates) groups.set(c.source || '?', [...(groups.get(c.source || '?') ?? []), c])
+  return [...groups].sort((a, b) => Number(CHAT_SOURCES.has(a[0])) - Number(CHAT_SOURCES.has(b[0])) || b[1].length - a[1].length)
 }
 
 // ---------- 메모리 ----------
@@ -296,7 +306,12 @@ export function report(survey: Json, cfg: Json, c: Json): string {
   if ('error' in c.hermes) out.push(`후보를 내지 않음: ${c.hermes.error}`)
   else {
     for (const p of survey.hermes.profiles ?? []) if (p.error) out.push(`${p.profile}: ${p.error}`)
-    for (const h of c.hermes.candidates) out.push(`- ${h.profile}:${h.root}  출처=${h.source} 마지막 활동=${new Date(h.activity * 1000).toISOString().slice(0, 10)} 세션 ${h.sessions}개`)
+    for (const [source, items] of hermesBySource(c.hermes.candidates)) {
+      const chat = CHAT_SOURCES.has(source)
+      out.push(`### 출처 ${source}: 루트 ${items.length}개, 세션 ${items.reduce((n, h) => n + h.sessions, 0)}개${chat ? ' (사람이 다시 이어 쓸 수 있다. 권장 묶음에서 뺀다)' : ' (권장 묶음)'}`)
+      for (const h of items.slice(0, 10)) out.push(`- ${h.profile}:${h.root}  마지막 활동=${new Date(h.activity * 1000).toISOString().slice(0, 10)} 세션 ${h.sessions}개`)
+      if (items.length > 10) out.push(`- 외 ${items.length - 10}개(전체는 --hermes-out 파일)`)
+    }
     if (!c.hermes.candidates.length) out.push('- 없음')
   }
   return out.join('\n')
@@ -305,14 +320,14 @@ export function report(survey: Json, cfg: Json, c: Json): string {
 export function main(argv: string[]): number {
   let parsed
   try {
-    parsed = parseArgs({ args: argv, allowPositionals: true, options: { config: { type: 'string' }, 'json-out': { type: 'string' }, 'git-out': { type: 'string' }, 'orphans-out': { type: 'string' } } })
+    parsed = parseArgs({ args: argv, allowPositionals: true, options: { config: { type: 'string' }, 'json-out': { type: 'string' }, 'git-out': { type: 'string' }, 'orphans-out': { type: 'string' }, 'hermes-out': { type: 'string' } } })
   } catch (error) {
-    write(2, `usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE]\n${(error as Error).message}\n`)
+    write(2, `usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE]\n${(error as Error).message}\n`)
     return 2
   }
   const { values, positionals } = parsed
   if (positionals.length !== 1 || !values.config) {
-    write(2, 'usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE]\n')
+    write(2, 'usage: hs_classify.ts SURVEY --config CONFIG [--json-out FILE] [--git-out FILE] [--orphans-out FILE] [--hermes-out FILE]\n')
     return 2
   }
   let survey: Json
@@ -330,6 +345,7 @@ export function main(argv: string[]): number {
     const repos = c.repos.filter((r: Json) => !r.survey_only && !r.error).map((r: Json) => ({ repo: r.repo, base: r.base, gh_errors: r.gh_errors, worktrees: r.worktrees, branches: r.branches }))
     writeFileSync(values['git-out'], `${JSON.stringify(repos, null, 2)}\n`)
   }
+  if (values['hermes-out']) writeFileSync(values['hermes-out'], 'candidates' in c.hermes ? c.hermes.candidates.map((h: HermesCandidate) => `${h.source}\t${h.profile}:${h.root}\n`).join('') : '')
   if (values['orphans-out'] && survey.sessions?.orphans) writeFileSync(values['orphans-out'], JSON.stringify(survey.sessions.orphans))
   write(1, `${report(survey, cfg, c)}\n`)
   return 0

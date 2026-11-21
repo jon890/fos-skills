@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Sandbox, write } from './helpers.ts'
 import { DAY, sampleConfig } from './hs-helpers.ts'
-import { backupGrade, backupOverRetention, classify, hermesCandidates, imageGrade, imageOverRetention, memorySuggestions, report } from '../scripts/hs_classify.ts'
+import { backupGrade, backupOverRetention, classify, hermesBySource, hermesCandidates, imageGrade, imageOverRetention, memorySuggestions, report } from '../scripts/hs_classify.ts'
 
 const PRUNE = 1_800_000_000
 const before = PRUNE - DAY
@@ -67,6 +67,13 @@ describe('Hermes 후보(REQ10)', () => {
     assert.deepEqual(r.candidates.map((x) => [x.profile, x.root, x.sessions]), [['p1', 'a', 2]])
   })
 
+  test('출처별로 묶고 채팅 출처(discord)는 권장 묶음 뒤에 둔다', () => {
+    const sessions = [['d1', null, 'discord', old], ['d2', null, 'discord', old], ['d3', null, 'discord', old], ['c1', null, 'cron', old], ['t1', null, 'tui', old], ['t2', null, 'tui', old]]
+    const r = hermesCandidates(hermes([], sessions), now)
+    assert.ok('candidates' in r)
+    assert.deepEqual(hermesBySource(r.candidates).map(([s, items]) => [s, items.length]), [['tui', 2], ['cron', 1], ['discord', 3]])
+  })
+
   test('연결 조회가 실패했으면 후보를 하나도 내지 않는다', () => {
     const r = hermesCandidates({ profiles: [{ profile: 'p1', sessions: [['a', null, 'cron', old]] }], linked_error: 'db down' }, now)
     assert.deepEqual(r, { error: 'db down' })
@@ -110,7 +117,8 @@ describe('hs_classify 명령', () => {
     const surveyFile = write(join(box.root, 'survey.json'), JSON.stringify(sampleSurvey(box.root)))
     const cfgFile = write(join(box.root, 'cfg.json'), JSON.stringify(cfg))
     const gitOut = join(box.root, 'git.json')
-    const r = box.run('hs_classify', [surveyFile, '--config', cfgFile, '--git-out', gitOut, '--orphans-out', join(box.root, 'orph.json')])
+    const hermesOut = join(box.root, 'hermes.tsv')
+    const r = box.run('hs_classify', [surveyFile, '--config', cfgFile, '--git-out', gitOut, '--orphans-out', join(box.root, 'orph.json'), '--hermes-out', hermesOut])
     assert.equal(r.code, 0, r.stderr)
     assert.match(r.stdout, /\| 유지 \| [0-9a-f]+ \| recovery\/app-x:1 /)
     assert.match(r.stdout, /표에 올릴 용도\(지울지와 함께 표에 올릴지 묻는다\):\n- oneoff-20261001/)
@@ -119,10 +127,11 @@ describe('hs_classify 명령', () => {
     assert.match(r.stdout, /ssh -t example-host 'sudo snap remove core --revision=17'/)
     assert.match(r.stdout, /제안\(스킬은 재시작이나 한도 변경을 하지 않는다\)/)
     assert.match(r.stdout, /대화 기록 \(오래된 기준 30일\): 없음/)
-    assert.match(r.stdout, /- default:old {2}출처=cron/)
+    assert.match(r.stdout, /### 출처 cron: 루트 1개, 세션 1개 \(권장 묶음\)\n- default:old {2}마지막 활동=/)
     // 조사만 하는 저장소는 삭제 입력에 없고, 빌드 워크트리는 원인 수정 제안으로 나온다
     assert.match(r.stdout, /~\/agents \(조사만\. 승인 후보에 넣지 않는다\)/)
     assert.match(r.stdout, /원인 수정 제안: 빌드 스크립트가 남긴 워크트리 1개/)
+    assert.equal(readFileSync(hermesOut, 'utf8'), 'cron\tdefault:old\n')
     const git = JSON.parse(readFileSync(gitOut, 'utf8'))
     assert.deepEqual(git.map((x: any) => x.repo), [join(box.root, 'ops')])
   })

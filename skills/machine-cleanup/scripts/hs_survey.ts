@@ -436,9 +436,10 @@ function memorySection(): Json {
 // ---------- git ----------
 
 // 이 uid 의 프로세스 cwd 목록. 같은 uid 인데 cwd 를 읽지 못한 프로세스 수를 함께 낸다
-export function procCwds(uid: number): { cwds: Set<string>; unreadable: number } {
+export function procCwds(uid: number): { cwds: Set<string>; unreadable: number; unreadableNames: string[] } {
   const cwds = new Set<string>()
   let unreadable = 0
+  const unreadableNames: string[] = []
   for (const pid of procPids()) {
     const status = readText(sys(`/proc/${pid}/status`))
     const owner = status ? /^Uid:\s+(\d+)/m.exec(status) : null
@@ -447,15 +448,18 @@ export function procCwds(uid: number): { cwds: Set<string>; unreadable: number }
       cwds.add(readlinkSync(sys(`/proc/${pid}/cwd`)))
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT' && code !== 'ESRCH') unreadable += 1
+      if (code !== 'ENOENT' && code !== 'ESRCH') {
+        unreadable += 1
+        unreadableNames.push(/^Name:\s*(.*)$/m.exec(status!)?.[1] ?? '?')
+      }
     }
   }
-  return { cwds, unreadable }
+  return { cwds, unreadable, unreadableNames }
 }
 
 function gitSection(cfg: Json, opts: { fetch: boolean; checkPrs: boolean; ghTimeout: number }): Json {
   const uid = process.getuid?.() ?? -1
-  const { cwds, unreadable } = procCwds(uid)
+  const { cwds, unreadable, unreadableNames } = procCwds(uid)
   const checkout = expandHome(cfg.checkout).replace(/\/+$/, '')
   const repos: Json[] = []
   for (const r of cfg.repos) {
@@ -482,7 +486,9 @@ function gitSection(cfg: Json, opts: { fetch: boolean; checkPrs: boolean; ghTime
     }
     repos.push({ ...entry, ...result, path: r.path, repo: path })
   }
-  return { cwd_check: unreadable ? `확인하지 못함(같은 사용자 프로세스 ${unreadable}개의 cwd 를 읽지 못함)` : '완료', repos }
+  // 같은 uid 라도 다른 namespace(컨테이너 안)나 dumpable 이 꺼진 프로세스는 cwd 를 읽지 못한다. 이름을 보여 사람이 판단하게 한다
+  const names = [...new Set(unreadableNames)].slice(0, 5).join(', ')
+  return { cwd_check: unreadable ? `확인하지 못함(같은 사용자 프로세스 ${unreadable}개의 cwd 를 읽지 못함: ${names}. 컨테이너 안 프로세스일 수 있다)` : '완료', repos }
 }
 
 // ---------- 대화 기록 ----------

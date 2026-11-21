@@ -6,7 +6,7 @@ SKILL.md 「머신 고르기」 가 홈서버를 골랐을 때 읽는다. 단계
 `$SKILL_DIR` 은 이 스킬 번들 경로다. `$HS` 는 이번 정리의 파일을 둘 세션 임시 폴더이고, 아래 변수는 그 안의 파일이다.
 
 ```bash
-CFG="$HS/config.json"; SURVEY="$HS/survey.json"; GIT="$HS/git.json"; ORPHANS="$HS/orphans.json"
+CFG="$HS/config.json"; SURVEY="$HS/survey.json"; GIT="$HS/git.json"; ORPHANS="$HS/orphans.json"; HERMES="$HS/hermes.tsv"
 ```
 
 ## 0. 오버레이와 접속 확인
@@ -25,7 +25,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" true
 
 ```bash
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --input "$CFG" --json-out "$SURVEY" hs_survey.ts --config "$CFG"
-node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY" --config "$CFG" --git-out "$GIT" --orphans-out "$ORPHANS"
+node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY" --config "$CFG" --git-out "$GIT" --orphans-out "$ORPHANS" --hermes-out "$HERMES"
 ```
 
 - 통과 조건: 두 명령이 종료 코드 0 이다. 조사는 1분 안쪽이 걸린다.
@@ -47,6 +47,7 @@ node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY" --config "$CFG" --git-out "$G
 
 - 유지 등급, 조사만 하는 저장소의 항목, 원인 수정 제안, 메모리 제안은 질문에 넣지 않는다. 5단계 보고에 둔다.
 - **표에 없는 백업 용도는 용도마다 지울지와 보관 규칙 표에 올릴지를 함께 묻는다.**
+- **Hermes 세션은 출처별 묶음으로 묻는다.** `hs_classify.ts` 가 출처(cron, cli, tui 등)마다 묶어 보인다. 채팅 출처(discord)는 사람이 스레드에서 다시 이어 쓰는 대화일 수 있어 권장 묶음에서 빼고 따로 묻는다.
 - Hermes 세션을 지우기로 한 profile 마다 「공간 회수」 를 따로 묻는다. 세션을 지워도 세션 DB 파일은 줄지 않는다. 도는 동안 Hermes 응답이 잠깐 늦어질 수 있다고 선택지에 적는다.
 
 ## 4. 실행
@@ -54,7 +55,7 @@ node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY" --config "$CFG" --git-out "$G
 승인한 묶음의 명령만 돌리고 명령마다 종료 코드를 기록한다. 지우는 명령은 모두 dry-run 을 먼저 돌려 목록을 보인 뒤 `--apply` 를 붙인다.
 **Docker 이미지, 백업, 운영 checkout 의 브랜치와 워크트리는 `--lock "$LOCK"` 으로 돌린다.** 배포가 복구본과 복구 이미지를 만드는 동안 지우면, 그 배포가 실패했을 때 되돌릴 복구본이 사라진다.
 
-`$REFS` 는 승인한 이미지의 태그(태그가 없으면 조사 결과의 ID), `$LABEL` 은 백업 용도 하나, `$WT` 는 워크트리 경로, `$NAME` 은 휴지통 항목, `$PICKS` 는 `profile:세션` 꼴의 Hermes 루트, `$PROFILES` 는 공간 회수를 승인한 profile, `$DAYS` 는 사용자가 정한 기준 일수다.
+`$REFS` 는 승인한 이미지의 태그(태그가 없으면 조사 결과의 ID), `$LABEL` 은 백업 용도 하나, `$WT` 는 워크트리 경로, `$NAME` 은 휴지통 항목, `$PICKS` 는 승인한 출처 묶음의 Hermes 루트(`awk -F'\t' '$1 == "cron" { print $2 }' "$HERMES"` 처럼 `$HERMES` 에서 고른 `profile:세션` 목록), `$PROFILES` 는 공간 회수를 승인한 profile, `$DAYS` 는 사용자가 정한 기준 일수다.
 
 ```bash
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" hs_delete.ts images $REFS
