@@ -28,7 +28,7 @@ claude plugin test .
 
 | 하려는 일 | 명령 | 알아 둘 것 |
 | --- | --- | --- |
-| 한 파일이나 폴더만 | `node scripts/run-tests.ts skills/mac-cleanup/tests` | tsc 는 돌지 않아요 |
+| 한 파일이나 폴더만 | `node scripts/run-tests.ts skills/machine-cleanup/tests` | tsc 는 돌지 않아요 |
 | 타입만 | `node scripts/run-tests.ts --tsc-only` | 테스트는 돌지 않고, 파일 인자와 함께 줄 수 없어요 |
 | 동시 수 낮추기 | `node scripts/run-tests.ts --concurrency 4` | 기본은 CPU 수 이하, 최대 8이에요. worker 여럿이 함께 검증할 때 낮춰요 |
 | 오래 걸릴 때 | `--background` 로 띄우고 `--wait` 로 기다리기 | 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요 |

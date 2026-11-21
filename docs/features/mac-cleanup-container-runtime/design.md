@@ -1,6 +1,6 @@
 # mac-cleanup 컨테이너 런타임 기술 설계
 
-스펙: [spec.md](spec.md). 코드는 `skills/mac-cleanup/scripts/` 아래다. 스킬 하나 안의 변경이라 새 서비스나 ADR 은 없다.
+스펙: [spec.md](spec.md). 코드는 `skills/machine-cleanup/scripts/` 아래다. 스킬 하나 안의 변경이라 새 서비스나 ADR 은 없다.
 
 ## 요구사항 연결
 

@@ -8,7 +8,7 @@
 
 - 배경: 2026-11-11 Docker Desktop(context `desktop-linux`) 머신에서 스킬을 돌렸다. `colima` 명령이 없어 `colima_trim.ts` 를 돌릴 수 없었고, 에이전트가 그 단계를 건너뛸지 직접 판단했다. 빌드 캐시 32.08GB 와 이미지 15개를 지운 뒤 `Docker.raw` 는 5.6G 로 저절로 줄었고 호스트 여유가 늘었다.
 - 사용자 요청(2026-11-11): 「container 런타임이 어떤걸 쓰던간에, 내 환경을 감지하고 정리할 수 있도록」.
-- 지금 Colima 에 묶인 곳: `skills/mac-cleanup/SKILL.md` 1·3·5단계, `references/targets.md` 의 Docker 절, `scripts/survey_system.ts` 의 `surveyDocker`, `scripts/colima_trim.ts`. `docker_images.ts`, `docker_volumes.ts`, `delete_volumes.ts` 는 `docker` CLI 만 써서 런타임과 무관하지만 현재 context 하나만 본다.
+- 지금 Colima 에 묶인 곳: `skills/machine-cleanup/SKILL.md` 1·3·5단계, `references/targets.md` 의 Docker 절, `scripts/survey_system.ts` 의 `surveyDocker`, `scripts/colima_trim.ts`. `docker_images.ts`, `docker_volumes.ts`, `delete_volumes.ts` 는 `docker` CLI 만 써서 런타임과 무관하지만 현재 context 하나만 본다.
 
 ## 범위
 

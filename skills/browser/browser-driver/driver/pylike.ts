@@ -1,7 +1,7 @@
 // 옛 Python 구현이 표준 라이브러리로 하던 일 가운데 이 드라이버가 쓰는 것만 옮겼다.
 // 같은 입력에 같은 글자를 내는 것이 목적이라 이름과 순서를 원본(str, float, int, json, os.path, pathlib, shutil, shlex)에 맞췄다.
 // 이 폴더는 팀 저장소에 tools/browser-driver 로 실려 폴더 밖을 import 할 수 없다(docs/features/node-runtime/design.md DECISION1).
-// 그래서 modules/kit 과 mac-cleanup 의 같은 이름 함수를 복사해 필요한 만큼만 둔다.
+// 그래서 modules/kit 과 machine-cleanup 의 같은 이름 함수를 복사해 필요한 만큼만 둔다.
 //
 // 문자열 (str)
 //     PY_SPACE, pyStrip     str.isspace 가 공백으로 보는 글자와 str.strip

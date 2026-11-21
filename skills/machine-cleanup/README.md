@@ -1,4 +1,4 @@
-# mac-cleanup
+# machine-cleanup
 
 맥이 느려지거나 디스크가 모자랄 때, 무엇을 지워도 되는지 하나하나 찾아보는 수고를 덜어 준다.
 디스크, 메모리, 스왑과 Docker, 도구 캐시, 오래된 에이전트 세션, 머지된 브랜치와 끝난 워크트리를 한 번에 조사한다.
@@ -51,7 +51,8 @@
 - macOS 와 Node 24 이상이 필요하다. `gh` 에 로그인돼 있으면 squash 머지된 브랜치도 찾는다
 - 컨테이너 런타임은 Docker Desktop, Colima, OrbStack 을 감지한다. 그 밖의 이 맥의 엔진은 「알 수 없는 런타임」 으로 docker CLI 로 조사와 정리만 하고 VM 디스크 회수는 사용자 몫으로 남긴다. ssh·tcp 로 연결한 엔진은 크기만 보이고 지우지 않는다
 - 꺼진 런타임은 승인한 것만 켜고, 정리 뒤에도 끄지 않는다. 사용자의 현재 docker context 는 바꾸지 않는다
-- 이 머신에서 정리하지 않을 앱이 있으면 `~/.claude/overlays/mac-cleanup.md` 에 앱과 이유를 적는다(옛 자리 `~/.claude/mac-cleanup-overlay.md` 도 새 파일이 없으면 읽는다). 그 항목은 후보에 올라오지 않는다
+- 이 머신에서 정리하지 않을 앱이 있으면 `~/.claude/overlays/machine-cleanup.md` 에 앱과 이유를 적는다. 그 항목은 후보에 올라오지 않는다. 새 파일이 없으면 옛 자리 `~/.claude/overlays/mac-cleanup.md`, `~/.claude/mac-cleanup-overlay.md` 를 차례로 읽는다
+- 지금은 이 맥만 정리한다. 「홈서버 정리」 나 「둘 다」 를 말하면 홈서버는 아직 지원하지 않는다고 알리고 이 맥만 정리한다
 
 ## 함께 쓰는 스킬
 
