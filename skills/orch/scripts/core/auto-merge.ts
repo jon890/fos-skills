@@ -31,7 +31,7 @@
 //                      통과하면 조건마다 `<조건> <판정>(커밋 <앞 8자리> 또는 댓글, <시각>)` 꼴의 근거를 낸다
 //   - chainIndex       본문이 가리키는 커밋의 체인 자리. 리뷰는 달린 커밋, 댓글은 쓴 시각 이전의 가장 새 커밋(커밋 시각 기준)이다
 //   - reviewScope      지금 HEAD 의 판정으로 셀 리뷰의 범위. HEAD 부터 첫 부모를 따라 내려가며, 기준 브랜치를 합친 merge 커밋
-//                      (첫 부모가 체인의 다음 커밋이고 둘째 부모가 base 에 있다)만 이어지는 동안 그 앞 커밋의 리뷰도 인정한다.
+//                      만 이어지는 동안 그 앞 커밋의 리뷰도 인정한다. 둘째 부모가 base 밖이면 두 부모가 같은 커밋에서 base 합치기만 거쳤는지 확인한다.
 //                      PR 의 변경을 바꾸지 않은 최신화 때문에 리뷰를 다시 받지 않게 하려는 것이다. 다른 커밋을 만나면 멈춘다.
 //                      since 는 마지막으로 인정한 커밋의 시각이다
 //   - scopedNotes      reviewScope 안의 본문. 리뷰는 달린 커밋으로, 댓글은 since 이후인지로 본다. 옛 HEAD 의 pass 로 새 HEAD 를 걸지 않으려는 것이다
@@ -249,14 +249,25 @@ export type ReviewScope = { heads: string[]; since: string | null }
 export type ChainCommit = { oid: string; parents: string[]; at: string }
 
 // 머리 주석의 「reviewScope」. chain 이 비었으면 head 하나만 인정하고 댓글은 세지 않는다
-export function reviewScope(head: string, chain: ChainCommit[], inBase: (oid: string) => boolean): ReviewScope {
+export function reviewScope(head: string, chain: ChainCommit[], inBase: (oid: string) => boolean, baseMergesOnly?: (head: string, reviewed: string) => boolean): ReviewScope {
   if (chain.length === 0 || chain[0].oid !== head) return { heads: [head], since: null }
   const heads = [head]
   let i = 0
-  for (; i + 1 < chain.length; i++) {
+  while (i + 1 < chain.length) {
     const { parents } = chain[i]
-    if (parents.length !== 2 || parents[0] !== chain[i + 1].oid || !inBase(parents[1])) break
-    heads.push(chain[i + 1].oid)
+    if (parents.length !== 2 || parents[0] !== chain[i + 1].oid) break
+    let next = i + 1
+    if (!inBase(parents[1])) {
+      if (!baseMergesOnly) break
+      while (next < chain.length && !baseMergesOnly(chain[i].oid, chain[next].oid)) {
+        const parents = chain[next].parents
+        if (parents.length !== 2 || parents[0] !== chain[next + 1]?.oid) return { heads, since: chain[i].at || null }
+        next++
+      }
+      if (next === chain.length) break
+    }
+    heads.push(...chain.slice(i + 1, next + 1).map((commit) => commit.oid))
+    i = next
   }
   return { heads, since: chain[i].at || null }
 }
