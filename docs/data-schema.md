@@ -146,7 +146,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `worktree` | 워크트리 이름. 줄의 열쇠 |
 | `branch` | 브랜치 이름 또는 `null` |
 | `pr` | PR 번호 또는 `null`. 리뷰·검증은 대상 PR |
-| `stages` | `pr=N,merge=M`. 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. 그 PR 의 단계 번호이고 없으면 칸이 없다 |
+| `stages` | `pr=N,merge=M`. 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. 그 PR 의 단계 번호이고 없으면 칸이 없다. 끝난 단계 지우기(`orch board clear-done`)가 끝난 PR 단계를 지우면 `merge=M` 만 남고, merge 단계까지 지우면 칸을 지운다 |
 | `status` | `working`, `done`, `lost`(보고 없이 끊김) |
 | `at` | 더하거나 다시 띄운 시각 |
 | `endedAt` | 끝난 시각 또는 `null` |
@@ -166,7 +166,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `state/approvals.json.lock` | 승인 파일 잠금. [보드 쓰기 잠금](adr/029-board-write-lock.md)의 `withFileLock` 규약을 쓴다 | 쓰기를 끝내면 푼다. 30초 넘은 잠금은 넘겨받는다 |
 | `state/step-ready.json` | 다음 단계 알림 기록. `notices` 의 항목 id 아래 `step`(사건 꼬리표를 뗀 글), `mark`(auto/ask), `at`(ms), `again`(재알림에 쓴 한도 알림 시각 또는 null)을 둔다 | 틱 자식이 옆 파일에 쓰고 rename 한다. 같은 단계는 worker 가 떠도 유지하며 글 변경·항목 완료 때 지운다 |
 | `<머신 폴더>/worker-limited.json` | 마지막 `WORKER-LIMITED` 전송 성공 시각 `at`(ms)과 선택 필드 `checks`. `checks` 는 Run·제공자 쌍의 JSON 문자열을 키로 `run`, `provider`, `at`, 마지막 확인 알림 성공 시각 `checkedAt`(선택, ms), 전송 예약 `claim`(선택, `id`와 `at`)을 둔다. 머신 폴더는 `lib/machine.ts` 가 정한다 | 파일 옆 잠금 안에서 다시 읽고 더 늦은 시각만 rename 으로 저장한다. 자동 진행 확인과 루프가 함께 읽고, 한도 확인 알림은 잠금 안에서 예약·성공 시각만 저장하고 잠금 밖에서 보낸다. 예약은 3분 뒤 다시 시도하며 한도 기록은 발생 후 24시간에 정리한다 |
-| `state/step-launches.jsonl` | 자동 진행 단계의 실행 기록. 한 줄에 `at`(ISO 8601 UTC), `item`, `number`, `step`(사건 꼬리표를 뗀 글), `dispatch`, `branch`(문자열 또는 null). `launch-worker`, `send-to-worker` 가 쓰고 `orch board auto-check` 가 읽는다 | 자동으로 지우지 않는다 |
+| `state/step-launches.jsonl` | 자동 진행 단계의 실행 기록. 한 줄에 `at`(ISO 8601 UTC), `item`, `number`, `step`(사건 꼬리표를 뗀 글), `dispatch`, `branch`(문자열 또는 null). `launch-worker`, `send-to-worker` 가 쓰고 `orch board auto-check` 가 읽는다. `orch board clear-done` 이 단계 번호를 다시 매기면 같은 기록을 새 글로 한 줄 더 쓴다 | 자동으로 지우지 않는다 |
 | `state/launched-workers/<dispatch>.json` | worker 소유 기록. 기존 필드는 `skills/orch/scripts/lib/launched.ts` 의 `Launch` 가 소유한다. 선택 필드 `main_guard` 는 `version: 1`, `main`(처음 띄울 때 메인 Run 또는 null), `caller_repo`, `target_repo` 를 담는다. `not_main` 은 직접 띄우기를 우회한 이유다. 옛 기록에는 이 필드가 없고, 후속 worker 는 원래 소유 예외를 물려받는다 | 워크트리 정리 때 지운다 |
 | `state/launched-workers/not-main/<id>.json` | 우회 전용 기록. `repo`, `caller_run`(문자열 또는 null), `main_run`(문자열 또는 null), `command`, `reason`, `at`(ISO 시각), `notified`(메인 알림 성공 여부), `receipt_hash`(자식 체인 전용 비밀값의 SHA-256). 가짜 worker dispatch 를 만들지 않는다 | 실제 쓰기 전에 만들고 알림 실패 때도 보존한다. 자동으로 지우지 않는다 |
 | `state/launch-history.jsonl` | 띄울 때마다 남기는 영구 이력. `dispatch`, `task`, `run`, `terminal`, `at`, `branch`, `worktree`, `spec`, `title`, `agent`, `model`, `effort`, `effective`, `row`, `completion`, `experiment`, `retry_of`. 모르는 값은 null. 이력 필드는 [orch-routing 설계](features/orch-routing/design.md), 현재 선택 검사와 예외 기록은 [단일 worker 설계](features/orch-single-worker/design.md) 가 소유한다. 행과 다른 worker 는 `effective.candidateOverride` 에 `row`, `agent`, `model`, `effort`, `reason` 을 남긴다. effort 가 다르면 `effortLimit` 은 행의 값이다. Claude 사용량 때문에 바꿔 띄웠으면 `reason` 은 `사용량: 남은 N%, 남은 시간 M%` 이고 `agent`, `model`, `effort` 는 띄운 worker 다([usage-routing 설계](features/usage-routing/design.md)) | 자동으로 지우지 않는다. launched-workers 정리와 별개다 |

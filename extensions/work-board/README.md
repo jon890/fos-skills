@@ -123,6 +123,7 @@ orch board add-step order-api "배포" --on "877 deploy"
 orch board list                         # 모든 항목과 진행률을 봐요
 orch board get order-api branch         # 값 하나를 꺼내요
 orch board del --done                   # 끝난 항목을 비워요
+orch board clear-done --all             # 항목 안의 끝난 단계를 지우고 남은 단계를 1번부터 다시 매겨요
 ```
 
 옛 파일의 `goal` 상태는 내용을 보존해 `doing`으로 읽고, 다음 저장부터 `doing`으로 남겨요. 단계나 진행률이 없던 옛 항목은 다른 진행 중 항목처럼 고칠 때 `--progress`나 단계 줄을 함께 줘야 해요. 새 항목에는 `goal`을 쓸 수 없어요.

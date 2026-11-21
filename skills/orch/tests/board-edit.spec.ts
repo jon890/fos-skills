@@ -265,3 +265,36 @@ test('상태 없이 업무 칸을 넣고 고치고 지운다', () => {
   writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ board: { task: {} } }))
   refused(['set', 'x', '--task-ref', '1'], /board.task/, 2)
 })
+
+test('clear-done 은 끝난 단계를 지우고 번호를 다시 매기며 띄운 기록을 새 단계 글로 잇는다', () => {
+  save([
+    { id: 'a', status: 'doing', title: '작업', details: [{ text: '1. 구현', done: true }, { text: '2. [auto] 검증 (#7 merge)', done: false }, { text: '3. 정리', done: false }] },
+    { id: 'b', status: 'doing', details: [{ text: '1. 구현', done: false }] },
+    { id: 'c', status: 'doing', progress: '17/18' },
+  ])
+  const launches = join(repo, '.orch/state/step-launches.jsonl')
+  mkdirSync(dirname(launches), { recursive: true })
+  writeFileSync(launches, JSON.stringify({ item: 'a', number: 2, step: '2. [auto] 검증', dispatch: 'ctx_1', branch: 'feat/a' }) + '\n')
+  ok(['clear-done', 'a'], 'BOARD-CLEAR a 1 0/2')
+  const rows = readFileSync(launches, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.deepEqual(rows.slice(1).map(({ at, ...rest }) => (assert.ok(at), rest)), [{ item: 'a', number: 1, step: '1. [auto] 검증', dispatch: 'ctx_1', branch: 'feat/a' }])
+  ok(['show', 'a'], 'BOARD a doing 0/2\n1. [auto] 검증 (#7 merge)\n2. 정리')
+  const none = orch(['clear-done', 'b'])
+  assert.equal(none.code, 0); assert.equal(none.out, 'BOARD-NONE\n'); assert.match(none.err, /b: 끝난 단계가 없다/)
+  ok(['clear-done', '--all'], 'BOARD-CLEAR c 17 0/1')
+  ok(['clear-done', '--all'], 'BOARD-NONE')
+  for (const args of [['clear-done'], ['clear-done', 'a', '--all'], ['clear-done', 'a', 'b'], ['clear-done', 'a', '--json'], ['del', 'a', '--all']]) refused(args, /사용법/, 2)
+})
+
+test('clear-done 은 열린 단계 승인이 있는 항목의 번호를 바꾸지 않는다', () => {
+  const steps = () => [{ text: '1. 구현', done: true }, { text: '2. [ask] 배포', done: false }]
+  save([{ id: 'a', status: 'doing', details: steps() }, { id: 'b', status: 'doing', details: steps() }])
+  const approvals = join(repo, '.orch/state/approvals.json')
+  mkdirSync(dirname(approvals), { recursive: true })
+  const entry = { id: 'step-a-2', version: 1, kind: 'step', title: '배포', state: 'open', run: 'R', terminal: null, preview: null, item: 'a', step: 2, then: null, real: null, command: null, createdAt: '2026-11-21T00:00:00Z', closedAt: null, press: null, note: null, reason: null }
+  writeFileSync(approvals, JSON.stringify({ seq: 1, entries: [entry] }))
+  refused(['clear-done', 'a'], /열린 단계 승인/)
+  const all = orch(['clear-done', '--all'])
+  assert.equal(all.code, 0, all.err); assert.equal(all.out, 'BOARD-CLEAR b 1 0/1\n'); assert.match(all.err, /a: 열린 단계 승인이 있다/)
+  ok(['show', 'a', '--full'], 'BOARD a doing 1/2\n✓ 1. 구현\n2. [ask] 배포')
+})

@@ -31,6 +31,11 @@
 //   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄은 세지 않는다)
 //     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
 //   board.ts del <id>
+//   board.ts clear-done <id> | clear-done --all [--except ID,ID]   (끝난 단계 줄을 지우고 남은 단계를 1번부터 다시 매긴다. 진행률은 0/<남은 수> 가 된다)
+//     stages 칸과 worker 줄의 stages 는 새 번호로 바꾸고, 지운 단계를 가리키던 짝은 뺀다. 짝이 모두 빠지면 칸을 지운다
+//     명시 progress(N/M)는 0/(M-N) 이 된다. 번호 없는 참고 줄은 그대로다. done 항목, 끝난 단계가 없는 항목,
+//     모든 단계가 끝난 항목(끝난 항목 표시를 유지한다), 같은 번호 단계가 둘 이상인 항목은 건너뛴다. --except 의 항목도 건너뛴다
+//     결과 JSON: {"cleared": [{"id", "removed", "progress", "renumbered": [{"from", "to", "was", "now"}]}], "skipped": [{"id", "reason"}]}
 //   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 //   board.ts view <id> (읽기 전용 항목 JSON)
 //   set, step --exact: 있는 항목과 하나뿐인 단계에만 적용하고 결과 JSON 을 낸다.
@@ -96,12 +101,12 @@ const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
 export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'clear-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link']
 const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--if-rev REV] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,clear-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
@@ -146,6 +151,7 @@ const HELP = `${USAGE}
   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄은 세지 않는다)
     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
   board.ts del <id> [--exact] | del-done <id> | del-done --all (엄격한 지우기는 결과와 사본을 남긴다)
+  board.ts clear-done <id> | clear-done --all [--except ID,ID] (끝난 단계 줄을 지우고 남은 단계를 1번부터 다시 매긴다. stages 도 새 번호로 바꾸고 사본을 남긴다)
   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 status: decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 항목의 status, details, next 가 바뀐 쓰기는 그 항목의 stepAt 에 그 시각을 남긴다. 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다
@@ -364,6 +370,7 @@ type Args = {
   undo: boolean
   exact: boolean
   all: boolean
+  except?: string[]
   fill?: boolean
   ifTaskRef?: string
   ifRev?: string
@@ -388,6 +395,7 @@ function parse(argv: string[]): Args | 'help' {
     undo: { type: 'boolean' },
     exact: { type: 'boolean' },
     all: { type: 'boolean' },
+    except: { type: 'string' },
     'if-rev': { type: 'string' },
     event: { type: 'string' },
     title: { type: 'string' },
@@ -413,7 +421,7 @@ function parse(argv: string[]): Args | 'help' {
   if (head.includes('-h') || head.includes('--help')) return 'help'
   const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: true })
   if (positionals.length === 0) throw new Error('cmd 가 필요하다')
-  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit', 'get'].includes(positionals[0]) ? 4 : (['item', 'items', 'del-done'].includes(positionals[0]) || (positionals[0] === 'del' && values.exact)) ? 2 : 3
+  const limit = positionals[0] === 'step-mark' ? 5 : ['detail-edit', 'step-edit', 'get'].includes(positionals[0]) ? 4 : (['item', 'items', 'del-done', 'clear-done'].includes(positionals[0]) || (positionals[0] === 'del' && values.exact)) ? 2 : 3
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
@@ -427,8 +435,9 @@ function parse(argv: string[]): Args | 'help' {
   if (values.clear !== undefined && cmd !== 'worker-end') throw new Error('--clear 는 worker-end 에만 쓴다')
   if (cmd === 'worker-add' && (!id || !ROLES.includes(status ?? '') || !values.worktree?.trim() || (values['keep-current'] !== undefined && !ROLES.includes(values['keep-current'])))) throw new Error('worker-add 에는 id, 역할(impl|follow|review|verify), --worktree 가 필요하다')
   if (cmd === 'worker-end' && (!id || !['done', 'lost'].includes(status ?? '') || (values.dispatch !== undefined) === (values.worktree !== undefined) || !(values.dispatch ?? values.worktree)?.trim())) throw new Error('worker-end 에는 id, done|lost 와 --dispatch 또는 --worktree 하나가 필요하다')
-  if (values.all && (cmd !== 'del-done' || id !== undefined)) throw new Error('--all 은 del-done 에만 단독으로 쓴다')
-  if (cmd === 'del-done' && id === undefined && !values.all) throw new Error('del-done 에는 id 또는 --all 이 필요하다')
+  if (values.all && (!['del-done', 'clear-done'].includes(cmd) || id !== undefined)) throw new Error('--all 은 del-done, clear-done 에만 id 없이 쓴다')
+  if (['del-done', 'clear-done'].includes(cmd) && id === undefined && !values.all) throw new Error(`${cmd} 에는 id 또는 --all 이 필요하다`)
+  if (values.except !== undefined && (cmd !== 'clear-done' || !values.all)) throw new Error('--except 는 clear-done --all 에만 쓴다')
   if (values.exact !== undefined && !['set', 'step', 'del'].includes(cmd)) throw new Error('--exact 는 set, step, del 에만 쓴다')
   if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
@@ -443,7 +452,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -553,9 +562,78 @@ function warnMissingEvent(item: Item, id: string, number: number, text: string):
   process.stderr.write(`${id} 의 ${number} 번 단계 글에 #${pr[1]} 와 머지·배포·릴리스 낱말이 있지만 --event 가 없어 PR 이 머지돼도 자동으로 끝나지 않는다. 자동으로 끝내려면 --event "${pr[1]} merge" 처럼 사건을 준다(사건은 pr, merge, deploy, release)\n`)
 }
 
+type ClearResult = { id: unknown; removed: number; progress: [number, number] | null; renumbered: { from: number; to: number; was: string; now: string }[] }
+const NOTHING_DONE = '끝난 단계가 없다'
+
+// 끝난 단계를 지울 수 있는 항목인가. 명시 progress 가 있으면 그 값으로, 없으면 단계 줄로 본다
+function clearable(item: Item): boolean {
+  const progress = progressOf(item)
+  return progress !== null && progress[0] > 0 && progress[0] < progress[1]
+}
+
+// 「pr=1,merge=2」 의 번호를 새 번호로 바꾼다. 지운 단계를 가리키던 짝은 뺀다. 남은 짝이 없으면 null
+function remapStages(value: unknown, numbers: Map<number, number>): string | null {
+  if (typeof value !== 'string' || !STAGES.test(value)) return null
+  const pairs = value.split(',').flatMap((part) => {
+    const [kind, number] = part.trim().split('=')
+    const to = numbers.get(Number(number))
+    return to === undefined ? [] : [`${kind}=${to}`]
+  })
+  return pairs.length ? pairs.join(',') : null
+}
+
+// 항목 하나의 끝난 단계를 지우고 남은 단계를 1번부터 다시 매긴다. 건너뛰면 그 이유를 돌려준다
+function clearDone(item: Item): ClearResult | string {
+  if (item.status === 'done') return 'done 항목이다. 항목을 지우려면 del 을 쓴다'
+  const progress = progressOf(item)
+  if (progress === null || progress[0] === 0) return NOTHING_DONE
+  if (progress[0] >= progress[1]) return '모든 단계가 끝난 항목이라 끝난 항목 표시를 그대로 둔다. 항목을 지우려면 del 을 쓴다'
+  const [source, lines] = stepSource(item)
+  const steps = lines.flatMap((line) => { const step = parseStep(line); return step ? [step] : [] })
+  if (new Set(steps.map((step) => step[0])).size !== steps.length) return '같은 번호 단계가 둘 이상이라 새 번호를 정하지 못한다'
+  const numbers = new Map<number, number>()
+  const renumbered: ClearResult['renumbered'] = []
+  let removed = 0
+  if (source !== null) {
+    const kept: Line[] = []
+    for (const line of lines) {
+      const step = parseStep(line)
+      if (step && line.done) { removed++; continue }
+      if (step) {
+        const to = numbers.size + 1
+        numbers.set(step[0], to)
+        const now = line.text.replace(/^(\s*)\d+/, `$1${to}`)
+        if (now !== line.text) renumbered.push({ from: step[0], to, was: line.text, now })
+        kept.push({ text: now, done: false })
+      } else kept.push(line)
+    }
+    item[source] = kept
+    if ('stages' in item) {
+      const stages = remapStages(item.stages, numbers)
+      if (stages === null) delete item.stages
+      else item.stages = stages
+    }
+    for (const row of Array.isArray(item.workers) ? item.workers as Record<string, unknown>[] : []) {
+      if (row === null || typeof row !== 'object' || !('stages' in row)) continue
+      const stages = remapStages(row.stages, numbers)
+      // 후속 줄의 stages 는 merge 단계가 있어야 자기 PR 의 머지를 끝낸다. merge 가 빠지면 줄 stages 를 지운다
+      if (stages === null || !/merge=/.test(stages)) delete row.stages
+      else row.stages = stages
+    }
+  }
+  const explicit = PROGRESS.exec(String(item.progress || ''))
+  if (explicit && Number(explicit[2]) > 0) {
+    const left = progress[1] - progress[0]
+    item.progress = `0/${left}`
+    // 명시 진행률이 앞서므로 지운 수도 그 값의 끝낸 수로 알린다
+    removed = progress[0]
+  }
+  return { id: item.id, removed, progress: progressOf(item), renumbered }
+}
+
 type View = ReturnType<typeof itemView>
 // 읽기는 false, 기존 쓰기는 true, 결과를 내는 쓰기는 잠금 안에서 만든 항목 값이다.
-function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } | 'empty' {
+function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } | { cleared: ClearResult[]; skipped: { id: unknown; reason: string }[] } | 'empty' {
   if (a.cmd === 'items') {
     const statuses = a.id === undefined ? null : a.id.split(',').map((value) => value.trim())
     const invalid = statuses?.find((value) => !STATUSES.includes(value))
@@ -576,6 +654,26 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     if (!removed.length) { process.stdout.write('{"deleted":[]}\n'); return false }
     board.items = board.items.filter((item) => item.status !== 'done')
     return { deleted: removed.map((item) => item.id) }
+  }
+  if (a.cmd === 'clear-done') {
+    let targets: Item[]
+    if (a.all) targets = board.items.filter((item) => item.status !== 'done' && !(a.except ?? []).includes(item.id))
+    else {
+      const item = find(board, a.id ?? '')
+      if (!item) throw new Refused(`항목이 없다: ${a.id ?? ''}`)
+      targets = [item]
+    }
+    const cleared: ClearResult[] = []
+    const skipped: { id: unknown; reason: string }[] = []
+    for (const item of targets) {
+      const result = clearDone(item)
+      if (typeof result !== 'string') cleared.push(result)
+      // 묶음은 끝난 단계가 있는데 건너뛴 항목만 알린다. 지울 것이 없는 항목까지 알리면 출력이 보드 전체가 된다
+      else if (!a.all || result !== NOTHING_DONE) skipped.push({ id: item.id, reason: result })
+    }
+    if (a.all) for (const id of a.except ?? []) { const item = find(board, id); if (item && item.status !== 'done' && clearable(item)) skipped.push({ id, reason: '열린 단계 승인이 있다' }) }
+    if (!cleared.length) { process.stdout.write(`${JSON.stringify({ cleared, skipped })}\n`); return false }
+    return { cleared, skipped }
   }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
@@ -922,7 +1020,7 @@ function main(argv: string[]): number {
       const stamp = localIso(new Date())
       board.updatedAt = stamp
       for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
-      const backup = (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined)) || (typeof result === 'object' && 'deleted' in result)
+      const backup = (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined)) || (typeof result === 'object' && ('deleted' in result || 'cleared' in result))
       saved = saveBoard(path, board, lock, backup)
       if (!saved) {
         process.stderr.write(`보드 잠금을 다른 프로세스가 넘겨받아 쓰지 않았다: ${lock.file}\n`)
