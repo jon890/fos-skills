@@ -156,7 +156,7 @@ test('끝낸 단계와 남은 단계는 누른 목록만 펼쳐 적힌 순서대
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pressDrawn(ui, 'fold-a-done')
   await pressDrawn(ui, 'fold-a-todo')
-  expect((await keys(ui, 'a')).slice(0, 5)).toEqual(['head', 'bar', 'fd-0', 'steps', 'ft-0'])
+  expect((await keys(ui, 'a')).slice(0, 6)).toEqual(['head', 'bar', 'meta', 'fd-0', 'steps', 'ft-0'])
   const done = stepParts(await ui.find({ type: 'Box', key: 'fd-0' }))
   const now = stepParts(await ui.find({ type: 'Box', key: 'steps' }))
   const todo = stepParts(await ui.find({ type: 'Box', key: 'ft-0' }))
