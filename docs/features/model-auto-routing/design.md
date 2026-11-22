@@ -54,7 +54,7 @@ Claude Code 2.1.329 에서 2026-11-20 에 `claude -p --model <계열> --output-f
 
 ## 다음 PR 과의 경계
 
-PR 2(여러 계정의 사용량)는 `launch-worker` 의 차례 0-0 을 넓힌다. 고른 짝(REQ9)의 모델은 그 뒤 차례 0-0-1 이 그 계열의 최신 세대로 바꾸므로, PR 2 는 짝 표에 계열만 적으면 된다. PR 3(비교)는 코드를 더하지 않는다(스펙 DECISION31). 코디네이터가 보드의 「새 모델 <모델>」 항목을 보고 [model-compare.md](../../../skills/orch/references/model-compare.md) 의 절차대로 비교한다. 두 비교 worker 는 `후보 밖:` 줄로 모델을 정하므로 세대 판정과 사용량 판정이 바꾸지 않는다. 지금 세대를 고르므로 REQ23 의 거절 대상도 아니다.
+PR 2(여러 계정의 사용량)는 하지 않는다(스펙 DECISION31). PR 3(비교)는 코드를 더하지 않는다(스펙 DECISION32). 코디네이터가 보드의 「새 모델 <모델>」 항목을 보고 [model-compare.md](../../../skills/orch/references/model-compare.md) 의 절차대로 비교한다. 두 비교 worker 는 `후보 밖:` 줄로 모델을 정하므로 세대 판정과 사용량 판정이 바꾸지 않는다. 지금 세대를 고르므로 REQ23 의 거절 대상도 아니다.
 
 ## 검증 전략
 
