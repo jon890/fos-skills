@@ -1,4 +1,4 @@
-// worker 워크트리에 한국어 커밋 검사 훅을 건다. launch-worker 가 worker 를 띄우기 전에 부른다.
+// worker 워크트리에 커밋 검사 훅(한국어 검사, 공개 저장소의 비공개 낱말 검사)을 건다. launch-worker 가 worker 를 띄우기 전에 부른다.
 // 선택 이유는 docs/adr/036-worker-commit-korean-check.md, 훅이 하는 일은 skills/orch/githooks/dispatch.mjs 머리 주석이 소유한다.
 //
 //     installCommitCheck(worktree)   그 워크트리에만 걸리는 core.hooksPath 를 훅 폴더로 둔다. 몇 번을 불러도 결과가 같다
@@ -12,6 +12,7 @@
 //         <훅 이름>               HOOK_NAMES 마다 dispatch.mjs 를 가리키는 심볼릭 링크
 //         korean-check/scripts    같은 번들의 export-only-skills/korean-check/scripts 사본
 //         korean-check/references 같은 번들의 references 사본. 폴더째 복사해 검사기가 읽는 파일이 늘어도 이 목록을 고치지 않는다
+//         private-words.ts        비공개 낱말 검사기(이 폴더의 lib/private-words.ts 사본). Node 내장 모듈만 써서 혼자 돈다
 //     검사기를 번들 경로로 가리키지 않고 복사한다. 플러그인 설치 경로에는 버전이 들어 있어 갱신하면 없어지고,
 //     끊긴 경로의 훅은 git 이 없는 훅으로 보고 조용히 지나간다. 사본은 다시 띄울 때(launch-worker --worktree) 새로 만든다.
 //
@@ -63,6 +64,7 @@ const HOOKS_DIR = 'orch-hooks'
 const BUNDLE = join(import.meta.dirname, '..', '..', '..', '..')
 const CHECKER = join(BUNDLE, 'export-only-skills', 'korean-check')
 const DISPATCH = join(BUNDLE, 'skills', 'orch', 'githooks', 'dispatch.mjs')
+const PRIVATE_WORDS = join(import.meta.dirname, 'private-words.ts')
 
 // 이 함수가 둔 값의 꼴인가. 연결된 워크트리의 git 관리 폴더(<공통 git 폴더>/worktrees/<id>) 아래의 훅 폴더다
 function isOurs(value: string): boolean {
@@ -107,6 +109,7 @@ export function installCommitCheck(worktree: string, source: { checker?: string;
     writeFileSync(join(fresh, 'package.json'), '{"type":"module"}\n')
     cpSync(join(checker, 'scripts'), join(fresh, 'korean-check', 'scripts'), { recursive: true })
     cpSync(join(checker, 'references'), join(fresh, 'korean-check', 'references'), { recursive: true })
+    copyFileSync(PRIVATE_WORDS, join(fresh, 'private-words.ts'))
     for (const name of HOOK_NAMES) symlinkSync('dispatch.mjs', join(fresh, name))
     // 옛 폴더를 지우는 동안 훅 폴더가 없으면 git 이 훅을 부르지 않는다. 옆 이름으로 옮긴 뒤 바꿔 넣어 그 틈을 이름 바꾸기 두 번 사이로 줄인다
     rmSync(old, { recursive: true, force: true })

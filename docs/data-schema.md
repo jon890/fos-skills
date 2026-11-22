@@ -114,7 +114,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `heavy` | `wait_idle` | 비지 않은 JS 정규식 문자열 목록(빈 목록 허용) | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
 | `review` | `prepare` | bash 명령 문자열. 문자열이 아니면 사용법 오류다 | 없음(준비하지 않는다) | `launch-worker` 가 지시서에 `리뷰 PR: #<N>` 줄이 있는 리뷰 worker 의 워크트리를 PR head 에 둔 뒤 그 워크트리에서 한 번 돌리는 생성물 준비 명령. 실패해도 worker 는 뜬다. 차례와 환경 변수는 `launch-worker.ts` 머리 주석의 2-1 이 소유한다 |
 | `docker` | `containers`, `images` | 객체 목록. 컨테이너 규칙은 `label` 과 `name` 가운데 하나 이상, 이미지 규칙은 `repository` 와 `keep`(0 이상의 정수, 기본 1)이다. 모르는 키는 설정 오류다 | 절이 없으면 빈 규칙(지우지 않는다) | 정리가 지울 임시 컨테이너와 쌓인 이미지의 규칙. 칸의 뜻은 [마무리 설정 파일](../skills/orch/references/overlay.md#마무리-설정-파일)의 `docker` 행, 판정은 `core/docker.ts` 의 `dockerRules` 가 소유한다 |
-| `worker` | `commit_check` | bool. true 나 false 가 아니면 사용법 오류다 | true(건다) | `launch-worker` 가 worker 워크트리에 한국어 커밋 검사 훅을 걸지 정한다. false 면 그 저장소의 worker 에는 걸지 않고, 앞서 건 훅이 있으면 다시 띄울 때 푼다. 훅이 하는 일은 `lib/commit-check.ts` 머리 주석이 소유한다([ADR-036](adr/036-worker-commit-korean-check.md)). 이 절을 모르는 옛 orch 번들은 설정 오류로 멈추므로 플러그인을 갱신한 뒤에 둔다 |
+| `worker` | `commit_check` | bool. true 나 false 가 아니면 사용법 오류다 | true(건다) | `launch-worker` 가 worker 워크트리에 커밋 검사 훅(한국어 검사, 공개 저장소의 비공개 낱말 검사)을 걸지 정한다. false 면 그 저장소의 worker 에는 걸지 않고, 앞서 건 훅이 있으면 다시 띄울 때 푼다. 훅이 하는 일은 `lib/commit-check.ts` 머리 주석이 소유한다([ADR-036](adr/036-worker-commit-korean-check.md)). 이 절을 모르는 옛 orch 번들은 설정 오류로 멈추므로 플러그인을 갱신한 뒤에 둔다 |
 | `plugin` | `auto_update` | bool. true 나 false 가 아니면 설정 오류다 | true | 상주 루프가 설치된 플러그인의 새 버전을 확인하고 갱신할지 정한다. false 면 확인과 갱신을 모두 건너뛴다. 동작은 [플러그인 자동 갱신 설계](features/plugin-auto-update/design.md)가 소유한다 |
 | `queue` | `shared_groups` | 이름(영문, 숫자, `_`, `-`)에서 Python 정규식 문자열이나 그 목록으로 가는 비지 않은 객체. `up_to_date_when` 이 `overlap` 일 때만 둔다 | 없음 | 공용 묶음. PR 과 base 가 같은 묶음을 둘 다 바꿨을 때만 최신화가 필요하다. 머지 큐(`--shared-group`)와 상주 루프의 최신화가 같은 판정(`core/overlap.ts` 의 `judge`)을 쓴다. 전제는 `skills/orch/references/cleanup.md` 의 「언제 overlap 을 쓰는가」 가 소유한다 |
 | `queue` | `auto_merge` | bool | false | 상주 루프가 머지할 수 있는 PR 을 스스로 `merge-with-finish.ts` 에 건다. 대상과 순서는 `loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」 가, 근거는 [ADR-016](adr/016-orch-auto-merge.md) 가 소유한다. `pipeline.enabled` 와 무관하다 |
@@ -218,9 +218,18 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `questions-dismissed.json` | 닫은 질문 `{<질문 id>: <이유>}`. 이유는 `dispatch_inactive` 나 `answer_conflict` 다. `send-to-worker` 가 reply 를 그 코드로 거절받으면 쓰고, 질문 조회(`lib/questions.ts` 의 `snapshot`)가 미답변에서 뺀다 | 지우지 않는다 |
 | `send-hook-cache.json` | worker 터미널 send hook 이 worker 가 아니라고 정한 에이전트 터미널 `{<handle>: <epoch ms>}` | 쓸 때마다 기한(`ORCH_SEND_HOOK_CACHE_SEC`, 기본 600초)이 지난 항목을 지운다 |
 | `model-watch.json` | 루프의 하루 한 번 모델 감지 기록. `checked_at`(목록을 마지막으로 읽은 시각, ms 또는 null), `baseline`(첫 목록의 기준점 모델 목록 또는 null), `models`(마지막으로 읽은 목록), `found`(기준점 뒤에 나타난 현재 세대 모델), `repos`(저장소 경로에서 `{checked_at, announced, boarded, tables}` 로. `boarded` 는 보드 쓰기에 성공한 모델이다. `tables` 는 `"table-pr"` 를 마지막으로 올린 표 PR `{pr, at, keys}` 로, `"<옛>><새>"` 나 `"skip:<옛>><새>@<effort>"` 를 `{pr, at}` 로). 옆 잠금 파일 안에서 읽고 rename 으로 쓴다. 형식과 판정은 `skills/orch/scripts/loop/model-watch.ts` 머리 주석이 소유한다 | 지우지 않는다. 지우면 다음 감지가 그때 목록을 기준점으로 새로 잡는다 |
+| `repo-visibility.json` | 저장소마다 기억한 GitHub 공개 여부 `{<공통 git 폴더의 실제 경로>: {visibility, at}}`. visibility 는 `public`, `private`, `unknown`(읽지 못함), at 은 ms 다. 비공개 낱말 검사(worker 훅, 머지 관문, doctor)가 쓴다. 옆 파일에 쓴 뒤 rename 한다. 형식과 기한은 `skills/orch/scripts/lib/private-words.ts` 머리 주석이 소유한다 | 지우지 않는다. 읽은 값은 1시간, `unknown` 은 10분이 지나면 다음 조회가 덮는다 |
 | `codex-latest.json` | `orch doctor` 가 읽은 Codex CLI 최신 버전 `{version, at}`(ms). `skills/orch/scripts/doctor/codex-version.ts` 가 쓴다 | 12시간이 지나면 다음 doctor 가 다시 읽어 덮는다 |
 
 루프 알림은 Orca 의 Run 메일함이 소유한다. `source: orch-loop`, `kind`, `pr` payload 로 구분한다. 종류는 알림을 내는 `skills/orch/scripts/loop/steps/` 의 단계 파일과 `loop/lifecycle.ts`, `loop/model-watch.ts` 가, 전송 실패 처리는 `lib/run-notice.ts` 가 소유한다.
 완료 보고의 본 id·마지막 시각·의심 dispatch·이벤트 기록은 `state/done-seen/<Run>.json`, 미답변 질문 묶음은 `state/unanswered/<Run>.json` 에 둔다. PR 없는 작업은 띄우기 기록의 `completion: "none"` 으로 구분한다.
 
 loop.json 의 restart_notices 는 보내지 못한 재시작 알림을 Run 에서 이전 alive_at 으로 연결한다. 성공한 알림은 목록에서 뺀다. 앞 루프에서 등록을 뺀 Run 은 전송 실패도 한 번 시도한 뒤 목록에서 뺀다. 지금 등록된 Run 의 실패는 다음 틱이 재시도한다.
+
+## 사용자 설정 파일
+
+저장소에도 머신 폴더에도 두지 않고 사용자가 직접 관리하는 파일이다. 어느 저장소에도 커밋하지 않는다.
+
+| 경로 | 담는 것 | 읽는 곳 |
+| --- | --- | --- |
+| `~/.config/orch/private-words.txt` | 공개 저장소에 들어가면 안 되는 낱말 목록. 한 줄에 낱말 하나이고 앞뒤 빈칸은 뺀다. 빈 줄과 `#` 로 시작하는 줄은 건너뛴다. 대소문자를 가리지 않는 부분 문자열로 찾는다 | 공개 저장소의 worker 커밋 훅, `orch queue gate` 와 머지 큐, 루프의 보류 이유 가리기, `orch doctor`(없으면 `PRIVATE-WORDS-MISSING`). 없거나 비었으면 검사하지 않는다. 동작은 [비공개 낱말 검사 설계](features/private-leak-guard/design.md)가 소유한다 |

@@ -121,6 +121,13 @@ worker 가 금지어가 든 `.md` 를 커밋하면 git 이 발견 줄과 권장 
 - 저장소 전체에서 끄려면 `orch config set worker.commit_check false --json` 을 한다. 그 뒤로 띄우는 worker 에는 걸지 않고, 이미 건 워크트리는 다시 띄울 때 푼다. 기본은 켜짐이다.
 - 한 워크트리에서만 풀려면 그 워크트리에서 `git config --worktree --unset core.hooksPath` 를 한다.
 
+같은 훅이 GitHub 공개 저장소에서 비공개 낱말도 검사한다. 사용자가 `~/.config/orch/private-words.txt` 에 적은 낱말이 이번 커밋에서 더한 줄, 새 파일 이름, 커밋 메시지에 있으면 커밋을 거절한다.
+거절 출력은 위치와 목록의 줄 번호만 보이고 값은 보이지 않는다. 목록이 없거나 비었으면 검사하지 않는다. 목록 형식은 저장소의 `docs/data-schema.md` 「사용자 설정 파일」, 동작은 `scripts/lib/private-words.ts` 머리 주석이 소유한다.
+
+- worker 가 비공개 낱말로 막혔다고 알려 오면 그 위치의 글을 일반 표현(예: `<서버 데이터 경로>`)으로 바꾸게 한다. 목록에서 낱말을 빼지 않는다.
+- 목록이 있는데 검사기가 돌지 못하면 커밋이 거절된다. 원인을 고친 뒤 다시 띄운다.
+- 머지 전에는 `orch queue gate` 가 PR 본문과 댓글을 같은 목록으로 본다.
+
 `worker-start` 가 0 이 아닌 코드로 끝나면 새로 띄우지 않고 아래 절에서 원인을 찾는다.
 
 ## Codex 모델 확인

@@ -1,6 +1,6 @@
 // 머지 전 조건 판정. 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 같은 함수를 쓴다.
 // 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 판정, 기능 완료 근거 블록(독립 리뷰 줄 포함),
-// 통합 테스트 기록(queue.integration_tests 가 있을 때만), 마이그레이션 번호.
+// 통합 테스트 기록(queue.integration_tests 가 있을 때만), 마이그레이션 번호, 공개 저장소의 비공개 낱말(private-words.ts).
 // 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
 
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
@@ -11,6 +11,8 @@ import { acceptsVerifiedCommit, featureBranch, featureEvidenceProblem } from '..
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
 import { migrationReasons } from './migrations.ts'
+import { privateReasons } from './private-words.ts'
+import { mask, readPrivateWords } from '../../lib/private-words.ts'
 import { requiredChecks } from './checks.ts'
 import type { Pr, StepContext } from './model.ts'
 import { Conflict, FAIL_SEL, HeadChanged, PENDING, ROLL_NAMES, ROLL_NAMES_NO_SKIPPED, Stop, WorkerFix } from './model.ts'
@@ -19,8 +21,8 @@ import { fetchPrRefs } from './overlap.ts'
 import { api, field, prEnv } from './pr.ts'
 import { chomp, log, namesJson, nap, stop } from './runtime.ts'
 
-// ci 는 체크, threads·evidence·migration 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
-export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup' | 'migration'
+// ci 는 체크, threads·evidence·migration·private 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
+export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup' | 'migration' | 'private'
 export type GateReason = { kind: GateKind; text: string }
 // none 은 체크를 보지 않고, failed 는 실패한 체크만 보고(체크를 기다린 뒤), all 은 진행 중이거나 나타나지 않은 체크도 본다
 export type GateChecks = 'none' | 'failed' | 'all'
@@ -183,7 +185,11 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
     notes.push(...integration.notes)
   }
   reasons.push(...migrationReasons(state))
-  return { reasons, summary: facts.join(' '), fixed, notes }
+  reasons.push(...privateReasons(stepContext, state, evidence.ok && typeof evidence.data.body === 'string' ? evidence.data.body : null))
+  // 이유와 알림 줄에는 PR 본문에서 옮긴 글(통합 테스트 생략 이유, 근거 칸 값)이 섞인다. gate 출력과 큐 로그로 나가기 전에 비공개 낱말을 가린다
+  const words = readPrivateWords()
+  if (words.length === 0) return { reasons, summary: facts.join(' '), fixed, notes }
+  return { reasons: reasons.map((r) => ({ ...r, text: mask(r.text, words) })), summary: facts.join(' '), fixed, notes: notes.map((note) => mask(note, words)) }
 }
 
 // 통합 테스트 기록(core/integration-evidence.ts). 규칙이 없으면 바뀐 파일을 읽지 않는다. 바뀐 파일은 REST 로 끝까지 읽는다(gh pr view 의 files 는 100개까지다).
@@ -207,7 +213,7 @@ export function holdWith(state: StepState, reasons: GateReason[]): never {
   const n = state.p.n
   const joined = reasons.map((r) => r.text).join('; ')
   if (reasons.some((r) => r.kind === 'conflict')) throw new Conflict(`${n} ${joined}`)
-  if (reasons.some((r) => r.kind === 'threads' || r.kind === 'evidence' || r.kind === 'migration')) {
+  if (reasons.some((r) => r.kind === 'threads' || r.kind === 'evidence' || r.kind === 'migration' || r.kind === 'private')) {
     // 스레드는 worker 가 고치는 동안 다른 PR 을 먼저 처리하고 정리 전에 한 번 다시 본다
     throw new WorkerFix(`${n} ${joined}`, joined, reasons.some((r) => r.kind === 'threads'))
   }

@@ -29,6 +29,7 @@
 //        `draft`, `CI 규칙을 읽지 못했다`(이번 틱의 CI 감시가 그 PR 의 base 규칙을 읽지 못해 이전 판정을 옮겼다. 옛 passed 로 걸지 않는다),
 //        `CI <상태>`(이번 틱의 ci 가 없거나 HEAD 가 다르면 `CI 없음`), `이미 건 HEAD`(tried 에 `<PR>@<HEAD>`),
 //        `지시서 보류: <이유>`(lib/auto-merge.ts 의 specHold), `PR 본문 보류: <이유>`(리뷰 조회 때 읽은 본문의 prHold, 지시서 보류와 같은 줄 꼴), `보드 보류: <줄>`(lib/board.ts 의 findBoardItems 로 찾은 항목의 boardHold),
+//        지시서 보류와 PR 본문 보류의 이유에 비공개 낱말(lib/private-words.ts 의 목록)이 있으면 이유 대신 `비공개 낱말이 있어 값을 생략한다(<지시서나 PR 본문> <n>번째 줄)` 를 쓴다(redactLine).
 //        `미해결 스레드 <n>`(THREADS_CMD), 리뷰 판정(queue.auto_review 가 있을 때).
 //        미해결 스레드는 queue.auto_review.require 의 조합과 상관없이 늘 본다. 조합에서 빼 실수로 스레드를 놓친 채 걸지 않으려는 것이다.
 //        리뷰 판정은 require 에 모르는 조건 이름이 있으면 gh 를 부르지 않고 `queue.auto_review.require 에 모르는 조건이 있다: …` 로 멈춘다.
@@ -101,6 +102,8 @@ import { makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
 import { turnLine } from '../../lib/queue-turn.ts'
 import { isQueueCommand } from '../../lib/queue-process.ts'
+import type { PrivateWord } from '../../lib/private-words.ts'
+import { readPrivateWords, redactLine } from '../../lib/private-words.ts'
 import { addedPaths, readReservations } from '../../lib/reservations.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
@@ -288,6 +291,7 @@ function judgeTarget(
   stale: Set<number>,
   state: AutoMergeState,
   board: { file: string; items: BoardItem[] } | null,
+  words: PrivateWord[] = [],
 ): { wait: string; missing?: string } | { error: string } | { migrations: Migration[]; basis: string } {
   if (pr.draft) return { wait: 'draft' }
   if (stale.has(pr.number)) return { wait: 'CI 규칙을 읽지 못했다' }
@@ -321,7 +325,7 @@ function judgeTarget(
   if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
   const bodyHold = typeof data.body === 'string' ? prHold(data.body) : null
-  if (bodyHold !== null) return { wait: `PR 본문 보류: ${bodyHold}` }
+  if (bodyHold !== null) return { wait: `PR 본문 보류: ${redactLine(bodyHold, words, 'PR 본문', data.body as string)}` }
   feature = feature || typeof data.body === 'string' && data.body.includes('fos-feature-evidence')
   if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 독립 리뷰 정책이 필요하다' }
   if (feature) {
@@ -495,10 +499,12 @@ async function autoMergeStep(
     }
   }
   const ready: Candidate[] = []
+  const words = readPrivateWords()
   for (const pr of mine) {
     const target = targets.get(pr.branch)
     if (!target) continue
-    const judged = judgeTarget(ctx, pr, target.hold, featureLoopRequested(target.text), ci, stale, state, board)
+    const hold = target.hold === null ? null : redactLine(target.hold, words, '지시서', target.text)
+    const judged = judgeTarget(ctx, pr, hold, featureLoopRequested(target.text), ci, stale, state, board, words)
     if ('error' in judged) {
       errors.add(judged.error)
       continue
