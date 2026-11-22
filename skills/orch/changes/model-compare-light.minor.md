@@ -1,0 +1,2 @@
+- 같은 계열의 새 세대가 아닌 새 모델을 같은 지시서로 지금 모델과 함께 맡겨 비교하는 절차(`references/model-compare.md`)를 더한다. 행마다 5건, 숨긴 리뷰, 세 관문 판단, 승인 뒤 표 바꾸기를 코디네이터가 절차대로 한다
+- 숨긴 리뷰 지시서 틀(`templates/spec-compare-review.md`)과 비교 기록 표 틀(`templates/model-compare-record.md`)을 더한다. 기록은 orch-routing evidence 의 「같은 일 두 모델 비교」 절에 쌓는다
