@@ -1,3 +1,0 @@
-- GitHub 공개 저장소에서 사용자가 `~/.config/orch/private-words.txt` 에 적은 비공개 낱말을 막는다. worker 워크트리의 커밋 훅이 더한 줄, 새 파일 이름, 커밋 메시지를 본다.
-- `orch queue gate` 와 머지 큐가 공개 저장소 PR 의 본문과 댓글·리뷰에 비공개 낱말이 있으면 GATE-FAIL 로 막는다. 걸린 위치만 알리고 값은 출력과 루프 로그에 남기지 않는다.
-- 목록이 없는 공개 저장소는 `orch doctor` 가 `PRIVATE-WORDS-MISSING` 으로 알린다.
