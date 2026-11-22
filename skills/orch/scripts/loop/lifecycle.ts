@@ -27,6 +27,9 @@
 //     이전인 것을 지우고 --run(또는 finish.run)을 등록한다. 루프가 죽은 뒤 끝난 세션의 Run 을 계속 맡지 않게 하려는 것이다.
 //     그 뒤의 등록은 남긴다. 살아 있는 루프 없이 --start 한 세션은 등록의 registered_at 을 새로 쓰므로, 루프가 죽어 여러 세션이 함께
 //     --start 해도 서로의 등록을 지우지 않는다. 앞 loop.json 이 없으면(alive_at 을 읽지 못하면) 지우지 않는다.
+//     이미 등록된 Run 은 명의 확인과 메인 판정보다 먼저 새로 쓴다. 둘 다 orca 조회라 느릴 수 있고, 그사이 함께 --start 한 다른 세션의
+//     루프가 떠서 이 Run 의 옛 등록을 지우면 메인 판정이 이 Run 을 새 Run 으로 보고 MAIN-EXISTS 로 막는다(CI 에서 실제로 났다).
+//     그렇게 새로 쓴 Run 이 도는 루프를 만나면 합류로 보고 LOOP-JOINED 와 0 이다. 명의 확인에서 막혀도 새로 쓴 시각은 그대로 둔다.
 //     지운 Run 의 세션이 살아 있으면 LOOP-RESTARTED 메시지나 doctor 의 미등록 안내를 따라 다시 등록한다.
 //     --stop 도 --run 이 없으면 finish.run 을 쓴다.
 //
@@ -248,9 +251,10 @@ function legacyHint(pid: unknown, run: unknown): void {
 
 // 살아 있는 루프에 이 Run 을 더한다. 이미 맡고 있거나 Run 이 없으면 전처럼 LOOP-RUNNING 이다(orch-loop.ts 머리 주석의 --start).
 // raced 는 띄운 자식이 다른 --start 의 루프에 잠금을 져 4 로 끝난 경우다. 이 Run 은 띄우기 전에 등록했으므로 합류로 본다.
+// rejoin 은 살아 있는 루프가 없을 때 이 --start 가 이미 있던 등록을 새로 쓴 경우다(머리 주석의 「Run」). 그사이 뜬 루프에 합류로 본다.
 // loop.json 의 pid 가 찾은 pid 와 다르면 루프가 막 뜨는 중이다. 그 루프는 시작할 때 앞 루프의 alive_at 이전 등록을 지우므로,
 // 이미 등록된 Run 이어도 registered_at 을 새로 써서 지워지지 않게 한다(머리 주석의 「Run」)
-async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean): Promise<number> {
+async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean, rejoin = false): Promise<number> {
   const state = readLoop(ctx.repo)
   const starting = state === null || Number(state.pid) !== found.pid
   const registered = ctx.run ? isRegistered(ctx.repo, ctx.run) : false
@@ -261,7 +265,7 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
     if (found.run !== ctx.run) legacyHint(found.pid, found.run)
     return 4
   }
-  if (ctx.run && (raced || !registered)) {
+  if (ctx.run && (raced || rejoin || !registered)) {
     // 루프는 띄운 터미널의 명의로 조회한다. 묶인 Run 이 다르거나 모르면 이 Run 의 질문을 읽지 못하니 합류하지 않는다(머리 주석의 「명의」)
     const bound = await loopBound(ctx.repo, found.pid)
     if (bound !== null && bound !== ctx.run) {
@@ -276,7 +280,7 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
   }
   if (ctx.run) {
     registerRun(ctx.repo, ctx.run, ctx.specsDir, starting, process.env.ORCA_TERMINAL_HANDLE)
-    if (raced || !registered) {
+    if (raced || rejoin || !registered) {
       log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
       return 0
     }
@@ -493,6 +497,9 @@ function keptRuns(): Set<string> {
 }
 
 export async function start(ctx: Context, entrypoint: string, options: StartOptions = { takeOver: false, confirmed: null }): Promise<number> {
+  // 살아 있는 루프가 없으면 이미 있던 등록을 느린 조회보다 먼저 새로 쓴다. 함께 --start 한 세션의 새 루프가 지우지 않게 한다(머리 주석의 「Run」)
+  const rejoin = !!ctx.run && isRegistered(ctx.repo, ctx.run) && running(ctx.repo) === null
+  if (rejoin) registerRun(ctx.repo, ctx.run as string, ctx.specsDir, true, process.env.ORCA_TERMINAL_HANDLE)
   if (ctx.run) {
     // 띄운 루프는 이 프로세스의 명의를 물려받는다. 이 Run 을 읽지 못하면 띄우지도 합류하지도 않는다(머리 주석의 「명의」)
     const bound = callerFenced(ctx.run)
@@ -509,13 +516,13 @@ export async function start(ctx: Context, entrypoint: string, options: StartOpti
   }
   const gate = await mainGate(ctx, entrypoint, options)
   if (gate !== null) return gate
-  return launch(ctx, entrypoint)
+  return launch(ctx, entrypoint, true, rejoin)
 }
 
 // 명의와 메인 판정을 지난 뒤의 지금 흐름. 도는 루프가 있으면 합류하고, 없으면 띄운다
-async function launch(ctx: Context, entrypoint: string, renew = true): Promise<number> {
+async function launch(ctx: Context, entrypoint: string, renew = true, rejoin = false): Promise<number> {
   const found = running(ctx.repo)
-  if (found) return joinLoop(ctx, found, false)
+  if (found) return joinLoop(ctx, found, false, rejoin)
   // registered_at 을 새로 쓴다. 새로 뜬 루프는 앞 루프의 alive_at 뒤에 쓴 등록을 살아 있는 세션의 것으로 보고 남긴다(머리 주석의 「Run」)
   if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, renew, process.env.ORCA_TERMINAL_HANDLE)
   // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 시작 대기 한도를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)

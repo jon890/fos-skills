@@ -22,6 +22,7 @@ const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', imp
 // 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다.
 // statuses 는 status 조회에, workers 는 worker-list 에 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
 // slow_run_current 는 run-current 만 그 초만큼 늦게 답한다. bound 가 있으면 그 Run 에 묶인 호출자처럼 run-current 에 그 Run 을 내고, 다른 Run 의 check 를 consumer_fenced 로 거부한다.
+// 환경 변수 FAKE_ORCA_SLEEP(초)가 있으면 그 프로세스가 부른 조회만 그만큼 늦게 답한다.
 // 받은 인자는 calls.jsonl 에 한 줄씩 적는다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -30,6 +31,7 @@ const argv = process.argv.slice(2)
 fs.appendFileSync(dir + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 if (st.sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.sleep * 1000)
+if (process.env.FAKE_ORCA_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_ORCA_SLEEP) * 1000)
 if (st.fail) {
   process.stderr.write('offline\\n')
   process.exit(1)
@@ -1308,10 +1310,13 @@ describe('여러 Run', () => {
     write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
     register('A', '2026-01-01T00:00:00Z')
     register('B', '2026-01-02T00:00:00Z')
-    for (const delay of [0, 50, 150]) {
+    // 마지막 경우는 B 의 orca 조회만 1초씩 늦춘다. B 가 명의 확인과 메인 판정을 기다리는 사이 A 가 띄운 새 루프가
+    // 앞 루프의 등록을 지우는 차례를 매번 만든다. CI 에서 150ms 경우가 MAIN-EXISTS 로 끝난 경합이 이 차례다
+    for (const { delay, slowB } of [{ delay: 0, slowB: '' }, { delay: 50, slowB: '' }, { delay: 150, slowB: '' }, { delay: 0, slowB: '1' }]) {
       const run = (id: string) =>
         new Promise<Result>((resolve) => {
-          const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', id, '--start'], { env, cwd: tmp })
+          const own = id === 'B' && slowB ? { ...env, FAKE_ORCA_SLEEP: slowB } : env
+          const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', id, '--start'], { env: own, cwd: tmp })
           spawned.push(child)
           let stdout = ''
           child.stdout?.on('data', (chunk) => (stdout += String(chunk)))

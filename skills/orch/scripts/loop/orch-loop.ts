@@ -33,6 +33,8 @@
 //                    쓸 때까지 10초까지 기다려 판정한다
 //                    그 루프가 막 뜨는 중(loop.json 의 pid 가 아직 그 루프의 것이 아니다)이면 이미 등록된 Run 이어도 registered_at 을
 //                    새로 쓴다. 뜨는 루프가 앞 루프의 alive_at 이전 등록을 지울 때 이 Run 을 지우지 않게 하려는 것이다.
+//                    살아 있는 루프 없이 시작한 --start 가 이미 있던 등록을 새로 썼으면, 그사이 다른 세션이 띄운 루프를 만나도 합류로 보고
+//                    LOOP-JOINED 와 0 이다(lifecycle.ts 머리 주석의 「Run」).
 //                    이미 등록됐거나 Run 이 없으면 LOOP-RUNNING <pid> run=<Run id> 와 4.
 //                    Run 등록을 모르는 옛 루프(loop.json 에 runs 가 없다)면 등록하지 않고 LOOP-RUNNING 과 4 이고, Run 이 다르면
 //                    `안내: …` 한 줄을 더 낸다. 그 루프를 띄운 세션이 --stop 뒤 새 orch 로 다시 띄워야 한다.
