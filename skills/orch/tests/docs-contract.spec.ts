@@ -106,6 +106,24 @@ test('gh-call-budget.md 의 TTL 표는 gh-budget.ts 의 기본 TTL 과 같다', 
   }
 })
 
+test('모델 비교 절차, 두 틀, evidence 비교 절은 서로 가리키고 결정값을 담는다', () => {
+  const procedure = read('references', 'model-compare.md')
+  for (const link of ['../templates/spec-compare-review.md', '../templates/model-compare-record.md', 'docs/features/model-auto-routing/spec.md']) {
+    assert.ok(procedure.includes(link), `model-compare.md 가 ${link} 를 가리키지 않는다`)
+  }
+  // 사용자 결정값(스펙 DECISION4~8, 17)이 절차에서 빠지면 비교가 다른 기준으로 돈다
+  for (const word of ['5건', '1.5배', '2배', '3건 이상', '5건 중 1건 이하', '후보 밖: 비교', '무승부', '나쁜 건', 'orch board approval add', '--lint-ack']) {
+    assert.ok(procedure.includes(word), `model-compare.md 에 「${word}」 가 없다`)
+  }
+  for (const name of ['spec-compare-review.md', 'model-compare-record.md']) {
+    assert.ok(read('templates', name).includes('skills/orch/references/model-compare.md'), `${name} 가 절차 문서를 가리키지 않는다`)
+  }
+  assert.ok(read('templates', 'model-compare-record.md').includes('docs/features/orch-routing/evidence.md'))
+  const evidence = section(readFileSync(join(ORCH, '..', '..', 'docs', 'features', 'orch-routing', 'evidence.md'), 'utf8'), '## 같은 일 두 모델 비교').join('\n')
+  for (const link of ['skills/orch/references/model-compare.md', 'skills/orch/templates/model-compare-record.md']) assert.ok(evidence.includes(link), link)
+  assert.ok(read('references', 'agent-selection.md').includes('(model-compare.md)'), 'agent-selection.md 가 model-compare.md 를 가리키지 않는다')
+})
+
 test('공통 지시서는 worker 가 이유 없이 기준 브랜치를 합치지 않게 한다', () => {
   const common = read('templates', 'spec-common.md')
   const rule = common.split('\n').find((line) => line.includes('orch-rule: no-early-base-merge')) ?? ''
