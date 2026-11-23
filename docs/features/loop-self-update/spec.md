@@ -20,7 +20,7 @@
 | 틱 실패 알림 | 부모가 판정하는 틱 실패의 이유는 `종료 코드 <n>` 뿐이고 실제 원인은 loop.log 에만 남는다. 이유가 바뀔 때만 `WATCH-ERROR` 를 보내고 모아 보낸다 | `lifecycle.ts` 474, 588-600행 |
 | 연속 실패 알림 | 단계 출처(questions, prs 등)의 같은 WATCH-ERROR 가 연속 세 틱을 넘으면(4번째) 그 틱에 바로 한 번 보낸다. 부모의 `tick` 출처에는 이 장치가 없다 | `notice-digest.ts` 8, 18, 51-63행, `skills/orch/scripts/loop/steps/errors.ts` 53-61행 |
 | 도는 머지 | 자동 머지는 머신 전체의 명령줄에 `merge_queue.` 등이 든 프로세스가 있으면 새 머지를 걸지 않는다. 마무리가 도는지는 `queue/finish-<PR>.pid` 프로세스가 살아 있는지로 본다. `state/finish-started/<PR>` 는 지우지 않는 표시다. 마무리는 머지를 180분까지 기다린다 | `skills/orch/scripts/loop/steps/auto-merge.ts` 16-17, 45행, `skills/orch/scripts/board/board-sync.ts` 14, 355행, `skills/orch/scripts/lib/finish-marks.ts` 6행 |
-| 알림 중복 거르기 | 같은 Run·kind·본문의 알림은 10분 안에 다른 저장소에서 와도 건너뛴다 | `skills/orch/scripts/lib/run-notice.ts` 10-13, 18-21행 |
+| 알림 중복 거르기 | 같은 Run·kind·본문의 알림은 10분 안에 다른 저장소에서 와도 건너뛴다 | `skills/orch/scripts/lib/notice-transport.ts`의 `claim` |
 | 실측 | ai-analysis loop.log 의 `STALE-BUNDLE` 줄은 83개다. 18.0.0 은 `~/.claude` 프로필, 18.4.0 은 Orca 프로필 설치본이다(2026-11-13) | ai-analysis `.orch/state/loop.log`, 피드백 `coordinator-20261104.md` 5, 7번 |
 
 ## 범위
