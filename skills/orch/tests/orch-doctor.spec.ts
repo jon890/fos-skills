@@ -570,6 +570,25 @@ describe('질문 판정', () => {
     assert.ok(!r.stdout.includes('UNANSWERED'), r.stdout)
   })
 
+  // 판정 함수는 codex-version.spec.ts 가 본다. 여기서는 doctor 출력에 줄이 나오고 종료 코드를 바꾸지 않는지 본다(스펙 REQ6)
+  test('낡은 Codex CLI 는 CODEX-OUTDATED 와 갱신 명령 줄을 내고 종료 코드를 바꾸지 않는다', () => {
+    const codex = join(tmp, 'codex')
+    write(codex, '#!/bin/sh\necho "codex-cli 0.166.0"\n')
+    chmodSync(codex, 0o755)
+    const latest = join(tmp, 'latest.json')
+    write(latest, JSON.stringify({ tag_name: 'rust-v0.171.0' }))
+    const base = { FAKE_AGE: '599', CODEX_BIN: codex, ORCH_MACHINE_DIR: join(tmp, 'machine') }
+    const old = doctor(['--skip-version', '--skill-dir', skill], { env: { ...base, ORCH_CODEX_LATEST_URL: `file://${latest}` } })
+    assert.equal(old.code, 0, old.stdout + old.stderr)
+    assert.match(old.stdout, /^CODEX-OUTDATED 0\.166\.0 0\.171\.0\n {2}codex update$/m)
+    // 질문 판정이 1 로 끝나는 때도 이 줄이 종료 코드를 바꾸지 않는다
+    assert.equal(doctor(['--skip-version', '--skill-dir', skill], { env: { ...base, FAKE_AGE: '600', ORCH_CODEX_LATEST_URL: `file://${latest}` } }).code, 1)
+    write(latest, JSON.stringify({ tag_name: 'rust-v0.166.0' }))
+    const same = doctor(['--skip-version', '--skill-dir', skill], { env: { ...base, ORCH_CODEX_LATEST_URL: `file://${latest}` } })
+    assert.equal(same.code, 0, same.stdout + same.stderr)
+    assert.doesNotMatch(same.stdout, /CODEX-OUTDATED/)
+  })
+
   test('질문 조회가 실패하면 SKIP-QUESTIONS 이고 종료 코드 0 이다', () => {
     const r = doctor(['--skip-version', '--skill-dir', skill], { env: { FAKE_FAIL: '1' } })
     assert.equal(r.code, 0, r.stdout + r.stderr)

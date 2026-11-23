@@ -14,6 +14,12 @@
 //     그 저장소의 보드 파일이 있으면 decide 항목 `model-new-<모델>`(제목 「새 모델 <모델>」)을 더한다. 보드에 쓰지 못하면 `MODEL-BOARD-FAIL <모델>: <이유>` 다.
 //     보드 쓰기에 성공한 모델은 boarded 에 따로 둔다. 실패한 모델은 다음에 목록을 읽을 때 같은 항목 ID 로 보드 쓰기만 다시 한다.
 //     보내지 못해도 announced 에 넣는다. 같은 모델을 다시 알리지 않는다는 스펙을 따른다. 루프 로그에는 남는다.
+// 낡은 목록: 새로 읽은 목록에서 어느 계열의 최신 세대가 이미 본 세대(저장된 목록의 현재 세대, 기준점, found)보다 낮으면(olderList)
+//     현재 세대(isCurrent)끼리 비교한다. 높은 세대가 Previous generation 으로만 남은 목록도 낮아진 목록이다.
+//     models 를 덮지 않고 저장된 목록을 둔다. checked_at 은 쓰고 `MODEL-LIST-OLDER <이유>` 를 한 번 알린다. 다음 날 다시 읽는다.
+//     Codex CLI 는 서버 목록을 받지 못하면 실행 파일에 든 기본 목록을 낸다. 2026-11-22 이 머신의 감지 기록이 codex-cli 0.166.0 의
+//     기본 목록(gpt-6.1-sol 이 「Latest」, gpt-6.2-* 없음)으로 덮였다(docs/features/model-auto-routing/verification.md 「관찰 1」).
+//     목록에서 사라진 계열은 보지 않는다. 계열이 없어진 것과 낡은 목록은 구분하지 못하고, 없어진 계열로는 띄우지 않는다.
 // 낡은 표 행: 저장된 목록으로 모델 표의 행마다 launch 와 같은 기준(staleRows, lib/model-generation.ts)으로 새 세대를 본다.
 //     표 문서는 이 저장소에 있으면(fos-skills) origin 기본 브랜치를 받아 그 것을, 없으면 번들의 것을 읽는다.
 //     옛 세대를 가리키는 행마다 `MODEL-TABLE-STALE <행> <옛> → <새>` 를 한 번 보내고, 새 세대마다 보드에 decide 항목
@@ -26,7 +32,7 @@ import { dirname, join } from 'node:path'
 import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
 import { defaultBase } from '../lib/git.ts'
 import { machineDir } from '../lib/machine.ts'
-import { codexBin, isCurrent, parseCodexModels, staleRows, type CodexModel } from '../lib/model-generation.ts'
+import { codexBin, compareGeneration, isCurrent, parseCodexModels, parseModel, staleRows, type CodexModel } from '../lib/model-generation.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { BOARD_BIN } from '../lib/board.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
@@ -93,6 +99,27 @@ export function newModels(state: WatchState, models: CodexModel[]): WatchState {
   return { ...state, baseline, found, models }
 }
 
+// 새로 읽은 목록이 이미 본 세대보다 낡았으면 그 이유, 아니면 null 이다(머리 주석 「낡은 목록」)
+export function olderList(state: WatchState, models: CodexModel[]): string | null {
+  const newest = (slugs: string[]) => {
+    const best = new Map<string, { slug: string; generation: number[] | null }>()
+    for (const slug of slugs) {
+      const name = parseModel(slug)
+      if (!name || name.provider !== 'codex') continue
+      const had = best.get(name.family)
+      if (!had || compareGeneration(name.generation, had.generation) > 0) best.set(name.family, { slug, generation: name.generation })
+    }
+    return best
+  }
+  const seen = newest([...(state.models ?? []).filter(isCurrent).map((m) => m.slug), ...(state.baseline ?? []), ...state.found])
+  const read = newest(models.filter(isCurrent).map((m) => m.slug))
+  for (const [family, before] of seen) {
+    const now = read.get(family)
+    if (now && compareGeneration(now.generation, before.generation) < 0) return `${family} 계열의 최신이 ${before.slug} 에서 ${now.slug} 로 낮아진 목록이라 저장된 목록을 둔다`
+  }
+  return null
+}
+
 // 보드에 새 모델 항목을 더한다. 보드 파일이 없는 저장소는 건너뛴다
 export function boardWriter(repo: string, exec: Exec): (id: string, title: string) => BoardResult {
   return (id, title) => {
@@ -133,8 +160,10 @@ export function watchModels(repo: string, opts: WatchOptions): void {
       state = { ...state, checked_at: now }
       const listed = exec([codexBin(), 'debug', 'models'], { timeoutMs: 30_000, maxBuffer: 64 * 1024 * 1024 })
       const parsed = listed.code === 0 ? parseCodexModels(listed.stdout) : null
-      if (parsed && parsed.failure === null) state = newModels(state, parsed.models)
+      const older = parsed && parsed.failure === null ? olderList(state, parsed.models) : null
+      if (parsed && parsed.failure === null && older === null) state = newModels(state, parsed.models)
       writeWatch(file, state)
+      if (older) opts.notify({ kind: 'MODEL-LIST-OLDER', text: older })
     }
     const mine: RepoWatch = state.repos[repo] ?? { checked_at: null, announced: [], boarded: [], tables: {} }
     if (!state.models || (mine.checked_at !== null && state.checked_at !== null && mine.checked_at >= state.checked_at)) return

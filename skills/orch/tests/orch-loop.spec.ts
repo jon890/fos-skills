@@ -811,6 +811,27 @@ describe('틱 자식의 실패', () => {
     assert.match(logText(), /^결과 없이 끝난다$/m)
     assert.equal(pidAlive(child.pid as number), false)
   })
+
+  // 감지 자체는 model-watch.spec.ts 가 본다. 여기서는 루프 부모가 틱 뒤에 watchModels 를 부르고 알림을 loop.log 에 남기는지 본다
+  test('--once 가 아닌 루프는 틱 뒤에 모델 감지를 불러 새 모델을 MODEL-NEW 로 남긴다', async () => {
+    config({ pipeline: { tick_sec: 0.2 } })
+    const models = [{ slug: 'gpt-6.2-sol', visibility: 'list', description: 'Fast.', supported_reasoning_levels: [{ effort: 'medium' }] },
+      { slug: 'gpt-6.2-astra', visibility: 'list', description: 'Most capable.', supported_reasoning_levels: [{ effort: 'medium' }] }]
+    const codex = linkBin(join(tmp, 'codex-bin'), 'codex', `console.log(${JSON.stringify(JSON.stringify({ models }))})`)
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground'], { env: { ...env, CODEX_BIN: codex }, cwd: tmp })
+    spawned.push(child)
+    const closed = new Promise((resolve) => child.on('close', resolve))
+    const deadline = Date.now() + 40_000
+    while (!/^MODEL-NEW gpt-6\.2-astra Most capable\.$/m.test(logText())) {
+      assert.ok(Date.now() < deadline, `MODEL-NEW 가 loop.log 에 없다:\n${logText()}`)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    child.kill('SIGTERM')
+    await closed
+    const watch = JSON.parse(readFileSync(join(tmp, 'machine', 'model-watch.json'), 'utf8'))
+    assert.deepEqual(watch.found, ['gpt-6.2-astra'])
+    assert.deepEqual(watch.repos[repo].announced, ['gpt-6.2-astra'])
+  })
 })
 
 describe('신호', () => {

@@ -9,7 +9,7 @@ import { copyRepo, git, gitEnv } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { run } from '../scripts/lib/proc.ts'
 import type { RunOptions } from '../scripts/lib/proc.ts'
-import { BOARD_SKIPPED, boardWriter, FIRST_COMPARE, newModels, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
+import { BOARD_SKIPPED, boardWriter, FIRST_COMPARE, newModels, olderList, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
 
 const DAY = WATCH_MS
 const entry = (slug: string, description: string, visibility = 'list') => ({ slug, visibility, description, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] })
@@ -85,6 +85,51 @@ describe('새 모델', () => {
     codexList(TODAY)
     assert.deepEqual(watch(repo, 2000, file), [])
     assert.deepEqual(watch(repo, 1000 + DAY, file).map(n => n.kind), ['MODEL-NEW'])
+  })
+
+  // 2026-11-22 이 머신의 감지 기록을 덮은 목록이다. codex-cli 0.166.0 이 서버 목록을 받지 못할 때 내는 실행 파일의 기본 목록과 같다
+  const BUILT_IN_0166 = [
+    entry('gpt-6-astra', 'Frontier intelligence for the most demanding work.'),
+    entry('gpt-6.1-sol', 'Latest workhorse model for coding.'),
+    entry('gpt-6.1-terra', 'GPT-6.1 Terra Codex model.'),
+    entry('gpt-6-sol', 'Previous generation workhorse model.'),
+    entry('gpt-6-luna', 'Fast and affordable model for easier tasks.'),
+    entry('gpt-daybreak-blue-latest', 'Latest frontier agentic coding model.'),
+    entry('gpt-5.5', 'Legacy coding model.'),
+  ]
+
+  test('이미 본 세대보다 낡은 목록은 저장된 목록을 덮지 않고 MODEL-LIST-OLDER 로 한 번 알린다', () => {
+    const repo = join(tmp, 'other')
+    mkdirSync(repo)
+    const file = join(tmp, 'machine', 'model-watch.json')
+    codexList(TODAY)
+    const t0 = Date.parse('2026-11-20T00:00:00Z')
+    watch(repo, t0, file)
+    codexList(BUILT_IN_0166)
+    const notices = watch(repo, t0 + DAY, file)
+    assert.deepEqual(notices.map(n => n.kind), ['MODEL-LIST-OLDER'])
+    assert.match(notices[0].text, /gpt-6\.2-(sol|astra) 에서 gpt-6(\.1)?-(sol|astra) 로 낮아진/)
+    const kept = readWatch(file)
+    assert.equal(kept.checked_at, t0 + DAY, '읽은 시각은 써서 하루 한 번을 지킨다')
+    assert.deepEqual(kept.models!.map(m => m.slug), TODAY.map(m => m.slug))
+    // 24시간 안에는 다시 알리지 않고, 다음 날 지금 목록을 읽으면 그대로 덮는다
+    assert.deepEqual(watch(repo, t0 + DAY + 1, file), [])
+    codexList([...TODAY, entry('gpt-6.3-sol', 'Next sol.')])
+    assert.deepEqual(watch(repo, t0 + 2 * DAY, file).filter(n => n.kind === 'MODEL-LIST-OLDER'), [])
+    assert.ok(readWatch(file).models!.some(m => m.slug === 'gpt-6.3-sol'))
+  })
+
+  test('감지 기록이 이미 낡은 목록이어도 기준점과 found 의 세대보다 낮으면 막는다. 목록에서 사라진 계열은 보지 않는다', () => {
+    const models = (list: ReturnType<typeof entry>[]) => list.map(m => ({ slug: m.slug, visibility: m.visibility, description: m.description, efforts: ['medium'] }))
+    // 이 머신의 기록: 기준점에 gpt-6.2-sol, found 에 gpt-6.2-astra, models 는 이미 0.166.0 의 기본 목록
+    const machine = { checked_at: 1, baseline: ['gpt-6.2-sol', 'gpt-6.1-sol'], models: models(BUILT_IN_0166), found: ['gpt-6.2-astra'], repos: {} }
+    assert.match(olderList(machine, models(BUILT_IN_0166)) ?? '', /gpt-6\.2-/)
+    assert.equal(olderList(machine, models(TODAY)), null)
+    // 높은 세대가 Previous generation 으로만 남고 현재 세대가 낮아진 목록도 낡은 목록이다(직접 선택 판정과 같은 isCurrent 기준)
+    const demoted = [entry('gpt-6.2-sol', 'Previous generation model.'), entry('gpt-6.1-sol', 'Latest workhorse.'), entry('gpt-6.2-astra', 'Most capable.')]
+    assert.match(olderList({ ...machine, models: models(TODAY) }, models(demoted)) ?? '', /gpt-6\.2-sol 에서 gpt-6\.1-sol 로 낮아진/)
+    // sol 만 남은 목록: astra 계열이 없어진 것은 낡은 목록의 근거로 삼지 않는다
+    assert.equal(olderList(machine, models([entry('gpt-6.2-sol', 'Fast.')])), null)
   })
 })
 
