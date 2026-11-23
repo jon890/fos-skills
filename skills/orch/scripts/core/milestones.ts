@@ -26,8 +26,8 @@
 //     - done 으로 닫을 때 끝내는 것은 끝나지 않은 수동 단계 가운데 done 지점 번호 이하인 것과, 모든 묶음의 사건 단계 가운데 종류가 done 지점의 종류 이하인 것이다.
 //       done 지점보다 늦은 종류(배포, 릴리스)의 사건 단계는 번호가 앞서도 남긴다. 남은 수동 단계가 있으면 done 으로 가지 않는다
 
-import { detailArgs, detailText, prNumbers, withNote } from './board.ts'
-import type { BoardDetail, BoardItem, BoardStep } from './board.ts'
+import { detailArgs, detailText, prNumbers, withNote } from './board-details.ts'
+import type { BoardDetail, BoardItem, BoardStep } from './board-details.ts'
 import { ConfigError, section, BOARD_KEYS } from './config.ts'
 import type { Config } from './config.ts'
 import { FINISH_KEYS } from './finish-options.ts'
