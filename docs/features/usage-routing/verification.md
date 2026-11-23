@@ -1,5 +1,7 @@
 # orch: Claude 주간 사용량으로 Codex 행을 바꿔 띄우기 검증
 
+> 현재 시작 전 모델 선택은 [모델 사용 한도 회피](../exhausted-model-avoid/spec.md)를 따른다. 아래는 Claude 에 남을 사용량을 보고 제공자를 바꾸던 기능의 기록이다.
+
 스펙: [spec.md](spec.md), 설계: [design.md](design.md)
 
 검증일: 2026-11-20. 실제 사용량 캐시는 읽지 않고 `ORCH_CLAUDE_USAGE` 로 준 임시 파일로 흉내 냈다.

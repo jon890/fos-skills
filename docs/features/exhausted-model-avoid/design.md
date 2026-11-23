@@ -22,7 +22,7 @@
 - [launch-worker 의 `decideSettings`](../../../skills/orch/scripts/worker/launch-worker.ts) 가 지시서 검사와 실제 시작 사이에서 후보를 고른다. [relaunch-worker](../../../skills/orch/scripts/worker/relaunch-worker.ts) 의 시작 전 검사도 같은 경로를 쓴다.
 - 제공자별 파일 읽기와 Orca 호출은 `lib/` 가 맡는다. `core/` 는 파싱된 한도, 후보 순서, 현재 시각을 받아 선택 결과를 낸다. 계정 선택과 사용량 기록의 작성은 Orca 와 각 제공자가 소유한다. [ADR-028](../../adr/028-orch-core-layer.md)
 - [한도 표](../../../skills/orch/references/agent-selection.md#사용-한도에-걸렸을-때)가 같은 등급 후보의 원본이다. [한도 표 읽기](../../../skills/orch/scripts/lib/limit-table.ts)의 `readSelectionTable`, `limitRows`, `limitRowOf` 를 사용한다. [시작 전 모델 검사](../../../skills/orch/scripts/lib/model-check.ts), [모델 알림](../../../skills/orch/scripts/loop/model-watch.ts), [리뷰 지시서 생성](../../../skills/orch/scripts/lib/review-spec.ts)과 공유한다.
-- [usage-routing](../usage-routing/design.md)의 사용률과 남은 시간 비교, 행 목록, `sameGradeClaude`, 시간 경과 기준, `ORCH_CLAUDE_USAGE` 우선 경로를 걷어 낸다. 경로와 시각은 테스트에서 직접 주입한다. 구현 PR 에서 [선택 안내](../../../skills/orch/references/agent-selection.md), [오버레이 안내](../../../skills/orch/references/overlay.md), [설정 스키마 문서](../../data-schema.md)를 맞추고, 옛 기능 문서에서 이 설계로 이어지는 링크를 남긴다.
+- [usage-routing](../usage-routing/design.md)의 사용률과 남은 시간 비교, 행 목록, `sameGradeClaude`, 시간 경과 기준, `ORCH_CLAUDE_USAGE` 우선 경로를 걷어 낸다. 경로와 시각은 테스트에서 직접 주입한다. 현재 동작과 옛 설정 키의 삭제 안내는 [선택 안내](../../../skills/orch/references/agent-selection.md), [오버레이 안내](../../../skills/orch/references/overlay.md), [설정 스키마 문서](../../data-schema.md)에서 확인할 수 있다.
 
 ## 인터페이스와 데이터
 
@@ -39,7 +39,7 @@
 
 `credentialIdentity` 가 새 worker 에서 사용할 인증의 해시와 일치하는 캐시만 사용한다. Claude 플러그인 설치 기록에서 찾은 oh-my-claudecode 의 `getUsageCredentialIdentity()` 를 별도 프로세스에서 부른다. 캐시를 쓸 때와 같은 기본 인자로 인증 환경 변수를 포함한다. Orca 가 새 worker 에 주는 `CLAUDE_CONFIG_DIR` 문자열을 그대로 전달한다. Keychain 서비스 이름 계산에 원문을 쓰므로 말단 슬래시나 `~` 표기를 바꾸지 않는다. 기본 계정에서 Orca 가 그 변수를 주지 않으면 조회 프로세스에서도 비운다.
 
-`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN` 등 해시에 영향을 주는 환경은 Orca 의 새 실행과 일치한다고 확인할 수 있는 값만 사용한다. 계정의 저장된 인증을 쓰고 관련 변수가 없다는 것을 확인했으면 조회 프로세스에서도 해당 변수를 비운다. 새 실행의 환경을 확인할 수 없거나 모듈·시간 상한·해시 비교에서 실패하면 `USAGE-UNKNOWN claude` 로 그대로 진행한다. 공유 캐시에는 마지막으로 쓴 계정 값만 남으므로 계정을 전환한 직후에는 해시가 다를 수 있다. orch 가 받는 것은 비교용 해시다. 한도 값은 캐시에서만 읽는다. 이번 조사에서는 캐시와 설치 소스를 확인했고, 실계정 해시 일치 여부는 구현 검증에 남긴다. [oh-my-claudecode 캐시 및 인증 식별 구현](https://github.com/Yeachan-Heo/oh-my-claudecode/blob/v5.8.6/src/hud/usage-api.ts)
+`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN` 등 해시에 영향을 주는 환경은 Orca 의 새 실행과 일치한다고 확인할 수 있는 값만 사용한다. 계정의 저장된 인증을 쓰고 관련 변수가 없다는 것을 확인했으면 조회 프로세스에서도 해당 변수를 비운다. 새 실행의 환경을 확인할 수 없거나 모듈·시간 상한·해시 비교에서 실패하면 `USAGE-UNKNOWN claude` 로 그대로 진행한다. 공유 캐시에는 마지막으로 쓴 계정 값만 남으므로 계정을 전환한 직후에는 해시가 다를 수 있다. orch 가 받는 것은 비교용 해시다. 한도 값은 캐시에서만 읽는다. 선택 계정의 해시 일치는 [인수 검증의 실환경 읽기](verification.md#실환경-읽기)에서 확인했다. [oh-my-claudecode 캐시 및 인증 식별 구현](https://github.com/Yeachan-Heo/oh-my-claudecode/blob/v5.8.6/src/hud/usage-api.ts)
 
 | 대상 | 캐시의 `data` 필드 |
 | --- | --- |
@@ -71,7 +71,7 @@
 
 5시간·주간 창을 읽을 때 수정 시각이 최근 7일 이내인 세션을 다 확인하면 탐색을 끝낸다. 각 창은 길이가 7일 이하여서 그보다 앞서 관측한 창은 이미 초기화됐을 시점이다. 초기화 시각을 그대로 쓰고, 사용률에 별도의 신선도 제한은 두지 않는다. 후보 파일은 첫 줄로 계정을 대조하고 일치하는 파일의 첫 턴만 줄 단위로 읽는다. 시작부터 최대 3초와 누적 읽기 64 MiB 를 허용한다. 이번 머신에서 최근 7일간 선택 계정에 귀속된 파일의 전체 크기는 약 19 MiB 였다. 상한에 닿으면 읽다 만 값으로 소진을 확정하지 않고 `USAGE-UNKNOWN codex 세션 기록 탐색 한도 초과` 를 낸다.
 
-`rate_limit_reached_type` 은 해당 묶음의 알려진 걸림 표시다. 같은 이벤트에서 걸린 창의 초기화 시각이 확인될 때만 쓴다. 창이 하나뿐이면 그 창을 쓰고, 창이 여럿이면 어느 창인지 확인된 것 또는 사용률로 이미 소진이 확인된 창만 쓴다. 시각이 없는 크레딧·지출 한도 표시에 다른 창의 시간을 붙이지 않는다. 로컬 표본에서는 이 필드가 `null` 이었다. 표시가 붙은 값과 두 창이 있는 값은 합성 입력으로 검증한다. [Codex 의 한도 오류와 시각 필드](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/error.rs)
+`rate_limit_reached_type` 은 해당 묶음의 알려진 걸림 표시다. 값이 `rate_limit_reached` 이고 이벤트에 창이 하나뿐이며 그 창의 초기화 시각을 읽을 수 있을 때 걸림 표시를 쓴다. 창이 여럿이면 각 창의 사용률로 소진 여부를 확인한다. 시각이 없는 크레딧·지출 한도 표시에 다른 창의 시간을 붙이지 않는다. 로컬 표본에서는 이 필드가 `null` 이었다. 표시가 붙은 값과 두 창이 있는 값은 합성 입력으로 검증한다. [Codex 의 한도 오류와 시각 필드](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/error.rs)
 
 ### 선택과 기록
 
@@ -79,7 +79,7 @@
 2. 제공자별 읽기는 후보가 처음 필요해질 때 한 번 한다. 스펙의 소진 기준을 후보마다 적용한다. 같은 등급 칸에서 첫 미소진·미확인 후보를 선택하고, 기존 모델·effort 검사를 거쳐 실행한다.
 3. 전원이 소진됐거나, 소진된 원래 모델의 표 줄이 없거나, 같은 등급 목록이 비어 있으면 launch 는 종료 코드 1 과 `REFUSED` 를 반환한다(전체 출력은 `거부:`). relaunch 의 시작 전 검사에서는 기존 `RELAUNCH-REFUSED` 와 종료 코드 3 으로 전달한다. 후보를 확인할 때 모은 한도 값으로 모델과 한도 종류별 초기화 시각, 가장 이른 초기화 시각을 낸다. 표의 줄이나 같은 등급 후보가 없을 때는 원래 모델의 한도 값을 쓴다. 한 모델에 걸린 창이 여럿이면 그 모델의 모든 시각을 남긴다.
 4. [실행 기록](../../../skills/orch/scripts/lib/launched.ts)의 `candidateOverride` 에 `row` 는 지시서의 원래 행이다. 최상위 `agent`, `model`, `effort` 는 최종 실행 값이며, 한도로 바꾼 경우에만 `from: {agent, model, effort}` 에 지시서에서 요청한 값을 보존한다. 지시서에 `후보 밖:` 사유가 있으면 `from.outsideReason` 에 원문을 남긴다. `effort` 의 기본값은 양쪽 모두 `null` 이다. `reason` 은 `한도: <모델> <한도 종류> 100%, <풀리는 시각>` 형식이다. 소진된 창이 여럿이면 가장 늦게 풀리는 창을 전환 사유에 쓴다. 세대 승격 정보는 기존 `generation` 에 남긴다. `LAUNCH-EFFECTIVE`, 로컬 기록, 영구 이력에 같은 값을 보존하고, 옛 기록의 `from` 은 생략한다.
-5. 리뷰 대상 PR 의 실제 구현 제공자는 [`implementerOf`](../../../skills/orch/scripts/lib/review-spec.ts) 로 구한다. 한도로 후보가 바뀌어 리뷰 제공자가 같아졌다면 실행 기록에 표시한다. 리뷰 워크트리의 `git rev-parse --git-path orch-review-launch.json` 이 가리키는 Git 메타데이터에 시작 전에 `{repo, pr, sameProviderDueToLimit}` 를 원자적으로 쓴다. `repo` 는 리뷰 명령에 주는 `owner/repo` 문자열이다. `--task` 재시도는 새 선택으로 값을 다시 쓴다. 최초 실행과 재시도 모두 [리뷰 등록 명령](../../../skills/pr-review/scripts/gh-review-post.ts)이 워크트리에서 저장소와 PR 번호가 일치하는 값을 읽어 요약 본문에 `같은 제공자 리뷰(한도)` 를 한 번 붙인다. [리뷰 지시서](../../../skills/orch/templates/spec-review.md)에서 다른 제공자를 쓴다는 문장을 계획값으로 바꾸고, 판정 줄과 등급 표의 형식은 유지한다. 구현 계획에서는 한도 선택과 별개 작업으로 나눈다. 같은 PR 안에서 실행 쪽 기록과 `pr-review` 의 요약 표시를 한 커밋으로 묶고, 수동 리뷰와 기존 오버레이를 쓰는 경로에서도 본문 형식을 확인한다.
+5. 리뷰 대상 PR 의 실제 구현 제공자는 [`implementerOf`](../../../skills/orch/scripts/lib/review-spec.ts) 로 구한다. 한도로 후보가 바뀌어 리뷰 제공자가 같아졌다면 실행 기록에 표시한다. 리뷰 워크트리의 `git rev-parse --git-path orch-review-launch.json` 이 가리키는 Git 메타데이터에 시작 전에 `{repo, pr, sameProviderDueToLimit}` 를 원자적으로 쓴다. `repo` 는 리뷰 명령에 주는 `owner/repo` 문자열이다. `--task` 재시도는 새 선택으로 값을 다시 쓴다. 최초 실행과 재시도 모두 [리뷰 등록 명령](../../../skills/pr-review/scripts/gh-review-post.ts)이 워크트리에서 저장소와 PR 번호가 일치하는 값을 읽어 요약 본문에 `같은 제공자 리뷰(한도)` 를 한 번 붙인다. [리뷰 지시서](../../../skills/orch/templates/spec-review.md)에서 다른 제공자를 쓴다는 문장을 계획값으로 바꾸고, 판정 줄과 등급 표의 형식은 유지한다. 실행 쪽 기록과 리뷰 본문은 [인수 검증의 REQ3](verification.md#인수-조건별-결과)에서 확인했다.
 
 ## 실패와 일관성
 

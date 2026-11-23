@@ -1,6 +1,6 @@
 # orch: Claude 주간 사용량이 남을 것 같으면 Codex 행을 같은 등급의 Claude 로 띄운다
 
-> 이 기능은 [모델 사용 한도 회피](../exhausted-model-avoid/spec.md)로 대체됐다. 아래는 이전 동작의 기록이다.
+> 현재 시작 전 모델 선택은 [모델 사용 한도 회피](../exhausted-model-avoid/spec.md)를 따른다. 아래는 Claude 에 남을 사용량을 보고 제공자를 바꾸던 기능의 기록이다.
 
 확인: 2026-11-20
 
