@@ -1,5 +1,5 @@
 // 보드 창(hooks/register.js)이 worker 줄에 붙일 멈춤 판정을 낸다. 읽기만 한다.
-// mod 는 TypeScript 와 node:fs 를 import 하지 못해, 이 명령을 $.process.run 으로 불러 JSON 출력만 읽는다.
+// 창은 $.process.run 으로 이 명령을 불러 JSON 을 받는다. 설정과 파일은 명령 쪽에서 읽는다.
 //
 // worker 상태는 orch 가 소유한다. 이 명령은 work-board 창에 줄 결과를 만들 때 상주 루프와 같은 판정 함수를 쓴다.
 // 판정 규칙은 skills/orch/scripts/lib/movement.ts 머리 주석이 소유한다(docs/features/board-decision-box/spec.md 의 D11).

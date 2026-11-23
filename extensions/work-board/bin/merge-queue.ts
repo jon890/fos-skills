@@ -1,6 +1,6 @@
 // 보드 창(hooks/register.js)이 열린 PR 마다 머지 가능 여부와 그 이유를 한 줄로 그릴 수 있게 orch 의 설정, 상태 파일과 로그를 읽어 낸다. 읽기만 한다.
 // gh 를 부르지 않는다. 열린 PR 목록은 창이 이미 읽은 것과 합친다. gh 호출 예산을 늘리지 않으려는 것이다.
-// mod 는 TypeScript 와 node:fs 를 import 하지 못해, 이 명령을 $.process.run 으로 불러 JSON 출력만 읽는다.
+// 창은 $.process.run 으로 이 명령을 불러 JSON 을 받는다.
 //
 // 사용법:
 //     merge-queue.ts --repo DIR

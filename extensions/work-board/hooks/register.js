@@ -290,7 +290,7 @@ export function autoAlertKind(m) {
 
 const notAutoAlert = (m) => !autoAlertKind(m)
 
-// 턴만 끝낸 멈춤 보고인가. skills/orch/scripts/lib/stop-reports.ts 의 stopReason 과 같은 규칙이다(mod 는 그 파일을 import 하지 못한다).
+// 턴만 끝낸 멈춤 보고인가. orch 의 core/stop-reports.ts 에 있는 stopReason 과 같은 규칙이다.
 // payload 의 stopReason 이 있으면 그 값, 없으면 제목으로 정한 값이 finished 면 참이다
 const STOP_SUBJECTS = {
   'Worker stopped without reporting': 'finished',

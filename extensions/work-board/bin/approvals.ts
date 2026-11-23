@@ -1,5 +1,5 @@
 // 보드 창(hooks/register.js)이 승인 대기를 읽고 누를 때 부르는 창 전용 명령이다. orch 명령 표에는 넣지 않는다.
-// mod 는 TypeScript 와 node:fs 를 import 하지 못해 이 명령을 $.process.run 으로 불러 출력만 읽는다.
+// 창은 이 명령을 $.process.run 으로 부른다. 승인 기록과 Orca 신호는 명령 쪽에서 처리한다.
 //
 // 에이전트의 Bash 도구로 부르지 않는다. 승인 기록은 사람이 보드 창에서 누른 버튼만 쓴다.
 // `press` 호출은 skills/orch/hooks/block-approval-press.ts 가 거부한다(막지 못하는 범위는 docs/features/board-approval/design.md 「막는 것과 막지 못하는 것」).

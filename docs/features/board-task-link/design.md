@@ -58,7 +58,7 @@ flowchart TD
 
 - **업무 도구를 아는 코드는 orch 의 어댑터 두 파일뿐이다.** 번호를 맞추고 주소를 만드는 판정은 `core/task-adapters.ts`, 설정 파일 읽기와 `dooray` CLI 호출은 `lib/task-adapters.ts` 가 맡는다(값 판정과 외부 실행의 층 규칙, [ADR-028](../../adr/028-orch-core-layer.md)). 경계를 고른 이유는 [ADR-031](../../adr/031-board-task-adapter.md) 이 소유한다.
 - **보드 명령은 도구를 모른다.** `board.ts` 는 두 칸을 받은 그대로 저장하고, 주소가 `http`·`https` 인지와 칸이 비었는지만 본다. 쓰기는 지금처럼 보드 잠금 안에서 한다([ADR-029](../../adr/029-board-write-lock.md)).
-- **창은 설정을 읽지 않는다.** 창이 승인 파일 경로를 `bin/approvals.ts where` 로 받는 것처럼, 도구 이름을 `bin/task-tool.ts` 로 받는다. 창은 TypeScript 와 `node:fs` 를 import 하지 못해 명령 출력만 읽는다(`bin/merge-queue.ts` 머리 주석).
+- **창은 설정을 읽지 않는다.** 창이 승인 파일 경로를 `bin/approvals.ts where` 로 받는 것처럼, 도구 이름을 `bin/task-tool.ts` 로 받는다. 설정과 파일을 읽는 작업은 각각의 명령이 맡고 창은 명령 출력에서 결과를 받는다.
 - **번호를 읽는 규칙은 지금 자리에 둔다(스펙 DECISION16).** 지시서는 `board.task_line`(`lib/board.ts` 의 `taskOf`), PR 제목은 `finish.task_pattern` 이 읽는다. 어댑터는 읽은 번호를 맞추고 주소로 바꾸기만 한다.
 - **inbox 스킬의 dooray 어댑터와 코드를 나누지 않는다.** 스킬은 폴더째 따로 내보내므로 orch 가 inbox 스킬을 import 하면 orch 만 가져간 저장소에서 깨진다. 같은 것은 주소 꼴(`<web_url>/project/tasks/<postId>`) 하나뿐이다.
 
