@@ -6,7 +6,7 @@ export const KINDS = new Set(['question', 'escalation'])
 
 export type Message = Record<string, unknown>
 
-// 턴 종료 알림은 답할 일이 아니다. 준비나 신호 대기를 알린 worker 의 보고도 여기서 빠진다.
+// Orca 의 턴 종료 알림(finished)은 앞선 보고와 관계없이 질문에서 뺀다.
 export function isQuestionCandidate(message: Message): boolean {
   return KINDS.has(String(message.type)) && !isQuietStop(message)
 }

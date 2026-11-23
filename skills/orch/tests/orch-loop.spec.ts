@@ -436,11 +436,11 @@ describe('질문 확인', () => {
     assert.equal(inputs[0].run, 'r')
   })
 
-  test('준비 보고 뒤 턴 종료 알림은 빼고 실제 질문만 UNANSWERED 에 보낸다', () => {
+  test('턴 종료 알림은 앞선 상태 보고와 관계없이 빼고 실제 질문만 UNANSWERED 에 보낸다', () => {
     const q = question('real-question')
     const stop = { ...question('msg_stop_idle'), type: 'escalation', subject: 'Worker stopped without reporting' }
     const ready = { ...question('ready'), type: 'status', subject: `준비됨 #7, head ${'a'.repeat(40)}` }
-    orca({ messages: [stop], statuses: [ready] })
+    orca({ messages: [stop] })
     once()
     assert.deepEqual(events().filter((event) => event.kind === 'UNANSWERED'), [])
     orca({ messages: [q, stop], statuses: [ready] })

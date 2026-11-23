@@ -95,15 +95,15 @@ test('더 늦은 자동 알림에 답했으면 앞선 막힘도 푼 것이고, �
   assert.deepEqual(ids((await queryQuestions(fake([blocker, later, again], [answer('msg_chaterr_aa')]), RUN, ACTIVE)).questions), ['msg_e2'])
 })
 
-test('준비됨이나 재개 신호 대기 뒤의 턴 종료 알림은 실제 질문을 가리지 않는다', async () => {
+test('턴 종료 알림은 앞선 상태 보고와 관계없이 실제 질문을 가리지 않는다', async () => {
   const q = ask('msg_q', 'question', '2026-11-02T09:30:00Z')
   const finished = stop('msg_stop_aa', '2026-11-02T10:00:00Z')
-  for (const subject of [`준비됨 #7, head ${'a'.repeat(40)}`, '코디네이터의 재개 신호를 기다립니다']) {
-    const status = ask('msg_status', 'status', '2026-11-02T09:00:00Z', { subject })
+  for (const subject of [null, `준비됨 #7, head ${'a'.repeat(40)}`, '코디네이터의 재개 신호를 기다립니다']) {
+    const reports = subject === null ? [] : [ask('msg_status', 'status', '2026-11-02T09:00:00Z', { subject })]
     const parse = (messages: Json[]) => ids(parseQuestions(JSON.stringify({ messages }), RUN))
-    assert.deepEqual(parse([status, finished]), [])
-    assert.deepEqual(parse([status, q, finished, answer('msg_stop_aa')]), ['msg_q'])
-    const result = await queryQuestions(fake([status, q, finished], [answer('msg_stop_aa')]), RUN, ACTIVE)
+    assert.deepEqual(parse([...reports, finished]), [])
+    assert.deepEqual(parse([...reports, q, finished, answer('msg_stop_aa')]), ['msg_q'])
+    const result = await queryQuestions(fake([...reports, q, finished], [answer('msg_stop_aa')]), RUN, ACTIVE)
     assert.deepEqual(ids(result.questions), ['msg_q'])
     assert.deepEqual(result.asking.sort(), ['open', 'structworker_w'])
   }
