@@ -374,6 +374,7 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     const kept = { FAKE_SWEEP_REMOVES: '0', FAKE_SWEEP_SAY: '남김 <WT>: 기능 후속 검증이 끝나지 않았다: 후속 검증 이 완료되지 않았다: 대기 | 배포 후 smoke' }
     const waiting = await c.finish(args, kept)
     assert.equal(waiting.code, 0, both(waiting))
+    assert.match(both(waiting), /후속 검증 대기에 근거가 없다/)
     assert.match(waiting.stdout, /^FOLLOWUP-ADDED #77 배포 후 smoke, 코디네이터, CI 실행기$/m)
     assert.match(waiting.stdout, /FINISH-DONE\s*$/)
     // 사용자 결정(2026-11-20): 후속 검증이 끝날 때까지 워크트리, 지시서, handoff 를 남기고, 남긴 것은 실패로 세지 않는다
@@ -456,12 +457,13 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
         const spec = join(c.specs, 'spec-x.md')
         writeFileSync(spec, readFileSync(spec, 'utf8') + '\n보드 항목 id: feature\n')
       }
-      c.state.pr.body = evidence(c, '대기 | 배포 후 smoke PR #77')
+      c.state.pr.body = evidence(c, '대기 | 근거: REQ-3 · 배포 후 smoke PR #77')
       const boardBin = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
       const args = ['--specs-dir', c.specs, '--board', board, '--board-bin', boardBin]
       const first = await c.finish(args)
       assert.equal(first.code, 0, both(first))
       assert.match(first.stdout, /^FOLLOWUP-ADDED #77 /m)
+      assert.doesNotMatch(both(first), /후속 검증 대기에 근거가 없다/)
       const again = await c.finish(args)
       assert.equal(again.code, 0, both(again))
       assert.equal(followups(c)[0].board_item, 'feature')
@@ -469,7 +471,7 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
       assert.deepEqual(rows.map((row: Json) => row.id), ['feature'])
       assert.deepEqual(rows[0].details, [
         ...item.details,
-        { text: '2. [wait] 배포 뒤 확인 (PR 77) · 배포 후 smoke PR 77', done: false },
+        { text: '2. [wait] 배포 뒤 확인 (PR 77) · 근거: REQ-3 · 배포 후 smoke PR 77', done: false },
       ])
     })
   }

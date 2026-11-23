@@ -835,6 +835,9 @@ async function finish(args: Args, repo: string): Promise<number> {
     if (problem) return fail(problem)
     const waiting = pendingFollowup(body)
     if (waiting !== null && !followupDone(repo, args.pr)) {
+      if (!/^근거:\s*[^·\s][^·]*·/.test(waiting)) {
+        log(`경고: PR ${args.pr} 의 후속 검증 대기에 근거가 없다. 스펙의 REQ ID 나 지시서의 해당 줄을 적는다`)
+      }
       return holdForFollowup(args, repo, merged, waiting, deploy, deployed && !handoffProblem, problems, worktree)
     }
     if (waiting === null) closeFollowup(args, repo)
