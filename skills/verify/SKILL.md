@@ -17,7 +17,7 @@ metadata:
 | 1 | 입력 확인 | 입력 커밋과 실제 HEAD 가 같고 미커밋 변경이 없다. 이번 PR 의 `requirements` 를 적었다 | |
 | 2 | 검증 계획 대조 | index 의 verification_plan 이 스펙·설계·이번 PR 범위와 대조됐고 누락 사례는 보완됐다 | [`verification-plan.md`](../plan/templates/verification-plan.md) |
 | 3 | 독립 검토 | 구현자가 아닌 검토자의 코드·문서 검토 결과가 있다(코드 리뷰를 PR 자동 리뷰에 맡겼으면 그렇게 적었다) | [`role-code-reviewer.md`](../implementation/references/role-code-reviewer.md), [`role-docs-verifier.md`](../implementation/references/role-docs-verifier.md) |
-| 4 | 실행 검증 | 요구사항마다 정한 경계에서 테스트 방법을 실행했다 | |
+| 4 | 실행 검증 | 요구사항마다 실행 결과나 실행하지 못한 이유가 있다. 탐색 QA 를 골랐다면 경로별 결과가 있다 | [탐색 QA](references/exploratory-qa.md) (선택) |
 | 5 | 증거 기록 | 요구사항별로 기대값, 실제값, 명령·환경·검증 커밋이 기록됐다 | [`verification-result.md`](templates/verification-result.md) |
 | 6 | 반환 판정 | 완료를 막는 결함마다 돌려보낼 단계가 정해졌다 | |
 | 7 | 회신 | 첫 줄이 `완료:` 나 `미완료:` 이고 양식의 증거를 orch 에 넘겼다 | |
@@ -49,6 +49,7 @@ metadata:
 4. 요구사항별 테스트 방법을 실행한다. 공개 API·저장 상태·외부 효과를 확인하고, UI 는 실제 브라우저 흐름을 확인한다.
    CLI·작업·웹훅이면 해당 경계에서 실행한다. 모든 검증을 브라우저로 대체하지 않는다.
    저장소의 필수 통합 검증과 plan 의 `PR 전` 원격 검증도 수행한다.
+   요구사항별 실행 결과를 확인한 뒤, 사용자 흐름이 바뀌었고 추가로 살펴볼 경로가 있으면 [탐색 QA](references/exploratory-qa.md)를 선택해 실행한다.
 5. 기대값과 실제값, 명령·환경·검증 커밋을 요구사항별로 기록한다. 테스트 개수나 리뷰어의 PASS 만으로 인수 조건을 대신하지 않는다.
    도메인 규칙 변경이 있으면 문서, 코드와 지시문, 평가 사례가 같은 규칙을 따르는지 규칙 ID 별로 일치 여부와 실행 근거를 남긴다([문서 소유권의 「단계별 책임」](../spec/references/document-ownership.md#단계별-책임)).
    변경한 ADR 이 있으면 [결정 기록의 단계별 책임](../spec/references/document-ownership.md#결정-기록의-단계별-책임)에 따라 종류·현재 원본·구현의 의미와 대체 관계를 확인한다. 타입이 없는 기존 ADR 을 오류로 만들지 않는다.
