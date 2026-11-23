@@ -11,7 +11,7 @@ import { basename, delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
-import { copyRepo, git as templateGit, templateRepo } from '../../../modules/testkit/git.ts'
+import { copyRepo, git as templateGit, GIT_ISOLATION, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 
@@ -22,8 +22,7 @@ const LAUNCHER = fileURLToPath(new URL('../../../bin/orch', import.meta.url))
 const WORD = 'orch'
 
 const GIT_ENV = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@t',
   GIT_COMMITTER_NAME: 't',

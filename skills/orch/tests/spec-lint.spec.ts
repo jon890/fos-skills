@@ -7,14 +7,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
 const TEMPLATE = fileURLToPath(new URL('../templates/spec-common.md', import.meta.url))
 // 로컬의 전역 git 설정이 결과를 바꾸지 않게 하고, CI 에 없는 작성자 설정을 채운다.
 const ENV: NodeJS.ProcessEnv = {
   ...process.env,
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@t',
   GIT_COMMITTER_NAME: 't',

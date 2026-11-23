@@ -6,12 +6,12 @@ import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { conflicts, defaultBase, mainCheckout, repoArgProblem } from '../scripts/lib/git.ts'
 import { renameSync } from 'node:fs'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 // CI 에는 git 작성자 설정이 없어 커밋이 실패하고, 로컬의 전역 설정은 결과를 바꿀 수 있어 둘 다 고정한다.
 // 라이브러리가 부르는 git 도 같은 값을 받도록 process.env 에 둔다. 테스트 파일마다 프로세스가 나뉘어 다른 파일에 새지 않는다.
 const GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 'orch-test',
   GIT_AUTHOR_EMAIL: 'orch-test@example.com',
   GIT_COMMITTER_NAME: 'orch-test',

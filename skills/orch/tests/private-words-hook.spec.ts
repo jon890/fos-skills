@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, beforeEach, describe, test } from 'node:test'
 import { installCommitCheck } from '../scripts/lib/commit-check.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const WORD = 'example-secret'
 let tmp = ''
@@ -51,8 +52,7 @@ before(() => {
     HOME: home,
     GH: gh,
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

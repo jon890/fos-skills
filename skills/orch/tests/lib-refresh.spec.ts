@@ -11,6 +11,7 @@ import { ConfigError } from '../scripts/lib/config.ts'
 import type { Config } from '../scripts/lib/config.ts'
 import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshSettings, verdict, writeRefresh } from '../scripts/lib/refresh.ts'
 import type { ForkFiles, RefreshRecord } from '../scripts/lib/refresh.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const NOW = Date.parse('2026-11-04T12:00:00Z')
 const MIN = 60_000
@@ -140,8 +141,7 @@ describe('기록과 git', () => {
   let tmp: string
   const env = {
     ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

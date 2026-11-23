@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { WorkerRunCache } from '../scripts/lib/worker-run-cache.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const HOOKS = fileURLToPath(new URL('../hooks', import.meta.url))
 
@@ -224,7 +225,7 @@ describe('block-broken-commit-subject', () => {
   function repo(): { dir: string; git: (...args: string[]) => string } {
     const dir = mkdtempSync(join(root, 'git-'))
     const git = (...args: string[]) => {
-      const result = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } })
+      const result = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ISOLATION } })
       assert.equal(result.status, 0, result.stderr)
       return result.stdout.trim()
     }

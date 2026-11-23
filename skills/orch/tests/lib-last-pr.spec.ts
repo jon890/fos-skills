@@ -5,9 +5,10 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { judgeLastPr } from '../scripts/lib/last-pr.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 function git(repo: string, ...args: string[]): string {
-  const done = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
+  const done = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ISOLATION, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
   assert.equal(done.status, 0, done.stderr)
   return done.stdout.trim()
 }

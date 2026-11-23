@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { copyRepo, git, gitEnv, templateRepo } from '../git.ts'
+import { copyRepo, git, GIT_CONFIG_FILE, gitEnv, templateRepo } from '../git.ts'
 import { tempDir } from '../temp.ts'
 
 describe('git 도우미', () => {
@@ -17,9 +17,31 @@ describe('git 도우미', () => {
     const cfg = join(root, 'gitconfig')
     writeFileSync(cfg, '[user]\n\tname = leak\n')
     const env = gitEnv({ ...process.env, GIT_CONFIG_GLOBAL: cfg })
-    assert.equal(env.GIT_CONFIG_GLOBAL, '/dev/null')
+    assert.equal(env.GIT_CONFIG_GLOBAL, GIT_CONFIG_FILE)
     const { dir } = copyRepo(join(root, 'r'))
     assert.throws(() => git(dir, ['config', 'user.name'], env), /실패 \(종료 1\)/)
+  })
+
+  it('gitEnv 아래 commit 과 push 받는 쪽 모두 자동 정리를 백그라운드로 돌리지 않는다', () => {
+    const root = tempDir()
+    const { dir } = copyRepo(join(root, 'r'))
+    const trace = join(root, 'trace.json')
+    const env = { ...gitEnv(), GIT_TRACE2_EVENT: trace }
+    git(dir, ['commit', '-q', '--allow-empty', '-m', 'x'], env)
+    git(dir, ['push', '-q', 'origin', 'main'], env)
+    // 자동 정리 명령 줄만 모은다. 로컬 push 는 receive-pack 의 환경에서 GIT_CONFIG_COUNT 를 지워 그 방식으로는 받는 쪽에 닿지 않았다
+    const runs = readFileSync(trace, 'utf8').split('\n').filter(Boolean)
+      .map((line) => JSON.parse(line) as { event: string; argv?: string[] })
+      .filter((e) => e.event === 'start' && e.argv?.includes('maintenance'))
+      .map((e) => e.argv!.slice(1).join(' '))
+    assert.ok(runs.length >= 2, runs.join('\n'))
+    assert.ok(runs.every((r) => r.includes('--no-detach')), runs.join('\n'))
+  })
+
+  it('호출자가 넘긴 GIT_CONFIG_COUNT 설정을 그대로 둔다', () => {
+    const { dir } = copyRepo(join(tempDir(), 'r'))
+    const env = gitEnv({ ...process.env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'x.y', GIT_CONFIG_VALUE_0: 'z' })
+    assert.equal(git(dir, ['config', '--get', 'x.y'], env), 'z')
   })
 
   it('ceiling 을 주면 GIT_CEILING_DIRECTORIES 를 건다', () => {

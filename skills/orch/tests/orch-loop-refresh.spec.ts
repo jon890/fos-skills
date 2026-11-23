@@ -15,6 +15,7 @@ import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
 import { queuedNotices } from './fixtures/queued-notices.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 
@@ -115,8 +116,7 @@ beforeEach(() => {
     FAKE_DIR: tmp,
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
     GIT_CEILING_DIRECTORIES: tmp,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

@@ -6,11 +6,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { configureSshAgent, sshCommandFor, shellSshAgentLines } from '../scripts/lib/ssh-agent.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 // 전역 설정과 작성자를 고정한다. 프로세스가 파일마다 나뉘어 다른 파일에 새지 않는다.
 const GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',

@@ -26,6 +26,7 @@ import { queueDefaults } from '../scripts/lib/queue-defaults.ts'
 import { context } from '../scripts/loop/steps/context.ts'
 import { parseArgs } from '../scripts/queue/steps/options.ts'
 import { SAMPLES } from './fixtures/config-samples.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const FINISH_PR = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
 const CI_READY = fileURLToPath(new URL('../scripts/queue/ci-ready.ts', import.meta.url))
@@ -66,7 +67,7 @@ function repoWith(config: Config, gitRepo = false): string {
   const repo = join(tmp, `repo-${n}`)
   mkdirSync(join(repo, '.orch'), { recursive: true })
   // finish-pr 는 --repo 가 git 작업 트리여야 한다
-  if (gitRepo) assert.equal(spawnSync('git', ['init', '-q'], { cwd: repo, env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).status, 0)
+  if (gitRepo) assert.equal(spawnSync('git', ['init', '-q'], { cwd: repo, env: { ...process.env, ...GIT_ISOLATION } }).status, 0)
   writeFileSync(join(repo, '.orch/config.json'), JSON.stringify(config))
   return repo
 }

@@ -15,13 +15,13 @@ import { fileURLToPath } from 'node:url'
 import { classify, compileHeavy, Queue } from '../scripts/slot/heavy-slot.ts'
 import { DEFAULT_HOLD_MAX_SEC, holdMaxSec, overHeld } from '../scripts/lib/heavy-hold.ts'
 import type { Heavy } from '../scripts/slot/heavy-slot.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/slot/heavy-slot.ts', import.meta.url))
 const NODE = process.execPath
 const CLEAR = ['HEAVY_SLOT_DIR', 'HEAVY_SLOT_HELD', 'HEAVY_SLOTS', 'HEAVY_EXCLUSIVE', 'HEAVY_POLL', 'HEAVY_IDLE_WAIT', 'MEM_GATE', 'ORCH_DIR']
 const GIT_ENV = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',

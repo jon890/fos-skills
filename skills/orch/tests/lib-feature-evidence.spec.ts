@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { baseMergesOnly, featureBranch, featureEvidenceProblem, featureLoopRequested, planDeletionOnly } from '../scripts/lib/feature-evidence.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 import { judgePrReview } from '../scripts/lib/review-judgement.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const HEAD = 'a'.repeat(40)
 test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지시서를 모은다', (t) => {
@@ -141,8 +142,7 @@ describe('baseMergesOnly', () => {
   let tmp = ''
   const env = {
     ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

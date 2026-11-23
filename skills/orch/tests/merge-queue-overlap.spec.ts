@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { copyRepo, git as templateGit, templateRepo } from '../../../modules/testkit/git.ts'
+import { copyRepo, git as templateGit, GIT_ISOLATION, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
 import { FAKE_GH, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
@@ -56,7 +56,8 @@ function setup(t: TestContext): Ctx {
   const tmp = mkdtempSync(join(tmpdir(), 'merge-queue-overlap-'))
   t.after(() => rmSync(tmp, { recursive: true, force: true }))
   const gitconfig = join(tmp, 'gitconfig')
-  writeFileSync(gitconfig, '')
+  // testkit 전역 설정(GIT_CONFIG_FILE)과 같은 자동 정리 설정을 둔다. 이 테스트는 자기 전역 설정 파일을 쓴다
+  writeFileSync(gitconfig, '[maintenance]\n\tautoDetach = false\n')
   const stateFile = join(tmp, 'state.json')
   const logFile = join(tmp, 'log.txt')
   writeFileSync(join(tmp, 'sweep.py'), '')
@@ -68,8 +69,8 @@ function setup(t: TestContext): Ctx {
     FAKE_LOG: logFile,
     TMPDIR: tmp,
     MERGE_QUEUE_FAKE_GIT: '0',
+    ...GIT_ISOLATION,
     GIT_CONFIG_GLOBAL: gitconfig,
-    GIT_CONFIG_NOSYSTEM: '1',
     MERGE_QUEUE_SLEEP_SCALE: '0',
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@x',
