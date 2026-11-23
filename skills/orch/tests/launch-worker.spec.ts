@@ -15,6 +15,7 @@ import { claudeProjectName } from '../scripts/lib/session-tokens.ts'
 import { selectionsOf } from '../scripts/lib/spec.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/launch-worker-run.ts', import.meta.url))
@@ -91,8 +92,7 @@ process.exit(3)
 
 // CI 에는 git 작성자 설정이 없고, 로컬의 전역 설정은 결과를 바꿀 수 있어 고정한다.
 const GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',

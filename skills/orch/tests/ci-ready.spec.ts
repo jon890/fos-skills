@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/ci-ready.ts', import.meta.url))
 
@@ -51,8 +52,7 @@ process.exit(3)
 
 // CI 에는 git 작성자 설정이 없고, 로컬의 전역 설정은 결과를 바꿀 수 있어 고정한다.
 const GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',

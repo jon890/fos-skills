@@ -19,6 +19,7 @@ import type { FakeBin } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
 import { queuedNotices } from './fixtures/queued-notices.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
@@ -122,8 +123,7 @@ beforeEach(() => {
     ORCH_PLUGIN_UPDATE_STATE_DIR: join(tmp, 'plugin-update-state'),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다. 로컬의 전역 설정이 결과를 바꾸지 않게 고정한다
     GIT_CEILING_DIRECTORIES: tmp,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

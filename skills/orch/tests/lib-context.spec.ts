@@ -9,6 +9,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { resolveNew, type Command } from '../scripts/lib/commands.ts'
 import { contextEnv, fillContext } from '../scripts/lib/context.ts'
 import { registerRun } from '../scripts/lib/loop.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 let tmp: string
 let main: string
@@ -17,7 +18,7 @@ let outside: string
 const saved: Record<string, string | undefined> = {}
 
 function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } })
+  execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore', env: { ...process.env, ...GIT_ISOLATION } })
 }
 
 // 가짜 orca. FAKE_RUN 이 있으면 run-current 에 그 Run 을 낸다. FAKE_SLOW_ONCE 가 있으면 첫 호출만 3초 늦는다

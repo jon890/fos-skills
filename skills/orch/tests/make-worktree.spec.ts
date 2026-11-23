@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/make-worktree.ts', import.meta.url))
 const DENY_SCRIPT = fileURLToPath(new URL('../scripts/worker/worktree-deny.ts', import.meta.url))
@@ -25,8 +26,7 @@ beforeEach(() => {
   env = {
     ...process.env,
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     XDG_CONFIG_HOME: tmp,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',

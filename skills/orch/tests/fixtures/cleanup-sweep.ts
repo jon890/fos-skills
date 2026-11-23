@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, before, beforeEach, afterEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { copyRepo } from '../../../../modules/testkit/git.ts'
+import { copyRepo, GIT_ISOLATION } from '../../../../modules/testkit/git.ts'
 import { linkBin } from '../../../../modules/testkit/fake-bin.ts'
 
 export const SCRIPT = fileURLToPath(new URL('../../scripts/cleanup/cleanup-sweep.ts', import.meta.url))
@@ -219,8 +219,7 @@ beforeEach(() => {
     ...process.env,
     // 가짜 실행 파일은 PATH 의 node 로 돈다. 이 테스트의 node 폴더를 가짜 다음에 둔다
     PATH: [fx.bin, dirname(process.execPath), process.env.PATH ?? ''].join(delimiter),
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

@@ -11,6 +11,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { after, before, beforeEach, afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/cleanup/handoff-cleanup.ts', import.meta.url))
 const DAY = 86400
@@ -85,8 +86,7 @@ beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'handoff-cleanup-')))
   env = {
     ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

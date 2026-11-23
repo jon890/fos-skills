@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { fire } from '../scripts/lib/events.ts'
 import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/doctor/migrate-orch-dir.ts', import.meta.url))
 const ORCH_PATHS = fileURLToPath(new URL('../scripts/paths/orch_paths.ts', import.meta.url))
@@ -101,8 +102,7 @@ function setup(t: TestContext): Ctx {
   })
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

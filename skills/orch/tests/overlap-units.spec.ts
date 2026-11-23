@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { groupMap, judge as judgeRaw, parseSharedGroup, unitOf, verdictText } from '../scripts/lib/overlap.ts'
 import type { JudgeOptions } from '../scripts/lib/overlap.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/overlap_units.ts', import.meta.url))
 const SHARED = '^(modules/common/|build\\.gradle$|\\.github/)'
@@ -148,8 +149,7 @@ describe('judge', () => {
 // CI 에는 git 작성자 설정이 없고, 로컬의 전역 설정은 결과를 바꿀 수 있어 고정한다.
 const GIT_ENV: NodeJS.ProcessEnv = {
   ...process.env,
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',

@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { copyRepo, git as templateGit, templateRepo } from '../../../modules/testkit/git.ts'
+import { copyRepo, git as templateGit, GIT_ISOLATION, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
 import { FAKE_GH, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
@@ -68,8 +68,8 @@ function setup(t: TestContext): Ctx {
     FAKE_LOG: logFile,
     TMPDIR: tmp,
     MERGE_QUEUE_FAKE_GIT: '0',
+    ...GIT_ISOLATION,
     GIT_CONFIG_GLOBAL: gitconfig,
-    GIT_CONFIG_NOSYSTEM: '1',
     MERGE_QUEUE_SLEEP_SCALE: '0',
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@x',

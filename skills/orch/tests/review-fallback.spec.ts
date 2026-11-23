@@ -12,6 +12,7 @@ import { autoMergeConfig } from '../scripts/core/auto-merge.ts'
 import type { Config } from '../scripts/core/config.ts'
 import { ConfigError } from '../scripts/core/config.ts'
 import { fallbackSpec, reviewOutage, reviewRunning, verdictSince } from '../scripts/core/review-fallback.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const T0 = '2026-11-20T01:51:00Z'
 const after = (sec: number) => new Date(Date.parse(T0) + sec * 1000).toISOString()
@@ -165,7 +166,7 @@ console.log('REVIEW-SPEC ' + argv[argv.indexOf('--out') + 1])
     const launched = join(root, 'launched.jsonl')
     const launcher = join(root, 'launch.ts')
     writeFileSync(launcher, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(launched)}, JSON.stringify(process.argv.slice(2)) + '\\n')\n`)
-    const env: NodeJS.ProcessEnv = { ...process.env, ORCH_DIR: orch, ORCH_MACHINE_DIR: join(root, 'machine'), CODEX_BIN: join(root, 'no-codex'), CLAUDE_CONFIG_DIR: join(root, 'cfg'), ORCA: orca.path, GH: gh.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, SEND_TO_WORKER: noop, REVIEW_SPEC: reviewSpec, LAUNCH_WORKER: launcher, ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
+    const env: NodeJS.ProcessEnv = { ...process.env, ORCH_DIR: orch, ORCH_MACHINE_DIR: join(root, 'machine'), CODEX_BIN: join(root, 'no-codex'), CLAUDE_CONFIG_DIR: join(root, 'cfg'), ORCA: orca.path, GH: gh.path, CLEANUP_SWEEP: noop, BOARD_SYNC: noop, SEND_TO_WORKER: noop, REVIEW_SPEC: reviewSpec, LAUNCH_WORKER: launcher, ORCH_LOOP_BOUND: '{"run":null}', GIT_CEILING_DIRECTORIES: root, ...GIT_ISOLATION, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
     delete env.NODE_OPTIONS
     const git = (cwd: string, ...args: string[]) => {
       const done = spawnSync('git', args, { cwd, env, encoding: 'utf8' })

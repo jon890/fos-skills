@@ -18,7 +18,7 @@ import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
-import { copyRepo, git as templateGit, gitEnv, templateRepo } from '../../../modules/testkit/git.ts'
+import { copyRepo, git as templateGit, GIT_ISOLATION, gitEnv, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
 
 // 다른 프로세스가 쥔 마무리 실행권을 흉내 낸다
@@ -176,8 +176,7 @@ function setup(t: TestContext, cli = false): Ctx {
   t.after(() => rmSync(tmp, { recursive: true, force: true }))
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
+    ...GIT_ISOLATION,
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',

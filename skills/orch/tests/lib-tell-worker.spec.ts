@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { tellBranchWorker } from '../scripts/lib/tell-worker.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -20,7 +21,7 @@ process.exitCode = Number(process.env.FAKE_SEND_CODE || 0)
 let tmp = ''
 let repo = ''
 const saved = { ORCA: process.env.ORCA, SEND_TO_WORKER: process.env.SEND_TO_WORKER, FAKE_DIR: process.env.FAKE_DIR, FAKE_SEND_CODE: process.env.FAKE_SEND_CODE }
-const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@e', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@e' }
+const env = { ...process.env, ...GIT_ISOLATION, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@e', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@e' }
 
 function git(cwd: string, ...args: string[]): void {
   const done = spawnSync('git', args, { cwd, encoding: 'utf8', env })

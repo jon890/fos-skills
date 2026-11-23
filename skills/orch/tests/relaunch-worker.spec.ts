@@ -11,6 +11,7 @@ import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 import { fixedSelectionLine } from '../scripts/worker/relaunch-worker.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
+import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/relaunch-worker.ts', import.meta.url))
 
@@ -84,8 +85,7 @@ process.exit(Number(process.env.FAKE_LAUNCH_CODE || '0'))
 `
 
 const GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+  ...GIT_ISOLATION,
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',
