@@ -14,6 +14,7 @@ import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { copyRepo, git as templateGit, GIT_ISOLATION, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
+import { cleanupDoctorTemp } from './fixtures/doctor-temp-cleanup.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/doctor/orch-doctor.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/orch-doctor-run.ts', import.meta.url))
@@ -123,9 +124,7 @@ beforeEach(() => {
   mkdirSync(join(tmp, 'home', '.local', 'bin'), { recursive: true })
   copyFileSync(LAUNCHER, join(tmp, 'home', '.local', 'bin', 'orch'))
 })
-// Linux CI 에서 doctor 와 Git 이 돌아온 뒤에도 드물게 ENOTEMPTY 가 났다. 로컬 추적에서 남은 쓰기 프로세스는 확인되지 않았다.
-// 잠깐 남는 파일은 다시 지우고, 재시도 뒤에도 지우지 못하면 정리 실패를 테스트에 남긴다.
-afterEach(() => rmSync(tmp, { recursive: true, force: true, maxRetries: 3 }))
+afterEach(() => cleanupDoctorTemp(tmp))
 
 describe('설치본 판정', () => {
   let origin: string
