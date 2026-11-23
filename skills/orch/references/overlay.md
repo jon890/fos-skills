@@ -382,7 +382,7 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 ```
 
 GitHub 에서 계정 종류가 봇이고 `login` 이 같은 댓글과 리뷰만 본다. 표지는 한 줄 전체가 `receipt_marker` 와 같아야 한다.
-`reviewed_commit` 은 각 줄의 시작과 끝을 쓸 수 있는 JavaScript 정규식이다. 첫 번째 캡처 그룹으로 읽은 7~40자리 16진수가 현재 HEAD 전체 또는 앞자리와 같아야 한다. 영수증을 리뷰에 달았다면 GitHub 가 기록한 리뷰 커밋도 영수증과 일치해야 한다.
+`reviewed_commit` 은 각 줄의 시작과 끝을 쓸 수 있는 JavaScript 정규식이다. 첫 번째 캡처 그룹에서 7~40자리 16진수를 읽고 영수증에 적힌 자리 전체를 현재 HEAD 와 비교한다. 리뷰에 달린 영수증은 GitHub 가 기록한 리뷰 커밋 전체도 현재 HEAD 와 같아야 한다.
 
 영수증이 유효하면 기존 `require` 가 읽는 `pass` 로 함께 센다. 기준 브랜치를 합친 뒤에도 영수증은 갱신한 HEAD 를 가리켜야 한다.
 봇을 여러 개 등록하면 그중 하나의 유효한 영수증으로 `pass` 를 얻을 수 있다. 지적을 남긴 봇마다 그 봇이 발행한 새 영수증이 필요하다.

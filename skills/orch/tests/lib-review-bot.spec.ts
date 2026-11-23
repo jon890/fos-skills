@@ -38,9 +38,23 @@ test('봇 종류와 계정, 영수증 표지, 현재 HEAD 앞자리가 모두 �
 
 test('리뷰 영수증은 GitHub 가 기록한 커밋과도 맞아야 한다', () => {
   const returned = { author: BOT, state: 'APPROVED', submittedAt: REVIEWED_AT, body: receipt(HEAD).body }
-  assert.deepEqual(judge({ reviews: [{ ...returned, commit: { oid: OLD } }] }), { ok: true, receipts: [] })
+  for (const oid of [OLD, HEAD.slice(0, 10) + OLD.slice(10)]) {
+    assert.deepEqual(judge({ reviews: [{ ...returned, commit: { oid } }] }), { ok: true, receipts: [] })
+  }
   const result = judge({ reviews: [{ ...returned, commit: { oid: HEAD } }] })
   assert.ok(result.ok && result.receipts.length === 1)
+})
+
+test('커밋 앞자리는 7자리부터 허용하며 영수증에 적힌 자리를 모두 비교한다', () => {
+  const { body, ...comment } = receipt(HEAD)
+  const withCommit = (commit: string) => ({ ...comment, body: body.replace(HEAD.slice(0, 10), commit) })
+  for (const commit of [HEAD.slice(0, 6), HEAD.slice(0, 7) + 'bbb', HEAD.slice(0, 39) + 'b']) {
+    assert.deepEqual(judge({ comments: [withCommit(commit)] }), { ok: true, receipts: [] })
+  }
+  for (const commit of [HEAD.slice(0, 7), HEAD]) {
+    const result = judge({ comments: [withCommit(commit)] })
+    assert.ok(result.ok && result.receipts.length === 1)
+  }
 })
 
 test('제출되지 않았거나 취소된 리뷰는 지적이나 영수증으로 세지 않는다', () => {

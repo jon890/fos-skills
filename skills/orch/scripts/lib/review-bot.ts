@@ -84,6 +84,7 @@ function receiptCommit(body: string, bot: TrustedReviewBot): string | null {
 
 export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: readonly TrustedReviewBot[]): TrustedReview {
   const receipts: ReviewNote[] = []
+  const headOid = head.toLowerCase()
   for (const bot of bots) {
     let latestFinding = -Infinity
     const foundAt = (at: string | null) => {
@@ -92,7 +93,7 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
     }
     const candidate: ReviewNote[] = []
     const addReceipt = (commit: string | null, at: string | null) => {
-      if (commit && head.toLowerCase().startsWith(commit) && at && Number.isFinite(Date.parse(at))) {
+      if (commit && headOid.startsWith(commit) && at && Number.isFinite(Date.parse(at))) {
         candidate.push({ body: '', at, commit: head, receiptBot: bot.login })
       }
     }
@@ -105,10 +106,11 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
     for (const review of data.reviews) {
       if (!fromBot(review.author, bot) || review.state === 'PENDING' || review.state === 'DISMISSED') continue
       const commit = receiptCommit(review.body, bot)
-      const matchesReview = commit && review.commit?.oid.toLowerCase().startsWith(commit)
+      const reviewOid = review.commit?.oid.toLowerCase()
+      const matchesReview = commit && reviewOid?.startsWith(commit)
       if (review.state === 'CHANGES_REQUESTED' || (review.state === 'COMMENTED' && !matchesReview)) {
         foundAt(review.submittedAt)
-      } else if (matchesReview) {
+      } else if (matchesReview && reviewOid === headOid) {
         addReceipt(commit, review.submittedAt)
       }
     }
