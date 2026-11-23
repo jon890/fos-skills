@@ -221,7 +221,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `repo-visibility.json` | 저장소마다 기억한 GitHub 공개 여부 `{<공통 git 폴더의 실제 경로>: {visibility, at}}`. visibility 는 `public`, `private`, `unknown`(읽지 못함), at 은 ms 다. 비공개 낱말 검사(worker 훅, 머지 관문, doctor)가 쓴다. 옆 파일에 쓴 뒤 rename 한다. 형식과 기한은 `skills/orch/scripts/lib/private-words.ts` 머리 주석이 소유한다 | 지우지 않는다. 읽은 값은 1시간, `unknown` 은 10분이 지나면 다음 조회가 덮는다 |
 | `codex-latest.json` | `orch doctor` 가 읽은 Codex CLI 최신 버전 `{version, at}`(ms). `skills/orch/scripts/doctor/codex-version.ts` 가 쓴다 | 12시간이 지나면 다음 doctor 가 다시 읽어 덮는다 |
 
-루프 알림은 Orca 의 Run 메일함이 소유한다. `source: orch-loop`, `kind`, `pr` payload 로 구분한다. 종류는 알림을 내는 `skills/orch/scripts/loop/steps/` 의 단계 파일과 `loop/lifecycle.ts`, `loop/model-watch.ts` 가, 전송 실패 처리는 `lib/run-notice.ts` 가 소유한다.
+루프 알림은 Orca 의 Run 메일함이 소유한다. `source: orch-loop`, `kind`, `pr` payload 로 구분한다. 종류는 알림을 내는 `skills/orch/scripts/loop/steps/` 의 단계 파일과 `loop/lifecycle.ts`, `loop/model-watch.ts` 가, 전송 실패 처리는 `lib/notice-transport.ts` 가 소유한다.
 완료 보고의 본 id·마지막 시각·의심 dispatch·이벤트 기록은 `state/done-seen/<Run>.json`, 미답변 질문 묶음은 `state/unanswered/<Run>.json` 에 둔다. PR 없는 작업은 띄우기 기록의 `completion: "none"` 으로 구분한다.
 
 loop.json 의 restart_notices 는 보내지 못한 재시작 알림을 Run 에서 이전 alive_at 으로 연결한다. 성공한 알림은 목록에서 뺀다. 앞 루프에서 등록을 뺀 Run 은 전송 실패도 한 번 시도한 뒤 목록에서 뺀다. 지금 등록된 Run 의 실패는 다음 틱이 재시도한다.

@@ -10,8 +10,7 @@
 import { ghRepoVisibility } from '../../lib/gh.ts'
 import type { PrivateWord } from '../../lib/private-words.ts'
 import { findingsText, readPrivateWords, repoVisibility, textFindings } from '../../lib/private-words.ts'
-import type { GateReason } from './gate.ts'
-import type { StepContext, StepState } from './model.ts'
+import type { GateReason, StepContext, StepState } from './model.ts'
 import { api } from './pr.ts'
 
 const SOURCES = [

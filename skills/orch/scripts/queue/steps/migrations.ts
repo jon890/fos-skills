@@ -4,9 +4,8 @@ import type { Migration, QueueItem } from '../../lib/auto-merge.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { addedPaths } from '../../lib/reservations.ts'
-import type { GateReason } from './gate.ts'
 import { HeadChanged, Usage } from './model.ts'
-import type { StepState } from './model.ts'
+import type { GateReason, StepState } from './model.ts'
 import { git, out } from './runtime.ts'
 
 function migrationDirs(repo: string): Record<string, string[]> {
