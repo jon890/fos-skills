@@ -34,13 +34,6 @@ function issues(file: string, root = core): string[] {
   return found
 }
 
-// 두 검사는 gate 가 호출하고 GateReason 타입만 gate 에서 가져온다.
-// 타입을 분리하려면 이번 수정 범위 밖의 queue/steps 를 바꿔야 한다.
-const allowedTypeImports = new Map([
-  ['queue/steps/migrations.ts', 'queue/steps/gate.ts'],
-  ['queue/steps/private-words.ts', 'queue/steps/gate.ts'],
-])
-
 function importCycles(root: string): string[] {
   const files = new Set(sources(root).sort())
   const visited = new Set<string>()
@@ -55,12 +48,10 @@ function importCycles(root: string): string[] {
     if (visited.has(file)) return
     visited.add(file)
     chain.push(file)
-    for (const [declaration, name] of dependencies(readFileSync(file, 'utf8'))) {
+    for (const [, name] of dependencies(readFileSync(file, 'utf8'))) {
       if (!name.startsWith('.')) continue
       const target = resolve(dirname(file), name)
-      if (!files.has(target)) continue
-      if (/^import\s+type\s/.test(declaration) && allowedTypeImports.get(relative(root, file)) === relative(root, target)) continue
-      visit(target)
+      if (files.has(target)) visit(target)
     }
     chain.pop()
   }

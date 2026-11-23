@@ -16,15 +16,14 @@ import { mask, readPrivateWords } from '../../lib/private-words.ts'
 import { requiredChecks } from './checks.ts'
 import type { Pr, StepContext } from './model.ts'
 import { Conflict, FAIL_SEL, HeadChanged, PENDING, ROLL_NAMES, ROLL_NAMES_NO_SKIPPED, Stop, WorkerFix } from './model.ts'
-import type { StepState } from './model.ts'
+import type { GateReason, StepState } from './model.ts'
 import { fetchPrRefs } from './overlap.ts'
 import { api, field, prEnv } from './pr.ts'
 import { chomp, log, namesJson, nap, stop } from './runtime.ts'
 
 // ci 는 체크, threads·evidence·migration·private 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
-export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup' | 'migration' | 'private'
-export type GateReason = { kind: GateKind; text: string }
-// none 은 체크를 보지 않고, failed 는 실패한 체크만 보고(체크를 기다린 뒤), all 은 진행 중이거나 나타나지 않은 체크도 본다
+export type { GateKind, GateReason } from './model.ts'
+
 export type GateChecks = 'none' | 'failed' | 'all'
 
 // PR 하나의 값을 읽어 state.pr, state.q 를 채운다. 이미 MERGED 면 merged, OPEN 이 아니면 멈춘다

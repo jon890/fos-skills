@@ -207,3 +207,7 @@ export type StepContext = { script: string; here: string; sleepScale: number }
 export type StepResult<T extends object = {}> = T & { changes: Partial<StepState> }
 
 export type SelectionResult = StepResult<{ kind: 'config'; error: ConfigError } | { kind: 'held' } | { kind: 'done' }>
+
+export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'review' | 'lookup' | 'migration' | 'private'
+export type GateReason = { kind: GateKind; text: string }
+// none 은 체크를 보지 않고, failed 는 실패한 체크만 보고(체크를 기다린 뒤), all 은 진행 중이거나 나타나지 않은 체크도 본다
