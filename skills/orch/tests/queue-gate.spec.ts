@@ -305,6 +305,41 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(gateReason(missing), /리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다/)
   })
 
+  test('머지 큐도 이전 영수증을 막고 현재 HEAD 를 확인한 영수증으로 머지한다', async (t) => {
+    const c = setup(t)
+    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    const withReceipt = (head: string) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)] } }) })
+    const blocked = await queue(c, withReceipt('b'.repeat(40)), 0)
+    assert.equal(blocked.code, 1, both(blocked))
+    assert.match(queueReason(blocked), /현재 HEAD 를 확인한 봇 영수증이 없다/)
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+    const merged = await queue(c, withReceipt(HEAD), 0)
+    assert.equal(merged.code, 0, both(merged))
+    assert.match(merged.stdout, /1 MERGED/)
+  })
+
+  test('페이지를 끝까지 읽을 수 없으면 중간에 찾은 영수증으로 통과하지 않는다', async (t) => {
+    const c = setup(t)
+    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    for (const pageInfo of [{ hasNextPage: true, endCursor: 'same' }, { endCursor: null }]) {
+      const result = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(HEAD)], pageInfo } }) }, 0)
+      assert.equal(result.code, 1, both(result))
+      assert.match(gateReason(result), /스레드를 읽지 못했다/)
+    }
+  })
+
+  test('모르는 require 조건은 봇 영수증을 조회하기 전에 막는다', async (t) => {
+    const c = setup(t)
+    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING], require: ['unknown'] }
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    const result = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(HEAD)] } }) }, 0)
+    assert.equal(result.code, 1, both(result))
+    assert.match(gateReason(result), /모르는 조건/)
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /readThreads=/)
+  })
+
   test('기능 PR 은 설정에 HEAD 조건이 없어도 현재 HEAD 의 판정이 필요하다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['last-verdict-pass'] } } }))

@@ -83,7 +83,7 @@ if (args[0] === 'api' && args[1] === 'graphql' && args.some((a) => a.startsWith(
       const next = split && !param(after)
       result[key] = {
         nodes: next ? [] : nodes,
-        pageInfo: { hasNextPage: next, endCursor: next ? 'next' : null },
+        pageInfo: pr.bot_review.pageInfo ?? { hasNextPage: next, endCursor: next ? 'next' : null },
       }
     }
   }

@@ -43,6 +43,25 @@ test('리뷰 영수증은 GitHub 가 기록한 커밋과도 맞아야 한다', (
   assert.ok(result.ok && result.receipts.length === 1)
 })
 
+test('제출되지 않았거나 취소된 리뷰는 지적이나 영수증으로 세지 않는다', () => {
+  for (const state of ['PENDING', 'DISMISSED']) {
+    const review = { author: BOT, state, submittedAt: FOUND_AT, body: receipt(HEAD).body, commit: { oid: HEAD } }
+    assert.deepEqual(judge({ reviews: [review] }), { ok: true, receipts: [] })
+    const result = judge({ reviews: [{ ...review, body: '' }], comments: [receipt(HEAD)] })
+    assert.ok(result.ok && result.receipts.length === 1)
+  }
+})
+
+test('의견 리뷰가 다른 커밋의 영수증을 포함하면 지적으로 처리한다', () => {
+  const review = { author: BOT, state: 'COMMENTED', submittedAt: FOUND_AT, body: receipt(HEAD).body, commit: { oid: OLD } }
+  assert.equal(judge({ reviews: [review], comments: [receipt(HEAD)] }).ok, false)
+})
+
+test('지적 시각을 읽을 수 없으면 영수증이 있어도 재리뷰를 기다린다', () => {
+  const review = { author: BOT, state: 'CHANGES_REQUESTED', submittedAt: null, body: '', commit: { oid: HEAD } }
+  assert.equal(judge({ reviews: [review], comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, false)
+})
+
 test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 지적 이후의 영수증을 요구한다', () => {
   const thread = { isResolved: false, comments: { nodes: [{ author: BOT, createdAt: FOUND_AT }] } }
   const fresh = receipt(HEAD, REREVIEWED_AT)
