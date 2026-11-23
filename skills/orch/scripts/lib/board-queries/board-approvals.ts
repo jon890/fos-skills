@@ -8,6 +8,7 @@ export { approvalsFile as boardApprovalPath, recordPress, selfIsWorker } from '.
 if (import.meta.main) {
   const repo = process.argv[2]
   if (!repo) {
+    process.stderr.write('사용법: board-approvals.ts DIR\n')
     process.exitCode = 2
   } else {
     process.stdout.write(approvalsFile(resolve(repo)) + '\n')
