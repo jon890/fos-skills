@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { defaultBoardPath } from '../bin/board.ts'
+import { defaultBoardPath } from '../../../modules/work-board/path.ts'
 
 const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
 
@@ -463,7 +463,7 @@ describe('기본 보드 위치', () => {
     git(repo, 'init', '-q')
     const done = spawnSync(
       process.execPath,
-      ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', `import { defaultBoardPath } from ${JSON.stringify(BOARD)}; defaultBoardPath(process.cwd())`],
+      ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', `await import(${JSON.stringify(BOARD)})`],
       { cwd: repo, encoding: 'utf8' },
     )
     assert.equal(done.status, 0, done.stderr)

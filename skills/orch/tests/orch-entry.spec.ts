@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 
 const ENTRY = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
 const OWN_SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
+const PLUGIN_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 
 type Result = { code: number | null; stdout: string; stderr: string }
 type Entry = { scope: string; installPath: string }
@@ -44,8 +45,9 @@ function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): stri
     mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
     copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
     for (const dir of ['core', 'lib']) cpSync(join(OWN_SCRIPTS, dir), join(scripts, dir), { recursive: true })
-    // lib 가 가져오는 work-board 모듈(lib/paths.ts 의 board.ts 같은 것)
-    for (const dir of ['bin', 'hooks']) cpSync(join(OWN_SCRIPTS, '..', '..', '..', 'extensions', 'work-board', dir), join(root, 'extensions', 'work-board', dir), { recursive: true })
+    for (const dir of ['extensions/work-board/bin', 'extensions/work-board/hooks', 'modules']) {
+      cpSync(join(PLUGIN_ROOT, dir), join(root, dir), { recursive: true })
+    }
   }
   return root
 }

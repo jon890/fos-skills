@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { claimFile, claimStale, LockTimeout, peekLock, replaceStale, withFileLock } from '../bin/file-lock.ts'
+import { claimFile, claimStale, LockTimeout, peekLock, replaceStale, withFileLock } from '../../../modules/file-lock.ts'
 import { tempBoard } from './board-run.ts'
 
 const old = (file: string, seconds = 40) => { const time = new Date(Date.now() - seconds * 1000); utimesSync(file, time, time) }

@@ -1,7 +1,7 @@
 // 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 //
 // 파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
-// 이 기본 위치 규칙은 defaultBoardPath 한 곳이 소유한다. orch 의 lib/board-file.ts 가 import 해 같은 값을 쓴다.
+// 기본 위치는 modules/work-board/path.ts 의 defaultBoardPath 를 orch 와 함께 쓴다.
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
 // 사용:
@@ -75,12 +75,12 @@
 // list, steps, view, get, item, items 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
-import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { parseArgs } from 'node:util'
-import { LockTimeout, withFileLock, type Lock } from './file-lock.ts'
+import { LockTimeout, withFileLock, type Lock } from '../../../modules/file-lock.ts'
+import { FIELDS, GET_FIELDS, LEAD_MARK, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
+import { defaultBoardPath } from '../../../modules/work-board/path.ts'
 
 export { parseEventTag } from '../hooks/event-tags.js'
 import { STEP, parseEventTag, stageTag, withEventTag } from '../hooks/event-tags.js'
@@ -88,10 +88,7 @@ import { withStepMark } from '../hooks/step-marks.js'
 import { lineProblem, waitConditionProblem } from '../hooks/line-rules.js'
 
 const STATUSES = ['decide', 'doing', 'wait', 'done']
-const DONE_MARKS = ['✓', '[x]', '[X]']
-const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
-const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'task', 'task-ref', 'progress', 'stages'] as const
 // stages 칸의 값. 사건과 단계 번호의 짝을 쉼표로 잇는다
 const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|release)=\d+)*\s*$/
 // worker 줄의 stages 값. 후속 묶음은 PR·머지 두 단계만 갖는다
@@ -100,7 +97,6 @@ const ROW_STAGES = /^\s*pr=\d+\s*,\s*merge=\d+\s*$/
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
 const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'clear-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link']
 const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
@@ -166,19 +162,8 @@ const MISSING_PROGRESS = (id: string) => `doing 항목에는 진행률이 필요
   단계 줄을 적는다: --next '1. 구현' --next '2. 리뷰 반영' --next '3. 머지' (끝낸 단계는 앞에 ✓ 나 [x])
   단계로 나타낼 수 없으면 --progress 끝낸단계/전체단계 (예: --progress 2/5) 를 준다`
 
-type Line = { text: string; done: boolean }
 type Item = Record<string, unknown> & { id: string }
 type Board = Record<string, unknown> & { items: Item[] }
-
-// 보드 파일의 기본 위치. cwd 의 git 작업 트리 최상위(--show-toplevel)가 기준이고, git 밖이면 cwd 다.
-// 주 checkout 이 아니라 작업 트리 기준이다.
-export function defaultBoardPath(cwd: string): string {
-  const done = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-  const top = done.status === 0 ? (done.stdout ?? '').trim() : ''
-  const root = top || cwd
-  const legacy = join(root, '.omc/handoffs/board.json')
-  return existsSync(legacy) ? legacy : join(root, '.omc/board.json')
-}
 
 class Refused extends Error {}
 
@@ -186,29 +171,6 @@ class Refused extends Error {}
 function refuseLine(text: string): void {
   const problem = lineProblem(text)
   if (problem) throw new Refused(problem)
-}
-
-// 옛 문자열을 {text, done} 으로 바꾼다. 객체의 done 값이 앞 표시보다 우선한다.
-function normalizeLine(line: unknown): Line {
-  let text: string
-  let done: boolean
-  if (typeof line === 'object' && line !== null && !Array.isArray(line)) {
-    const row = line as Record<string, unknown>
-    if (!('text' in row)) throw new Error('단계 줄 객체에 text 가 없다')
-    text = String(row.text)
-    done = row.done === true
-  } else {
-    text = String(line)
-    const mark = LEAD_MARK.exec(text)
-    done = Boolean(mark && DONE_MARKS.includes(mark[1]))
-  }
-  return { text: text.replace(LEAD_MARK, ''), done }
-}
-
-// Python 의 `value or ''` 처럼 거짓 값은 빈 줄 하나가 된다
-function normalizeLines(value: unknown): Line[] {
-  const lines = Array.isArray(value) ? value : String(value || '').split('\n')
-  return lines.map(normalizeLine)
 }
 
 // 글 한 줄을 Line 으로 바꾼다. 앞 표시가 없으면 같은 글의 옛 줄(old)에서 끝냄 표시를 이어받는다.
@@ -320,7 +282,7 @@ function localIso(now: Date): string {
 }
 
 // json.dumps(ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 다. steps 출력을 읽는 쪽과 바이트를 맞춘다.
-// skills/orch/scripts/lib/py.ts 의 pyJson 과 같다. board.ts 는 orch 를 import 하지 않아(orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다) 복사해 두었다.
+// skills/orch/scripts/lib/py.ts 의 pyJson 과 결과를 맞춘다.
 // 바꾸면 함께 고친다
 function pyJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(pyJson).join(', ')}]`
@@ -470,23 +432,11 @@ function find(board: Board, id: string): Item | undefined {
   return board.items.find((item) => item.id === id)
 }
 
-// 줄 글과 끝냄 값을 함께 비교한다. 저장 형식이 달라도 같은 줄은 같은 지문이다.
-export function linesRev(item: Record<string, unknown> | undefined): string {
-  const lists = ['details', 'next'].map((key) => item && key in item ? normalizeLines(item[key]).map(({ text, done }) => [text, done]) : [])
-  return createHash('sha1').update(JSON.stringify(lists)).digest('hex').slice(0, 12)
-}
-
 function linesOf(item: Item) {
   const [source] = stepSource(item)
   return ['details', 'next'].flatMap((key) => ((item[key] ?? []) as Line[])
     .filter((line) => line.text.trim())
     .map((line) => ({ number: key === source ? parseStep(line)?.[0] ?? null : null, done: line.done, text: line.text, in: key })))
-}
-function fieldText(value: unknown): string | null {
-  return typeof value === 'string' ? value || null : typeof value === 'number' ? String(value) : null
-}
-export function itemTitle(item: Record<string, unknown>): string | null {
-  return 'title' in item ? fieldText(item.title) : String(item.id)
 }
 function itemObject(item: Item) {
   const result: Record<string, unknown> = {}

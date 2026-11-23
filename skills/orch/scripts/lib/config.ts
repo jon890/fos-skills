@@ -28,7 +28,7 @@ import { orchWord } from './commands.ts'
 import { isFile } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
 import { shQuote } from './py.ts'
-import { withFileLock, type LockOptions } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withFileLock, type LockOptions } from '../../../../modules/file-lock.ts'
 
 // opts.file 이 없으면 <orch 루트>/config.json 이다. 상대경로 file 은 작업 디렉터리 기준이다.
 

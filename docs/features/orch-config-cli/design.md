@@ -16,7 +16,7 @@ PR 은 「PR 나누기」 의 번호다.
 | REQ6 | 새 core 모듈 `core/config-schema.ts` 가 키마다 zod 스키마나 기존 core 판정 하나를 가진다. 기준은 「키별 검사 기준」 표다. `lib` 와 명령 파일에 있던 순수 판정 다섯 개를 core 로 옮겨 이 모듈이 부른다. 읽는 쪽의 동작은 바꾸지 않는다 | PR1 |
 | REQ7 | `orch doctor` 의 설정 검사 세 갈래를 `problems` 한 번으로 바꾸고 문제마다 `INVALID-CONFIG <경로> <이유>` 를 낸다 | PR1 |
 | REQ8 | `unset` 은 `unsetAt` 으로 지우고 빈 객체를 위로 거슬러 지운다. 지울 범위 안에 옛 설정 칸이 있으면 거절한다 | PR2 |
-| REQ9 | `lib/config.ts` 의 새 `updateConfig` 가 `withFileLock`(`extensions/work-board/bin/file-lock.ts`) 안에서 다시 읽고, 바꾸고, 옆 파일에 쓴 뒤 이름을 바꾼다. 파일이 없으면 `ensure('config', repo)` 로 orch 루트를 만든다. 옛 위치에 설정이 남은 저장소는 `requireMigrated` 로 먼저 막는다. `doctor migrate` 의 설정 쓰기 두 길도 이 함수로 옮긴다 | PR2 |
+| REQ9 | `lib/config.ts` 의 새 `updateConfig` 가 `withFileLock`(`modules/file-lock.ts`) 안에서 다시 읽고, 바꾸고, 옆 파일에 쓴 뒤 이름을 바꾼다. 파일이 없으면 `ensure('config', repo)` 로 orch 루트를 만든다. 옛 위치에 설정이 남은 저장소는 `requireMigrated` 로 먼저 막는다. `doctor migrate` 의 설정 쓰기 두 길도 이 함수로 옮긴다 | PR2 |
 | REQ10 | 명령이 `CONFIG-SET`, `CONFIG-UNSET` 한 줄을 만든다. 이전 값은 잠금 안에서 읽은 값이다 | PR2 |
 | REQ11 | `core/config-schema.ts` 의 `RESTART_KEYS` 에 든 경로를 바꿨고 `lib/loop.ts` 의 `loopStatus` 가 살아 있음이나 다시 확인 필요를 내면 stderr 에 한 줄을 낸다 | PR2 |
 | REQ12 | `skills/orch/references/overlay.md` 에 「설정 바꾸기」 절을 두고, 값을 직접 두라는 안내(`replying.md`, `heavy-checks.md`, `board.md`, `hooks.md`, `cleanup.md`, `spec-writing.md`)를 `orch config set` 예시로 바꾼다. 키 타입 표도 코드 기준으로 맞춘다 | PR2 |

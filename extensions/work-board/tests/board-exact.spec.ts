@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { linesRev } from '../bin/board.ts'
+import { linesRev } from '../../../modules/work-board/item.ts'
 import { item, run, tempBoard, write } from './board-run.ts'
 
 test('엄격 set 은 명시한 빈 상태를 거절하고 상태 생략과 기존 호출은 유지한다', () => {
@@ -65,7 +65,8 @@ test('view 는 읽기만 하고 세는 쪽의 번호, 진행률과 지문을 낸
     const before = readFileSync(t.file, 'utf8'), result = run(t.file, ['view', 'a'])
     assert.equal(result.code, 0); const view = JSON.parse(result.stdout)
     assert.deepEqual(view.progress, [1, 3]); assert.deepEqual(view.lines.map((line: { number: number | null }) => line.number), [1, 2, 3, null, null])
-    assert.equal(view.lines[4].in, 'next'); assert.equal(view.rev, linesRev(row)); assert.equal(readFileSync(t.file, 'utf8'), before)
+    assert.equal(view.lines[4].in, 'next'); assert.equal(readFileSync(t.file, 'utf8'), before)
+    assert.equal(view.rev, '7794f9b210e1'); assert.equal(view.rev, linesRev(row))
     assert.equal(run(t.file, ['view', 'nope']).code, 1)
     for (const [extra, progress] of [[{ progress: '7/10' }, [7, 10]], [{}, null], [{ next: ['1. 다음'] }, [0, 1]]] as const) {
       write(t.file, { id: 'a', ...extra })

@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withFileLock } from '../../../../modules/file-lock.ts'
 import { applyPress, emptyFile, parseFile, prune, revertPress, signalMatches } from '../core/approvals.ts'
 import type { Approval, ApprovalFile, CheckFacts, PressInput } from '../core/approvals.ts'
 import { isObject } from '../core/json.ts'

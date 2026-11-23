@@ -203,6 +203,7 @@ test('검사표 의존 누락은 설치 안내로 거절한다', () => {
   const isolated = join(dir, 'bundle')
   cpSync(join(root, 'skills/orch'), join(isolated, 'skills/orch'), { recursive: true, filter: source => !source.includes('/tests') })
   cpSync(join(root, 'extensions/work-board'), join(isolated, 'extensions/work-board'), { recursive: true, filter: source => !source.includes('/tests') })
+  cpSync(join(root, 'modules'), join(isolated, 'modules'), { recursive: true })
   const result = run(['show'], { ORCH_SCRIPTS_DIR: join(isolated, 'skills/orch/scripts') })
   assert.equal(result.status, 1, result.stderr); assert.match(result.stderr, /의존을 읽지 못했다.*npm ci/)
   const loop = spawnSync(process.execPath, [join(isolated, 'skills/orch/bin/orch.ts'), 'loop', 'status'], { cwd: repo, env: { ...env, ORCH_SCRIPTS_DIR: join(isolated, 'skills/orch/scripts') }, encoding: 'utf8', timeout: 15000 })

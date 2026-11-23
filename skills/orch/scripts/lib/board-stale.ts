@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withFileLock } from '../../../../modules/file-lock.ts'
 import { makeParent, pathOf } from './paths.ts'
 
 // 항목 id → { "<단계 번호>:<PR 번호>": 단계 글의 지문 }
