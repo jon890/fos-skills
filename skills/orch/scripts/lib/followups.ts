@@ -27,8 +27,7 @@ import {
   boardItemId, boardTitle, dueFollowups, markDeployed, markNotified, noticeText, parseFollowups, pruneFollowups, undeployedFollowups,
 } from '../core/followups.ts'
 import type { Followup } from '../core/followups.ts'
-import { boardPath } from './board-file.ts'
-import { BOARD_BIN, staleBoardWrite } from './board.ts'
+import { BOARD_BIN, boardPath, staleBoardWrite } from './board-file.ts'
 import { parseStepMark } from '../../../../extensions/work-board/hooks/step-marks.js'
 import { deployVerdict, parseRuns } from './deploy.ts'
 import type { RunRow } from './deploy.ts'

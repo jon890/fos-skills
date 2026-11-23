@@ -12,14 +12,13 @@ import { linesRev } from '../../../../extensions/work-board/bin/board.ts'
 import type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename } from 'node:path'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesOf, stagesText } from './milestones.ts'
 import { section } from '../core/config.ts'
 import { FINISH_KEYS } from '../core/finish-options.ts'
 import { rulesFrom } from './last-pr.ts'
 import { loadConfig } from './config.ts'
-import { boardPath } from './board-file.ts'
+import { BOARD_BIN, boardPath, staleBoardWrite } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
 import { boardIdOf, boardNewOf, workerRoleOf, interimOf } from './spec.ts'
 import { boardWorkerRows } from '../core/board-workers.ts'
@@ -31,7 +30,7 @@ import { workerRows } from './workers.ts'
 import { isLive } from './worker-state.ts'
 import { workerEnds } from '../core/board-workers.ts'
 
-export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../extensions/work-board/bin/board.ts')
+export { BOARD_BIN, staleBoardWrite } from './board-file.ts'
 export function readBoard(file: string): BoardItem[] {
   const raw = JSON.parse(readFileSync(file, 'utf8')).items
   if (!raw || typeof raw !== 'object') throw new Error('보드 items 가 목록이나 객체가 아니다')
@@ -103,11 +102,6 @@ function targetItem(items: BoardItem[], opts: { repo: string; worktree: string; 
   }
   if (opts.verify) return byBranch(opts.branch) ?? (opts.ref ? latest(open.filter((item) => item['task-ref'] === opts.ref)) : undefined)
   return undefined
-}
-
-export function staleBoardWrite(command: string[], result: { code: number; stderr: string }): boolean {
-  return command.includes('--if-rev') && result.code === 1 &&
-    result.stderr.split('\n').some((line) => line.endsWith(`읽은 뒤 ${command[1]} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`))
 }
 
 function registerBoardOnce(repo: string, spec: string, worktree: string, name: string, branch: string, dispatch: string, remembered: { value?: BoardAttach }): BoardAttach | null {
