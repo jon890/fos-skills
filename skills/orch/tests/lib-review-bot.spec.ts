@@ -62,6 +62,21 @@ test('지적 시각을 읽을 수 없으면 영수증이 있어도 재리뷰를 
   assert.equal(judge({ reviews: [review], comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, false)
 })
 
+test('등록한 봇 하나의 영수증을 pass 로 센다. 지적을 남긴 봇의 새 영수증은 그 봇에서 받아야 한다', () => {
+  const second = { ...BOT, login: 'another-review-app' }
+  const auto_review = { ...CONFIG, trusted_bots: [BOT_SETTING, { ...BOT_SETTING, login: second.login }] }
+  const { trustedBots: bots } = autoMergeConfig({ queue: { auto_review } }).review!
+  const comment = receipt(HEAD, REREVIEWED_AT)
+  const rows = { comments: [comment], reviews: [], reviewThreads: [] }
+  const pass = judgeTrustedBotReviews(HEAD, rows, bots!)
+  assert.ok(pass.ok && pass.receipts.length === 1 && pass.receipts[0].receiptBot === BOT.login)
+
+  const reviews = [{ author: second, state: 'CHANGES_REQUESTED', submittedAt: FOUND_AT, body: '', commit: { oid: HEAD } }]
+  assert.equal(judgeTrustedBotReviews(HEAD, { ...rows, reviews }, bots!).ok, false)
+  const comments = [comment, { ...comment, author: second }]
+  assert.equal(judgeTrustedBotReviews(HEAD, { ...rows, reviews, comments }, bots!).ok, true)
+})
+
 test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 지적 이후의 영수증을 요구한다', () => {
   const thread = { isResolved: false, comments: { nodes: [{ author: BOT, createdAt: FOUND_AT }] } }
   const fresh = receipt(HEAD, REREVIEWED_AT)
