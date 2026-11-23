@@ -1,4 +1,4 @@
-import { readBoardWorkers } from '../../../skills/orch/scripts/public/board-worker-list.js'
+import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'

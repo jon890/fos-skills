@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, mock, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { readBoardWorkerMarks } from '../../../skills/orch/scripts/public/board-worker-marks.ts'
+import { readBoardWorkerMarks } from '../../../skills/orch/scripts/lib/board-queries/board-worker-marks.ts'
 import { fakeBin } from '../../../modules/testkit/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../bin/worker-marks.ts', import.meta.url))

@@ -2,12 +2,12 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ConfigError } from '../lib/config.ts'
-import { real } from '../lib/fs.ts'
-import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../lib/movement.ts'
-import type { MovementSettings, ScreenMark } from '../lib/movement.ts'
-import { pathOf } from '../lib/paths.ts'
-import { workerRows } from '../lib/workers.ts'
+import { ConfigError } from '../config.ts'
+import { real } from '../fs.ts'
+import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../movement.ts'
+import type { MovementSettings, ScreenMark } from '../movement.ts'
+import { pathOf } from '../paths.ts'
+import { workerRows } from '../workers.ts'
 
 type Json = Record<string, unknown>
 

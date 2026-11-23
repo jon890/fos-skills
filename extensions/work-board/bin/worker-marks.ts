@@ -26,7 +26,7 @@
 // 종료 코드: 0 냈다(worker 목록을 못 읽어도 error 에 이유를 두고 0), 1 예기치 못한 오류, 2 사용법이나 설정 오류(stderr 에 이유)
 
 import { parseArgs } from 'node:util'
-import { readBoardWorkerMarks } from '../../../skills/orch/scripts/public/board-worker-marks.ts'
+import { readBoardWorkerMarks } from '../../../skills/orch/scripts/lib/board-queries/board-worker-marks.ts'
 
 const USAGE = '사용법: worker-marks.ts --repo DIR [--run ID] [--asking ID]... [--merging ID]... [--questions-unknown]'
 

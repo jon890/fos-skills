@@ -21,7 +21,7 @@
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { approvalsFile, recordPress, selfIsWorker } from '../../../skills/orch/scripts/lib/approvals.ts'
-import { isLiveWorkerTerminal } from '../../../skills/orch/scripts/public/board-worker-terminal.ts'
+import { isLiveWorkerTerminal } from '../../../skills/orch/scripts/lib/board-queries/board-worker-terminal.ts'
 
 const USAGE = '사용법: approvals.ts where --repo DIR | self [--live] | press <id> <버전> approve|revise [--note=글] --origin kind --repo DIR'
 const out = (line: string) => process.stdout.write(line + '\n')
