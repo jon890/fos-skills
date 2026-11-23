@@ -26,7 +26,7 @@ worker 선택: `{{에이전트}}` `{{모델}}` effort `{{effort}}`. 행: review.
    다른 커밋이 끼었으면 ask 로 알린다.
 2. 변경 파일과 그 호출 쪽을 읽고 정확성, 회귀, 누락된 테스트와 문서를 본다. 코드를 고치거나 커밋하지 않는다.
 3. 리뷰를 PR 에 COMMENT 로 등록한다. 본문은 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 쓰고 저장소에는 두지 않는다.
-   `pr-review` 스킬의 `gh-review-post.ts` 로 등록하고 `--human-reviewed` 는 붙이지 않는다. 사람이 보지 않고 등록하므로 끝 안내가 「AI 가 작성했습니다」 만 말해야 한다. 「사람이 확인했습니다」 는 사실과 다르다.
+   PR head 를 꺼낸 리뷰 워크트리에서 `pr-review` 스킬의 `gh-review-post.ts` 를 실행한다. 스크립트가 현재 워크트리의 Git 정보에서 한도에 따른 리뷰 표시를 읽는다. `--human-reviewed` 는 붙이지 않는다. 사람이 보지 않고 등록하므로 끝 안내가 「AI 가 작성했습니다」 만 말해야 한다. 「사람이 확인했습니다」 는 사실과 다르다.
 4. 본문 머리에 등급별 건수 표를 둔다. `.orch/config.json` 의 `routing.review_pattern` 이 이 표를 읽으므로 칸 이름과 순서를 바꾸지 않는다.
 
    ```markdown
