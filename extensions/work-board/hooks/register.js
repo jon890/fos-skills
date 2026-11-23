@@ -1,4 +1,5 @@
 import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
+import { isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
@@ -242,7 +243,7 @@ export function countQuestions(stdout, runId) {
 // worker 열쇠는 keyOf(m), 없으면 질문의 dispatch(payload.dispatchId, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 그 메시지 id(묶지 않음)다.
 // 늦고 이른 것은 created_at 문자열로 비교하고, 같으면 입력 순서가 뒤인 것을 늦은 것으로 본다.
 // shown(원본 메시지 → 참거짓)을 주면 보이는 미답변을 그것이 참인 것으로 줄인다. 답 기준선(가장 늦게 답한 질문)은 모든 질문에서 정한다.
-// 코디네이터가 더 늦은 자동 알림에 답했으면 그 worker 의 앞선 막힘도 푼 것이다(orch lib/questions.ts 의 unanswered 와 같다).
+// 턴 종료 알림은 답을 받았어도 질문의 답 기준선에 넣지 않는다. 그 밖의 자동 알림에 대한 답은 기준선에 넣는다.
 export function parseQuestions(stdout, runId, keyOf = null, shown = null) {
   const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
   if (data.ok === false) throw new Error('질문 기록 조회 실패')
@@ -252,7 +253,7 @@ export function parseQuestions(stdout, runId, keyOf = null, shown = null) {
   const answered = new Set(messages.filter((m) => m.thread_id && m.id !== m.thread_id
     && m.to_handle && m.to_handle !== 'run:' + (runId || m.run_id)).map((m) => m.thread_id))
   const asked = [...new Map(messages
-    .filter((m) => (m.type === 'question' || m.type === 'escalation') && m.id
+    .filter((m) => isQuestionCandidate(m) && m.id
       && m.to_handle === 'run:' + (runId || m.run_id))
     .map((m) => [m.id, m])).values()]
     .map((m, order) => {
@@ -289,23 +290,6 @@ export function autoAlertKind(m) {
 }
 
 const notAutoAlert = (m) => !autoAlertKind(m)
-
-// 턴만 끝낸 멈춤 보고인가. orch 의 core/stop-reports.ts 에 있는 stopReason 과 같은 규칙이다.
-// payload 의 stopReason 이 있으면 그 값, 없으면 제목으로 정한 값이 finished 면 참이다
-const STOP_SUBJECTS = {
-  'Worker stopped without reporting': 'finished',
-  'Worker stopped on an error without reporting': 'errored',
-  'Worker is waiting on a prompt': 'needs-input',
-  'Worker exited without reporting': 'exited',
-}
-function stopReasonOf(m) {
-  if (!m || m.type !== 'escalation') return null
-  const reason = payloadOf(m)?.stopReason
-  return (typeof reason === 'string' && reason ? reason : STOP_SUBJECTS[String(m.subject || '')]) || null
-}
-export function isQuietStop(m) {
-  return stopReasonOf(m) === 'finished'
-}
 
 // 멈춤 보고(msg_stop_)의 worker 줄 글. 턴만 끝낸 것(finished)과 모르는 이유는 글이 없다
 const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고' }
@@ -363,7 +347,7 @@ function dispatchOf(m) {
 // 닫힌 dispatch 는 inbox 에 답변이 남지 않아 답해도 줄지 않는다. active 는 살아 있는 worker 의 {id, terminal} 목록이고, null 이면 거르지 않는다.
 // dispatch id 를 알 수 없는 질문은 발신 터미널 handle 이 살아 있는 worker 의 것일 때만 센다.
 // 전체 inbox 대신 Run 의 질문 후보와 그 질문의 worker handle 만 읽는다.
-// Orca 자동 알림(autoAlertKind)은 questions 에 넣지 않고 alerts 로 따로 낸다. 답 기준선에는 넣는다(parseQuestions 의 shown).
+// Orca 자동 알림(autoAlertKind)은 questions 에 넣지 않고 alerts 로 따로 낸다.
 // 회신은 `dispatch:<그 worker 터미널의 지금 dispatch>` 로 가서 발신 터미널의 inbox 에 나오지 않는다(ADR-015).
 // 그래서 질문마다 발신자, payload 의 dispatch, 그 질문이 붙은 살아 있는 worker 의 dispatch 를 읽는다.
 export async function queryQuestions($, runId, active = null) {
@@ -391,14 +375,16 @@ export async function queryQuestions($, runId, active = null) {
       && (m.type === 'question' || m.type === 'escalation')
       && alive(m))
     .map((m) => [m.id, m])).values()]
+  const alerts = candidates.filter((m) => autoAlertKind(m))
+  const questions = candidates.filter(isQuestionCandidate)
   const handlesOf = (m) => [...new Set([m.from_handle,
     dispatchOf(m) && 'dispatch:' + dispatchOf(m),
     workerOf(m) && 'dispatch:' + workerOf(m)].filter(Boolean))]
-  const threads = new Set(candidates.map((m) => m.id))
+  const threads = new Set(questions.map((m) => m.id))
   const replies = []
   const full = []
   // 같은 handle 은 한 번만 읽는다. 네 개씩 조회해 프로세스 수를 제한한다.
-  const handles = [...new Set(candidates.flatMap((m) => {
+  const handles = [...new Set(questions.flatMap((m) => {
     const own = handlesOf(m)
     if (own.length === 0) throw new Error('질문 발신자가 없어요')
     return own
@@ -414,16 +400,15 @@ export async function queryQuestions($, runId, active = null) {
   }
   // 한도에 닿은 handle 의 질문이라도 다른 handle 에서 온 회신으로 답한 것이 확인되면 오류가 아니다.
   // 모든 회신을 합쳐도 미답변으로 남는 질문이 있을 때만 잘린 기록에 회신이 있을 수 있다고 본다.
-  const unsure = candidates.filter((m) => handlesOf(m).some((handle) => full.includes(handle)))
+  const unsure = questions.filter((m) => handlesOf(m).some((handle) => full.includes(handle)))
   if (unsure.length && parseQuestions(JSON.stringify({ messages: [...unsure, ...replies] }), runId, workerOf, notAutoAlert).length) {
     throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
   }
-  const alerts = candidates.filter((m) => autoAlertKind(m))
   // 답을 기다리는 worker. orch 루프의 askers(snapshot().pending) 와 같은 뜻이다. 턴만 끝낸 멈춤 보고는 세지 않는다.
   // 루프와 다른 점: 살아 있는 worker 의 질문(alive)만 본다. 끝난 dispatch 의 미답변 질문이 남은 터미널에 새 dispatch 가 붙으면
   // 루프는 그 새 worker 를 기다리는 것으로 보고 보드는 멈춤으로 볼 수 있다. 끝난 dispatch 의 답은 읽지 않으므로 맞출 수 없다
-  const byId = new Map(candidates.map((m) => [m.id, m]))
-  const asking = [...new Set(parseQuestions(JSON.stringify({ messages: [...candidates.filter((m) => !isQuietStop(m)), ...replies] }), runId, workerOf)
+  const byId = new Map(questions.map((m) => [m.id, m]))
+  const asking = [...new Set(parseQuestions(JSON.stringify({ messages: [...questions, ...replies] }), runId, workerOf)
     .map((q) => byId.get(q.id))
     .flatMap((m) => (m ? [dispatchOf(m), m.from_handle, workerOf(m)] : []))
     .filter(Boolean))]
@@ -439,7 +424,7 @@ export async function queryQuestions($, runId, active = null) {
     if (!before || at >= before.at) notes.set(worker + '\n' + kind, { worker, kind, at, text, reason: stopReasonOf(m) })
   }
   return {
-    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf, notAutoAlert),
+    questions: parseQuestions(JSON.stringify({ messages: [...questions, ...replies] }), runId, workerOf, notAutoAlert),
     alerts,
     asking,
     notes: [...notes.values()],

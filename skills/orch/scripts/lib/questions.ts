@@ -26,7 +26,7 @@
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
 import { objectOr } from '../core/json.ts'
-import { KINDS, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
+import { isQuestionCandidate, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
 import type { Message, Notice } from '../core/questions.ts'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
@@ -42,7 +42,6 @@ import type { Launch } from './launched.ts'
 import { machineDir } from './machine.ts'
 import { makeParent } from './paths.ts'
 import { pyJson, pyStr as text } from './py.ts'
-import { isQuietStop } from './stop-reports.ts'
 import { workerRows, worktreePaths } from './workers.ts'
 import { recipientOf, senderOf, threadOf } from '../core/message-fields.ts'
 
@@ -110,7 +109,7 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   }
   for (const m of [...history, ...unread]) {
     // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
-    if (m.id && !Object.hasOwn(dismissed, String(m.id)) && m.run_id === run && KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && !isQuietStop(m) &&
+    if (m.id && !Object.hasOwn(dismissed, String(m.id)) && m.run_id === run && isQuestionCandidate(m) && recipientOf(m) === `run:${run}` &&
       !ended.has(String(dispatchOf(m))) && !sharedClosedReason(run, String(m.id), true)) candidates.set(m.id, m)
   }
   // Task 종료가 dispatch 상태보다 먼저 반영될 수 있다. 남은 질문에 Task 가 있을 때만 Run 의 목록을 한 번 읽는다.

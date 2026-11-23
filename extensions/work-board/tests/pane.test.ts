@@ -314,6 +314,30 @@ test('질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한�
   await ui.unmount()
 })
 
+for (const hasQuestion of [false, true]) {
+  test(`턴 종료 알림이 와도 실제 질문이 있을 때만 결정 필요 상자를 그린다 (${hasQuestion})`, async ($, on) => {
+    const message = { run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
+    const ready = { ...message, id: 'ready', type: 'status', subject: `준비됨 #7, head ${'a'.repeat(40)}` }
+    const stop = { ...message, id: 'msg_stop_wait', type: 'escalation', subject: 'Worker stopped without reporting' }
+    const question = { ...message, id: 'q', type: 'question', body: '검사 범위를 정해 주세요' }
+    await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+      argv.includes('run-current') ? { run: { id: 'r' } }
+        : argv.includes('worker-list') ? { workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched' }] }
+          : argv.includes('check') ? { messages: [ready, ...(hasQuestion ? [question] : []), stop] }
+            : { messages: [] },
+    }) }))
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    if (hasQuestion) {
+      expect(await ui.find({ type: 'Text', text: /^결정 필요  1$/ })).toBeTruthy()
+      expect(await ui.find({ type: 'Text', text: /검사 범위를 정해 주세요/ })).toBeTruthy()
+    } else {
+      expect(await ui.find({ type: 'Box', key: 'live-decide' })).toBeUndefined()
+    }
+    expect(await ui.find({ type: 'Text', text: /Worker stopped without reporting/ })).toBeUndefined()
+    await ui.unmount()
+  })
+}
+
 test('최근 질문 상한이면 답변이 모두 끝났어도 조회 범위를 표시한다', async ($, on) => {
   const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
   await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:

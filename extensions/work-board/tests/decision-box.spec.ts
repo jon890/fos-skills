@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  alertNoteText, autoAlertKind, ciPassed, errorSummary, idleStepMinutes, isQuietStop, marksArgv, mergingIds, parseMarks, queryQuestions, spanText, statusLine, stepRows, workerNoneText, workerNotes,
+  alertNoteText, autoAlertKind, ciPassed, errorSummary, idleStepMinutes, marksArgv, mergingIds, parseMarks, parseQuestions, queryQuestions, spanText, statusLine, stepRows, workerNoneText, workerNotes,
 } from '../hooks/register.js'
 
 type Json = Record<string, unknown>
@@ -70,6 +70,7 @@ test('worker 가 보낸 메시지는 자동 알림과 제목이 같아도 상자
   const own = ask('msg_9f2c0a', 'escalation', '2026-11-02T10:00:00Z', { subject: 'Worker stopped without reporting' })
   const result = await queryQuestions(fake([own]), RUN, ACTIVE)
   assert.deepEqual(ids(result.questions), ['msg_9f2c0a'])
+  assert.deepEqual(result.asking.sort(), ['open', 'structworker_w'])
   assert.deepEqual(result.alerts, [])
 })
 
@@ -86,12 +87,37 @@ test('직접 올린 막힘은 답장이나 worker 해제·중지로 사라지고
 
 test('더 늦은 자동 알림에 답했으면 앞선 막힘도 푼 것이고, 답 없는 자동 알림은 막힘을 가리지 않는다 (R3)', async () => {
   const blocker = ask('msg_e1', 'escalation', '2026-11-02T09:30:00Z')
-  const later = stop('msg_stop_aa', '2026-11-02T10:00:00Z')
-  assert.deepEqual((await queryQuestions(fake([blocker, later], [answer('msg_stop_aa')]), RUN, ACTIVE)).questions, [])
+  const later = chatError('msg_chaterr_aa', '2026-11-02T10:00:00Z')
+  assert.deepEqual((await queryQuestions(fake([blocker, later], [answer('msg_chaterr_aa')]), RUN, ACTIVE)).questions, [])
   assert.deepEqual(ids((await queryQuestions(fake([blocker, later]), RUN, ACTIVE)).questions), ['msg_e1'])
   // 답한 막힘 뒤에 온 미답변 막힘은 남는다
   const again = ask('msg_e2', 'escalation', '2026-11-02T10:30:00Z')
-  assert.deepEqual(ids((await queryQuestions(fake([blocker, later, again], [answer('msg_stop_aa')]), RUN, ACTIVE)).questions), ['msg_e2'])
+  assert.deepEqual(ids((await queryQuestions(fake([blocker, later, again], [answer('msg_chaterr_aa')]), RUN, ACTIVE)).questions), ['msg_e2'])
+})
+
+test('준비됨이나 재개 신호 대기 뒤의 턴 종료 알림은 실제 질문을 가리지 않는다', async () => {
+  const q = ask('msg_q', 'question', '2026-11-02T09:30:00Z')
+  const finished = stop('msg_stop_aa', '2026-11-02T10:00:00Z')
+  for (const subject of [`준비됨 #7, head ${'a'.repeat(40)}`, '코디네이터의 재개 신호를 기다립니다']) {
+    const status = ask('msg_status', 'status', '2026-11-02T09:00:00Z', { subject })
+    const parse = (messages: Json[]) => ids(parseQuestions(JSON.stringify({ messages }), RUN))
+    assert.deepEqual(parse([status, finished]), [])
+    assert.deepEqual(parse([status, q, finished, answer('msg_stop_aa')]), ['msg_q'])
+    const result = await queryQuestions(fake([status, q, finished], [answer('msg_stop_aa')]), RUN, ACTIVE)
+    assert.deepEqual(ids(result.questions), ['msg_q'])
+    assert.deepEqual(result.asking.sort(), ['open', 'structworker_w'])
+  }
+})
+
+test('턴 종료 알림뿐이면 worker 답변 기록을 읽지 않는다', async () => {
+  const finished = stop('msg_stop_aa', '2026-11-02T10:00:00Z')
+  const source = fake([finished])
+  const result = await queryQuestions({ process: { run: async (argv: string[]) => {
+    assert.ok(argv.includes('check'), argv.join(' '))
+    return source.process.run(argv)
+  } } }, RUN, ACTIVE)
+  assert.deepEqual(result.questions, [])
+  assert.deepEqual(result.asking, [])
 })
 
 // ---- worker 줄의 멈춤과 오류 (R4, R5) ----
@@ -173,13 +199,6 @@ test('같은 worker 의 오류는 늦은 하나로 묶고, 답을 기다리는 w
   assert.deepEqual(errored.asking.sort(), ['open', 'structworker_w'])
   // 답한 질문은 기다리는 것이 아니다
   assert.deepEqual((await queryQuestions(fake([ask('msg_q1', 'question', '2026-11-02T08:00:00Z')], [answer('msg_q1')]), RUN, ACTIVE)).asking, [])
-})
-
-test('턴만 끝낸 멈춤 보고는 payload 나 제목으로 가린다', () => {
-  assert.equal(isQuietStop(stop('msg_stop_a', 'x')), true)
-  assert.equal(isQuietStop({ id: 'msg_stop_b', type: 'escalation', subject: 'Worker stopped without reporting' }), true)
-  assert.equal(isQuietStop(stop('msg_stop_c', 'x', 'errored')), false)
-  assert.equal(isQuietStop({ id: 'q', type: 'question', subject: 'Worker stopped without reporting' }), false)
 })
 
 const pr = (extra: Json) => ({ number: 1, branch: 'wt-a', pass: 2, fail: 0, pending: 0, failed: [], ...extra })
