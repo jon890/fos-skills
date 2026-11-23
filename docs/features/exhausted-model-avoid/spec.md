@@ -2,6 +2,8 @@
 
 확인: 2026-11-23
 
+[기술 설계](design.md)와 [인수 검증](verification.md)에서 구현과 확인 결과를 볼 수 있다.
+
 ## 목표
 
 `orch worker launch` 가 평소에는 모델 표대로 띄운다.
