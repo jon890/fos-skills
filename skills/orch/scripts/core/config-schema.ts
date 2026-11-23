@@ -293,7 +293,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     review_author: zodCheck(nonEmptyText),
     review_pattern: zodCheck(capturePattern('routing.review_pattern', 5, 'js')),
     size_pattern: zodCheck(capturePattern('routing.size_pattern', 1, 'js')),
-    usage_boost: zodCheck(bool),
+    usage_boost: zodCheck(z.unknown()), // 옛 설정 파일을 열어 키를 지울 수 있게 받는다.
   },
   docker: Object.fromEntries(DOCKER_KEYS.map((key) => [key, viaConfig('docker', key, dockerRules)])),
   finish: {

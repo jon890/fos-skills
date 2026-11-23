@@ -2,7 +2,7 @@
 
 **일의 내용으로 행을 고르고, 그 행에 정해진 worker 하나와 이유를 지시서에 적는다.**
 에이전트·모델·effort 가운데 하나라도 행과 다르면 `후보 밖: <이유>` 를 적는다. 사용자가 지정하거나 사용 한도 표로 바꾸는 경우도 같다.
-Claude 사용량이 남아 `launch-worker` 가 스스로 바꾸는 경우만 지시서를 고치지 않는다(아래 「Claude 사용량이 남을 때」).
+시작 전 한도 검사로 `launch-worker` 가 같은 등급 모델을 고르면 지시서를 그대로 둔다(아래 「사용 한도에 걸렸을 때」).
 줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유한다. 명령 예시는 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 선택 근거와 실측은 [evidence.md](../../../docs/features/orch-routing/evidence.md), 사용자 결정은 [단일 worker 스펙](../../../docs/features/orch-single-worker/spec.md) 에 둔다.
 
@@ -65,20 +65,16 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
 
-바꾼 worker 는 지시서의 `worker 선택:` 줄에 반영하고 `후보 밖: 한도 <제공자>` 를 적는다. 줄과 다르면 `launch-worker` 가 거부한다.
-시작 전 모델 검사에서 보여 주는 대체 후보는 이 표의 「같은 등급 대응」 칸이다. 같은 계열이면 세대가 달라도 그 줄을 쓴다. 구현은 `scripts/lib/model-check.ts` 와 `scripts/lib/usage-boost.ts` 의 `limitRowOf` 가 소유한다.
+이미 떠 있는 worker 를 다른 모델로 다시 띄울 때 코디네이터가 직접 고른 값은 지시서의 `worker 선택:` 줄에 반영하고 `후보 밖: 한도 <제공자>` 를 적는다. 줄과 띄우는 값이 다르면 시작 전에 거부한다.
 
-### Claude 사용량이 남을 때
+새로 띄울 때는 지시서와 대조하고 세대를 정한 뒤, Orca 에서 지금 고른 계정의 한도를 본다. 적용되는 한도가 100% 이거나 걸림 표시가 있고 풀리는 시각 전이면 위 표의 같은 등급 대응을 순서대로 본다. 후보 칸에 effort 가 없으면 처음 요청한 effort 를 쓴다. 쓸 후보가 없으면 워크트리와 Task 를 만들기 전에 모델별로 한도가 풀리는 시각을 알린다.
 
-**Claude 주간 사용량이 초기화 전에 남을 것 같으면 `launch-worker` 가 Codex 행을 같은 등급의 Claude 로 바꿔 띄운다.** 코디네이터는 지시서에 모델 표의 행 그대로 적는다.
+- Claude 는 선택 프로필의 상태 줄 사용량 캐시를, Codex 는 선택 계정의 세션 기록을 읽는다. 자료의 계정을 확인할 수 없거나 모델에 적용할 값이 없으면 `USAGE-UNKNOWN <제공자> <이유>` 한 줄을 내고 그 후보를 이용한다.
+- 바꿔 띄울 때는 `LAUNCH-EFFECTIVE` 와 실행 이력의 `candidateOverride` 에 처음 선택, 실제 실행 설정, 한도 사유를 남긴다. 한도로 바뀐 리뷰 제공자가 구현 제공자와 같으면 리뷰 요약에 `같은 제공자 리뷰(한도)` 를 붙인다.
+- 직접 고른 모델과 새로 띄우는 `--task` 재시도, `orch worker relaunch` 도 확인한다. `--terminal` 이어 쓰기와 `orch worker resume` 은 같은 세션을 잇는다.
+- `routing.usage_boost` 가 설정에 남아 있으면 지우라고 한 줄 안내한다.
 
-- 대상: `impl-planned`, `impl-explore`, `small-fix`, `design` 행의 Codex worker. 지시서에 `후보 밖:` 이 있으면 그 선택이 먼저라 바꾸지 않는다. `visual`, `review`, 이미 Claude 인 행은 바꾸지 않는다.
-- 기준: 남은 사용량 비율(100 − 주간 사용 %)이 초기화까지 남은 시간 비율(남은 시간 ÷ 7일)보다 크면 바꾼다.
-- 같은 등급: 위 「사용 한도에 걸렸을 때」 표의 「같은 등급 대응」 칸에서 첫 Claude 모델이다. 칸에 effort 가 없으면 행의 effort 를 그대로 쓴다. 지금 표로는 sol `medium` 이 Opus 5.5 `medium`, sol `low` 가 Sonnet 5.5 `low` 다.
-- 기록: 바꾸면 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.candidateOverride` 에 행, 띄운 worker, `사용량: 남은 78%, 남은 시간 22%` 꼴의 이유를 남긴다. 띄우기 기록의 에이전트가 Claude 라 리뷰 제공자는 Codex 로 정해진다.
-- 출처: 상태 줄과 같은 값인 oh-my-claudecode 사용량 캐시다. 출처가 없거나 읽지 못하거나 1시간보다 오래된 값이면 `USAGE-UNKNOWN <이유>` 를 내고 행 그대로 띄운다. 위치와 판정은 `scripts/lib/usage-boost.ts` 머리 주석이 소유한다.
-- 끄기: 저장소 설정 `routing.usage_boost` 가 `false` 면 보지 않는다. 값이 없으면 켜진 것이다.
-- `--terminal` 이어 쓰기와 `orch worker resume` 은 같은 세션을 잇는 일이라 바꾸지 않는다. `--task` 로 새로 띄우는 재시도는 다시 판정한다.
+같은 등급 표는 시작 전 모델 검사와 시작 뒤 한도 알림에서도 쓴다. 같은 계열이면 세대가 달라도 그 줄을 쓴다. 출처와 계정 확인은 [모델 사용 한도 회피 설계](../../../docs/features/exhausted-model-avoid/design.md)가 설명한다.
 
 ### 새 모델과 새 세대
 

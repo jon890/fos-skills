@@ -1,6 +1,6 @@
 # 모델 사용 한도 회피 기술 설계
 
-이 문서는 다음 구현 PR 의 목표 동작을 설명한다. 구현을 적용하기 전 릴리스의 동작은 [usage-routing 스펙](../usage-routing/spec.md)을 따른다.
+이 문서는 시작 전 모델 사용 한도 검사와 같은 등급 대체를 설명한다.
 
 ## 요구사항 연결
 
@@ -21,7 +21,7 @@
 
 - [launch-worker 의 `decideSettings`](../../../skills/orch/scripts/worker/launch-worker.ts) 가 지시서 검사와 실제 시작 사이에서 후보를 고른다. [relaunch-worker](../../../skills/orch/scripts/worker/relaunch-worker.ts) 의 시작 전 검사도 같은 경로를 쓴다.
 - 제공자별 파일 읽기와 Orca 호출은 `lib/` 가 맡는다. `core/` 는 파싱된 한도, 후보 순서, 현재 시각을 받아 선택 결과를 낸다. 계정 선택과 사용량 기록의 작성은 Orca 와 각 제공자가 소유한다. [ADR-028](../../adr/028-orch-core-layer.md)
-- [한도 표](../../../skills/orch/references/agent-selection.md#사용-한도에-걸렸을-때)가 같은 등급 후보의 원본이다. [기존 표 읽기](../../../skills/orch/scripts/lib/usage-boost.ts)의 `readSelectionTable`, `limitRows`, `limitRowOf` 를 별도 모듈로 옮긴다. [시작 전 모델 검사](../../../skills/orch/scripts/lib/model-check.ts), [모델 알림](../../../skills/orch/scripts/loop/model-watch.ts), [리뷰 지시서 생성](../../../skills/orch/scripts/lib/review-spec.ts)과 공유한다.
+- [한도 표](../../../skills/orch/references/agent-selection.md#사용-한도에-걸렸을-때)가 같은 등급 후보의 원본이다. [한도 표 읽기](../../../skills/orch/scripts/lib/limit-table.ts)의 `readSelectionTable`, `limitRows`, `limitRowOf` 를 사용한다. [시작 전 모델 검사](../../../skills/orch/scripts/lib/model-check.ts), [모델 알림](../../../skills/orch/scripts/loop/model-watch.ts), [리뷰 지시서 생성](../../../skills/orch/scripts/lib/review-spec.ts)과 공유한다.
 - [usage-routing](../usage-routing/design.md)의 사용률과 남은 시간 비교, 행 목록, `sameGradeClaude`, 시간 경과 기준, `ORCH_CLAUDE_USAGE` 우선 경로를 걷어 낸다. 경로와 시각은 테스트에서 직접 주입한다. 구현 PR 에서 [선택 안내](../../../skills/orch/references/agent-selection.md), [오버레이 안내](../../../skills/orch/references/overlay.md), [설정 스키마 문서](../../data-schema.md)를 맞추고, 옛 기능 문서에서 이 설계로 이어지는 링크를 남긴다.
 
 ## 인터페이스와 데이터

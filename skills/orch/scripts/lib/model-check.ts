@@ -11,8 +11,8 @@
 //
 // 검사하지 않는 경우: --agent 가 없으면 어느 쪽 모델인지 알 수 없다. --model 이 없으면 effort 가 어느 모델에 속하는지 몰라 effort 도 보지 않는다.
 
-import { readCodexModels, codexBin, type CodexModel } from './model-generation.ts'
-import { limitRowOf, readSelectionTable } from './usage-boost.ts'
+import { readCodexModels, codexBin, type CodexModel, type WorkerHome } from './model-generation.ts'
+import { limitRowOf, readSelectionTable } from './limit-table.ts'
 
 export type LaunchSettings = { agent: string | null; model: string | null; effort: string | null }
 export type ModelCheck = { reject: string | null; warnings: string[] }
@@ -27,9 +27,9 @@ function suggestion(settings: LaunchSettings, table: string | null): string {
   return cell ? `\n같은 등급 대체 모델: ${cell} — agent-selection.md 의 한도 표를 확인한다` : ''
 }
 
-function checkCodex(settings: LaunchSettings, table: string | null): ModelCheck {
+function checkCodex(settings: LaunchSettings, table: string | null, worker?: WorkerHome): ModelCheck {
   const bin = codexBin()
-  const list = readCodexModels(bin)
+  const list = readCodexModels(bin, worker)
   if (list.failure !== null) return { reject: null, warnings: [`${bin} debug models ${list.failure}라 --model, --effort 를 검사하지 못했다`] }
   const models: CodexModel[] = list.models
   // 이 계정의 선택 목록에 보이는 모델만 launch 대상으로 삼는다.
@@ -44,9 +44,9 @@ function checkCodex(settings: LaunchSettings, table: string | null): ModelCheck 
   return { reject: null, warnings: [] }
 }
 
-export function checkLaunchSettings(settings: LaunchSettings, table: string | null = null): ModelCheck {
+export function checkLaunchSettings(settings: LaunchSettings, table: string | null = null, worker?: WorkerHome): ModelCheck {
   if (!settings.agent || !settings.model) return { reject: null, warnings: [] }
-  if (settings.agent === 'codex') return checkCodex(settings, table)
+  if (settings.agent === 'codex') return checkCodex(settings, table, worker)
   if (settings.agent === 'claude') {
     return { reject: null, warnings: ['claude 는 모델 목록을 조회하는 명령이 없어 --model, --effort 를 검사하지 않는다'] }
   }

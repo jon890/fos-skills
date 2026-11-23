@@ -8,15 +8,13 @@
 //
 // 모델 목록: `codex debug models` 의 JSON(models[].slug, visibility, description, supported_reasoning_levels[].effort). CODEX_BIN 으로 실행 파일을 바꾼다.
 //     한 프로세스 안에서는 실행 파일과 계정마다 한 번만 부른다. 목록에 보이는 모델은 visibility 가 `list` 인 것이다.
-//     계정은 Orca 가 새 Codex worker 에 쓸 계정이다(workerCodexHome). `orca account list --agent codex` 의 activeAccountId 의 홈
-//     (ORCA_CODEX_ACCOUNTS, 없으면 ~/Library/Application Support/Orca/codex-accounts 아래 <id>/home)을 CODEX_HOME 으로 주고 부른다.
-//     Orca 관리 계정이 없거나(system) 조회하지 못하면 부른 셸의 환경 그대로다. ORCH_WORKER_CODEX_HOME 으로 홈을 정한다(빈 값이면 셸 그대로, 테스트).
+//     Orca 가 새 Codex worker 에 쓸 홈을 CODEX_HOME 으로 준다(worker-account.ts). 조회에 실패하면 모델 목록도 읽지 않는다.
+//     ORCH_WORKER_CODEX_HOME 으로 테스트의 홈을 정할 수 있다(빈 값이면 부른 셸 그대로).
 //     현재 세대는 목록에 보이고 설명이 `Legacy` 나 `Previous generation` 으로 시작하지 않는 것이다(스펙 REQ1).
-import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { machineDir } from './machine.ts'
-import { orcaJson } from './orca.ts'
+import { selectedCodexAccount } from './worker-account.ts'
 import { run } from './proc.ts'
 
 export const CLAUDE_FAMILIES: readonly string[] = ['opus', 'sonnet', 'haiku', 'fable']
@@ -92,19 +90,9 @@ export function workerCodexHome(): WorkerHome {
   const fixed = process.env.ORCH_WORKER_CODEX_HOME
   if (fixed !== undefined) return { home: fixed || null, failure: null }
   if (workerHome) return workerHome
-  const listed = orcaJson<Record<string, any>>(['account', 'list', '--agent', 'codex'], { timeoutMs: 10_000 })
-  let value: WorkerHome
-  if (!listed.ok) value = { home: null, failure: 'Orca 가 새 worker 에 쓸 Codex 계정을 확인하지 못했' }
-  else {
-    const codex = listed.data?.codex ?? listed.data
-    const id = typeof codex?.activeAccountId === 'string' ? codex.activeAccountId : null
-    const root = process.env.ORCA_CODEX_ACCOUNTS || join(homedir(), 'Library/Application Support/Orca/codex-accounts')
-    if (id === null) value = { home: process.env.ORCH_SYSTEM_CODEX_HOME || join(homedir(), '.codex'), failure: null }
-    else if (/^[\w-]+$/.test(id) && existsSync(join(root, id, 'home'))) value = { home: join(root, id, 'home'), failure: null }
-    else value = { home: null, failure: `Orca 의 Codex 계정 ${id} 의 홈을 찾지 못했` }
-  }
-  workerHome = value
-  return value
+  const { home, failure } = selectedCodexAccount()
+  workerHome = { home, failure }
+  return workerHome
 }
 
 // 실패는 `<실행 파일> debug models <failure>다` 로 읽히는 조각이다(model-check 의 경고 문장)
@@ -223,11 +211,11 @@ const higher = (a: CodexModel | null, slug: string) => !!a && compareGeneration(
 //     kept      더 높은 세대를 알지만(목록이나 감지 기록) 그 계정이 받지 못하거나 그 effort 를 지원하지 않는다. 옛 세대를 그대로 띄우고 이유를 남긴다
 //     none      더 높은 세대를 모른다. 목록을 읽지 못했으면 warning 에 이유가 있다
 // remote 면 이 머신의 목록은 원격 계정의 것이 아니라 보지 않는다(읽지 못한 것과 같다)
-export function pinnedCheck(agent: string | null, model: string | null, effort: string | null, opts: { remote?: boolean; known?: CodexModel[] } = {}): PinCheck {
+export function pinnedCheck(agent: string | null, model: string | null, effort: string | null, opts: { remote?: boolean; known?: CodexModel[]; worker?: WorkerHome } = {}): PinCheck {
   const name = parseModel(model)
   if (agent !== 'codex' || !model || !name || name.provider !== 'codex') return { kind: 'none', warning: null }
   const known = (opts.known ?? knownModels()).filter(isCurrent)
-  const list = opts.remote ? { models: null, failure: '원격 worker 라 이 머신의 목록을 쓰지 않았' } as CodexList : readCodexModels()
+  const list = opts.remote ? { models: null, failure: '원격 worker 라 이 머신의 목록을 쓰지 않았' } as CodexList : readCodexModels(undefined, opts.worker)
   const outdated = (to: string, why: string) => ({ kind: 'outdated' as const, message: `MODEL-OUTDATED ${model} → ${to}${why}\n지시서를 새 세대로 고친다. \`후보 밖:\` 으로 옛 세대를 고를 수 있는 것은 worker 계정이 새 세대를 받지 못할 때뿐이다` })
   if (list.failure === null) {
     const choice = chooseGeneration(model, effort, list.models)

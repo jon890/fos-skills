@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 import { fixedSelectionLine } from '../scripts/worker/relaunch-worker.ts'
+import { claudeProfile, codexUsage, CREATOR } from './fixtures/usage-limits.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
 import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
@@ -34,6 +35,7 @@ function opt(name) {
   return at >= 0 ? args[at + 1] : null
 }
 const is = (a, b) => args[0] === a && args[1] === b
+if (is('account', 'list') && state.accounts?.[opt('--agent')]) out(state.accounts[opt('--agent')])
 if (is('worktree', 'list')) out({ worktrees: [{ path: state.worktree }] })
 if (is('terminal', 'list')) out({ terminals: state.terminals })
 if (is('terminal', 'read')) out({ terminal: { tail: state.screen } })
@@ -63,6 +65,7 @@ if (is('orchestration', 'worker-abandon')) {
   }
   state.dispatches[opt('--dispatch')].status = 'abandoned'
   state.task = state.after_abandon
+  if (state.accounts_after_abandon) state.accounts = state.accounts_after_abandon
   out({})
 }
 if (is('orchestration', 'worker-start')) {
@@ -142,8 +145,6 @@ beforeEach(() => {
     CODEX_BIN: join(tmp, 'no-codex'),
     // Orca 계정 조회(orca account list)를 부르지 않고 셸의 codex 환경을 쓴다. 계정 홈 판정은 lib-model-generation.spec.ts 가 본다
     ORCH_WORKER_CODEX_HOME: '',
-    // 사용량 판정이 이 기계의 실제 Claude 사용량을 읽지 않게 없는 파일로 고정한다
-    ORCH_CLAUDE_USAGE: join(tmp, 'no-usage.json'),
     // 감지 기록도 이 기계의 것을 읽지 않는다
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
     FAKE_STATE: stateFile,
@@ -292,13 +293,13 @@ describe('띄우기 전 확인', () => {
   })
 
   test('codex 에 없는 모델은 abandon 전에 거부한다', () => {
-    writeSpec('codex', 'gpt-nope', 'medium')
-    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.1-sol","visibility":"list","supported_reasoning_levels":[{"effort":"medium"}]}]}'\n`)
+    writeSpec('codex', 'gpt-6.2-sol', 'medium')
+    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6-luna","visibility":"list","supported_reasoning_levels":[{"effort":"medium"}]}]}'\n`)
     chmodSync(join(tmp, 'codex'), 0o755)
     env = { ...env, CODEX_BIN: join(tmp, 'codex') }
-    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-nope', '--effort', 'medium'])
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
     assert.equal(r.code, 3, r.out)
-    assert.match(r.stdout, /^RELAUNCH-REFUSED .*gpt-nope/m)
+    assert.match(r.stdout, /^RELAUNCH-REFUSED MODEL-UNAVAILABLE gpt-6\.2-sol/m)
     assert.deepEqual(touched(orcaCalls()), [])
   })
 
@@ -324,17 +325,39 @@ describe('띄우기 전 확인', () => {
     assert.deepEqual(touched(orcaCalls()), [])
   })
 
-  test('사용량 판정이 Claude 로 바꾸는 지시서는 Codex 목록에 그 effort 가 없어도 거부하지 않는다', () => {
-    // launch 와 같은 차례: 사용량 판정이 먼저라 Codex 모델 검사를 하지 않는다
+  test('두 제공자가 모두 소진되면 preflight 가 abandon 전에 멈춘다', () => {
     writeSpec('codex', 'gpt-6.2-sol', 'medium')
-    writeFileSync(join(tmp, 'codex'), `#!/bin/sh\necho '{"models":[{"slug":"gpt-6.2-sol","visibility":"list","description":"New.","supported_reasoning_levels":[{"effort":"low"}]}]}'\n`)
-    chmodSync(join(tmp, 'codex'), 0o755)
-    const usage = join(tmp, 'usage.json')
-    writeFileSync(usage, JSON.stringify({ timestamp: Date.now(), lastSuccessAt: Date.now() - 60_000, data: { weeklyPercent: 10, weeklyResetsAt: new Date(Date.now() + 24 * 3_600_000).toISOString() }, error: false }))
-    env = { ...env, CODEX_BIN: join(tmp, 'codex'), ORCH_CLAUDE_USAGE: usage }
+    env.ORCH_SYSTEM_CODEX_HOME = join(tmp, 'codex-home')
+    codexUsage(env.ORCH_SYSTEM_CODEX_HOME, 100)
+    state({ accounts: {
+      codex: { activeAccountId: null, systemDefault: { providerAccountId: CREATOR } },
+      claude: claudeProfile(env.ORCA_CLAUDE_PROFILES!, 100),
+    } })
     const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
-    assert.doesNotMatch(r.out, /EFFORT-UNAVAILABLE/)
-    assert.equal(r.code, 0, r.out)
+    assert.equal(r.code, 3, r.out)
+    assert.match(r.stdout, /^RELAUNCH-REFUSED 같은 등급/m)
+    assert.match(r.stdout, /^USAGE-RESET /m)
+    assert.deepEqual(touched(orcaCalls()), [])
+    assert.ok(!existsSync(holdFile()))
+  })
+
+  test('사전 검사 뒤 계정이 바뀌어 소진됐으면 새 실행을 멈추고 재시도 경로를 남긴다', () => {
+    writeSpec('codex', 'gpt-6.2-sol', 'medium')
+    env.ORCH_SYSTEM_CODEX_HOME = join(tmp, 'codex-home')
+    codexUsage(env.ORCH_SYSTEM_CODEX_HOME, 100)
+    const claude = claudeProfile(env.ORCA_CLAUDE_PROFILES!, 100)
+    const account = (id: string) => ({ activeAccountId: null, systemDefault: { providerAccountId: id } })
+    state({
+      accounts: { codex: account('creator-before'), claude },
+      accounts_after_abandon: { codex: account(CREATOR), claude },
+    })
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
+    assert.equal(r.code, 1, r.out)
+    assert.match(r.stdout, /^USAGE-RESET /m)
+    assert.match(r.stdout, /^RELAUNCH-FAIL launch .*NEXT /m)
+    assert.equal(touched(orcaCalls()).filter(line => line.includes('worker-abandon')).length, 1)
+    assert.ok(!touched(orcaCalls()).some(line => line.includes('worker-start')))
+    assert.ok(existsSync(holdFile()))
   })
 
   test('launch-worker 의 띄우기 전 검사에 걸리면 옛 worker 를 건드리지 않는다', () => {

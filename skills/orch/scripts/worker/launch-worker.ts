@@ -33,24 +33,10 @@
 // 차례:
 //     0. selectionVerdict 로 지시서의 행별 worker 와 후보 밖 이유를 검사한다. 새 지시서의 비교 칸과 experiment 줄은 거절한다.
 //        새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다. 같은 지시서·설정의 이어하기는 옛 형식을 허용한다.
-//     0-0. 지시서 행이 impl-planned, impl-explore, small-fix, design 의 Codex worker 이고 `후보 밖:` 이 없으면 Claude 주간 사용량을 읽는다(lib/usage-boost.ts).
-//        남은 사용량 비율이 초기화까지 남은 시간 비율보다 크면 WORKER_ARGS 의 --agent, --model, --effort 를 같은 등급의 Claude 로 바꾸고
-//        LAUNCH-EFFECTIVE 와 기록의 effective.candidateOverride 에 행·worker·이유(`사용량: 남은 N%, 남은 시간 M%`)를 남긴다. 아래 차례는 바꾼 값으로 돈다.
-//        사용량 출처가 없거나 읽지 못하거나 1시간보다 오래됐으면 `USAGE-UNKNOWN <이유>` 를 내고 그대로 띄운다. 설정 routing.usage_boost 가 false 면 보지 않는다.
-//        --terminal 로 이어 쓰면 보지 않는다
-//     0-0-1. 0-0 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). --terminal 로 이어 쓰면 보지 않는다.
-//        지시서에 `후보 밖:` 이 있으면(사람이 고른 모델) 바꾸지 않는다. 그 모델이 Codex 이고 같은 계열에 그 effort 를 지원하는 새 세대가 있으면
-//        `MODEL-OUTDATED <옛> → <새>` 와 고칠 안내로 4 다. 목록을 읽지 못해도 감지 기록(model-watch.json)이 새 세대를 알면 같다.
-//        더 높은 세대를 알지만 worker 계정이 받지 못하면 그대로 띄우고 effective.generation(from 과 to 가 같다)에 이유를 남긴다. 판정은 lib/model-generation.ts 의 pinnedCheck.
-//        모델 목록은 Orca 가 새 worker 에 쓸 Codex 계정으로 읽는다. 원격 환경 옵션(--on, --environment, --pairing-code)이 있으면 이 머신의 목록을 쓰지 않는다:
-//        세대를 바꾸지 않고 0-1 도 하지 않으며 경고만 낸다. 0~0-1 은 decideSettings 가 소유하고 relaunch-worker 가 abandon 전에 같은 것을 부른다.
-//        codex 는 `codex debug models` 에 같은 계열(`gpt-<세대>-<계열>` 의 계열)의 더 높은 세대가 있고 effort 를 지원하면 --model 을 그 세대로 바꾼다.
-//        적힌 모델을 이 계정이 받지 못하면(목록에 없거나 effort 를 지원하지 않는다) 받을 수 있는 같은 계열 최신으로 이 띄우기만 바꾼다. 목록을 읽지 못하면 바꾸지 않는다.
-//        claude 는 `claude-<계열>-<세대>` 를 계열 이름(opus, sonnet, haiku, fable)으로 바꿔 Claude Code 가 그 계열의 최신 모델로 띄우게 한다.
-//        바꾸면 LAUNCH-EFFECTIVE 와 기록의 effective.generation 에 from, to, reason 을 남긴다. 지시서의 `worker 선택:` 에 옛 세대가 적혀도 거절하지 않는다(lib/selection.ts).
-//        claude 는 띄운 뒤 worker 세션 기록의 첫 응답 모델을 LAUNCH_MODEL_WAIT 초(기본 60, 0 이면 보지 않음)까지 기다려 기록의 model 과 effective.modelId 에 남긴다.
-//        못 읽으면 effective.modelId 는 null 이고 기록의 model 은 표의 모델 ID 다
-//     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
+//     0-0. 지시서와 대조한 뒤 모델 세대를 정한다. 선택 계정에서 쓸 실제 모델의 한도가 소진됐으면 같은 등급 표의 순서대로 대체한다.
+//        모든 후보가 소진됐으면 워크트리와 Task 를 만들기 전에 초기화 시각을 안내하고 멈춘다. 자료가 없으면 USAGE-UNKNOWN 을 내고 이용을 허용한다.
+//        직접 고른 모델(후보 밖:)에도 한도 검사를 한다. 세대 고정 규칙은 원래 모델에만 적용한다.
+//     0-1. 최종 모델과 effort 를 검사한다. relaunch-worker 는 abandon 전에 launch-worker --preflight 를 불러 같은 검사를 한다.
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
 //     0-3. 새 터미널이고(--terminal 이 없고) claude 가 아닌 에이전트면 worker 의 셸이 PATH 로 orch 실행기를 찾는지 본다(lib/worker-path.ts). 못 찾으면 고칠 명령을 내고 1 이다.
@@ -167,7 +153,7 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFamily, type Generation } from '../lib/model-generation.ts'
+import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFamily, type Generation, type WorkerHome } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
@@ -187,7 +173,10 @@ import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
 import { candidateOverrideOf, pinnedSelection, selectionVerdict } from '../lib/selection.ts'
-import { boostEnabled, decideBoost, readSelectionTable, readWeekly, usageCacheFile } from '../lib/usage-boost.ts'
+import { limitRowOf, readSelectionTable } from '../lib/limit-table.ts'
+import { launchLimits } from '../lib/launch-limits.ts'
+import { chooseWithinLimits, refusalLines } from '../core/model-limits.ts'
+import type { Candidate } from '../lib/spec.ts'
 import { reservedLine, reserveRequestsOf, withReservedBlock } from '../lib/spec-reserve.ts'
 import type { Reserved } from '../lib/spec-reserve.ts'
 import { autoStepNumberOf, boardIdOf, branchesOf, coordinatorCommandWarning, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf, skipsPrReady } from '../lib/spec.ts'
@@ -338,6 +327,24 @@ function startError(text: string): string {
 }
 
 // WORKER_ARGS 에서 옵션의 값. 없거나 값이 빠졌으면 null.
+// 새 터미널의 실행 환경을 확인한다. 원격 PATH 는 워크트리를 고른 뒤 remoteOrchProbe 에서 본다.
+function launchEnvironmentReady(passthru: string[], remote: ReturnType<typeof remoteSelectorOf>): boolean {
+  if (passthru.includes('--terminal')) return true
+  if (passValue(passthru, '--agent') === 'claude') {
+    const profile = selectedReadiness(profilesRoot())
+    if (!profile || !profile.missing.length) return true
+    err(`거부: 선택된 Orca 의 Claude 프로필 ${profile.id} 에 ${profile.missing.join(', ')} 가 없어 worker 에게 플러그인과 지침이 보이지 않는다. 아래 명령으로 맞춘 뒤 다시 띄운다(--apply 를 빼면 목록만 본다)`)
+    err(`${orchWord()} worker link-profile ${profile.id} --apply`)
+    return false
+  }
+  if (remote) return true
+  const orchOnPath = checkWorkerOrch()
+  if (orchOnPath.ok) return true
+  err(`거부: worker 터미널에서 orch 를 부를 수 없다. ${orchOnPath.reason}. 지시서가 \`orch …\` 로만 부르므로 worker 가 첫 명령에서 막힌다. 아래대로 고친 뒤 다시 띄운다`)
+  for (const line of orchOnPath.fix) err(line)
+  return false
+}
+
 function passValue(passthru: string[], name: string): string | null {
   const at = passthru.indexOf(name)
   return at >= 0 && at + 1 < passthru.length ? passthru[at + 1] : null
@@ -457,65 +464,102 @@ export function selectionReject(specPath: string, passthru: string[], repo: stri
   return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 과 띄우는 값이 다르다: ${mismatched.join('; ')}. 지시서를 고치거나 그 값으로 띄운다`
 }
 
-export type Decided = { reject: { text: string; code: number } | null; warnings: string[]; boostOverride: CandidateOverride | null; generation: Generation | null }
-
-// 머리 주석의 「0」~「0-1」 을 이 순서로 한다: 선택 검사, 사용량 판정, 세대 판정(직접 고른 옛 세대 거절), 모델 검사. passthru 를 바꾼다.
-// relaunch-worker 가 옛 worker 를 abandon 하기 전에 같은 판정을 passthru 사본으로 부른다(skipSelection 은 relaunch 가 선택 줄을 따로 대조할 때)
-export function decideSettings(specPath: string, passthru: string[], repo: string, opts: { retry: boolean; continuation: boolean; skipSelection?: boolean }): Decided {
-  const warnings: string[] = []
-  let boostOverride: CandidateOverride | null = null
-  let generation: Generation | null = null
-  const remote = remoteSelectorOf(passthru) !== null
-  if (!passthru.includes('--terminal')) {
-    const rejected = opts.skipSelection ? null : selectionReject(specPath, passthru, repo, opts.retry, opts.continuation)
-    if (rejected) return { reject: { text: rejected, code: 1 }, warnings, boostOverride, generation }
-    boostOverride = applyUsageBoost(specPath, passthru, repo)
-    // 지시서가 `후보 밖:` 으로 모델을 정했으면 세대를 바꾸지 않는다. 사용량 판정이 표의 값으로 바꾼 경우는 바꾼다(머리 주석의 「0-0-1」)
-    let pinned = false
-    try { pinned = pinnedSelection(readFileSync(specPath, 'utf8')) } catch { /* 지시서를 읽지 못하면 spec-line 이 알린다 */ }
-    if (boostOverride || !pinned) {
-      if (remote && passValue(passthru, '--agent') === 'codex') warnings.push('원격 worker 라 이 머신의 Codex 모델 목록으로 세대를 바꾸지 않는다')
-      else generation = applyGeneration(passthru)
-    } else {
-      // 직접 고른 옛 세대는 막는다. worker 계정이 새 세대를 받지 못할 때만 그대로 띄우고 이유를 남긴다(머리 주석의 「0-0-1」)
-      const pin = pinnedCheck(passValue(passthru, '--agent'), passValue(passthru, '--model'), passValue(passthru, '--effort'), { remote })
-      if (pin.kind === 'outdated') return { reject: { text: pin.message, code: 4 }, warnings, boostOverride, generation }
-      if (pin.kind === 'kept') generation = pin.generation
-      else if (pin.warning) warnings.push(pin.warning)
-    }
-  }
-  // 원격 worker 의 Codex 모델은 그 서버의 계정이 받는지 이 머신에서 알 수 없어 검사하지 않는다
-  if (remote && passValue(passthru, '--agent') === 'codex') {
-    warnings.push('원격 worker 라 이 머신의 codex debug models 로 --model, --effort 를 검사하지 않는다')
-    return { reject: null, warnings, boostOverride, generation }
-  }
-  const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
-  warnings.push(...settings.warnings)
-  if (settings.reject) return { reject: { text: settings.reject, code: 4 }, warnings, boostOverride, generation }
-  return { reject: null, warnings, boostOverride, generation }
+export type Decided = {
+  reject: { text: string; code: number } | null
+  warnings: string[]
+  notices: string[]
+  limitOverride: CandidateOverride | null
+  generation: Generation | null
+  accountsChanged: () => boolean
 }
 
-// 머리 주석의 「0-0」. 지시서의 행이 바꿀 수 있는 Codex 행이고 Claude 주간 사용량이 남을 것 같으면 WORKER_ARGS 를 같은 등급의 Claude 로 바꾼다.
-// 판정은 lib/usage-boost.ts 가 소유한다. 바꾸면 후보 밖 기록을, 아니면 null 을 낸다. 사용량을 읽지 못하면 USAGE-UNKNOWN 줄만 낸다
-function applyUsageBoost(specPath: string, passthru: string[], repo: string): CandidateOverride | null {
+function candidateOf(args: string[]): Candidate {
+  return { agent: passValue(args, '--agent'), model: passValue(args, '--model'), effort: passValue(args, '--effort') }
+}
+
+// 원래 지시서는 그대로 두고 시작 인자 사본에서 후보를 비교한다. 최종 후보가 정해지면 인자를 바꾼다.
+export function decideSettings(specPath: string, passthru: string[], repo: string, opts: { retry: boolean; continuation: boolean }): Decided {
+  const warnings: string[] = []
+  const notices: string[] = []
+  const remote = remoteSelectorOf(passthru) !== null
+  const result: Decided = { reject: null, warnings, notices, limitOverride: null, generation: null, accountsChanged: () => false }
+  if (passthru.includes('--terminal')) return result
+  function reject(text: string, code: number): Decided {
+    return { ...result, reject: { text, code } }
+  }
+
+  const rejected = selectionReject(specPath, passthru, repo, opts.retry, opts.continuation)
+  if (rejected) return reject(rejected, 1)
   let text: string
-  try {
-    text = readFileSync(specPath, 'utf8')
-  } catch {
-    return null
-  }
+  try { text = readFileSync(specPath, 'utf8') } catch { return result } // spec-line 이 파일 오류를 알린다.
   const [selection] = selectionsOf(text)
-  if (!selection) return null
-  const now = Date.now()
-  const boost = decideBoost({ selection, enabled: () => boostEnabled(repo), weekly: () => readWeekly(usageCacheFile(), now), now, table: readSelectionTable() })
-  if (boost.kind === 'keep') {
-    if (boost.notice) out(boost.notice)
-    return null
+  const requested = candidateOf(passthru)
+  if (!selection) return result
+  if (Object.hasOwn(loadConfig(repo).routing ?? {}, 'usage_boost')) {
+    warnings.push('routing.usage_boost 는 없어졌다. 저장소 설정에서 이 키를 지운다')
   }
-  setOption(passthru, '--agent', boost.worker.agent)
-  setOption(passthru, '--model', boost.worker.model)
-  setOption(passthru, '--effort', boost.worker.effort === '기본' ? null : boost.worker.effort)
-  return boost.override
+
+  const now = Date.now()
+  const usage = launchLimits(remote, now)
+  result.accountsChanged = usage.changed
+  const codexHome = (agent: string | null) => !remote && agent === 'codex' ? usage.codexHome() : undefined
+  type Prepared = Candidate & { generation: Generation | null }
+  const prepare = (candidate: Candidate): Prepared => {
+    const generation = generationOf(candidate, codexHome(candidate.agent))
+    return { ...candidate, model: generation?.to ?? candidate.model, generation }
+  }
+  let initial: Prepared
+  if (pinnedSelection(text)) {
+    const pin = pinnedCheck(requested.agent, requested.model, requested.effort, { remote, worker: codexHome(requested.agent) })
+    if (pin.kind === 'outdated') return reject(pin.message, 4)
+    if (pin.kind === 'none' && pin.warning) warnings.push(pin.warning)
+    initial = { ...requested, generation: pin.kind === 'kept' ? pin.generation : null }
+  } else if (remote && requested.agent === 'codex') {
+    warnings.push('원격 worker 라 이 머신의 Codex 모델 목록으로 세대를 바꾸지 않는다')
+    initial = { ...requested, generation: null }
+  } else initial = prepare(requested)
+
+  function* alternatives(): Generator<Prepared> {
+    let table: string
+    try { table = readSelectionTable() } catch { return }
+    for (const row of limitRowOf(table, initial)?.same ?? []) {
+      yield prepare({ ...row, effort: row.effort ?? requested.effort })
+    }
+  }
+  const unknown = new Set<string>()
+  const choice = chooseWithinLimits(initial, alternatives, ({ agent, model }) => {
+    if ((agent !== 'codex' && agent !== 'claude') || !model) return { windows: [] }
+    const evidence = usage.read(agent, model)
+    if (evidence.unknown && !unknown.has(agent)) {
+      notices.push(`USAGE-UNKNOWN ${agent} ${evidence.unknown}`)
+      unknown.add(agent)
+    }
+    return evidence
+  }, now)
+  if ('blocked' in choice) {
+    notices.push(...refusalLines(choice.blocked))
+    return reject('같은 등급에서 사용 한도가 남은 모델이 없다', 1)
+  }
+  const { chosen, reason } = choice
+  const { agent, model, effort, generation } = chosen
+  result.generation = generation
+  if (reason) {
+    result.limitOverride = {
+      row: selection.row, agent, model, effort, reason, from: {
+        ...requested, ...(selection.outsideReason ? { outsideReason: selection.outsideReason } : {}),
+      },
+    }
+  }
+  if (remote && agent === 'codex') warnings.push('원격 worker 라 이 머신의 codex debug models 로 --model, --effort 를 검사하지 않는다')
+  else {
+    const settings = checkLaunchSettings(chosen, null, codexHome(agent))
+    warnings.push(...settings.warnings)
+    if (settings.reject) return reject(settings.reject, 4)
+  }
+  setOption(passthru, '--agent', agent)
+  setOption(passthru, '--model', model)
+  setOption(passthru, '--effort', effort)
+  return result
 }
 
 // WORKER_ARGS 의 `--name 값` 을 바꾼다. 없으면 끝에 더하고, value 가 null 이면 뺀다
@@ -525,20 +569,12 @@ function setOption(passthru: string[], name: string, value: string | null): void
   else if (value !== null) passthru.push(name, value)
 }
 
-// 머리 주석의 「0-0-1」. 사용량 판정 뒤의 WORKER_ARGS 로 모델 세대를 정한다(lib/model-generation.ts). 바꾸면 그 기록을, 아니면 null 을 낸다.
-// Codex 는 모델 목록을 읽지 못하면 바꾸지 않는다(0-1 이 경고한다). Claude 는 계열 이름으로 넘겨 Claude Code 가 최신으로 띄운다
-function applyGeneration(passthru: string[]): Generation | null {
-  const agent = passValue(passthru, '--agent')
-  const model = passValue(passthru, '--model')
+function generationOf({ agent, model, effort }: Candidate, worker?: WorkerHome): Generation | null {
   if (!model) return null
-  let found: Generation | null = null
-  if (agent === 'claude') found = claudeGeneration(model)
-  else if (agent === 'codex') {
-    const list = readCodexModels()
-    if (list.failure === null) found = codexGeneration(model, passValue(passthru, '--effort'), list.models)
-  }
-  if (found) setOption(passthru, '--model', found.to)
-  return found
+  if (agent === 'claude') return claudeGeneration(model)
+  if (agent !== 'codex') return null
+  const list = readCodexModels(undefined, worker)
+  return list.failure === null ? codexGeneration(model, effort, list.models) : null
 }
 
 function isDir(target: string): boolean {
@@ -821,7 +857,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   const priorSelection = terminalLaunch ?? retryLaunch
   const sameSpec = !!priorSelection && (!priorSelection.spec || realPath(priorSelection.spec) === realPath(a.spec))
   const sameSettings = !!priorSelection && ['agent', 'model', 'effort'].every(name => {
-    const previous = priorSelection[name as 'agent' | 'model' | 'effort'] ?? null
+    const previous = (priorSelection.effective?.candidateOverride?.from ?? priorSelection)[name as 'agent' | 'model' | 'effort'] ?? null
     // 기록의 모델은 세대를 바꾼 뒤의 값이다(0-0-1). 같은 계열이면 같은 설정으로 본다
     const given = passValue(passthru, `--${name}`)
     return reusedTerminal || previous === given || (name === 'model' && sameFamily(previous, given))
@@ -832,20 +868,28 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
   }
-  const decided = decideSettings(a.spec, passthru, retryRepo, { retry: !!a.task, continuation })
-  for (const warning of decided.warnings) err(`경고: ${warning}`)
-  if (decided.reject) {
-    err(`거부: ${decided.reject.text}`)
+  const originalArgs = [...passthru]
+  const decide = () => {
+    passthru.splice(0, passthru.length, ...originalArgs)
+    return decideSettings(a.spec, passthru, retryRepo, { retry: !!a.task, continuation })
+  }
+  const firstDecision = decide()
+  let decided = firstDecision
+  function reportDecision(): number | null {
+    for (const warning of decided.warnings) err(`경고: ${warning}`)
+    for (const notice of decided.notices) out(notice)
+    if (!decided.reject) return null
+    const message = `거부: ${decided.reject.text}`
+    if (short() && decided.notices.some(line => line.startsWith('USAGE-LIMIT '))) out(message)
+    else err(message)
     return decided.reject.code
   }
-  const { boostOverride, generation } = decided
-  if (passValue(passthru, '--agent') === 'claude') {
-    const profile = selectedReadiness(profilesRoot())
-    if (profile && profile.missing.length > 0) {
-      err(`거부: 선택된 Orca 의 Claude 프로필 ${profile.id} 에 ${profile.missing.join(', ')} 가 없어 worker 에게 플러그인과 지침이 보이지 않는다. 아래 명령으로 맞춘 뒤 다시 띄운다(--apply 를 빼면 목록만 본다)`)
-      err(`${orchWord()} worker link-profile ${profile.id} --apply`)
-      return 1
-    }
+  // 이미 거부할 상황이면 계정 전환 때문에 이전 한도를 읽은 것인지 바로 확인한다.
+  if (decided.reject && !decided.accountsChanged()) return reportDecision()!
+  const remoteSelector = remoteSelectorOf(passthru)
+  if (!decided.reject && !launchEnvironmentReady(passthru, remoteSelector)) {
+    reportDecision()
+    return 1
   }
   if (passthru.includes('--terminal')) {
     const text = readFileSync(a.spec, 'utf8')
@@ -855,20 +899,6 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
   // 설정은 워크트리를 만들고 번호를 잡기 전에 읽는다. 설정 오류(2)로 멈출 때 만들다 만 것이 남지 않는다
   const commitCheck = commitCheckEnabled(retryRepo)
-  // 새 터미널이면 worker 의 셸이 PATH 로 orch 를 찾아야 한다(지시서가 `orch …` 만 쓴다). 이어 쓰는 터미널은 이미 떠 있어 보지 않는다.
-  // 원격 환경(--on, --environment, --pairing-code)의 worker 는 그 서버의 셸에서 뜨므로 이 머신의 PATH 로 판정하지 못한다.
-  // 워크트리가 정해진 뒤 원격에서 짧은 확인 터미널을 열어 본다(아래 remoteOrchProbe).
-  // Claude worker 는 플러그인 bin/ 이 PATH 에 들어가 보지 않는다(0-2 가 프로필의 plugins 링크를 본다)
-  const remoteSelector = remoteSelectorOf(passthru)
-  const checkPath = !passthru.includes('--terminal') && passValue(passthru, '--agent') !== 'claude'
-  if (checkPath && !remoteSelector) {
-    const orchOnPath = checkWorkerOrch()
-    if (!orchOnPath.ok) {
-      err(`거부: worker 터미널에서 orch 를 부를 수 없다. ${orchOnPath.reason}. 지시서가 \`orch …\` 로만 부르므로 worker 가 첫 명령에서 막힌다. 아래대로 고친 뒤 다시 띄운다`)
-      for (const line of orchOnPath.fix) err(line)
-      return 1
-    }
-  }
   const poll = seconds('LAUNCH_POLL', '5')
   const wtWait = seconds('LAUNCH_WT_WAIT', '30')
   const wtPoll = seconds('LAUNCH_WT_POLL', '2')
@@ -882,6 +912,21 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
 
   const gate = await lintGate(a, continuation, execute)
   if (gate.stop !== null) return gate.stop
+  // 번호와 워크트리를 만들기 직전에 다시 조회한다. 준비 중 계정이 바뀌었으면 새 계정으로 한도를 읽는다.
+  if (decided.reject || decided.accountsChanged()) {
+    decided = decide()
+    if (decided.accountsChanged()) {
+      const message = '거부: Orca 의 선택 계정이 검사 중 계속 바뀌었다. 선택한 뒤 다시 띄운다'
+      if (short()) out(message)
+      else err(message)
+      return 1
+    }
+  }
+  const decisionStop = reportDecision()
+  if (decisionStop !== null) return decisionStop
+  const { limitOverride, generation } = decided
+  if (decided !== firstDecision && !launchEnvironmentReady(passthru, remoteSelector)) return 1
+  const checkPath = !passthru.includes('--terminal') && passValue(passthru, '--agent') !== 'claude'
   // --preflight 는 0~1-1 의 거부만 보고 끝낸다. 지시서, 워크트리, Orca 를 바꾸지 않는다(relaunch-worker 가 옛 worker 를 abandon 하기 전에 부른다)
   if (a.preflight) {
     out('PREFLIGHT-OK')
@@ -895,7 +940,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   const commandWarning = coordinatorCommandWarning(specText)
   if (commandWarning) err(`경고: ${a.spec}:${commandWarning.no}: ${commandWarning.command} 명령은 worker 가 직접 실행하지 않는다. 명령과 대상을 ask 로 코디네이터에게 보낸다고 허락 줄에 적는다`)
   const autoStep = autoStepNumberOf(specText)
-  const candidateOverride = boostOverride ?? candidateOverrideOf(specText)
+  const candidateOverride = limitOverride ?? candidateOverrideOf(specText)
   const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
   let worktree: string
@@ -1023,12 +1068,19 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     err(`Orca 가 워크트리를 알아보기까지 ${secondsText(waited)}초 기다렸다`)
 
     const start = async (args: string[]): Promise<RunResult> => {
+      const stop = (stderr: string): RunResult => {
+        err(stderr)
+        return { code: 1, stdout: '', stderr, timedOut: false }
+      }
+      const accountChanged = () => stop(`Orca 의 선택 계정이 준비 중 바뀌었다. 남은 워크트리 ${worktree} 로 다시 띄운다`)
+      if (decided.accountsChanged()) return accountChanged()
       let result = await call(['orchestration', 'worker-start', ...args, '--json'], LONG_MS)
       // worktree list 에 보인 직후에도 Orca 가 그 워크트리를 아직 고르지 못해 selector_not_found 로 끝나는 일이 있다.
       // 그 오류만 한 번 다시 부른다. 다른 오류는 다시 불러도 같은 결과라 그대로 멈춘다.
       if (result.code !== 0 && (result.stdout + result.stderr).includes('selector_not_found')) {
         err(`worker-start 가 selector_not_found 로 끝나 ${secondsText(wtPoll)}초 뒤 한 번 다시 부른다`)
         await sleep(wtPoll * 1000)
+        if (decided.accountsChanged()) return accountChanged()
         result = await call(['orchestration', 'worker-start', ...args, '--json'], LONG_MS)
       }
       out(result.stdout + result.stderr)
@@ -1039,7 +1091,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
           const value = JSON.parse(result.stdout)?.result?.launch?.effective
           if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
         } catch { /* receipt 가 손상돼도 후보 밖 이유는 남긴다 */ }
-        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...effective, ...(candidateOverride ? { candidateOverride } : {}), ...(generation ? { generation } : {}) })}`)
+        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...(limitOverride ? candidateOf(passthru) : {}), ...effective, ...(candidateOverride ? { candidateOverride } : {}), ...(generation ? { generation } : {}) })}`)
       } else if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
       // 실패한 시작의 receipt(failedStage, 남은 자원, request id)는 다시 불러 볼 수 없다. 다시 부르면 Task 가 하나 더 생긴다.
       // 그래서 짧은 출력에서도 receipt 전체를 한 줄로 남긴다
@@ -1112,7 +1164,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       const value = JSON.parse(result.stdout)?.result?.launch?.effective
       if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
-    if (candidateOverride) effective = { ...effective, candidateOverride }
+    if (candidateOverride) effective = { ...(limitOverride ? candidateOf(passthru) : {}), ...effective, candidateOverride }
     // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」)
     const modelId = !stalled && generation && passValue(passthru, '--agent') === 'claude' ? await claudeModelId(worktree, launchedAt) : null
     if (generation) effective = { ...effective, generation, ...(passValue(passthru, '--agent') === 'claude' ? { modelId } : {}) }

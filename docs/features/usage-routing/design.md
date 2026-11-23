@@ -1,5 +1,7 @@
 # orch: Claude 주간 사용량으로 Codex 행을 바꿔 띄우는 기술 설계
 
+> 이 기능은 [모델 사용 한도 회피](../exhausted-model-avoid/spec.md)로 대체됐다. 아래는 이전 동작의 기록이다.
+
 스펙: [spec.md](spec.md)
 
 ## 요구사항 연결
