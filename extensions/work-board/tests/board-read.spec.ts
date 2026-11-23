@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { GET_FIELDS } from '../bin/board.ts'
+import { GET_FIELDS } from '../../../modules/work-board/item.ts'
 import { run, tempBoard, write } from './board-run.ts'
 
 test('옛 goal 은 doing 으로 읽되 조회는 파일을 보존하고 새 goal 쓰기는 거절한다', () => {

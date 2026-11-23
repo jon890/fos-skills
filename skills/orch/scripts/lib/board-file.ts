@@ -3,7 +3,7 @@
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
+import { defaultBoardPath } from '../../../../modules/work-board/path.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { real } from './fs.ts'
 import { mainCheckout } from './git.ts'

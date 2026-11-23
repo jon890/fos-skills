@@ -20,7 +20,7 @@ PR 은 「PR 나누기와 순서」 의 번호다.
 | REQ8 | 엄격 호출과 새 동작은 성공하면 고친 뒤의 항목을 JSON 한 줄로 낸다. `board-edit.ts` 가 그 JSON 으로 `BOARD-SET`, `BOARD-STEP`, `BOARD-STEP-ADD` 한 줄을 만들고 `board.ts` 의 종료 코드와 stderr 를 그대로 넘긴다. 인자 검사는 `board-edit.ts` 가 하고 종료 코드 2 다 | PR1, PR3 |
 | REQ9 | 읽기 전용 새 동작 `board.ts view` 가 항목의 상태, 진행률, 줄 목록을 JSON 으로 낸다. `board-edit.ts` 가 머리 줄과 끝나지 않은 단계로 줄여 보인다. 안 풀린 `BOARD-UNMATCHED` 줄은 PR4 가 더한다 | PR1, PR3, PR4 |
 | REQ10 | `board.ts step-mark` 와 `orch board step <항목> <번호> auto\|ask\|wait\|plain` 이 줄 번호 뒤의 표시만 바꾼다. 표시를 읽고 쓰는 코드는 자동 진행 구현이 머지한 `hooks/step-marks.js` 를 쓴다(아래 「자동 진행 표시 동작」) | PR5 |
-| REQ11 | 잠금은 새 모듈 `extensions/work-board/bin/file-lock.ts` 에 두고 `board.ts` 의 모든 쓰기 동작이 읽기부터 쓰기까지 잡는다. 낡은 목록은 `set --if-rev <줄 지문>` 으로 거절하고, 줄 목록을 통째로 저장하는 호출자가 읽을 때의 지문을 넘긴다 | PR1, PR2 |
+| REQ11 | 잠금은 새 모듈 `modules/file-lock.ts` 에 두고 `board.ts` 의 모든 쓰기 동작이 읽기부터 쓰기까지 잡는다. 낡은 목록은 `set --if-rev <줄 지문>` 으로 거절하고, 줄 목록을 통째로 저장하는 호출자가 읽을 때의 지문을 넘긴다 | PR1, PR2 |
 | REQ12 | 머지를 보드에 반영하는 두 자리(`board-sync.ts`, `finish-pr.ts`)가 같은 순수 판정으로 「가리키는 줄이 하나도 없는 머지」 를 가려 `state/board-unmatched.json` 에 기록한다. 루프의 보드 단계가 알리지 않은 기록마다 `BOARD-UNMATCHED` 를 한 번 보낸다 | PR4 |
 | REQ13 | 새 옵션을 주지 않은 `board.ts` 호출은 분기가 그대로다. 새 옵션 이름은 지금 옵션의 줄임 꼴과 겹치지 않게 짓는다. 예외는 잠금을 못 잡은 때의 종료 코드 1 이다 | PR1 |
 | REQ14 | `skills/orch/references/board.md` 의 「갱신 담당」 과 worker 금지 문장을 새 명령으로 바꾸고 「직접 고치지 않는다」 를 더한다. 보드 창의 요청문과 work-board 문서의 안내도 새 명령으로 바꾼다 | PR3 |
@@ -74,7 +74,8 @@ flowchart TD
 | 층 | 파일 | 맡는 것 |
 | --- | --- | --- |
 | work-board | `extensions/work-board/bin/board.ts` | 항목 검사, 단계 번호 풀이, 글 바꾸기와 더하기 규칙, 꼬리표 붙이기, 저장 꼴, 잠금 잡기, 낡은 목록 판정. 보드 파일을 쓰는 유일한 코드다 |
-| work-board | `extensions/work-board/bin/file-lock.ts`(새 파일) | 파일 잠금 한 벌. 대상 파일 옆에 잠금 파일을 만들고 기다림과 낡은 잠금 넘겨받기를 맡는다. 보드 형식을 모른다 |
+| 보드 파일 규칙 | `modules/work-board/item.ts`, `modules/work-board/path.ts` | 항목을 읽는 규칙과 줄 지문, 기본 파일 위치. 보드 명령과 orch 가 함께 쓴다 |
+| 공용 파일 잠금 | `modules/file-lock.ts` | 파일 잠금 한 벌. 대상 파일 옆에 잠금 파일을 만들고 기다림과 낡은 잠금 넘겨받기를 맡는다. 보드 형식을 모른다 |
 | work-board | `extensions/work-board/hooks/event-tags.js` | 줄에서 사건 꼬리표를 읽고 붙이는 규칙의 원본. 줄 끝 꼬리표를 바꾸는 함수와 줄 앞 꼬리표(`[merge]` 따위)를 읽는 함수를 더한다 |
 | orch 명령 표 | `skills/orch/scripts/lib/commands.ts` | 새 동작 이름과 스크립트, 문맥 인자(`--repo`)만 정한다. 판정은 두지 않는다 |
 | orch 스크립트 | `skills/orch/scripts/board/board-edit.ts`(새 파일) | 인자 개수와 꼴 검사(종료 코드 2), 보드 파일 찾기, `board.ts` 호출, 결과 JSON 을 한 줄 출력으로 바꾸기. 번호, 글, 상태의 옳고 그름은 판정하지 않는다 |
@@ -82,9 +83,9 @@ flowchart TD
 | orch core | `skills/orch/scripts/core/board.ts` | 값으로 정하는 판정. 명령 묶음에 지문을 붙이는 함수(PR2), 못 맞춘 머지와 풀림 판정(PR4)을 더한다 |
 | orch lib | `skills/orch/scripts/lib/board-unmatched.ts`(새 파일, PR4) | 못 맞춘 머지 기록 파일을 읽고 쓴다 |
 
-- `board.ts` 와 `hooks/` 의 파일은 지금처럼 orch 를 import 하지 않는다(`lib/board-file.ts` 와 `lib/board.ts` 가 `board.ts` 를 import 해 고리가 생긴다). work-board 의 다른 파일(`bin/worker-marks.ts`, `bin/merge-queue.ts`)이 orch 를 import 하는 것은 그대로이고 새 고리는 생기지 않는다. 그래서 `board.ts` 를 직접 부르면 `finish.board` 를 모르고 부른 폴더의 기본 위치를 쓴다. 이 동작은 그대로 둔다.
+- `board.ts` 는 공용 모듈의 기본 위치를 쓴다. orch 명령은 `lib/board-file.ts` 에서 `finish.board` 를 먼저 적용한다. work-board 의 worker 와 머지 큐 조회 명령은 orch 의 상태를 읽는다.
 - 새 명령은 다른 orch 스크립트처럼 `board.ts` 를 자식 프로세스로 부른다. `BOARD_BIN` 환경 변수로 바꿀 수 있다.
-- 소유 경계의 분리 신호(쓰는 사람, 배포 환경, 데이터 생명주기, 거꾸로 읽기)에 걸리는 것이 없다. 새 파일은 모두 지금 모듈 안에 둔다.
+- 보드 파일 쓰기는 `board.ts` 가 맡는다. 잠금과 기본 파일 위치, 항목 읽기 규칙은 공용 모듈에서 가져온다.
 
 ## 인터페이스와 데이터
 
@@ -148,7 +149,7 @@ flowchart TD
 
 ### 줄 지문과 낡은 목록 거절 (PR1, PR2)
 
-- 줄 지문은 항목의 `details` 와 `next` 줄(글과 끝냄 값)을 `board.ts` 가 읽는 꼴로 맞춘 뒤 sha1 로 줄인 앞 12 글자다. `board.ts` 가 `linesRev(항목)` 으로 내보내고, orch 는 이 함수를 import 해 자기가 읽은 항목의 지문을 만든다. 계산 규칙이 한 곳에만 있다.
+- `modules/work-board/item.ts` 의 `linesRev` 는 항목의 `details`, `next` 를 글과 끝냄 값으로 정리한 뒤 SHA-1 해시 앞 12 글자를 돌려준다. `board.ts` 와 orch 가 이 함수를 함께 쓴다.
 - 지문은 저장하지 않는다. 읽을 때마다 계산하므로 보드 형식이 그대로다.
 - `set --if-rev` 를 붙이는 호출자는 「보드를 먼저 읽고, 그 줄 목록을 고쳐 `--detail` 로 통째 저장하는」 자리다.
 
@@ -171,7 +172,7 @@ flowchart TD
 
 1. 명령줄 값(`--board`). 상대경로는 주 checkout 기준이다.
 2. `<orch 루트>/config.json` 의 `finish.board`. 상대경로는 주 checkout 기준이다. 빈 문자열은 지금처럼 값이 없는 것으로 보고 3 으로 간다. 문자열이 아니면 설정 오류(`ConfigError`)다.
-3. work-board 의 기본 위치(`board.ts` 의 `defaultBoardPath`). 받은 폴더가 속한 git 작업 트리의 `.omc/board.json` 이고 옛 `.omc/handoffs/board.json` 이 있으면 그것이다.
+3. 공용 모듈 `modules/work-board/path.ts` 의 기본 위치(`defaultBoardPath`). 받은 폴더가 속한 git 작업 트리의 `.omc/board.json` 이고 옛 `.omc/handoffs/board.json` 이 있으면 그것이다.
 
 - 새 꼴 명령은 진입점이 `--repo` 를 주 checkout 으로 채운다(`lib/context.ts`). 그래서 워크트리에서 `orch board set` 을 불러도 주 checkout 의 보드가 바뀐다. `--repo <워크트리>` 를 직접 주면 3 이 그 워크트리의 보드를 고른다. 설정 파일은 워크트리에서 읽어도 주 checkout 의 것이라 2 는 어디서 불러도 같은 파일이다.
 - `lib/paths.ts` 의 `boardPath` 는 지운다. 이름이 같은 함수가 둘이면 설정을 읽지 않는 쪽을 다시 부르기 쉽다. `lib/paths.ts` 가 설정을 읽게 하지 않는 까닭은 `lib/config.ts` 가 이미 `lib/paths.ts` 를 import 해 고리가 생기기 때문이다.

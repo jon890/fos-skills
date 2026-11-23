@@ -29,7 +29,7 @@
 // 테스트는 상태 파일, 시각, 명령 실행기, 알림을 주입한다. 실제 codex 와 gh 를 부르지 않는다.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withFileLock } from '../../../../modules/file-lock.ts'
 import { defaultBase } from '../lib/git.ts'
 import { machineDir } from '../lib/machine.ts'
 import { codexBin, compareGeneration, isCurrent, parseCodexModels, parseModel, staleRows, type CodexModel } from '../lib/model-generation.ts'

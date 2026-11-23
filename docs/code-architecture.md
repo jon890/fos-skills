@@ -29,6 +29,8 @@
 | `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
 | `modules/` | 여러 영역의 테스트와 코드가 함께 쓰는 공용 모듈. 스킬이 아니다. 팀 저장소로 내보내지 않는다 |
 | `modules/kit/` | 옛 Python 명령과 같은 글자를 내는 실행용 helper(argparse 꼴 옵션 펼치기, `str.splitlines` 같은 Python 꼴). `scripts/` 와 `githooks/` 는 import 하고, 스킬과 도구는 복사본을 둔다(설계 [`features/node-runtime/design.md`](features/node-runtime/design.md) 「공통 꼴 모듈 kit」) |
+| `modules/work-board/` | orch 와 work-board 가 사용하는 보드 항목의 형식, 줄 지문, 기본 파일 위치 |
+| `modules/file-lock.ts` | 보드와 orch 상태 파일에서 함께 쓰는 파일 잠금 |
 | `modules/testkit/` | 테스트용 helper. 이 저장소의 테스트만 쓴다 |
 | `scripts/` | 이 저장소의 설치·검사·내보내기·버전 관리 |
 | `githooks/` | Git pre-commit, commit-msg 와 post-commit. 확장자 없는 node 진입이 같은 이름의 `.ts` 본체를 부른다. Claude 훅이 아님 |
@@ -75,7 +77,7 @@
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `skills/orch/githooks/dispatch.mjs` | worker 워크트리에 거는 git 훅 본체. `scripts/lib/commit-check.ts` 가 워크트리의 git 관리 폴더에 복사해 건다. 동작과 종료 코드는 머리 주석이 소유한다. Claude 훅이 아니다([ADR-036](adr/036-worker-commit-korean-check.md)) | worker 워크트리의 git |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
-| `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/board-file.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
+| `extensions/work-board/bin/board.ts` | 보드 편집 명령 | orch 명령의 `BOARD_BIN` 기본값, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
 | `skills/plan/scripts/{verify_task,check_feature,run_doc_checks,overlay_paths,plan_number}.ts` | 계획서 검사, 스펙·설계 형식 검사, 레포 설정의 문서 검사 명령 실행, 하위 프로젝트 판정과 오버레이 탐색 순서, plan 번호 계산. 옵션, 출력 줄, 종료 코드는 각 머리 주석이 소유한다 | plan·spec·technical-design·implementation·docs-audit·docs-consolidate·review-fix 의 단계, `skills/plan/tests/` |
 | `skills/browser/browser-driver/` | 브라우저 백엔드 중립 계층. 소유자는 `browser` 스킬이고 팀 저장소에는 `tools/browser-driver/` 로 실린다. 명령 목록은 `help` 가, 백엔드 규칙은 그 폴더의 `README.md` 가 소유한다 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts`, `skills/presentation/scripts/check-deck.ts` |
@@ -258,13 +260,13 @@ skills/orch/tests/core-*.spec.ts         값 입력 검증과 경계·중복 검
 skills/orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
 skills/orch/tests/golden/                고정 입력과 stdout·stderr·종료 코드·종료 뒤 상태. fixtures/golden-run.ts 가 비교한다
 skills/orch/tests/loop-order/            Run 이 둘인 루프 틱의 로그 줄·결과 줄·orca 와 gh 호출 순서. fixtures/loop-order-run.ts 가 비교한다
-extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/board-file.ts 가 import 한다
+extensions/work-board/bin/board.ts           보드 편집 명령. 보드 파일 쓰기를 맡는다
 ```
 
 `skills/orch/scripts/` 의 명령은 외부 조회·기록에 `lib/`, 값 판정에 `core/` 를 import 한다. core 는 실행 모듈을 import 하지 않는다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
-보드 위치와 줄 지문은 work-board 가 소유한다. `lib/board-file.ts` 는 `defaultBoardPath` 를, `lib/board.ts` 는 `linesRev` 를 `extensions/work-board/bin/board.ts` 에서 import 한다.
-work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
-`extensions/work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/board-file.ts` 와 `lib/board.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
+`modules/work-board/` 의 `path.ts` 와 `item.ts` 는 보드 파일의 기본 위치와 항목 형식, 줄 지문을 정의한다. orch 와 보드 편집 명령이 두 파일을 참조한다.
+`modules/file-lock.ts` 는 대상 파일 옆의 잠금 파일을 관리한다. 보드 편집 명령과 orch 상태 파일 쓰기에서 같은 잠금 규칙을 쓴다.
+orch 는 하위 프로세스로 보드 편집 명령을 실행한다. work-board 의 조회 명령은 worker, 머지 큐, 승인 대기 등의 상태를 읽을 때 orch 모듈을 참조한다.
 옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
 
 ### 실행 규칙

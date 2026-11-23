@@ -10,7 +10,7 @@
 
 import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withFileLock } from '../../../../modules/file-lock.ts'
 import { lineBody, lineProblem, MAX_BODY } from '../../../../extensions/work-board/hooks/line-rules.js'
 import { boardIds, isClosed, nextRequestState, replyKind, replyTarget, REQUEST_STATES } from '../core/main-coordinator.ts'
 import type { RequestAction, RequestState } from '../core/main-coordinator.ts'

@@ -1,9 +1,9 @@
 // 사용 한도 알림 시각은 머신 전체가 공유한다. 별도 파일 잠금 안에서 최신 시각만 남긴다.
 import { randomUUID } from 'node:crypto'
-import type { Lock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import type { Lock } from '../../../../modules/file-lock.ts'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { withFileLock } from '../../../../modules/file-lock.ts'
 import { machineDir } from './machine.ts'
 
 const fileOf = () => join(machineDir(), 'worker-limited.json')

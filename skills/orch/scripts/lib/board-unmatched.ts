@@ -2,7 +2,7 @@
 // 기록 실패는 머지 마무리를 실패로 바꾸지 않는다. 성공한 전송만 notified 에 남긴다.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { LockTimeout, withFileLock } from '../../../../extensions/work-board/bin/file-lock.ts'
+import { LockTimeout, withFileLock } from '../../../../modules/file-lock.ts'
 import { unmatchedMerge, unmatchedResolved as resolved } from '../core/board.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import type { BoardStep } from '../core/board.ts'
