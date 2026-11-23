@@ -12,8 +12,9 @@ export type Repo = { origin: string; dir: string }
 // 전역 설정은 이 폴더의 gitconfig 하나로 바꾼다. 그 파일이 `maintenance.autoDetach=false` 를 갖는다.
 // GIT_CONFIG_COUNT 로 넣지 않는 이유: 로컬 경로로 push 하면 git 이 받는 쪽 receive-pack 의 환경에서 그 변수를 지운다.
 //   전역 설정 파일은 그대로 읽혀 받는 저장소의 자동 정리에도 걸린다. 호출자가 넘긴 GIT_CONFIG_COUNT 도 덮지 않는다.
-// git 2.56 은 git 이 돌아온 뒤에도 자동 정리 자식이 `objects/maintenance.lock` 을 쥐고 있다가 지운다. 그사이 테스트가 그 폴더를
-// 복사하거나 지우면 cpSync 가 ENOENT, rmSync 가 ENOTEMPTY 로 가끔 실패했다.
+// 관측(git 2.56.1): commit 과 push 가 부르는 `git maintenance run --auto` 가 백그라운드로 남아, git 이 돌아온 뒤에도
+//   `objects/maintenance.lock` 을 쥐고 있다가 지운다. 그사이 폴더를 복사하면 목록의 파일이 사라져 cpSync 가 ENOENT 로 실패할 수 있다.
+//   CI 에서 본 rmSync 의 ENOTEMPTY 도 같은 원인으로 보지만 재현하지 못한 가설이다.
 // 작성자는 테스트마다 다를 수 있어 넣지 않는다. git 을 띄우는 테스트는 이 값을 env 에 펼친다
 export const GIT_CONFIG_FILE = fileURLToPath(new URL('./gitconfig', import.meta.url))
 
