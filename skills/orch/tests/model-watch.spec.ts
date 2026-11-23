@@ -125,6 +125,9 @@ describe('새 모델', () => {
     const machine = { checked_at: 1, baseline: ['gpt-6.2-sol', 'gpt-6.1-sol'], models: models(BUILT_IN_0166), found: ['gpt-6.2-astra'], repos: {} }
     assert.match(olderList(machine, models(BUILT_IN_0166)) ?? '', /gpt-6\.2-/)
     assert.equal(olderList(machine, models(TODAY)), null)
+    // 높은 세대가 Previous generation 으로만 남고 현재 세대가 낮아진 목록도 낡은 목록이다(직접 선택 판정과 같은 isCurrent 기준)
+    const demoted = [entry('gpt-6.2-sol', 'Previous generation model.'), entry('gpt-6.1-sol', 'Latest workhorse.'), entry('gpt-6.2-astra', 'Most capable.')]
+    assert.match(olderList({ ...machine, models: models(TODAY) }, models(demoted)) ?? '', /gpt-6\.2-sol 에서 gpt-6\.1-sol 로 낮아진/)
     // sol 만 남은 목록: astra 계열이 없어진 것은 낡은 목록의 근거로 삼지 않는다
     assert.equal(olderList(machine, models([entry('gpt-6.2-sol', 'Fast.')])), null)
   })

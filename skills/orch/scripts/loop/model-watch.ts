@@ -15,6 +15,7 @@
 //     보드 쓰기에 성공한 모델은 boarded 에 따로 둔다. 실패한 모델은 다음에 목록을 읽을 때 같은 항목 ID 로 보드 쓰기만 다시 한다.
 //     보내지 못해도 announced 에 넣는다. 같은 모델을 다시 알리지 않는다는 스펙을 따른다. 루프 로그에는 남는다.
 // 낡은 목록: 새로 읽은 목록에서 어느 계열의 최신 세대가 이미 본 세대(저장된 목록의 현재 세대, 기준점, found)보다 낮으면(olderList)
+//     현재 세대(isCurrent)끼리 비교한다. 높은 세대가 Previous generation 으로만 남은 목록도 낮아진 목록이다.
 //     models 를 덮지 않고 저장된 목록을 둔다. checked_at 은 쓰고 `MODEL-LIST-OLDER <이유>` 를 한 번 알린다. 다음 날 다시 읽는다.
 //     Codex CLI 는 서버 목록을 받지 못하면 실행 파일에 든 기본 목록을 낸다. 2026-11-22 이 머신의 감지 기록이 codex-cli 0.166.0 의
 //     기본 목록(gpt-6.1-sol 이 「Latest」, gpt-6.2-* 없음)으로 덮였다(docs/features/model-auto-routing/verification.md 「관찰 1」).
@@ -111,7 +112,7 @@ export function olderList(state: WatchState, models: CodexModel[]): string | nul
     return best
   }
   const seen = newest([...(state.models ?? []).filter(isCurrent).map((m) => m.slug), ...(state.baseline ?? []), ...state.found])
-  const read = newest(models.filter((m) => m.visibility === 'list').map((m) => m.slug))
+  const read = newest(models.filter(isCurrent).map((m) => m.slug))
   for (const [family, before] of seen) {
     const now = read.get(family)
     if (now && compareGeneration(now.generation, before.generation) < 0) return `${family} 계열의 최신이 ${before.slug} 에서 ${now.slug} 로 낮아진 목록이라 저장된 목록을 둔다`
