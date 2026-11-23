@@ -17,7 +17,7 @@ metadata:
 | 1 | 입력 확인 | 입력 커밋과 실제 HEAD 가 같고 미커밋 변경이 없다. 이번 PR 의 `requirements` 를 적었다 | |
 | 2 | 검증 계획 대조 | index 의 verification_plan 이 스펙·설계·이번 PR 범위와 대조됐고 누락 사례는 보완됐다 | [`verification-plan.md`](../plan/templates/verification-plan.md) |
 | 3 | 독립 검토 | 구현자가 아닌 검토자의 코드·문서 검토 결과가 있다(코드 리뷰를 PR 자동 리뷰에 맡겼으면 그렇게 적었다) | [`role-code-reviewer.md`](../implementation/references/role-code-reviewer.md), [`role-docs-verifier.md`](../implementation/references/role-docs-verifier.md) |
-| 4 | 실행 검증 | 요구사항마다 실행 결과나 실행하지 못한 이유가 있다. 탐색 QA 를 골랐다면 경로별 결과가 있다 | [탐색 QA](references/exploratory-qa.md) (선택) |
+| 4 | 실행 검증 | 요구사항마다 정한 경계에서 테스트 방법을 실행했다. 탐색 QA 를 골랐다면 경로별 결과가 있다 | [탐색 QA](references/exploratory-qa.md) (선택) |
 | 5 | 증거 기록 | 요구사항별로 기대값, 실제값, 명령·환경·검증 커밋이 기록됐다 | [`verification-result.md`](templates/verification-result.md) |
 | 6 | 반환 판정 | 완료를 막는 결함마다 돌려보낼 단계가 정해졌다 | |
 | 7 | 회신 | 첫 줄이 `완료:` 나 `미완료:` 이고 양식의 증거를 orch 에 넘겼다 | |
