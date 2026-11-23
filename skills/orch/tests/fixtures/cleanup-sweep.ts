@@ -98,7 +98,7 @@ if (has('repo', 'view')) {
     repo[m[1]] = { nodes: p ? [{ number: 1, state: p[0], headRefOid: p[1], headRefName: b, isCrossRepository: p.length > 2 && p[2], author }] : [] }
   }
   for (const m of q.matchAll(/(n\\d+): pullRequest\\(number: (\\d+)\\)/g)) {
-    if (m[2] in st.pr_views) repo[m[1]] = { state: st.pr_views[m[2]].state }
+    if (m[2] in st.pr_views) repo[m[1]] = { state: st.pr_views[m[2]].state, headRefName: st.pr_views[m[2]].headRefName }
   }
   console.log(JSON.stringify({ data: { repository: repo } }))
 } else if (has('pr', 'list') && a.includes('--head')) {
@@ -116,7 +116,7 @@ if (has('repo', 'view')) {
 } else if (has('pr', 'list') && a[a.indexOf('--state') + 1] === 'open') {
   const rows = [...st.open_bases.map((b) => ({ baseRefName: b, headRefName: 'open-head' })), ...st.open_heads.map((h) => ({ baseRefName: 'main', headRefName: h }))]
   console.log(JSON.stringify(rows))
-} else if (has('pr', 'view') && (a.includes('state,headRefOid') || a.includes('body,headRefOid,headRefName') || a.includes('baseRefName,mergeCommit') || a[a.indexOf('--json') + 1]?.includes('createdAt'))) {
+} else if (has('pr', 'view') && (a.includes('state') || a.includes('state,headRefName') || a.includes('state,headRefOid') || a.includes('body,headRefOid,headRefName') || a.includes('baseRefName,mergeCommit') || a[a.indexOf('--json') + 1]?.includes('createdAt'))) {
   if (!(a[2] in st.pr_views)) {
     if (a.includes('body,headRefOid,headRefName')) { console.log('{}'); process.exit(0) }
     process.exit(1)

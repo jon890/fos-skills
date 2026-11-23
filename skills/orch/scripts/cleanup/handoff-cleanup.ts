@@ -6,7 +6,7 @@
 //     handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [옵션...]
 //
 // 옮기는 것 (<orch> 는 orch 작업 폴더다. lib/paths.ts 의 orchDir 이 정한다):
-//     - <orch>/queue/*.out: QUEUE-DONE, STOP, FINISH-DONE, FINISH-FAIL 중 하나로 끝났고 --queue-days 일 넘게 지난 로그
+//     - <orch>/queue/*.out: 끝 표시가 있고 보존 기한이 지난 로그. 열린 PR 이나 실행 중인 로그는 남긴다
 //     - <orch>/specs/spec-*.md: 아래가 모두 참인 지시서. spec-common.md 는 남긴다
 //         · 지시서의 `보드 항목 id: \`x\`` 항목이 보드에서 done 이다. 보드를 읽었고 항목이 done 이 아니면
 //           아직 쓰는 지시서다(띄우기 전, PR 이 여럿인 일의 중간). 보드를 읽지 못해도 남긴다. 보드에 항목이 없으면(done 을 먼저
@@ -54,7 +54,7 @@
 //     --previews DIR     미리보기 폴더. 주지 않으면 보지 않는다. 상대경로면 주 checkout 기준
 //     --board FILE       보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
 //     --trash DIR        휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
-//     --queue-days N     기본 1
+//     --queue-days N     기본 3
 //     --folder-days N    기본 3
 //     --data-days N      기본 1
 //     --data-ext LIST    쉼표로 이은 확장자. 기본 csv,tsv
@@ -71,11 +71,14 @@ import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rm
 import { homedir } from 'node:os'
 import { basename, dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
+import { SWEEP_RETENTION_KEYS } from '../core/config.ts'
 import { expandArgs } from '../lib/args.ts'
 import { CLEANUP_KEYS, ConfigError, loadConfig, section } from '../lib/config.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
+import { lookupOf } from './steps/prs.ts'
+import { lsofOpenedBy, QUEUE_DAYS, queueLogCandidates } from '../lib/queue-logs.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { FILES, NAMES, orchDir, requireMigrated } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
@@ -86,7 +89,6 @@ import { emit } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
 
 const USAGE = '사용법: handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [--gh-host HOST] [--run RUN] [--orch-dir DIR] [--previews DIR] [--board FILE] [--trash DIR] [--queue-days N] [--folder-days N] [--data-days N] [--data-ext LIST]'
-const QUEUE_DONE = /QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL/m
 const BOARD_ID_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?보드 항목 id(?:\*\*)?:(?:\*\*)?\s*`([^`]+)`/m
 // handoff 안의 파일과 측정 폴더는 남기고, CLOSED PR 의 폴더만 별도로 옮긴다.
 const RESERVED = new Set([...Object.entries(NAMES).filter(([name]) => !FILES.has(name)).map(([, dir]) => dir.split('/')[0]), 'handoff'])
@@ -114,7 +116,7 @@ const OPTIONS = { ...MAIN_GUARD_OPTIONS,
 const OPTION_KEYS: readonly string[] = Object.keys(OPTIONS)
   .filter((name) => name !== 'config' && name !== 'help' && name !== 'not-main')
   .map((name) => name.replaceAll('-', '_'))
-if (OPTION_KEYS.join() !== CLEANUP_KEYS.join()) throw new Error('CLEANUP_KEYS 가 OPTIONS 와 다르다')
+if ([...OPTION_KEYS, ...SWEEP_RETENTION_KEYS].join() !== CLEANUP_KEYS.join()) throw new Error('CLEANUP_KEYS 가 OPTIONS 와 다르다')
 
 class Usage extends Error {}
 
@@ -161,13 +163,6 @@ function expandUser(value: string): string {
 
 function isOld(mtime: number, now: number, days: number): boolean {
   return now - mtime > days * DAY
-}
-
-// 로그의 마지막 3줄에 끝 표시가 있는지.
-function queueLogFinished(text: string): boolean {
-  const lines = text.replace(/\n+$/, '').split(LINE_BREAK)
-  if (lines.at(-1) === '') lines.pop()
-  return QUEUE_DONE.test(lines.slice(-3).join('\n'))
 }
 
 // 보드 JSON 에서 id 별 status. items 는 목록이나 id 로 묶은 객체다. 읽지 못하면 빈 Map 이다.
@@ -340,15 +335,11 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
     if (args.run === null) found.push(target)
     else err(`남긴다 ${join(basename(root), relative(root, target))}: ${OUT_OF_RUN}`)
   }
-  const queue = join(orch, 'queue')
-  for (const name of isDir(queue) ? listDir(queue).filter((n) => n.endsWith('.out')) : []) {
-    const log = join(queue, name)
-    try {
-      if (isOld(mtimeSec(log), now, args.queueDays) && queueLogFinished(readFileSync(log, 'utf8'))) push(log, orch)
-    } catch {
-      continue
-    }
-  }
+  const queueLogs = queueLogCandidates({
+    dir: join(orch, 'queue'), days: args.queueDays, kind: 'handoff',
+    host: { now: () => now * 1000, openedBy: lsofOpenedBy, prStates: (numbers) => lookupOf(repo).states(numbers) },
+  })
+  for (const file of queueLogs) push(file, orch)
 
   const boardText = isFile(board) ? readFileSync(board, 'utf8') : ''
   const statuses = boardStatuses(boardText)
@@ -480,7 +471,7 @@ function parse(argv: string[]): Args | null {
     previews: text('previews'),
     board: text('board'),
     trash: text('trash'),
-    queueDays: num('queue-days', 1),
+    queueDays: num('queue-days', QUEUE_DAYS),
     folderDays: num('folder-days', 3),
     dataDays: num('data-days', 1),
     dataExt: new Set((text('data-ext') ?? 'csv,tsv').split(',').map((e) => e.trim().toLowerCase().replace(/^\.+/, '')).filter((e) => e)),

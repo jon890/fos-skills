@@ -202,7 +202,7 @@ import { deleteRemote, merged, ownPr, prCandidates, protectedReason, remotePlan,
 import { deleteSpecFiles, specsKept, trashLaunchedSpecs } from './specs.ts'
 import { finishStarted } from '../../lib/finish-marks.ts'
 import { fire } from '../../lib/events.ts'
-import { forgetLaunch, launchesAt } from '../../lib/launched.ts'
+import { launchesAt } from '../../lib/launched.ts'
 import { idleShellVerdict } from '../../lib/idle-shells.ts'
 import { heldDispatch, isFinished, isLive, judge, readScreens, screenHandles } from '../../lib/worker-state.ts'
 import type { Held } from '../../lib/worker-state.ts'
@@ -622,9 +622,6 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
     deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
   }
-  // 지시서를 옮긴 뒤 지운다. 그 워크트리를 가리키는 다른 Run 의 기록도 워크트리와 함께 끝났다
-  for (const w of mine) if (typeof w.dispatchId === 'string') forgetLaunch(repo, w.dispatchId)
-  for (const launch of launchesAt(repo, path)) forgetLaunch(repo, launch.dispatch)
 }
 
 export async function cleanupWorktrees(ctx: StepContext, state: StepState): Promise<StepResult> {

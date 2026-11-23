@@ -61,7 +61,7 @@ export function parseHeads(data: unknown, heads: readonly string[]): Map<string,
 
 export class PrLookup {
   private readonly heads = new Map<string, Listed>()
-  private bases: Set<string> | null | undefined
+  private open: { baseRefName: string; headRefName?: string }[] | null | undefined
   private target: { host: string; owner: string; name: string } | null | undefined
 
   private readonly repo: string
@@ -119,38 +119,56 @@ export class PrLookup {
   }
 
   // PR 번호마다 state. GraphQL `pullRequest(number:)` 를 묶어 읽고, 읽지 못한 번호는 `gh pr view` 로 하나씩 읽는다.
-  // 끝내 읽지 못한 번호는 담지 않는다
+  // 닫힌 PR 이 다시 열릴 수 있어 보존 기한 정리에서는 캐시 대신 다시 읽는다. 끝내 읽지 못한 번호는 담지 않는다
   states(numbers: readonly number[]): Map<number, string> {
-    const found = new Map<number, string>()
+    return new Map([...this.details(numbers)].map(([number, detail]) => [number, detail.state]))
+  }
+
+  details(numbers: readonly number[], includeHead = false): Map<number, { state: string; head: string | null }> {
+    const found = new Map<number, { state: string; head: string | null }>()
+    const save = (n: number, node: unknown) => {
+      if (isObject(node) && PR_STATES.has(node.state as string)) {
+        found.set(n, { state: node.state as string, head: typeof node.headRefName === 'string' ? node.headRefName : null })
+      }
+    }
     const todo = [...new Set(numbers)].filter((n) => Number.isInteger(n) && n > 0)
     const target = todo.length ? this.repoTarget() : null
     for (let at = 0; target && at < todo.length; at += BATCH) {
       const chunk = todo.slice(at, at + BATCH)
-      const query = `query { repository(owner: ${JSON.stringify(target.owner)}, name: ${JSON.stringify(target.name)}) { ${chunk.map((n, i) => `n${i}: pullRequest(number: ${n}) { state }`).join(' ')} } }`
-      const done = ghJson<unknown>(['api', 'graphql', '--hostname', target.host, '-f', `query=${query}`], { cwd: this.repo })
+      const query = `query { repository(owner: ${JSON.stringify(target.owner)}, name: ${JSON.stringify(target.name)}) { ${chunk.map((n, i) => `n${i}: pullRequest(number: ${n}) { state${includeHead ? ' headRefName' : ''} }`).join(' ')} } }`
+      const done = ghJson<unknown>(['api', 'graphql', '--hostname', target.host, '-f', `query=${query}`], { cwd: this.repo, refresh: true })
       const repo = done.ok && isObject(done.data) && isObject(done.data.data) && isObject(done.data.data.repository) ? done.data.data.repository : null
       chunk.forEach((n, i) => {
-        const node = repo?.[`n${i}`]
-        if (isObject(node) && PR_STATES.has(node.state as string)) found.set(n, node.state as string)
+        save(n, repo?.[`n${i}`])
       })
     }
     for (const n of todo) {
       if (found.has(n)) continue
-      const done = ghJson<{ state?: unknown }>(['pr', 'view', String(n), '--json', 'state'], { cwd: this.repo })
-      if (done.ok && isObject(done.data) && PR_STATES.has(done.data.state as string)) found.set(n, done.data.state as string)
+      const done = ghJson<{ state?: unknown }>(['pr', 'view', String(n), '--json', includeHead ? 'state,headRefName' : 'state'], { cwd: this.repo, refresh: true })
+      if (done.ok) save(n, done.data)
     }
     return found
   }
 
-  // 열린 PR 의 base 이름 집합. 읽지 못했거나 목록이 잘렸으면 null 이다
-  openBases(): Set<string> | null {
-    if (this.bases !== undefined) return this.bases
-    const done = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', String(OPEN_LIMIT), '--json', 'baseRefName,headRefName'], { cwd: this.repo })
-    this.bases = null
+  // 열린 PR 의 base 와 head 를 한 번 읽는다. 읽지 못했거나 목록이 잘렸으면 null 이다
+  private openPrs(refresh = false) {
+    if (!refresh && this.open !== undefined) return this.open
+    const done = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', String(OPEN_LIMIT), '--json', 'baseRefName,headRefName'], { cwd: this.repo, refresh })
+    this.open = null
     if (done.ok && Array.isArray(done.data) && done.data.length < OPEN_LIMIT && done.data.every((pr) => isObject(pr) && typeof pr.baseRefName === 'string')) {
-      this.bases = new Set(done.data.map((pr) => (pr as { baseRefName: string }).baseRefName))
+      this.open = done.data
     }
-    return this.bases
+    return this.open
+  }
+
+  openBases(): Set<string> | null {
+    const prs = this.openPrs()
+    return prs ? new Set(prs.map((pr) => pr.baseRefName)) : null
+  }
+
+  openHeads(): Set<string> | null {
+    const prs = this.openPrs(true)
+    return prs && prs.every((pr) => typeof pr.headRefName === 'string') ? new Set(prs.map((pr) => pr.headRefName!)) : null
   }
 }
 

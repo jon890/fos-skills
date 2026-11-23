@@ -153,7 +153,7 @@ function withGitLog(args: string[], extra: Record<string, string> = {}): Result 
 
 describe('handoff-cleanup', () => {
   test('기본은 후보만 보이고 아무것도 옮기지 않는다', () => {
-    const old = make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    const old = make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const r = ok()
     assert.match(r.stdout, /^후보 \.orch\/queue\/q\.out$/m)
     assert.equal(existsSync(old), true)
@@ -162,7 +162,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('--apply 이면 옮기고 휴지통 폴더를 알린다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const r = ok(['--apply'])
     assert.match(r.stdout, /^옮김 \.orch\/queue\/q\.out$/m)
     assert.ok(r.stdout.includes(`휴지통 폴더: ${trash}`), r.stdout)
@@ -170,7 +170,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('짧은 출력은 WOULD-TRASH, TRASHED, TRASH-DIR 판정 줄이다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const finished = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
     const dry = new Set(ok([], { ORCH_OUTPUT: 'short' }).stdout.split('\n').filter(Boolean))
     assert.deepEqual(dry, new Set(['WOULD-TRASH .orch/queue/q.out', `WOULD-TRASH ${finished}`]))
@@ -181,7 +181,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('.omc 가 없는 저장소도 돌고 .omc 를 만들지 않는다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const finished = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
     const lines = new Set(ok().stdout.split('\n').filter((line) => line))
     assert.deepEqual(lines, new Set(['후보 .orch/queue/q.out', `지시서를 휴지통으로 옮길 것 ${finished}`]))
@@ -197,25 +197,26 @@ describe('handoff-cleanup', () => {
   })
 
   test('큐 로그는 마지막 3줄에 끝 표시가 있고 --queue-days 일 넘게 지났을 때만 옮긴다', () => {
-    make('.orch/queue/done.out', 'a\nQUEUE-DONE\n', 2)
-    make('.orch/queue/finish-7.out', 'FINISH-FAIL\n', 2)
-    make('.orch/queue/stop.out', 'x\nSTOP 12 체크 실패\n', 2)
-    make('.orch/queue/finish-done.out', 'FINISH-DONE', 2)
+    make('.orch/queue/done.out', 'a\nQUEUE-DONE\n', 4)
+    make('.orch/queue/finish-7.out', 'FINISH-FAIL\n', 4)
+    make('.orch/queue/stop.out', 'x\nSTOP 12 체크 실패\n', 4)
+    make('.orch/queue/finish-done.out', 'FINISH-DONE', 4)
+    make('.orch/queue/finish-8.out', 'FINISH-DONE', 4)
     make('.orch/queue/recent.out', 'QUEUE-DONE\n', 0)
     make('.orch/queue/running.out', '진행 중\n', 5)
     make('.orch/queue/mid-word.out', '진행 중 STOP 이라는 말이 줄 가운데 있다\n', 5)
     make('.orch/queue/far.out', 'QUEUE-DONE\n1\n2\n3\n', 5)
-    ok(['--apply'])
-    for (const name of ['done.out', 'finish-7.out', 'stop.out', 'finish-done.out']) assert.equal(existsSync(join(trash, '.orch/queue', name)), true, name)
-    for (const name of ['recent.out', 'running.out', 'mid-word.out', 'far.out']) assert.equal(existsSync(join(orch, 'queue', name)), true, name)
+    ok(['--apply'], { FAKE_PR_STATES: JSON.stringify({ 7: 'MERGED', 12: 'CLOSED' }) })
+    for (const name of ['done.out', 'finish-7.out', 'stop.out']) assert.equal(existsSync(join(trash, '.orch/queue', name)), true, name)
+    for (const name of ['recent.out', 'running.out', 'mid-word.out', 'far.out', 'finish-done.out', 'finish-8.out']) assert.equal(existsSync(join(orch, 'queue', name)), true, name)
   })
 
   test('수정 시각이 기준일과 정확히 같으면 옮기지 않고 넘으면 옮긴다', () => {
     const edge = make('.orch/queue/edge.out', 'QUEUE-DONE\n', 0)
     const now = Date.now() / 1000
-    utimesSync(edge, now - DAY + 30, now - DAY + 30)
+    utimesSync(edge, now - 3 * DAY + 30, now - 3 * DAY + 30)
     assert.equal(ok().stdout, '')
-    utimesSync(edge, now - DAY - 30, now - DAY - 30)
+    utimesSync(edge, now - 3 * DAY - 30, now - 3 * DAY - 30)
     assert.match(ok().stdout, /후보 \.orch\/queue\/edge\.out/)
   })
 
@@ -341,7 +342,7 @@ describe('handoff-cleanup', () => {
 
   test('살아 있는 지시서 목록을 읽지 못하면 지시서는 하나도 옮기지 않고 큐 로그는 옮긴다', () => {
     const target = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const r = withGitLog(['--apply'], { FAKE_ORCA_FAILS: '1' })
     assert.match(r.stderr, /살아 있는 dispatch 의 지시서를 읽지 못해/)
     assert.equal(existsSync(target), true)
@@ -427,7 +428,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('휴지통에 같은 이름이 있으면 덮어쓰지 않고 번호를 붙인다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     mkdirSync(join(trash, '.orch/queue'), { recursive: true })
     writeFileSync(join(trash, '.orch/queue/q.out'), 'older')
     ok(['--apply'])
@@ -436,7 +437,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('휴지통에 q.out 과 q.out.2 가 있으면 q.out.3 으로 옮긴다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     mkdirSync(join(trash, '.orch/queue'), { recursive: true })
     writeFileSync(join(trash, '.orch/queue/q.out'), 'first')
     writeFileSync(join(trash, '.orch/queue/q.out.2'), 'second')
@@ -456,7 +457,7 @@ describe('handoff-cleanup', () => {
 
   test('후보 줄은 지시서 줄까지 깊이 순으로 낸다', () => {
     make('.orch/raw.csv', 'a,b\n', 2)
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const finished = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
     make('.orch/zz/raw.csv', 'a,b\n', 2)
     const lines = ok(['--folder-days', '100']).stdout.split('\n').filter((line) => line)
@@ -464,7 +465,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('휴지통 폴더 줄은 --trash 로 준 상대경로를 그대로 낸다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
     const done = spawnSync(
       process.execPath,
       ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--board', 'board.json', '--trash', 'rel-trash', '--apply'],
@@ -495,7 +496,7 @@ describe('handoff-cleanup', () => {
   })
 
   test('ORCH_DIR 이 orch 작업 폴더를 옮긴다', () => {
-    make('work/orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    make('work/orch/queue/q.out', 'QUEUE-DONE\n', 4)
     assert.deepEqual(ok([], { ORCH_DIR: 'work/orch' }).stdout.split('\n').filter((line) => line), ['후보 orch/queue/q.out'])
   })
 
@@ -539,7 +540,7 @@ describe('handoff-cleanup', () => {
     })
 
     test('--run 이면 큐 로그, 폴더, csv 는 옮기지 않고 남긴다 줄을 낸다', () => {
-      const log = make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+      const log = make('.orch/queue/q.out', 'QUEUE-DONE\n', 4)
       const folder = make('.orch/old-handoff', null, 9)
       const csv = make('.orch/raw.csv', 'a,b\n', 2)
       const r = ok(['--apply', '--run', 'A'], { FAKE_RUN_TASKS: '{}' })
