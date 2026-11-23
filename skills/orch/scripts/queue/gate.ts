@@ -1,4 +1,4 @@
-// 사용: gate.ts [옵션] PR
+// 사용법: orch queue gate PR [--wait] [--repo DIR]
 //
 // 머지 큐가 머지 전에 보는 조건을 머지 없이 한 번 돌려 본다. worker 는 「준비됨」 을 보내기 전에 이 명령이 통과해야 한다.
 // 조건은 머지 큐와 같은 함수(steps/gate.ts 의 gateReasons)가 판정한다. 규칙을 두 곳에 두지 않는다.
@@ -27,6 +27,9 @@
 //   GATE-FAIL <PR>
 //     <이유>        걸린 이유를 한 줄씩. PR 을 읽지 못하거나 이미 MERGED 이거나 OPEN 이 아니어도 GATE-FAIL 이다
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
+// PR 을 열거나 고쳐 push 한 턴에서 --wait 로 검사한다. GATE-OK 뒤 「준비됨」 status 를 보낸다.
+// HOLD 가 있으면 이유도 status 에 적는다. GATE-FAIL 이면 출력된 조건을 해결한 뒤 다시 검사한다.
+// 독립 리뷰 대기만 남으면 코디네이터에게 리뷰를 요청하고 그 이유를 status 에 적는다.
 //
 // MERGE_QUEUE_GH_RETRIES, MERGE_QUEUE_GH_RETRY_SECONDS, MERGE_QUEUE_SLEEP_SCALE 는 머지 큐와 같다.
 
@@ -89,6 +92,10 @@ export function main(argv: string[], runner?: typeof run): Promise<number> {
 }
 
 async function mainImpl(argv: string[]): Promise<number> {
+  if (argv[0] === '--help' || argv[0] === '-h') {
+    print([usageText(stepContext)])
+    return 0
+  }
   let state: StepState
   let n: string
   try {
@@ -120,7 +127,7 @@ async function mainImpl(argv: string[]): Promise<number> {
       return 2
     }
     if (!(e instanceof Usage)) throw e
-    process.stderr.write(`${e.message || usageText(stepContext)}\n`)
+    process.stderr.write(`${e.message}\n${usageText(stepContext)}\n`)
     return 2
   }
   try {

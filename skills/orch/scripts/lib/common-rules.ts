@@ -40,8 +40,7 @@ export function ruleIssues(text: string): { no: number; message: string }[] {
 
 // 머리 주석의 「공통」 의 조건부 표지. 조건이 거짓인 저장소에서는 그 표지가 빠져도 알리지 않는다
 export const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = {
-  migration: (repoRoot) => configured(repoRoot, 'migrations', ['dirs', 'watch']),
-  adr: (repoRoot) => configured(repoRoot, 'adr', ['dirs']),
+  migration: (repoRoot) => configured(repoRoot, 'migrations', ['dirs', 'watch']) || configured(repoRoot, 'adr', ['dirs']),
   'integration-evidence': (repoRoot) => {
     try {
       return integrationRules(loadConfig(repoRoot)).length > 0
@@ -50,6 +49,12 @@ export const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = 
       throw e
     }
   },
+}
+
+export function retiredRuleHint(name: string, template: ReadonlyMap<string, RuleBody>): string | undefined {
+  if (name === 'adr' && !template.has('adr') && template.has('migration')) {
+    return 'adr 표지는 migration 의 번호 예약 규칙에 합쳤다. 저장소 예외를 옮긴 뒤 옛 adr 항목을 지운다'
+  }
 }
 
 // 설정 절의 keys 가운데 하나라도 비지 않은 객체인지. 설정을 읽지 못하면 거짓이다

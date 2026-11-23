@@ -19,6 +19,9 @@ const USAGE = [
   '        orch feedback collect',
   '        orch feedback notify [--trash DIR]',
   '후보 파일은 add 와 set 으로만 기록하고 고친다. 파일에 직접 글을 덧붙이지 않는다.',
+  '--slug 는 영문 소문자, 숫자, 하이픈으로 짓는다. 다른 저장소에서도 생기면 --target 은 "core 스킬", 이 저장소에 한정되면 "이 저장소" 다.',
+  '실제 시간이나 실패가 줄고, 단순 함정이 아니며, 스크립트·검사기·구조로 막을 수 있을 때만 후보로 올린다. 세 이유를 각각 적는다.',
+  '후보는 주 checkout 의 orch 루트 아래 feedback/ 에 쌓인다. 1 은 중복 또는 처리 실패, 2 는 빠진 인자나 사용법 오류다.',
 ].join('\n')
 const OPTIONS = {
   ...Object.fromEntries(['slug', 'title', 'target', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural', 'status', 'repo', 'trash'].map(key => [key, { type: 'string' as const }])),

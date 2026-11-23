@@ -128,6 +128,7 @@ orch config unset contracts.merge_command contracts.paths
 | `docker` | `images` | 정리가 지울 이미지 규칙의 목록. 규칙은 `repository`(저장소 이름 전체에 맞출 정규식)와 `keep`(저장소 이름마다 남길 최근 태그 수, 0 이상의 정수, 기본 1)이다. 컨테이너가 쓰는 이미지는 남긴다 |
 | `review` | `prepare` | 리뷰 worker 를 띄울 때 PR head 의 워크트리에서 한 번 돌리는 생성물 준비 명령(bash 문자열). 쓰는 법은 [`spec-writing.md`](spec-writing.md) 의 「리뷰 worker 지시서」 가 소유한다 |
 | `worker` | `commit_check` | worker 워크트리에 커밋 검사 훅(한국어 검사, 공개 저장소의 비공개 낱말 검사)을 걸지(bool, 기본 true). false 면 그 저장소의 worker 에는 걸지 않는다. 동작은 [`launch.md`](launch.md) 의 「한국어 커밋 검사」 가 소유한다 |
+| `worker` | `readonly_tools` | worker 가 직접 쓸 수 있는 읽기 전용 도구 이름 목록. 영문, 숫자, 밑줄, 점, 하이픈을 쓰고 첫 글자는 영문, 숫자, 밑줄 중 하나다. 기본은 빈 목록이다. `ssh`, 셸, 파일 전송 도구처럼 쓰기도 가능한 범용 도구는 등록하지 않는다. 사용 기준은 [`launch.md`](launch.md#worker-가-직접-쓰는-조회-도구)를 따른다 |
 
 짝 조건도 함께 검사한다. `contracts.merge_command` 와 `contracts.paths` 는 함께 넣거나 함께 지운다. `finish.deploy_workflow` 와 `finish.deploy_branch` 는 함께 채우거나 비운다. `finish.complete` 와 `finish.intermediate` 를 함께 true 로 둘 수 없다. `queue.up_to_date_when` 이 `overlap` 이면 `require_up_to_date` 가 true 여야 하고 `shared_paths`·`unit_groups` 와 `shared_groups` 는 이때만 둔다. `update_docs_on_overlap` 이 true 면 `docs_glob` 이 있어야 한다. `poll_min_sec` 은 `poll_max_sec` 이하여야 하며, 생략한 쪽은 기본값과 비교한다.
 

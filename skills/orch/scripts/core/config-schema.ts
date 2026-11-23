@@ -334,7 +334,10 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     data_days: zodCheck(numberLike('cleanup.data_days', 'nonnegative')),
     apply: zodCheck(bool),
   },
-  worker: { commit_check: zodCheck(bool) },
+  worker: {
+    commit_check: zodCheck(bool),
+    readonly_tools: zodCheck(z.array(z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/))),
+  },
   inbox: {
     enabled: zodCheck(bool),
     dooray: zodCheck(inboxAdapter),

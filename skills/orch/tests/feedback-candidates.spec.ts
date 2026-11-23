@@ -143,12 +143,13 @@ test('워크트리에서 실행해도 주 checkout 의 후보 폴더에 쌓인�
 })
 
 
-test('공통 지시서 동기화가 후보 기록 명령과 필수 옵션을 함께 옮긴다', () => {
+test('공통 지시서 동기화가 후보 기록 명령만 옮기고 상세 인자는 도움말에 둔다', () => {
   const template = readFileSync(new URL('../templates/spec-common.md', import.meta.url), 'utf8')
   const result = syncCommon('## 스킬 개선 후보 보고\n', template, repo)
   assert.ok(result.output.includes('SYNC-ADD feedback-add'))
-  assert.match(result.text, /orch feedback add --slug/)
-  assert.match(result.text, /--structural/)
+  assert.match(result.text, /`orch feedback add`/)
+  assert.doesNotMatch(result.text, /--structural/)
+  assert.match(run('add', '--help').stdout, /--structural/)
 })
 
 

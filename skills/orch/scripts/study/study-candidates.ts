@@ -60,10 +60,13 @@ import {
 } from '../lib/study.ts'
 
 const USAGE = [
-  '사용법: study-candidates.ts list [--open] [--today | --date YYYY-MM-DD] [--repo DIR]',
-  '        study-candidates.ts add --slug SLUG --topic 주제 --question 질문 --origin 생긴곳 [--ref 참고] [--memo 메모] [--repo DIR]',
-  '        study-candidates.ts set --slug SLUG --status 상태 --note 메모 [--repo DIR]',
-  '        study-candidates.ts migrate --slug N=SLUG [--slug N=SLUG ...] [--trash DIR] [--repo DIR]',
+  '사용법: orch study list [--open] [--today | --date YYYY-MM-DD] [--repo DIR]',
+  '        orch study add --slug SLUG --topic 주제 --question 질문 --origin 생긴곳 [--ref 참고] [--memo 메모] [--repo DIR]',
+  '        orch study set --slug SLUG --status 상태 --note 메모 [--repo DIR]',
+  '        orch study migrate --slug N=SLUG [--slug N=SLUG ...] [--trash DIR] [--repo DIR]',
+  '--slug 는 영문 소문자, 숫자, 하이픈으로 짓는다. 내부 이름과 식별자는 일반 개념과 질문으로 바꿔 적는다.',
+  '--memo 에는 저장소 밖에서도 통하고 실제 선택을 바꿨으며, 더 읽을 자료가 있고 한두 문장 설명으로 끝나지 않는다는 근거를 적는다.',
+  '후보는 주 checkout 의 orch 루트에 쌓인다. 중복으로 1 이면 기존 후보를 쓰고, 2 면 빠진 인자나 사용법을 확인한다.',
 ].join('\n')
 
 const OPTIONS = {

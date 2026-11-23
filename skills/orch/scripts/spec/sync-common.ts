@@ -10,7 +10,7 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { expandArgs } from '../lib/args.ts'
 import { bundleRoot } from '../lib/bundle.ts'
-import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, ruleMarks, sameBody } from '../lib/common-rules.ts'
+import { CONDITIONAL_RULES, outsideFences, retiredRuleHint, ruleBodies, ruleIssues, ruleMarks, sameBody } from '../lib/common-rules.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 
 // 목록 기호와 표지를 제외한 첫 줄로 옛 항목과 중복을 찾는다. 코드 예시는 제외한다.
@@ -112,13 +112,21 @@ function syncUniqueCommon(copy: string, template: string, repo: string, blockedH
   const output: string[] = []
   let manual = false
   const addedSections = new Set<string>()
+  const visible = outsideFences(lines)
+  const headings = visible.flatMap((line, index) => /^#{1,6}\s+/.test(line) ? [{ title: line.trim(), head: index }] : [])
+  for (const name of existing.keys()) {
+    const retired = retiredRuleHint(name, wanted)
+    if (!retired) continue
+    output.push(`SYNC-MANUAL ${name}: ${retired}`)
+    manual = true
+  }
   for (const [name, want] of wanted) {
     let mine = existing.get(name)
     if (blockedNames.has(name) || blockedHeads.has(ruleHead(want.raw.split('\n')[0]))
       || (mine && blockedHeads.has(ruleHead(mine.raw.split('\n')[0])))) continue
     let legacy = false
     if (!mine) {
-      const head = outsideFences(lines).findIndex((line) => /^(?:[-*]|\d+\.)\s+/.test(line)
+      const head = visible.findIndex((line) => /^(?:[-*]|\d+\.)\s+/.test(line)
         && !/<!--\s*orch-rule:/.test(line) && ruleHead(line) === ruleHead(want.raw.split('\n')[0]))
       if (head >= 0) {
         mine = legacyItem(lines, head, name, want.raw)
@@ -146,23 +154,29 @@ function syncUniqueCommon(copy: string, template: string, repo: string, blockedH
     let end = mine?.end ?? head
     let sectionPrefix: string[] = []
     if (!mine) {
-      const headings = outsideFences(lines).flatMap((line, index) => /^#{1,6}\s+/.test(line) ? [{ title: line.trim(), head: index }] : [])
       const sections = headings.filter((heading) => heading.title === want.section)
       if (sections.length > 1) {
         output.push(`SYNC-MANUAL ${name}: 같은 절 제목이 둘 이상이다: ${want.section}`)
         manual = true
         continue
       }
-      const section = sections[0]
+      // 같은 절의 기존 표지가 한 절에 모여 있으면 저장소가 붙인 그 제목을 쓴다.
+      const peers = [...wanted.entries()].filter(([, rule]) => rule.section === want.section)
+      const peerHeadings = new Set(peers.flatMap(([key]) => {
+        const peer = existing.get(key)
+        return peer ? [headings.findLast((heading) => heading.head < peer.head)] : []
+      }))
+      const section = sections[0] ?? (peerHeadings.size === 1 ? [...peerHeadings][0] : undefined)
       const sectionEnd = section ? headings.find((heading) => heading.head > section.head)?.head ?? lines.length : lines.length
-      const next = [...wanted.entries()].find(([key, rule]) => rule.head > want.head && rule.section === want.section && existing.has(key) &&
+      const next = peers.find(([key, rule]) => rule.head > want.head && existing.has(key) &&
         (!want.section || (section && existing.get(key)!.head > section.head && existing.get(key)!.head < sectionEnd)))
       head = end = next ? existing.get(next[0])!.head : sectionEnd
       if (want.section && !section && !addedSections.has(want.section)) {
         sectionPrefix = ['', want.section, '']
         addedSections.add(want.section)
       }
-      output.push(`SYNC-LOCATION ${name}: ${want.section ?? '절 제목 없음'}, ${head + 1}줄 앞${next ? `, 표지 ${next[0]} 앞` : ''}`)
+      const title = section?.title ?? want.section ?? '절 제목 없음'
+      output.push(`SYNC-LOCATION ${name}: ${title}, ${head + 1}줄 앞${next ? `, 표지 ${next[0]} 앞` : ''}`)
     }
     // 기존 목록 번호와 기호는 저장소의 문맥이다.
     const prefix = mine?.raw.match(/^(?:[-*]|\d+\.)\s+/)?.[0]

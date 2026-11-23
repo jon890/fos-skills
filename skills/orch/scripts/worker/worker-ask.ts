@@ -77,9 +77,20 @@ function asked(id: string, output: string): void {
 }
 
 const USAGE = [
-  '사용: worker-ask.ts --from HANDLE (--question TEXT | --question-file FILE)',
-  '                   [--options CSV] [--run ID] [--force] [--decision]',
-  '      worker-ask.ts --check-answer TEXT (--question TEXT | --question-file FILE)',
+  '사용법: orch worker ask --from HANDLE (--question TEXT | --question-file FILE)',
+  '                        [--options CSV] [--run ID] [--force] [--decision]',
+  '        orch worker ask --check-answer TEXT (--question TEXT | --question-file FILE)',
+  'HANDLE 은 dispatch 머리말의 --from 값이다. 질문을 전경에서 보내고 긴 본문은 --question-file 로 준다.',
+  '사용자가 정할 결정에만 --decision 을 붙인다. 한 질문에 결정 블록을 최대 4개 담는다.',
+  '  결정: 무엇을 정하는지 한 줄',
+  '  배경: 왜 지금 정해야 하는지',
+  '  선택지:',
+  '  - 선택지 이름: 고르면 생기는 결과',
+  '  - 선택지 이름: 고르면 생기는 결과',
+  '  권장: 선택지 이름. 이유',
+  '0 ASKED 또는 3 SENT-RUN 이면 턴을 끝낸다. Orca 가 깨우면 orca orchestration check 로 답을 읽는다.',
+  '0 answer: 줄에 답이 있으면 적용한다. 5 면 출력된 미확인 메시지를 읽고, 질문이 여전히 필요하면 같은 명령을 다시 부른다.',
+  '2 면 오류 안내를 따른다. 질문이 닿았는지 알 수 없으면 다시 보내기 전에 orca orchestration check 로 확인한다.',
 ].join('\n')
 // 결정 질문 하나에 담는 블록의 상한. 사용자에게 묻는 AskUserQuestion 이 한 번에 4개까지다
 const MAX_BLOCKS = 4
@@ -317,7 +328,7 @@ async function main(argv: string[]): Promise<number> {
     return 2
   }
   if (values.resume) {
-    err('worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. 읽을 문서: 공통 지시서의 worker-ask 규칙')
+    err('worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. orch worker ask --help 에서 답을 확인하는 방법을 본다')
     return 2
   }
   if (values['timeout-ms'] !== undefined || values['max-wait'] !== undefined) {
@@ -338,6 +349,7 @@ async function main(argv: string[]): Promise<number> {
     const problems = decisionProblems(question)
     if (problems.length) {
       for (const problem of problems) err(`worker-ask: --decision 형식 위반: ${problem}`)
+      err(USAGE)
       return 2
     }
   }

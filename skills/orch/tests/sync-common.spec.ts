@@ -49,15 +49,22 @@ test('자리표시자가 있는 낡은 항목과 빠진 항목은 수동 확인�
   assert.ok(!result.text.includes('{{'))
 })
 
-test('migration 과 adr 은 lint 와 같은 설정으로 추가하고 이미 있으면 조건과 무관하게 갱신한다', () => {
-  const template = rule('migration', '예약') + rule('adr', 'ADR 예약')
-  assert.equal(syncCommon('# 공통\n', template, repo).text, '# 공통\n')
-  writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ migrations: { watch: { api: 'db' } }, adr: { dirs: { root: 'docs/adr' } } }))
-  const result = syncCommon('# 공통\n', template, repo)
+test('번호 예약은 마이그레이션 또는 ADR 설정이 있으면 추가하고 옛 ADR 예외는 보존한다', () => {
+  const template = rule('migration', '번호 예약')
+  assert.equal(syncCommon('', template, repo).text, '')
+  const config = join(repo, '.orch', 'config.json')
+  for (const options of [{ migrations: { watch: { api: 'db' } } }, { adr: { dirs: { root: 'docs/adr' } } }]) {
+    writeFileSync(config, JSON.stringify(options))
+    assert.match(syncCommon('', template, repo).text, /orch-rule: migration/)
+  }
+  const legacy = rule('adr', 'ADR 예약 예외', true)
+  const result = syncCommon(legacy, template, repo)
+  assert.ok(result.text.includes(legacy))
   assert.match(result.text, /orch-rule: migration/)
-  assert.match(result.text, /orch-rule: adr/)
-  writeFileSync(join(repo, '.orch', 'config.json'), '{}')
-  assert.match(syncCommon(rule('migration', '옛것'), template, repo).text, /예약/)
+  assert.match(result.output.join('\n'), /^SYNC-MANUAL adr: adr 표지는 migration/m)
+  assert.equal(result.manual, true)
+  writeFileSync(config, '{}')
+  assert.match(syncCommon(rule('migration', '옛것'), template, repo).text, /번호 예약/)
 })
 
 test('여러 빠진 항목의 틀 순서와 번호, CRLF, 이어지는 코드 블록을 보존한다', () => {
@@ -141,6 +148,16 @@ test('빠진 표지는 틀의 절 안에 넣고 위치를 알리며 없는 절�
 })
 
 
+test('저장소가 바꾼 절 제목과 실제로 넣은 위치를 알린다', () => {
+  const template = '## 공통\n' + rule('first', '처음') + rule('last', '끝')
+  const copy = '## 저장소 규칙\n' + rule('last', '끝') + '\n## 다른 절\n'
+  const result = syncCommon(copy, template, repo)
+  assert.match(result.text, /## 저장소 규칙\n- 처음.*\n\n- 끝/)
+  assert.match(result.output.join('\n'), /^SYNC-LOCATION first: ## 저장소 규칙, 2줄 앞, 표지 last 앞$/m)
+  assert.equal(syncCommon(result.text, template, repo).text, result.text)
+})
+
+
 test('원자적 쓰기는 이름 변경 실패 때 원본을 지키고 임시 파일을 치우며 성공 때 권한을 유지한다', () => {
   const file = join(repo, 'common.md')
   writeFileSync(file, '원본')
@@ -183,26 +200,23 @@ test('파일 첫 줄 앞 삽입은 diff 의 기존 범위를 0줄로 표시한�
   assert.match(result.output.join('\n'), /@@ -0,0 \+1,/)
 })
 
-test('옛 틀(명령 블록마다 경로 풀기 한 줄)을 현재 틀로 맞춰도 공부 후보 명령이 한 번만 남고 재실행은 같다', () => {
+test('표지에 딸린 옛 셸 예시를 제거하고 새 명령은 한 번만 남긴다', () => {
   const template = readFileSync(TEMPLATE, 'utf8')
-  const old = '  command -v orch >/dev/null || orch() { _o="$(node -e \'x\')" || return 3; node "$_o" "$@"; }\n'
-  // 현재 틀의 명령 블록마다 옛 한 줄을 되돌린 사본을 옛 공통 지시서로 쓴다
-  const copy = template.replace(/^( {2}orch (?:queue|worker|feedback|study) .*\n)/gm, old + '$1')
-  assert.equal(copy.split('command -v orch').length - 1, 5)
+  const marker = '<!-- orch-rule: study-candidates -->'
+  const copy = template.replace(marker, [
+    marker, '', '  ```bash', '  SLUG=""', '  orch study add --slug "$SLUG"', '  ```',
+  ].join('\n'))
   const result = syncCommon(copy, template, repo)
   assert.equal(result.text.split('orch study add').length - 1, 1)
-  assert.equal(result.text.split('orch worker ask').length - 1, template.split('orch worker ask').length - 1)
-  // 표지 항목의 옛 한 줄은 지워진다. 표지가 없는 공부 후보 블록의 한 줄은 저장소 항목으로 보존한다
-  assert.equal(result.text.split('command -v orch').length - 1, 1)
+  assert.doesNotMatch(result.text, /--slug/)
   assert.equal(result.manual, false)
-  assert.equal(syncCommon(result.text, template, repo).text, result.text)
+  assert.equal(result.text, template)
   assert.deepEqual(syncCommon(result.text, template, repo).output, [])
 })
 
 
-test('표지 없던 feedback-add 블록을 갱신하고 명령 블록은 한 번만 남긴다', () => {
-  const template = readFileSync(TEMPLATE, 'utf8')
-  // cfda7fe8 의 옛 틀처럼 설명을 별도 목록 항목으로 두고 표지는 뺀다.
+test('표지 없는 항목 뒤에 별도 목록으로 풀어 쓴 설명도 같은 내용이면 합친다', () => {
+  const template = rule('feedback-add', '후보를 남긴다.') + '  `SLUG` 는 이름이다.\n\n  ```bash\n  orch feedback add --slug "$SLUG"\n  ```\n'
   const copy = template.replace(' <!-- orch-rule: feedback-add -->', '')
     .replace('  `SLUG` 는', '- `SLUG` 는')
   assert.notEqual(copy, template)
