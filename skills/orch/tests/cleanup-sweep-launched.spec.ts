@@ -4,10 +4,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, utimesSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
-import { type Row, branches, calls, exists, fx, git, gone, has, lacks, runSweep, save, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
+import { type Row, branches, calls, exists, fx, git, gone, has, lacks, runSweep, runSweepFull, save, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
 
 type Own = { record?: boolean | Row; status?: string; state?: string; otherTerminal?: boolean }
 
@@ -73,7 +73,7 @@ else { const r = require('node:child_process').spawnSync(${JSON.stringify(origin
     fx.env.GIT_TRACE = trace
     const marker = join(fx.tmp, 'after-cleanup-called')
     mkdirSync(join(fx.repo, '.orch', 'hooks'), { recursive: true })
-    writeFileSync(join(fx.repo, '.orch', 'hooks', 'after-cleanup.ts'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'called')`)
+    writeFileSync(join(fx.repo, '.orch', 'hooks', 'after-cleanup.ts'), `import { writeFileSync, symlinkSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'called')`)
     save()
     const finish = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
     const sweep = fileURLToPath(new URL('../scripts/cleanup/cleanup-sweep.ts', import.meta.url))
@@ -101,7 +101,7 @@ else { const r = require('node:child_process').spawnSync(${JSON.stringify(origin
     assert.ok(!branches().has('feat-l1'))
     has(calls(), 'orca terminal close --terminal term_o')
     has(calls(), 'orca orchestration worker-release --dispatch ctx_o')
-    assert.ok(!existsSync(join(fx.repo, '.orch/state/launched-workers/ctx_o.json')))
+    assert.ok(existsSync(join(fx.repo, '.orch/state/launched-workers/ctx_o.json')))
   })
 
   test('send reopened 가 기록한 새 터미널도 코디네이터가 띄운 것으로 본다', () => {
@@ -339,6 +339,9 @@ describe('머지 큐 로그 폴더', () => {
     const queue = join(fx.repo, '.orch/queue')
     mkdirSync(queue, { recursive: true })
     writeFileSync(join(queue, 'finish-41.out'), 'FINISH-DONE\n')
+    const old = new Date(Date.now() - 4 * 86_400_000)
+    utimesSync(join(queue, 'finish-41.out'), old, old)
+    fx.prViews['41'] = { state: 'MERGED' }
     writeFileSync(join(queue, 'memo.txt'), 'x')
     const trash = join(fx.tmp, 'trash-q')
     const out = runSweep(['--trash', trash, '--apply'])
@@ -346,5 +349,89 @@ describe('머지 큐 로그 폴더', () => {
     assert.ok(!existsSync(join(queue, 'finish-41.out')))
     assert.ok(existsSync(join(trash, 'queue', 'finish-41.out')))
     assert.ok(existsSync(join(queue, 'memo.txt')))
+  })
+})
+
+describe('상태 파일 보존 기한', () => {
+  function file(rel: string, text: string, days = 4): string {
+    const target = join(fx.repo, '.orch', rel)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, text)
+    const stamp = new Date(Date.now() - days * 86_400_000)
+    utimesSync(target, stamp, stamp)
+    return target
+  }
+
+  test('미리 본 파일만 휴지통으로 옮기고 보관 대상은 남긴다', () => {
+    const trash = join(fx.tmp, 'retention trash')
+    const launch = (dispatch: string, branch: string, days?: number) => file(
+      `state/launched-workers/${dispatch}.json`, JSON.stringify({ dispatch, branch, worktree: fx.wts }), days)
+    const activeAutoLog = file('state/auto-merge/20261001T100100Z.log', 'MERGED 41\nQUEUE-DONE\n')
+    file('state/auto-merge.json', JSON.stringify({ queue: { log: activeAutoLog } }))
+    const expired = [
+      ['queue/finish-41.out', file('queue/finish-41.out', 'FINISH-DONE\n')],
+      ['queue/finish-41.pid', file('queue/finish-41.pid', '999999999')],
+      ['state/finish-started/41', file('state/finish-started/41', '2026-10-01T10:00:00Z\n')],
+      ['state/auto-merge/20261001T100000Z.log', file('state/auto-merge/20261001T100000Z.log', 'MERGED 41\nQUEUE-DONE\n')],
+      ['state/launched-workers/ctx_done.json', launch('ctx_done', 'finished')],
+      ['state/gh/logs/2026-10-01.jsonl', file('state/gh/logs/2026-10-01.jsonl', '{}\n', 2)],
+    ]
+    const kept = [
+      activeAutoLog,
+      file('state/auto-merge/20261001T100300Z.log', 'QUEUE-HELD 42\n'),
+      file('queue/finish-42.out', 'FINISH-FAIL\n'),
+      file('queue/finish-43.out', 'FINISH-DONE\n'),
+      file('state/finish-started/42', '2026-10-01T10:00:00Z\n'),
+      file('state/finish-started/41.tmp', 'x'),
+      launch('ctx_busy', 'busy'),
+      launch('ctx_unknown', 'missing'),
+      launch('ctx_open', 'open-branch'),
+      launch('ctx_recent', 'recent', 2),
+      file(`state/gh/logs/${new Date().toISOString().slice(0, 10)}.jsonl`, '{}\n'),
+      file('state/gh/logs/2026-10-02.jsonl', '{}\n', 0.5),
+      file('state/gh/cache/pr.json', '{}'),
+      file('state/launch-history.jsonl', 'x'),
+      file('state/routing-log.jsonl', 'x'),
+      file('state/requests/history.jsonl', 'x'),
+    ]
+    const link = join(fx.repo, '.orch/state/gh/logs/2026-10-03.jsonl')
+    symlinkSync(kept.at(-1)!, link)
+    kept.push(link)
+    fx.prViews['41'] = { state: 'MERGED' }
+    fx.prViews['42'] = { state: 'OPEN' }
+    fx.openHeads = ['open-branch']
+    fx.allWorkers = [
+      ...['ctx_done', 'ctx_open', 'ctx_recent'].map((dispatchId) => ({ dispatchId, dispatchStatus: 'completed' })),
+      { dispatchId: 'ctx_busy', dispatchStatus: 'dispatched', workerState: 'ready' },
+    ]
+    fx.env.ORCH_OUTPUT = 'short'
+    const preview = runSweepFull(['--trash', trash])
+    delete fx.env.ORCH_OUTPUT
+    const text = preview.stdout
+    for (const [, target] of expired) {
+      has(text, `WOULD-REMOVE ${target}`)
+      exists(target, text)
+    }
+    assert.ok(!existsSync(trash))
+    const out = runSweep(['--apply', '--trash', trash])
+    for (const [relative, target] of expired) {
+      gone(target, out)
+      exists(join(trash, relative), out)
+    }
+    for (const target of kept) exists(target, out)
+  })
+
+  test('저장소 설정으로 보존 기한을 바꾼다', () => {
+    file('config.json', JSON.stringify({ cleanup: { queue_days: 6, state_days: '5', gh_log_days: 3, folder_days: 2 } }))
+    const kept = [
+      file('queue/finish-51.out', 'FINISH-DONE\n', 5),
+      file('state/finish-started/51', '2026-10-01T10:00:00Z\n', 4),
+      file('state/gh/logs/2026-10-01.jsonl', '{}\n', 2),
+    ]
+    const old = file('state/gh/logs/2026-10-02.jsonl', '{}\n', 4)
+    fx.prViews['51'] = { state: 'CLOSED' }
+    const out = runSweep(['--apply', '--trash', join(fx.tmp, 'trash')])
+    for (const target of kept) exists(target, out)
+    gone(old, out)
   })
 })

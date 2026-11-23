@@ -126,6 +126,8 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     board: textOrNull,
     data_ext: { good: ['csv,tsv', null], bad: [1, ['csv']] },
     queue_days: days,
+    state_days: days,
+    gh_log_days: days,
     folder_days: days,
     data_days: days,
     apply: flag,

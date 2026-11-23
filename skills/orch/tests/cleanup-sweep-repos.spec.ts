@@ -297,7 +297,7 @@ describe('지시서, PR 본문, 기준 브랜치', () => {
     writeFileSync(join(dir, `${dispatch}.json`), JSON.stringify({ dispatch, task: `task_${dispatch}`, terminal: null, worktree: path, run: null, spec }))
   }
 
-  test('워크트리를 지우면 기록된 지시서를 이름과 상관없이 휴지통으로 옮기고 기록을 지운다', () => {
+  test('워크트리를 지우면 기록된 지시서를 휴지통으로 옮기고 최근 띄우기 기록은 남긴다', () => {
     const { path, specs } = mergedWithSpecs('feat-rec')
     const resume = join(specs, 'spec-feat-rec-resume.md')
     const conflict = join(specs, 'spec-conflict-9-abc.md')
@@ -314,7 +314,7 @@ describe('지시서, PR 본문, 기준 브랜치', () => {
     assert.ok(existsSync(join(trash, '.orch', 'specs', 'spec-conflict-9-abc.md')), out)
     // 기록에 없는 지시서는 건드리지 않는다
     exists(other, out)
-    assert.deepEqual(readdirSync(join(fx.repo, '.orch/state/launched-workers')), [])
+    assert.deepEqual(readdirSync(join(fx.repo, '.orch/state/launched-workers')).sort(), ['ctx_a.json', 'ctx_b.json', 'ctx_c.json'])
   })
 
   test('기록된 지시서도 살아 있는 dispatch 가 쓰면 남긴다', () => {

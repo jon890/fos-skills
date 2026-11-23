@@ -6,7 +6,7 @@
 //     단계가 끝날 때 옆 파일에 쓰고 rename 한다. 쓰지 못하면 로그에 남기고, 단계가 예외 없이 끝났으면 오류 이유로 낸다. 큐 로그는 state/auto-merge/<YYYYMMDDTHHMMSSZ>.log 다. queue 폴더에 두면 틱의 정리(cleanup.ts)가
 //     끝난 로그를 휴지통으로 옮겨(lib/queue-logs.ts) 끝 줄을 읽기 전에 사라진다.
 //     1. 기록에서 이번 틱의 내 열린 PR 이 아닌 PR 의 ready, blocked 항목과 tried, clashes 의 `<PR>@…` 키를 지운다.
-//        로그 폴더에서 마지막으로 바뀐 지 7일이 넘은 .log 를 지운다. queue 기록이 가리키는 로그는 남긴다
+//        오래된 로그는 정기 정리(cleanup/steps/state.ts)에서 휴지통으로 옮긴다.
 //     2. PS -Ao pid=,command= 를 읽는다. 0 이 아니면 `프로세스 목록을 읽지 못했다` 로 단계를 끝낸다.
 //        queue 기록의 pid 줄이 없거나 그 명령줄에 `merge-with-finish.` 가 없으면 끝난 큐다. pid 를 다른 프로세스가 다시 받았을 수 있어
 //        살아 있는지만으로 보지 않는다. 끝 줄은 로그에서 QUEUE-DONE, QUEUE-HELD 로 시작하는 마지막 줄, 없으면 `STOP ` 으로 시작하는
@@ -82,8 +82,8 @@
 //     MERGE_WITH_FINISH, THREADS_CMD, PS 다.
 
 import { spawn } from 'node:child_process'
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
 import { beforeCommand, boardHold, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
@@ -115,9 +115,6 @@ import type { CiEntry, OwnPr, TickRun } from './shared.ts'
 
 // 진입 파일(orch-loop.ts)이 있는 loop 폴더. 기본 스레드 명령의 경로를 옛 명령과 같은 글자로 잇는 데 쓴다
 const LOOP_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
-
-// 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
-const AUTO_MERGE_LOG_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 
 // AUTO-MERGE-HELD 줄에 옮기는 명령줄의 앞 글자 수
 const HELD_COMMAND_CHARS = 160
@@ -198,24 +195,6 @@ function pruneAutoMerge(state: AutoMergeState, open: Set<string>): void {
     for (const key of Object.keys(map)) {
       const at = key.indexOf('@')
       if (at < 0 || !open.has(key.slice(0, at))) delete map[key]
-    }
-  }
-}
-
-function dropOldLogs(dir: string, keep: string | null): void {
-  let names: string[]
-  try {
-    names = readdirSync(dir)
-  } catch {
-    return
-  }
-  for (const name of names) {
-    const path = join(dir, name)
-    if (!name.endsWith('.log') || (keep !== null && resolve(keep) === path)) continue
-    try {
-      if (Date.now() - statSync(path).mtimeMs > AUTO_MERGE_LOG_KEEP_MS) unlinkSync(path)
-    } catch (e) {
-      log(`orch-loop: 자동 머지 로그 ${path} 를 지우지 못했다: ${oneLine(e)}`)
     }
   }
 }
@@ -456,10 +435,9 @@ async function autoMergeStep(
   state: AutoMergeState,
   errors: Set<string>,
 ): Promise<void> {
-  // 1. 지난 항목과 오래된 로그
+  // 1. 지난 항목
   pruneAutoMerge(state, new Set(mine.map((pr) => String(pr.number))))
   const logs = join(pathOf('state', ctx.repo), 'auto-merge')
-  dropOldLogs(logs, state.queue?.log ?? null)
 
   // 2. 앞선 큐와 도는 큐
   const listed = processes()

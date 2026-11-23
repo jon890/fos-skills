@@ -6,10 +6,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { run } from '../scripts/lib/proc.ts'
-import { lsofOpenedBy, type QueueLogHost, sweepQueueLogs } from '../scripts/lib/queue-logs.ts'
+import { lsofOpenedBy, type QueueLogHost, queueLogCandidates, trashRetainedFile } from '../scripts/lib/queue-logs.ts'
 
 const NOW = Date.parse('2026-10-26T12:00:00Z')
 const HOUR = 3600_000
+const DAY = 24 * HOUR
 let tmp: string
 let dir: string
 let trash: string
@@ -23,7 +24,7 @@ const host = (): QueueLogHost => ({
 })
 
 // 마지막으로 바뀐 때를 NOW 에서 agoMs 전으로 둔다
-function put(name: string, text: string, agoMs = 5 * HOUR): string {
+function put(name: string, text: string, agoMs = 4 * DAY): string {
   const file = join(dir, name)
   writeFileSync(file, text)
   const when = new Date(NOW - agoMs)
@@ -31,10 +32,11 @@ function put(name: string, text: string, agoMs = 5 * HOUR): string {
   return file
 }
 
-function sweep(apply = true) {
+function sweep(apply = true, days?: number) {
   const lines: string[] = []
-  const done = sweepQueueLogs({ dir, trash, apply, log: (line) => lines.push(line), host: host() })
-  return { ...done, lines }
+  const moved = queueLogCandidates({ dir, host: host(), days })
+  for (const file of moved) trashRetainedFile(file, 'queue', trash, apply, (line) => lines.push(line))
+  return { moved, lines }
 }
 
 beforeEach(() => {
@@ -43,7 +45,7 @@ beforeEach(() => {
   trash = join(tmp, 'trash')
   mkdirSync(dir)
   open = new Set()
-  states = {}
+  states = { 1: 'MERGED', 2: 'MERGED', 3: 'MERGED', 4: 'MERGED', 5: 'MERGED', 6: 'MERGED', 7: 'MERGED', 8: 'MERGED', 9: 'MERGED' }
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -73,10 +75,10 @@ describe('마무리 로그', () => {
 
   test('끝 표시 없이 pid 만 죽었으면 남길 시간 동안 남기고 지나면 옮긴다', () => {
     const young = put('finish-5.out', '머지를 기다린다\n', HOUR / 2)
-    put('finish-5.pid', '999999999')
+    put('finish-5.pid', '999999999', HOUR / 2)
     const old = put('finish-6.out', '머지를 기다린다\n', 2 * HOUR)
-    const oldPid = put('finish-6.pid', '999999999')
-    sweep()
+    const oldPid = put('finish-6.pid', '999999999', 2 * HOUR)
+    sweep(true, 0)
     assert.ok(existsSync(young))
     assert.ok(!existsSync(old) && !existsSync(oldPid))
   })
@@ -84,7 +86,7 @@ describe('마무리 로그', () => {
   test('FINISH-FAIL 은 남길 시간 안이면 남기고 지나면 옮긴다', () => {
     const young = put('finish-1.out', 'FINISH-FAIL\n', HOUR / 2)
     const old = put('finish-2.out', 'FINISH-FAIL\n', 2 * HOUR)
-    sweep()
+    sweep(true, 0)
     assert.ok(existsSync(young))
     assert.ok(!existsSync(old))
   })
@@ -122,7 +124,7 @@ describe('머지 큐 로그', () => {
   test('STOP 로그는 남길 시간 안이면 남긴다', () => {
     const young = put('queue-f.out', '12:00 5 판정\nSTOP 5 충돌\n', HOUR / 2)
     const old = put('queue-g.out', 'STOP 5 충돌\n', 2 * HOUR)
-    sweep()
+    sweep(true, 0)
     assert.ok(existsSync(young))
     assert.ok(!existsSync(old))
   })
@@ -175,11 +177,25 @@ describe('lsofOpenedBy', { skip: run(['lsof', '-v']).code === 127 ? 'lsof 가 �
     const live = put('queue-j.out', '12:00 6 MERGED\nQUEUE-DONE\n')
     const fd = openSync(live, 'r')
     try {
-      sweepQueueLogs({ dir, trash, apply: true, log: () => {}, host: { ...host(), openedBy: lsofOpenedBy } })
+      const files = queueLogCandidates({ dir, host: { ...host(), openedBy: lsofOpenedBy } })
+      for (const file of files) trashRetainedFile(file, 'queue', trash, true, () => {})
     } finally {
       closeSync(fd)
     }
     assert.ok(!existsSync(ended))
     assert.ok(existsSync(live))
   })
+})
+
+test('기한보다 최근 파일과 열린 PR 의 끝난 로그와 pid 는 남긴다', () => {
+  states[6] = 'OPEN'
+  const recent = put('finish-7.out', 'FINISH-DONE\n', 2 * DAY)
+  const edge = put('finish-5.out', 'FINISH-DONE\n', 3 * DAY)
+  const openOut = put('finish-6.out', 'FINISH-FAIL\n')
+  const openPid = put('finish-6.pid', '999999999')
+  const held = put('queue-held.log', 'MERGED 7\nQUEUE-HELD 6\n')
+  const done = put('q.out', 'MERGED 6\nQUEUE-DONE\n')
+  const orphan = put('finish-8.pid', '999999999')
+  assert.deepEqual(sweep().moved, [orphan])
+  for (const file of [recent, edge, openOut, openPid, held, done]) assert.ok(existsSync(file))
 })

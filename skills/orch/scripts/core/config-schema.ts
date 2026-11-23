@@ -327,6 +327,8 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     trash: zodCheck(textOrNull),
     board: zodCheck(textOrNull),
     data_ext: zodCheck(textOrNull),
+    state_days: zodCheck(numberLike('cleanup.state_days', 'nonnegative')),
+    gh_log_days: zodCheck(numberLike('cleanup.gh_log_days', 'nonnegative')),
     queue_days: zodCheck(numberLike('cleanup.queue_days', 'nonnegative')),
     folder_days: zodCheck(numberLike('cleanup.folder_days', 'nonnegative')),
     data_days: zodCheck(numberLike('cleanup.data_days', 'nonnegative')),

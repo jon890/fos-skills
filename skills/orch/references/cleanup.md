@@ -356,7 +356,17 @@ orch followup done "$PR" --note "$NOTE"
 **정리는 `cleanup-sweep.ts` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 상주 루프(`orch-loop.ts`)가 틱마다 `--remote-branches` 와 함께 부른다.
 **사용자가 정리하라고 말하지 않아도 상주 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 로컬 브랜치가 없는 원격 브랜치는 `--remote-branches` 로 지운다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치가 여기 든다.
-머지 큐 로그 폴더(`.orch/queue`)의 끝난 마무리 로그와 큐 로그도 휴지통(`--trash`)으로 옮긴다. 돌고 있는 것, 모르는 파일, 1시간이 안 된 실패 로그와, 끝 표시 없이 pid 만 죽은 마무리 로그는 남긴다(1시간이 지나면 옮긴다). 조건은 `lib/queue-logs.ts` 머리 주석이 소유한다.
+`orch cleanup sweep` 은 마지막 수정 시각부터 보존 기한이 지난 파일을 보여 준다. `--apply` 를 주면 `--trash` 로 지정한 휴지통 폴더로 옮긴다. 상주 루프도 같은 명령으로 정리한다.
+
+| 대상 | 기본 보존 기한 | 바꿀 설정 |
+| --- | --- | --- |
+| `.orch/queue` 의 끝난 머지 큐 로그와 마무리 로그·pid 파일 | 3일 | `cleanup.queue_days` |
+| `.orch/state/launched-workers` 의 끝난 dispatch 기록, `finish-started` 의 마무리 표시, `auto-merge` 의 자동 머지 로그 | 3일 | `cleanup.state_days` |
+| `.orch/state/gh/logs` 의 날짜별 GitHub 조회 로그 | 1일 | `cleanup.gh_log_days` |
+
+열린 PR 의 파일, 실행 중인 큐나 마무리의 로그, 살아 있는 dispatch 의 기록은 기한이 지나도 남긴다. PR 이나 dispatch 의 상태를 확인하지 못했을 때도 남긴다. 실패한 마무리 로그와 중간에 멈춘 마무리 로그는 설정을 줄여도 최소 1시간 동안 남긴다. 자동 머지의 종료 알림이 읽을 로그, 워크트리가 남아 있어 마무리 여부를 확인하는 데 필요한 표시, UTC 기준 당일 GitHub 조회 로그도 남긴다.
+
+실측 기록(`routing-log.jsonl`, `launch-history.jsonl`), 보드, 배포 뒤 할 일 목록, 요청 기록과 위 표에 없는 파일은 보존 기한 정리 대상에서 제외한다. `loop.log` 는 1 MiB 를 넘으면 다음 줄을 쓰기 전에 `loop.log.1` 로 옮긴다. 새로 돌릴 때 이전 `loop.log.1` 을 교체한다.
 작업이 띄운 Docker 컨테이너와 쌓은 이미지도 반납한다. 무엇을 지우고 남기는지는 아래 「Docker 자원 반납」 이 소유한다.
 상세 규칙은 `scripts/cleanup/steps/` 의 해당 단계 파일 맨 위 설명을 따른다.
 
@@ -507,7 +517,7 @@ orch cleanup sweep --repo "$REPO" --run "$RUN_ID" --remove-kept "$WORKTREE" --ap
 
 ### handoff 산출물 정리
 
-끝난 작업의 큐 로그, 지시서, 오래된 orch 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
+끝난 작업의 큐 로그, 지시서, 오래된 orch 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 옮긴 파일은 되살릴 수 있다. 큐의 `.out` 로그와 짝인 pid 에는 위 보존 기한과 상태 확인 규칙을 적용한다. 이 명령의 `--queue-days` 는 `cleanup.queue_days` 보다 우선한다.
 PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가 MERGED 를 확인하면 그 폴더를 바로 휴지통으로 옮긴다. 휴지통 이동만 실패하면 원본을 남기고 경고한 뒤 다른 마무리는 계속한다.
 `orch cleanup handoff --apply` 는 GitHub 가 CLOSED 로 확인한 PR 폴더를 옮긴다. 상태를 확인할 수 없는 PR 과 OPEN·MERGED PR 의 폴더, `pending/` 과 측정 결과 폴더는 남긴다. 규칙 밖의 옛 파일도 옮기지 않고, `finish` 가 개수만 알린다.
 **사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.

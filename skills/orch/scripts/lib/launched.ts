@@ -121,7 +121,7 @@ export function latestTaskLaunch(repo: string, task: string): Launch | null {
   const dir = join(pathOf('state', repo), DIR)
   try {
     return readdirSync(dir).filter(name => name.endsWith('.json'))
-      .map(name => ({ launch: readLaunch(repo, name.slice(0, -5)), at: statSync(join(dir, name)).mtimeMs }))
+      .map(name => ({ launch: readLaunch(repo, name.slice(0, -5)), at: statSync(join(dir, name), { throwIfNoEntry: false })?.mtimeMs ?? 0 }))
       .filter(row => row.launch?.task === task).sort((a, b) => b.at - a.at)[0]?.launch ?? null
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -135,7 +135,7 @@ export function allLaunches(repo: string): Launch[] {
   let names: string[]
   try { names = readdirSync(dir) } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return []; throw e }
   return names.filter(name => name.endsWith(".json"))
-    .map(name => ({ launch: readLaunch(repo, name.slice(0, -5)), at: statSync(join(dir, name)).mtimeMs }))
+    .map(name => ({ launch: readLaunch(repo, name.slice(0, -5)), at: statSync(join(dir, name), { throwIfNoEntry: false })?.mtimeMs ?? 0 }))
     .sort((a, b) => b.at - a.at)
     .flatMap(row => row.launch ? [row.launch] : [])
 }

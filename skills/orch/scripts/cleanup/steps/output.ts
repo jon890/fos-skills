@@ -32,10 +32,12 @@ const SWEEP_RULES: [RegExp, (m: RegExpExecArray, ctx: SweepContext) => string | 
   [/^건너뜀 (\S+): (.*)/, (m) => `KEPT ${m[1]} ${m[2]}`],
   [/^원격 브랜치 정리 건너뜀: (.*)/, (m) => `KEPT remote ${m[1]}`],
   [/^기준 브랜치를 맞추지 않는다: (.*)/, (m) => `KEPT base ${m[1]}`],
+  [/^(?:보존 기한이 지난 파일을|머지 큐 로그를) 남긴다 (.*): (.*)/, (m) => `KEPT ${m[1]} ${m[2]}`],
   [/닫기 실패:? (\S+)(?: (.*))?$/, (m) => `FAILED terminal:${m[1]}${m[2] ? ` ${m[2]}` : ''}`],
   [/^dispatch release 실패 (\S+)/, (m) => `FAILED dispatch:${m[1]}`],
   [/^.*? 실패 ([^\s:]+)(?::? (.*))?$/, (m) => `FAILED ${m[1]}${m[2] ? ` ${m[2]}` : ''}`],
   // 지운 것
+  [/^(?:보존 기한이 지난 파일|머지 큐 로그) 옮김 (.*) -> /, (m) => `REMOVED ${m[1]}`],
   [/^(?:removed|리뷰 워크트리 삭제|detached 워크트리 삭제) (\S+)/, (m) => `REMOVED ${m[1]}`],
   [/^(?:deleted branch|브랜치 삭제|리뷰 브랜치 삭제) (\S+)/, (m) => `REMOVED branch:${m[1]}`],
   [/^원격 브랜치 삭제 (\S+)/, (m) => `REMOVED remote:${m[1]}`],
@@ -45,6 +47,7 @@ const SWEEP_RULES: [RegExp, (m: RegExpExecArray, ctx: SweepContext) => string | 
   [/^(?:지시서|PR 본문) (?:삭제|옮김) (\S+)/, (m) => `REMOVED ${m[1]}`],
   [/^기준 브랜치 fast-forward (\S+)/, (m) => `UPDATED base:${m[1]}`],
   // 지울 것(dry-run)
+  [/^(?:보존 기한이 지난 파일을|머지 큐 로그를) 휴지통으로 옮길 것 (.*)/, (m) => `WOULD-REMOVE ${m[1]}`],
   [/^worktree 와 로컬 브랜치를 지울 것 (\S+)/, (m, ctx) => `WOULD-REMOVE ${ctx.path ?? `branch:${m[1]}`}`],
   [/^(?:리뷰 워크트리|detached 워크트리)를 지울 것 (\S+)/, (m) => `WOULD-REMOVE ${m[1]}`],
   [/^(?:리뷰 브랜치|브랜치)를 지울 것 (\S+)/, (m) => `WOULD-REMOVE branch:${m[1]}`],
