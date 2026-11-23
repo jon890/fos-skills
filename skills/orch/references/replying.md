@@ -168,7 +168,7 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 
 `handoff/` 는 `orch paths root` 가 가리키는 폴더 아래에 있고, 질문과 보고에는 절대경로를 적는다.
 ask 질문에 세션 임시 폴더 경로가 있으면 worker ask 가 종료 코드 2 로 거절한다. 코디네이터가 열 필요 없는 기록용 경로면 `--temp-ok` 를 붙여 보낸다.
-`orch queue finish` 는 머지 뒤 해당 PR 폴더를 휴지통으로 옮기고, `orch cleanup handoff --apply` 는 워크트리가 없어진 `pending/` 폴더를 옮긴다. 측정 결과처럼 다시 쓸 파일은 `handoff/` 의 별도 폴더에 둔다.
+`orch queue finish` 는 머지 뒤 해당 PR 폴더를 휴지통으로 옮기고, 정기 정리가 남은 산출물을 옮긴다(규칙은 [`cleanup.md`](cleanup.md) 의 「handoff 산출물 정리」). 측정 결과처럼 오래 둘 폴더는 `handoff/.keep` 에 이름을 적는다.
 
 ## PR 준비를 보고한다
 

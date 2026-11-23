@@ -87,7 +87,7 @@ orch config unset contracts.merge_command contracts.paths
 | `cleanup` | `repo`, `gh_host`, `run` | 문자열이나 null. 정리할 저장소, GitHub 호스트, Orca Run id |
 | `cleanup` | `orch_dir`, `previews`, `board` | 문자열이나 null. orch 작업 폴더, 함께 정리할 미리보기 폴더, 보드 파일. 미리보기는 content-preview 의 산출물이라 주지 않으면 보지 않는다 |
 | `cleanup` | `trash` | 문자열이나 null. 휴지통 폴더. 기본은 `~/.Trash/orch-cleanup-<날짜>` |
-| `cleanup` | `queue_days`, `state_days`, `gh_log_days`, `folder_days`, `data_days` | null, 또는 0 이상의 유한한 수나 그렇게 읽히는 문자열. 큐 로그, 상태 파일, GitHub 조회 로그, 폴더, 데이터 파일의 기준 일수. 파일 범위와 기본값은 [정리](cleanup.md#정리)를 따른다 |
+| `cleanup` | `queue_days`, `state_days`, `gh_log_days`, `handoff_days`, `folder_days`, `data_days` | null, 또는 0 이상의 유한한 수나 그렇게 읽히는 문자열. 큐 로그, 상태 파일, GitHub 조회 로그, 폴더, 데이터 파일의 기준 일수. 파일 범위와 기본값은 [정리](cleanup.md#정리)를 따른다 |
 | `cleanup` | `data_ext` | 문자열이나 null. 데이터 파일 확장자 |
 | `cleanup` | `apply` | 참거짓. true 면 정리를 적용한다 |
 | `queue` | `required` | 비지 않은 문자열, 또는 비지 않은 문자열 목록(빈 목록 허용). 필수 체크 이름 |
