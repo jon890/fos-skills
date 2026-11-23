@@ -23,6 +23,7 @@ describe('stop-reports', () => {
   test('worker 가 보낸 escalation 과 다른 종류는 멈춤 보고가 아니다', () => {
     assert.equal(stopReason({ id: 'msg_1', type: 'escalation', subject: 'Blocked: 권한 거부', payload: '{"taskId":"t"}' }), null)
     assert.equal(stopReason({ id: 'msg_1', type: 'escalation', subject: 'Worker stopped without reporting' }), null)
+    assert.equal(isQuietStop({ ...report('finished', 'Worker stopped without reporting'), id: 'msg_1' }), false)
     assert.equal(stopReason({ id: 'msg_stop_x', type: 'status', subject: 'Worker stopped without reporting' }), null)
   })
 

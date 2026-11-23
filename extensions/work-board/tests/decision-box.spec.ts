@@ -67,7 +67,7 @@ test('자동 알림은 결정 필요 수에 세지 않는다 (R1)', async () => 
 })
 
 test('worker 가 보낸 메시지는 자동 알림과 제목이 같아도 상자에 남는다 (R2)', async () => {
-  const own = ask('msg_9f2c0a', 'escalation', '2026-11-02T10:00:00Z', { subject: 'Worker stopped without reporting' })
+  const own = stop('msg_9f2c0a', '2026-11-02T10:00:00Z')
   const result = await queryQuestions(fake([own]), RUN, ACTIVE)
   assert.deepEqual(ids(result.questions), ['msg_9f2c0a'])
   assert.deepEqual(result.asking.sort(), ['open', 'structworker_w'])

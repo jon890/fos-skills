@@ -150,7 +150,7 @@ test('옛 Run 에 남은 worker 의 마지막 보고를 보여 주고 새 메인
   state.workers.r_old[0].dispatchStatus = 'completed'
   state.inboxes = { 'run:r_old': [
     ...Array.from({ length: 200 }, () => ({ type: 'status', dispatch_id: 'd3', body: '다른 저장소' })),
-    { type: 'escalation', dispatch_id: 'd2', payload: { stopReason: 'finished' }, body: 'Orca 가 만든 대기 알림' },
+    { id: 'msg_stop_idle', type: 'escalation', dispatch_id: 'd2', payload: { stopReason: 'finished' }, body: 'Orca 가 만든 대기 알림' },
     { type: 'heartbeat', dispatch_id: 'd2', body: '보고가 아님' },
     { id: 'msg_done', type: 'worker_done', payload: { dispatchId: 'd2' }, body: '준비됨 #42' },
     { type: 'status', dispatch_id: 'd2', body: '오래된 보고' },
