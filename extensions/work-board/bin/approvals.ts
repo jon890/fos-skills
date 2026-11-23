@@ -1,6 +1,5 @@
 // 보드 창(hooks/register.js)이 승인 대기를 읽고 누를 때 부르는 창 전용 명령이다. orch 명령 표에는 넣지 않는다.
 // mod 는 TypeScript 와 node:fs 를 import 하지 못해 이 명령을 $.process.run 으로 불러 출력만 읽는다.
-// orch 의 lib/approvals.ts 를 import 한다. bin/worker-marks.ts 가 lib/movement.ts 를 쓰는 것과 같은 방향이다.
 //
 // 에이전트의 Bash 도구로 부르지 않는다. 승인 기록은 사람이 보드 창에서 누른 버튼만 쓴다.
 // `press` 호출은 skills/orch/hooks/block-approval-press.ts 가 거부한다(막지 못하는 범위는 docs/features/board-approval/design.md 「막는 것과 막지 못하는 것」).
@@ -22,16 +21,11 @@
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { approvalsFile, recordPress, selfIsWorker } from '../../../skills/orch/scripts/lib/approvals.ts'
-import { ACTIVE_STATE, LIVE_STATES, lookupWorkerTerminals } from '../../../skills/orch/scripts/lib/worker-terminal.ts'
+import { isLiveWorkerTerminal } from '../../../skills/orch/scripts/public/board-worker-terminal.ts'
 
 const USAGE = '사용법: approvals.ts where --repo DIR | self [--live] | press <id> <버전> approve|revise [--note=글] --origin kind --repo DIR'
 const out = (line: string) => process.stdout.write(line + '\n')
 const err = (line: string) => process.stderr.write(line + '\n')
-
-async function liveWorker(handle: string): Promise<boolean | null> {
-  const result = await lookupWorkerTerminals([handle], { states: [ACTIVE_STATE, ...LIVE_STATES] })
-  return result.ok ? result.found.has(handle) : null
-}
 
 async function main(): Promise<number> {
   let parsed: ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>
@@ -41,7 +35,7 @@ async function main(): Promise<number> {
   if (verb === 'where' && positionals.length === 1 && v.repo) { out(approvalsFile(resolve(v.repo))); return 0 }
   if (verb === 'self' && positionals.length === 1) {
     const terminal = process.env.ORCA_TERMINAL_HANDLE || null
-    const worker = !terminal ? false : v.live ? await liveWorker(terminal) : await selfIsWorker()
+    const worker = !terminal ? false : v.live ? await isLiveWorkerTerminal(terminal) : await selfIsWorker()
     out(JSON.stringify({ terminal, worker }))
     return 0
   }
