@@ -212,4 +212,23 @@ Codex 매니페스트에 hook 을 넣지 않는 선택은 [ADR-007](../../adr/00
 절차와 판단 규칙은 [model-compare.md](../../../skills/orch/references/model-compare.md) 가, 비교마다 복사할 표는 [기록 틀](../../../skills/orch/templates/model-compare-record.md) 이 갖는다.
 비교를 시작하면 이 절 아래에 `###` 절을 하나 더한다. 같은 모델과 행의 판단이 이미 있으면 다시 비교하지 않는다.
 
-아직 시작한 비교가 없다. 첫 비교 대상은 `gpt-6.2-astra` 다.
+고른 행은 astra 를 쓰는 「가장 어려운 설계와 구현」(agent-selection.md 「기본 후보에서 뺀 모델」)에 맞춘 hard-design 과 impl-hard 다. 지금 두 행은 Fable 이 맡는다.
+
+### 2026-11-23 gpt-6.2-astra 대 claude-fable-5-2, 행 hard-design
+
+비교 id: `compare-gpt-6-2-astra-hard-design`. 상태: 진행 중
+
+| 건 | 일 | PR(지금/후보) | 리뷰 P1·P2 | 첫 CI | 리뷰 뒤 고친 커밋 | 막힘·재시도 | 준비까지 분 | 토큰 비용($) | 숨긴 리뷰 | 머지한 쪽 | 나쁜 건 |
+| --: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+판단(5건 뒤): 아직 없음.
+
+### 2026-11-23 gpt-6.2-astra 대 claude-fable-5-2, 행 impl-hard
+
+비교 id: `compare-gpt-6-2-astra-impl-hard`. 상태: 진행 중
+
+| 건 | 일 | PR(지금/후보) | 리뷰 P1·P2 | 첫 CI | 리뷰 뒤 고친 커밋 | 막힘·재시도 | 준비까지 분 | 토큰 비용($) | 숨긴 리뷰 | 머지한 쪽 | 나쁜 건 |
+| --: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+판단(5건 뒤): 아직 없음.
+
