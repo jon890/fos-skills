@@ -17,7 +17,7 @@
 - 파일 수정은 `sed -i` 대신 Edit 나 python 으로 한다.
 - 의존성이 필요하면 워크트리 안에서 lockfile 로 설치한다. 원래 저장소의 의존성 폴더를 링크로 걸지 않는다.
 - **PR 생성은 지시서의 `허락:` 줄이 허락한 경우에만 한다. 허락이 없으면 push 까지만 하고 status 로 알린다.** base 는 {{BASE}} 다. 다른 PR 브랜치를 base 로 두지 않는다. 제목과 본문은 {{PR_FORMAT}} 을 따른다. 지시서가 정한 PR 만 연다.
-- 원격 명령은 `orch config get worker.readonly_tools` 에 나온 도구의 읽기 전용 호출만 직접 한다. 그 밖의 원격 명령, 원격 쓰기, 대량 삭제는 `orch worker ask` 로 맡긴다. <!-- orch-rule: coordinator-commands -->
+- 원격 명령은 `orch config get worker.readonly_tools` 에 나온 도구의 읽기 전용 호출만 직접 한다. 지시서의 `허락:` 줄에 있더라도 목록 밖 원격 명령, 원격 쓰기, auto mode 가 막을 수 있는 대량 삭제는 `orch worker ask` 로 맡긴다. <!-- orch-rule: coordinator-commands -->
 - {{DRAFT_PR_RULE}}
 - 자동 리뷰 workflow 를 바꾸면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. 결과는 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
 - PR 리뷰는 `review-fix` 로 반영한다. 반영 뒤 새 비차단 제안은 다음에 다룬다고 회신하고 resolve 하며, 차단 지적만 다시 반영한다. 첫 리뷰의 하위 등급 판단과 회신 전 ask 기준은 `references/replying.md` 를 따른다. <!-- orch-rule: review-once -->
