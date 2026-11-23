@@ -1790,6 +1790,32 @@ describe('리뷰 worker 준비', () => {
     assert.equal(lines('orca orchestration worker-start').length, 1)
   })
 
+  test('한도로 같아진 리뷰 제공자를 표시하고 같은 Task 의 다음 선택으로 갱신한다', () => {
+    reviewSpec(5)
+    const args = ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium']
+    writeFileSync(spec, readFileSync(spec, 'utf8') + 'worker 선택: `codex` `gpt-6.2-sol` effort `medium`. 행: review. 이유: 다른 제공자.\n')
+    env.GH = linkBin(tmp, 'gh', 'console.log(JSON.stringify({ headRefName: "feat/impl", url: "https://github.com/o/r/pull/5" }))')
+    env.ORCH_SYSTEM_CODEX_HOME = join(tmp, 'codex-home')
+    const accounts = { codex: { activeAccountId: null, systemDefault: { providerAccountId: CREATOR } } }
+    codexUsage(env.ORCH_SYSTEM_CODEX_HOME, 100)
+    recordHistory(proj, {
+      dispatch: 'ctx_impl', task: 'task_impl', run: null, terminal: null, at: '2026-11-20T00:00:00.000Z',
+      branch: 'feat/impl', worktree, spec, title: '구현', agent: 'claude', model: 'opus', effort: 'medium',
+      row: 'impl-explore', retry_of: null,
+    })
+    state({ accounts, next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const result = launch(['--repo', proj, '--name', 'review-pr-5', '--', ...args], 'bash', false)
+    assert.equal(result.code, 0, both(result))
+    const file = git('-C', reviewWt, 'rev-parse', '--git-path', 'orch-review-launch.json')
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { repo: 'o/r', pr: 5, sameProviderDueToLimit: true })
+    assert.equal(existsSync(git('-C', proj, 'rev-parse', '--path-format=absolute', '--git-path', 'orch-review-launch.json')), false)
+    codexUsage(env.ORCH_SYSTEM_CODEX_HOME, 0)
+    state({ accounts, next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+    const retried = launch(['--repo', proj, '--task', 'task_1', '--', ...args], 'bash', false)
+    assert.equal(retried.code, 0, both(retried))
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).sameProviderDueToLimit, false)
+  })
+
   test('review.prepare 를 PR head 의 워크트리에서 한 번 돌리고 결과 코드를 낸다', () => {
     reviewSpec(5)
     const seen = join(tmp, 'prepare.txt')

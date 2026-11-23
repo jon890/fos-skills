@@ -39,6 +39,21 @@ import { PY_SPACE, pyInt, pyJson, pyReadText, pyStr } from './kit/py.ts'
 import { isMainModule } from './is-main.ts'
 
 const GRADE_RE = /^(🔴 \*\*P1 치명|🟠 \*\*P2 높음|🟡 \*\*P3 보통|🔵 \*\*P4 낮음|⚪ \*\*P5 참고)\*\*$/
+const SAME_PROVIDER_NOTICE = '같은 제공자 리뷰(한도)'
+
+// orch 가 이 워크트리의 리뷰를 시작할 때 남긴 값이다. 수동 리뷰와 옛 워크트리에서는 파일이 없을 수 있다.
+function reviewLimitNotice(repo: string, pr: string): boolean {
+  const found = spawnSync('git', ['rev-parse', '--git-path', 'orch-review-launch.json'], { encoding: 'utf8', timeout: 2000 })
+  if (found.status !== 0 || !found.stdout.trim()) return false
+  try {
+    const value = JSON.parse(readFileSync(found.stdout.trim(), 'utf8'))
+    return value?.sameProviderDueToLimit === true && value.pr === Number(pr)
+      && typeof value.repo === 'string' && value.repo.toLowerCase() === repo.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 const AI_NOTICE = '🤖 이 리뷰는 AI 가 작성했습니다.'
 const HUMAN_NOTICE = '🤖 이 리뷰는 AI 가 작성했고, 등록 전에 사람이 확인했습니다.'
 // 옛 셸의 grep -E `\b` 는 UTF-8 로케일에서 한글도 낱말 글자로 본다. 그래서 `@claude가` 는 토큰 뒤에 낱말이 이어진 것이다
@@ -269,7 +284,12 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
       return JSON.parse(gh(host, ['api', `repos/${repo}/pulls/${pr}/reviews`, '-X', 'POST', '--input', payload]))
     }
     const withNotice = (text: string, wrap: (notice: string) => string) => (text.includes(AI_NOTICE) || text.includes(HUMAN_NOTICE) ? text : text + wrap(notice))
-    const summaryBody = () => withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n---\n\n${n}`)
+    const summaryBody = () => {
+      const text = rstrip(pyReadText(bodyFile))
+      const marked = reviewLimitNotice(repo, pr) && !text.includes(SAME_PROVIDER_NOTICE)
+        ? `${text}\n\n${SAME_PROVIDER_NOTICE}` : text
+      return withNotice(marked, (n) => `\n\n---\n\n${n}`)
+    }
     if (mode === 'batch') {
       const comments = parsedInlines.map(({ path, line, file }) => ({
         path,

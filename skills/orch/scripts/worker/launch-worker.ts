@@ -158,6 +158,7 @@ import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
 import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
+import { writeReviewLaunch } from '../lib/review-launch.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
 import { runAsync, scriptCommand, withRun } from '../lib/proc.ts'
@@ -1074,6 +1075,15 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       }
       const accountChanged = () => stop(`Orca 의 선택 계정이 준비 중 바뀌었다. 남은 워크트리 ${worktree} 로 다시 띄운다`)
       if (decided.accountsChanged()) return accountChanged()
+      if (reviewPr !== null && !reusedTerminal) {
+        try {
+          writeReviewLaunch(worktree, repo, reviewPr, limitOverride?.agent ?? null)
+        } catch {
+          return stop(`리뷰 실행 정보를 저장하지 못했다. 남은 워크트리 ${worktree} 로 다시 띄운다`)
+        }
+        // 원격 PR 을 조회하는 동안 사용자 선택이 바뀔 수 있다.
+        if (limitOverride && decided.accountsChanged()) return accountChanged()
+      }
       let result = await call(['orchestration', 'worker-start', ...args, '--json'], LONG_MS)
       // worktree list 에 보인 직후에도 Orca 가 그 워크트리를 아직 고르지 못해 selector_not_found 로 끝나는 일이 있다.
       // 그 오류만 한 번 다시 부른다. 다른 오류는 다시 불러도 같은 결과라 그대로 멈춘다.
