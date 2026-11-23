@@ -399,7 +399,7 @@ describe('상태 파일 보존 기한', () => {
     const link = join(fx.repo, '.orch/state/gh/logs/2026-10-03.jsonl')
     symlinkSync(kept.at(-1)!, link)
     kept.push(link)
-    fx.prViews['41'] = { state: 'MERGED' }
+    fx.prViews['41'] = { state: 'MERGED', headRefName: 'finished' }
     fx.prViews['42'] = { state: 'OPEN' }
     fx.openHeads = ['open-branch']
     fx.allWorkers = [
