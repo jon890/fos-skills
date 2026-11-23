@@ -124,6 +124,33 @@ test('모델 비교 절차, 두 틀, evidence 비교 절은 서로 가리키고 
   assert.ok(read('references', 'agent-selection.md').includes('(model-compare.md)'), 'agent-selection.md 가 model-compare.md 를 가리키지 않는다')
 })
 
+test('모델 비교 절차는 두 worker 줄, 숨긴 리뷰, 머지, 판단 순서를 스펙 결정대로 적는다', () => {
+  const procedure = read('references', 'model-compare.md')
+  // 후보 줄은 스펙 REQ18 과 글자까지 같다. 지금 모델 줄도 후보 밖 이유를 적는다
+  const launch = section(procedure, '## 두 worker 띄우기').join('\n')
+  assert.ok(launch.includes('`후보 밖: 비교, <지금 모델> 대조(사용자 결정 2026-11-20)`'), '후보 줄이 스펙 REQ18 과 다르다')
+  assert.ok(launch.includes('`후보 밖: 비교 기준, <후보 모델> 대조(사용자 결정 2026-11-20)`'), '지금 모델 줄의 후보 밖 이유가 없다')
+  // 표가 옛 세대일 때 지금 모델 쪽 worker 가 MODEL-OUTDATED 로 막히지 않게 새 세대를 적는다(verification.md 결함 2)
+  for (const word of ['MODEL-TABLE-STALE', 'MODEL-OUTDATED', '새 세대를 적는다']) assert.ok(launch.includes(word), `두 worker 띄우기에 「${word}」 가 없다`)
+  // 비교 id 와 숨긴 리뷰 틀에 모델 이름이 들어가지 않는다(결함 1). 순서 파일의 뜻을 적는다(결함 3)
+  const start = section(procedure, '## 비교 시작').join('\n')
+  assert.ok(start.includes('`compare-<행>-<시작 날짜>`') && !start.includes('compare-<모델>'), '비교 id 에 모델 이름이 들어간다')
+  const review = section(procedure, '## 숨긴 리뷰').join('\n')
+  assert.ok(review.includes('`base=A` 는 `A.diff` 가 지금 모델의 PR'), '순서 파일의 뜻이 없다')
+  assert.ok(review.includes('`spec.md`'), '리뷰어에게 모델 줄을 뺀 지시서 사본을 넘기지 않는다')
+  const template = read('templates', 'spec-compare-review.md').split('\n').filter((line) => !line.startsWith('<!--')).join('\n')
+  for (const leak of ['모델 이름', '후보 모델', '지금 모델', '원래 지시서 경로', 'compare-keys']) assert.ok(!template.includes(leak), `숨긴 리뷰 틀 본문에 「${leak}」 가 있다`)
+  // 머지: 갈리면 P1·P2, 같으면 준비까지 분(스펙 DECISION34)
+  const merge = section(procedure, '## 머지와 건의 결과').join('\n')
+  assert.match(merge, /P1·P2 수가 적은 쪽을 머지한다\. P1·P2 수도 같으면 준비까지 분이 짧은 쪽을 머지한다/)
+  // 판단은 문제 → 시간 → 비용 순서다(스펙 DECISION5). 정의의 원본은 DECISION33 이다
+  const judge = section(procedure, '## 5건 뒤 판단').filter((line) => /^\d\. /.test(line)).map((line) => line.slice(3, 5))
+  assert.deepEqual(judge, ['문제', '시간', '비용'])
+  assert.ok(section(procedure, '## 건마다 기록할 값').join('\n').includes('DECISION33'))
+  const spec = readFileSync(join(ORCH, '..', '..', 'docs', 'features', 'model-auto-routing', 'spec.md'), 'utf8')
+  for (const id of ['DECISION33', 'DECISION34']) assert.match(spec, new RegExp(`^\\| ${id} \\|.*\\| 사용자 2026-11-23 \\|`, 'm'), `스펙 결정 표에 ${id} 가 없다`)
+})
+
 test('공통 지시서는 worker 가 이유 없이 기준 브랜치를 합치지 않게 한다', () => {
   const common = read('templates', 'spec-common.md')
   const rule = common.split('\n').find((line) => line.includes('orch-rule: no-early-base-merge')) ?? ''
