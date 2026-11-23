@@ -56,7 +56,8 @@ function setup(t: TestContext): Ctx {
   const tmp = mkdtempSync(join(tmpdir(), 'merge-queue-overlap-'))
   t.after(() => rmSync(tmp, { recursive: true, force: true }))
   const gitconfig = join(tmp, 'gitconfig')
-  writeFileSync(gitconfig, '')
+  // testkit 전역 설정(GIT_CONFIG_FILE)과 같은 자동 정리 설정을 둔다. 이 테스트는 자기 전역 설정 파일을 쓴다
+  writeFileSync(gitconfig, '[maintenance]\n\tautoDetach = false\n')
   const stateFile = join(tmp, 'state.json')
   const logFile = join(tmp, 'log.txt')
   writeFileSync(join(tmp, 'sweep.py'), '')

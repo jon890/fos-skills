@@ -3,21 +3,23 @@
 import { spawnSync } from 'node:child_process'
 import { cpSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tempDir } from './temp.ts'
 
 export type Repo = { origin: string; dir: string }
 
 // 테스트가 띄우는 git 이 이 기계의 전역·시스템 설정을 읽지 않고, 자동 정리를 백그라운드로 돌리지 않게 하는 값이다.
-// git 2.47 부터 commit, push(받는 쪽 receive-pack), fetch 가 부르는 `git maintenance run --auto` 는 기본으로 백그라운드 자식 프로세스로 돈다.
-// git 2.56 은 git 이 돌아온 뒤에도 그 자식이 `objects/maintenance.lock` 을 쥐고 있다가 지운다. 그사이 테스트가 그 폴더를
-// 복사하거나 지우면 cpSync 가 ENOENT, rmSync 가 ENOTEMPTY 로 가끔 실패했다. autoDetach 를 끄면 같은 정리가 git 안에서 끝난다.
+// 전역 설정은 이 폴더의 gitconfig 하나로 바꾼다. 그 파일이 `maintenance.autoDetach=false` 를 갖는다.
+// GIT_CONFIG_COUNT 로 넣지 않는 이유: 로컬 경로로 push 하면 git 이 받는 쪽 receive-pack 의 환경에서 그 변수를 지운다.
+//   전역 설정 파일은 그대로 읽혀 받는 저장소의 자동 정리에도 걸린다. 호출자가 넘긴 GIT_CONFIG_COUNT 도 덮지 않는다.
+// git 2.56 은 git 이 돌아온 뒤에도 자동 정리 자식이 `objects/maintenance.lock` 을 쥐고 있다가 지운다. 그사이 테스트가 그 폴더를
+// 복사하거나 지우면 cpSync 가 ENOENT, rmSync 가 ENOTEMPTY 로 가끔 실패했다.
 // 작성자는 테스트마다 다를 수 있어 넣지 않는다. git 을 띄우는 테스트는 이 값을 env 에 펼친다
+export const GIT_CONFIG_FILE = fileURLToPath(new URL('./gitconfig', import.meta.url))
+
 export const GIT_ISOLATION: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_GLOBAL: GIT_CONFIG_FILE,
   GIT_CONFIG_NOSYSTEM: '1',
-  GIT_CONFIG_COUNT: '1',
-  GIT_CONFIG_KEY_0: 'maintenance.autoDetach',
-  GIT_CONFIG_VALUE_0: 'false',
 }
 
 export function gitEnv(base: NodeJS.ProcessEnv = process.env, opts: { ceiling?: string } = {}): NodeJS.ProcessEnv {
