@@ -48,7 +48,7 @@
 //     근거를 갱신한 뒤 같은 명령으로 재개한다
 //
 // 배포 뒤 할 일: 기능 PR 의 근거가 「후속 검증: 대기 | <글>」 하나만 남았으면 그 글을 배포 뒤 할 일 목록(lib/followups.ts)에 옮기고
-//     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드 파일이 있으면 항목 followup-<PR> 을 wait 로 보인다.
+//     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드에서 연결된 항목에 대기 단계를 더하거나 별도 followup-<PR> 항목을 만든다.
 //     이 마무리에 준 옵션(보드, 마지막 PR 표시 같은 것, replayArgs)을 항목의 finish_args 에 남긴다. followup done 이 그 값을 그대로 쓴다.
 //     --pid-file 의 절대 경로도 항목의 pid_file 에 남긴다. followup done 이 그 파일로 도는 마무리를 알아본다.
 //     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 단계 4 의 정리는 워크트리를 남기고,
@@ -56,7 +56,7 @@
 //     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
 //     코디네이터가 `orch followup done <PR>` 로 끝내면 그 명령이 이 마무리를 다시 띄운다. 그때는 목록의 끝난 기록을 후속 검증 통과로 보고
 //     지시서 정리, 업무 완료, 보드 done 까지 간다. 정리도 목록의 끝난 기록을 보고 남겼던 워크트리와 handoff 를 지운다. 본문의 대기를 통과로 바꿔도 같다.
-//     그때는 목록에 남은 그 PR 의 항목도 끝내고 `FOLLOWUP-DONE #<PR>` 을 낸다(보드 항목 followup-<PR> 도 done)
+//     그때는 목록에 남은 그 PR 의 항목도 끝내고 `FOLLOWUP-DONE #<PR>` 을 낸다(보드 단계나 별도 항목도 완료)
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -183,7 +183,7 @@ import { releaseClaim } from '../lib/pr-claim.ts'
 import type { Claim } from '../lib/pr-claim.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
-import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
+import { boardIdOf, branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows } from '../lib/workers.ts'
 import { emit, oneLine, short } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
@@ -835,7 +835,7 @@ async function finish(args: Args, repo: string): Promise<number> {
     if (problem) return fail(problem)
     const waiting = pendingFollowup(body)
     if (waiting !== null && !followupDone(repo, args.pr)) {
-      return holdForFollowup(args, repo, merged, waiting, deploy, deployed && !handoffProblem, problems)
+      return holdForFollowup(args, repo, merged, waiting, deploy, deployed && !handoffProblem, problems, worktree)
     }
     if (waiting === null) closeFollowup(args, repo)
   }
@@ -905,14 +905,32 @@ async function finish(args: Args, repo: string): Promise<number> {
   return 0
 }
 
+function followupBoardItem(args: Args, repo: string, branch: string, worktree: string | null): string | undefined {
+  const file = boardPath(repo, args.board)
+  if (!existsSync(file)) return undefined
+  const ids = new Set(readBoard(file).map((item) => item?.id))
+  if (args.boardId && ids.has(args.boardId)) return args.boardId
+  const specs = specFiles(args.specsDir ? specsDirOf(args, repo) : pathOf('specs', repo))
+  const given = new Set(specs.filter((spec) => branchesOf(spec.text).includes(branch))
+    .map((spec) => boardIdOf(spec.text)?.id).filter((id): id is string => !!id && ids.has(id)))
+  if (given.size === 1) return [...given][0]
+  return pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)?.id
+}
+
 // 머리 주석의 「배포 뒤 할 일」. 후속 검증 줄을 목록에 옮기고 보드에 보인다. 지시서, 업무 완료(after-deploy), 보드 done 은 남긴다.
 // 배포가 실패했거나 시간이 지났거나 handoff 정리가 남았으면(ok 가 거짓) 옮긴 뒤 FINISH-FAIL 이다. 루프가 배포를 다시 확인한다
-function holdForFollowup(args: Args, repo: string, merged: Merged, text: string, deploy: Deploy, ok: boolean, problems: string[]): number {
+function holdForFollowup(args: Args, repo: string, merged: Merged, text: string, deploy: Deploy, ok: boolean, problems: string[], worktree: string | null): number {
   const pr = Number(args.pr)
   let line: string
   try {
     const { value: got, board } = updateWithBoard(repo, pr, (items) => {
-      const made = upsertFollowup(items, { pr, title: merged.title, text, merge_commit: merged.merge, deploy, finish_args: replayArgs(args), pid_file: args.pidFile ? resolve(args.pidFile) : null }, new Date().toISOString())
+      // 이전에 등록한 항목은 위치를 지킨다. 다시 마무리해도 다른 보드 항목에 복제하지 않는다.
+      let boardItem: string | undefined
+      if (!items.some((item) => item.pr === pr)) {
+        try { boardItem = followupBoardItem(args, repo, merged.branch, worktree) }
+        catch (e) { log(`배포 뒤 할 일의 보드 항목을 읽지 못했다: ${oneLine((e as Error).message)}`) }
+      }
+      const made = upsertFollowup(items, { ...(boardItem ? { board_item: boardItem } : {}), pr, title: merged.title, text, merge_commit: merged.merge, deploy, finish_args: replayArgs(args), pid_file: args.pidFile ? resolve(args.pidFile) : null }, new Date().toISOString())
       return { items: made.items, value: made }
     }, { file: args.board, bin: args.boardBin })
     line = got.result === 'added' ? `FOLLOWUP-ADDED #${pr} ${oneLine(text)}` : `FOLLOWUP-KEPT #${pr} ${oneLine(text)}`

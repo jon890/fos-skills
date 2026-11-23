@@ -443,6 +443,37 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
   })
 
+  for (const source of ['지시서', 'PR 연결']) {
+    test(`${source}로 찾은 보드 항목에 배포 뒤 확인 단계를 한 번만 붙인다`, async (t) => {
+      const c = setup(t)
+      const board = join(c.repo, 'board.json')
+      const item = { id: 'feature', status: 'doing', details: [{ text: '1. 구현', done: true }] }
+      const viaSpec = source === '지시서'
+      writeFileSync(board, JSON.stringify({
+        items: [{ ...item, ...(viaSpec ? {} : { pr: '#77' }) }],
+      }))
+      if (viaSpec) {
+        const spec = join(c.specs, 'spec-x.md')
+        writeFileSync(spec, readFileSync(spec, 'utf8') + '\n보드 항목 id: feature\n')
+      }
+      c.state.pr.body = evidence(c, '대기 | 배포 후 smoke PR #77')
+      const boardBin = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
+      const args = ['--specs-dir', c.specs, '--board', board, '--board-bin', boardBin]
+      const first = await c.finish(args)
+      assert.equal(first.code, 0, both(first))
+      assert.match(first.stdout, /^FOLLOWUP-ADDED #77 /m)
+      const again = await c.finish(args)
+      assert.equal(again.code, 0, both(again))
+      assert.equal(followups(c)[0].board_item, 'feature')
+      const rows = JSON.parse(readFileSync(board, 'utf8')).items
+      assert.deepEqual(rows.map((row: Json) => row.id), ['feature'])
+      assert.deepEqual(rows[0].details, [
+        ...item.details,
+        { text: '2. [wait] 배포 뒤 확인 (PR 77) · 배포 후 smoke PR 77', done: false },
+      ])
+    })
+  }
+
   test('후속 검증이 없음이면 PR 본문의 참고 제안으로 배포 뒤 할 일을 만들지 않는다', async (t) => {
     const c = setup(t)
     c.state.pr.body = evidence(c, '없음 | 스펙과 지시서에서 요구한 배포 뒤 확인이 없다')

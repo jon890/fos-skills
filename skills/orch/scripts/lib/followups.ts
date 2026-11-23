@@ -6,9 +6,8 @@
 //     파일이 JSON 이 아니면 `followups.json.broken-<시각>` 으로 옮기고 빈 목록으로 다시 시작하며 stderr 에 경고 한 줄을 낸다.
 //     그대로 두면 그 저장소의 기능 PR 마무리가 모두 FINISH-FAIL 로 멈추고 고칠 명령이 없었다(PR 558 리뷰). 옮긴 파일에서 항목을 직접 되살린다
 //
-// 보드 반영(updateWithBoard): 보드 파일이 있을 때만 항목 `followup-<PR>` 을 보드 명령으로 만든다. 끝나지 않은 항목은 wait 상태,
-//     제목 「배포 뒤 확인 #<PR> <PR 제목>」, 하위 줄 하나(후속 검증 글)다. 끝낸 항목은 done 으로 바꾼다. 보드가 없으면 건너뛴다.
-//     보드에는 항목을 새로 만드는 orch 명령이 없어(orch board set 은 있는 항목만 받는다) 이 경로가 만든다.
+// 보드 반영(updateWithBoard): 연결된 보드 항목에는 대기 단계를 붙이고, 없으면 별도 followup-<PR> 항목을 만든다.
+//     완료하면 해당 단계나 별도 항목을 끝낸다. 보드가 없으면 건너뛴다.
 //     보드 반영이 실패해도 목록은 그대로 쓴다. 목록이 원본이고 보드는 보여 주는 자리다.
 //     보드는 목록을 쓴 같은 잠금 안에서, 방금 쓴 목록의 그 항목 값으로만 쓴다. 받아 둔 값으로 보드를 쓰는 경로는 없다.
 //     따로 쓰면 늦게 끝난 대기 쓰기가 followup done 의 끝남을 덮어 보드가 대기로 돌아갔다(PR 558 리뷰)
@@ -22,14 +21,15 @@
 //     목록 파일이 없으면 gh 와 Orca 를 부르지 않는다.
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { withOwnerLock } from './owner-lock.ts'
 import {
   boardItemId, boardTitle, dueFollowups, markDeployed, markNotified, noticeText, parseFollowups, pruneFollowups, undeployedFollowups,
 } from '../core/followups.ts'
 import type { Followup } from '../core/followups.ts'
 import { boardPath } from './board-file.ts'
+import { BOARD_BIN, staleBoardWrite } from './board.ts'
+import { parseStepMark } from '../../../../extensions/work-board/hooks/step-marks.js'
 import { deployVerdict, parseRuns } from './deploy.ts'
 import type { RunRow } from './deploy.ts'
 import { gh } from './gh.ts'
@@ -38,9 +38,6 @@ import { makeParent, pathOf } from './paths.ts'
 import { run, scriptCommand } from './proc.ts'
 
 export type { Followup } from '../core/followups.ts'
-
-// lib/board.ts 의 BOARD_BIN 과 같은 경로다. 그 모듈은 무거워 마무리와 정리가 함께 읽는 이 모듈에서 import 하지 않는다
-const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../extensions/work-board/bin/board.ts')
 
 export function followupsFile(repo: string): string {
   return join(pathOf('state', repo), 'followups.json')
@@ -136,14 +133,55 @@ function mirrorBoard(repo: string, item: Followup, options: BoardOptions): strin
     return `실패: 보드 경로를 정하지 못했다: ${(e as Error).message}`
   }
   if (!existsSync(file)) return '보드 없음'
+  const bin = options.bin || process.env.BOARD_BIN || BOARD_BIN
+  const call = (argv: string[]) => run(scriptCommand(bin, [...argv, '--file', file]), { cwd: repo, timeoutMs: 60_000 })
+  if (item.board_item) return mirrorStep(call, item, item.board_item)
+
   const id = boardItemId(item.pr)
   const argv = item.done_at
     ? ['set', id, 'done']
     : ['set', id, 'wait', '--title', boardTitle(item), '--detail', item.text.replace(/\s+/g, ' ').trim()]
-  const bin = options.bin || process.env.BOARD_BIN || BOARD_BIN
-  const done = run(scriptCommand(bin, [...argv, '--file', file]), { cwd: repo, timeoutMs: 60_000 })
+  const done = call(argv)
   if (done.code !== 0) return `실패: 보드 ${id}: ${done.stderr.replace(/\s+/g, ' ').trim()}`
   return `보드 ${id} ${item.done_at ? 'done' : 'wait'}`
+}
+
+type BoardView = {
+  status: string
+  rev: string
+  lines: { number: number | null; done: boolean; text: string; in: 'details' | 'next' }[]
+}
+
+function mirrorStep(call: (argv: string[]) => ReturnType<typeof run>, item: Followup, id: string): string {
+  // 번호 앞에 #을 쓰면 기존 PR 머지 단계로 인식해 배포 뒤 확인까지 자동으로 끝낸다.
+  const label = `배포 뒤 확인 (PR ${item.pr})`
+  const body = `${label} · ${item.text.replace(/(?:PR\s+)?#(?=\d)/gi, 'PR ').replace(/\s+/g, ' ').trim()}`
+  const done = item.done_at !== null
+  const status = `보드 ${id} 배포 뒤 확인 ${done ? 'done' : 'wait'}`
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const got = call(['view', id])
+    if (got.code !== 0) return `실패: 보드 ${id}: ${got.stderr.trim()}`
+    let view: BoardView
+    try { view = JSON.parse(got.stdout) } catch { return `실패: 보드 ${id} 의 단계 목록을 읽지 못했다` }
+    if (!Array.isArray(view?.lines) || typeof view.rev !== 'string') return `실패: 보드 ${id} 의 단계 목록을 읽지 못했다`
+    const steps = view.lines.filter((line) => line.number !== null)
+    const current = steps.find((line) => parseStepMark(line.text)?.body.startsWith(`${label} · `))
+    if (done && !current) return '단계 없음'
+    const number = current?.number ?? Math.max(0, ...steps.map((line) => line.number ?? 0)) + 1
+    const text = done && current ? current.text : `${number}. [wait] ${body}`
+    if (current?.text === text && current.done === done && (done || view.status !== 'done')) return status
+
+    const source = current?.in ?? steps[0]?.in ?? 'details'
+    const lines = view.lines.filter((line) => line.in === source)
+    const fresh = { text, done }
+    const next = current ? lines.map((line) => line === current ? fresh : line) : [...lines, fresh]
+    const argv = ['set', id, ...(!done && view.status === 'done' ? ['wait'] : []), '--if-rev', view.rev]
+    for (const line of next) argv.push(source === 'details' ? '--detail' : '--next', `${line.done ? '✓ ' : '[ ] '}${line.text}`)
+    const written = call(argv)
+    if (written.code === 0) return status
+    if (!staleBoardWrite(argv, written)) return `실패: 보드 ${id}: ${written.stderr.trim()}`
+  }
+  return `실패: 보드 ${id} 의 단계가 계속 바뀌었다`
 }
 
 export type DeploySettings = { workflow: string; branch: string }

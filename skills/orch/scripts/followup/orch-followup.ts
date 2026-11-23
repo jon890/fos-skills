@@ -7,7 +7,7 @@
 //     orch followup done <PR> [--note 글] [--no-finish] [--run RUN] [--repo DIR]
 //         코디네이터가 배포된 환경에서 확인을 마친 뒤 부른다. 항목을 끝냄으로 적고 `FOLLOWUP-DONE #<PR>` 를 낸다.
 //         이미 끝났으면 `FOLLOWUP-ALREADY #<PR>`, 목록에 없으면 `FOLLOWUP-MISSING #<PR>` 과 종료 코드 1 이다.
-//         보드 파일이 있으면 항목 followup-<PR> 을 done 으로 바꾼다. 실패해도 목록은 끝낸 채 둔다.
+//         보드 파일이 있으면 연결된 단계를 끝내거나 별도 항목을 done 으로 바꾼다. 실패해도 목록은 끝낸 채 둔다.
 //         이어서 그 PR 의 마무리(finish-pr.ts)를 백그라운드로 다시 띄워 지시서 정리, 업무 완료, 보드 done 까지 가게 한다.
 //         pid 파일은 처음 마무리가 쓴 것(항목의 pid_file)이고, 없으면 <orch 루트>/queue/finish-<PR>.pid 다. 출력은 그 옆 finish-<PR>.out 이다.
 //         `FINISH-STARTED <PR> <로그>` 를 낸다. 같은 PR 의 마무리가 이미 돌면
