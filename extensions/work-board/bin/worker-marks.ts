@@ -1,5 +1,5 @@
 // 보드 창(hooks/register.js)이 worker 줄에 붙일 멈춤 판정을 낸다. 읽기만 한다.
-// mod 는 TypeScript 와 node:fs 를 import 하지 못해, 이 명령을 $.process.run 으로 불러 JSON 출력만 읽는다.
+// 창은 $.process.run 으로 이 명령을 불러 JSON 을 받는다. 설정과 파일은 명령 쪽에서 읽는다.
 //
 // worker 상태는 orch 가 소유한다. 이 명령은 work-board 창에 줄 결과를 만들 때 상주 루프와 같은 판정 함수를 쓴다.
 // 판정 규칙은 skills/orch/scripts/lib/movement.ts 머리 주석이 소유한다(docs/features/board-decision-box/spec.md 의 D11).
@@ -25,86 +25,10 @@
 //
 // 종료 코드: 0 냈다(worker 목록을 못 읽어도 error 에 이유를 두고 0), 1 예기치 못한 오류, 2 사용법이나 설정 오류(stderr 에 이유)
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { ConfigError } from '../../../skills/orch/scripts/lib/config.ts'
-import { real } from '../../../skills/orch/scripts/lib/fs.ts'
-import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../../../skills/orch/scripts/lib/movement.ts'
-import type { MovementSettings, ScreenMark } from '../../../skills/orch/scripts/lib/movement.ts'
-import { pathOf } from '../../../skills/orch/scripts/lib/paths.ts'
-import { workerRows } from '../../../skills/orch/scripts/lib/workers.ts'
-
-type Json = Record<string, unknown>
-
-export type WorkerMark = {
-  dispatch: string
-  terminal: string
-  worktree: string | null
-  reason: 'idle' | 'exited' | null
-  idleMin: number | null
-  movedAt: number | null
-  workedAt: number | null
-  waiting: string | null
-}
+import { readBoardWorkerMarks } from '../../../skills/orch/scripts/lib/board-queries/board-worker-marks.ts'
 
 const USAGE = '사용법: worker-marks.ts --repo DIR [--run ID] [--asking ID]... [--merging ID]... [--questions-unknown]'
-
-// orch-loop.ts 의 waitingOf 와 같은 순서와 문구다
-function waitingOf(row: Json, asking: ReadonlySet<string>, merging: ReadonlySet<string>, questionsUnknown: boolean): string | null {
-  const dispatch = String(row.dispatchId ?? '')
-  if (questionsUnknown) return '질문을 읽지 못했다'
-  if (asking.has(dispatch) || asking.has(String(row.agentTerminalHandle ?? ''))) return '질문의 답을 기다린다'
-  return merging.has(dispatch) ? 'CI 를 통과해 머지를 기다린다' : null
-}
-
-// 열린 dispatch 마다 판정한다. 워크트리 폴더가 없으면 파일과 커밋 시각을 읽지 않는다(lib/movement.ts 의 collectWorkers 와 같다)
-export function markWorkers(input: {
-  rows: Json[]
-  settings: MovementSettings
-  now: number
-  screens: Readonly<Record<string, ScreenMark>>
-  asking: ReadonlySet<string>
-  merging: ReadonlySet<string>
-  questionsUnknown: boolean
-}): WorkerMark[] {
-  return openRows(input.rows).map((row) => {
-    const path = worktreeOf(row)
-    const exists = path !== null && existsSync(path)
-    const mtime = exists ? latestMtime(path as string) : null
-    const commit = exists ? lastCommitMs(path as string) : null
-    const worked = [mtime, commit].filter((v): v is number => typeof v === 'number')
-    const verdict = judgeWorker({
-      run: '',
-      row,
-      now: input.now,
-      settings: input.settings,
-      mtime,
-      commit,
-      screen: input.screens[String(row.dispatchId)],
-      waiting: waitingOf(row, input.asking, input.merging, input.questionsUnknown),
-    })
-    return {
-      dispatch: verdict.dispatch,
-      terminal: verdict.terminal,
-      worktree: verdict.worktree,
-      reason: verdict.reason,
-      idleMin: verdict.idleMin,
-      movedAt: verdict.movedAt,
-      workedAt: worked.length > 0 ? Math.max(...worked) : null,
-      waiting: verdict.waiting,
-    }
-  })
-}
-
-// 루프가 적은 화면 기록. 없거나 깨졌으면 빈 기록이다
-function screens(repo: string): Record<string, ScreenMark> {
-  try {
-    return readRecords(JSON.parse(readFileSync(join(pathOf('state', repo), 'movement.json'), 'utf8'))).screens
-  } catch {
-    return {}
-  }
-}
 
 function main(argv: string[]): number {
   const options = {
@@ -130,34 +54,18 @@ function main(argv: string[]): number {
     process.stderr.write(`${USAGE}\nworker-marks: --repo 가 필요하다\n`)
     return 2
   }
-  const repo = real(values.repo)
-  let settings: MovementSettings
-  try {
-    settings = movementSettings(repo)
-  } catch (e) {
-    if (!(e instanceof ConfigError)) throw e
-    process.stderr.write(`worker-marks: ${e.message}\n`)
+  const result = readBoardWorkerMarks({
+    repo: values.repo,
+    run: values.run,
+    asking: values.asking,
+    merging: values.merging,
+    questionsUnknown: values['questions-unknown'],
+  })
+  if (!result.ok) {
+    process.stderr.write(`worker-marks: ${result.error}\n`)
     return 2
   }
-  let workers: WorkerMark[] = []
-  let error: string | null = null
-  if (values.run) {
-    const rows = workerRows(values.run)
-    if (rows.ok) {
-      workers = markWorkers({
-        rows: rows.rows,
-        settings,
-        now: Date.now(),
-        screens: screens(repo),
-        asking: new Set(values.asking ?? []),
-        merging: new Set(values.merging ?? []),
-        questionsUnknown: values['questions-unknown'] ?? false,
-      })
-    } else {
-      error = rows.error
-    }
-  }
-  process.stdout.write(`${JSON.stringify({ settings, workers, error })}\n`)
+  process.stdout.write(`${JSON.stringify(result.view)}\n`)
   return 0
 }
 

@@ -1,4 +1,4 @@
-// mod 는 TypeScript 를 import 하지 못한다. 표시용 gh 읽기를 orch 와 같은 캐시·잠금으로 실행한다.
+// 창에서 프로세스로 불러 orch 와 같은 캐시·잠금으로 표시용 gh 조회를 실행한다.
 // 사용법: node github.ts prs|url
 // cwd 는 현재 세션의 저장소다. stdout 과 종료 코드는 gh 결과 그대로이고 쓰는 명령은 받지 않는다.
 import { gh } from '../../../skills/orch/scripts/lib/gh.ts'

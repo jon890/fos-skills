@@ -39,7 +39,7 @@
 ## 설계
 
 - 제외: `queryQuestions` 가 모은 `escalation` 가운데 id 가 `msg_stop_`, `msg_chaterr_` 로 시작하는 것은 질문 상자 후보에서 뺀다. 오류(`msg_chaterr_`)는 R5 의 worker 줄 표시 재료로 따로 넘긴다.
-- 멈춤 판정: orch `lib/movement.ts` 의 판정 함수를 work-board 가 읽는다. 두 플러그인이 같은 번들에 있으므로 import 로 재사용하고, 판정 기준값은 orch 설정을 읽는다.
+- 멈춤 판정: work-board 는 orch 의 공개 조회 함수에서 표시할 값을 받는다. orch 는 상주 루프와 같은 멈춤 판정 함수와 설정을 쓴다.
 - 막힘이 사라지는 조건: 지금의 「답장이 달림」 에 「dispatch 가 해제·중지됨」 을 더한다. 살아 있는 worker 를 판정하는 기존 `active` 목록을 쓴다.
 - 「worker 없음 · N시간」: board.ts 가 항목의 단계를 바꿀 때 그 항목에 갱신 시각을 남기고, 그 시각부터 잰다.
 - 멈춤 판정 입력: orch-loop 의 `waitingOf` 와 `movement.json` 의 화면 변화를 함께 넘겨 루프와 같은 판정을 낸다.

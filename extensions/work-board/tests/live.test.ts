@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, workerRowsFor, workerRowLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, queryWorkers, questionText, decisionOf } from '../hooks/register.js'
+import { countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, workerRowsFor, workerRowLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, queryWorkers, questionText, decisionOf } from '../hooks/register.js'
 import { queryQuestions, prAuthors, nextAuthor } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
@@ -166,7 +166,7 @@ test('프로세스 출력이 잘렸으면 JSON 파싱 전에 한도 오류로 �
   expect(failure).toContain('4 MiB')
 })
 
-test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
+test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', async () => {
   const stdout = JSON.stringify({ result: { workers: [
     { dispatchId: 'a', agentTerminalHandle: 'term_a', dispatchStatus: 'dispatched', workerState: 'ready',
       resource: { worktreeId: 'x::/repo/worktrees/repo/ci-path-filter' } },
@@ -174,14 +174,15 @@ test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
     { dispatchId: 'c', dispatchStatus: 'running', workerState: 'working', resource: { worktreeId: 'x::/repo/w/running' } },
     { dispatchId: 'd', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: 'x::/repo/w/old' } },
   ] } })
-  expect(parseWorkers(stdout)).toEqual([
+  const $ = { process: { run: async () => ({ exitCode: 0, stdout, stderr: '' }) } }
+  expect(await queryWorkers($, 'r')).toEqual([
     { id: 'a', terminal: 'term_a', state: 'ready', worktree: 'ci-path-filter' },
     { id: 'b', terminal: '', state: 'ready', worktree: 'pending' },
     { id: 'c', terminal: '', state: 'working', worktree: 'running' },
   ])
 })
 
-test('structured 모드 항목(outcome, state, terminal, workspace)도 읽고 끝난 것은 거른다', () => {
+test('structured 모드 항목(outcome, state, terminal, workspace)도 읽고 끝난 것은 거른다', async () => {
   const row = (extra) => ({ dispatchId: 'x', taskId: 't', state: 'ready', outcome: 'in_progress', liveness: 'unverifiable',
     terminal: 'structworker_1', terminalState: 'active', workspace: 'repo-id::/abs/worktrees/repo/accountbook-monthly-report', host: 'local', ...extra })
   const stdout = JSON.stringify({ result: { workers: [
@@ -190,7 +191,8 @@ test('structured 모드 항목(outcome, state, terminal, workspace)도 읽고 �
     row({ dispatchId: 'c', outcome: 'failed' }),
     row({ dispatchId: 'd', state: 'abandoned' }),
   ] } })
-  expect(parseWorkers(stdout)).toEqual([
+  const $ = { process: { run: async () => ({ exitCode: 0, stdout, stderr: '' }) } }
+  expect(await queryWorkers($, 'r')).toEqual([
     { id: 'a', terminal: 'structworker_1', state: 'ready', worktree: 'accountbook-monthly-report' },
   ])
 })
@@ -207,7 +209,10 @@ test('worker 목록은 모든 페이지를 읽고 반복 cursor는 오류로 만
   expect(await queryWorkers($, 'r')).toEqual([
     { id: 'a', terminal: '', state: '', worktree: '' }, { id: 'b', terminal: '', state: '', worktree: '' },
   ])
-  expect(calls).toHaveLength(2)
+  expect(calls).toEqual([
+    ['orca', 'orchestration', 'worker-list', '--run', 'r', '--full', '--json'],
+    ['orca', 'orchestration', 'worker-list', '--run', 'r', '--full', '--cursor', 'next', '--json'],
+  ])
   const looping = { process: { run: async () => ({ exitCode: 0, stdout: JSON.stringify({ result: { workers: [], page: { nextCursor: 'again' } } }), stderr: '' }) } }
   await expect(queryWorkers(looping, 'r')).rejects.toThrow('다음 페이지')
 })
