@@ -108,6 +108,18 @@ worker 에게 push, PR 생성, 리뷰 회신과 resolve 를 맡기는 저장소�
 
 Orca 가 남기는 `.orca-worktree-trash` 는 Orca 가 관리하므로 지우지 않는다.
 
+### worker 가 직접 쓰는 조회 도구
+
+코디네이터는 읽기 전용으로 확인한 도구를 저장소에서 `orch config set worker.readonly_tools '["service-inspect","logs-read"]' --json` 으로 등록한다.
+worker 는 `orch config get worker.readonly_tools` 에서 결과를 읽고 이름이 정확히 일치하는 도구의 읽기 전용 호출만 직접 한다. 키가 없거나 목록을 확인할 수 없으면 원격 명령은 ask 로 맡긴다.
+목록 밖의 ssh 나 원격 명령, 쓰기, 삭제가 필요하면 명령과 대상, 예상 결과를 `orch worker ask` 로 보낸다. 지시서의 원격 작업 허락만으로 직접 실행하지 않는다.
+등록 목록은 worker 의 작업 지침이다. 실행 권한은 기존 터미널 설정을 따르며, 쓰기도 가능한 범용 도구를 읽기 전용 도구로 등록하지 않는다.
+
+### worker 가 검토 결과를 기다릴 때
+
+Claude worker 는 검토 하위 에이전트가 실행 중일 때만 턴을 끝내고, 완료 알림으로 깬 뒤 남은 에이전트가 있으면 다시 턴을 끝낸다. 기다리는 status, ask, 파일 감시나 sleep 은 쓰지 않는다. 돌고 있는 하위 에이전트가 없으면 턴을 끝낼 때 코디네이터가 깨므로 먼저 실행 여부를 확인한다.
+이 동작은 Claude worker 에서 확인했다. Codex worker 는 검토 결과를 확인한 뒤 턴을 끝낸다.
+
 ### 한국어 커밋 검사
 
 `launch-worker` 는 worker 를 띄우기 전에 그 워크트리에만 걸리는 git 훅을 건다. 에이전트 종류와 대상 저장소를 보지 않는다.

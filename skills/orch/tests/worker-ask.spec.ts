@@ -189,7 +189,7 @@ describe('없어진 옵션', () => {
     const r = ask('--from', 'term_w', '--resume', 'm1')
     assert.equal(r.code, 2, r.stderr)
     assert.deepEqual(r.calls, [])
-    assert.deepEqual(r.stderr.trim().split('\n'), ['worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. 읽을 문서: 공통 지시서의 worker-ask 규칙'])
+    assert.match(r.stderr.trim(), /^worker-ask: --resume 은 없어졌다\.[^\n]*orch worker ask --help[^\n]*$/)
   })
 
   test('--timeout-ms 와 --max-wait 는 안내 한 줄만 내고 값과 상관없이 묻는다', () => {
@@ -221,11 +221,12 @@ describe('결정 질문 형식', () => {
     assert.deepEqual(r.calls, [], '형식이 어긋난 질문은 orca 를 부르지 않는다')
   })
 
-  test('결정: 뒤 제목이 비면 그 한 줄만 알리고 2 다', () => {
+  test('결정: 뒤 제목이 비면 고칠 줄과 질문 예시를 알리고 2 다', () => {
     fake('{"result":{"answer":"x"}}', 0)
     const r = ask('--from', 'term_w', '--question', DECISION.replace('결정: 저장 형식을 바꿀까요', '결정:   '), '--decision')
     assert.equal(r.code, 2, r.stderr)
-    assert.deepEqual(r.stderr.trim().split('\n'), ['worker-ask: --decision 형식 위반: `결정:` 뒤에 무엇을 정하는지 제목이 있어야 한다'])
+    assert.equal(firstLine(r.stderr), 'worker-ask: --decision 형식 위반: `결정:` 뒤에 무엇을 정하는지 제목이 있어야 한다')
+    assert.match(r.stderr, /결정: 무엇을 정하는지 한 줄\n *배경: 왜 지금 정해야 하는지/)
     assert.deepEqual(r.calls, [], '제목이 빈 질문은 orca 를 부르지 않는다')
   })
 
@@ -233,7 +234,7 @@ describe('결정 질문 형식', () => {
     fake('{"result":{"answer":"x"}}', 0)
     const r = ask('--from', 'term_w', '--question', '배경: 첫 줄이 다르다\n- 하나\n권장: a\n권장: b', '--decision')
     assert.equal(r.code, 2, r.stderr)
-    assert.deepEqual(r.stderr.trim().split('\n'), [
+    assert.deepEqual(r.stderr.split('\n').filter((line) => line.startsWith('worker-ask: --decision 형식 위반:')), [
       'worker-ask: --decision 형식 위반: 첫 줄이 `결정:` 으로 시작해야 한다',
       'worker-ask: --decision 형식 위반: `- ` 로 시작하는 선택지 줄이 둘 이상이어야 한다(지금 1개)',
       'worker-ask: --decision 형식 위반: `권장:` 줄이 정확히 하나여야 한다(지금 2개)',
@@ -252,7 +253,7 @@ describe('결정 질문 형식', () => {
     const body = `${DECISION}\n결정: 응답 형식\n- A: 짧다\n권장: A\n권장: B`
     const r = ask('--from', 'term_w', '--question', body, '--decision')
     assert.equal(r.code, 2, r.stderr)
-    assert.deepEqual(r.stderr.trim().split('\n'), [
+    assert.deepEqual(r.stderr.split('\n').filter((line) => line.startsWith('worker-ask: --decision 형식 위반:')), [
       'worker-ask: --decision 형식 위반: 결정 블록 2: `- ` 로 시작하는 선택지 줄이 둘 이상이어야 한다(지금 1개)',
       'worker-ask: --decision 형식 위반: 결정 블록 2: `권장:` 줄이 정확히 하나여야 한다(지금 2개)',
     ])

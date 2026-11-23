@@ -8,7 +8,7 @@
 | 사용자 | 저장 형식이나 사용자 데이터 변경, 근거 없는 임시 값을 쓰는 범위 확장, 사용자 규칙의 예외, 비용이나 규모 결정 |
 
 **사용자가 정할 질문은 코디네이터가 권장안으로 대신 답하지 않는다.** 권장안을 보여 사용자가 고르게 하고, 고른 답을 worker 에게 보낸다. 대신 답하면 사용자가 정할 일을 코디네이터가 정한 것이 된다.
-worker 가 `--decision` 으로 보낸 질문은 `결정:` 줄과 `권장:` 줄을 그대로 옮겨 사용자에게 보인다. 코디네이터가 사용자에게 직접 묻는 결정도 같은 형식으로 쓴다. 형식과 검사 규칙은 저장소의 `docs/data-schema.md` 「사용자 결정 질문 형식」 이, 형식 예시는 `templates/spec-common.md` 가 소유한다.
+worker 가 `--decision` 으로 보낸 질문은 `결정:` 줄과 `권장:` 줄을 그대로 옮겨 사용자에게 보인다. 코디네이터가 사용자에게 직접 묻는 결정도 같은 형식으로 쓴다. 형식 예시와 질문 전송 뒤 할 일은 `orch worker ask --help` 에 있다. 검사 규칙은 저장소의 `docs/data-schema.md` 「사용자 결정 질문 형식」 이 소유한다.
 사용자 결정은 배경과 권장안을 붙여 `AskUserQuestion` 하나에 묶고, Codex 에서는 사용 가능한 구조화 질문 도구로 묻는다. 답을 받으면 아래 「질문과 막힘에 답하기」 를 따른다.
 
 ## 질문과 막힘에 답하기
@@ -156,6 +156,21 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 - PR 은 그 본문 파일로 연다. 본문 파일이 없으면 브랜치 diff 를 읽고 직접 쓴 뒤 `gh pr edit --body-file` 로 넣는다
 - 리뷰 회신은 스레드 id 와 회신 파일을 받아 `review-fix` 스킬이 소유한 절차로 달고, 반영한 스레드만 `resolve` 한다
 
+### 인계 파일을 둔다
+
+코디네이터에게 넘길 파일은 `orch paths root` 가 가리키는 폴더 아래 `handoff/` 에 두고 절대경로를 보낸다. 세션 임시 폴더 경로를 질문에 넣으면 worker ask 가 종료 코드 2 로 거절한다.
+PR 본문·미리보기·리뷰 답변 초안과 매핑 TSV 는 `handoff/pr-<PR 번호>/` 에 모은다. PR 을 열기 전에 만든 초안은 세션 임시 폴더에 두고, 게시가 막혀 넘길 때만 `handoff/pending/<워크트리 이름>/` 에 복사한다. PR 번호가 나오면 해당 PR 폴더로 옮긴다.
+`orch queue finish` 는 머지 뒤 해당 PR 폴더를 휴지통으로 옮긴다. 측정 결과처럼 다시 쓸 파일은 `handoff/` 의 별도 폴더에 둔다.
+
+## PR 준비를 보고한다
+
+PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 필수 체크를 기다린다. 도구 시간 제한에 걸리면 같은 명령으로 계속 확인한다. 직접 `gh run watch` 를 쓰는 검사는 간격을 60초 이상으로 준다.
+`GATE-OK` 이면 「준비됨」과 현재 head 를 status 로 보낸다. `HOLD` 가 함께 나오면 이유를 적어 보내고, 머지는 보류가 풀린 뒤에 한다.
+`GATE-FAIL` 이면 출력된 조건을 해결하고 다시 검사한다. 독립 리뷰 대기만 남아 코디네이터에게 리뷰를 요청했다면 대기 이유를 적어 준비를 알릴 수 있다. 새 커밋을 올렸으면 새 head 로 다시 보고한다.
+머지 없이 닫혔으면 ask 로 알린다. 머지 뒤 확인이 있다면 그 확인까지 마쳐야 `worker_done` 을 보낸다.
+
+검증 단계마다 진행을 보내거나 CI 를 기다리며 턴을 끝내면 코디네이터에게 불필요한 알림이 간다. Claude worker 에서 상황별 한 번씩 확인했을 때, 보고 없이 끝내면 escalation 한 건, status 뒤 끝내면 status 와 escalation 각 한 건이 왔다. ask 와 worker_done 뒤에는 각각 해당 메시지 한 건이 왔다.
+
 ## 자동 리뷰 workflow 를 바꾼 PR
 
 worker 의 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claude-code-review.yml`)가 있으면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다.
@@ -165,6 +180,11 @@ worker 의 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claud
 
 `REVIEW-FALLBACK` 은 리뷰 봇이 실행 장애로 실패해 상주 루프가 리뷰 worker 를 이미 띄웠다는 알림이다. 독립 리뷰를 따로 맡기지 않고 그 worker 의 판정 댓글을 기다린다.
 `REVIEW-FALLBACK-FAIL` 이면 루프가 띄우지 못한 것이라 지금처럼 독립 리뷰를 맡긴다. 설정은 [`overlay.md`](overlay.md) 의 「리뷰 봇 장애 때 대체 리뷰」 에 있다.
+
+## 리뷰 지적을 반영한다
+
+첫 리뷰는 `review-fix` 로 반영하며 회신과 resolve 를 할 수 있다. 하위 등급 지적의 반영 여부는 worker 가 정한다. 선택과 이유는 status 와 PR 본문 「결정」 절에 남긴다. 그 밖에 반영하지 않을 지적은 회신 전에 ask 로 묻는다.
+반영해 push 한 뒤 새로 달린 비차단 제안은 다음에 다룬다고 회신하고 resolve 한다. 이 회신에는 ask 가 필요 없다. 버그, 보안, 「머지 전 반영 필요」 등 차단 지적만 다시 반영한다.
 
 ## 다음 단계 이어 가기
 
@@ -222,7 +242,7 @@ orch worker send --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE"
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
 - 후속 지시서를 보내도 종료 코드 3 이면 안내를 읽고 코디네이터에게 알린다
 - **PR 이 열려 있는데 worker 가 `worker_done` 을 보내 닫힌 경우**에는 `orch worker continue --dispatch "$DISPATCH_ID"` 로 같은 지시서에 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 붙여 이어 맡긴다. 상주 루프가 먼저 같은 일을 하므로(DONE-RETURNED) 직접 부르는 것은 루프가 못 했을 때다. 출력은 `CONTINUED`(이어 맡김), `CONTINUE-SKIP`(대상이 아님: PR 이 없거나 머지됐다, 리뷰 worker 다, 아직 살아 있다), `CONTINUE-FAIL`(조회나 전송 실패, 같은 명령을 다시)이다. 원본은 `scripts/worker/continue-worker.ts` 머리 주석이다
-- 리뷰 반영 지시서에는 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
+- 리뷰 반영 지시서에는 PR 번호를 적고 위 [리뷰 반영 절](#리뷰-지적을-반영한다)을 가리킨다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
 - 위 「새 worker 로 이어받는 순서」 나 [`launch.md`](launch.md) 의 새 worker 띄우기와 어긋나면 충돌과 리뷰 반영에는 이 절이 우선한다
 
 회신과 resolve 가 막히면 위 「PR 생성과 리뷰 회신을 대신 한다」 를 따라 코디네이터가 단다.

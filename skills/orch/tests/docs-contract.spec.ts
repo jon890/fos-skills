@@ -156,7 +156,8 @@ test('모델 비교 절차는 두 worker 줄, 숨긴 리뷰, 머지, 판단 순�
 test('공통 지시서는 worker 가 이유 없이 기준 브랜치를 합치지 않게 한다', () => {
   const common = read('templates', 'spec-common.md')
   const rule = common.split('\n').find((line) => line.includes('orch-rule: no-early-base-merge')) ?? ''
-  for (const word of ['충돌이 났거나 코디네이터나 머지 큐가 요청했을 때만 합친다', '미리 합치지 않는다', '큐가 머지 직전에 갱신한다']) assert.ok(rule.includes(word), word)
+  assert.match(rule, /충돌이 났거나 코디네이터나 머지 큐가 요청했을 때만 합친다/)
+  assert.match(read('references', 'verification.md'), /최종 최신화는 큐가 머지 직전에 하므로/)
   // 준비됨 뒤에 기준 브랜치 변경을 worker 가 처리하라는 반대 문장이 없다
   for (const doc of [common, read('SKILL.md'), read('references', 'replying.md')]) assert.ok(!doc.includes('기준 브랜치 변경'))
 })

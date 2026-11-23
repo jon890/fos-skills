@@ -113,8 +113,14 @@ import { adrDirs, adrOf, addedPaths, choose, lockFile, migrationName, prune, rea
 import type { Reservation, ReservationStore, ReserveKind } from '../lib/reservations.ts'
 
 const USAGE = [
-  '사용법: reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java|adr] [--dir DIR] [--branch B] [--base B] [--again]',
-  '        reserve-migration.ts --repo DIR --prune',
+  '사용법: orch queue reserve --module M --name TEXT [--kind sql|java|adr] [--repo DIR] [--dir DIR] [--branch B] [--base B] [--again [--rename]]',
+  '        orch queue reserve prune [--repo DIR]',
+  '지시서의 orch-reserved 경로가 있으면 그 경로를 쓰고, 없으면 자기 워크트리에서 예약한다.',
+  '--module 은 설정의 migrations.dirs(sql, 기본), migrations.watch(java), adr.dirs(adr) 에서 고른다.',
+  '--name 은 영문 설명이다. Java 는 폴더의 파일명 형식(snake_case 또는 PascalCase)을 따른다. 후보 폴더가 여럿이면 --dir 로 고른다.',
+  '0 RESERVED 면 그 경로를 쓴다. reused 는 같은 번호다. renewed 면 기존 파일과 번호를 인용한 곳을 함께 고친다.',
+  '1 조회 실패 또는 4 잠금 오류면 한 번 다시 부른다. 다시 실패하거나 2 사용법 오류면 출력과 함께 ask 한다.',
+  'RESERVED 줄이 없으면 파일을 만들지 않는다. 기준 브랜치를 합친 뒤 확인과 --again 사용은 references/spec-writing.md 를 본다.',
 ].join('\n')
 const LOCK_WAIT_MS = 10_000
 // 브랜치가 없어도 예약을 남기는 예약 뒤 유예(머리 주석의 「정리 판정」). worker 를 띄워 브랜치를 만들기까지 하루를 넘기지 않는다고 본다

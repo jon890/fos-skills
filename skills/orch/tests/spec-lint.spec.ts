@@ -282,8 +282,8 @@ describe('지시서 검사', () => {
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고,
-    // 검토 하위 에이전트 허락과 기다리기, 보드 고치기 금지, 마이그레이션 번호 예약, ADR 번호 예약 규칙에 표지를 단다
-    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'wait-subagent', 'no-board-edit', 'migration', 'adr']) {
+    // 검토 하위 에이전트 허락과 기다리기, 보드 고치기 금지, 마이그레이션 번호 예약 규칙에 표지를 단다
+    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'wait-subagent', 'no-board-edit', 'migration']) {
       assert.match(template, new RegExp(`<!-- orch-rule: ${rule} -->`))
     }
     const a = spec('spec-a', '담당: `src/a/**`')
@@ -294,8 +294,8 @@ describe('지시서 검사', () => {
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 .* 가 없다/m)
-    // migration 은 orch 설정에 migrations 가, adr 은 adr 이, integration-evidence 는 queue.integration_tests 규칙이 있는 저장소에서만 요구한다
-    const conditional = ['migration', 'adr', 'integration-evidence']
+    // 번호 예약과 통합 테스트는 설정이 있는 저장소에서만 요구한다
+    const conditional = ['migration', 'integration-evidence']
     for (const [, rule] of template.matchAll(/<!-- orch-rule: ([\w-]+) -->/g)) {
       assert.equal(r.stdout.includes(`\`${rule}\``), !conditional.includes(rule), `${rule}\n${r.stdout}`)
     }
@@ -307,15 +307,9 @@ describe('지시서 검사', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     const line = template.split('\n').find((l) => l.includes('<!-- orch-rule: wait-subagent -->'))
     assert.ok(line, 'wait-subagent 줄이 있다')
-    // 턴을 끝내고 완료 알림으로 깨어나며, 기다린다는 status 와 우회(수정 시각 살피기, sleep, 폴링)는 막는다
-    assert.match(line, /턴을 끝내고 기다린다/)
-    assert.match(line, /완료 알림/)
-    assert.match(line, /status 나 ask 를 보내지 않는다/)
-    assert.match(line, /수정 시각/)
-    assert.match(line, /폴링은 쓰지 않는다/)
-    // 실측은 Claude worker 에서만 했으므로 Codex worker 는 따로 정한다
-    assert.match(line, /Claude worker 는/)
-    assert.match(line, /Codex worker 는 확인하기 전까지/)
+    assert.match(line, /Claude worker 는 하위 에이전트가 실행 중이면 턴을 끝낸다/)
+    assert.match(line, /Codex worker 는 결과를 받은 뒤 턴을 끝낸다/)
+    assert.match(line, /references\/launch.md/)
     // 이 줄은 하위 에이전트를 요청하는 review-subagents 줄 뒤에 온다
     assert.ok(template.indexOf('orch-rule: review-subagents') < template.indexOf('orch-rule: wait-subagent'))
   })
@@ -334,19 +328,17 @@ describe('지시서 검사', () => {
   test('표지는 있지만 본문이 틀과 다른 규칙을 표지마다 그 항목 머리 줄로 경고한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     const a = spec('spec-a', '담당: `src/a/**`')
-    // 옛 사본: worker-ask 의 이어지는 설명에 `SENT-RUN` 안내가 없고, 보드 줄은 표지만 남긴 채 단계 체크를 시킨다
-    const sentence = /3 이고 `SENT-RUN <id>` 면[^\n]*?\.(?=\n)/.exec(template)
-    assert.ok(sentence, '틀에서 SENT-RUN 안내를 찾지 못했다')
-    const board = /^- 진행 보드\(`board\.json`\)를 고치지 않는다\..*$/m.exec(template)
-    assert.ok(board, '틀에서 보드 줄을 찾지 못했다')
+    const ask = /^- .*<!-- orch-rule: worker-ask -->$/m.exec(template)
+    const board = /^- .*<!-- orch-rule: no-board-edit -->$/m.exec(template)
+    assert.ok(ask && board)
     const old = template
-      .replace(sentence[0], '')
+      .replace(ask[0], ask[0] + '\n  옛 설명을 이어 쓴다.')
       .replace(board[0], '- phase 가 끝나면 `board.ts step` 으로 보드 단계를 체크한다. <!-- orch-rule: no-board-edit -->')
     const common = write(join(specs, 'spec-common.md'), old)
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     const lineOf = (text: string, needle: string) => text.slice(0, text.indexOf(needle)).split('\n').length
-    const askLine = lineOf(old, '- **ask 는 설치된 스킬의 `worker-ask`(`orch worker ask`)로 보낸다.**')
+    const askLine = lineOf(old, ask[0])
     const boardLine = lineOf(old, '- phase 가 끝나면 `board.ts step`')
     assert.ok(r.stdout.includes(`${common}:${askLine}: 공통: 표지 \`worker-ask\` 가 붙은 규칙이 틀과 다르다`), r.stdout)
     assert.ok(r.stdout.includes(`${common}:${boardLine}: 공통: 표지 \`no-board-edit\` 가 붙은 규칙이 틀과 다르다`), r.stdout)
@@ -374,16 +366,10 @@ describe('지시서 검사', () => {
     const check = () => spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a], { env: { ...ENV, SPEC_TEMPLATE: TEMPLATE }, encoding: 'utf8' })
     write(join(specs, 'spec-common.md'), template)
     assert.equal(check().stdout, '')
-    // 명령 블록이 있는 항목마다 옛 한 줄을 되돌린 사본을 본다
-    for (const [rule, call] of [
-      ['migration', '  orch queue reserve --repo'],
-      ['adr', '  orch queue reserve --repo "$(git rev-parse --show-toplevel)" --kind adr'],
-      ['worker-ask', '  orch worker ask'],
-      ['feedback-add', '  orch feedback add'],
-    ]) {
-      const at = template.indexOf(call, template.indexOf(`<!-- orch-rule: ${rule} -->`))
-      assert.ok(at > 0, rule)
-      write(join(specs, 'spec-common.md'), template.slice(0, at) + old + template.slice(at))
+    for (const rule of ['migration', 'worker-ask', 'feedback-add', 'study-candidates']) {
+      const marker = '<!-- orch-rule: ' + rule + ' -->\n'
+      assert.ok(template.includes(marker), rule)
+      write(join(specs, 'spec-common.md'), template.replace(marker, marker + old))
       assert.match(check().stdout, new RegExp(`표지 \`${rule}\` 가 붙은 규칙이 틀과 다르다`), rule)
     }
   })
@@ -404,7 +390,7 @@ describe('지시서 검사', () => {
 
   test('마이그레이션 표지는 orch 설정에 migrations 가 있는 저장소에서만 빠진 것을 알린다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
-    const without = template.replace(/^- Flyway 마이그레이션[\s\S]*?(?=^- )/m, '')
+    const without = template.replace(/^.*<!-- orch-rule: migration -->\n/m, '')
     assert.notEqual(without, template)
     assert.doesNotMatch(without, /orch-rule: migration/)
     const a = spec('spec-a', '담당: `src/a/**`')
@@ -418,9 +404,9 @@ describe('지시서 검사', () => {
 
   test('ADR 표지는 orch 설정에 adr.dirs 가 있는 저장소에서만 빠진 것을 알린다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
-    const without = template.replace(/^- 번호 붙은 ADR[\s\S]*?(?=^- )/m, '')
+    const without = template.replace(/^.*<!-- orch-rule: migration -->\n/m, '')
     assert.notEqual(without, template)
-    assert.doesNotMatch(without, /orch-rule: adr/)
+    assert.doesNotMatch(without, /orch-rule: migration/)
     const a = spec('spec-a', '담당: `src/a/**`')
     write(join(specs, 'spec-common.md'), without)
     write(join(repo, '.orch', 'config.json'), JSON.stringify({ adr: { dirs: {} } }))
@@ -428,7 +414,11 @@ describe('지시서 검사', () => {
     write(join(repo, '.orch', 'config.json'), JSON.stringify({ adr: { dirs: { root: 'docs/adr' } } }))
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
-    assert.match(r.stdout, /공통: 틀의 규칙 표지 `adr` 가 없다/)
+    assert.match(r.stdout, /공통: 틀의 규칙 표지 `migration` 가 없다/)
+    write(join(specs, 'spec-common.md'), template + '\n- 옛 ADR 예약 규칙 <!-- orch-rule: adr keep -->\n')
+    const legacy = run(['--repo', repo, a])
+    assert.equal(legacy.code, 0, legacy.stdout)
+    assert.match(legacy.stdout, /공통: adr 표지는 migration 의 번호 예약 규칙에 합쳤다/)
   })
 
   test('임시 폴더 아래 경로를 가리키면 임시 경고를 내고 종료 코드는 0 이다', () => {
