@@ -132,7 +132,10 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     data_days: days,
     apply: flag,
   },
-  worker: { commit_check: { good: [true, false], bad: ['false', 0, null] } },
+  worker: {
+    commit_check: { good: [true, false], bad: ['false', 0, null] },
+    readonly_tools: { good: [[], ['service-inspect', 'logs_read', 'status.v2']], bad: ['service-inspect', [''], ['  '], ['ssh host'], ['--flag'], ['bin/tool'], [1], null] },
+  },
   inbox: {
     enabled: { good: [true, false], bad: ['false', 0, null] },
     dooray: inboxAdapter,

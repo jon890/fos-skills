@@ -93,7 +93,7 @@ export const INBOX_KEYS: readonly string[] = ['enabled', 'dooray', 'slack']
 
 // worker 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 worker 행이다. launch-worker 가 worker 를 띄울 때 읽는다.
 // commit_check 가 false 면 그 저장소의 worker 워크트리에 한국어 커밋 검사를 걸지 않는다(lib/commit-check.ts)
-export const WORKER_KEYS: readonly string[] = ['commit_check']
+export const WORKER_KEYS: readonly string[] = ['commit_check', 'readonly_tools']
 
 // docker 절의 아는 키. 값의 판정은 core/docker.ts 의 dockerRules 가 소유한다.
 export const DOCKER_KEYS: readonly string[] = ['containers', 'images']

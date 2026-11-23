@@ -45,6 +45,14 @@ function child(args: string[]) {
   })
 }
 
+test('worker 는 조회 도구 이름 목록을 그대로 확인할 수 있다', () => {
+  put({})
+  assert.match(run(['get', 'worker.readonly_tools']).stderr, /설정 파일에 없다/)
+  ok(['set', 'worker.readonly_tools', '["service-inspect","logs-read"]', '--json'])
+  assert.deepEqual(JSON.parse(ok(['get', 'worker.readonly_tools']).stdout), ['service-inspect', 'logs-read'])
+  refused(['set', 'worker.readonly_tools', '["ssh host"]', '--json'], /worker\.readonly_tools/)
+})
+
 test('도움말과 사용법 오류, 옵션과 겹치는 경로', () => {
   assert.match(ok(['--help']).stdout, /show.*\n.*get.*\n.*set.*\n.*unset/s)
   for (const args of [['get'], ['set', 'pipeline.tick_sec'], ['unset'], ['show', 'queue', 'finish'], ['get', 'queue'], ['set', 'queue', '{}'], ['set', 'queue.required', '[]', '--typo'], ['get', 'queue.required', '--json'], ['get', '.queue.required'], ['unset', 'queue', 'queue.method'], ['set', 'queue.method', 'merge', 'queue.method', 'squash']]) refused(args, /사용법/, 2)
