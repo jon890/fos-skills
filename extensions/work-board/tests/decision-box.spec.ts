@@ -206,6 +206,14 @@ test('같은 worker 의 오류는 늦은 하나로 묶고, 답을 기다리는 w
   assert.deepEqual((await queryQuestions(fake([ask('msg_q1', 'question', '2026-11-02T08:00:00Z')], [answer('msg_q1')]), RUN, ACTIVE)).asking, [])
 })
 
+test('연결 끊김 알림은 두 접두사 모두 worker 줄에 표시한다', async () => {
+  for (const id of ['msg_stop_lost', 'msg_rest_lost']) {
+    const result = await queryQuestions(fake([stop(id, '2026-11-23T11:00:00Z', 'lost')]), RUN, ACTIVE)
+    assert.deepEqual(result.questions, [])
+    assert.deepEqual(workerNotes(ACTIVE[0], null, result.notes), ['연결 끊김'])
+  }
+})
+
 const pr = (extra: Json) => ({ number: 1, branch: 'wt-a', pass: 2, fail: 0, pending: 0, failed: [], ...extra })
 
 test('CI 를 통과한 PR 의 worker 만 머지를 기다린다. 판정은 루프처럼 선택 검사 실패도 실패로 본다 (R4)', () => {

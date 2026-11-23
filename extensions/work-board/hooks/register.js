@@ -292,7 +292,7 @@ export function autoAlertKind(m) {
 const notAutoAlert = (m) => !autoAlertKind(m)
 
 // 멈춤 보고의 worker 줄 글. 턴만 끝낸 것(finished)과 모르는 이유는 글이 없다
-const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고' }
+const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고', lost: '연결 끊김' }
 
 // 자동 알림 하나를 worker 줄 글로. 오류는 「오류: <요약>」, 멈춤 보고는 STOP_NOTES 다. 글이 없으면 ''
 export function alertNoteText(m) {
