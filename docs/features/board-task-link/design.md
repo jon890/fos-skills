@@ -58,7 +58,7 @@ flowchart TD
 
 - **업무 도구를 아는 코드는 orch 의 어댑터 두 파일뿐이다.** 번호를 맞추고 주소를 만드는 판정은 `core/task-adapters.ts`, 설정 파일 읽기와 `dooray` CLI 호출은 `lib/task-adapters.ts` 가 맡는다(값 판정과 외부 실행의 층 규칙, [ADR-028](../../adr/028-orch-core-layer.md)). 경계를 고른 이유는 [ADR-031](../../adr/031-board-task-adapter.md) 이 소유한다.
 - **보드 명령은 도구를 모른다.** `board.ts` 는 두 칸을 받은 그대로 저장하고, 주소가 `http`·`https` 인지와 칸이 비었는지만 본다. 쓰기는 지금처럼 보드 잠금 안에서 한다([ADR-029](../../adr/029-board-write-lock.md)).
-- **창은 설정을 읽지 않는다.** 창이 승인 파일 경로를 `bin/approvals.ts where` 로 받는 것처럼, 도구 이름을 `bin/task-tool.ts` 로 받는다. 설정과 파일을 읽는 작업은 각각의 명령이 맡고 창은 명령 출력에서 결과를 받는다.
+- **창은 설정을 읽지 않는다.** 도구 이름을 `bin/task-tool.ts` 로 받는다. 설정과 파일을 읽는 작업은 각각의 명령이 맡고 창은 명령 출력에서 결과를 받는다.
 - **번호를 읽는 규칙은 지금 자리에 둔다(스펙 DECISION16).** 지시서는 `board.task_line`(`lib/board.ts` 의 `taskOf`), PR 제목은 `finish.task_pattern` 이 읽는다. 어댑터는 읽은 번호를 맞추고 주소로 바꾸기만 한다.
 - **inbox 스킬의 dooray 어댑터와 코드를 나누지 않는다.** 스킬은 폴더째 따로 내보내므로 orch 가 inbox 스킬을 import 하면 orch 만 가져간 저장소에서 깨진다. 같은 것은 주소 꼴(`<web_url>/project/tasks/<postId>`) 하나뿐이다.
 
@@ -230,7 +230,7 @@ orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
 | DECISION1 | 어댑터 설정의 자리 | `board` 절의 `task` 객체. 새 최상위 절을 만들지 않는다 | 작성자 | 보드 항목 링크만 쓰는 설정이다. 키 판정을 한 core 함수가 소유해 `viaConfig` 꼴로 검사표에 넣을 수 있다 |
 | DECISION2 | 업무 도구 코드의 자리 | orch 의 `core/task-adapters.ts`(판정)와 `lib/task-adapters.ts`(설정 읽기, CLI). 보드 명령과 창은 도구를 모른다 | 작성자 | [ADR-031](../../adr/031-board-task-adapter.md) |
 | DECISION3 | 자동 경로의 덮어쓰기 막기 | `board.ts set` 의 `--fill`(업무 칸이 모두 빌 때만)과 `--if-task-ref`. 판정은 보드 잠금 안에서 한다 | 작성자 | 부르는 쪽이 미리 읽고 판정하면 잠금 밖이라 코디네이터의 쓰기와 겹친다. 칸마다 따로 채우면 이미 있는 주소와 다른 업무의 번호가 짝지어진다(스펙 DECISION11) |
-| DECISION4 | 창이 도구 이름을 얻는 길 | 새 명령 `bin/task-tool.ts` 를 저장소가 바뀔 때 한 번 부른다 | 작성자 | 창은 설정 파일 위치(orch 루트) 규칙을 계산하지 않는다. `bin/approvals.ts where` 와 같은 꼴이다. 항목마다 이름을 저장하면 설정을 바꿔도 옛 이름이 남는다 |
+| DECISION4 | 창이 도구 이름을 얻는 길 | 새 명령 `bin/task-tool.ts` 를 저장소가 바뀔 때 한 번 부른다 | 작성자 | 창은 설정 파일 위치(orch 루트) 규칙을 계산하지 않는다. 항목마다 이름을 저장하면 설정을 바꿔도 옛 이름이 남는다 |
 | DECISION5 | PR 제목에서 읽은 번호의 허용 글자 | 문자·숫자와 `._/-`(유니코드). `extractTaskNumber` 는 쓰지 않는다 | 작성자 | 그 함수는 영문만 받아 한글 프로젝트 코드를 버린다. 마지막 PR 판정의 동작은 이 기능 범위 밖이라 바꾸지 않는다 |
 | DECISION6 | 자동 경로의 틀린 설정 | 어댑터 없음으로 보고 한 줄 알린다. `orch board set --task-ref` 만 설정 오류로 끝난다 | 작성자 | 업무 링크 설정 하나가 띄우기와 보드 맞추기를 멈추면 피해가 더 크다. 사람이 직접 넣을 때는 저장할 꼴을 정할 수 없어 멈춘다 |
 | DECISION7 | 루프 단계의 자리와 상한 | 틱 3(보드 맞추기와 결정 알림) 바로 뒤. 틱마다 업무 도구 호출 시간 60초, 호출마다 15초 | 작성자 | 같은 틱에 PR 연결로 들어간 번호를 바로 잇는다. 건수 상한은 기존 항목에 번호를 한꺼번에 넣을 때 여러 틱이 걸려 스펙 REQ6 「다음 틱 뒤」 와 어긋난다. 시간 예산은 `dooray` 가 멈출 때만 걸린다 |

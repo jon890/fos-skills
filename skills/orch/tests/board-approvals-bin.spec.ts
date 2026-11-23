@@ -6,11 +6,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { applyAdd, emptyFile } from '../../../skills/orch/scripts/core/approvals.ts'
-import type { ApprovalFile } from '../../../skills/orch/scripts/core/approvals.ts'
-import { fakeBin } from '../../../skills/orch/tests/fixtures/fake-bin.ts'
+import { applyAdd, emptyFile } from '../scripts/core/approvals.ts'
+import type { ApprovalFile } from '../scripts/core/approvals.ts'
+import { fakeBin } from './fixtures/fake-bin.ts'
 
-const script = fileURLToPath(new URL('../bin/approvals.ts', import.meta.url))
+const script = fileURLToPath(new URL('../../../extensions/work-board/bin/approvals.ts', import.meta.url))
+const pathScript = fileURLToPath(new URL('../scripts/lib/board-queries/board-approvals.ts', import.meta.url))
 const envelope = (result: unknown) => JSON.stringify({ ok: true, result })
 const workers = (handles: string[] = []) => envelope({ workers: handles.map(agentTerminalHandle => ({ agentTerminalHandle, dispatchId: 'd' })), scope: { source: 'all' }, page: {} })
 
@@ -44,6 +45,13 @@ test('where 는 orch 상태 폴더의 승인 파일 경로를 낸다', () => {
     assert.equal(r.out.endsWith('/.orch/state/approvals.json'), true)
     assert.equal(f.run(['where']).code, 2)
   } finally { f.clean() }
+})
+
+test('승인 경로를 조회할 저장소가 없으면 사용법과 종료 코드 2를 낸다', () => {
+  const got = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', pathScript], { encoding: 'utf8' })
+  assert.equal(got.status, 2)
+  assert.equal(got.stdout, '')
+  assert.equal(got.stderr, '사용법: board-approvals.ts DIR\n')
 })
 
 test('self: 터미널 변수가 없으면 worker 가 아니고, worker 목록에 있으면 true, 조회가 실패하면 null 이다', () => {

@@ -58,3 +58,15 @@ test('orch 명령 표에 승인·고쳐 달라를 기록하는 동작이 없다'
   assert.ok(!/verb: 'approval (?:press|approve|revise)/.test(table))
   assert.ok(!/board-approval\.ts', prepend: \['(?:press|approve|revise)'\]/.test(table))
 })
+
+test('보드는 orch 공개 함수로 승인 대기와 머지 큐를 읽는다', () => {
+  const board = 'extensions/work-board/'
+  for (const file of sources(join(root, board))) {
+    const rel = file.slice(root.length)
+    const source = lines(rel)
+    assert.doesNotMatch(source, /scripts\/(?:core|lib)\/approvals\.ts|approvals\.json|queue-turn|auto-merge\.json|AUTO-MERGE-WAIT/, rel)
+  }
+  assert.match(lines(board + 'hooks/register.js'), /import \{ boardApprovalReader \} from .*\/board-queries\/board-approval-view\.ts/)
+  assert.match(lines(board + 'bin/approvals.ts'), /import \{ .*recordPress.* \} from .*\/board-queries\/board-approvals\.ts/)
+  assert.match(lines(board + 'bin/merge-queue.ts'), /import \{ readBoardMergeQueue \} from .*\/board-queries\/board-merge-queue\.ts/)
+})

@@ -1,4 +1,4 @@
-// 보드 창(hooks/register.js)이 승인 대기를 읽고 누를 때 부르는 창 전용 명령이다. orch 명령 표에는 넣지 않는다.
+// 보드 창(hooks/register.js)이 현재 터미널을 확인하거나 승인 버튼을 누를 때 부르는 창 전용 명령이다. orch 명령 표에는 넣지 않는다.
 // 창은 이 명령을 $.process.run 으로 부른다. 승인 기록과 Orca 신호는 명령 쪽에서 처리한다.
 //
 // 에이전트의 Bash 도구로 부르지 않는다. 승인 기록은 사람이 보드 창에서 누른 버튼만 쓴다.
@@ -6,7 +6,8 @@
 //
 // 사용법:
 //     approvals.ts where --repo DIR
-//         승인 파일의 절대경로 한 줄
+//         승인 파일의 절대경로 한 줄(기존 명령 호환용)
+//         이 명령을 부르는 기존 스크립트가 새 조회 경로로 옮겨진 것을 확인한 뒤 정리한다.
 //     approvals.ts self [--live]
 //         {"terminal": "term_…" | null, "worker": true | false | null} 한 줄
 //         terminal 은 이 프로세스의 ORCA_TERMINAL_HANDLE 이다. 변수가 없으면(Orca 밖 창) worker 는 false 다.
@@ -20,7 +21,7 @@
 
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { approvalsFile, recordPress, selfIsWorker } from '../../../skills/orch/scripts/lib/approvals.ts'
+import { boardApprovalPath, recordPress, selfIsWorker } from '../../../skills/orch/scripts/lib/board-queries/board-approvals.ts'
 import { isLiveWorkerTerminal } from '../../../skills/orch/scripts/lib/board-queries/board-worker-terminal.ts'
 
 const USAGE = '사용법: approvals.ts where --repo DIR | self [--live] | press <id> <버전> approve|revise [--note=글] --origin kind --repo DIR'
@@ -32,7 +33,7 @@ async function main(): Promise<number> {
   try { parsed = parseArgs({ args: process.argv.slice(2), options: OPTIONS, allowPositionals: true }) } catch (error) { err((error as Error).message); return 2 }
   const { values: v, positionals } = parsed
   const [verb, id, versionText, action] = positionals
-  if (verb === 'where' && positionals.length === 1 && v.repo) { out(approvalsFile(resolve(v.repo))); return 0 }
+  if (verb === 'where' && positionals.length === 1 && v.repo) { out(boardApprovalPath(resolve(v.repo))); return 0 }
   if (verb === 'self' && positionals.length === 1) {
     const terminal = process.env.ORCA_TERMINAL_HANDLE || null
     const worker = !terminal ? false : v.live ? await isLiveWorkerTerminal(terminal) : await selfIsWorker()
