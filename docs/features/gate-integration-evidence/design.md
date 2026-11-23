@@ -40,6 +40,7 @@
 - 관문과 `orch doctor` 를 실행하는 환경의 플러그인을 먼저 갱신한 뒤 저장소 설정에 `modules` 를 추가한다. 이전 버전은 이 키를 설정 오류로 처리한다.
 - 모듈 자리 표기는 스펙 예시와 같은 `<모듈>` 하나로 정했다. 영문 표기를 함께 받으면 같은 뜻의 표기가 둘이 된다.
 - 꼴이 틀리면 `ConfigError` 다. `orch doctor` 는 설정 검사표(`core/config-schema.ts`)로 같은 판정을 `INVALID-CONFIG` 로 알린다.
+- `orch doctor` 는 Git 이 추적하는 파일을 읽어, 해당 규칙의 `paths` 에 맞는 파일이 없는 목록 항목을 `INTEGRATION-MODULE-NOT-FOUND` 로 알린다. 모듈 이름의 오타나 이름 변경을 확인할 수 있고, 이 경고는 종료 코드에 영향을 주지 않는다.
 
 ## 기록 줄
 
