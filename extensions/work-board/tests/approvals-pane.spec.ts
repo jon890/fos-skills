@@ -4,24 +4,9 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { approvalArgv, approvalSelfArgs, approvalControls, approvalKey, approvalWait, armedState, parseApprovals, pressToast, statusLine } from '../hooks/register.js'
+import { approvalArgv, approvalSelfArgs, approvalControls, approvalKey, approvalWait, armedState, pressToast, statusLine } from '../hooks/register.js'
 
 const entry = (over: Record<string, unknown> = {}) => ({ id: 'post-1', version: 3, kind: 'post', title: '제목', state: 'open', terminal: 'term_c', ...over })
-
-test('parseApprovals: 열린 대기만 버전 순으로 낸다', () => {
-  const source = JSON.stringify({ seq: 9, entries: [
-    entry({ id: 'b', version: 7 }), entry({ id: 'a', version: 2 }), entry({ id: 'c', version: 5, state: 'approved' }),
-    entry({ id: 'd', version: 6, state: 'used' }), { id: 'broken' },
-  ] })
-  assert.deepEqual(parseApprovals(source).open?.map(e => e.id), ['a', 'b'])
-})
-
-test('parseApprovals: 빈 글은 대기 없음이고 깨진 글과 틀린 꼴은 error 다', () => {
-  assert.deepEqual(parseApprovals(''), { open: [] })
-  assert.deepEqual(parseApprovals('  \n'), { open: [] })
-  assert.ok('error' in parseApprovals('{깨짐'))
-  assert.deepEqual(parseApprovals('{"seq":1}'), { error: '승인 파일 꼴이 틀려요' })
-})
 
 test('approvalWait: 59분, 61분, 25시간은 노랑, 2일', () => {
   const at = Date.parse('2026-11-10T12:00:00+09:00')

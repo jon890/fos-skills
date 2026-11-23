@@ -31,10 +31,12 @@ async function start($, on, opts: { approvals?: string; self?: { terminal: strin
   on('process.run', (_, e) => {
     calls.push({ argv: e.argv })
     if (e.argv[0] === 'git') return { value: { exitCode: 0, stdout: '/repo/.git\n', stderr: '' } }
+    if (e.argv[2]?.endsWith('/board-queries/board-approvals.ts')) {
+      return { value: { exitCode: 0, stdout: APPROVALS + '\n', stderr: '' } }
+    }
     const script = e.argv.find((a) => a.endsWith('bin/approvals.ts'))
     if (script) {
       const verb = e.argv[e.argv.indexOf(script) + 1]
-      if (verb === 'where') return { value: { exitCode: 0, stdout: APPROVALS + '\n', stderr: '' } }
       if (verb === 'self') return { value: { exitCode: 0, stdout: JSON.stringify(opts.self ?? { terminal: 'term_c', worker: false }) + '\n', stderr: '' } }
       if (verb === 'press') return { value: (opts.press ?? (() => ({ exitCode: 0, stdout: 'PRESS-OK msg_1\n', stderr: '' })))(e.argv) }
     }
@@ -69,6 +71,15 @@ test('열린 대기가 없으면 상자도 상태 줄의 「승인 n」 도 없�
   expect(h.statuses.some((s) => s.includes('승인'))).toBe(false)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /승인 대기/ })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('승인 파일 꼴이 틀리면 같은 오류를 보이고 버튼은 그리지 않는다', async ($, on) => {
+  const h = await start($, on, { approvals: '{"seq":1}' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^승인 대기를 읽지 못했어요: 승인 파일 꼴이 틀려요$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', key: 'approval:post-1:3:approve' })).toBeFalsy()
+  expect(h.statuses.some((s) => s.includes('승인'))).toBe(false)
   await ui.unmount()
 })
 

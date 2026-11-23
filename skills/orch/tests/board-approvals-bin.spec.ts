@@ -6,11 +6,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { applyAdd, emptyFile } from '../../../skills/orch/scripts/core/approvals.ts'
-import type { ApprovalFile } from '../../../skills/orch/scripts/core/approvals.ts'
-import { fakeBin } from '../../../skills/orch/tests/fixtures/fake-bin.ts'
+import { applyAdd, emptyFile } from '../scripts/core/approvals.ts'
+import type { ApprovalFile } from '../scripts/core/approvals.ts'
+import { fakeBin } from './fixtures/fake-bin.ts'
 
-const script = fileURLToPath(new URL('../bin/approvals.ts', import.meta.url))
+const script = fileURLToPath(new URL('../../../extensions/work-board/bin/approvals.ts', import.meta.url))
 const envelope = (result: unknown) => JSON.stringify({ ok: true, result })
 const workers = (handles: string[] = []) => envelope({ workers: handles.map(agentTerminalHandle => ({ agentTerminalHandle, dispatchId: 'd' })), scope: { source: 'all' }, page: {} })
 

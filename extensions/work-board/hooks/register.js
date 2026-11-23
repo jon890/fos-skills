@@ -1,3 +1,4 @@
+import { boardApprovalReader } from '../../../skills/orch/scripts/lib/board-queries/board-approval-view.ts'
 import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
@@ -30,8 +31,8 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
 //   3-1. 머지 줄: 같은 플러그인의 bin/merge-queue.ts 출력. orch 설정, 상태 파일과 루프 로그에서 PR 마다 머지 가능 여부와 대기 이유를 읽고
 //        gh 는 부르지 않는다. 열린 PR 상자의 PR 아래 한 줄로 붙인다. 큐를 쓰지 않는 저장소에서는 붙이지 않는다.
-//   3-2. 승인 대기: orch 가 쓰는 승인 파일(bin/approvals.ts where 가 경로를 낸다)의 열린 대기. 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그리고,
-//        사람이 「승인」, 「고쳐 달라」 를 누르면 bin/approvals.ts press 를 불러 기록과 신호를 쓴다. 창이 승인 기록을 쓰는 곳은 pressApproval 하나다.
+//   3-2. 승인 대기: orch 가 넘긴 열린 승인 대기. 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그리고,
+//        사람이 「승인」, 「고쳐 달라」 를 누르면 bin/approvals.ts press 를 불러 orch 에 기록과 신호를 맡긴다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
 // 파일과 로컬 명령은 계속 읽는다. 네트워크 조회는 network-poll.js 가 창 표시와 최근 입력, 조회별 주기로 제한한다.
 
@@ -205,17 +206,16 @@ const dismissUndo = []
 // 넘김과 되돌리기마다 올린다. 그 전에 시작한 알림 읽기의 결과는 넘긴 항목을 되살리므로 버린다
 let inboxGeneration = 0
 
-// 승인 대기. open 은 승인 파일의 열린 대기(parseApprovals)이고 path 는 bin/approvals.ts where 가 낸 파일 경로다.
-// error 는 파일이 있는데 읽지 못했을 때만 둔다. where 를 못 부르면(옛 설치본 등) 상자를 그리지 않는다
-let approvals = { open: [], error: '', path: '' }
+let approvals = { open: [], error: '' }
+let readApprovalView = null
 let approvalSelf = { known: false, terminal: null, worker: null } // bin/approvals.ts self 의 결과. 한 번 worker 로 본 터미널은 계속 worker 로 둔다
 let approvalSelfBusy = false
 let approvalOrigin = 'none' // 마지막 ui.press, ui.input 이벤트의 origin.kind. 나중에 확인할 기록이고 버튼을 막는 조건이 아니다
 let armed = null // real 대기의 「승인」 을 처음 누른 { key, until }
 let reviseKey = '' // 「고쳐 달라」 글칸이 열린 대기의 버튼 키
-let approvalsRoot = '' // 승인 경로를 받은 주 checkout. 세션이 다른 저장소로 옮겨 가면 경로를 다시 받는다
+let approvalsRoot = '' // 승인 대기를 읽는 주 checkout
 let approvalSelfFull = false // released 까지 읽은 전체 조회가 한 번 성공했는지. 그 전에는 --live 로 넘어가지 않는다
-let whereSkips = 0 // where 가 실패한 동안 5초마다 다시 부르지 않고 열두 번에 한 번만 부른다
+let approvalReaderSkips = 0 // 조회 준비가 실패한 동안 5초마다 다시 부르지 않고 열두 번에 한 번만 부른다
 const pressing = new Set()
 
 // 플러그인 버전. install 은 설치본(installOf), latest 는 main 의 { commit, version } 이나 { error }, 아직 읽지 않았으면 undefined
@@ -1196,22 +1196,6 @@ export function statusLine(items, state, inboxState = null, freshness = null, ap
 
 // ---- 승인 대기(순수 함수) ----
 
-// 승인 파일 글에서 열린 대기를 버전 순으로 낸다. 빈 글은 대기 없음, JSON 이 아니거나 꼴이 틀리면 { error } 다
-export function parseApprovals(source) {
-  if (!String(source || '').trim()) return { open: [] }
-  let data
-  try {
-    data = JSON.parse(source)
-  } catch (failure) {
-    return { error: String(failure && failure.message ? failure.message : failure) }
-  }
-  if (!data || !Array.isArray(data.entries)) return { error: '승인 파일 꼴이 틀려요' }
-  const open = data.entries
-    .filter((e) => e && e.state === 'open' && typeof e.id === 'string' && Number.isInteger(e.version) && typeof e.title === 'string')
-    .sort((a, b) => a.version - b.version)
-  return { open }
-}
-
 // 기다린 시간 글(분, 시간, 일)과 24시간을 넘겼는지
 export function approvalWait(createdAt, now) {
   const at = Date.parse(createdAt || '')
@@ -1379,7 +1363,7 @@ async function loadLive($) {
     } catch (failure) {
       next.errors.marks = String(failure.message || failure)
     }
-    // 열린 PR 마다의 머지 줄. orch 설정, 상태 파일과 로그만 읽는다(bin/merge-queue.ts 머리 주석)
+    // 열린 PR 마다의 머지 줄. orch 의 읽기 전용 큐 조회를 쓴다
     try {
       const root = await boardRoot($)
       if (root) {
@@ -1663,35 +1647,32 @@ export async function updatePlugin($, install = plugin.install) {
   await loadLatest($)
 }
 
-// 승인 파일을 읽는다. 경로는 처음 한 번 bin/approvals.ts where 로 받는다(orch 루트 규칙을 창이 계산하지 않는다).
-// 못 받으면 상자를 그리지 않는다. force 는 /board 를 열 때 경로를 다시 받는다
+// orch 에서 열린 승인 대기를 읽는다.
 async function loadApprovals($, force = false) {
   const root = await boardRoot($)
   await loadTaskTool($, force)
   if (root !== approvalsRoot) {
     approvalsRoot = root
-    approvals = { open: [], error: '', path: '' }
+    approvals = { open: [], error: '' }
+    readApprovalView = null
     reviseKey = ''
-    whereSkips = 0
+    approvalReaderSkips = 0
     force = true
   }
-  if (root && !approvals.path && !force) whereSkips++
-  if (root && (force || (!approvals.path && whereSkips % 12 === 1))) {
+  if (root && !readApprovalView && !force) approvalReaderSkips++
+  if (root && (force || (!readApprovalView && approvalReaderSkips % 12 === 1))) {
     try {
-      const where = (await run($, ['node', '--disable-warning=ExperimentalWarning',
-        $.plugin.root + '/extensions/work-board/bin/approvals.ts', 'where', '--repo', root])).trim()
-      if (where.startsWith('/')) approvals.path = where
+      readApprovalView = await boardApprovalReader(root, $.plugin.root, (argv) => run($, argv), {
+        exists: (file) => $.fs.exists(file),
+        read: (file) => $.fs.read(file),
+      })
     } catch {
-      /* 옛 설치본이나 orch 가 없으면 승인 대기를 보이지 않는다 */
+      /* 조회를 준비하지 못하면 승인 대기를 보이지 않는다 */
     }
   }
-  if (!approvals.path) return
-  if (await $.fs.exists(approvals.path)) {
-    const parsed = parseApprovals(await $.fs.read(approvals.path))
-    approvals = { ...approvals, open: parsed.open || [], error: parsed.error || '' }
-  } else {
-    approvals = { ...approvals, open: [], error: '' }
-  }
+  if (!readApprovalView) return
+  const { open = [], error = '' } = await readApprovalView()
+  approvals = { open, error }
   if (reviseKey && !approvals.open.some((e) => approvalKey(e, 'revise') === reviseKey)) reviseKey = ''
   // worker 터미널인지는 승인 대기가 있을 때만 읽는다. 조회가 무겁다
   if (approvals.open.length > 0 && !approvalSelf.known) void loadApprovalSelf($, false)
