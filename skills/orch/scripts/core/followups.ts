@@ -15,6 +15,7 @@
 //     note          끝낼 때 남긴 한 줄
 //     finish_args   처음 마무리에 준 옵션(queue/finish-pr.ts 의 replayArgs). `orch followup done` 이 그 보드에 쓰고 마무리를 다시 띄울 때 그대로 준다.
 //                   옛 항목에는 없어 빈 목록으로 읽는다
+//     board_item    배포 뒤 확인 단계를 붙인 보드 항목 ID. 없으면 별도 항목을 쓴다
 //     pid_file      처음 마무리의 pid 파일 절대 경로. `orch followup done` 이 도는 마무리를 이 파일로 알아보고 다시 띄울 때 쓴다.
 //                   마무리가 --finish-log-dir 로 다른 곳에 썼을 수 있다(PR 558 리뷰). 없으면 null 이고 <orch 루트>/queue/finish-<PR>.pid 를 쓴다
 //
@@ -36,6 +37,7 @@ export type Followup = {
   note: string | null
   finish_args: string[]
   pid_file: string | null
+  board_item?: string
 }
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -55,6 +57,7 @@ export function parseFollowups(data: unknown): Followup[] {
       added_at: str(row.added_at), notified_at: optional(row.notified_at), done_at: optional(row.done_at), note: optional(row.note),
       finish_args: Array.isArray(row.finish_args) ? row.finish_args.filter((arg): arg is string => typeof arg === 'string') : [],
       pid_file: optional(row.pid_file),
+      ...(typeof row.board_item === 'string' && row.board_item ? { board_item: row.board_item } : {}),
     }]
   })
 }

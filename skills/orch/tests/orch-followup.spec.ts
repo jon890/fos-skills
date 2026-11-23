@@ -103,11 +103,13 @@ test('처음 마무리가 다른 pid 파일을 썼으면 그 파일로 도는 �
   assert.match(readFileSync(c.log, 'utf8'), new RegExp(`--pid-file ${pidFile} `))
 })
 
-test('done 은 처음 마무리가 쓴 보드에 done 을 쓰고, 다시 띄우는 마무리에 처음 옵션을 그대로 준다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {
+test('done 은 연결 정보를 저장하기 전에 만든 별도 보드 항목을 끝내고 처음 마무리 옵션을 유지한다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {
   const c = setup(t)
   const board = join(c.repo, 'boards', 'team.json')
   mkdirSync(join(c.repo, 'boards'), { recursive: true })
-  writeFileSync(board, JSON.stringify({ items: [] }))
+  const legacy = { id: 'followup-787', title: '배포 뒤 확인 #787', status: 'wait', details: [{ text: 'smoke 787', done: false }] }
+  const parent = { id: 'feature', pr: '#787', status: 'wait' }
+  writeFileSync(board, JSON.stringify({ items: [legacy, parent] }))
   const file = join(c.repo, '.orch', 'state', 'followups.json')
   const items = JSON.parse(readFileSync(file, 'utf8')).items
   items[0].finish_args = ['--run', 'run_first', '--board', board, '--complete']
@@ -115,11 +117,40 @@ test('done 은 처음 마무리가 쓴 보드에 done 을 쓰고, 다시 띄우�
   const r = c.run(['done', '787', '--not-main', '테스트'])
   assert.equal(r.code, 0, r.stdout + r.stderr)
   assert.doesNotMatch(r.stdout, /FOLLOWUP-BOARD-FAIL/)
-  const saved = JSON.parse(readFileSync(board, 'utf8')).items.find((one: { id: string }) => one.id === 'followup-787')
-  assert.equal(saved.status, 'done')
+  const [completed, ...others] = JSON.parse(readFileSync(board, 'utf8')).items
+  assert.equal(completed.status, 'done')
+  assert.equal(completed.id, legacy.id)
+  assert.equal(completed.title, legacy.title)
+  assert.deepEqual(completed.details, legacy.details)
+  assert.deepEqual(others, [parent])
   const deadline = Date.now() + 5000
   while (!existsSync(c.log) && Date.now() < deadline) await sleep(50)
   assert.match(readFileSync(c.log, 'utf8'), new RegExp(`^finish 787 --repo \\S+ --pid-file \\S+ --run run_first --board ${board} --complete --not-main 테스트$`, 'm'))
+})
+
+test('done 은 연결된 보드에서 해당 PR 의 단계만 끝낸다', (t) => {
+  const c = setup(t)
+  const board = join(c.repo, 'board.json')
+  const steps = [
+    { text: '1. [wait] 배포 뒤 확인 (PR 787) · smoke 787', done: false },
+    { text: '2. [wait] 배포 뒤 확인 (PR 789) · smoke 789', done: false },
+  ]
+  writeFileSync(board, JSON.stringify({ items: [{ id: 'feature', status: 'doing', next: steps }] }))
+  const file = join(c.repo, '.orch', 'state', 'followups.json')
+  const items = saved(c)
+  items[0].finish_args = ['--board', board]
+  items[0].board_item = 'feature'
+  writeFileSync(file, JSON.stringify({ items }))
+  for (const expected of ['FOLLOWUP-DONE #787', 'FOLLOWUP-ALREADY #787']) {
+    const r = c.run(['done', '787', '--no-finish', '--not-main', '테스트'])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(r.stdout.trim(), expected)
+  }
+  const [row, ...rest] = JSON.parse(readFileSync(board, 'utf8')).items
+  assert.deepEqual(rest, [])
+  assert.equal(row.id, 'feature')
+  assert.equal(row.status, 'doing')
+  assert.deepEqual(row.next, [{ ...steps[0], done: true }, steps[1]])
 })
 
 test('done 에 --run 을 주면 처음 마무리의 --run 대신 그 값을 준다', { skip: !HAS_PYTHON && 'python3 가 필요하다' }, async (t) => {

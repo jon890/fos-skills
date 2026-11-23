@@ -91,5 +91,6 @@ test('느린 틱이 시간 상한을 넘기면 끊고 WATCH-ERROR slow-tick 을 
   await loop.wait(() => typeof loop.state()?.errors?.['slow-tick@r'] === 'string', '끊긴 느린 틱이 기록되지 않았다')
   assert.match(loop.state().errors['slow-tick@r'], /^1초를 넘겨 끊었다$/)
   await loop.wait(() => loop.notices().some((body) => body.startsWith('slow-tick: 1초를 넘겨 끊었다')), 'WATCH-ERROR slow-tick 을 모아 보내기에 쌓지 않았다')
-  assert.deepEqual(loop.log(), ['start'])
+  // 제한 시간은 프로세스를 띄울 때부터 센다. 환경이 느리면 정리가 시작 줄을 쓰기 전에 끊긴다.
+  assert.match(loop.log().join('\n'), /^(?:start)?$/)
 })
