@@ -1,6 +1,6 @@
 import { boardApprovalReader } from '../../../skills/orch/scripts/lib/board-queries/board-approval-view.ts'
 import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
-import { isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
+import { hasStopReportId, isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
@@ -284,7 +284,7 @@ export function parseQuestions(stdout, runId, keyOf = null, shown = null) {
 // worker 가 직접 보낸 메시지는 제목이 같아도 id 가 msg_<hex> 라 자동 알림이 아니다. 아니면 null 이다
 export function autoAlertKind(m) {
   const id = String((m && m.id) || '')
-  if (m && stopReasonOf(m) !== null) return 'stop'
+  if (hasStopReportId(id)) return 'stop'
   if (id.startsWith('msg_chaterr_')) return 'error'
   return null
 }

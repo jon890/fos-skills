@@ -21,6 +21,7 @@ const SUBJECTS: Record<string, string> = {
   'Worker stopped on an error without reporting': 'errored',
   'Worker is waiting on a prompt': 'needs-input',
   'Worker exited without reporting': 'exited',
+  'Worker lost without reporting': 'lost',
 }
 
 function payloadOf(m: Message): Record<string, unknown> {
@@ -35,10 +36,15 @@ function payloadOf(m: Message): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
+// 보드도 같은 접두사로 Orca 멈춤 알림을 찾는다.
+export function hasStopReportId(value: unknown): boolean {
+  const id = String(value ?? '')
+  return PREFIXES.some((prefix) => id.startsWith(prefix))
+}
+
 // Orca 가 만든 멈춤 보고의 이유다. payload 에 이유가 없으면 제목으로 정한다.
 export function stopReason(m: Message): string | null {
-  const id = String(m.id ?? '')
-  if (m.type !== 'escalation' || !PREFIXES.some((prefix) => id.startsWith(prefix))) return null
+  if (m.type !== 'escalation' || !hasStopReportId(m.id)) return null
   const reason = payloadOf(m).stopReason
   if (typeof reason === 'string' && reason) return reason
   const subject = String(m.subject ?? '')

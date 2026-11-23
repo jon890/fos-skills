@@ -39,7 +39,7 @@ const ids = (list: Json[]) => list.map((m) => m.id)
 
 test('Orca 자동 알림은 id 접두로 확인한다 (R2)', () => {
   for (const id of ['msg_stop_aa', 'msg_rest_aa']) {
-    assert.equal(autoAlertKind({ id, type: 'escalation' }), 'stop')
+    assert.equal(autoAlertKind({ id }), 'stop')
     assert.equal(alertNoteText(stop(id, 'x', 'errored')), '오류로 멈춤')
   }
   assert.equal(autoAlertKind({ id: 'msg_chaterr_c4fb0a4cdbd1db6875aa79b5' }), 'error')
