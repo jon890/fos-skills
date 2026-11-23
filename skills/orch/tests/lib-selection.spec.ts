@@ -1,4 +1,3 @@
-import { sameFamily } from '../scripts/lib/model-generation.ts'
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,31 +12,27 @@ afterEach(() => { rmSync(repo, { recursive: true, force: true }) })
 const source = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
 const sol = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 계획서가 수정 위치를 정했다.'
 
-test('모든 행의 worker 가 스펙의 행과 worker 표와 같다', () => {
-  const spec = readFileSync(join(import.meta.dirname, '../../../docs/features/orch-single-worker/spec.md'), 'utf8')
-  const expected = new Map([...spec.matchAll(/^\| `([^`]+)` \|[^|]*\| `([^`]+)` `([^`]+)` (`[^`]+`|기본 effort) \|/gm)]
-    .map(m => [m[1], [{ agent: m[2], model: m[3], effort: m[4] === '기본 effort' ? '기본' : m[4].replaceAll('`', '') }]]))
+test('REQ4, REQ8: 모델 표의 등급마다 적힌 두 모델과 effort 가 실행 조합과 같다', () => {
   const policies = modelPolicies(source)
-  assert.ok(expected.size > 0)
-  for (const [id, policy] of policies) {
-    if (id === 'review') {
-      assert.deepEqual(policy.workers, [{ agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium' }, { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }])
-    } else {
-      // 스펙의 표는 행을 정할 때의 세대를 적는다. 모델 표는 같은 계열의 새 세대로 바뀔 수 있다(lib/model-generation.ts)
-      const want = expected.get(id)
-      assert.equal(policy.workers.length, want?.length, id)
-      policy.workers.forEach((w, i) => {
-        assert.deepEqual([w.agent, w.effort], [want![i].agent, want![i].effort], id)
-        assert.ok(sameFamily(w.model, want![i].model), `${id}: ${w.model} / ${want![i].model}`)
-      })
-    }
+  const section = source.split('\n## 모델\n')[1].split('\n#')[0]
+  const rows = [...section.matchAll(/^\| `([^`]+)` \|[^|]+\| `([^`]+)` \|[^|]+\| (.*?) \|$/gm)]
+  assert.ok(rows.length > 0)
+  assert.deepEqual(rows.map(([, id]) => id), [...policies.keys()])
+  for (const [, id, grade, display] of rows) {
+    const policy = policies.get(id)!
+    assert.equal(policy.grade, grade, id)
+    assert.equal(policy.alternates, id !== 'review' && id !== 'security-review', id)
+    const published = display.split(' / ').map(pair => pair.replaceAll('`', ''))
+    assert.equal(published.length, 2, id)
+    assert.deepEqual(policy.workers.map(w => `${w.model} ${w.effort}`).sort(),
+      published.filter(pair => id !== 'security-review' || pair.startsWith('claude-')).sort(), id)
     for (const worker of policy.workers) {
       const text = `worker 선택: \`${worker.agent}\` \`${worker.model}\` effort \`${worker.effort}\`. 행: ${id}. 이유: 해당 작업.`
       assert.deepEqual(selectionVerdict(text, repo), [], id)
       assert.equal(candidateOverrideOf(`${text} 후보 밖: 복사한 이유.`), null)
     }
   }
-  assert.deepEqual([...policies.keys()].filter(id => id !== 'review').sort(), [...expected.keys()].sort())
+  assert.doesNotMatch(source, /기본 후보에서 뺀 모델/)
 })
 
 test('에이전트·모델·effort 가 하나만 달라도 lint 와 launch 모두 이유를 요구한다', () => {
@@ -52,7 +47,7 @@ test('에이전트·모델·effort 가 하나만 달라도 lint 와 launch 모�
 
 test('기본 effort 는 명시한 단계와 다르고 낮은 effort 도 예외다', () => {
   for (const id of ['simple-apply', 'hard-design', 'impl-hard']) {
-    const worker = modelPolicies(source).get(id)!.workers[0]
+    const worker = modelPolicies(source).get(id)!.workers.find(w => w.agent === 'claude')!
     const text = `worker 선택: \`${worker.agent}\` \`${worker.model}\` effort \`기본\`. 행: ${id}. 이유: 작업 내용.`
     assert.deepEqual(selectionVerdict(text, repo), [])
     assert.match(selectionVerdict(text.replace('`기본`', '`medium`'), repo).join(), /후보 밖/)
@@ -126,13 +121,19 @@ test('누락·중복·알 수 없는 행·읽지 못한 표는 예외 이유로�
   assert.match(model, /행에는 작업 종류 id/)
 })
 
-test('표의 값 변경은 검사에 반영되고 빈 값·중복 후보는 읽지 못한 행으로 거절한다', () => {
+test('표의 값 변경은 검사에 반영되고 빈 값·알 수 없는 등급은 읽지 못한 행으로 거절한다', () => {
   const file = join(repo, 'table.md')
-  const table = '## 모델\n| `impl-planned` | 구현 | `codex` | `gpt-6.1-sol` | `medium` |\n### 다음 절\n| `ignored` | 설명 | `x` | `y` | `low` |'
+  const table = ['## 모델', '| `impl-planned` | 구현 | `opus` | `medium` | 표시 |',
+    '### 사용 한도에 걸렸을 때', '| `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | 없음 | `opus` |',
+    '### 다음 절', '| `ignored` | 설명 | `x` | `low` | 표시 |'].join('\n')
   writeFileSync(file, table)
   assert.deepEqual(modelRowIds(table), ['impl-planned'])
   assert.deepEqual(selectionVerdict(sol.replace('`low`', '`medium`'), repo, { table: file }), [])
-  for (const broken of [table.replace('`medium`', ''), table.replace('`codex`', '`codex` / `claude`')]) {
+  const single = table.replace('Claude Opus 5.5 `medium`', '없음')
+  assert.equal(modelPolicies(single).get('impl-planned')?.alternates, false)
+  writeFileSync(file, single)
+  assert.deepEqual(selectionVerdict(sol.replace('`low`', '`medium`'), repo, { table: file }), [])
+  for (const broken of [table.replace('`medium`', ''), table.replace('`opus`', '`unknown`')]) {
     writeFileSync(file, broken)
     assert.match(selectionVerdict(`${sol} 후보 밖: 지정.`, repo, { table: file }).join(), /worker 를 읽지 못했다/)
   }

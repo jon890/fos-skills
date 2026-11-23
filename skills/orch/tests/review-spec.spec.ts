@@ -69,6 +69,17 @@ test('구현 worker 가 Codex 면 Claude 리뷰이고 가장 늦은 구현 행�
   const [choice] = selectionsOf(readFileSync(file(), 'utf8'))
   assert.deepEqual([choice.agent, choice.model, choice.effort], ['claude', 'claude-sonnet-5-5', 'medium'])
 })
+test('REQ6: 리뷰는 지시서나 차례의 제공자 대신 실제 구현 제공자의 반대쪽을 고른다', () => {
+  const from = { agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium' }
+  recordHistory(repo, row('d1', 'fix/precommit', 'codex', '2026-11-10T00:00:00Z', {
+    effective: { agent: 'claude', model: 'opus', modelId: 'claude-opus-5-5', alternation: {
+      grade: 'opus', agent: 'codex', reason: '번갈아: opus 차례', from,
+    } },
+  }))
+  const r = make('262')
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /impl=claude\/claude-opus-5-5 review=codex\/gpt-6\.2-sol\/medium/)
+})
 test('만든 지시서는 spec-lint 가 막지 않고 남은 자리표시는 채움 경고로 알린다', () => {
   recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))
   assert.equal(make('262').code, 0)

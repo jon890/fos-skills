@@ -195,7 +195,7 @@ describe('보드 다시 쓰기', () => {
 describe('낡은 표 행', () => {
   const NEXT = [...TODAY, entry('gpt-6.3-sol', 'Fast, go-to model for coding.')]
   const SOL_ROWS = (readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8').split('\n## 모델\n')[1].split('\n#')[0])
-    .split('\n').filter(line => line.startsWith('| `') && line.includes('`gpt-6.2-sol`')).map(line => line.split('|')[1].trim().replace(/`/g, ''))
+    .split('\n').filter(line => line.startsWith('| `') && !line.startsWith('| `security-review`') && line.includes('`gpt-6.2-sol`')).map(line => line.split('|')[1].trim().replace(/`/g, ''))
 
   test('옛 세대를 가리키는 행마다 MODEL-TABLE-STALE 을 한 번 보내고 새 세대마다 보드 항목 하나를 더한다', () => {
     const repo = join(tmp, 'other')

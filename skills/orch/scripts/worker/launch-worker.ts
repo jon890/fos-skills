@@ -24,16 +24,16 @@
 //     --run            worker-start 와 다시 띄우기에 줄 Run. 없으면 코디네이터에 묶인 Run 이다
 //     --no-pr      PR 없는 작업으로 기록해 완료 근거 경고를 생략한다
 //     --preflight      --task 와 함께 준다. 차례 0~1-1(선택, 모델, Claude 프로필, orch PATH, `허락:` 줄, orch 폴더 이전, worker.commit_check 설정, spec-lint)만 하고
-//                      통과하면 `PREFLIGHT-OK` 와 0, 걸리면 같은 거부와 종료 코드로 끝난다. 1-2 의 번호 예약, 워크트리 확인, before-launch 는 하지 않는다.
-//                      orch worker relaunch 가 옛 worker 를 abandon 하기 전에 부른다
+//                      통과하면 `PREFLIGHT-OK` 와 0, 걸리면 같은 거부와 종료 코드로 끝난다. 교대 차례를 잡으면 `LAUNCH-EFFECTIVE` 에 실행 후보도 낸다.
+//                      orch worker relaunch 는 abandon 전에 이 차례를 받아 최종 시작에 이어 쓴다. 번호 예약, 워크트리 확인, before-launch 는 하지 않는다.
 //     --watch          띄운 뒤 worker-show 의 단계를 볼 초. 기본 90. 0 이면 보지 않는다
 //     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal 같은 것).
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
 //
 // 차례:
 //     0. selectionVerdict 로 지시서의 행별 worker 와 후보 밖 이유를 검사한다. 새 지시서의 비교 칸과 experiment 줄은 거절한다.
-//        새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다. 같은 지시서·설정의 이어하기는 옛 형식을 허용한다.
-//     0-0. 지시서와 대조한 뒤 모델 세대를 정한다. 선택 계정에서 쓸 실제 모델의 한도가 소진됐으면 같은 등급 표의 순서대로 대체한다.
+//        새 실행은 agent/model/effort 도 대조한다. 교대하는 행은 두 조합을 받는다. 같은 지시서·설정의 이어하기는 옛 형식을 허용한다.
+//     0-0. 등급의 차례로 모델을 고르고 세대를 정한다. 사용 한도가 소진됐으면 같은 등급의 짝으로 바꾼다. 고정 선택은 기존 한도 표를 따른다.
 //        모든 후보가 소진됐으면 워크트리와 Task 를 만들기 전에 초기화 시각을 안내하고 멈춘다. 자료가 없으면 USAGE-UNKNOWN 을 내고 이용을 허용한다.
 //        직접 고른 모델(후보 밖:)에도 한도 검사를 한다. 세대 고정 규칙은 원래 모델에만 적용한다.
 //     0-1. 최종 모델과 effort 를 검사한다. relaunch-worker 는 abandon 전에 launch-worker --preflight 를 불러 같은 검사를 한다.
@@ -156,7 +156,7 @@ import { checkLaunchSettings } from '../lib/model-check.ts'
 import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFamily, type Generation, type WorkerHome } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
-import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type CandidateOverride, type Effective } from '../lib/launched.ts'
+import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Alternation, type CandidateOverride, type Effective } from '../lib/launched.ts'
 import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { writeReviewLaunch } from '../lib/review-launch.ts'
 import { requireMigrated } from '../lib/paths.ts'
@@ -173,7 +173,8 @@ import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
-import { candidateOverrideOf, pinnedSelection, selectionVerdict } from '../lib/selection.ts'
+import { acceptsTurnCandidate, candidateOverrideOf, pinnedSelection, selectionVerdict, turnPolicy } from '../lib/selection.ts'
+import { parseModelTurn, takeModelTurn, type ModelTurn } from '../lib/model-turn.ts'
 import { limitRowOf, readSelectionTable } from '../lib/limit-table.ts'
 import { launchLimits } from '../lib/launch-limits.ts'
 import { chooseWithinLimits, refusalLines } from '../core/model-limits.ts'
@@ -456,6 +457,8 @@ export function selectionReject(specPath: string, passthru: string[], repo: stri
   const verdict = selectionVerdict(text, repo, { launch: true, retry, continuation })
   if (verdict.length) return `${verdict.join('; ')}. 형식: ${SELECTION_FORMAT}`
   const [selection] = selectionsOf(text)
+  const policy = turnPolicy(selection, continuation)
+  if (policy && acceptsTurnCandidate(policy, candidateOf(passthru))) return null
   const mismatched: string[] = []
   for (const [name, want] of [['--agent', selection.agent], ['--model', selection.model], ['--effort', selection.effort === '기본' ? null : selection.effort]] as const) {
     const given = passValue(passthru, name)
@@ -470,6 +473,7 @@ export type Decided = {
   warnings: string[]
   notices: string[]
   limitOverride: CandidateOverride | null
+  alternation: Alternation | null
   generation: Generation | null
   accountsChanged: () => boolean
 }
@@ -479,11 +483,11 @@ function candidateOf(args: string[]): Candidate {
 }
 
 // 원래 지시서는 그대로 두고 시작 인자 사본에서 후보를 비교한다. 최종 후보가 정해지면 인자를 바꾼다.
-export function decideSettings(specPath: string, passthru: string[], repo: string, opts: { retry: boolean; continuation: boolean }): Decided {
+export function decideSettings(specPath: string, passthru: string[], repo: string, opts: { retry: boolean; continuation: boolean; turn?: ModelTurn | null }): Decided {
   const warnings: string[] = []
   const notices: string[] = []
   const remote = remoteSelectorOf(passthru) !== null
-  const result: Decided = { reject: null, warnings, notices, limitOverride: null, generation: null, accountsChanged: () => false }
+  const result: Decided = { reject: null, warnings, notices, limitOverride: null, alternation: null, generation: null, accountsChanged: () => false }
   if (passthru.includes('--terminal')) return result
   function reject(text: string, code: number): Decided {
     return { ...result, reject: { text, code } }
@@ -496,6 +500,20 @@ export function decideSettings(specPath: string, passthru: string[], repo: strin
   const [selection] = selectionsOf(text)
   const requested = candidateOf(passthru)
   if (!selection) return result
+  const policy = turnPolicy(selection, opts.continuation)
+  let ordered: Candidate[] | null = null
+  if (policy?.grade && reviewPrOfSpec(text) === null) {
+    try {
+      const turn = opts.turn?.grade === policy.grade ? opts.turn : takeModelTurn(policy.grade)
+      result.alternation = { ...turn, reason: `번갈아: ${turn.grade} 차례`, from: requested }
+      const requestedInGrade = acceptsTurnCandidate(policy, requested)
+      const [first, second] = policy.workers.map(worker => requestedInGrade && worker.agent === requested.agent
+        ? requested : { ...worker, effort: worker.effort === '기본' ? null : worker.effort })
+      ordered = first.agent === turn.agent ? [first, second] : [second, first]
+    } catch (e) {
+      return reject(`모델 차례를 저장하지 못했다: ${(e as Error).message}`, 1)
+    }
+  }
   if (Object.hasOwn(loadConfig(repo).routing ?? {}, 'usage_boost')) {
     warnings.push('routing.usage_boost 는 없어졌다. 저장소 설정에서 이 키를 지운다')
   }
@@ -506,7 +524,7 @@ export function decideSettings(specPath: string, passthru: string[], repo: strin
   const codexHome = (agent: string | null) => !remote && agent === 'codex' ? usage.codexHome() : undefined
   type Prepared = Candidate & { generation: Generation | null }
   const prepare = (candidate: Candidate): Prepared => {
-    const generation = generationOf(candidate, codexHome(candidate.agent))
+    const generation = remote && candidate.agent === 'codex' ? null : generationOf(candidate, codexHome(candidate.agent))
     return { ...candidate, model: generation?.to ?? candidate.model, generation }
   }
   let initial: Prepared
@@ -515,12 +533,16 @@ export function decideSettings(specPath: string, passthru: string[], repo: strin
     if (pin.kind === 'outdated') return reject(pin.message, 4)
     if (pin.kind === 'none' && pin.warning) warnings.push(pin.warning)
     initial = { ...requested, generation: pin.kind === 'kept' ? pin.generation : null }
-  } else if (remote && requested.agent === 'codex') {
+  } else if (remote && (ordered?.[0] ?? requested).agent === 'codex') {
     warnings.push('원격 worker 라 이 머신의 Codex 모델 목록으로 세대를 바꾸지 않는다')
-    initial = { ...requested, generation: null }
-  } else initial = prepare(requested)
+    initial = { ...(ordered?.[0] ?? requested), generation: null }
+  } else initial = prepare(ordered?.[0] ?? requested)
 
   function* alternatives(): Generator<Prepared> {
+    if (ordered) {
+      for (const worker of ordered.slice(1)) yield prepare(worker)
+      return
+    }
     let table: string
     try { table = readSelectionTable() } catch { return }
     for (const row of limitRowOf(table, initial)?.same ?? []) {
@@ -858,7 +880,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   const priorSelection = terminalLaunch ?? retryLaunch
   const sameSpec = !!priorSelection && (!priorSelection.spec || realPath(priorSelection.spec) === realPath(a.spec))
   const sameSettings = !!priorSelection && ['agent', 'model', 'effort'].every(name => {
-    const previous = (priorSelection.effective?.candidateOverride?.from ?? priorSelection)[name as 'agent' | 'model' | 'effort'] ?? null
+    const previous = (priorSelection.effective?.alternation?.from ?? priorSelection.effective?.candidateOverride?.from ?? priorSelection)[name as 'agent' | 'model' | 'effort'] ?? null
     // 기록의 모델은 세대를 바꾼 뒤의 값이다(0-0-1). 같은 계열이면 같은 설정으로 본다
     const given = passValue(passthru, `--${name}`)
     return reusedTerminal || previous === given || (name === 'model' && sameFamily(previous, given))
@@ -870,9 +892,9 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     return 1
   }
   const originalArgs = [...passthru]
-  const decide = () => {
+  const decide = (turn = parseModelTurn(process.env.ORCH_RELAUNCH_TURN ?? '')) => {
     passthru.splice(0, passthru.length, ...originalArgs)
-    return decideSettings(a.spec, passthru, retryRepo, { retry: !!a.task, continuation })
+    return decideSettings(a.spec, passthru, retryRepo, { retry: !!a.task, continuation, turn })
   }
   const firstDecision = decide()
   let decided = firstDecision
@@ -915,7 +937,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   if (gate.stop !== null) return gate.stop
   // 번호와 워크트리를 만들기 직전에 다시 조회한다. 준비 중 계정이 바뀌었으면 새 계정으로 한도를 읽는다.
   if (decided.reject || decided.accountsChanged()) {
-    decided = decide()
+    decided = decide(firstDecision.alternation)
     if (decided.accountsChanged()) {
       const message = '거부: Orca 의 선택 계정이 검사 중 계속 바뀌었다. 선택한 뒤 다시 띄운다'
       if (short()) out(message)
@@ -925,11 +947,12 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
   }
   const decisionStop = reportDecision()
   if (decisionStop !== null) return decisionStop
-  const { limitOverride, generation } = decided
+  const { limitOverride, alternation, generation } = decided
   if (decided !== firstDecision && !launchEnvironmentReady(passthru, remoteSelector)) return 1
   const checkPath = !passthru.includes('--terminal') && passValue(passthru, '--agent') !== 'claude'
   // --preflight 는 0~1-1 의 거부만 보고 끝낸다. 지시서, 워크트리, Orca 를 바꾸지 않는다(relaunch-worker 가 옛 worker 를 abandon 하기 전에 부른다)
   if (a.preflight) {
+    if (alternation) out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...candidateOf(passthru), alternation, ...(limitOverride ? { candidateOverride: limitOverride } : {}), ...(generation ? { generation } : {}) })}`)
     out('PREFLIGHT-OK')
     return 0
   }
@@ -1095,13 +1118,13 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       }
       out(result.stdout + result.stderr)
       // 짧은 출력은 worker-start JSON 을 내지 않는다. 코디네이터가 고른 값과 대조하는 launch.effective 만 판정 줄로 남긴다(references/launch.md 「띄운 직후 확인」)
-      if (result.code === 0 && (candidateOverride || generation)) {
+      if (result.code === 0 && (candidateOverride || alternation || generation)) {
         let effective = {}
         try {
           const value = JSON.parse(result.stdout)?.result?.launch?.effective
           if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
         } catch { /* receipt 가 손상돼도 후보 밖 이유는 남긴다 */ }
-        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...(limitOverride ? candidateOf(passthru) : {}), ...effective, ...(candidateOverride ? { candidateOverride } : {}), ...(generation ? { generation } : {}) })}`)
+        out(`LAUNCH-EFFECTIVE ${JSON.stringify({ ...(limitOverride || alternation ? candidateOf(passthru) : {}), ...effective, ...(candidateOverride ? { candidateOverride } : {}), ...(alternation ? { alternation } : {}), ...(generation ? { generation } : {}) })}`)
       } else if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
       // 실패한 시작의 receipt(failedStage, 남은 자원, request id)는 다시 불러 볼 수 없다. 다시 부르면 Task 가 하나 더 생긴다.
       // 그래서 짧은 출력에서도 receipt 전체를 한 줄로 남긴다
@@ -1175,6 +1198,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
     if (candidateOverride) effective = { ...(limitOverride ? candidateOf(passthru) : {}), ...effective, candidateOverride }
+    if (alternation) effective = { ...candidateOf(passthru), ...effective, alternation }
     // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」)
     const modelId = !stalled && generation && passValue(passthru, '--agent') === 'claude' ? await claudeModelId(worktree, launchedAt) : null
     if (generation) effective = { ...effective, generation, ...(passValue(passthru, '--agent') === 'claude' ? { modelId } : {}) }

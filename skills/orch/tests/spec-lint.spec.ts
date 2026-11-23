@@ -548,6 +548,9 @@ describe('지시서 검사', () => {
     }
     const valid = write(join(specs, 'spec-valid.md'), source(opus + ' 후보 밖: 사용자 지정.'))
     assert.equal(lint([valid]).code, 0)
+    const paired = write(join(specs, 'spec-paired.md'), source(SELECTED
+      .replace('`codex` `gpt-6.1-sol` effort `low`', '`claude` `claude-opus-5-5` effort `medium`')))
+    assert.equal(lint([paired]).code, 0)
   })
 
   test('행 없는 옛 선택 줄은 활성 지시서로만 호환한다', () => {

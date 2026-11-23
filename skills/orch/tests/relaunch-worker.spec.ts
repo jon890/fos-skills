@@ -212,10 +212,10 @@ const holdFile = () => join(repo, '.orch/state/relaunch-hold/ctx_old.json')
 const touched = (calls: string[]) => calls.filter((c) => /worker-abandon|terminal close|worker-start/.test(c))
 
 describe('띄우기 전 확인', () => {
-  test('지시서의 worker 선택 줄이 새 인자와 다르면 고칠 줄을 내고 옛 worker 를 건드리지 않는다', () => {
-    const r = relaunch()
+  test('등급의 조합과 다른 인자를 주면 고칠 줄을 내고 옛 worker 를 건드리지 않는다', () => {
+    const r = relaunch([], ['--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high'])
     assert.equal(r.code, 1, r.out)
-    assert.match(r.stdout, new RegExp(`^RELAUNCH-FIX ${spec}:5 worker 선택: \`claude\` \`claude-opus-5-5\` effort \`medium\`\\. 행: impl-explore\\. 이유: 테스트\\.$`, 'm'))
+    assert.match(r.stdout, new RegExp(`^RELAUNCH-FIX ${spec}:5 worker 선택: \`claude\` \`claude-opus-5-5\` effort \`high\`\\. 행: impl-explore\\. 이유: 테스트\\.$`, 'm'))
     assert.deepEqual(touched(orcaCalls()), [])
     assert.ok(!existsSync(holdFile()))
   })
@@ -312,6 +312,17 @@ describe('띄우기 전 확인', () => {
     const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
     assert.doesNotMatch(r.out, /MODEL-UNAVAILABLE/)
     assert.equal(r.code, 0, r.out)
+  })
+
+  test('REQ7: 다시 띄우기는 사전 검사에서 받은 차례를 실제 시작에도 쓴다', () => {
+    writeSpec('codex', 'gpt-6.2-sol', 'medium')
+    mkdirSync(env.ORCH_MACHINE_DIR!, { recursive: true })
+    const file = join(env.ORCH_MACHINE_DIR!, 'model-turns.json')
+    writeFileSync(file, '{"opus":"claude"}')
+    const r = relaunch([], ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'])
+    assert.equal(r.code, 0, r.out)
+    assert.ok(orcaCalls().some(line => /worker-start .*--agent claude --model opus/.test(line)), r.out)
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { opus: 'codex' })
   })
 
   test('`후보 밖:` 으로 직접 고른 옛 세대는 abandon 전에 MODEL-OUTDATED 로 거부한다', () => {

@@ -1,17 +1,14 @@
 // 지침 표와 지시서의 선택 계약. lint 와 launch 차례 0 이 같은 검사를 쓴다.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { bundleRoot } from './bundle.ts'
 import { selectionsOf, type Candidate } from './spec.ts'
 import type { CandidateOverride } from './launched.ts'
 import { outsideFences } from './common-rules.ts'
 import { sameFamily } from './model-generation.ts'
+import { gradeCandidates, readSelectionTable } from './limit-table.ts'
 import { LINE_BREAK } from '../core/text.ts'
 
-type ModelPolicy = { workers: Candidate[] }
+type ModelPolicy = { grade: string | null; workers: Candidate[]; alternates: boolean }
 
-// ## 모델 절의 id | Task 성격 | 에이전트 | 모델 | effort 표만 읽는다.
-// review 행은 구현 제공자에 따라 고르는 두 조합을 같은 순서로 적는다.
+// 행의 등급과 effort, 한도 표의 모델 쌍을 함께 읽는다.
 export function modelPolicies(table: string): Map<string, ModelPolicy> {
   const lines = table.split('\n')
   const start = lines.indexOf('## 모델')
@@ -19,17 +16,18 @@ export function modelPolicies(table: string): Map<string, ModelPolicy> {
   const rest = lines.slice(start + 1)
   const end = rest.findIndex(line => /^#{1,6} /.test(line))
   const policies = new Map<string, ModelPolicy>()
+  const grades = gradeCandidates(table)
   for (const line of end === -1 ? rest : rest.slice(0, end)) {
     const cells = line.split('|').slice(1, -1).map(cell => cell.trim())
     const id = /^`([a-z][a-z0-9-]*)`$/.exec(cells[0] ?? '')?.[1]
     if (!id) continue
-    const values = cells.slice(2).map(cell => [...cell.matchAll(/`([^`]+)`/g)].map(m => m[1]))
-    const [agents = [], models = [], efforts = []] = values
-    const count = id === 'review' ? 2 : 1
-    const valid = cells.length === 5 && values.every(v => v.length === count)
-      && agents.every(v => ['claude', 'codex'].includes(v))
-      && efforts.every(v => ['기본', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(v))
-    policies.set(id, { workers: valid ? models.map((model, i) => ({ agent: agents[i], model, effort: efforts[i] })) : [] })
+    const grade = cells[2]?.match(/^`([a-z][a-z0-9-]*)`$/)?.[1] ?? null
+    const effort = cells[3]?.match(/^`(기본|low|medium|high|xhigh|max|ultra)`$/)?.[1]
+    const candidates = grade ? grades.get(grade) : undefined
+    const workers = cells.length === 5 && effort && candidates ? candidates
+      .filter(worker => id !== 'security-review' || worker.agent === 'claude')
+      .map(worker => ({ ...worker, effort: worker.effort ?? effort })) : []
+    policies.set(id, { grade, workers, alternates: workers.length === 2 && id !== 'review' })
   }
   return policies
 }
@@ -39,13 +37,24 @@ export function modelRows(table: string): Map<string, string[]> {
 }
 export function modelRowIds(table: string): string[] { return [...modelRows(table).keys()] }
 
-function readModelPolicies(file = join(bundleRoot(), 'references', 'agent-selection.md')): Map<string, ModelPolicy> {
-  return modelPolicies(readFileSync(file, 'utf8'))
+function readModelPolicies(file?: string): Map<string, ModelPolicy> {
+  return modelPolicies(readSelectionTable(file))
 }
 
 // 모델은 같은 계열이면 세대가 달라도 같은 worker 로 본다. 띄울 때 launch-worker 가 그 계열의 최신 세대로 바꾼다(lib/model-generation.ts)
 function sameWorker(a: Candidate, b: Candidate): boolean {
   return a.agent === b.agent && sameFamily(a.model, b.model) && a.effort === b.effort
+}
+
+export function turnPolicy(selection: ReturnType<typeof selectionsOf>[number], continuation: boolean): ModelPolicy | null {
+  if (selection.outsideReason) return null
+  const policy = readModelPolicies().get(selection.row ?? '')
+  return policy?.alternates && (continuation || policy.workers.some(worker => sameWorker(worker, selection))) ? policy : null
+}
+
+export function acceptsTurnCandidate(policy: ModelPolicy, candidate: Candidate): boolean {
+  const selected = { ...candidate, effort: candidate.effort ?? '기본' }
+  return candidate.effort !== '기본' && policy.workers.some(worker => sameWorker(worker, selected))
 }
 
 export function candidateOverrideOf(text: string): CandidateOverride | null {
