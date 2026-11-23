@@ -23,6 +23,11 @@ describe('integrationRules', () => {
     ['모듈 자리가 둘이다', [{ paths: '<모듈>/<모듈>/**', command: 'x' }]],
     ['명령이 비었다', [{ paths: 'a/<모듈>/**', command: ' ' }]],
     ['모르는 키가 있다', [{ paths: 'a/<모듈>/**', command: 'x', when: 'y' }]],
+    ['모듈 목록 대신 문자열을 썼다', [{ ...RULE, modules: 'core' }]],
+    ['모듈 목록이 비었다', [{ ...RULE, modules: [] }]],
+    ['모듈 이름 대신 경로를 썼다', [{ ...RULE, modules: ['modules/core'] }]],
+    ['모듈 이름이 공백이다', [{ ...RULE, modules: [' '] }]],
+    ['모듈 이름에 줄바꿈이 있다', [{ ...RULE, modules: ['core\n'] }]],
   ] as const) {
     test(`꼴이 틀리면 ConfigError 다: ${name}`, () => {
       assert.throws(() => integrationRules({ queue: { integration_tests: value } }), ConfigError)
@@ -47,6 +52,19 @@ describe('integrationNeeds', () => {
     }] } })
     const files = ['core/src/main/A.kt', 'apps/deep/api/src/main/A.kt', 'modules/data/x/A.kt', 'modules/apps/deep/web/x/A.kt', 'modules/ignored/y/A.kt']
     assert.deepEqual(integrationNeeds(files, nested), [need('api'), need('core'), need('data'), need('web')])
+  })
+
+  test('모듈 목록은 그 규칙에만 적용하고 이름 전체를 비교한다', () => {
+    const scoped = integrationRules({ queue: { integration_tests: [
+      { ...RULE, modules: ['core'] },
+      { ...RULE, command: 'make verify-<모듈>' },
+    ] } })
+    const files = ['modules/core/src/main/A.kt', 'modules/core-web/src/main/B.ts']
+    assert.deepEqual(integrationNeeds(files, scoped), [
+      need('core'),
+      { module: 'core', command: 'make verify-core' },
+      { module: 'core-web', command: 'make verify-core-web' },
+    ])
   })
 })
 

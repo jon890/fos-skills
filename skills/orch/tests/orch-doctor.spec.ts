@@ -711,6 +711,26 @@ describe('저장소 판정', () => {
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
   })
 
+  test('통합 테스트 모듈에 해당 규칙과 맞는 추적 파일이 없으면 경고만 낸다', () => {
+    const rule = { paths: 'modules/<모듈>/src/main/**', command: 'make test-<모듈>' }
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { integration_tests: [
+      rule,
+      { ...rule, modules: ['api', 'apii', 'web'] },
+      { ...rule, paths: 'modules/<모듈>/src/test/**', modules: ['web'] },
+    ] } }))
+    git('-C', tmp, 'init', '-q')
+    write(join(tmp, 'modules/api/src/main/Main.java'), '')
+    write(join(tmp, 'modules/web/src/test/Test.java'), '')
+    git('-C', tmp, 'add', 'modules')
+    write(join(tmp, 'modules/web/src/main/index.ts'), '')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.deepEqual(r.stdout.split('\n').filter((line) => line.startsWith('INTEGRATION-MODULE-NOT-FOUND')), [
+      'INTEGRATION-MODULE-NOT-FOUND queue.integration_tests[1].modules apii',
+      'INTEGRATION-MODULE-NOT-FOUND queue.integration_tests[1].modules web',
+    ])
+  })
+
   test('설정이 없는 저장소에는 INVALID-CONFIG 줄이 없다', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)

@@ -161,6 +161,7 @@
 //     OK-SCRIPTS <개수>                          문서가 부르는 스크립트가 모두 있다
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
 //     INVALID-CONFIG <경로> <이유>                설정 파일의 문제 하나. 깨진 JSON(경로 config.json), 모르는 절·키, 틀린 값, 짝 규칙 위반, 삭제한 옛 설정 칸(이유에 고칠 명령이 든다)
+//     INTEGRATION-MODULE-NOT-FOUND <설정 경로> <모듈>  해당 규칙의 paths 에 맞는 추적 파일이 없는 모듈이다. 종료 코드에는 영향이 없다
 //     CLI-DEPS-MISSING <이유>                    설정 검사표가 쓰는 의존(zod)을 불러오지 못했다. 설정 검사만 건너뛴다. 플러그인을 다시 설치하거나 플러그인 폴더에서 npm ci 를 돈다. 종료 코드에는 영향이 없다
 //     OLD-INBOX-FILTER <옛 파일> ...              옛 알림 필터(<orch 루트>/config/notification.json)가 있다. config.json 의 inbox 절로 옮기는 법을 알린다. 종료 코드에는 영향이 없다
 //     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
@@ -207,6 +208,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { isObject } from '../core/json.ts'
+import { integrationNeeds, integrationRules } from '../core/integration-evidence.ts'
 import { COMMANDS, isGroup, LAUNCHER_MARK, legacyNames, orchWord, resolveLegacy, resolveNew, scriptIn, SCRIPTS_DIR } from '../lib/commands.ts'
 import { LEGACY_INBOX_FILTER, readConfigFile } from '../lib/config.ts'
 import type { Config } from '../lib/config.ts'
@@ -473,15 +475,34 @@ function checkRepo(repo: string, schema: Schema | null): string[] {
     if (read.error !== undefined) lines.push(`INVALID-CONFIG config.json ${read.error}`)
     else if (read.exists) {
       const migrate = `${orchWord()} doctor migrate-hooks --repo ${shQuote(repo)} --apply`
-      for (const problem of schema.problems(read.value)) {
+      const problems = schema.problems(read.value)
+      for (const problem of problems) {
         const reason = problem.kind === 'removed' ? problem.reason.replace('orch doctor migrate-hooks --apply', migrate) : problem.reason
         lines.push(`INVALID-CONFIG ${problem.path} ${reason.replace(/\s*\n\s*/g, ' ')}`)
       }
+      if (problems.length === 0) lines.push(...missingIntegrationModules(repo, read.value as Config))
     }
   }
   const config = (isObject(read.value) ? read.value : {}) as Config
   lines.push(...legacyInboxFilter(repo, config))
   lines.push(...missingAdrReservation(repo, config))
+  return lines
+}
+
+function missingIntegrationModules(repo: string, config: Config): string[] {
+  const rules = integrationRules(config)
+  if (!rules.some((rule) => rule.modules)) return []
+  const tracked = run(['git', 'ls-files', '-z'], { cwd: repo, timeoutMs: GIT_TIMEOUT_MS })
+  if (tracked.code !== 0) return []
+  const files = tracked.stdout.split('\0')
+  const lines: string[] = []
+  for (const [i, rule] of rules.entries()) {
+    if (!rule.modules) continue
+    const matched = new Set(integrationNeeds(files, [rule]).map((need) => need.module))
+    for (const module of rule.modules) {
+      if (!matched.has(module)) lines.push(`INTEGRATION-MODULE-NOT-FOUND queue.integration_tests[${i}].modules ${module}`)
+    }
+  }
   return lines
 }
 

@@ -153,6 +153,25 @@ describe('통합 테스트 기록 관문', { skip: !HAS_TOOLS && 'jq 와 bash �
     assert.equal(g.code, 0, both(g))
   })
 
+  test('목록에 든 모듈의 기록만 관문과 머지 큐에서 확인한다', async (t) => {
+    const c = setup(t, { queue: { integration_tests: [{ ...RULES.queue.integration_tests[0], modules: ['core'] }] } })
+    const missing = await gate(c, { '1': pr({ body: '' }) })
+    assert.equal(missing.code, 1, both(missing))
+    assert.equal(gateReason(missing), '통합 테스트 기록 없음: core (./gradlew :core:integrationTest)')
+
+    const state = { '1': pr({ body: body(record('core')) }) }
+    const g = await gate(c, state)
+    assert.equal(g.code, 0, both(g))
+    assert.deepEqual(verdict(g), ['GATE-OK 1'])
+    const q = await queue(c, state)
+    assert.equal(q.code, 0, both(q))
+    assert.match(q.stdout, /1 MERGED/)
+
+    const onlyOutside = await gate(c, { '1': pr({ files: [FILES[1]], body: '통합 테스트 생략: api 테스트가 없다' }) })
+    assert.equal(onlyOutside.code, 0, both(onlyOutside))
+    assert.deepEqual(verdict(onlyOutside), ['GATE-OK 1'])
+  })
+
   test('이름을 바꾼 파일은 옛 경로의 모듈도 기록이 필요하다', async (t) => {
     const c = setup(t)
     const files = [{ path: 'modules/api/src/main/A.kt', previous: 'modules/core/src/main/A.kt' }]
