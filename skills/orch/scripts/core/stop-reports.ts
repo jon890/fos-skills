@@ -1,7 +1,7 @@
 // Orca 가 worker 대신 보내는 멈춤 보고(stop report)를 가린다. 사용처: wait-important.ts, triage-messages.ts, lib/questions.ts.
 //
 // worker 가 worker_done 없이 턴을 끝내면 Orca 가 그 worker 이름으로 escalation 을 Run 에 보낸다(Orca 1.4.246 실측).
-//     id         msg_stop_<해시>
+//     id         msg_stop_<해시> 또는 msg_rest_<해시>
 //     subject    stopReason 마다 하나. finished 「Worker stopped without reporting」, errored 「Worker stopped on an error without reporting」,
 //                needs-input 「Worker is waiting on a prompt」, exited 「Worker exited without reporting」
 //     payload    { taskId, dispatchId, handle, stopReason }. 전체 기록(--full)에서는 JSON 문자열, 줄인 보기에서는 객체다
@@ -15,7 +15,7 @@
 
 export type Message = Record<string, unknown>
 
-const PREFIX = 'msg_stop_'
+const PREFIXES = ['msg_stop_', 'msg_rest_']
 const SUBJECTS: Record<string, string> = {
   'Worker stopped without reporting': 'finished',
   'Worker stopped on an error without reporting': 'errored',
@@ -37,7 +37,8 @@ function payloadOf(m: Message): Record<string, unknown> {
 
 // Orca 가 만든 멈춤 보고의 이유다. payload 에 이유가 없으면 제목으로 정한다.
 export function stopReason(m: Message): string | null {
-  if (m.type !== 'escalation' || !String(m.id ?? '').startsWith(PREFIX)) return null
+  const id = String(m.id ?? '')
+  if (m.type !== 'escalation' || !PREFIXES.some((prefix) => id.startsWith(prefix))) return null
   const reason = payloadOf(m).stopReason
   if (typeof reason === 'string' && reason) return reason
   const subject = String(m.subject ?? '')
