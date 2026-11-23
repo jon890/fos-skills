@@ -1,0 +1,1 @@
+- 정기 정리와 `orch cleanup handoff` 가 handoff 의 끝난 산출물(머지·닫힌 PR 의 파일, 어디에도 속하지 않고 3일 지난 파일)을 휴지통으로 옮긴다. 기한은 `cleanup.handoff_days` 로 바꾼다.

@@ -551,16 +551,48 @@ describe('handoff-cleanup', () => {
       assert.doesNotMatch(r.stdout, /^옮김/m)
     })
 
-    test('PR별 handoff 는 오래돼도 머지 확인 전에는 옮기지 않는다', () => {
+    test('열린 PR 의 handoff 는 오래돼도 남기고, 어디에도 속하지 않은 오래된 파일은 옮긴다', () => {
       const body = make('.orch/handoff/pr-77/body.md', '본문\n', 9)
       const mapping = make('.orch/handoff/pr-77/replies.tsv', '대응\n', 9)
       const old = make('.orch/handoff/old-reply.md', '옛 파일\n', 9)
       const r = ok(['--apply'], { FAKE_RUN_TASKS: '{}' })
-      for (const target of [body, mapping, old]) assert.equal(existsSync(target), true, target)
-      assert.doesNotMatch(r.stdout, /옮김 .*handoff/)
+      for (const target of [body, mapping]) assert.equal(existsSync(target), true, target)
+      assert.equal(existsSync(old), false)
+      assert.match(r.stdout, /옮김 \.orch\/handoff\/old-reply\.md/)
     })
 
-    test('CLOSED PR 폴더만 옮기고 OPEN, MERGED, 비슷한 번호와 다른 자료는 남긴다', () => {
+    test('이름에 PR 번호가 든 파일과 폴더는 그 PR 이 머지되거나 닫히면 기한 없이 옮긴다', () => {
+      const review = make('.orch/handoff/pr-565-review-3n09s8zy/out.md', '리뷰')
+      const reviewPr = make('.orch/handoff/review-pr-561-Zd4Ck9/A.diff', 'diff')
+      const preview = make('.orch/handoff/pr-600-preview.html', '<p>')
+      const states = JSON.stringify({ '565': 'MERGED', '561': 'CLOSED', '600': 'OPEN' })
+      ok(['--apply'], { FAKE_PR_STATES: states, FAKE_RUN_TASKS: '{}' })
+      assert.equal(existsSync(review), false)
+      assert.equal(existsSync(reviewPr), false)
+      assert.equal(existsSync(preview), true)
+    })
+
+    test('열린 PR 브랜치나 워크트리 이름이 든 파일, compare-keys, .keep 의 이름은 오래돼도 남긴다', () => {
+      const live = join(tmp, 'wt', 'test-import-warn')
+      sh('git', '-C', repo, 'worktree', 'add', '-q', '-b', 'fix/test-import-warn', live)
+      const plan = make('.orch/handoff/plan-test-import-warn-pr.md', '본문', 9)
+      const open = make('.orch/handoff/worker-stalls-preview.html', '<p>', 9)
+      const keys = make('.orch/handoff/compare-keys/c1-1.txt', 'base=A', 9)
+      age(join(orch, 'handoff/compare-keys'), 9)
+      const kept = make('.orch/handoff/measurements/result.tsv', '측정', 9)
+      age(join(orch, 'handoff/measurements'), 9)
+      make('.orch/handoff/.keep', 'measurements\n')
+      ok(['--apply'], { FAKE_OPEN: JSON.stringify(['feat/worker-stalls']), FAKE_RUN_TASKS: '{}' })
+      for (const target of [plan, open, keys, kept]) assert.equal(existsSync(target), true, target)
+    })
+
+    test('열린 PR 목록을 읽지 못하면 PR 번호 없는 handoff 파일을 남긴다', () => {
+      const old = make('.orch/handoff/old-reply.md', '옛 파일\n', 9)
+      clean(['--apply'], { FAKE_GH_FAILS: '1' })
+      assert.equal(existsSync(old), true)
+    })
+
+    test('CLOSED, MERGED PR 폴더만 옮기고 OPEN, 비슷한 번호와 다른 자료는 남긴다', () => {
       const closed = make('.orch/handoff/pr-77/body.md', '닫힌 PR')
       const open = make('.orch/handoff/pr-78/body.md', '열린 PR')
       const merged = make('.orch/handoff/pr-79/body.md', '머지된 PR')
@@ -572,7 +604,8 @@ describe('handoff-cleanup', () => {
       assert.match(r.stdout, /옮김 \.orch\/handoff\/pr-77/)
       assert.equal(existsSync(closed), false)
       assert.equal(existsSync(join(trash, '.orch/handoff/pr-77/body.md')), true)
-      for (const target of [open, merged, similar, pending, measurement]) assert.equal(existsSync(target), true, target)
+      assert.equal(existsSync(merged), false)
+      for (const target of [open, similar, pending, measurement]) assert.equal(existsSync(target), true, target)
     })
 
     test('워크트리가 없어진 오래된 pending 폴더만 옮긴다', () => {

@@ -441,6 +441,36 @@ describe('상태 파일 보존 기한', () => {
     assert.ok(!existsSync(trash))
   })
 
+  test('handoff 의 끝난 산출물을 정기 정리가 옮기고 열린 PR 과 기한 안의 것은 남긴다', () => {
+    const trash = join(fx.tmp, 'trash')
+    const merged = file('handoff/pr-565-review-3n09s8zy/out.md', '리뷰', 0)
+    const openPr = file('handoff/pr-570/body.md', '본문')
+    const stray = file('handoff/plan-old-preview.html', '<p>')
+    const owned = file('handoff/plan-worker-stalls-pr.md', '본문')
+    const fresh = file('handoff/note.md', '메모', 1)
+    const pending = file('handoff/pending/gone-worker/body.md', '대기')
+    utimesSync(dirname(pending), new Date(Date.now() - 4 * 86_400_000), new Date(Date.now() - 4 * 86_400_000))
+    fx.prViews['565'] = { state: 'MERGED' }
+    fx.prViews['570'] = { state: 'OPEN' }
+    fx.openHeads = ['feat/worker-stalls']
+    const preview = runSweep(['--trash', trash])
+    for (const target of [dirname(merged), stray, dirname(pending)]) has(preview, `handoff 산출물을 휴지통으로 옮길 것 ${target}`)
+    exists(merged, preview)
+    const out = runSweep(['--apply', '--trash', trash])
+    gone(merged, out)
+    gone(stray, out)
+    gone(pending, out)
+    for (const target of [openPr, owned, fresh]) exists(target, out)
+    assert.ok(existsSync(join(trash, 'handoff/pr-565-review-3n09s8zy/out.md')))
+  })
+
+  test('cleanup.handoff_days 로 handoff 기한을 바꾼다', () => {
+    file('config.json', JSON.stringify({ cleanup: { handoff_days: 10 } }))
+    const stray = file('handoff/plan-old-preview.html', '<p>', 5)
+    const out = runSweep(['--apply', '--trash', join(fx.tmp, 'trash')])
+    exists(stray, out)
+  })
+
   test('저장소 설정으로 보존 기한을 바꾼다', () => {
     file('config.json', JSON.stringify({ cleanup: { queue_days: 6, state_days: '5', gh_log_days: 3, folder_days: 2 } }))
     const kept = [
