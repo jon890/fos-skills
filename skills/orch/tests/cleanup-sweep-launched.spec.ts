@@ -364,8 +364,8 @@ describe('상태 파일 보존 기한', () => {
 
   test('미리 본 파일만 휴지통으로 옮기고 보관 대상은 남긴다', () => {
     const trash = join(fx.tmp, 'retention trash')
-    const launch = (dispatch: string, branch: string, days?: number) => file(
-      `state/launched-workers/${dispatch}.json`, JSON.stringify({ dispatch, branch, worktree: fx.wts }), days)
+    const launch = (dispatch: string, branch: string, days?: number, cwd = fx.wts) => file(
+      `state/launched-workers/${dispatch}.json`, JSON.stringify({ dispatch, branch, worktree: cwd }), days)
     const activeAutoLog = file('state/auto-merge/20261001T100100Z.log', 'MERGED 41\nQUEUE-DONE\n')
     file('state/auto-merge.json', JSON.stringify({ queue: { log: activeAutoLog } }))
     const expired = [
@@ -376,6 +376,7 @@ describe('상태 파일 보존 기한', () => {
       ['state/launched-workers/ctx_done.json', launch('ctx_done', 'finished')],
       ['state/gh/logs/2026-10-01.jsonl', file('state/gh/logs/2026-10-01.jsonl', '{}\n', 2)],
     ]
+    const retained = worktree('retained-worker', { commits: 0, push: false })
     const kept = [
       activeAutoLog,
       file('state/auto-merge/20261001T100300Z.log', 'QUEUE-HELD 42\n'),
@@ -386,6 +387,7 @@ describe('상태 파일 보존 기한', () => {
       launch('ctx_busy', 'busy'),
       launch('ctx_unknown', 'missing'),
       launch('ctx_open', 'open-branch'),
+      launch('ctx_retained', 'retained-worker', 4, retained),
       launch('ctx_recent', 'recent', 2),
       file(`state/gh/logs/${new Date().toISOString().slice(0, 10)}.jsonl`, '{}\n'),
       file('state/gh/logs/2026-10-02.jsonl', '{}\n', 0.5),
@@ -401,13 +403,14 @@ describe('상태 파일 보존 기한', () => {
     fx.prViews['42'] = { state: 'OPEN' }
     fx.openHeads = ['open-branch']
     fx.allWorkers = [
-      ...['ctx_done', 'ctx_open', 'ctx_recent'].map((dispatchId) => ({ dispatchId, dispatchStatus: 'completed' })),
+      ...['ctx_done', 'ctx_open', 'ctx_recent', 'ctx_retained'].map((dispatchId) => ({ dispatchId, dispatchStatus: 'completed' })),
       { dispatchId: 'ctx_busy', dispatchStatus: 'dispatched', workerState: 'ready' },
     ]
     fx.env.ORCH_OUTPUT = 'short'
     const preview = runSweepFull(['--trash', trash])
     delete fx.env.ORCH_OUTPUT
     const text = preview.stdout
+    lacks(text, 'WOULD-REMOVE ' + join(fx.repo, '.orch/state/launched-workers/ctx_retained.json'))
     for (const [, target] of expired) {
       has(text, `WOULD-REMOVE ${target}`)
       exists(target, text)

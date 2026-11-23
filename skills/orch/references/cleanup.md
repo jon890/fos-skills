@@ -364,7 +364,7 @@ orch followup done "$PR" --note "$NOTE"
 | `.orch/state/launched-workers` 의 끝난 dispatch 기록, `finish-started` 의 마무리 표시, `auto-merge` 의 자동 머지 로그 | 3일 | `cleanup.state_days` |
 | `.orch/state/gh/logs` 의 날짜별 GitHub 조회 로그 | 1일 | `cleanup.gh_log_days` |
 
-열린 PR 의 파일, 실행 중인 큐나 마무리의 로그, 살아 있는 dispatch 의 기록은 기한이 지나도 남긴다. PR 이나 dispatch 의 상태를 확인하지 못했을 때도 남긴다. 실패한 마무리 로그와 중간에 멈춘 마무리 로그는 설정을 줄여도 최소 1시간 동안 남긴다. 자동 머지의 종료 알림이 읽을 로그, 워크트리가 남아 있어 마무리 여부를 확인하는 데 필요한 표시, UTC 기준 당일 GitHub 조회 로그도 남긴다.
+열린 PR 의 파일, 실행 중인 큐나 마무리의 로그, 살아 있는 dispatch 의 기록은 기한이 지나도 남긴다. 워크트리가 남은 dispatch 의 기록은 작업을 재개하거나 지시서를 찾을 때 쓴다. 이 기록도 보존한다. PR 이나 dispatch 의 상태를 확인하지 못했을 때도 남긴다. 실패한 마무리 로그와 중간에 멈춘 마무리 로그는 설정을 줄여도 최소 1시간 동안 남긴다. 자동 머지의 종료 알림이 읽을 로그, 워크트리가 남아 있어 마무리 여부를 확인하는 데 필요한 표시, UTC 기준 당일 GitHub 조회 로그도 남긴다.
 
 실측 기록(`routing-log.jsonl`, `launch-history.jsonl`), 보드, 배포 뒤 할 일 목록, 요청 기록과 위 표에 없는 파일은 보존 기한 정리 대상에서 제외한다. `loop.log` 는 1 MiB 를 넘으면 다음 줄을 쓰기 전에 `loop.log.1` 로 옮긴다. 새로 돌릴 때 이전 `loop.log.1` 을 교체한다.
 작업이 띄운 Docker 컨테이너와 쌓은 이미지도 반납한다. 무엇을 지우고 남기는지는 아래 「Docker 자원 반납」 이 소유한다.

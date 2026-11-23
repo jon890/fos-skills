@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { isObject } from '../../core/json.ts'
 import { CLEANUP_KEYS, ConfigError, loadConfig, section } from '../../lib/config.ts'
+import { realPath } from '../../lib/fs.ts'
 import { readLaunch } from '../../lib/launched.ts'
 import { LookupError } from '../../lib/ownership.ts'
 import { pathOf } from '../../lib/paths.ts'
@@ -50,12 +51,13 @@ async function launchCandidates(ctx: StepContext, state: StepState, dir: string,
     if (!eligible.length) return []
     const openHeads = lookupOf(repo).openHeads()
     if (!openHeads) return []
-    const branches = new Map(state.listed)
+    const worktrees = new Set(state.listed.map(([worktree]) => realPath(worktree)))
     const openByBranch = new Map<string, boolean>()
     return eligible.flatMap(({ file, name }) => {
       const launch = readLaunch(repo, name.slice(0, -5))
-      if (!launch) return []
-      const branch = launch.branch ?? branches.get(launch.worktree)
+      // 재개와 지시서 정리는 워크트리가 남아 있는 동안 띄우기 기록을 읽는다.
+      if (!launch || worktrees.has(realPath(launch.worktree))) return []
+      const branch = launch.branch
       if (!branch) return []
       if (!openByBranch.has(branch)) {
         openByBranch.set(branch, openHeads.size > 0 && prCandidates(repo, branch).some(([head]) => openHeads.has(head)))
