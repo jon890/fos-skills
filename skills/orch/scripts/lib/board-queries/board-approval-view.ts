@@ -1,4 +1,5 @@
-// Claude Code 훅에서 쓰는 승인 조회. 로컬 명령과 파일 읽기는 훅이 넘긴다.
+// Claude Code 훅은 Node 내장 모듈을 불러올 수 없다. 최초 경로 확인만 별도 프로세스에서 하고
+// 이후 파일은 훅이 건넨 파일 API 로 매번 읽는다. 경로를 보관하고 열린 대기를 고르는 것은 이 모듈이 맡는다.
 import type { Approval } from '../../core/approvals.ts'
 
 type BoardApproval = Pick<Approval, 'id' | 'version' | 'kind' | 'title' | 'createdAt' |

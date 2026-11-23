@@ -31,7 +31,7 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
 //   3-1. 머지 줄: 같은 플러그인의 bin/merge-queue.ts 출력. orch 설정, 상태 파일과 루프 로그에서 PR 마다 머지 가능 여부와 대기 이유를 읽고
 //        gh 는 부르지 않는다. 열린 PR 상자의 PR 아래 한 줄로 붙인다. 큐를 쓰지 않는 저장소에서는 붙이지 않는다.
-//   3-2. 승인 대기: orch 가 넘긴 열린 승인 대기. 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그리고,
+//   3-2. 승인 대기: 훅의 파일 API 로 읽고 orch 가 해석한 열린 대기. 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그리고,
 //        사람이 「승인」, 「고쳐 달라」 를 누르면 bin/approvals.ts press 를 불러 orch 에 기록과 신호를 맡긴다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
 // 파일과 로컬 명령은 계속 읽는다. 네트워크 조회는 network-poll.js 가 창 표시와 최근 입력, 조회별 주기로 제한한다.

@@ -10,7 +10,7 @@
 | REQ2 | 버전은 저장 파일 전체에서 하나씩 늘어나는 번호 `seq` 다. 같은 id 의 열린 대기가 있으면 잠금 안에서 `replaced` 로 닫고 새 기록을 더한다. 끝난 기록은 건드리지 않는다. 버튼 키, 기록, 신호 제목과 payload, `check` 가 모두 `<id>` 와 `<버전>` 을 함께 쓴다. 창의 누름 처리(`bin/approvals.ts press`)는 잠금 안에서 그 id 의 가장 늦은 기록이 그 버전이고 열려 있을 때만 쓴다 | PR1(저장, 바꾸기), PR2(누름) |
 | REQ3 | `list`, `list --full`, `cancel` 을 같은 스크립트가 받는다. 줄 꼴은 `core/approvals.ts` 의 `formatLine` 이 소유한다 | PR1 |
 | REQ4 | 명령 표에 `approval add`, `list`, `cancel`, `check` 넷만 둔다. 승인과 고쳐 달라 상태를 만드는 순수 함수는 `core/approvals.ts` 의 `applyPress` 하나, 그것을 부르는 곳은 `lib/approvals.ts` 의 `recordPress` 하나, 창 전용 스크립트 `extensions/work-board/bin/approvals.ts press` 는 공개 모듈을 통해 `recordPress` 를 부른다. 그 스크립트를 부르는 곳은 `register.js` 의 버튼 누름 처리 하나다. 테스트가 네 곳을 정적으로 확인한다. 에이전트의 Bash 도구가 `approvals.ts press` 를 부르면 PreToolUse hook(`hooks/block-approval-press.ts`)이 거부한다. 창의 `$.process.run` 은 Bash 도구를 거치지 않는다 | PR1(표), PR2(누름 길, hook) |
-| REQ5 | `register.js` 가 orch 의 공개 조회 함수에서 5초마다 열린 승인 대기를 받아 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그린다. 조회는 세션 시작과 `/board` 를 열 때, 주 checkout 이 바뀔 때 준비하고, 실패하면 약 60초마다 다시 시도한다 | PR2 |
+| REQ5 | `register.js` 의 파일 API 로 5초마다 읽고 orch 가 고른 열린 대기로 「승인 대기」 상자와 상태 줄의 「승인 n」 을 그린다. 조회는 세션 시작과 `/board` 를 열 때, 주 checkout 이 바뀔 때 준비하고, 실패하면 약 60초마다 다시 시도한다 | PR2 |
 | REQ6 | 「승인」 버튼은 `bin/approvals.ts press <id> <버전> approve` 를 부른다. 이 스크립트가 기록을 쓰고, 올린 Run 으로 `APPROVED <id> <버전>` 을 보내고, 보내지 못하면 기록을 되돌린다. 창이 worker 터미널인지는 `bin/approvals.ts self` 가 정하고, worker 거나 정하지 못하면 버튼을 그리지 않는다. `self`, `press`, `check` 는 같은 판정 꼴(아래 「worker 판정 꼴」)을 쓴다 | PR2 |
 | REQ7 | 「고쳐 달라」 는 그 대기 자리에 글칸(`Input`)을 연다. 보낸 글이 공백뿐이면 아무것도 부르지 않는다. 글이 있으면 `press <id> <버전> revise --note=<글>` 을 부른다 | PR2 |
 | REQ8 | `real` 대기는 대상 환경, 바꿀 것, 되돌리는 법을 빨간 글로 그린다. 첫 누름은 창 메모리에 `armed = { key, until: 지금 + 10초 }` 만 남기고, 기한 안의 같은 키 누름만 `press` 를 부른다 | PR2 |
@@ -23,17 +23,9 @@
 ## 책임과 경계
 
 ```text
-코디네이터 ── orch board approval add/list/cancel/check ──┐
-                                                         ▼
-                              skills/orch/scripts/board/board-approval.ts (명령)
-                                         │
-                         lib/approvals.ts (파일, 잠금, 해시, Orca 조회)
-                                         │
-                         core/approvals.ts (검사, 상태 변경, 출력)
-                                         ▲
-                                         │
-register.js ─ press/self → bin/approvals.ts → lib/board-queries/board-approvals.ts → lib/approvals.ts
-            └ 열린 대기 → lib/board-queries/board-approval-view.ts ────────────────────┘
+orch board approval add/list/cancel/check → board/board-approval.ts → lib/approvals.ts
+보드 버튼 → bin/approvals.ts → board-queries/board-approvals.ts → lib/approvals.ts
+보드 조회 → board-queries/board-approval-view.ts → 경로는 orch 명령, 읽기는 Claude Code 파일 API
 ```
 
 - **`core/approvals.ts`(신규, PR1)**: 저장 꼴의 타입, `validateAdd`, `applyAdd`(바꾸기와 `--keep-open` 포함), `applyCancel`, `checkVerdict`, `applyUsed`, `prune`, `formatLine`. PR2 가 `applyPress`, `revertPress` 를 더한다. 파일과 프로세스를 모르고 시각은 인자로 받는다. [ADR-028](../../adr/028-orch-core-layer.md) 의 `core/` 규칙을 따른다.
@@ -42,7 +34,7 @@ register.js ─ press/self → bin/approvals.ts → lib/board-queries/board-appr
 - **`scripts/board/board-approval.ts`(신규, PR1)**: 인자 풀이와 출력, 종료 코드만 맡는다. 동작 넷을 `prepend` 로 받는다.
 - **`extensions/work-board/bin/approvals.ts`(신규, PR2)**: 창 전용 명령과 기존 호출을 위한 `where`. `where`(승인 파일의 절대경로 한 줄), `self`(이 프로세스의 `ORCA_TERMINAL_HANDLE` 과 worker 여부를 JSON 한 줄), `press`(승인·고쳐 달라 기록과 신호). orch 의 `lib/board-queries/board-approvals.ts` 를 부른다. `register.js` 는 `board-approval-view.ts` 에서 표시할 대기만 받는다. orch 명령 표에는 넣지 않는다.
 - **`hooks/block-approval-press.ts`(신규, PR2, 자리는 `skills/orch/hooks/`)**: Bash PreToolUse hook. 가린 명령(따옴표 안, heredoc, 주석 제외)에 `approvals.ts press` 가 낱말로 이어 있으면 거부한다. 파일 경로를 따옴표로 감싼 호출(`node "$ROOT/bin/approvals.ts" press`)도 잡고, `lib/approvals.ts` 를 여는 명령이나 커밋 메시지의 같은 글은 통과시킨다. `block-worker-terminal-send.ts` 와 같은 자리, 같은 꼴(`skills/orch/hooks/`, 거부할 때만 deny 를 낸다)이다. 에이전트가 승인 기록을 쓰는 가장 쉬운 길을 막는다. 셸 밖에서 우회하는 것은 막지 못한다.
-- **`register.js`(PR2)**: 그리기와 사람 입력만 맡는다. 판정 규칙(누가 누를 수 있나, 버전이 맞나)은 스크립트가 다시 확인하므로, 창의 판정은 버튼을 그릴지 정하는 데만 쓴다.
+- **`register.js`(PR2)**: 그리기, 사람 입력, 파일 API 를 제공한다. Claude Code 훅은 Node 내장 모듈을 불러올 수 없어 경로 확인은 별도 프로세스에서 하고, 5초마다 읽는 일은 훅의 파일 API 에 남긴다. 파일 경로와 형식을 다루는 코드는 orch 에 있다. 판정 규칙(누가 누를 수 있나, 버전이 맞나)은 스크립트가 다시 확인하므로, 창의 판정은 버튼을 그릴지 정하는 데만 쓴다.
 - **루프(`loop/`)**: 바꾸지 않는다. 승인 대기를 만들지 않는다(스펙 「범위 밖」, DECISION10).
 - **보드 파일(`board.json`)**: 승인 대기를 담지 않는다(스펙 DECISION12). `--item`, `--step` 은 글로만 남기고 보드에 그 항목과 단계가 있는지 보지 않는다. 보드를 읽으면 보드 잠금과 얽히고, 틀린 번호는 코디네이터가 `list` 와 창에서 바로 본다.
 
