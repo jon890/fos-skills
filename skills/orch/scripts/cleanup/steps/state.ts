@@ -3,6 +3,7 @@
 
 import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { SWEEP_RETENTION_DAYS } from '../../core/config.ts'
 import { isObject } from '../../core/json.ts'
 import { CLEANUP_KEYS, ConfigError, loadConfig, section } from '../../lib/config.ts'
 import { realPath } from '../../lib/fs.ts'
@@ -93,8 +94,8 @@ async function sweepRetention(ctx: StepContext, state: StepState): Promise<void>
   const { repo, args, log } = ctx
   const config = section<Record<string, unknown>>(loadConfig(repo), 'cleanup', CLEANUP_KEYS)
   const queueDays = days(config, 'queue_days', QUEUE_DAYS)
-  const stateDays = days(config, 'state_days', 3)
-  const ghDays = days(config, 'gh_log_days', 1)
+  const stateDays = days(config, 'state_days', SWEEP_RETENTION_DAYS.state_days)
+  const ghDays = days(config, 'gh_log_days', SWEEP_RETENTION_DAYS.gh_log_days)
   const now = Date.now()
   const stateDir = pathOf('state', repo)
   const host = { now: () => now, openedBy: lsofOpenedBy, prStates: (numbers: number[]) => lookupOf(repo).states(numbers) }
