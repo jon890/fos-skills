@@ -13,7 +13,7 @@
 | --- | --- |
 | `node scripts/run-tests.ts` 에 `launch-worker.spec.ts`, `lib-model-limits.spec.ts`, `relaunch-worker.spec.ts`, `launch-worker-functions.spec.ts`, `skills/pr-review/tests/gh-review.spec.ts` 를 준 실행 | 통과 5, 실패 0 (249.8초) |
 | `launchLimits` 로 이 머신의 선택 계정에서 Claude 와 Codex 한도를 읽기(읽기 전용) | 아래 「실환경 읽기」 |
-| `launch-worker.ts --task <현재 Task> --preflight` 로 Codex 행(`gpt-6.2-sol` `medium`) 건조 실행 | `PREFLIGHT-OK`, 종료 코드 0. 경고 한 줄: `routing.usage_boost 는 없어졌다. 저장소 설정에서 이 키를 지운다` |
+| `orch worker launch --task <현재 Task> --preflight` 로 Codex 행(`gpt-6.2-sol` `medium`) 건조 실행 | `PREFLIGHT-OK`, 종료 코드 0. 경고 한 줄: `routing.usage_boost 는 없어졌다. 저장소 설정에서 이 키를 지운다` |
 | 표 읽기(`readSelectionTable`, `limitRowOf`) 로 같은 등급 칸 확인 | 아래 REQ3 |
 
 전체 테스트(인자 없는 `run-tests.ts`)와 `claude plugin test .` 는 돌리지 않았다. PR 594 본문은 구현 쪽에서 둘 다 통과했다고 적었고, 이 검증은 변경된 동작의 테스트 파일만 다시 돌렸다.
