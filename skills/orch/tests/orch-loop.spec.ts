@@ -22,7 +22,7 @@ const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', imp
 // 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다.
 // statuses 는 status 조회에, workers 는 worker-list 에 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
 // slow_run_current 는 run-current 만 그 초만큼 늦게 답한다. bound 가 있으면 그 Run 에 묶인 호출자처럼 run-current 에 그 Run 을 내고, 다른 Run 의 check 를 consumer_fenced 로 거부한다.
-// 환경 변수 FAKE_ORCA_SLEEP(초)가 있으면 그 프로세스가 부른 조회만 그만큼 늦게 답한다.
+// 환경 변수 FAKE_ORCA_HOLD(파일 경로)가 있으면 그 프로세스의 명의 확인(check --peek)에서 <경로>.entered 를 만들고 <경로>.release 가 생길 때까지 기다린다.
 // 받은 인자는 calls.jsonl 에 한 줄씩 적는다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -31,7 +31,11 @@ const argv = process.argv.slice(2)
 fs.appendFileSync(dir + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 if (st.sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.sleep * 1000)
-if (process.env.FAKE_ORCA_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_ORCA_SLEEP) * 1000)
+const hold = process.env.FAKE_ORCA_HOLD
+if (hold && argv[1] === 'check' && argv.includes('--peek')) {
+  fs.writeFileSync(hold + '.entered', '')
+  while (!fs.existsSync(hold + '.release')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+}
 if (st.fail) {
   process.stderr.write('offline\\n')
   process.exit(1)
@@ -1310,12 +1314,13 @@ describe('여러 Run', () => {
     write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
     register('A', '2026-01-01T00:00:00Z')
     register('B', '2026-01-02T00:00:00Z')
-    // 마지막 경우는 B 의 orca 조회만 1초씩 늦춘다. B 가 명의 확인과 메인 판정을 기다리는 사이 A 가 띄운 새 루프가
-    // 앞 루프의 등록을 지우는 차례를 매번 만든다. CI 에서 150ms 경우가 MAIN-EXISTS 로 끝난 경합이 이 차례다
-    for (const { delay, slowB } of [{ delay: 0, slowB: '' }, { delay: 50, slowB: '' }, { delay: 150, slowB: '' }, { delay: 0, slowB: '1' }]) {
+    // 마지막 경우는 시간 대신 파일 신호로 차례를 정한다. B 를 명의 확인에 멈춰 두고 A 의 루프가 뜬 뒤(앞 루프의 등록을 지운 뒤)에 푼다.
+    // CI 에서 150ms 경우가 MAIN-EXISTS 로 끝난 경합이 이 차례다
+    for (const { delay, held } of [{ delay: 0, held: false }, { delay: 50, held: false }, { delay: 150, held: false }, { delay: 0, held: true }]) {
+      const hold = join(tmp, `hold-${delay}-${held}`)
       const run = (id: string) =>
         new Promise<Result>((resolve) => {
-          const own = id === 'B' && slowB ? { ...env, FAKE_ORCA_SLEEP: slowB } : env
+          const own = id === 'B' && held ? { ...env, FAKE_ORCA_HOLD: hold } : env
           const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', id, '--start'], { env: own, cwd: tmp })
           spawned.push(child)
           let stdout = ''
@@ -1324,7 +1329,18 @@ describe('여러 Run', () => {
         })
       const a = run('A')
       await new Promise((resolve) => setTimeout(resolve, delay))
-      const [ra, rb] = await Promise.all([a, run('B')])
+      const b = run('B')
+      if (held) {
+        // 단언이 실패해도 B 의 가짜 orca 가 영영 기다리지 않게 푼다
+        try {
+          const ra = await a
+          assert.match(ra.stdout, /^LOOP-STARTED /m, ra.stdout)
+          assert.ok(existsSync(`${hold}.entered`), 'B 가 명의 확인에서 멈추지 않았다')
+        } finally {
+          writeFileSync(`${hold}.release`, '')
+        }
+      }
+      const [ra, rb] = await Promise.all([a, b])
       assert.equal(ra.code, 0, `delay ${delay}: ${ra.stdout}`)
       assert.equal(rb.code, 0, `delay ${delay}: ${rb.stdout}`)
       const pid = Number(loopState()?.pid)
@@ -1338,6 +1354,28 @@ describe('여러 Run', () => {
       register('B', '2026-01-02T00:00:00Z')
       write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
     }
+  })
+
+  test('죽은 루프 뒤 명의 확인에서 막힌 --start 는 등록을 그대로 두고, 다음 Run 의 시작을 막지 않는다', { timeout: 60_000 }, async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
+    const fileA = orchFile('state', 'loop-runs', 'A.json')
+    const original = JSON.stringify({ run: 'A', specs_dir: null, registered_at: '2026-01-01T00:00:00Z', coordinator_terminal: 't_A' })
+    write(fileA, original)
+    // A 의 코디네이터 터미널은 끝났다. B 의 터미널이 A 로 --start 하면 명의 확인에서 막힌다
+    orca({ runs: [{ id: 'A', coordinator_handle: 't_A' }, { id: 'B', coordinator_handle: 't_B' }], terminals: [{ handle: 't_B', agentIdentity: 'claude', connected: true }], bound: 'B' })
+    const fenced = loop(['--run', 'A', '--start'], { ORCA_TERMINAL_HANDLE: 't_B' })
+    assert.equal(fenced.code, 5, fenced.stdout + fenced.stderr)
+    assert.match(fenced.stdout, /^LOOP-START-FENCED A B$/m)
+    assert.deepEqual(JSON.parse(readFileSync(fileA, 'utf8')), JSON.parse(original))
+    // 거절된 터미널이 A 의 것으로 남지 않았으므로 A 는 메인이 아니다. 새 Run C 가 루프를 띄운다
+    orca({ runs: [{ id: 'A', coordinator_handle: 't_A' }, { id: 'C', coordinator_handle: 't_C' }], terminals: [{ handle: 't_C', agentIdentity: 'claude', connected: true }] })
+    const started = loop(['--run', 'C', '--start'], { ORCA_TERMINAL_HANDLE: 't_C' })
+    assert.equal(started.code, 0, started.stdout + started.stderr)
+    const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
+    assert.ok(pid > 0, started.stdout)
+    assert.equal(loop(['--stop', '--all']).code, 0)
+    await waitDead([pid], 20_000)
   })
 
   test('--run 도 finish.run 도 없는 --stop 은 등록된 Run 이 하나여도 멈추지 않고 LOOP-STOP-SHARED 와 1 이다', async () => {
