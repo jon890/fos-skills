@@ -40,8 +40,8 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
       bad: ['x', { pass: 'a' }, { pass: '', block: 'b' }, { pass: '(', block: 'b' }, { pass: 'a', block: 'b', require: ['thread-resolved'] }, { pass: 'a', block: 'b', feature_head: 'no' }],
     },
     integration_tests: {
-      good: [[], [{ paths: 'modules/<모듈>/src/main/**', command: './gradlew :<모듈>:integrationTest' }], [{ paths: ['a/<모듈>/**', 'b/<모듈>/*.kt'], command: 'make it' }]],
-      bad: ['x', [{ paths: 'a/**', command: 'x' }], [{ paths: 'a/<모듈>/**', command: '' }], [{ paths: 'a/<모듈>/**', command: 'x', when: 'y' }], ['x']],
+      good: [[], [{ paths: 'modules/<모듈>/src/main/**', command: './gradlew :<모듈>:integrationTest', modules: ['api'] }], [{ paths: ['a/<모듈>/**', 'b/<모듈>/*.kt'], command: 'make it' }]],
+      bad: ['x', [{ paths: 'a/**', command: 'x' }], [{ paths: 'a/<모듈>/**', command: '' }], [{ paths: 'a/<모듈>/**', command: 'x', when: 'y' }], [{ paths: 'a/<모듈>/**', command: 'x', modules: [] }], ['x']],
     },
   },
   pipeline: {

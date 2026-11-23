@@ -50,10 +50,10 @@ export function integrationRules(config: Config): IntegrationRule[] {
   const body = section<Record<string, unknown>>(config, 'queue', QUEUE_KEYS)
   const raw = body.integration_tests
   if (raw === undefined) return []
-  if (!Array.isArray(raw)) throw new ConfigError('설정 파일의 queue.integration_tests 는 { paths, command } 규칙의 목록이어야 한다')
+  if (!Array.isArray(raw)) throw new ConfigError('설정 파일의 queue.integration_tests 는 { paths, command, modules? } 규칙의 목록이어야 한다')
   return raw.map((rule, i) => {
     const key = `queue.integration_tests[${i}]`
-    if (!isObject(rule)) throw new ConfigError(`설정 파일의 ${key} 는 { paths, command } 객체여야 한다`)
+    if (!isObject(rule)) throw new ConfigError(`설정 파일의 ${key} 는 { paths, command, modules? } 객체여야 한다`)
     const unknown = Object.keys(rule).filter((name) => !['paths', 'command', 'modules'].includes(name)).sort()
     if (unknown.length > 0) throw new ConfigError(`설정 파일의 ${key} 에 모르는 키가 있다: ${unknown.join(', ')}`)
     const paths = typeof rule.paths === 'string' ? [rule.paths] : rule.paths
