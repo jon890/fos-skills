@@ -121,6 +121,6 @@ export async function cleanupState(ctx: StepContext, state: StepState): Promise<
   const { repo, args, log } = ctx
   await sweepRetention(ctx, state)
   migrateLegacyNotices(repo, args.trash, args.apply, log)
-  if (args.apply) pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))
+  pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))
   return {}
 }
