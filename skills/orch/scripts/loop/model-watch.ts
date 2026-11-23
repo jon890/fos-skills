@@ -37,7 +37,7 @@ import { boardPath } from '../lib/board-file.ts'
 import { BOARD_BIN } from '../lib/board.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import type { RunOptions, RunResult } from '../lib/proc.ts'
-import { readSelectionTable } from '../lib/usage-boost.ts'
+import { readSelectionTable } from '../lib/limit-table.ts'
 
 export const WATCH_MS = 24 * 60 * 60 * 1000
 export const FIRST_COMPARE: readonly string[] = ['gpt-6.2-astra']

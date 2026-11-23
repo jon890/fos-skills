@@ -27,7 +27,7 @@ import { join } from 'node:path'
 import { realPath } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
 
-export type CandidateOverride = { row: string | null; agent: string | null; model: string | null; effort: string | null; reason: string; effortLimit?: string | null }
+export type CandidateOverride = { row: string | null; agent: string | null; model: string | null; effort: string | null; reason: string; effortLimit?: string | null; from?: { agent: string | null; model: string | null; effort: string | null; outsideReason?: string } }
 // generation 은 띄울 때 바꾼 모델 세대(lib/model-generation.ts), modelId 는 Claude 를 계열 이름으로 띄웠을 때 세션 기록에서 읽은 실제 모델 ID 다
 export type Effective = { agent?: string | null; model?: string | null; effort?: string | null; candidateOverride?: CandidateOverride; generation?: Generation; modelId?: string | null }
 export type MainGuardStamp = { version: 1; main: string | null; caller_repo: string; target_repo: string }
@@ -78,6 +78,10 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
     const override = raw?.candidateOverride
     const candidateOverride = override && typeof override === 'object' && typeof override.reason === 'string' && override.reason.trim()
       ? { row: text(override.row), agent: text(override.agent), model: text(override.model), effort: text(override.effort), reason: override.reason,
+          ...(override.from && typeof override.from === 'object' ? { from: {
+            agent: text(override.from.agent), model: text(override.from.model), effort: text(override.from.effort),
+            ...(typeof override.from.outsideReason === 'string' ? { outsideReason: override.from.outsideReason } : {}),
+          } } : {}),
           ...(override.effortLimit !== undefined ? { effortLimit: text(override.effortLimit) } : {}) }
       : null
     const gen = raw?.generation

@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import {
   claudeGeneration, codexGeneration, compareGeneration, isCurrent, forgetCodexModels, parseCodexModels, parseModel, pinnedCheck, staleRows, readCodexModels, sameFamily, workerCodexHome, type CodexModel,
 } from '../scripts/lib/model-generation.ts'
-import { limitRowOf } from '../scripts/lib/usage-boost.ts'
+import { limitRowOf } from '../scripts/lib/limit-table.ts'
 
 const TABLE = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
 const model = (slug: string, description = 'Current model.', efforts = ['low', 'medium', 'high'], visibility = 'list'): CodexModel => ({ slug, visibility, description, efforts })

@@ -394,6 +394,27 @@ describe('gh-review-post', () => {
     assert.equal(s.calls().find((call) => call.input !== null)!.input, `{"event": "COMMENT", "body": "## 코드 리뷰\\n요약 낱말S\\n\\n---\\n\\n${NOTICE}"}\n`)
   })
 
+  for (const [repo, pr, sameProviderDueToLimit, repeated, expected] of [
+    ['o/r', 5, true, false, 1],
+    ['o/r', 5, true, true, 1],
+    ['o/r', 6, true, false, 0],
+    ['o/other', 5, true, false, 0],
+    ['o/r', 5, false, false, 0],
+  ] as const) {
+    test(`요약에 한도로 같아진 제공자를 한 번 표시한다 (${repo}, ${pr}, ${sameProviderDueToLimit}, ${repeated})`, (t) => {
+      const s = setup(t)
+      writeFileSync(join(s.repo, '.git', 'orch-review-launch.json'), JSON.stringify({ repo, pr, sameProviderDueToLimit }))
+      s.setRules([{ match: ['reviews', 'POST'], stdout: posted() }])
+      const note = '같은 제공자 리뷰(한도)'
+      const body = repeated ? `${SUMMARY}\n${note}\n` : SUMMARY
+      const done = post(s, ['--summary', 'o/r', '5', s.write('s.md', body), '낱말S'])
+      assert.equal(done.code, 0, done.stderr)
+      const payload = JSON.parse(s.calls().find(call => call.input !== null)!.input!)
+      assert.equal(payload.body.split(note).length - 1, expected)
+      assert.ok(payload.body.endsWith(NOTICE))
+    })
+  }
+
   test('묶음 등록', (t) => {
     const s = setup(t)
     const first = s.write('i1.md', '🔴 **P1 치명**\n첫 인라인\n')

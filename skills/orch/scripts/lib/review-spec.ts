@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 import type { LaunchHistory } from './launch-history.ts'
 import { reviewPrOfBranch } from './review.ts'
 import { modelPolicies } from './selection.ts'
-import { readSelectionTable } from './usage-boost.ts'
+import { readSelectionTable } from './limit-table.ts'
 
 export type Implementer = { agent: string; model: string | null; effort: string | null; dispatch: string }
 export type Reviewer = { agent: string; model: string; effort: string; reason: string }

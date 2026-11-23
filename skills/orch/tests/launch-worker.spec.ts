@@ -10,9 +10,10 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
-import { recordLaunch } from '../scripts/lib/launched.ts'
+import { readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
 import { claudeProjectName } from '../scripts/lib/session-tokens.ts'
 import { selectionsOf } from '../scripts/lib/spec.ts'
+import { claudeProfile, codexUsage, CREATOR } from './fixtures/usage-limits.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
 import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
@@ -52,6 +53,13 @@ if (joined.length) {
 if (state.main_guard && is('orchestration', 'run-list')) out({ runs: [{ id: 'main', coordinator_handle: 'tm' }] })
 if (state.main_guard && is('orchestration', 'run-current')) out({ run: { id: 'other' } })
 if (state.main_guard && is('orchestration', 'send')) out({ message: { id: 'notice' } })
+if (is('account', 'list')) {
+  const provider = opt('--agent')
+  const scheduled = state.account_schedule?.[provider]
+  if (scheduled?.length) out(scheduled.shift())
+  if (state.accounts?.[provider]) out(state.accounts[provider])
+  out({}, 1)
+}
 if (is('worktree', 'list')) {
   const lists = state.worktree_lists
   const paths = lists && lists.length ? lists.shift() : (process.env.FAKE_WT_DEFAULT || '').split(':').filter(Boolean)
@@ -149,8 +157,6 @@ beforeEach(() => {
     ORCA_CLAUDE_PROFILES: join(tmp, 'no-profiles'),
     // 이 기계의 셸 설정에 기대지 않게 worker 셸의 PATH 를 고정한다. 판정은 「worker 셸의 orch 판정」 에서 본다
     ORCH_WORKER_PATH: workerPathWithOrch(tmp),
-    // 이 기계의 실제 Claude 사용량 캐시에 기대지 않게 없는 파일로 고정한다. 판정은 「Claude 사용량으로 바꿔 띄우기」 에서 본다
-    ORCH_CLAUDE_USAGE: join(tmp, 'no-usage.json'),
     LAUNCH_POLL: '0',
     // 실제 Claude 세션 기록을 기다리지 않는다. 계열 이름으로 띄운 뒤의 모델 ID 읽기는 「모델 세대」 에서 본다
     LAUNCH_MODEL_WAIT: '0',
@@ -508,169 +514,117 @@ describe('worker 선택 줄 대조', () => {
   }
 })
 
-describe('Claude 사용량으로 바꿔 띄우기', () => {
-  const PLANNED = '# 일\n허락: push\n- **worker 선택:** `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 계획서가 있다.\n'
-  const DESIGN = '# 일\n허락: push\n- **worker 선택:** `codex` `gpt-6.1-sol` effort `medium`. 행: design. 이유: 일반 설계다.\n'
-  const SOL_LOW = ['--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'low']
-  const SOL_MEDIUM = ['--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium']
-  const HOUR = 3_600_000
-
-  // 사용량 캐시를 임시 파일로 흉내 낸다. resetsIn 은 초기화까지 남은 시간(ms), age 는 마지막 조회 성공(lastSuccessAt) 뒤 지난 시간(ms)이다.
-  // timestamp 는 늘 지금이다. OMC 가 429 때 timestamp 만 다시 쓰는 모양이라, 신선도를 timestamp 로 보면 오래된 값 사례가 실패한다
-  function usage(used: number, resetsIn: number, age = 60_000, extra: Record<string, unknown> = {}): void {
-    const file = join(tmp, 'usage.json')
-    writeFileSync(file, JSON.stringify({ timestamp: Date.now(), lastSuccessAt: Date.now() - age, data: { weeklyPercent: used, weeklyResetsAt: new Date(Date.now() + resetsIn).toISOString() }, error: false, ...extra }))
-    env.ORCH_CLAUDE_USAGE = file
+describe('시작 전 모델 한도', () => {
+  const SOL = ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium']
+  const PLANNED = '# 일\n허락: push\nworker 선택: `codex` `gpt-6.2-sol` effort `medium`. 행: impl-explore. 이유: 테스트.'
+  const started = () => lines('orca orchestration worker-start')[0] ?? ''
+  const once = { next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } }
+  function codex(used: number) {
+    env.ORCH_SYSTEM_CODEX_HOME = join(tmp, 'codex-home')
+    const reset = codexUsage(env.ORCH_SYSTEM_CODEX_HOME, used)
+    return { reset, account: { activeAccountId: null, systemDefault: { providerAccountId: CREATOR } } }
   }
-  function started(): string {
-    return lines('orca orchestration worker-start')[0] ?? ''
-  }
-  function override(r: Launch): unknown {
+  function override(r: Launch) {
     const line = r.stdout.split('\n').find(line => line.startsWith('LAUNCH-EFFECTIVE '))
     return line ? JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride : undefined
   }
 
+  test('다른 제공자에 여유가 있어도 고른 Codex 를 유지한다', () => {
+    const { account } = codex(99.9)
+    state({ ...once, accounts: { codex: account, claude: claudeProfile(env.ORCA_CLAUDE_PROFILES!, 0) } })
+    writeFileSync(spec, PLANNED)
+    const r = launch(['--worktree', worktree, '--', ...SOL], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), /--agent codex --model gpt-6\.2-sol --effort medium/)
+    assert.equal(override(r), undefined)
+    assert.ok(!lines('orca account list --agent claude').length)
+  })
+
   for (const short of [false, true]) {
-    test(`남은 사용량이 남은 시간보다 많으면 같은 등급의 Claude 로 띄우고 이유를 남긴다: short=${short}`, () => {
-      writeFileSync(spec, DESIGN)
+    test(`소진이면 같은 등급을 실행하고 처음 요청을 출력과 이력에 남긴다: short=${short}`, () => {
+      const { account, reset } = codex(100)
+      state({ ...once, accounts: { codex: account, claude: claudeProfile(env.ORCA_CLAUDE_PROFILES!, 0) } })
+      writeFileSync(spec, PLANNED + ' 후보 밖: 사용자 지정.')
       if (short) env.ORCH_OUTPUT = 'short'
-      usage(22, 37 * HOUR)
-      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--', ...SOL_MEDIUM], 'bash', false)
+      const r = launch(['--worktree', worktree, '--', ...SOL], 'bash', false)
       assert.equal(r.code, 0, both(r))
-      // Claude 는 계열 이름으로 넘긴다(모델 세대). 후보 밖 기록에는 표의 모델 ID 가 남는다
-      assert.match(started(), / --agent claude --model opus --effort medium(?: |$)/)
-      assert.doesNotMatch(started(), /codex|gpt-6/)
-      const expected = { row: 'design', agent: 'claude', model: 'claude-opus-5-5', effort: 'medium', reason: '사용량: 남은 78%, 남은 시간 22%' }
+      assert.match(started(), /--agent claude --model opus --effort medium/)
+      const expected = {
+        row: 'impl-explore', agent: 'claude', model: 'opus', effort: 'medium',
+        from: { agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium', outsideReason: '사용자 지정' },
+        reason: `한도: gpt-6.2-sol 주간 100%, ${reset}`,
+      }
       assert.deepEqual(override(r), expected)
-      const history = readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
-      assert.equal(history.at(-1).agent, 'claude')
-      assert.equal(history.at(-1).model, 'claude-opus-5-5')
-      assert.deepEqual(history.at(-1).effective.candidateOverride, expected)
+      assert.deepEqual(launchHistory(worktree).at(-1)?.effective?.candidateOverride, expected)
+      assert.deepEqual(readLaunch(worktree, 'ctx_1')?.effective?.candidateOverride, expected)
     })
   }
 
-  test('sol low 행은 Sonnet 5.5 로 바꾸고 행의 effort 를 그대로 쓴다', () => {
-    writeFileSync(spec, PLANNED)
-    usage(10, 24 * HOUR)
-    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
-    assert.equal(r.code, 0, both(r))
-    assert.match(started(), / --agent claude --model sonnet --effort low(?: |$)/)
-    assert.deepEqual(override(r), { row: 'impl-planned', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'low', reason: '사용량: 남은 90%, 남은 시간 14%' })
-  })
-
-  for (const [name, used, resetsIn] of [
-    ['남은 사용량이 남은 시간보다 적다', 80, 5 * 24 * HOUR],
-    // 같은 경우는 시각이 흘러 판정이 흔들리므로 단위 테스트(lib-usage-boost.spec.ts)가 본다
-    ['남은 사용량이 남은 시간보다 조금 적다', 50, 3.5 * 24 * HOUR + 10 * 60_000],
-  ] as const) {
-    test(`기준을 채우지 않으면 행 그대로 띄운다: ${name}`, () => {
-      writeFileSync(spec, PLANNED)
-      usage(used, resetsIn, 0)
-      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
-      assert.equal(r.code, 0, both(r))
-      assert.match(started(), / --agent codex --model gpt-6\.1-sol --effort low(?: |$)/)
-      assert.equal(override(r), undefined)
-      assert.doesNotMatch(both(r), /USAGE-UNKNOWN/)
-    })
-  }
-
-  for (const [name, model, row, effort] of [
-    ['화면 판정', 'gpt-6.1-terra', 'visual', 'low'],
-    ['리뷰', 'gpt-6.1-sol', 'review', 'medium'],
-  ] as const) {
-    test(`바꾸지 않는 행은 사용량이 남아도 그대로 띄운다: ${name}`, () => {
-      writeFileSync(spec, `# 일\n허락: push\n- **worker 선택:** \`codex\` \`${model}\` effort \`${effort}\`. 행: ${row}. 이유: 테스트.\n`)
-      usage(0, 24 * HOUR)
-      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', model, '--effort', effort], 'bash', false)
-      assert.equal(r.code, 0, both(r))
-      assert.match(started(), new RegExp(` --agent codex --model ${model.replaceAll('.', '\\.')} --effort ${effort}(?: |$)`))
-      assert.doesNotMatch(both(r), /USAGE-/)
-    })
-  }
-
-  test('이미 Claude 인 행은 바꾸지 않는다', () => {
-    writeFileSync(spec, '# 일\n허락: push\n- **worker 선택:** `claude` `claude-fable-5-2` effort `기본`. 행: impl-hard. 이유: 어렵다.\n')
-    usage(0, 24 * HOUR)
-    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
-    assert.equal(r.code, 0, both(r))
-    assert.match(started(), / --agent claude --model fable(?: |$)/)
-    assert.equal(override(r), undefined)
-  })
-
-  for (const [name, write, reason] of [
-    ['출처 없음', () => { env.ORCH_CLAUDE_USAGE = join(tmp, 'missing.json') }, /^USAGE-UNKNOWN 출처 없음: .*missing\.json$/m],
-    ['읽지 못함', () => { writeFileSync(join(tmp, 'broken.json'), '{'); env.ORCH_CLAUDE_USAGE = join(tmp, 'broken.json') }, /^USAGE-UNKNOWN 읽지 못함: /m],
-    ['값 없음', () => usage(10, 24 * HOUR, 0, { error: true }), /^USAGE-UNKNOWN 값 없음: /m],
-    ['1시간보다 오래된 값', () => usage(10, 24 * HOUR, 2 * HOUR), /^USAGE-UNKNOWN 오래된 값: 120분 전에 갱신됐다$/m],
-    ['초기화 시각이 지난 값', () => usage(10, -HOUR, 0), /^USAGE-UNKNOWN 초기화 시각이 지난 값이다$/m],
-  ] as const) {
-    test(`사용량을 읽지 못하면 알리고 행 그대로 띄운다: ${name}`, () => {
-      writeFileSync(spec, PLANNED)
-      write()
-      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
-      assert.equal(r.code, 0, both(r))
-      assert.match(r.stdout, reason)
-      assert.match(started(), / --agent codex --model gpt-6\.1-sol --effort low(?: |$)/)
-    })
-  }
-
-  test('짧은 출력에도 USAGE-UNKNOWN 줄이 남는다', () => {
-    writeFileSync(spec, PLANNED)
+  test('같은 등급이 모두 소진되면 Task 와 워크트리를 만들기 전에 멈춘다', () => {
+    const { account } = codex(100)
+    state({ ...once, accounts: { codex: account, claude: claudeProfile(env.ORCA_CLAUDE_PROFILES!, 100) } })
     env.ORCH_OUTPUT = 'short'
-    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
-    assert.equal(r.code, 0, both(r))
-    assert.match(r.stdout, /^USAGE-UNKNOWN 출처 없음: /m)
+    writeFileSync(spec, PLANNED + '\n브랜치: feat/limit\n')
+    const r = launch(['--repo', worktree, '--name', 'limit', '--', ...SOL], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^REFUSED 같은 등급/m)
+    assert.match(r.stdout, /^USAGE-LIMIT 한도: gpt-6\.2-sol 주간/m)
+    assert.match(r.stdout, /^USAGE-LIMIT 한도: opus 주간/m)
+    assert.match(r.stdout, /^USAGE-RESET /m)
+    assert.equal(started(), '')
+    assert.deepEqual(lines('make '), [])
   })
 
-  test('routing.usage_boost 가 false 면 사용량을 보지 않는다', () => {
+  test('한도 미확인과 옛 설정을 한 번씩 알리고 원래 모델로 띄운다', () => {
     writeFileSync(spec, PLANNED)
-    mkdirSync(join(worktree, '.orch'), { recursive: true })
-    writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ routing: { usage_boost: false } }))
-    usage(0, 24 * HOUR)
-    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
+    mkdirSync(join(worktree, '.orch'))
+    writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ routing: { usage_boost: 'old' } }))
+    state(once)
+    const r = launch(['--worktree', worktree, '--', ...SOL], 'bash', false)
     assert.equal(r.code, 0, both(r))
-    assert.match(started(), / --agent codex --model gpt-6\.1-sol --effort low(?: |$)/)
-    assert.equal(override(r), undefined)
+    assert.equal([...r.stdout.matchAll(/^USAGE-UNKNOWN codex /gm)].length, 1)
+    assert.equal([...r.stderr.matchAll(/routing\.usage_boost/g)].length, 1)
+    assert.match(started(), /--agent codex/)
   })
 
-  test('routing.usage_boost 가 bool 이 아니면 설정 오류로 멈춘다', () => {
+  test('계정이 바뀌면 예약 전에 새 계정의 한도를 다시 읽는다', () => {
+    const { account } = codex(100)
+    const other = { activeAccountId: null, systemDefault: { providerAccountId: 'new-creator' } }
+    state({ ...once, accounts: { codex: other }, account_schedule: { codex: [account, other] } })
     writeFileSync(spec, PLANNED)
-    mkdirSync(join(worktree, '.orch'), { recursive: true })
-    writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ routing: { usage_boost: 'no' } }))
-    usage(0, 24 * HOUR)
-    state({ next_ids: ['ctx_1'] })
-    const r = launch(['--worktree', worktree, '--', ...SOL_LOW], 'bash', false)
-    assert.equal(r.code, 2, both(r))
-    assert.match(r.stderr, /routing\.usage_boost 는 true 나 false 여야 한다/)
-    assert.deepEqual(lines('orca orchestration worker-start'), [])
-  })
-
-  test('지시서가 후보 밖으로 고른 worker 가 사용량보다 먼저다', () => {
-    writeFileSync(spec, PLANNED.replace('effort `low`', 'effort `medium`').trimEnd() + ' 후보 밖: 사용자 지정.\n')
-    usage(0, 24 * HOUR)
-    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', ...SOL_MEDIUM], 'bash', false)
+    const r = launch(['--worktree', worktree, '--', ...SOL], 'bash', false)
     assert.equal(r.code, 0, both(r))
-    assert.match(started(), / --agent codex --model gpt-6\.1-sol --effort medium(?: |$)/)
-    assert.equal((override(r) as { reason: string }).reason, '사용자 지정')
+    assert.match(started(), /--agent codex/)
   })
 
-  test('--task 로 다시 띄울 때도 사용량을 본다', () => {
+  test('워크트리가 준비된 뒤 계정이 바뀌면 시작하지 않는다', () => {
+    const { account } = codex(0)
+    const other = { activeAccountId: null, systemDefault: { providerAccountId: 'new-creator' } }
+    state({ ...once, accounts: { codex: other }, account_schedule: { codex: [account, account] } })
     writeFileSync(spec, PLANNED)
-    recordHistory(worktree, { dispatch: 'ctx_old', task: 'task_1', run: null, terminal: 'term_old', at: '2026-11-20T00:00:00.000Z', branch: null, worktree, spec, title: '일', agent: 'codex', model: 'gpt-6.1-sol', effort: 'low', effective: null, row: 'impl-planned', experiment: null, retry_of: null })
-    usage(10, 24 * HOUR)
-    state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
-    const r = launch(['--repo', worktree, '--task', 'task_1', '--', ...SOL_LOW], 'bash', false)
+    const r = launch(['--worktree', worktree, '--', ...SOL], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /선택 계정이 준비 중 바뀌었다/)
+    assert.equal(started(), '')
+  })
+
+  test('--task 재시도는 한도를 읽고 터미널 이어 쓰기는 읽지 않는다', () => {
+    const { account } = codex(100)
+    writeFileSync(spec, PLANNED)
+    recordHistory(worktree, {
+      dispatch: 'ctx_old', task: 'task_1', run: null, terminal: 'term_old', at: '2026-11-20T00:00:00.000Z',
+      branch: null, worktree, spec, title: '일', agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium',
+      row: 'impl-explore', retry_of: null,
+    })
+    state({ ...once, accounts: { codex: account } })
+    const r = launch(['--repo', worktree, '--task', 'task_1', '--', ...SOL], 'bash', false)
     assert.equal(r.code, 0, both(r))
-    assert.match(started(), /--task task_1 .*--agent claude --model sonnet --effort low(?: |$)/)
+    assert.match(started(), /--task task_1 .*--agent claude --model opus --effort medium/)
+    resetLog()
+    state(once)
+    const reused = launch(['--worktree', worktree, '--', '--terminal', 'term_old'], 'bash', false)
+    assert.equal(reused.code, 0, both(reused))
+    assert.deepEqual(lines('orca account list'), [])
   })
 })
 
@@ -1469,7 +1423,10 @@ describe('before-launch 와 worker-launched', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launchNew()
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(order(), ['orca orchestration worker-list', 'orca orchestration task-list', 'make --repo', 'orca worktree list', 'orca orchestration worker-start', 'orca orchestration worker-show'])
+    assert.deepEqual(order(), [
+      'orca account list', 'orca orchestration worker-list', 'orca orchestration task-list', 'orca account list',
+      'make --repo', 'orca worktree list', 'orca account list', 'orca orchestration worker-start', 'orca orchestration worker-show',
+    ])
     assert.doesNotMatch(r.stdout, /HOOK-/)
   })
 
@@ -1831,6 +1788,32 @@ describe('리뷰 worker 준비', () => {
     assert.equal(spawnSync('git', ['-C', proj, 'rev-parse', '--verify', '-q', 'refs/heads/pr-5'], { env }).status, 1)
     assert.doesNotMatch(r.stdout, /REVIEW-PREPARE/)
     assert.equal(lines('orca orchestration worker-start').length, 1)
+  })
+
+  test('한도로 같아진 리뷰 제공자를 표시하고 같은 Task 의 다음 선택으로 갱신한다', () => {
+    reviewSpec(5)
+    const args = ['--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium']
+    writeFileSync(spec, readFileSync(spec, 'utf8') + 'worker 선택: `codex` `gpt-6.2-sol` effort `medium`. 행: review. 이유: 다른 제공자.\n')
+    env.GH = linkBin(tmp, 'gh', 'console.log(JSON.stringify({ headRefName: "feat/impl", url: "https://github.com/o/r/pull/5" }))')
+    env.ORCH_SYSTEM_CODEX_HOME = join(tmp, 'codex-home')
+    const accounts = { codex: { activeAccountId: null, systemDefault: { providerAccountId: CREATOR } } }
+    codexUsage(env.ORCH_SYSTEM_CODEX_HOME, 100)
+    recordHistory(proj, {
+      dispatch: 'ctx_impl', task: 'task_impl', run: null, terminal: null, at: '2026-11-20T00:00:00.000Z',
+      branch: 'feat/impl', worktree, spec, title: '구현', agent: 'claude', model: 'opus', effort: 'medium',
+      row: 'impl-explore', retry_of: null,
+    })
+    state({ accounts, next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const result = launch(['--repo', proj, '--name', 'review-pr-5', '--', ...args], 'bash', false)
+    assert.equal(result.code, 0, both(result))
+    const file = git('-C', reviewWt, 'rev-parse', '--git-path', 'orch-review-launch.json')
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { repo: 'o/r', pr: 5, sameProviderDueToLimit: true })
+    assert.equal(existsSync(git('-C', proj, 'rev-parse', '--path-format=absolute', '--git-path', 'orch-review-launch.json')), false)
+    codexUsage(env.ORCH_SYSTEM_CODEX_HOME, 0)
+    state({ accounts, next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+    const retried = launch(['--repo', proj, '--task', 'task_1', '--', ...args], 'bash', false)
+    assert.equal(retried.code, 0, both(retried))
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).sameProviderDueToLimit, false)
   })
 
   test('review.prepare 를 PR head 의 워크트리에서 한 번 돌리고 결과 코드를 낸다', () => {
@@ -2236,7 +2219,7 @@ describe('모델과 effort 검사', () => {
     return launch(['--worktree', worktree, '--', '--agent', 'codex', ...extra])
   }
 
-  test('목록에 없는 모델은 4 로 거부하고 쓸 수 있는 목록을 내며 orca 를 부르지 않는다', () => {
+  test('목록에 없는 모델은 4 로 거부하고 쓸 수 있는 목록을 내며 worker 를 띄우지 않는다', () => {
     fakeCodex(JSON.stringify(MODELS))
     const r = launchCodex('--model', 'gpt-5.5')
     assert.equal(r.code, 4, both(r))
@@ -2245,7 +2228,7 @@ describe('모델과 effort 검사', () => {
     assert.doesNotMatch(r.stderr, /같은 등급 대체 모델/)
     assert.match(r.stderr, /gpt-6\.1-sol: low, high, ultra/)
     assert.doesNotMatch(r.stderr, /gpt-hidden/)
-    assert.deepEqual(lines('orca '), [])
+    assert.deepEqual(lines('orca orchestration'), [])
   })
 
   test('새 워크트리도 만들기 전에 멈춘다', () => {
@@ -2334,7 +2317,7 @@ describe('worker 셸의 orch 판정', () => {
     assert.match(r.stderr, /^orch doctor install-cli$/m)
     assert.match(r.stderr, /^~\/\.zshenv에 export PATH=".*\/\.local\/bin:\$PATH" 를 더한다/m)
     assert.match(r.stderr, /^~\/\.zshrc 에만 있는 PATH 설정은 읽지 않는다/m)
-    assert.equal(existsSync(log), false)
+    assert.equal(lines('orca orchestration').length, 0)
   })
 
   test('claude worker 는 플러그인 bin/ 이 PATH 에 들어가 보지 않는다', () => {
@@ -2483,7 +2466,7 @@ describe('claude 프로필 준비 판정', () => {
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /프로필 p1 에 plugins 링크, settings\.json 가 없어/)
     assert.match(r.stderr, / worker link-profile p1 --apply$/m)
-    assert.equal(existsSync(log), false)
+    assert.equal(lines('orca orchestration').length, 0)
   })
 
   test('갖춰진 프로필이면 띄운다', () => {
@@ -2874,7 +2857,7 @@ describe('짧은 출력', () => {
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
-    const out = r.stdout.trim().split('\n')
+    const out = r.stdout.trim().split('\n').filter(line => !line.startsWith('USAGE-UNKNOWN '))
     assert.equal(out.length, 2, r.stdout)
     assert.deepEqual(JSON.parse(out[0].slice('LAUNCH-EFFECTIVE '.length)), { candidateOverride: { row: 'impl-planned', agent: 'claude', model: 'm', effort: '기본', reason: '실행 경로 테스트용 가짜 모델' } })
     assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
@@ -2915,7 +2898,7 @@ describe('짧은 출력', () => {
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /^REFUSED 이 워크트리에 터미널이 남아 있다.*\n$/)
+    assert.match(r.stdout.replace(/^USAGE-UNKNOWN .*\n/m, ''), /^REFUSED 이 워크트리에 터미널이 남아 있다.*\n$/)
   })
 })
 

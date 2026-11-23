@@ -17,10 +17,7 @@
 //        아니거나 화면을 읽지 못하면 정상 작업 중일 수 있어 멈춘다. 일부러 바꾸는 것이면 --working-ack <이유> 로 넘긴다
 //     5. 지시서의 `worker 선택:` 줄을 WORKER_ARGS 와 대조한다(launch-worker 의 selectionReject).
 //        에이전트, 모델, effort 가 다르면 `RELAUNCH-FIX <지시서>:<줄 번호>` 와 고칠 줄을 내고 멈춘다. 지시서는 고치지 않는다
-//        에이전트에 없는 모델과 effort, 직접 고른 옛 세대(MODEL-OUTDATED)는 이 대조보다 먼저 거부한다. launch 와 같은 차례(사용량 판정 → 세대 판정 → 모델 검사)로
-//        launch-worker 의 decideSettings 를 부른다. 자식이 abandon 뒤에 거부하면 옛 세션으로 돌아갈 수 없다
-//     6. 워크트리에 옛 터미널 밖의 터미널이 있으면 목록을 내고 멈춘다. 커밋 안 된 변경이 있고 --dirty-ack 이 없으면 목록을 내고 멈춘다
-//     6-1. launch-worker --preflight 를 자식으로 불러 띄우기 전 검사(Claude 프로필, orch PATH, `허락:` 줄, orch 폴더 이전, 설정, spec-lint)를 미리 한다.
+//     6-1. launch-worker --preflight 를 불러 모델 세대·한도·effort, 실행 환경, 지시서를 미리 검사한다.
 //        걸리면 자식의 출력을 그대로 내고 RELAUNCH-REFUSED 다. before-launch 이벤트의 거부는 9 의 자식에서만 난다
 //     7. 보존 표시(lib/relaunch-hold.ts)를 쓴다. 다시 띄우는 동안 cleanup 이 그 워크트리와 지시서를 지우지 않는다
 //     8. 옛 dispatch 가 살아 있으면 worker-abandon 한다. 오류가 나면 worker-show 로 다시 읽어 아직 살아 있을 때만 표시를 지운다
@@ -65,7 +62,7 @@ import { terminalRows } from '../lib/sessions.ts'
 import { limitedScreen, structuredScreen, isStructured } from '../lib/sessions.ts'
 import { screenLines } from '../lib/screen.ts'
 import { selectionsOf } from '../lib/spec.ts'
-import { decideSettings, leftTerminals, selectionReject, uncommitted } from './launch-worker.ts'
+import { leftTerminals, selectionReject, uncommitted } from './launch-worker.ts'
 
 type Json = Record<string, unknown>
 
@@ -157,9 +154,10 @@ function target(dispatch: string, run: string, repoArg: string | null): Target {
   if (status === 'completed') throw new Refused(`dispatch ${dispatch} 는 completed 다. PR 이 열려 있으면 ${orchWord()} worker continue --dispatch ${shQuote(dispatch)} 를 쓴다`)
   if (!LIVE_DISPATCH.has(status) && status !== 'failed' && status !== 'abandoned') throw new Refused(`dispatch 상태 ${status || '-'} 는 다시 띄울 대상이 아니다`)
   const terminal = text(worker.agentTerminalHandle) || text(head.assigneeHandle) || recorded.terminal || null
+  const requested = recorded.effective?.candidateOverride?.from ?? recorded
   return {
     dispatch, run, task, status, terminal, worktree, repo, spec, shown,
-    previous: { agent: recorded.agent ?? null, model: recorded.model ?? null, effort: recorded.effort ?? null, spec: recorded.spec ?? null },
+    previous: { agent: requested.agent ?? null, model: requested.model ?? null, effort: requested.effort ?? null, spec: recorded.spec ?? null },
   }
 }
 
@@ -334,10 +332,6 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
   const launcher = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
   try {
     out(`RELAUNCH-TARGET ${t.dispatch} task=${t.task} status=${t.status} worktree=${t.worktree} spec=${t.spec}`)
-    // launch 와 같은 차례(사용량 판정 → 세대 판정·직접 고른 옛 세대 거절 → 모델 검사)를 passthru 사본으로 abandon 전에 한다(launch-worker 의 decideSettings).
-    // 선택 줄 대조는 아래 selectionCheck 가 RELAUNCH-FIX 로 따로 한다
-    const decided = decideSettings(t.spec, [...a.passthru], t.repo, { retry: true, continuation: false, skipSelection: true })
-    if (decided.reject) throw new Refused(decided.reject.text)
     limitCheck(t, a.workingAck)
     if (a.workingAck !== null && LIVE_DISPATCH.has(t.status)) out(`working-ack: ${a.workingAck}`)
     const fix = selectionCheck(t, a.passthru)
@@ -362,6 +356,8 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
     const pre = await execute(scriptCommand(launcher, [...childArgs(a, t, true), '--preflight', '--', ...a.passthru]), { timeoutMs: LAUNCH_MS, env: shortEnv() })
     if (pre.code !== 0 || !/^PREFLIGHT-OK$/m.test(pre.stdout)) {
       relay(pre)
+      const modelRefusal = /^(?:거부:|REFUSED) (MODEL-(?:UNAVAILABLE|OUTDATED).*|EFFORT-UNAVAILABLE.*|같은 등급에서 사용 한도가 남은 모델이 없다)$/m.exec(pre.stdout + '\n' + pre.stderr)
+      if (modelRefusal) throw new Refused(modelRefusal[1])
       throw new Refused(`launch-worker 의 띄우기 전 검사가 종료 코드 ${pre.code} 로 멈췄다. 위 거부를 고친 뒤 같은 명령을 다시 부른다`)
     }
   } catch (e) {

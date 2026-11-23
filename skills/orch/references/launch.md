@@ -88,7 +88,7 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
 ## 띄운 직후 확인
 
 - `worker-start` 응답의 `launch.effective`(기본 출력의 `LAUNCH-EFFECTIVE` 줄)가 1단계에서 고른 모델, effort 와 같다. 기본 출력의 `LAUNCHED <dispatch> <터미널> <워크트리>` 에서 터미널을 읽는다
-  - `LAUNCH-EFFECTIVE` 의 `candidateOverride.reason` 이 `사용량: ` 으로 시작하면 Claude 사용량 때문에 같은 등급의 Claude 로 바꿔 띄운 것이다. 고른 값과 달라도 정상이다([`agent-selection.md`](agent-selection.md) 「Claude 사용량이 남을 때」). `USAGE-UNKNOWN <이유>` 줄은 사용량을 읽지 못해 행 그대로 띄웠다는 뜻이다
+  - `LAUNCH-EFFECTIVE` 의 `candidateOverride.reason` 이 `한도: ` 로 시작하면 같은 등급의 모델로 바꿔 띄운 것이다. `from` 에 처음 요청한 값이 남는다. `USAGE-UNKNOWN <제공자> <이유>` 가 나오면 그 제공자의 한도를 확인하지 못한 것이다. [시작 전 한도 검사](agent-selection.md#사용-한도에-걸렸을-때)
   - `LAUNCH-EFFECTIVE` 에 `generation` 이 있으면 같은 계열의 다른 세대로 띄운 것이다. Codex 는 새 세대로 올렸거나(`같은 계열 새 세대`) 이 계정이 받지 못해 그 띄우기만 옛 세대로 내렸고, Claude 는 계열 이름(`fable`)으로 넘겨 최신으로 띄웠다. 고른 모델과 세대가 달라도 정상이다([`agent-selection.md`](agent-selection.md) 「새 모델과 새 세대」)
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 - 출력에 `COMMIT-CHECK-SKIP` 이나 `COMMIT-CHECK-FAIL` 이 없다. 있으면 아래 「한국어 커밋 검사」 를 따른다

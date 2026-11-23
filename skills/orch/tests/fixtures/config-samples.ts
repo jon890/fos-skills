@@ -87,8 +87,8 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
   routing: {
     review_author: { good: ['review-bot'], bad: ['', 1] },
     review_pattern: { good: ['(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+(\\d+)'], bad: ['(\\d+)', '(', '', 1] },
+    usage_boost: { good: [true, false, 'old', 0, null], bad: [] },
     size_pattern: { good: ['Size: (\\w+)'], bad: ['size', '(', '', 1] },
-    usage_boost: { good: [true, false], bad: ['false', 0, null] },
   },
   docker: {
     containers: { good: [[], [{ label: 'a=b' }, { name: 'job-(?<pid>\\d+)' }]], bad: ['x', [{}], [{ label: 'x', extra: 1 }], [{ name: '(' }]] },

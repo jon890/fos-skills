@@ -1,6 +1,6 @@
 # 모델 사용 한도 회피 기술 설계
 
-이 문서는 다음 구현 PR 의 목표 동작을 설명한다. 구현을 적용하기 전 릴리스의 동작은 [usage-routing 스펙](../usage-routing/spec.md)을 따른다.
+이 문서는 시작 전 모델 사용 한도 검사와 같은 등급 대체를 설명한다.
 
 ## 요구사항 연결
 
@@ -21,7 +21,7 @@
 
 - [launch-worker 의 `decideSettings`](../../../skills/orch/scripts/worker/launch-worker.ts) 가 지시서 검사와 실제 시작 사이에서 후보를 고른다. [relaunch-worker](../../../skills/orch/scripts/worker/relaunch-worker.ts) 의 시작 전 검사도 같은 경로를 쓴다.
 - 제공자별 파일 읽기와 Orca 호출은 `lib/` 가 맡는다. `core/` 는 파싱된 한도, 후보 순서, 현재 시각을 받아 선택 결과를 낸다. 계정 선택과 사용량 기록의 작성은 Orca 와 각 제공자가 소유한다. [ADR-028](../../adr/028-orch-core-layer.md)
-- [한도 표](../../../skills/orch/references/agent-selection.md#사용-한도에-걸렸을-때)가 같은 등급 후보의 원본이다. [기존 표 읽기](../../../skills/orch/scripts/lib/usage-boost.ts)의 `readSelectionTable`, `limitRows`, `limitRowOf` 를 별도 모듈로 옮긴다. [시작 전 모델 검사](../../../skills/orch/scripts/lib/model-check.ts), [모델 알림](../../../skills/orch/scripts/loop/model-watch.ts), [리뷰 지시서 생성](../../../skills/orch/scripts/lib/review-spec.ts)과 공유한다.
+- [한도 표](../../../skills/orch/references/agent-selection.md#사용-한도에-걸렸을-때)가 같은 등급 후보의 원본이다. [한도 표 읽기](../../../skills/orch/scripts/lib/limit-table.ts)의 `readSelectionTable`, `limitRows`, `limitRowOf` 를 사용한다. [시작 전 모델 검사](../../../skills/orch/scripts/lib/model-check.ts), [모델 알림](../../../skills/orch/scripts/loop/model-watch.ts), [리뷰 지시서 생성](../../../skills/orch/scripts/lib/review-spec.ts)과 공유한다.
 - [usage-routing](../usage-routing/design.md)의 사용률과 남은 시간 비교, 행 목록, `sameGradeClaude`, 시간 경과 기준, `ORCH_CLAUDE_USAGE` 우선 경로를 걷어 낸다. 경로와 시각은 테스트에서 직접 주입한다. 구현 PR 에서 [선택 안내](../../../skills/orch/references/agent-selection.md), [오버레이 안내](../../../skills/orch/references/overlay.md), [설정 스키마 문서](../../data-schema.md)를 맞추고, 옛 기능 문서에서 이 설계로 이어지는 링크를 남긴다.
 
 ## 인터페이스와 데이터
@@ -83,6 +83,7 @@
 
 ## 실패와 일관성
 
+- Codex 에서는 같은 세션의 첫 턴 이후에 사용률이 100% 에 도달해도 시작 전에 확인할 수 없다. 다른 세션의 첫 턴에서 소진을 확인할 수 없으면 고른 모델로 시작한다. 시작 뒤 한도에 걸리면 기존 [사용 한도 대응](../../../skills/orch/references/agent-selection.md#사용-한도에-걸렸을-때)을 따른다.
 - 초기화 시각이 지났거나 시각이 없으면 그 창으로 소진을 확정하지 않는다. 오래된 관측은 리셋 전까지 쓴다. 읽을 수 있는 창 하나로 소진이 확정되면 다른 창의 파싱 실패로 그 결과를 취소하지 않는다. 실패 이유에는 파일 원문, 인증 정보, 계정 식별자를 넣지 않는다.
 - 기본 launch 의 한도 거부는 번호 예약과 워크트리·Task 생성 전에 끝낸다. relaunch 는 기존 `--preflight` 를 abandon 전에 실행하므로 별도로 같은 한도를 읽던 앞 단계를 합친다. 실제 시작 단계에서도 계정을 다시 확인한다. preflight 이후 계정·한도 변경으로 거부하면 기존 `RELAUNCH-FAIL launch` 와 `NEXT` 경로가 Task 와 워크트리를 보존해 재시도를 안내한다.
 - Orca 의 계정 선택과 시작 사이에 공용 잠금이 없다. 번호 예약과 워크트리 생성 전에 선택이 달라진 것을 발견하면 새 계정으로 한도를 다시 읽는다. 워크트리 준비 뒤의 최종 확인에서 변경을 발견하면 worker-start 전에 멈추고, 기존 실행 실패 경로에서 남은 워크트리를 재사용하도록 안내한다. 그 상태에서 다시 실행하면 새 계정의 한도를 처음부터 읽는다. 최종 확인과 Orca 시작 사이의 짧은 경합은 남는다.
@@ -96,7 +97,7 @@
 | 한도 파일과 계정 선택을 바꿔 끼운 테스트 | 선택 계정 전환, 시스템 홈, 공유 경로, Claude 설정 경로의 원문 전달, 인증 환경 누락과 해시 불일치의 미확인 처리, 모델별 주간 묶음, 기본 계정의 구형 기록과 그 기록을 다른 계정으로 재개한 턴, 계정 ID 누락, 다른 계정의 최신 기록, 두 창의 슬롯 교체, 뒤늦게 끝난 옛 세션·파싱 도중 끊긴 줄·탐색 상한을 재현한다 |
 | 가짜 Orca 를 붙인 명령 테스트 | 정상 행·직접 선택·동일 등급·비어 있는 칸·없는 줄을 재현한다. 직접 선택이 다시 바뀌면 최초 선택 사유와 한도 사유를 모두 확인한다. 거부 때 worktree 와 worker-start 호출이 없는지, 선택 때 출력과 영구 기록이 같은지, 경고가 명령마다 한 번인지 확인한다 |
 | relaunch 와 리뷰 검증 | preflight 가 거부되면 옛 worker 를 abandon 하지 않는다. 재시도는 새 계정과 한도를 읽고 resume 과 `--terminal` 은 읽지 않는다. 최초 실행과 같은 Task 재시도에서 리뷰의 실제 제공자가 한도로 구현 제공자와 같아진 경우에만 PR 리뷰 본문에 표시한다 |
-| 실환경 인수 검증 | 선택 계정을 바꾼 뒤 실제 사용량 캐시와 세션 기록의 귀속을 비교한다. Claude 해시 조회는 첫 실환경 검증에서 확인하고 실제 한도 소진에 의존하는 경우는 고정 입력으로 재현한다 |
+| 실환경 인수 검증 | 지금 선택한 계정의 실제 사용량 캐시와 세션 기록을 읽기 전용으로 확인한다. 계정 전환과 소진은 고정 입력으로 재현한다 |
 
 ## 결정
 
