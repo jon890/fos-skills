@@ -575,6 +575,27 @@ describe('handoff-cleanup', () => {
       for (const target of [open, merged, similar, pending, measurement]) assert.equal(existsSync(target), true, target)
     })
 
+    test('워크트리가 없어진 오래된 pending 폴더만 옮긴다', () => {
+      const live = join(tmp, 'wt', 'live-worker')
+      sh('git', '-C', repo, 'worktree', 'add', '-q', '-b', 'live', live)
+      const gone = make('.orch/handoff/pending/gone-worker/body.md', '대기', 9)
+      const alive = make('.orch/handoff/pending/live-worker/body.md', '대기', 9)
+      const fresh = make('.orch/handoff/pending/fresh-worker/body.md', '대기')
+      for (const dir of ['gone-worker', 'live-worker']) age(join(orch, 'handoff/pending', dir), 9)
+      const r = ok(['--apply'], { FAKE_RUN_TASKS: '{}' })
+      assert.match(r.stdout, /옮김 \.orch\/handoff\/pending\/gone-worker/)
+      assert.equal(existsSync(gone), false)
+      assert.equal(existsSync(join(trash, '.orch/handoff/pending/gone-worker/body.md')), true)
+      for (const target of [alive, fresh]) assert.equal(existsSync(target), true, target)
+    })
+
+    test('--run 이면 pending 폴더를 옮기지 않는다', () => {
+      const gone = make('.orch/handoff/pending/gone-worker/body.md', '대기', 9)
+      age(join(orch, 'handoff/pending/gone-worker'), 9)
+      ok(['--apply', '--run', 'A'], { FAKE_RUN_TASKS: '{}' })
+      assert.equal(existsSync(gone), true)
+    })
+
     test('PR 상태를 읽지 못하면 handoff 폴더를 남긴다', () => {
       const closed = make('.orch/handoff/pr-77/body.md', '닫힌 PR', 9)
       const r = ok(['--apply'], { FAKE_GH_FAILS: '1' })
