@@ -1,6 +1,6 @@
 // bin/merge-queue.ts 가 orch 설정, 상태 파일과 루프 로그에서 머지 큐의 순서, 머지 가능 여부, 대기 이유를 내는지 본다. 상태 폴더는 임시 폴더다.
 //
-// 실행: node --test extensions/work-board/tests/merge-queue.spec.ts
+// 실행: node --test skills/orch/tests/board-merge-queue.spec.ts
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -9,9 +9,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { autoMergeOn, clockAt, queueRows, readView, turnRows, waitRows } from '../bin/merge-queue.ts'
+import { autoMergeOn, clockAt, queueRows, readView, turnRows, waitRows } from '../scripts/lib/board-queries/board-merge-queue.ts'
 
-const SCRIPT = fileURLToPath(new URL('../bin/merge-queue.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../../../extensions/work-board/bin/merge-queue.ts', import.meta.url))
 
 let tmp: string
 let state: string
@@ -168,6 +168,23 @@ test('상태 폴더가 없으면 error 에 이유를 두고 0 으로 끝난다',
   assert.equal(out.running, false)
   assert.deepEqual(out.prs, {})
   assert.match(out.error, /orch 상태 폴더가 없다/)
+})
+
+test('큐 명령은 고정 루프 로그에서 기존 JSON 한 줄을 낸다', () => {
+  writeFileSync(join(tmp, 'config.json'), '{"queue":{"auto_merge":true}}')
+  writeFileSync(join(state, 'loop.log'), LOOP_LOG)
+  const got = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', tmp], {
+    encoding: 'utf8', env: { ...process.env, ORCH_DIR: tmp },
+  })
+  assert.equal(got.status, 0)
+  assert.equal(got.stderr, '')
+  assert.equal(got.stdout, JSON.stringify({
+    enabled: true, running: false, prs: {
+      10: { place: 'out', rank: null, reason: '리뷰 보류', at: '2026-11-04T04:10:00.000Z' },
+      11: { place: 'out', rank: null, reason: '미해결 스레드 2', at: '2026-11-04T04:00:00.000Z' },
+      12: { place: 'out', rank: null, reason: '기능 완료 근거 없음', at: '2026-11-04T04:10:00.000Z' },
+    }, error: null,
+  }) + '\n')
 })
 
 test('--repo 가 없으면 사용법 오류로 2 를 낸다', () => {
