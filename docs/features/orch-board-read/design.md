@@ -9,7 +9,7 @@
 | ID | 해결 방법 |
 | --- | --- |
 | REQ1 | 명령 표(`skills/orch/scripts/lib/commands.ts`)의 board 묶음에 `get`, `list`, `del` 행을 더한다. 세 행 모두 지금의 `board/board-edit.ts` 를 가리키고 동작 이름을 앞 인자로 붙인다. 보드 파일은 `set`, `show` 와 같이 `lib/board-file.ts` 의 `boardPath` 로 찾는다 |
-| REQ2 | 받는 칸 목록의 원본은 `board.ts` 가 내보내는 `GET_FIELDS` 하나다. 새 동작 `board.ts get` 과 `board-edit.ts` 가 같은 상수로 이름을 본다. 목록 밖의 이름은 사용법 오류(종료 코드 2)이고 stderr 의 사용법에 칸 목록이 나온다 |
+| REQ2 | 받는 칸 목록의 원본은 `modules/work-board/item.ts` 의 `GET_FIELDS` 다. 새 동작 `board.ts get` 과 `board-edit.ts` 가 같은 상수로 이름을 본다. 목록 밖의 이름은 사용법 오류(종료 코드 2)이고 stderr 의 사용법에 칸 목록이 나온다 |
 | REQ3 | `board.ts get <id> <칸>` 과 `get <id> step <번호>` 가 값을 정한다. 진행률은 `progressOf`, 단계는 `findStep`(`step --exact` 와 같은 번호 풀이)을 쓴다. `board-edit.ts` 는 받은 값을 한 줄로 쓴다 |
 | REQ4 | 값이 비었으면 `board.ts get` 이 `"value": null` 과 종료 코드 4 를 낸다. 없는 항목과 없는 단계는 지금의 거절(종료 코드 1)이다. `board-edit.ts` 는 종료 코드를 그대로 넘긴다 |
 | REQ5 | 새 동작 `board.ts items [<상태>[,<상태>…]]` 가 상태 값을 검사하고 그 상태의 항목만 남겨 항목 객체 배열을 낸다. `board-edit.ts` 가 항목마다 한 줄로 바꾸고, 빈 배열이면 `BOARD-NONE`, `--full` 이면 줄과 `BOARD-UNMATCHED` 를 잇는다 |
@@ -65,13 +65,14 @@ flowchart TD
 
 | 층 | 파일 | 맡는 것 |
 | --- | --- | --- |
-| work-board | `extensions/work-board/bin/board.ts` | 받는 칸 목록, 칸 값을 글로 바꾸는 규칙, 빈 값 판정, 제목 칸이 없을 때 id 로 대신하기, 항목 객체의 꼴, 상태 값 검사와 상태 필터, 없는 항목과 `done` 이 아닌 항목의 거절, 지우기 전 사본. 보드 파일을 쓰는 유일한 코드인 것은 그대로다 |
+| 보드 항목 규칙 | `modules/work-board/item.ts` | 받는 칸 목록, 칸 값을 글로 바꾸는 규칙, 빈 값 처리와 제목 칸이 없을 때 id 로 대신하기 |
+| work-board | `extensions/work-board/bin/board.ts` | 항목 객체의 꼴, 상태 값 검사와 상태 필터, 없는 항목과 `done` 이 아닌 항목의 거절, 지우기 전 사본. 보드 파일을 쓰는 유일한 코드인 것은 그대로다 |
 | orch 명령 표 | `skills/orch/scripts/lib/commands.ts` | 새 동작 이름과 사용법 한 줄, 문맥 인자(`--repo`). 판정은 두지 않는다 |
 | orch 스크립트 | `skills/orch/scripts/board/board-edit.ts` | 위치 인자와 옵션의 꼴 검사(종료 코드 2), 보드 파일 찾기, `board.ts` 호출, 받은 JSON 을 한 줄 출력으로 바꾸거나 그대로 내기, `BOARD-UNMATCHED` 줄과 `unmatched` 더하기 |
 | orch lib | `skills/orch/scripts/lib/board-unmatched.ts` | 못 맞춘 머지 기록 읽기. 고치지 않고 `show` 가 쓰던 함수를 `list --full` 과 `show --json` 이 함께 쓴다 |
 
-- 새 파일과 새 모듈은 없다. 소유 경계의 분리 신호(쓰는 사람, 배포 환경, 데이터 생명주기, 거꾸로 읽기)에 걸리는 것이 없다.
-- `board.ts` 는 지금처럼 orch 를 import 하지 않는다. orch 쪽은 `board.ts` 가 내보낸 값 둘(`GET_FIELDS`, `itemTitle`)을 `lib/board.ts` 를 거쳐 받는다. orch 의 lib 가 `board.ts` 의 값을 import 하는 지금 방향(`lib/board.ts` 의 `linesRev`, `lib/board-file.ts` 의 `defaultBoardPath`)과 같다.
+- 보드 조회 명령은 `board.ts` 에 두고, 양쪽이 쓰는 항목 규칙은 공용 모듈에 둔다.
+- `board.ts` 는 `modules/work-board/item.ts` 에서 `GET_FIELDS` 와 `itemTitle` 을 가져온다. orch 명령은 `lib/board.ts` 를 통해 같은 값과 함수를 쓴다.
 - `board-edit.ts` 는 보드 파일을 직접 읽지 않는다. 읽기도 `board.ts` 를 자식 프로세스로 부른다(`BOARD_BIN` 으로 바꿀 수 있다). 감싸기가 파일을 직접 읽으면 옛 문자열 줄 변환, 숫자 id 맞추기, 진행률 셈이 두 곳에 생긴다.
 
 ## 인터페이스와 데이터
@@ -262,7 +263,7 @@ orch board del --done
 | DECISION3 | 감싸기가 결과를 아는 방법 | 읽기와 지우기 모두 `board.ts` 가 낸 JSON 한 줄을 읽는다. `get` 도 값만 내지 않고 JSON 을 낸다 | 작성자 | 보드 고치기 설계 DECISION4 와 같은 꼴이다. 값만 내면 감싸기가 `--json` 의 객체를 다시 만들어야 하고 빈 값과 빈 문자열을 종료 코드로만 가린다. `board.ts` 에 `--json` 옵션을 더하지 않아도 된다 |
 | DECISION4 | `--force` 안내를 내는 자리 | `board.ts del-done` 의 거절 글이 `orch board del <id> --force` 를 적는다 | 작성자 | 스펙 REQ6 이 stderr 에 `--force` 안내를 요구한다. 감싸기가 안내를 붙이려면 종료 코드 1 의 여러 이유(없는 항목, 잠금 실패, 상태) 가운데 상태 거절을 stderr 글로 가려야 해서 글에 묶인 판정이 생긴다. `del-done` 은 `orch board del` 이 부르려고 둔 동작이고, work-board 의 README 와 창의 요청문이 이미 `orch board` 명령을 가리킨다. 감당할 것: `board.ts` 의 글 하나가 orch 의 옵션 이름에 묶인다. orch 가 `--force` 의 이름을 바꾸면 이 글도 고쳐야 하므로 `board.ts` 의 테스트가 글의 `--force` 를 고정하고 `del-done` 의 주석에 이 묶임을 적는다. `board.ts` 에 `--force` 옵션을 두는 안은 DECISION1 의 이유로 버렸다 |
 | DECISION5 | 항목 객체를 내는 동작 | `view` 를 넓히지 않고 `item`, `items` 를 따로 둔다. `show` 의 JSON 없는 출력은 `view` 를 그대로 쓴다 | 작성자 | `view` 의 꼴(`was`, `rev` 포함)은 고치기 결과와 같고 work-board 문서가 계약으로 적었다. 스펙 DECISION10 이 `was`, `rev` 를 뺐다. `show` 의 지금 출력 경로를 바꾸지 않아 기존 테스트가 그대로 통과한다 |
-| DECISION6 | 제목 대신 id, 받는 칸 목록을 두 층이 함께 쓰는 방법 | `board.ts` 가 `itemTitle`, `GET_FIELDS` 를 내보내고 orch 가 import 한다. 칸 이름은 두 층이 같은 상수로 본다 | 작성자 | `list` 한 줄의 제목과 `get title` 이 같은 규칙이어야 한다. 사용법 글에 칸 목록을 다시 적으면 `set` 에 칸이 늘 때 어긋난다. `linesRev`, `defaultBoardPath` 를 import 하는 지금 방향과 같다. 칸 이름을 감싸기가 먼저 보는 것은 독립 검토에서 나왔다. `board.ts` 의 사용법 줄이 `orch board` 사용자에게 그대로 보이던 것을 막는다 |
+| DECISION6 | 제목 대신 id, 받는 칸 목록을 두 층이 함께 쓰는 방법 | `board.ts` 와 orch 가 `modules/work-board/item.ts` 의 `itemTitle` 과 `GET_FIELDS` 를 함께 쓴다 | 작성자 | `list` 한 줄의 제목과 `get title` 이 같은 규칙이어야 한다. 사용법 글에 칸 목록을 다시 적으면 `set` 에 칸이 늘 때 어긋난다. 칸 이름을 감싸기가 먼저 보는 것은 독립 검토에서 나왔다. `board.ts` 의 사용법 줄이 `orch board` 사용자에게 그대로 보이던 것을 막는다 |
 | DECISION7 | 「아침 정리」 의 자리 | 창의 「오늘 시작」 요청문(`START_PROMPT`)을 구현 PR 에서 `orch board del --done` 으로 바꾼다 | 작성자 | 스펙은 저장소 문서에서 이 절차를 찾지 못했다고 적었다. 설계에서 창의 요청문이 `board.ts del` 을 시키는 것을 찾았다. 요청문이 플러그인 경로를 찾게 만드는 것이 스펙의 배경이고, 보드 고치기 설계 DECISION16 이 같은 요청문을 같은 이유로 고쳤다 |
 | DECISION8 | PR 나누기 | 구현 PR 하나 | 작성자 | 위 「PR 나누기와 순서」 |
 | DECISION9 | 지운 항목이 동기화로 다시 생기는 틈 | 이번에 막지 않고 문서에 적는다 | 작성자 | 지금 `board.ts del` 에도 있는 틈이고, 막으려면 동기화의 `set` 을 모두 엄격 호출로 바꿔야 한다. 스펙 범위(읽기와 지우기 입구) 밖이다. 구현 PR 본문에서 후속 후보로 알린다 |
