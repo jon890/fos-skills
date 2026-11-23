@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { autoMergeConfig } from '../scripts/core/auto-merge.ts'
+import { judgeTrustedBotReviews } from '../scripts/lib/review-bot.ts'
+import type { BotReviewData } from '../scripts/lib/review-bot.ts'
+import { BOT, BOT_SETTING, REVIEWED_AT, receipt } from './fixtures/codex-review.ts'
+
+const HEAD = 'a'.repeat(40)
+const OLD = 'b'.repeat(40)
+const FOUND_AT = '2026-01-01T00:03:00Z'
+const REREVIEWED_AT = '2026-01-01T00:04:00Z'
+const CONFIG = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
+const { trustedBots } = autoMergeConfig({ queue: { auto_review: CONFIG } }).review!
+const judge = (rows: Partial<BotReviewData>) => judgeTrustedBotReviews(HEAD, { reviews: [], comments: [], reviewThreads: [], ...rows }, trustedBots!)
+
+test('믿는 봇 설정에서 잘못된 항목을 거절한다', () => {
+  for (const trusted_bots of [[], [null], [{ ...BOT_SETTING, login: '' }], [{ ...BOT_SETTING, receipt_marker: '' }],
+    [{ ...BOT_SETTING, reviewed_commit: '(' }], [{ ...BOT_SETTING, reviewed_commit: 'no-group' }],
+    [BOT_SETTING, { ...BOT_SETTING, login: BOT.login.toUpperCase() }]]) {
+    assert.throws(() => autoMergeConfig({ queue: { auto_review: { ...CONFIG, trusted_bots } } }), /queue\.auto_review\.trusted_bots/)
+  }
+})
+
+test('봇 종류와 계정, 영수증 표지, 현재 HEAD 앞자리가 모두 맞아야 pass 를 얻는다', () => {
+  const current = receipt(HEAD, REVIEWED_AT, '검토를 마쳤습니다.')
+  assert.deepEqual(judge({ comments: [current] }), {
+    ok: true, receipts: [{ body: '', at: REVIEWED_AT, commit: HEAD, receiptBot: BOT.login }],
+  })
+  const noMarker = { ...current, body: current.body.split('\n').slice(1).join('\n') }
+  const stale = receipt(OLD, REVIEWED_AT, "Didn't find any major issues. Keep them coming!")
+  const humanCopy = { ...current, author: { __typename: 'User', login: BOT.login } }
+  const otherBot = { ...current, author: { ...BOT, login: 'another-app' } }
+  const ambiguous = { ...current, body: current.body + '\n' + stale.body }
+  for (const comment of [noMarker, stale, humanCopy, otherBot, ambiguous]) {
+    assert.deepEqual(judge({ comments: [comment] }), { ok: true, receipts: [] })
+  }
+})
+
+test('리뷰 영수증은 GitHub 가 기록한 커밋과도 맞아야 한다', () => {
+  const returned = { author: BOT, state: 'APPROVED', submittedAt: REVIEWED_AT, body: receipt(HEAD).body }
+  assert.deepEqual(judge({ reviews: [{ ...returned, commit: { oid: OLD } }] }), { ok: true, receipts: [] })
+  const result = judge({ reviews: [{ ...returned, commit: { oid: HEAD } }] })
+  assert.ok(result.ok && result.receipts.length === 1)
+})
+
+test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 지적 이후의 영수증을 요구한다', () => {
+  const thread = { isResolved: false, comments: { nodes: [{ author: BOT, createdAt: FOUND_AT }] } }
+  const fresh = receipt(HEAD, REREVIEWED_AT)
+  assert.deepEqual(judge({ reviewThreads: [thread], comments: [fresh] }), {
+    ok: false, wait: `${BOT.login} 봇의 미해결 줄 댓글 스레드가 있다`,
+  })
+  const resolved = { ...thread, isResolved: true }
+  assert.equal(judge({ reviewThreads: [resolved], comments: [receipt(HEAD), receipt(OLD, REREVIEWED_AT)] }).ok, false)
+  const passed = judge({ reviewThreads: [resolved], comments: [receipt(HEAD), fresh] })
+  assert.ok(passed.ok && passed.receipts[0].at === REREVIEWED_AT)
+})
+
+test('의견 리뷰와 변경 요청보다 늦게 같은 봇이 현재 HEAD 를 확인해야 한다', () => {
+  for (const state of ['COMMENTED', 'CHANGES_REQUESTED']) {
+    const reviews = [{ state, author: BOT, body: '', submittedAt: FOUND_AT, commit: { oid: HEAD } }]
+    assert.equal(judge({ reviews, comments: [receipt(HEAD)] }).ok, false)
+    assert.equal(judge({ reviews, comments: [receipt(HEAD, FOUND_AT)] }).ok, false)
+    assert.equal(judge({ reviews, comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, true)
+  }
+})

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { gateLines } from '../scripts/queue/gate.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
+import { BOT, BOT_SETTING, receipt } from './fixtures/codex-review.ts'
 
 import { copyRepo, git as templateGit } from '../../../modules/testkit/git.ts'
 
@@ -268,6 +269,40 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(gateReason(r), /HEAD aaaaaaaa 에 리뷰 판정이 없다/)
     const passed = await gate(c, { '1': pr({ reviews: [{ body: 'PASS', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD } }], comments: [] }) }, 0)
     assert.equal(passed.code, 0, both(passed))
+  })
+
+  test('믿는 봇 영수증을 뒤 페이지까지 읽고 require 의 pass 로 센다', async (t) => {
+    const c = setup(t)
+    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING],
+      require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'] }
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    const priorBlock = { body: 'BLOCK', submittedAt: '2026-01-01T00:01:00Z', commit: { oid: HEAD } }
+    const r = await gate(c, { '1': pr({ reviews: [priorBlock], comments: [],
+      bot_review: { split: 'comments', comments: [receipt(HEAD)] },
+    }), _log_rows: [`${HEAD}\t\t2026-01-01T00:00:00Z`] }, 0)
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^GATE-OK 1$/m)
+  })
+
+  test('믿는 봇을 설정해도 기존 판정 문구로 통과할 수 있고 봇 지적이나 조회 실패는 머지를 막는다', async (t) => {
+    const c = setup(t)
+    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    const reviews = [{ body: 'PASS', submittedAt: '2026-01-01T00:02:00Z', commit: { oid: HEAD } }]
+    const cases = [
+      { data: {}, reason: null },
+      { data: undefined, reason: /스레드를 읽지 못했다/ },
+      { data: { headRefOid: 'b'.repeat(40) }, reason: /PR HEAD 가 바뀌었다/ },
+      { data: { reviewThreads: [{ isResolved: false, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:01:00Z' }] } }] },
+        reason: /봇의 미해결 줄 댓글 스레드/ },
+    ]
+    for (const { data, reason } of cases) {
+      const r = await gate(c, { '1': pr({ reviews, comments: [], bot_review: data }) }, 0)
+      assert.equal(r.code, reason ? 1 : 0, both(r))
+      if (reason) assert.match(gateReason(r), reason)
+    }
+    const missing = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: {} }) }, 0)
+    assert.match(gateReason(missing), /리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다/)
   })
 
   test('기능 PR 은 설정에 HEAD 조건이 없어도 현재 HEAD 의 판정이 필요하다', async (t) => {

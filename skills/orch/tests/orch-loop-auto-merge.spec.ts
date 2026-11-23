@@ -19,6 +19,7 @@ import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
 import { queuedNotices } from './fixtures/queued-notices.ts'
+import { BOT_SETTING, receipt } from './fixtures/codex-review.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
@@ -189,7 +190,7 @@ function added(...paths: string[]): Json[] {
 }
 
 // 이번 실행의 gh 답. views 는 PR 마다의 pr view 답, open 은 마이그레이션을 보는 pr list 의 답, rules 는 저장소 규칙 API 의 답이다
-function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[]; rules?: FakeRule } = {}): void {
+function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[]; rules?: FakeRule; botReview?: FakeRule } = {}): void {
   gh.setRules([
     { args: ['pr', 'list', '--base'], stdout: '[]\n' },
     { args: ['pr', 'list', 'number,headRefName,baseRefName,files'], stdout: `${JSON.stringify(opts.open ?? [])}\n` },
@@ -197,6 +198,7 @@ function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[
     ...Object.entries(opts.views ?? {}).map(([n, view]) => ({ args: ['pr', 'view', n], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [], ...view })}\n` })),
     { args: ['pr', 'view'], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [] })}\n` },
     { args: ['api', 'user'], stdout: 'me\n' },
+    ...(opts.botReview ? [opts.botReview] : []),
     { stdout: '["test"]\n', ...opts.rules, args: [RULES_PATH] },
   ])
 }
@@ -363,6 +365,23 @@ describe('리뷰', () => {
     config({ queue: { auto_review: review } })
     github([pr(1)], { views: { 1: { reviews: reviews('보류: 고칠 것', '통과') } } })
     once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+  })
+
+  test('이전 봇 영수증에는 재리뷰를 알리고 현재 HEAD 의 영수증을 받으면 큐에 건다', async () => {
+    config({ queue: { auto_review: { ...review, trusted_bots: [BOT_SETTING] } } })
+    const withReceipt = (commit: string) => {
+      const page = (nodes: Json[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
+      const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page() }
+      github([pr(1)], { botReview: { args: ['api', 'graphql', 'readThreads=true'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) } })
+    }
+    withReceipt(HEAD_B)
+    assert.match(once(), /AUTO-MERGE-WAIT #1 .*봇 영수증이 없다/)
+    assert.match(String(events('AUTO-MERGE-NO-REVIEW')[0]?.text), /현재 HEAD 의 봇 리뷰를 요청하거나/)
+    assert.deepEqual(queueCalls(), [])
+
+    withReceipt(HEAD_A)
+    assert.match(once(), /AUTO-MERGE-BASIS #1 .*chatgpt-codex-connector 영수증/)
     assert.deepEqual(await queued(), queueArgs('1'))
   })
 

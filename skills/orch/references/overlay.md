@@ -364,6 +364,31 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.
 
+#### 믿는 리뷰 봇의 영수증
+
+`queue.auto_review.trusted_bots` 에 봇 계정과 영수증 형식을 목록으로 적으면, 자동 머지와 `orch queue gate` 가 기존 판정 문구에 더해 봇 영수증을 확인한다.
+아래 예시를 기존 `auto_review` 에 더한다. `require` 와 `pass`, `block` 은 저장소에 쓰던 값을 그대로 둔다.
+
+```json
+{
+  "trusted_bots": [
+    {
+      "login": "chatgpt-codex-connector[bot]",
+      "receipt_marker": "<!-- codex-review-receipt:v1 -->",
+      "reviewed_commit": "^\\*\\*Reviewed commit:\\*\\* `([0-9a-fA-F]{7,40})`[ \\t]*\\r?$"
+    }
+  ]
+}
+```
+
+GitHub 에서 계정 종류가 봇이고 `login` 이 같은 댓글과 리뷰만 본다. 표지는 한 줄 전체가 `receipt_marker` 와 같아야 한다.
+`reviewed_commit` 은 각 줄의 시작과 끝을 쓸 수 있는 JavaScript 정규식이다. 첫 번째 캡처 그룹으로 읽은 7~40자리 16진수가 현재 HEAD 전체 또는 앞자리와 같아야 한다. 영수증을 리뷰에 달았다면 GitHub 가 기록한 리뷰 커밋도 영수증과 일치해야 한다.
+
+영수증이 유효하면 기존 `require` 가 읽는 `pass` 로 함께 센다. 기준 브랜치를 합친 뒤에도 영수증은 갱신한 HEAD 를 가리켜야 한다.
+믿는 봇이 연 줄 댓글 스레드가 미해결이거나 그 봇이 지적을 남긴 뒤 현재 HEAD 의 새 영수증을 받지 못했으면 머지를 기다린다. GitHub 의 변경 요청과 영수증이 없는 의견 리뷰를 지적으로 읽는다.
+GitHub 는 스레드 해결 시각을 제공하지 않는다. 관문은 스레드가 지금 해결됐는지와 영수증이 지적보다 늦게 달렸는지를 함께 확인한다.
+`fixed_after_block` 은 기존 판정 문구로 남긴 `block` 에만 적용한다. 봇 지적을 닫은 뒤에는 그 봇에 다시 리뷰를 요청한다.
+
 ### 리뷰 봇 장애 때 대체 리뷰
 
 리뷰 봇이 모델을 부르지도 못하고 몇 초 만에 실패하면(인증, 사용량 한도, 봇 설정 오류) 판정이 없어 자동 머지가 멈춘다.
