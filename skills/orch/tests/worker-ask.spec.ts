@@ -630,6 +630,21 @@ describe('세션 임시 폴더 경로가 든 질문', () => {
     rejected(ask('--from', 'term_w', '--question-file', file), '/var/folders/ab/cd/T/body.json')
   })
 
+  test('--temp-ok 면 기록용 임시 경로가 있어도 보낸다', () => {
+    fake(OK, 0)
+    const r = ask('--from', 'term_w', '--temp-ok', '--question', 'PR 은 열었고 본문 초안은 /var/folders/ab/cd/T/pr-body-x.md 에 있다. 다음 단계를 정해 달라')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(firstLine(r.stdout), 'answer: 받았다')
+    assert.doesNotMatch(r.stderr, /세션 임시 폴더 경로/)
+  })
+
+  test('거절 안내는 handoff 자리와 --temp-ok 를 함께 알린다', () => {
+    fake(OK, 0)
+    const r = ask('--from', 'term_w', '--question', '파일: /tmp/claude-501/x.md')
+    assert.equal(r.code, 2, r.stderr)
+    assert.match(r.stderr, /--temp-ok/)
+  })
+
   test('공유 자리 경로와 경로 없는 본문은 그대로 보낸다', () => {
     fake(OK, 0)
     env.TMPDIR = join(tmp, 'session-tmp')
