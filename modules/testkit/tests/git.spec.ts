@@ -22,6 +22,11 @@ describe('git 도우미', () => {
     assert.throws(() => git(dir, ['config', 'user.name'], env), /실패 \(종료 1\)/)
   })
 
+  it('gitEnv 아래 git 은 자동 정리를 백그라운드로 돌리지 않는다', () => {
+    const { dir } = copyRepo(join(tempDir(), 'r'))
+    assert.equal(git(dir, ['config', '--get', 'maintenance.autoDetach']), 'false')
+  })
+
   it('ceiling 을 주면 GIT_CEILING_DIRECTORIES 를 건다', () => {
     assert.equal(gitEnv({}, { ceiling: '/x' }).GIT_CEILING_DIRECTORIES, '/x')
     assert.equal(gitEnv({}).GIT_CEILING_DIRECTORIES, undefined)
