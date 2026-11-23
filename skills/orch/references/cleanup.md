@@ -519,8 +519,8 @@ orch cleanup sweep --repo "$REPO" --run "$RUN_ID" --remove-kept "$WORKTREE" --ap
 ### handoff 산출물 정리
 
 끝난 작업의 큐 로그, 지시서, 오래된 orch 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 옮긴 파일은 되살릴 수 있다. 큐의 `.out` 로그와 짝인 pid 에는 위 보존 기한과 상태 확인 규칙을 적용한다. 이 명령의 `--queue-days` 는 `cleanup.queue_days` 보다 우선한다.
-PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가 MERGED 를 확인하면 그 폴더를 바로 휴지통으로 옮긴다. 휴지통 이동만 실패하면 원본을 남기고 경고한 뒤 다른 마무리는 계속한다.
-`orch cleanup handoff --apply` 는 GitHub 가 CLOSED 로 확인한 PR 폴더를 옮긴다. 상태를 확인할 수 없는 PR 과 OPEN·MERGED PR 의 폴더, `pending/` 과 측정 결과 폴더는 남긴다. 규칙 밖의 옛 파일도 옮기지 않고, `finish` 가 개수만 알린다.
+handoff 에는 코디네이터가 읽을 파일만 둔다(자리는 [`replying.md`](replying.md) 의 「인계 파일을 둔다」). PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가 MERGED 를 확인하면 그 폴더를 바로 휴지통으로 옮긴다. 휴지통 이동만 실패하면 원본을 남기고 경고한 뒤 다른 마무리는 계속한다.
+`orch cleanup handoff --apply` 는 GitHub 가 CLOSED 로 확인한 PR 폴더를 옮긴다. `pending/<워크트리 이름>/` 은 `--folder-days` 일 넘게 바뀌지 않았고 그 이름의 워크트리가 없을 때 옮긴다. 상태를 확인할 수 없는 PR 과 OPEN·MERGED PR 의 폴더, 워크트리 목록을 읽지 못한 때의 `pending/`, 측정 결과 폴더는 남긴다. 규칙 밖의 옛 파일도 옮기지 않고, `finish` 가 개수만 알린다.
 **사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
 **코디네이터와 핸들러는 `--run` 을 준다.** 그 Run 의 Task 가 쓴 지시서와 PR 본문만 옮겨 다른 세션의 산출물을 건드리지 않는다.
 `tick` 이나 `after-cleanup` 핸들러에서 부르면 입력의 `run` 을 넘긴다. 큐 로그, 폴더, csv 는 Run 에 묶을 수 없어 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다.

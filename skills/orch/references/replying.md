@@ -158,9 +158,17 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 
 ### 인계 파일을 둔다
 
-코디네이터에게 넘길 파일은 `orch paths root` 가 가리키는 폴더 아래 `handoff/` 에 두고 절대경로를 보낸다. 세션 임시 폴더 경로를 질문에 넣으면 worker ask 가 종료 코드 2 로 거절한다.
-PR 본문·미리보기·리뷰 답변 초안과 매핑 TSV 는 `handoff/pr-<PR 번호>/` 에 모은다. PR 을 열기 전에 만든 초안은 세션 임시 폴더에 두고, 게시가 막혀 넘길 때만 `handoff/pending/<워크트리 이름>/` 에 복사한다. PR 번호가 나오면 해당 PR 폴더로 옮긴다.
-`orch queue finish` 는 머지 뒤 해당 PR 폴더를 휴지통으로 옮긴다. 측정 결과처럼 다시 쓸 파일은 `handoff/` 의 별도 폴더에 둔다.
+한 번 쓰고 끝나는 파일(PR 본문, 미리보기 HTML, 리뷰 답변 초안)은 worker 의 세션 임시 폴더에 둔다. PR 등록이 허락된 일이면 worker 가 바로 등록하고, 등록한 뒤에는 아무도 그 파일을 읽지 않는다.
+`handoff/` 에는 코디네이터가 읽어야 하는 파일만 둔다. 경우는 둘이다.
+
+| 경우 | 자리 |
+| --- | --- |
+| 게시가 막혀 코디네이터가 대신 게시한다 | `handoff/pending/<워크트리 이름>/`, PR 번호가 나오면 `handoff/pr-<PR 번호>/` |
+| ask 로 코디네이터에게 본문 확인을 받는다 | `handoff/pr-<PR 번호>/`, PR 전이면 `handoff/pending/<워크트리 이름>/` |
+
+`handoff/` 는 `orch paths root` 가 가리키는 폴더 아래에 있고, 질문과 보고에는 절대경로를 적는다.
+ask 질문에 세션 임시 폴더 경로가 있으면 worker ask 가 종료 코드 2 로 거절한다. 코디네이터가 열 필요 없는 기록용 경로면 `--temp-ok` 를 붙여 보낸다.
+`orch queue finish` 는 머지 뒤 해당 PR 폴더를 휴지통으로 옮기고, `orch cleanup handoff --apply` 는 워크트리가 없어진 `pending/` 폴더를 옮긴다. 측정 결과처럼 다시 쓸 파일은 `handoff/` 의 별도 폴더에 둔다.
 
 ## PR 준비를 보고한다
 

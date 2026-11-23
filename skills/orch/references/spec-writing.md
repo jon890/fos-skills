@@ -79,7 +79,7 @@
   코드 블록과 인용의 예시는 검사하지 않는다. 비교 항목은 선택 줄에서 이유·후보 밖 이유가 시작되기 전의 항목 머리만 검사하고 이유 문장 속 낱말은 허용한다.
 
 - PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 `pr-body-<워크트리 이름>.md` 처럼 작업 이름을 넣어 쓰고 PR 이 열릴 때까지 지우지 않는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 `spec-lint` 가 `본문` 경고로 알린다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열거나 열지 않으면 본문을 `handoff/pending/<워크트리 이름>/` 에 두고 그 절대경로를 보고하게 한다. 코디네이터는 worker 의 세션 임시 폴더를 열 수 없다. 저장소의 `.orch/` 에는 두지 않는다
-- PR 번호가 생긴 뒤 코디네이터에게 넘길 PR 본문·미리보기 HTML·리뷰 답변 초안과 매핑 TSV 는 `"$(orch paths root)/handoff/pr-<PR 번호>/"` 에 모은다. `orch queue finish` 는 MERGED 확인 뒤 그 PR 폴더만 휴지통으로 옮긴다. 측정 결과처럼 PR 에 속하지 않는 인계는 별도 폴더에 둔다. 번호가 나오기 전 본문 초안은 세션 임시 폴더에 두고, 게시가 막혀 넘길 때는 `handoff/pending/<워크트리 이름>/` 에 복사한다. 번호가 나오면 pending 파일을 PR 번호 폴더로 옮긴다
+- 미리보기 HTML 과 리뷰 답변 초안도 worker 세션 임시 폴더에 두게 한다. PR 등록이 허락된 일이면 PR 본문 미리보기는 만들지 않아도 된다. `handoff/` 에는 코디네이터가 읽을 파일만 둔다: 게시가 막혀 대신 게시할 본문(`handoff/pending/<워크트리 이름>/`, 번호가 나오면 `handoff/pr-<PR 번호>/`)과 ask 로 확인받을 본문이다. 자리와 정리는 [`replying.md`](replying.md) 의 「인계 파일을 둔다」 가 소유한다
   PR 파일을 `handoff/` 바로 아래에 쓰라고 적은 지시서는 `spec-lint` 가 `PR 인계` 경고를 낸다
 - PR 을 열게 하면 「PR 은 기준 브랜치를 base 로 따로 연다. 다른 PR 브랜치를 base 로 두지 않는다」 도 적는다.
   앞 PR 브랜치를 base 로 연 PR 은 앞 PR 을 `--delete-branch` 로 머지하면 자동으로 닫히거나 앞 브랜치로 머지된다
