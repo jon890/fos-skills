@@ -11,7 +11,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
 import { runKey } from './loop.ts'
-import { notifyRun } from './run-notice.ts'
+import { notifyRun } from './notice-transport.ts'
 
 export const DEFAULT_DIGEST_SEC = 1800
 export const DIGEST_KINDS: ReadonlySet<string> = new Set(['WATCH-ERROR', 'LEGACY-NOTICE', 'STAGE-STALLED', 'LOOP-RESTARTED'])
