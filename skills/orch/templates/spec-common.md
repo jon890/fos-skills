@@ -20,7 +20,7 @@
 - 원격 명령은 `orch config get worker.readonly_tools` 에 나온 도구의 읽기 전용 호출만 직접 한다. 지시서의 `허락:` 줄에 있더라도 목록 밖 원격 명령, 원격 쓰기, auto mode 가 막을 수 있는 대량 삭제는 `orch worker ask` 로 맡긴다. <!-- orch-rule: coordinator-commands -->
 - {{DRAFT_PR_RULE}}
 - 자동 리뷰 workflow 를 바꾸면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. 결과는 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
-- PR 리뷰는 `review-fix` 로 반영한다. 반영 뒤 새 비차단 제안은 다음에 다룬다고 회신하고 resolve 하며, 차단 지적만 다시 반영한다. 첫 리뷰의 하위 등급 판단과 회신 전 ask 기준은 `references/replying.md` 를 따른다. <!-- orch-rule: review-once -->
+- PR 리뷰는 `review-fix` 로 반영한다. 반영 뒤 새 비차단 제안은 ask 없이 다음에 다룬다고 회신하고 resolve 하며, 차단 지적만 다시 반영한다. 첫 리뷰의 회신 기준은 `references/replying.md` 를 따른다. <!-- orch-rule: review-once -->
 - 머지는 하지 않는다. 코디네이터가 한다(워크트리 권한 설정이 `gh pr merge` 를 막는다). **그러나 PR 이 머지될 때까지 이 worker 가 맡는다.** 준비됨을 보낸 뒤에도 CI 실패, 충돌, 리뷰를 코디네이터의 지시를 기다리지 않고 직접 처리한다.
 - 하위 에이전트는 orca 명령을 쓰지 않는다. 스폰 프롬프트에 이 줄을 넣는다.
 - 기준 브랜치는 충돌이 났거나 코디네이터나 머지 큐가 요청했을 때만 합친다. <!-- orch-rule: no-early-base-merge -->
@@ -52,9 +52,9 @@
 2. 원격 브랜치를 pull 한 뒤 `git push -u origin HEAD` 로 push 한다.
 3. PR 본문을 파일로 쓴다. 파일 이름에 작업(워크트리) 이름을 넣어 `pr-body-<워크트리 이름>.md` 처럼 짓는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 엉뚱한 본문이 올라간다. 허락 줄이 PR 을 허락했으면 그 파일로 PR 을 연다. 본문 파일은 PR 이 열릴 때까지 지우지 않는다. PR 을 못 열거나 열지 않으면 본문을 `handoff/pending/<워크트리 이름>/` 에 두고 그 절대경로를 보고한다. 코디네이터는 worker 의 세션 임시 폴더를 열 수 없다.
 4. **게시가 막히면 묻지 않는다.** `gh pr create` 나 리뷰 회신이 거부되거나, 지금 실행의 지시가 GitHub 게시를 막는다고 판단되면 push 까지 하고 본문 파일(회신이면 스레드 id 와 회신 파일) 경로를 status 로 보낸다. 코디네이터가 그 파일로 연다.
-5. `orch queue gate` 가 `GATE-OK` 이면 status 로 `준비됨 #<PR 번호>, head <40자리 SHA>` 를 보낸다. 보류나 실패는 `references/replying.md` 를 따른다. <!-- orch-rule: ready-status -->
+5. 리뷰 지적 처리를 마치고 `orch queue gate` 가 `GATE-OK` 로 통과한 뒤 `준비됨 #<PR 번호>, head <40자리 SHA>` 를 status 로 보낸다. 보류나 실패는 `references/replying.md` 를 따른다. <!-- orch-rule: ready-status -->
 6. **머지될 때까지 맡는다.** CI 실패, 충돌, 리뷰를 직접 처리한다. 기준 브랜치가 앞서 나간 것만으로는 합치지 않는다. 고쳐 push 하면 5 의 gate 를 다시 통과한 뒤 바뀐 head 로 「준비됨 status」를 다시 보낸다. 코디네이터가 머지한다.
-7. `gh pr view` 로 MERGED 를 확인하고 완료 기준과 머지 뒤 작업까지 채운 뒤 PR 번호와 머지 커밋을 넣어 `worker_done` 을 보낸다. <!-- orch-rule: done-after-merged -->
+7. `gh pr view` 로 MERGED 를 확인한 뒤 지시서의 완료 기준을 다시 읽는다. 다른 PR 머지와 머지 뒤 확인을 포함해 완료 기준을 모두 채운 뒤 PR 번호와 머지 커밋을 넣어 `worker_done` 을 보낸다. <!-- orch-rule: done-after-merged -->
 - 계획을 나눈 뒤 다음 PR 이 남으면 `worker_done` 에 PR 별 이름과 계획 경로를 한 줄씩 적는다. <!-- orch-rule: remaining-prs -->
 - PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 CI 를 기다리고, 통과 뒤 「준비됨」을 한 번 보낸다. <!-- orch-rule: wait-in-turn -->
 
