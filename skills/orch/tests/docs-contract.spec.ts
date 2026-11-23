@@ -134,7 +134,7 @@ test('모델 비교 절차는 두 worker 줄, 숨긴 리뷰, 머지, 판단 순�
   for (const word of ['MODEL-TABLE-STALE', 'MODEL-OUTDATED', '새 세대를 적는다']) assert.ok(launch.includes(word), `두 worker 띄우기에 「${word}」 가 없다`)
   // 비교 id 와 숨긴 리뷰 틀에 모델 이름이 들어가지 않는다(결함 1). 순서 파일의 뜻을 적는다(결함 3)
   const start = section(procedure, '## 비교 시작').join('\n')
-  assert.ok(start.includes('`compare-<행>-<시작 날짜>`') && !start.includes('compare-<모델>'), '비교 id 에 모델 이름이 들어간다')
+  assert.ok(start.includes('`compare-<행>-<시작 날짜>-<번호>`') && !start.includes('compare-<모델>'), '비교 id 에 모델 이름이 들어간다')
   const review = section(procedure, '## 숨긴 리뷰').join('\n')
   assert.ok(review.includes('`base=A` 는 `A.diff` 가 지금 모델의 PR'), '순서 파일의 뜻이 없다')
   assert.ok(review.includes('`spec.md`'), '리뷰어에게 모델 줄을 뺀 지시서 사본을 넘기지 않는다')
@@ -143,6 +143,8 @@ test('모델 비교 절차는 두 worker 줄, 숨긴 리뷰, 머지, 판단 순�
   // 머지: 갈리면 P1·P2, 같으면 준비까지 분(스펙 DECISION34)
   const merge = section(procedure, '## 머지와 건의 결과').join('\n')
   assert.match(merge, /P1·P2 수가 적은 쪽을 머지한다\. P1·P2 수도 같으면 준비까지 분이 짧은 쪽을 머지한다/)
+  // 머지 전에는 routing-log 가 없어 준비까지 분을 띄우기 기록과 준비됨 status 에서 읽는다
+  for (const word of ['launch-history.jsonl', '`준비됨 #<PR>`']) assert.ok(merge.includes(word), `머지 절에 「${word}」 가 없다`)
   // 판단은 문제 → 시간 → 비용 순서다(스펙 DECISION5). 정의의 원본은 DECISION33 이다
   const judge = section(procedure, '## 5건 뒤 판단').filter((line) => /^\d\. /.test(line)).map((line) => line.slice(3, 5))
   assert.deepEqual(judge, ['문제', '시간', '비용'])
