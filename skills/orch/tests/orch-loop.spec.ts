@@ -436,6 +436,18 @@ describe('질문 확인', () => {
     assert.equal(inputs[0].run, 'r')
   })
 
+  test('턴 종료 알림은 앞선 상태 보고와 관계없이 빼고 실제 질문만 UNANSWERED 에 보낸다', () => {
+    const q = question('real-question')
+    const stop = { ...question('msg_stop_idle'), type: 'escalation', subject: 'Worker stopped without reporting' }
+    const ready = { ...question('ready'), type: 'status', subject: `준비됨 #7, head ${'a'.repeat(40)}` }
+    orca({ messages: [stop] })
+    once()
+    assert.deepEqual(events().filter((event) => event.kind === 'UNANSWERED'), [])
+    orca({ messages: [q, stop], statuses: [ready] })
+    once()
+    assert.deepEqual(events().filter((event) => event.kind === 'UNANSWERED').map((event) => event.text), ['real-question'])
+  })
+
   describe('닫힌 질문', () => {
     const SHA = 'a'.repeat(40)
     const ready = { id: 's1', type: 'status', run_id: 'r', payload: { dispatchId: 'd' }, subject: `준비됨 #7, head ${SHA}` }

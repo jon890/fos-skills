@@ -1,9 +1,15 @@
 import { context, isoTime } from './completion.ts'
 import { recipientOf, senderOf, threadOf } from './message-fields.ts'
+import { isQuietStop } from './stop-reports.ts'
 
 export const KINDS = new Set(['question', 'escalation'])
 
 export type Message = Record<string, unknown>
+
+// Orca 의 턴 종료 알림(finished)은 앞선 보고와 관계없이 질문에서 뺀다.
+export function isQuestionCandidate(message: Message): boolean {
+  return KINDS.has(String(message.type)) && !isQuietStop(message)
+}
 
 // worker 쪽으로 간 답이 질문을 푼다. Run 으로 간 worker 의 후속 메시지는 풀지 않는다.
 export function unanswered(rows: Message[], run: string): Message[] {
@@ -11,7 +17,7 @@ export function unanswered(rows: Message[], run: string): Message[] {
   const answered = new Set(
     scoped.filter((r) => threadOf(r) && r.id !== threadOf(r) && recipientOf(r) && recipientOf(r) !== `run:${run}`).map((r) => threadOf(r)),
   )
-  const asked = [...new Map(scoped.filter((m) => KINDS.has(String(m.type)) && recipientOf(m) === `run:${run}` && m.id)
+  const asked = [...new Map(scoped.filter((m) => isQuestionCandidate(m) && recipientOf(m) === `run:${run}` && m.id)
     .map((m) => [m.id, m])).values()]
   const key = (m: Message) => dispatchOf(m) || senderOf(m) || m.id
   const later = (a: Message, b: Message) => String(a.created_at || '') === String(b.created_at || '')

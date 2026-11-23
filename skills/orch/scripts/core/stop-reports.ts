@@ -35,14 +35,13 @@ function payloadOf(m: Message): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
-// 멈춤 보고면 stopReason, 아니면 null 이다. payload 에 stopReason 이 없으면 제목으로 정한다
+// Orca 가 만든 멈춤 보고의 이유다. payload 에 이유가 없으면 제목으로 정한다.
 export function stopReason(m: Message): string | null {
-  if (m.type !== 'escalation') return null
+  if (m.type !== 'escalation' || !String(m.id ?? '').startsWith(PREFIX)) return null
   const reason = payloadOf(m).stopReason
   if (typeof reason === 'string' && reason) return reason
-  const bySubject = SUBJECTS[String(m.subject ?? '')]
-  if (bySubject) return bySubject
-  return String(m.id ?? '').startsWith(PREFIX) ? 'unknown' : null
+  const subject = String(m.subject ?? '')
+  return Object.hasOwn(SUBJECTS, subject) ? SUBJECTS[subject] : 'unknown'
 }
 
 export function isQuietStop(m: Message): boolean {
