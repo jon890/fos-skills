@@ -37,8 +37,11 @@ function fake(rows: Json[], replies: Json[] = []) {
 const ACTIVE = [{ id: 'open', terminal: 'structworker_w' }]
 const ids = (list: Json[]) => list.map((m) => m.id)
 
-test('자동 알림은 id 접두로만 가린다 (R2)', () => {
-  assert.equal(autoAlertKind({ id: 'msg_stop_1d39bda81e4601e1fd242ef9' }), 'stop')
+test('Orca 자동 알림은 id 접두로 확인한다 (R2)', () => {
+  for (const id of ['msg_stop_aa', 'msg_rest_aa']) {
+    assert.equal(autoAlertKind({ id }), 'stop')
+    assert.equal(alertNoteText(stop(id, 'x', 'errored')), '오류로 멈춤')
+  }
   assert.equal(autoAlertKind({ id: 'msg_chaterr_c4fb0a4cdbd1db6875aa79b5' }), 'error')
   assert.equal(autoAlertKind({ id: 'msg_stopx' }), null)
   assert.equal(autoAlertKind({ id: 'msg_9f2c0a' }), null)
@@ -97,15 +100,17 @@ test('더 늦은 자동 알림에 답했으면 앞선 막힘도 푼 것이고, �
 
 test('턴 종료 알림은 앞선 상태 보고와 관계없이 실제 질문을 가리지 않는다', async () => {
   const q = ask('msg_q', 'question', '2026-11-02T09:30:00Z')
-  const finished = stop('msg_stop_aa', '2026-11-02T10:00:00Z')
-  for (const subject of [null, `준비됨 #7, head ${'a'.repeat(40)}`, '코디네이터의 재개 신호를 기다립니다']) {
-    const reports = subject === null ? [] : [ask('msg_status', 'status', '2026-11-02T09:00:00Z', { subject })]
-    const parse = (messages: Json[]) => ids(parseQuestions(JSON.stringify({ messages }), RUN))
-    assert.deepEqual(parse([...reports, finished]), [])
-    assert.deepEqual(parse([...reports, q, finished, answer('msg_stop_aa')]), ['msg_q'])
-    const result = await queryQuestions(fake([...reports, q, finished], [answer('msg_stop_aa')]), RUN, ACTIVE)
-    assert.deepEqual(ids(result.questions), ['msg_q'])
-    assert.deepEqual(result.asking.sort(), ['open', 'structworker_w'])
+  for (const id of ['msg_stop_aa', 'msg_rest_aa']) {
+    const finished = stop(id, '2026-11-02T10:00:00Z')
+    for (const subject of [null, `준비됨 #7, head ${'a'.repeat(40)}`, '코디네이터의 재개 신호를 기다립니다']) {
+      const reports = subject === null ? [] : [ask('msg_status', 'status', '2026-11-02T09:00:00Z', { subject })]
+      const parse = (messages: Json[]) => ids(parseQuestions(JSON.stringify({ messages }), RUN))
+      assert.deepEqual(parse([...reports, finished]), [])
+      assert.deepEqual(parse([...reports, q, finished, answer(id)]), ['msg_q'])
+      const result = await queryQuestions(fake([...reports, q, finished], [answer(id)]), RUN, ACTIVE)
+      assert.deepEqual(ids(result.questions), ['msg_q'])
+      assert.deepEqual(result.asking.sort(), ['open', 'structworker_w'])
+    }
   }
 })
 
@@ -199,6 +204,14 @@ test('같은 worker 의 오류는 늦은 하나로 묶고, 답을 기다리는 w
   assert.deepEqual(errored.asking.sort(), ['open', 'structworker_w'])
   // 답한 질문은 기다리는 것이 아니다
   assert.deepEqual((await queryQuestions(fake([ask('msg_q1', 'question', '2026-11-02T08:00:00Z')], [answer('msg_q1')]), RUN, ACTIVE)).asking, [])
+})
+
+test('연결 끊김 알림은 두 접두사 모두 worker 줄에 표시한다', async () => {
+  for (const id of ['msg_stop_lost', 'msg_rest_lost']) {
+    const result = await queryQuestions(fake([stop(id, '2026-11-23T11:00:00Z', 'lost')]), RUN, ACTIVE)
+    assert.deepEqual(result.questions, [])
+    assert.deepEqual(workerNotes(ACTIVE[0], null, result.notes), ['연결 끊김'])
+  }
 })
 
 const pr = (extra: Json) => ({ number: 1, branch: 'wt-a', pass: 2, fail: 0, pending: 0, failed: [], ...extra })

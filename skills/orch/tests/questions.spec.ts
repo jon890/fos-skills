@@ -280,9 +280,12 @@ describe('snapshot', () => {
 
   test('턴만 끝낸 멈춤 보고는 질문이 아니고, 오류로 멈춘 보고는 질문으로 남는다', () => {
     const quiet = message('msg_stop_a', 'escalation', { subject: 'Worker stopped without reporting', payload: JSON.stringify({ dispatchId: 'd', stopReason: 'finished' }) })
+    const rest = { ...quiet, id: 'msg_rest_a' }
+    const restError = { ...rest, id: 'msg_rest_b', payload: { dispatchId: 'd', stopReason: 'errored' } }
     const errored = message('msg_stop_b', 'escalation', { subject: 'Worker stopped on an error without reporting', payload: JSON.stringify({ dispatchId: 'd', stopReason: 'errored' }) })
-    fake({ all: { messages: [quiet, errored] }, peek: { messages: [] } })
-    assert.deepEqual(snapshot('r').pending.map((m) => m.id), ['msg_stop_b'])
+    const restLost = message('msg_rest_lost', 'escalation', { subject: 'Worker lost without reporting', payload: { dispatchId: 'd', stopReason: 'lost' } })
+    fake({ all: { messages: [quiet, rest, errored, restError, restLost] }, peek: { messages: [] } })
+    assert.deepEqual(snapshot('r').pending.map((m) => m.id), ['msg_stop_b', 'msg_rest_b', 'msg_rest_lost'])
   })
 
   test('질문 기록이 목록이 아니면 빈 성공이 아니라 오류다', () => {

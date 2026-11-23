@@ -1,6 +1,6 @@
 import { boardApprovalReader } from '../../../skills/orch/scripts/lib/board-queries/board-approval-view.ts'
 import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
-import { isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
+import { hasStopReportId, isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
@@ -279,20 +279,20 @@ export function parseQuestions(stdout, runId, keyOf = null, shown = null) {
 }
 
 // Orca 가 worker 대신 만드는 자동 알림의 종류. id 접두로 가린다(스펙 D10, 2026-11-02 inbox 실측).
-//   msg_stop_<hex>     worker 가 worker_done 없이 턴을 끝냈다(「Worker stopped without reporting」 등)
+//   msg_stop_<hex>, msg_rest_<hex>  worker 가 worker_done 없이 턴을 끝냈다(「Worker stopped without reporting」 등)
 //   msg_chaterr_<hex>  에이전트 오류(「Agent hit an error: …」)
 // worker 가 직접 보낸 메시지는 제목이 같아도 id 가 msg_<hex> 라 자동 알림이 아니다. 아니면 null 이다
 export function autoAlertKind(m) {
   const id = String((m && m.id) || '')
-  if (id.startsWith('msg_stop_')) return 'stop'
+  if (hasStopReportId(id)) return 'stop'
   if (id.startsWith('msg_chaterr_')) return 'error'
   return null
 }
 
 const notAutoAlert = (m) => !autoAlertKind(m)
 
-// 멈춤 보고(msg_stop_)의 worker 줄 글. 턴만 끝낸 것(finished)과 모르는 이유는 글이 없다
-const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고' }
+// 멈춤 보고의 worker 줄 글. 턴만 끝낸 것(finished)과 모르는 이유는 글이 없다
+const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고', lost: '연결 끊김' }
 
 // 자동 알림 하나를 worker 줄 글로. 오류는 「오류: <요약>」, 멈춤 보고는 STOP_NOTES 다. 글이 없으면 ''
 export function alertNoteText(m) {
