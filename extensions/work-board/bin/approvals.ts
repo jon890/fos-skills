@@ -7,6 +7,7 @@
 // 사용법:
 //     approvals.ts where --repo DIR
 //         승인 파일의 절대경로 한 줄(기존 명령 호환용)
+//         이 명령을 부르는 기존 스크립트가 새 조회 경로로 옮겨진 것을 확인한 뒤 정리한다.
 //     approvals.ts self [--live]
 //         {"terminal": "term_…" | null, "worker": true | false | null} 한 줄
 //         terminal 은 이 프로세스의 ORCA_TERMINAL_HANDLE 이다. 변수가 없으면(Orca 밖 창) worker 는 false 다.
