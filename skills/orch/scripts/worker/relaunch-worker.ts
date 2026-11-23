@@ -63,6 +63,7 @@ import { limitedScreen, structuredScreen, isStructured } from '../lib/sessions.t
 import { screenLines } from '../lib/screen.ts'
 import { selectionsOf } from '../lib/spec.ts'
 import { leftTerminals, selectionReject, uncommitted } from './launch-worker.ts'
+import { parseModelTurn } from '../lib/model-turn.ts'
 
 type Json = Record<string, unknown>
 
@@ -154,7 +155,7 @@ function target(dispatch: string, run: string, repoArg: string | null): Target {
   if (status === 'completed') throw new Refused(`dispatch ${dispatch} 는 completed 다. PR 이 열려 있으면 ${orchWord()} worker continue --dispatch ${shQuote(dispatch)} 를 쓴다`)
   if (!LIVE_DISPATCH.has(status) && status !== 'failed' && status !== 'abandoned') throw new Refused(`dispatch 상태 ${status || '-'} 는 다시 띄울 대상이 아니다`)
   const terminal = text(worker.agentTerminalHandle) || text(head.assigneeHandle) || recorded.terminal || null
-  const requested = recorded.effective?.candidateOverride?.from ?? recorded
+  const requested = recorded.effective?.alternation?.from ?? recorded.effective?.candidateOverride?.from ?? recorded
   return {
     dispatch, run, task, status, terminal, worktree, repo, spec, shown,
     previous: { agent: requested.agent ?? null, model: requested.model ?? null, effort: requested.effort ?? null, spec: recorded.spec ?? null },
@@ -330,6 +331,7 @@ function relay(result: { stdout: string; stderr: string }): void {
 
 async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<number> {
   const launcher = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
+  let reservedTurn = ''
   try {
     out(`RELAUNCH-TARGET ${t.dispatch} task=${t.task} status=${t.status} worktree=${t.worktree} spec=${t.spec}`)
     limitCheck(t, a.workingAck)
@@ -353,12 +355,22 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
       throw new Refused(`워크트리에 커밋 안 된 변경이 ${dirty.length}개 있다. 새 worker 가 이어받을 변경이면 --dirty-ack <이유> 를 준다`, shown)
     }
     // 6-1. 옛 dispatch 로 이력을 찾게 --retry-of 를 준다. 띄우지 않으므로 Task 상태와 상관없다
-    const pre = await execute(scriptCommand(launcher, [...childArgs(a, t, true), '--preflight', '--', ...a.passthru]), { timeoutMs: LAUNCH_MS, env: shortEnv() })
+    const pre = await execute(scriptCommand(launcher, [...childArgs(a, t, true), '--preflight', '--', ...a.passthru]), {
+      timeoutMs: LAUNCH_MS, env: { ...shortEnv(), ORCH_RELAUNCH_TURN: '' },
+    })
     if (pre.code !== 0 || !/^PREFLIGHT-OK$/m.test(pre.stdout)) {
       relay(pre)
       const modelRefusal = /^(?:거부:|REFUSED) (MODEL-(?:UNAVAILABLE|OUTDATED).*|EFFORT-UNAVAILABLE.*|같은 등급에서 사용 한도가 남은 모델이 없다)$/m.exec(pre.stdout + '\n' + pre.stderr)
       if (modelRefusal) throw new Refused(modelRefusal[1])
       throw new Refused(`launch-worker 의 띄우기 전 검사가 종료 코드 ${pre.code} 로 멈췄다. 위 거부를 고친 뒤 같은 명령을 다시 부른다`)
+    }
+    const line = /^LAUNCH-EFFECTIVE (.+)$/m.exec(pre.stdout)?.[1]
+    if (line) {
+      const turn = JSON.parse(line).alternation
+      if (turn) {
+        reservedTurn = `${turn.grade} ${turn.agent}`
+        if (!parseModelTurn(reservedTurn)) throw new Refused('띄우기 전 검사에서 모델 차례를 읽지 못했다')
+      }
     }
   } catch (e) {
     return refused(e)
@@ -422,7 +434,7 @@ async function relaunch(a: Args, t: Target, execute: typeof runAsync): Promise<n
   if (a.dirtyAck) args.push('--dirty-ack', a.dirtyAck)
   const launched = await execute(scriptCommand(launcher, [...args, '--', ...a.passthru]), {
     timeoutMs: Number(a.watch ?? 90) * 1000 + LAUNCH_MS,
-    env: shortEnv(),
+    env: { ...shortEnv(), ORCH_RELAUNCH_TURN: reservedTurn },
   })
   relay(launched)
   const started = /^(?:LAUNCHED|STALLED-START) (\S+)/m.exec(launched.stdout)

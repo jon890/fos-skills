@@ -53,7 +53,7 @@ orch worker launch --spec "$SPEC_FILE" --name "$NAME" --base "$BASE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
-지시서의 `worker 선택:` 줄이 effort 를 `기본` 으로 적었으면(예: Haiku 행) `--effort "$EFFORT"` 를 통째로 뺀다. 넣으면 `launch-worker` 가 줄과 인자가 다르다며 종료 코드 1 로 거부한다. 이 절 아래와 다른 절의 같은 꼴 블록도 같다.
+넘길 조합의 effort가 `기본`이면(예: Haiku 등급) `--effort "$EFFORT"` 를 통째로 뺀다. 행의 두 조합에서 벗어난 인자를 주면 `launch-worker`가 종료 코드 1로 거부한다. 이 절 아래와 다른 절의 같은 꼴 블록도 같다.
 
 `make-worktree` 가 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
 새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
@@ -87,7 +87,8 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
 
 ## 띄운 직후 확인
 
-- `worker-start` 응답의 `launch.effective`(기본 출력의 `LAUNCH-EFFECTIVE` 줄)가 1단계에서 고른 모델, effort 와 같다. 기본 출력의 `LAUNCHED <dispatch> <터미널> <워크트리>` 에서 터미널을 읽는다
+- `worker-start` 응답의 `launch.effective`(기본 출력의 `LAUNCH-EFFECTIVE` 줄)에서 그 띄우기에 쓴 에이전트, 모델, effort를 확인한다. 기본 출력의 `LAUNCHED <dispatch> <터미널> <워크트리>` 에서 터미널을 읽는다
+  - `LAUNCH-EFFECTIVE`에 `alternation`이 있으면 등급의 그 차례로 제공자를 정했다. 지시서의 제공자와 달라도 정상이다.
   - `LAUNCH-EFFECTIVE` 의 `candidateOverride.reason` 이 `한도: ` 로 시작하면 같은 등급의 모델로 바꿔 띄운 것이다. `from` 에 처음 요청한 값이 남는다. `USAGE-UNKNOWN <제공자> <이유>` 가 나오면 그 제공자의 한도를 확인하지 못한 것이다. [시작 전 한도 검사](agent-selection.md#사용-한도에-걸렸을-때)
   - `LAUNCH-EFFECTIVE` 에 `generation` 이 있으면 같은 계열의 다른 세대로 띄운 것이다. Codex 는 새 세대로 올렸거나(`같은 계열 새 세대`) 이 계정이 받지 못해 그 띄우기만 옛 세대로 내렸고, Claude 는 계열 이름(`fable`)으로 넘겨 최신으로 띄웠다. 고른 모델과 세대가 달라도 정상이다([`agent-selection.md`](agent-selection.md) 「새 모델과 새 세대」)
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
@@ -200,7 +201,7 @@ codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설�
 worker 가 `stage.detail: agent_readiness`, `outcome: failed` 로 아무 출력 없이 끝나면, codex 는 먼저 위 「codex 준비 판정」 의 설정을 본다.
 설정이 있는데도 실패하면 그 모델이 이 환경에서 뜨지 않는 것이므로 같은 Task 를 다른 모델로 다시 띄운다. `launch-worker` 의 `--spec` 은 검사할 지시서이고, `--task` 는 기존 Task 를 고른다. `--retry-of` 는 `--task` 와 함께 쓰고, Task 가 `failed` 나 `blocked` 일 때만 받아들여진다. 터미널이 끊겨 `abandoned` 가 된 경우는 아래 「끊긴 worker 다시 띄우기」 의 표를 따른다.
 `$WORKTREE` 는 처음 띄운 워크트리 경로다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다.
-다른 모델을 고르면 지시서의 `worker 선택:` 줄을 먼저 고친다. `launch-worker` 가 선택 검사 뒤 이력의 워크트리에서 같은 Task 를 다시 띄운다.
+행과 다른 조합을 직접 고르면 지시서의 `worker 선택:` 줄에 그 값과 후보 밖 이유를 적는다. 같은 등급으로 다시 띄우면 새 차례를 쓴다. `launch-worker` 가 선택 검사 뒤 이력의 워크트리에서 같은 Task 를 다시 띄운다.
 
 ```bash
 orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"

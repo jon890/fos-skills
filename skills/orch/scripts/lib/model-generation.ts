@@ -166,10 +166,15 @@ export function claudeGeneration(slug: string): Generation | null {
 
 export type StaleRow = { row: string; from: string; to: string }
 
-// 모델 표 줄 하나의 Codex 모델 자리와 그 자리의 effort(effort 칸의 같은 순서 값)
+// 등급 표는 모델과 effort를 같은 칸에 쓴다. 기본 브랜치에 옛 표가 남아 있으면 두 칸에서 읽는다.
 function occurrences(line: string): { slug: string; effort: string | null }[] {
-  const cells = line.split('|').slice(1, -1)
+  const cells = line.split('|').slice(1, -1).map(cell => cell.trim())
   if (cells.length !== 5) return []
+  if (cells[0] === '`security-review`') return []
+  if (!cells[2].includes('`codex`')) {
+    return [...cells[4].matchAll(/`(gpt-[^`]+)`\s+`([^`]+)`/g)]
+      .map(([, slug, effort]) => ({ slug, effort: effort === '기본' ? null : effort }))
+  }
   const efforts = [...cells[4].matchAll(/`([^`]+)`/g)].map(m => (m[1] === '기본' ? null : m[1]))
   return [...cells[3].matchAll(/`([^`]+)`/g)].map((m, k) => ({ slug: m[1], effort: efforts[k] ?? efforts[0] ?? null })).filter(at => at.slug.startsWith('gpt-'))
 }

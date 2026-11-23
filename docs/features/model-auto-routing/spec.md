@@ -29,7 +29,7 @@ PR 은 셋이고 이 순서로 머지한다.
 
 범위 밖:
 
-- 여러 계정의 사용량으로 계정과 제공자를 고르는 PR 2(사용자 결정 2026-11-23). 사용량 때문에 Fable 행이 astra 로 저절로 바뀌는 일도 없다. astra 는 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 「기본 후보에서 뺀 모델」 대로 쓴다.
+- 여러 계정의 사용량으로 계정과 제공자를 고르는 PR 2(사용자 결정 2026-11-23). Fable과 astra를 비롯한 현재의 모델 선택은 [같은 등급 모델 교대](../model-alternation/spec.md)가 대신한다.
 - 비교의 자동 시작, 두 worker 를 묶는 관리, 숨긴 리뷰와 관문의 자동 계산. 코디네이터가 절차대로 한다(DECISION32).
 - Codex CLI 나 Claude Code 를 자동으로 갱신하는 것. 알리기만 한다.
 - 이미 떠 있는 worker 의 모델이나 계정을 바꾸는 것.

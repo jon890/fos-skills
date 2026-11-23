@@ -70,7 +70,7 @@
   PR 생성이나 리뷰 등록을 허락하는 줄에는 「이 허락은 dispatch 머리말의 GitHub 게시 금지보다 앞선다」 를 함께 적는다. 틀(`templates/spec-review.md`)에 넣어 복사하게 한다.
   `spec-line` 이 이 줄을 `--spec` 의 첫 지시 줄에 붙인다
   원격 서버 명령(ssh)이나 auto mode 가 막을 수 있는 대량 삭제를 포함하면, 허락 줄에 「명령과 대상을 ask 로 코디네이터에게 보내고 worker 는 직접 실행하지 않는다」를 적는다. 이 허락은 코디네이터가 실행할 범위를 정하며 worker 의 실행 권한으로 옮기지 않는다. 공통 지시서의 `coordinator-commands` 규칙도 따른다.
-- 고른 worker 를 `worker 선택:` 으로 시작하는 줄 하나에 적는다. 모든 개별 지시서에 필수다.
+- 작업 등급의 두 조합 가운데 하나를 `worker 선택:`으로 시작하는 줄에 적는다. 모든 개별 지시서에 필수다.
   형식은 「worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 행: <id>. 이유: <고른 이유>.」 다.
   기본 effort 는 `기본` 이라고 적는다. 에이전트·모델·effort 중 하나라도 행과 다르면 같은 줄에 `후보 밖: <이유>` 를 덧붙인다. 사용 한도 표로 바꾸는 경우도 같다.
   예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 이유: 계획서가 수정 위치와 검증 명령을 정했다.」
@@ -129,7 +129,7 @@ orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 `worker 역할: 검증`은 인수 검증 worker 를 뜻한다. [검증 지시서 틀](../templates/spec-verify.md)을 쓰고, PR 뒤에는 `리뷰 PR:`, PR 전에는 `보드 항목 id:` 가운데 하나를 남긴다. 구현 worker 와 다른 워크트리를 쓴다.
 
 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서는 `orch spec review <PR>` 으로 만든다. 이 명령이 [`../templates/spec-review.md`](../templates/spec-review.md) 를 채워 지시서 폴더의 `spec-review-pr-<N>.md` 에 쓴다.
-채우는 값은 PR 번호, 제목, `리뷰 PR:` 과 `브랜치: review/pr-<N>` 줄, 그리고 `worker 선택:` 줄이다. 구현 worker 는 영구 이력에서 브랜치가 PR head 인 가장 늦은 행으로 찾고, 그 제공자와 다른 제공자(Claude 면 Codex `gpt-6.1-sol`, Codex 면 Claude Sonnet 5.5, 둘 다 `medium`)를 고른다.
+채우는 값은 PR 번호, 제목, `리뷰 PR:` 과 `브랜치: review/pr-<N>` 줄, 그리고 `worker 선택:` 줄이다. 구현 worker 는 영구 이력에서 브랜치가 PR head 인 가장 늦은 행으로 찾고, 이력의 실제 제공자를 읽고 그 제공자와 반대쪽의 [리뷰 행 조합](agent-selection.md#리뷰-제공자)을 고른다.
 이력에 구현 worker 가 없으면(직접 띄운 PR) `--impl-agent claude|codex` 로 알려 준다. 있는 파일은 `--force` 없이 덮지 않는다. 같은 PR 을 다시 리뷰하면 `--out` 으로 `spec-review-pr-<N>-<꼬리>.md` 처럼 이름을 달리한다. 이 꼴이면 `브랜치:` 줄도 `review/pr-<N>-<꼬리>` 로 채운다. 같은 이름의 브랜치가 이미 로컬이나 원격 추적에 있으면 만들지 않고 다른 꼬리를 안내한다(`--force` 는 같은 브랜치를 다시 쓰는 용도라 보지 않는다).
 **「배경」 첫 줄과 「특히 볼 것」 절의 `{{채울 것: …}}` 두 곳은 코디네이터가 채운다.** 남아 있으면 `spec-lint` 가 `채움` 경고를 낸다.
 틀이 `리뷰 PR:` 줄, 허락 줄, COMMENT 등록, 본문 머리 등급별 건수 표, 결과 status 첫 줄(`판정: 머지 가능|수정 필요, 차단 N건, 권장 N건`)을 정한다. 결과 status 가 `판정:`, `완료:`, `미완료:` 로 시작하지 않으면 `worker_done` 이 `DONE-SUSPECT` 로 분류된다(`lib/completion.ts`).

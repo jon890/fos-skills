@@ -15,7 +15,7 @@ function entryOf(text: string): Entry | null {
   return null
 }
 
-export type LimitRow = { from: Entry; same: Entry[]; cell: string }
+export type LimitRow = { from: Entry; same: Entry[]; cell: string; grade?: string }
 
 // 「사용 한도에 걸렸을 때」 표의 줄. 제목이나 칸 꼴이 바뀌면 빈 목록이다
 export function limitRows(table: string): LimitRow[] {
@@ -26,12 +26,25 @@ export function limitRows(table: string): LimitRow[] {
   for (const line of lines.slice(start + 1)) {
     if (/^#{1,6} /.test(line)) break
     const cells = line.split('|').slice(1, -1).map(cell => cell.trim())
-    if (cells.length !== 3) continue
+    if (cells.length !== 3 && cells.length !== 4) continue
     const from = entryOf(cells[0])
     if (!from) continue
-    rows.push({ from, same: cells[1].split(/,\s*/).map(entryOf).filter((e): e is Entry => e !== null), cell: cells[1] })
+    const grade = cells[3]?.match(/^`([a-z][a-z0-9-]*)`$/)?.[1]
+    rows.push({ from, same: cells[1].split(/,\s*/).map(entryOf).filter((e): e is Entry => e !== null), cell: cells[1], ...(grade ? { grade } : {}) })
   }
   return rows
+}
+
+// 등급의 두 제공자는 등급을 표시한 한도 표의 행과 첫 반대 제공자에서 읽는다.
+export function gradeCandidates(table: string): Map<string, Entry[]> {
+  const candidates = new Map<string, Entry[]>()
+  for (const row of limitRows(table)) {
+    if (!row.grade) continue
+    const other = row.same.find(entry => entry.agent !== row.from.agent)
+    const source = { ...row.from, effort: null }
+    candidates.set(row.grade, other ? [source, other] : [source])
+  }
+  return candidates
 }
 
 // 걸린 모델의 줄. effort 까지 맞는 줄이 먼저이고, 없으면 effort 없는 줄이다. 모델은 같은 계열이면 세대가 달라도 맞는 것으로 본다(model-generation.ts)

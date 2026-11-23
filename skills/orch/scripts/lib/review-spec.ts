@@ -31,7 +31,7 @@ export function implementerOf(history: LaunchHistory[], branch: string): { found
   const rows = history.filter((row) => row.branch === branch).sort((a, b) => a.at.localeCompare(b.at))
   const known = rows.flatMap((row) => {
     const agent = row.effective?.agent ?? row.agent
-    return agent ? [{ agent, model: row.effective?.model ?? row.model ?? null, effort: row.effective?.effort ?? row.effort ?? null, dispatch: row.dispatch }] : []
+    return agent ? [{ agent, model: row.effective?.modelId ?? row.effective?.model ?? row.model ?? null, effort: row.effective?.effort ?? row.effort ?? null, dispatch: row.dispatch }] : []
   })
   return { found: known.at(-1) ?? null, agents: [...new Set(known.map((row) => row.agent))] }
 }

@@ -107,7 +107,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | --- | --- | --- | --- |
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort, 모델 표의 행 id 와 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
-| 3 | 띄우기 | `orch worker launch` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `LAUNCH-EFFECTIVE` 줄(`launch.effective`)이 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
+| 3 | 띄우기 | `orch worker launch`가 종료 코드 0과 `LAUNCHED` 줄로 끝났다. `LAUNCH-EFFECTIVE`에서 실제 모델과 모델을 고른 이유를 확인했고, 대상 저장소 `git status`에 `worktrees/`가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 저장소별 루프가 살아 있고 Run 이 등록돼 있다. 메시지는 Orca 가 깨우며 별도 대기를 걸지 않는다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고, CI 가 같은 head SHA 로 돌린 검사는 CI 결과로 확인했고 CI 밖 검사는 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
@@ -117,7 +117,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 
 ## 1. 에이전트 고르기
 
-일의 내용으로 행을 고르고, 그 행의 worker 와 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint` 와 `launch-worker` 가 이 줄을 검사한다. 에이전트·모델·effort 는 모델 표와 정확히 대조하고 하나라도 다르면 후보 밖 이유가 필요하다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
+일의 내용으로 행을 고르고, 그 등급에 있는 조합 하나와 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint`와 `launch-worker`는 등급의 두 조합을 확인한다. 다른 조합을 직접 고를 때는 후보 밖 이유를 적는다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
 
 ## 2. 지시서 쓰기
 

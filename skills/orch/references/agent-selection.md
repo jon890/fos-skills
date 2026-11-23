@@ -1,30 +1,35 @@
 # 1. 에이전트 고르기
 
-**일의 내용으로 행을 고르고, 그 행에 정해진 worker 하나와 이유를 지시서에 적는다.**
+**일의 내용으로 행을 고르고, 그 등급의 두 조합 가운데 하나와 이유를 지시서에 적는다.**
 에이전트·모델·effort 가운데 하나라도 행과 다르면 `후보 밖: <이유>` 를 적는다. 사용자가 지정하거나 사용 한도 표로 바꾸는 경우도 같다.
-시작 전 한도 검사로 `launch-worker` 가 같은 등급 모델을 고르면 지시서를 그대로 둔다(아래 「사용 한도에 걸렸을 때」).
+`launch-worker` 는 장비 전체의 등급별 차례로 제공자를 골라 띄운다. 지시서의 조합은 등급을 확인하는 데 쓴다.
 줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유한다. 명령 예시는 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 선택 근거와 실측은 [evidence.md](../../../docs/features/orch-routing/evidence.md), 사용자 결정은 [단일 worker 스펙](../../../docs/features/orch-single-worker/spec.md) 에 둔다.
+
+<a id="기본-후보에서-뺀-모델"></a>
 
 ## 모델
 
 코디네이터가 일의 내용으로 행을 고른다. 정해진 문구나 줄만 바꾸는 문서 수정은 `simple-apply`, 문단이나 규칙을 새로 쓰거나 판단이 필요한 문서 일은 `design` 이다.
 어려운 일인지는 코디네이터가 판단하고 `이유:` 에 어려운 까닭을 적는다.
 
-| id | Task 성격 | 에이전트 | 모델 | effort |
+| id | Task 성격 | 등급 | 행의 effort | 등급의 두 모델과 effort |
 | --- | --- | --- | --- | --- |
-| `impl-planned` | 계획서가 수정 위치와 검증 명령을 정한 구현 | `codex` | `gpt-6.2-sol` | `low` |
-| `impl-explore` | 저장소를 탐색해야 하는 여러 파일 구현 | `codex` | `gpt-6.2-sol` | `medium` |
-| `small-fix` | 수정 위치가 정해진 작은 코드 수정. 분기나 상태가 있는 것 | `codex` | `gpt-6.2-sol` | `low` |
-| `simple-apply` | 정해진 문구나 줄만 바꾸는 문서 수정, 설정 한 줄, 리뷰 지적 단순 반영 | `claude` | `claude-haiku-5-5` | `기본` |
-| `design` | 일반 기능의 technical-design, spec 인터뷰, 문단이나 규칙을 새로 쓰는 문서 일 | `codex` | `gpt-6.2-sol` | `medium` |
-| `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | `claude` | `claude-fable-5-2` | `기본` |
-| `impl-hard` | 여러 모듈에 걸친 큰 구조 정리처럼 정말 어려운 구현 | `claude` | `claude-fable-5-2` | `기본` |
-| `visual` | 화면이나 이미지를 보고 판정, 브라우저나 앱 조작 | `codex` | `gpt-6.1-terra` | `low` |
-| `review` | 리뷰와 검증. Claude 가 만들었으면 앞 조합, Codex 가 만들었으면 뒤 조합 | `codex` / `claude` | `gpt-6.2-sol` / `claude-sonnet-5-5` | `medium` / `medium` |
-| `security-review` | 공격 경로를 재현하는 보안 리뷰 | `claude` | `claude-sonnet-5-5` | `medium` |
+| `impl-planned` | 계획서가 수정 위치와 검증 명령을 정한 구현 | `opus` | `low` | `gpt-6.2-sol` `low` / `claude-opus-5-5` `medium` |
+| `impl-explore` | 저장소를 탐색해야 하는 여러 파일 구현 | `opus` | `medium` | `gpt-6.2-sol` `medium` / `claude-opus-5-5` `medium` |
+| `small-fix` | 수정 위치가 정해진 작은 코드 수정. 분기나 상태가 있는 것 | `opus` | `low` | `gpt-6.2-sol` `low` / `claude-opus-5-5` `medium` |
+| `simple-apply` | 정해진 문구나 줄만 바꾸는 문서 수정, 설정 한 줄, 리뷰 지적 단순 반영 | `haiku` | `기본` | `claude-haiku-5-5` `기본` / `gpt-6-luna` `기본` |
+| `design` | 일반 기능의 technical-design, spec 인터뷰, 문단이나 규칙을 새로 쓰는 문서 일 | `opus` | `medium` | `gpt-6.2-sol` `medium` / `claude-opus-5-5` `medium` |
+| `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | `fable` | `기본` | `claude-fable-5-2` `기본` / `gpt-6.2-astra` `medium` |
+| `impl-hard` | 여러 모듈에 걸친 큰 구조 정리처럼 정말 어려운 구현 | `fable` | `기본` | `claude-fable-5-2` `기본` / `gpt-6.2-astra` `medium` |
+| `visual` | 화면이나 이미지를 보고 판정, 브라우저나 앱 조작 | `sonnet` | `low` | `claude-sonnet-5-5` `low` / `gpt-6.2-sol` `low` |
+| `review` | 리뷰와 검증. 구현한 쪽과 다른 제공자를 고른다 | `sonnet` | `medium` | `claude-sonnet-5-5` `medium` / `gpt-6.2-sol` `medium` |
+| `security-review` | 공격 경로를 재현하는 보안 리뷰. Claude를 고른다 | `sonnet` | `medium` | `claude-sonnet-5-5` `medium` / `gpt-6.2-sol` `medium` |
 
-- `spec-lint` 와 `launch-worker` 는 에이전트·모델·effort 전체를 정확히 대조한다. 낮은 effort 로 바꾸는 경우도 후보 밖 이유가 필요하다.
+- 행의 두 모델은 아래 한도 표에서 등급이 표시된 행의 모델과 첫 반대 제공자다. 그 칸에 effort가 있으면 그 값을, 없으면 행의 값을 쓴다.
+- 등급에 반대 제공자 대응이 없으면 한도 표에 적힌 모델로 띄운다.
+- `spec-lint`와 `launch-worker`는 두 조합을 모두 허용한다. 보안 리뷰의 시작 조합은 Claude다. 다른 모델이나 effort를 쓰려면 `후보 밖: <이유>`를 적는다. 이 경우 차례를 사용하지 않는다.
+- `LAUNCH-EFFECTIVE`와 띄우기 이력의 `effective.alternation`에 교대 이유가 남는다. 같은 등급이면 저장소나 작업 행이 달라도 차례가 이어진다.
 - Opus 의 high 이상에 별도 근거를 요구하지 않고 ultra 도 따로 금지하지 않는다. 행과 다르면 모두 후보 밖 이유 하나로 다룬다.
 - 기본 effort 는 `기본` 이라고 적고 실행 옵션 `--effort` 는 생략한다. 숫자 단계의 effort 와 같은 값으로 취급하지 않는다.
 - 이유가 있는 실제 예외는 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.candidateOverride` 에 행·에이전트·모델·effort·이유를 남긴다. effort 가 다르면 기존 키 `effortLimit` 에 행의 값을 남긴다.
@@ -52,22 +57,23 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 루프는 한 시간마다 `LIMIT-CHECK <제공자>`를 보내며, 받으면 한도 해제를 확인해 새 작업부터 모델 표의 후보로 돌아오고 `orch worker limit-clear`로 알림을 끝낸다. 종료 조건과 처리 순서는 [사용 한도 확인 알림](replying.md#사용-한도-확인-알림)을 따른다.
 
-코디네이터가 3번에서 모델을 직접 고를 때는 같은 등급 대응이나 한 단계 아래 후보를 쓴다. 시작 전 자동 대체는 같은 등급 대응 칸만 쓴다. 두 경우 모두 표에 있는 후보에서 고른다. 이 표의 astra 는 Fable 의 한도 대응에 쓰며, 평소 선택 기준은 [기본 후보에서 뺀 모델](#기본-후보에서-뺀-모델)을 따른다.
+코디네이터가 3번에서 모델을 직접 고를 때는 같은 등급 대응이나 한 단계 아래 후보를 쓴다. 시작 전 자동 대체는 같은 등급 대응 칸만 쓴다. 두 경우 모두 표에 있는 후보에서 고른다. 교대로 띄울 때는 등급을 표시한 행에서 고른 두 모델만 확인한다.
 
-| 걸린 모델 | 같은 등급 대응 | 한 단계 아래 |
-| --- | --- | --- |
-| Claude Opus 5.5 | `gpt-6.2-sol` `high`, `gpt-6.2-sol` `medium` | Claude Sonnet 5.5 |
-| `gpt-6.2-sol` `high` | Claude Opus 5.5 | `gpt-6.2-sol` `medium` |
-| `gpt-6.2-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
-| Claude Sonnet 5.5 | `gpt-6.2-sol`, `gpt-6.1-terra` | Claude Haiku 5.5 |
-| `gpt-6.2-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
-| Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.2-astra` `medium`, `gpt-6.2-sol` `medium` | Claude Sonnet 5.5 |
-| Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
-| `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
+| 걸린 모델 | 같은 등급 대응 | 한 단계 아래 | 교대 등급 |
+| --- | --- | --- | --- |
+| Claude Opus 5.5 | `gpt-6.2-sol` `high`, `gpt-6.2-sol` `medium` | Claude Sonnet 5.5 |  |
+| `gpt-6.2-sol` `high` | Claude Opus 5.5 | `gpt-6.2-sol` `medium` |  |
+| `gpt-6.2-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 | `opus` |
+| Claude Sonnet 5.5 | `gpt-6.2-sol`, `gpt-6.1-terra` | Claude Haiku 5.5 | `sonnet` |
+| `gpt-6.2-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |  |
+| Claude Fable 5.2 | Claude Opus 5.5 `medium`, `gpt-6.2-astra` `medium`, `gpt-6.2-sol` `medium` | Claude Sonnet 5.5 | `fable` |
+| `gpt-6.2-astra` | Claude Fable 5.2 | Claude Opus 5.5 | |
+| Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 | `haiku` |
+| `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |  |
 
 이미 떠 있는 worker 를 다른 모델로 다시 띄울 때 코디네이터가 직접 고른 값은 지시서의 `worker 선택:` 줄에 반영하고 `후보 밖: 한도 <제공자>` 를 적는다. 줄과 띄우는 값이 다르면 시작 전에 거부한다.
 
-새로 띄울 때는 지시서와 대조하고 세대를 정한 뒤, Orca 에서 지금 고른 계정의 한도를 본다. 한도가 풀리는 시각이 남아 있을 때, 사용률이 100% 이상이거나 걸림 표시가 있으면 위 표의 같은 등급 대응을 순서대로 본다. 후보 칸에 effort 가 없으면 처음 요청한 effort 를 쓴다. 쓸 후보가 없으면 워크트리와 Task 를 만들기 전에 모델과 한도별로 풀리는 시각을 알리고 가장 이른 시각도 보여 준다.
+새로 띄울 때는 지시서와 대조하고 세대를 정한 뒤, Orca 에서 지금 고른 계정의 한도를 본다. 한도가 풀리는 시각이 남아 있을 때, 사용률이 100% 이상이거나 걸림 표시가 있으면 등급의 짝을 본다. 직접 고른 모델과 리뷰는 위 표의 같은 등급 대응을 순서대로 본다. 후보 칸에 effort 가 없으면 처음 요청한 effort 를 쓴다. 쓸 후보가 없으면 워크트리와 Task 를 만들기 전에 모델과 한도별로 풀리는 시각을 알리고 가장 이른 시각도 보여 준다.
 
 - Claude 는 선택 프로필의 상태 줄 사용량 캐시를, Codex 는 선택 계정의 세션 기록을 읽는다. 자료의 계정을 확인할 수 없거나 모델에 적용할 값이 없으면 `USAGE-UNKNOWN <제공자> <이유>` 한 줄을 내고 그 후보를 이용한다.
 - 바꿔 띄울 때는 `LAUNCH-EFFECTIVE` 와 실행 이력의 `candidateOverride` 에 처음 선택, 실제 실행 설정, 한도 사유를 남긴다. 한도로 바뀐 리뷰 제공자가 구현 제공자와 같으면 리뷰 요약에 `같은 제공자 리뷰(한도)` 를 붙인다.
@@ -88,14 +94,6 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 - 기록: 바꾸면 `LAUNCH-EFFECTIVE` 와 띄우기 기록의 `effective.generation` 에 바꾸기 전, 바꾼 뒤, 이유를 남긴다. 판정은 `scripts/lib/model-generation.ts` 머리 주석이 소유한다.
 - 감지: 상주 루프가 하루 한 번 `codex debug models` 를 읽는다. 첫 목록을 기준점으로 두고, 그 뒤에 나타난 현재 세대 모델을 저장소마다 한 번 보드의 decide 항목 「새 모델 <모델>」 과 `MODEL-NEW <모델> <설명>` 으로 알린다. 표의 행이 옛 세대를 가리키면(띄울 때와 같은 기준) 루프가 행마다 `MODEL-TABLE-STALE <행> <옛> → <새>` 를 한 번 보내고, 새 세대마다 보드에 「모델 표를 <새> 로 바꿀 때」 항목을 하나 더한다. 루프는 표를 고치지 않는다. 코디네이터가 작은 worker 로 이 표를 고치는 PR 을 낸다. 기록과 판정은 `scripts/loop/model-watch.ts` 머리 주석이 소유한다.
 - 낡은 Codex CLI: CLI 가 낡으면 새 세대가 목록에 나오지 않는다. `orch doctor` 가 `CODEX-OUTDATED <설치> <최신>` 으로 알린다. 갱신은 사용자가 한다.
-
-### 기본 후보에서 뺀 모델
-
-**astra 계열(`gpt-<세대>-astra`)은 세대와 상관없이 worker 와 하위 에이전트의 기본 후보에서 뺀다.** 어려운 일도 기본은 모델 표의 Fable 이다.
-
-- 가장 어렵고 복잡한 설계와 구현에만 고른다. 설계는 technical-design 과 어려운 spec 결정 정리를 포함한다. 지시서의 `worker 선택:` 줄에 `후보 밖: <이유>` 로 그 일에 astra 가 필요한 이유를 적는다(사용자 결정 2026-11-20, 설계 포함은 2026-11-23).
-- 위 「사용 한도에 걸렸을 때」 표의 Fable 대응으로 쓸 때는 `후보 밖: 한도 <제공자>` 를 적는다.
-- 모델 비교의 후보로 쓸 때는 `후보 밖: 비교, <지금 모델> 대조(사용자 결정 2026-11-20)` 를 적는다(아래 「같은 일 두 모델 비교」).
 
 ### 같은 일 두 모델 비교
 

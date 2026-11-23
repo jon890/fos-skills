@@ -470,7 +470,7 @@ describe('worker 선택 줄 대조', () => {
 
   for (const [model, row, marker, effort] of [
     ['gpt-6.1-sol', 'review', '', 'medium'],
-    ['gpt-6.1-terra', 'visual', '', 'low'],
+    ['gpt-6.2-sol', 'visual', '', 'low'],
     ['claude-fable-5-2', 'impl-hard', '', '기본'],
   ]) {
     test(`리뷰와 후보 모델을 띄운다: ${model}`, () => {
@@ -480,6 +480,10 @@ describe('worker 선택 줄 대조', () => {
       const r = launch(['--worktree', worktree, '--', '--agent', agent, '--model', model, ...(effort === '기본' ? [] : ['--effort', effort])], 'bash', false)
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
+      if (row === 'review') {
+        assert.match(lines('orca orchestration worker-start')[0], /--agent codex/)
+        assert.equal(existsSync(join(env.ORCH_MACHINE_DIR!, 'model-turns.json')), false)
+      }
     })
   }
 
@@ -529,7 +533,39 @@ describe('시작 전 모델 한도', () => {
     return line ? JSON.parse(line.slice('LAUNCH-EFFECTIVE '.length)).candidateOverride : undefined
   }
 
-  test('다른 제공자에 여유가 있어도 고른 Codex 를 유지한다', () => {
+  test('REQ1, REQ4, REQ5: 두 조합을 허용하고 직접 지정한 중간 실행은 차례를 쓰지 않는다', () => {
+    const claude = ['--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'medium']
+    const selected = PLANNED.replace('`codex` `gpt-6.2-sol`', '`claude` `claude-opus-5-5`')
+    const next_ids = ['ctx_1', 'ctx_2', 'ctx_3']
+    state({ next_ids, dispatches: Object.fromEntries(next_ids.map(id => [id, shown('input_accepted')])) })
+    for (const [text, args] of [[selected, SOL], [selected + ' 후보 밖: 사용자 지정.', claude], [selected, claude]] as const) {
+      writeFileSync(spec, text)
+      const r = launch(['--worktree', worktree, '--', ...args], 'bash', false)
+      assert.equal(r.code, 0, both(r))
+    }
+    const history = launchHistory(worktree)
+    assert.deepEqual(history.map(h => [h.agent, h.effective?.alternation?.reason]), [
+      ['codex', '번갈아: opus 차례'], ['claude', undefined], ['claude', '번갈아: opus 차례'],
+    ])
+    assert.deepEqual(readLaunch(worktree, 'ctx_3')?.effective?.alternation, history[2].effective?.alternation)
+  })
+
+  test('REQ3: 차례 모델이 소진되면 짝으로 시작하고 다음 사전 검사에서 건너뛴 차례가 다시 나오지 않는다', () => {
+    const { account } = codex(100)
+    state({ ...once, accounts: { codex: account, claude: claudeProfile(env.ORCA_CLAUDE_PROFILES!, 0) } })
+    writeFileSync(spec, PLANNED)
+    const r = launch(['--worktree', worktree, '--', ...SOL], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), /--agent claude --model opus/)
+    assert.match(override(r)?.reason, /^한도: gpt-6\.2-sol /)
+    const next = launch(['--repo', worktree, '--task', 'task_1', '--preflight', '--', ...SOL], 'bash', false)
+    assert.equal(next.code, 0, both(next))
+    assert.match(next.stdout, /^LAUNCH-EFFECTIVE .*"alternation":\{"grade":"opus","agent":"claude"/m)
+    assert.match(next.stdout, /^PREFLIGHT-OK$/m)
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+  })
+
+  test('다른 제공자에 여유가 더 많아도 차례의 모델을 유지한다', () => {
     const { account } = codex(99.9)
     state({ ...once, accounts: { codex: account, claude: claudeProfile(env.ORCA_CLAUDE_PROFILES!, 0) } })
     writeFileSync(spec, PLANNED)
@@ -620,11 +656,16 @@ describe('시작 전 모델 한도', () => {
     const r = launch(['--repo', worktree, '--task', 'task_1', '--', ...SOL], 'bash', false)
     assert.equal(r.code, 0, both(r))
     assert.match(started(), /--task task_1 .*--agent claude --model opus --effort medium/)
+    assert.equal(readLaunch(worktree, 'ctx_1')?.effective?.alternation?.agent, 'codex')
+    const turns = join(env.ORCH_MACHINE_DIR!, 'model-turns.json')
+    const before = readFileSync(turns, 'utf8')
     resetLog()
     state(once)
     const reused = launch(['--worktree', worktree, '--', '--terminal', 'term_old'], 'bash', false)
     assert.equal(reused.code, 0, both(reused))
     assert.deepEqual(lines('orca account list'), [])
+    assert.equal(readFileSync(turns, 'utf8'), before)
+    assert.equal(readLaunch(worktree, 'ctx_1')?.agent, 'codex')
   })
 })
 
@@ -679,7 +720,7 @@ describe('모델 세대', () => {
     const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.2-sol', '--effort', 'medium'], 'bash', false)
     assert.equal(r.code, 0, both(r))
     assert.match(started(), / --model gpt-6\.2-sol --effort medium(?: |$)/)
-    assert.equal(effective(r), undefined)
+    assert.equal(effective(r)?.generation, undefined)
     assert.equal(history().effective?.generation, undefined)
   })
 
@@ -759,6 +800,8 @@ describe('모델 세대', () => {
 
   test('Claude 는 계열 이름으로 띄우고 worker 세션 기록의 실제 모델 ID 를 기록에 남긴다', () => {
     writeFileSync(spec, FABLE)
+    mkdirSync(env.ORCH_MACHINE_DIR!, { recursive: true })
+    writeFileSync(join(env.ORCH_MACHINE_DIR!, 'model-turns.json'), '{"fable":"claude"}')
     const home = join(tmp, 'claude-home')
     env.CLAUDE_CONFIG_DIR = home
     env.LAUNCH_MODEL_WAIT = '1'
@@ -786,6 +829,8 @@ describe('모델 세대', () => {
 
   test('Claude 세션 기록을 읽지 못하면 modelId 는 null 이고 기록의 model 은 표의 모델 ID 다', () => {
     writeFileSync(spec, FABLE)
+    mkdirSync(env.ORCH_MACHINE_DIR!, { recursive: true })
+    writeFileSync(join(env.ORCH_MACHINE_DIR!, 'model-turns.json'), '{"fable":"claude"}')
     env.CLAUDE_CONFIG_DIR = join(tmp, 'empty-home')
     env.LAUNCH_MODEL_WAIT = '0.5'
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
@@ -821,7 +866,9 @@ describe('선택 정책과 영구 이력', () => {
     const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
     assert.equal(r.code, 0, both(r))
     const record = JSON.parse(readFileSync(join(worktree, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
-    assert.deepEqual([record.agent, record.model, record.effort, record.effective, record.experiment], ['codex', 'gpt-6.1-sol', 'medium', effective, null])
+    const alternation = { grade: 'opus', agent: 'codex', reason: '번갈아: opus 차례', from: effective }
+    assert.deepEqual([record.agent, record.model, record.effort, record.effective, record.experiment], ['codex', 'gpt-6.1-sol', 'medium', { ...effective, alternation }, null])
+    assert.deepEqual(history()[0].effective, record.effective)
     assert.equal(history()[0].row, 'impl-explore')
     assert.equal(history()[0].title, '선택 검사')
     assert.equal(history()[0].retry_of, null)
@@ -833,7 +880,8 @@ describe('선택 정책과 영구 이력', () => {
     const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
     assert.equal(r.code, 0, both(r))
     assert.equal(history()[0].row, 'impl-explore')
-    assert.equal(history()[0].effective, null)
+    assert.equal(history()[0].effective.agent, 'codex')
+    assert.equal(history()[0].effective.alternation.reason, '번갈아: opus 차례')
   })
 
   test('옛 experiment 지시서는 같은 터미널에서 이어 쓰고 이전 이력을 보존한다', () => {
@@ -927,6 +975,8 @@ describe('선택 정책과 영구 이력', () => {
     const args = ['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-haiku-5-5']
     const rejected = launch([...args, '--effort', 'medium'], 'bash', false)
     assert.equal(rejected.code, 1, both(rejected))
+    const explicitDefault = launch([...args, '--effort', '기본'], 'bash', false)
+    assert.equal(explicitDefault.code, 1, both(explicitDefault))
     assert.deepEqual(lines('orca orchestration worker-start'), [])
     assert.equal(launch(args, 'bash', false).code, 0)
   })
