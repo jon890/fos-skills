@@ -443,9 +443,10 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
   })
 
-  test('후속 검증이 없음이면 배포 뒤 할 일을 만들지 않는다', async (t) => {
+  test('후속 검증이 없음이면 PR 본문의 참고 제안으로 배포 뒤 할 일을 만들지 않는다', async (t) => {
     const c = setup(t)
-    c.state.pr.body = evidence(c, '없음 | 배포 대상 없는 도구 변경')
+    c.state.pr.body = evidence(c, '없음 | 스펙과 지시서에서 요구한 배포 뒤 확인이 없다')
+      + '\n\n## 참고\n- 배포 뒤 응답 시간도 확인해 볼 수 있다.\n'
     const done = await c.finish(['--specs-dir', c.specs, '--complete'])
     assert.equal(done.code, 0, both(done))
     assert.doesNotMatch(done.stdout, /FOLLOWUP-/)
