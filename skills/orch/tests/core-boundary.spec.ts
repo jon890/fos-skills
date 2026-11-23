@@ -7,17 +7,20 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const tests = dirname(fileURLToPath(import.meta.url))
-const core = resolve(tests, '../scripts/core')
+const scripts = resolve(tests, '../scripts')
+const core = join(scripts, 'core')
 function sources(root: string): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? sources(join(root, entry.name)) : entry.name.endsWith('.ts') ? [join(root, entry.name)] : [])
+}
+function dependencies(source: string) {
+  // import type, 부수 효과 import 와 재수출도 같은 의존이다.
+  return source.matchAll(/\b(?:import|export)\s+(?:(?:type\s+)?(?:[\w$]+(?:\s*,\s*)?)?(?:\{[^}]*\}|\*(?:\s+as\s+[\w$]+)?)?\s+from\s*)?['"]([^'"\n]+)['"]/g)
 }
 function issues(file: string, root = core): string[] {
   const source = readFileSync(file, 'utf8')
   const found: string[] = []
   const report = (at: number, reason: string) => found.push(`${file}:${source.slice(0, at).split('\n').length}: ${reason}`)
-  // import type, 부수 효과 import 와 재수출도 같은 의존이다.
-  const dependencies = /\b(?:import|export)\s+(?:(?:type\s+)?[^;]*?\bfrom\s*)?['"]([^'"\n]+)['"]/g
-  for (const match of source.matchAll(dependencies)) {
+  for (const match of dependencies(source)) {
     const name = match[1]
     const rel = relative(root, resolve(dirname(file), name))
     const local = name.startsWith('.') && rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel)
@@ -29,6 +32,40 @@ function issues(file: string, root = core): string[] {
     for (const match of source.matchAll(rule)) report(match.index, `외부 상태 접근: ${match[0]}`)
   }
   return found
+}
+
+// 두 검사는 gate 가 호출하고 GateReason 타입만 gate 에서 가져온다.
+// 타입을 분리하려면 이번 수정 범위 밖의 queue/steps 를 바꿔야 한다.
+const allowedTypeImports = new Map([
+  ['queue/steps/migrations.ts', 'queue/steps/gate.ts'],
+  ['queue/steps/private-words.ts', 'queue/steps/gate.ts'],
+])
+
+function importCycles(root: string): string[] {
+  const files = new Set(sources(root).sort())
+  const visited = new Set<string>()
+  const chain: string[] = []
+  const cycles = new Set<string>()
+  function visit(file: string): void {
+    const start = chain.indexOf(file)
+    if (start !== -1) {
+      cycles.add([...chain.slice(start), file].map(entry => relative(root, entry)).join(' -> '))
+      return
+    }
+    if (visited.has(file)) return
+    visited.add(file)
+    chain.push(file)
+    for (const [declaration, name] of dependencies(readFileSync(file, 'utf8'))) {
+      if (!name.startsWith('.')) continue
+      const target = resolve(dirname(file), name)
+      if (!files.has(target)) continue
+      if (/^import\s+type\s/.test(declaration) && allowedTypeImports.get(relative(root, file)) === relative(root, target)) continue
+      visit(target)
+    }
+    chain.pop()
+  }
+  for (const file of files) visit(file)
+  return [...cycles]
 }
 function testIssues(file: string): string[] {
   const source = readFileSync(file, 'utf8')
@@ -48,6 +85,26 @@ test('core 는 허용한 순수 의존과 입력 값만 쓴다', () => {
   const specs = readdirSync(tests).filter(name => /^core-.*\.spec\.ts$/.test(name))
   assert.deepEqual(specs.flatMap(name => testIssues(join(tests, name))), [])
 })
+
+test('orch 스크립트의 정적 import 는 순환하지 않는다', () => {
+  assert.deepEqual(importCycles(scripts), [])
+})
+
+test('여러 파일에 걸친 순환은 경로를 표시하고 공유 의존은 허용한다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'import-cycles-'))
+  const a = join(dir, 'a.ts')
+  const b = join(dir, 'b.ts')
+  const c = join(dir, 'c.ts')
+  try {
+    writeFileSync(a, "import type { Value } from './b.ts'\nimport './c.ts'\n")
+    writeFileSync(b, "export { value } from './c.ts'\n")
+    writeFileSync(c, 'export const value = 1\n')
+    assert.deepEqual(importCycles(dir), [])
+    writeFileSync(c, "import './a.ts'\n")
+    assert.deepEqual(importCycles(dir), ['a.ts -> b.ts -> c.ts -> a.ts'])
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('금지 import 와 외부 상태 접근은 임시 파일의 줄 번호로 거부한다', () => {
   const dir = mkdtempSync(join(tmpdir(), 'core-boundary-'))
   const file = join(dir, 'bad.ts')
