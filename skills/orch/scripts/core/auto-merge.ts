@@ -66,7 +66,8 @@ export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-h
 // 리뷰 봇이 실행 장애로 실패했을 때 루프가 거는 대체 리뷰(loop/steps/review-fallback.ts 머리 주석). check 는 리뷰 봇의 체크 이름,
 // failWithinSec 은 시작부터 실패까지 이 초 안이면 장애로 보는 기준, passText 와 blockText 는 대체 리뷰가 달 판정 댓글의 첫 줄이다
 export type ReviewFallback = { check: string; failWithinSec: number; passText: string; blockText: string }
-export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean; fallback?: ReviewFallback | null }
+export type TrustedReviewBot = { login: string; receiptMarker: string; reviewedCommit: RegExp }
+export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean; fallback?: ReviewFallback | null; trustedBots?: TrustedReviewBot[] }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewConfig | null
@@ -80,7 +81,7 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
-export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block', 'fallback']
+export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block', 'fallback', 'trusted_bots']
 const FALLBACK_KEYS: readonly string[] = ['check', 'fail_within_sec', 'pass_text', 'block_text']
 export const DEFAULT_FAIL_WITHIN_SEC = 120
 export const DEFAULT_PASS_TEXT = '판정: 머지 가능'
@@ -135,6 +136,41 @@ function watchMap(value: unknown): Record<string, string[]> {
   return watch
 }
 
+function trustedReviewBots(value: unknown): TrustedReviewBot[] {
+  const key = 'queue.auto_review.trusted_bots'
+  if (!Array.isArray(value) || value.length === 0) throw new ConfigError(`설정 파일의 ${key} 는 비지 않은 목록이어야 한다`)
+  const logins = new Set<string>()
+  return value.map((entry: unknown) => {
+    if (!isObject(entry) || Object.keys(entry).some((field) => !['login', 'receipt_marker', 'reviewed_commit'].includes(field))) {
+      throw new ConfigError(`설정 파일의 ${key} 항목에는 login, receipt_marker, reviewed_commit 을 쓴다`)
+    }
+    const { login, receipt_marker: marker, reviewed_commit: commit } = entry
+    if (typeof login !== 'string' || !/^[a-z0-9-]+(?:\[bot\])?$/i.test(login)) {
+      throw new ConfigError(`설정 파일의 ${key} 항목의 login 은 GitHub 봇 계정 이름이어야 한다`)
+    }
+    const normalized = login.toLowerCase().replace(/\[bot\]$/, '')
+    if (logins.has(normalized)) throw new ConfigError(`설정 파일의 ${key} 에 같은 봇 계정이 두 번 있다`)
+    logins.add(normalized)
+    if (typeof marker !== 'string' || !marker.trim() || /[\r\n]/.test(marker)) {
+      throw new ConfigError(`설정 파일의 ${key} 항목의 receipt_marker 는 비지 않은 한 줄이어야 한다`)
+    }
+    if (typeof commit !== 'string' || !commit.trim()) {
+      throw new ConfigError(`설정 파일의 ${key} 항목의 reviewed_commit 은 첫 번째 캡처 그룹으로 커밋을 읽는 정규식이어야 한다`)
+    }
+    let reviewedCommit: RegExp
+    try {
+      reviewedCommit = new RegExp(commit, 'gm')
+    } catch {
+      throw new ConfigError(`설정 파일의 ${key} 항목의 reviewed_commit 을 정규식으로 읽지 못했다`)
+    }
+    // 빈 패턴과 번갈아 검사하면 정규식이 캡처 그룹을 제공하는지 확인할 수 있다.
+    if (new RegExp(`(?:${commit})|`).exec('')?.length === 1) {
+      throw new ConfigError(`설정 파일의 ${key} 항목의 reviewed_commit 에 커밋을 읽을 캡처 그룹이 필요하다`)
+    }
+    return { login: normalized, receiptMarker: marker.trim(), reviewedCommit }
+  })
+}
+
 function reviewRule(value: unknown): ReviewConfig {
   const name = 'queue.auto_review'
   if (!isObject(value)) throw new ConfigError(`설정 파일의 ${name} 는 {"pass": 정규식, "block": 정규식} 객체여야 한다`)
@@ -154,7 +190,14 @@ function reviewRule(value: unknown): ReviewConfig {
   }
   if (value.feature_head !== undefined && typeof value.feature_head !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.feature_head 는 true 나 false 여야 한다`)
   if (value.fixed_after_block !== undefined && typeof value.fixed_after_block !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.fixed_after_block 는 true 나 false 여야 한다`)
-  return { ...(rule as ReviewRule), ...reviewRequire(value.require), featureHead: value.feature_head !== false, fixedAfterBlock: value.fixed_after_block === true, fallback: reviewFallback(value.fallback, rule as ReviewRule) }
+  return {
+    ...(rule as ReviewRule),
+    ...reviewRequire(value.require),
+    featureHead: value.feature_head !== false,
+    fixedAfterBlock: value.fixed_after_block === true,
+    fallback: reviewFallback(value.fallback, rule as ReviewRule),
+    ...(value.trusted_bots === undefined ? {} : { trustedBots: trustedReviewBots(value.trusted_bots) }),
+  }
 }
 
 // 모르는 이름은 ConfigError 로 막지 않고 unknown 에 둔다. 루프가 멈추면 CI 감시와 정리까지 함께 멈추기 때문이다
@@ -241,7 +284,7 @@ export function boardHold(item: BoardItem): string | null {
 
 // commit 은 리뷰가 달린 커밋(gh 의 reviews[].commit.oid)이다. 댓글처럼 커밋이 없으면 null 이다
 // id 는 gh 가 준 리뷰나 댓글의 id 다. 없으면 로그에 시각으로 대신한다
-export type ReviewNote = { body: string; at: string; commit?: string | null; id?: string }
+export type ReviewNote = { body: string; at: string; commit?: string | null; id?: string; receiptBot?: string }
 
 // 판정에 세는 리뷰의 범위. heads 는 리뷰를 그대로 인정하는 커밋, since 는 커밋이 없는 본문(댓글)을 세기 시작하는 시각이다
 export type ReviewScope = { heads: string[]; since: string | null }
@@ -296,7 +339,8 @@ export function verdicts(notes: ReviewNote[], rule: ReviewRule): Verdict[] {
     .map((note, index) => ({ note, index, t: time(note.at) }))
     .sort((a, b) => (a.t === b.t ? b.index - a.index : b.t - a.t))
   for (const { note } of latest) {
-    if (rule.block.test(note.body)) found.push({ verdict: 'block', note })
+    if (note.receiptBot) found.push({ verdict: 'pass', note })
+    else if (rule.block.test(note.body)) found.push({ verdict: 'block', note })
     else if (rule.pass.test(note.body)) found.push({ verdict: 'pass', note })
   }
   return found
@@ -308,6 +352,7 @@ export function reviewVerdict(notes: ReviewNote[], rule: ReviewRule): 'pass' | '
 
 // 로그에 남기는 판정 근거. 리뷰는 달린 커밋의 앞 8자리, 댓글은 `댓글` 이다
 export function verdictText(v: Verdict): string {
+  if (v.note.receiptBot) return `pass(${v.note.receiptBot} 영수증, 커밋 ${v.note.commit?.slice(0, 8)}, ${v.note.at})`
   return `${v.verdict}(${v.note.commit ? `커밋 ${v.note.commit.slice(0, 8)}` : '댓글'}, ${v.note.at || '시각 없음'})`
 }
 

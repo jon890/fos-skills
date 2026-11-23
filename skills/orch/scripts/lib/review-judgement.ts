@@ -6,6 +6,8 @@ import type { ChainCommit, ReviewConfig, ReviewNote, ReviewJudgement } from './a
 import { loadConfig } from './config.ts'
 import { baseMergesOnly } from './feature-evidence.ts'
 import { git } from './git.ts'
+import { loadTrustedBotReviews } from './review-bot.ts'
+import type { ReviewTarget } from './review-bot.ts'
 
 const REVIEW_CHAIN_LIMIT = 50
 
@@ -25,7 +27,16 @@ export function featureReviewRule(review: ReviewConfig, feature: boolean): Revie
 }
 
 // threads 는 지금 미해결 리뷰 스레드 수다. 모르면 null 이고, 그러면 fixed_after_block 이 켜져 있어도 block 을 풀지 않는다
-export function judgePrReview(repo: string, pr: { head: string; branch: string; base: string }, data: { reviews?: unknown; comments?: unknown }, review: ReviewConfig, feature: boolean, threads: number | null = null): ReviewJudgement {
+export function judgePrReview(repo: string, pr: {
+  head: string; branch: string; base: string; target?: ReviewTarget
+}, data: { reviews?: unknown; comments?: unknown }, review: ReviewConfig, feature: boolean, threads: number | null = null): ReviewJudgement {
+  let receipts: ReviewNote[] = []
+  if (review.trustedBots && review.unknown.length === 0) {
+    if (!pr.target) return { ok: false, condition: null, wait: '믿는 리뷰 봇의 결과를 조회할 PR 정보가 없다', missing: false }
+    const trusted = loadTrustedBotReviews(repo, pr.target, pr.head, review.trustedBots)
+    if (!trusted.ok) return { ok: false, condition: null, wait: trusted.wait, missing: false }
+    receipts = trusted.receipts
+  }
   git(repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
   const listed = git(repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
   const chain: ChainCommit[] = listed.code === 0 ? listed.stdout.trim().split('\n').filter(Boolean).map((row) => {
@@ -40,5 +51,11 @@ export function judgePrReview(repo: string, pr: { head: string; branch: string; 
       return baseMergesOnly(repo, head, reviewed, pr.base, resolved)
     })
   const rule = featureReviewRule(review, feature)
-  return judgeReview({ notes: [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], scope, chain, threads }, rule)
+  const notes = [...receipts, ...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
+  const judged = judgeReview({ notes, scope, chain, threads }, rule)
+  if (!judged.ok && judged.missing && rule.trustedBots) {
+    const target = judged.condition === 'verdict-on-head' ? `HEAD ${pr.head.slice(0, 8)} 에` : 'PR 에'
+    return { ...judged, wait: `${target} 리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다` }
+  }
+  return judged
 }

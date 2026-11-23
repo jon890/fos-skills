@@ -86,7 +86,7 @@ import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSyn
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
-import { beforeCommand, boardHold, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
+import { beforeCommand, boardHold, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
 import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
@@ -260,7 +260,7 @@ function addedMigrations(files: unknown, dirs: Record<string, string | string[]>
 }
 
 // 판정(머리 주석의 「자동 머지」 3). wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다.
-// missing 은 판정 문구가 든 본문이 없어 멈춘 조건이다. AUTO-MERGE-NO-REVIEW 의 문구를 정한다
+// missing 은 판정 문구나 봇 영수증이 없어 멈춘 조건이다. AUTO-MERGE-NO-REVIEW 의 문구를 정한다
 function judgeTarget(
   ctx: Context,
   pr: OwnPr,
@@ -315,7 +315,8 @@ function judgeTarget(
   }
   let basis = noReview
   if (review) {
-    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base }, data, review, feature, Number(count))
+    const target = { host: pr.host, slug: pr.slug, number: pr.number }
+    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base, target }, data, review, feature, Number(count))
     if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
     basis = judged.basis.join('; ')
   }
@@ -490,9 +491,10 @@ async function autoMergeStep(
     if ('wait' in judged) {
       log(`AUTO-MERGE-WAIT #${pr.number} ${judged.wait}`)
       const key = `${pr.number}@${pr.head}`
-      if (judged.wait === REVIEW_WAIT && judged.missing && !Object.hasOwn(state.unreviewed, key)) {
-        const text =
-          judged.missing === 'verdict-on-head'
+      if (judged.missing && !Object.hasOwn(state.unreviewed, key)) {
+        const text = ctx.autoMerge.review?.trustedBots
+          ? `${judged.wait}. 현재 HEAD 의 봇 리뷰를 요청하거나 독립 리뷰 결과를 판정 문구로 남긴다`
+          : judged.missing === 'verdict-on-head'
             ? `HEAD ${pr.head.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
             : `HEAD ${pr.head.slice(0, 8)} 의 PR 에 판정 문구가 든 리뷰가 없다(${judged.missing}). 독립 리뷰 결과를 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
         if (notifyAutoMerge(ctx, 'AUTO-MERGE-NO-REVIEW', pr.number, text, target.run)) state.unreviewed[key] = iso()

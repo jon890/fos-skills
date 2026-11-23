@@ -162,8 +162,9 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
       throw new HeadChanged(`${n} 리뷰 조회 중 HEAD 가 바뀌었다`)
     } else {
       const feature = Boolean(featureBranch(o.repo, p.branch)) || (typeof got.data.body === 'string' && got.data.body.includes('fos-feature-evidence'))
-      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base }, got.data, review, feature, unresolved)
-      if (!judged.ok) reasons.push({ kind: 'review', text: judged.missing && judged.condition === 'verdict-on-head' ? `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다` : judged.wait })
+      const target = { host: p.apiHost, slug: `${p.owner}/${p.repo}`, number: n }
+      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base, target }, got.data, review, feature, unresolved)
+      if (!judged.ok) reasons.push({ kind: 'review', text: !review.trustedBots && judged.missing && judged.condition === 'verdict-on-head' ? `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다` : judged.wait })
       else fixed.push(...(judged.fixed ?? []))
     }
   }

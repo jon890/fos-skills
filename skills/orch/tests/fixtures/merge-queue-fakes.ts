@@ -71,6 +71,25 @@ if (args[0] === 'api' && args[1] === 'user') {
   const at = args.indexOf('--jq')
   jq(at >= 0 ? args[at + 1] : '.', { login: state._user ?? 'me' })
 }
+if (args[0] === 'api' && args[1] === 'graphql' && args.some((a) => a.startsWith('readThreads='))) {
+  const param = (name) => args.find((a) => a.startsWith(name + '='))?.slice(name.length + 1)
+  const pr = state[param('number')]
+  if (!pr?.bot_review) process.exit(1)
+  const result = { headRefOid: pr.bot_review.headRefOid ?? pr.headRefOid }
+  for (const [key, flag, after] of [['comments', 'readComments', 'commentsAfter'], ['reviews', 'readReviews', 'reviewsAfter'], ['reviewThreads', 'readThreads', 'threadsAfter']]) {
+    const nodes = pr.bot_review[key] ?? []
+    const split = pr.bot_review.split === key
+    if (param(flag) === 'true') {
+      const next = split && !param(after)
+      result[key] = {
+        nodes: next ? [] : nodes,
+        pageInfo: pr.bot_review.pageInfo ?? { hasNextPage: next, endCursor: next ? 'next' : null },
+      }
+    }
+  }
+  say(JSON.stringify({data:{repository:{pullRequest:result}}}))
+  process.exit(0)
+}
 if (args[0] === 'api') {
   const path = args.slice(1).find((a) => a.startsWith('repos/'))
   if (path.includes('update-branch')) {
