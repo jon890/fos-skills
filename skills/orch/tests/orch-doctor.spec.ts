@@ -14,6 +14,7 @@ import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { copyRepo, git as templateGit, GIT_ISOLATION, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
+import { cleanupDoctorTemp } from './fixtures/doctor-temp-cleanup.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/doctor/orch-doctor.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/orch-doctor-run.ts', import.meta.url))
@@ -123,7 +124,7 @@ beforeEach(() => {
   mkdirSync(join(tmp, 'home', '.local', 'bin'), { recursive: true })
   copyFileSync(LAUNCHER, join(tmp, 'home', '.local', 'bin', 'orch'))
 })
-afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => cleanupDoctorTemp(tmp))
 
 describe('설치본 판정', () => {
   let origin: string
