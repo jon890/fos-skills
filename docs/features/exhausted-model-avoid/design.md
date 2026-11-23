@@ -48,7 +48,9 @@
 
 ### Codex 세션 기록
 
-선택 홈의 `sessions/YYYY/MM/DD/rollout-*.jsonl` 을 본다. 현 머신에서는 관리 계정의 `sessions` 가 기본 홈으로 연결됐다. 파일 첫 `session_meta.payload` 의 `account_scoped === true` 와 `creator_account_id` 를 확인한다. 계정 ID 는 관리 계정의 `workspaceAccountId` 를 쓰고, 없으면 `providerAccountId` 를 쓴다. 기본 계정은 `systemDefault.providerAccountId` 다. 두 필드가 모두 있는데 서로 다르거나, 같은 계정 ID 를 쓰는 Orca 선택을 구분할 수 없다면 한도를 알 수 없는 것으로 본다. 메타데이터가 없거나 일치하지 않는 파일의 한도 줄은 읽지 않는다. 실제로 선택 계정과 일치하고 계정 범위가 표시된 세션에서 `codex` 한도와 주간 창을 확인했다. [Codex 세션 기록 형식](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/recorder.rs)
+선택 홈의 `sessions/YYYY/MM/DD/rollout-*.jsonl` 을 본다. 현 머신에서는 관리 계정의 `sessions` 가 기본 홈으로 연결됐다. 관리 계정의 ID 는 `workspaceAccountId` 를 쓰고 없으면 `providerAccountId` 를 쓴다. 기본 계정은 `systemDefault.providerAccountId` 다. 두 필드가 모두 있는데 서로 다르거나, 같은 ID 를 쓰는 Orca 선택을 구분할 수 없다면 한도를 알 수 없는 것으로 본다.
+
+파일 첫 `session_meta.payload.creator_account_id` 가 선택 계정과 일치해야 한다. `account_scoped` 는 기록 목록의 범위를 구분하는 값이며, 세션을 재개해도 생성 계정은 그대로다. 계정이 명시된 이벤트가 없는 현재 형식에서는 첫 `task_started` 부터 첫 `task_complete`, `turn_aborted` 또는 다음 `task_started` 전까지의 한도만 사용한다. 첫 턴을 찾지 못하거나 일치하는 한도 이벤트가 없으면 미확인으로 처리한다. 기본 계정도 `account_scoped` 가 없는 구형 기록에서 같은 기준을 쓴다. 이 머신에서 기본 계정으로 만든 구형 기록 13개의 첫 턴에서 `codex` 한도 값을 확인했다. [Codex 의 계정별 기록 목록](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md#local-history-by-account) · [Codex 세션 생성 계정 필드](https://github.com/openai/codex/blob/main/codex-rs/thread-store/src/types.rs)
 
 `type: event_msg`, `payload.type: token_count` 인 줄에서 `payload.rate_limits` 의 `limit_id`, `limit_name`, `primary`, `secondary`, `rate_limit_reached_type` 을 읽는다. 각 창에는 `used_percent`, `window_minutes`, `resets_at` 이 있다. `resets_at` 은 Unix 초이며 내부에서는 밀리초로 맞춘다. 슬롯 순서 대신 `window_minutes` 로 5시간(300)과 주간(10080)을 구분한다. 실제 기록에 `primary` 만 있는 주간 창이 있었다. 사용률이나 초기화 시각이 빠지거나 잘못된 창을 다른 창의 값으로 채우지 않는다. [Codex 한도 파서](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/rate_limits.rs)
 
@@ -63,7 +65,7 @@
 
 최근 수정된 기록부터 읽고 이벤트의 `timestamp` 로 최종 값을 정한다. 같은 `limit_id` 와 창 길이에서 가장 최근의 유효한 관측을 고르므로 다른 창의 갱신은 영향을 주지 않는다. 날짜 폴더는 탐색 순서에만 쓴다. 오래된 세션도 최근에 갱신됐다면 포함한다.
 
-5시간·주간 창을 읽을 때 수정 시각이 최근 7일 이내인 세션을 다 확인하면 탐색을 끝낸다. 각 창은 길이가 7일 이하여서 그보다 앞서 관측한 창은 이미 초기화됐을 시점이다. 초기화 시각을 그대로 쓰고, 사용률에 별도의 신선도 제한은 두지 않는다. 후보 파일은 첫 줄로 계정을 대조하고 일치하는 파일만 줄 단위로 끝까지 읽는다. 시작부터 최대 3초와 누적 읽기 64 MiB 를 허용한다. 이번 머신에서 최근 7일간 선택 계정에 귀속된 파일의 전체 크기는 약 19 MiB 였다. 상한에 닿으면 읽다 만 값으로 소진을 확정하지 않고 `USAGE-UNKNOWN codex 세션 기록 탐색 한도 초과` 를 낸다.
+5시간·주간 창을 읽을 때 수정 시각이 최근 7일 이내인 세션을 다 확인하면 탐색을 끝낸다. 각 창은 길이가 7일 이하여서 그보다 앞서 관측한 창은 이미 초기화됐을 시점이다. 초기화 시각을 그대로 쓰고, 사용률에 별도의 신선도 제한은 두지 않는다. 후보 파일은 첫 줄로 계정을 대조하고 일치하는 파일의 첫 턴만 줄 단위로 읽는다. 시작부터 최대 3초와 누적 읽기 64 MiB 를 허용한다. 이번 머신에서 최근 7일간 선택 계정에 귀속된 파일의 전체 크기는 약 19 MiB 였다. 상한에 닿으면 읽다 만 값으로 소진을 확정하지 않고 `USAGE-UNKNOWN codex 세션 기록 탐색 한도 초과` 를 낸다.
 
 `rate_limit_reached_type` 은 해당 묶음의 알려진 걸림 표시다. 같은 이벤트에서 걸린 창의 초기화 시각이 확인될 때만 쓴다. 창이 하나뿐이면 그 창을 쓰고, 창이 여럿이면 어느 창인지 확인된 것 또는 사용률로 이미 소진이 확인된 창만 쓴다. 시각이 없는 크레딧·지출 한도 표시에 다른 창의 시간을 붙이지 않는다. 로컬 표본에서는 이 필드가 `null` 이었다. 표시가 붙은 값과 두 창이 있는 값은 합성 입력으로 검증한다. [Codex 의 한도 오류와 시각 필드](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/error.rs)
 
@@ -87,7 +89,7 @@
 | 검증 경계 | 확인할 결과 |
 | --- | --- |
 | 값만 넘기는 단위 테스트 | 99.9%는 소진으로 계산하지 않는다. 100%, 걸림 표시, 리셋 직전·동일 시각·직후, 오래된 유효 관측, 여러 창, 알 수 없는 필드, 시간 없는 크레딧을 확인한다 |
-| 한도 파일과 계정 선택을 바꿔 끼운 테스트 | 선택 계정 전환, 시스템 홈, 공유 경로, 일치·불일치하는 Claude 해시, 모델별 주간 묶음, Codex 계정 범위 표시 누락, 다른 계정의 최신 기록, 두 창의 슬롯 교체, 뒤늦게 끝난 옛 세션·파싱 도중 끊긴 줄·탐색 상한을 재현한다 |
+| 한도 파일과 계정 선택을 바꿔 끼운 테스트 | 선택 계정 전환, 시스템 홈, 공유 경로, 일치·불일치하는 Claude 해시, 모델별 주간 묶음, 기본 계정의 구형 기록과 그 기록을 다른 계정으로 재개한 턴, 계정 ID 누락, 다른 계정의 최신 기록, 두 창의 슬롯 교체, 뒤늦게 끝난 옛 세션·파싱 도중 끊긴 줄·탐색 상한을 재현한다 |
 | 가짜 Orca 를 붙인 명령 테스트 | 정상 행·직접 선택·동일 등급·비어 있는 칸·없는 줄을 재현한다. 거부 때 worktree 와 worker-start 호출이 없는지, 선택 때 출력과 영구 기록이 같은지, 경고가 명령마다 한 번인지 확인한다 |
 | relaunch 와 리뷰 검증 | preflight 가 거부되면 옛 worker 를 abandon 하지 않는다. 재시도는 새 계정과 한도를 읽고 resume 과 `--terminal` 은 읽지 않는다. 최초 실행과 같은 Task 재시도에서 리뷰의 실제 제공자가 한도로 구현 제공자와 같아진 경우에만 PR 리뷰 본문에 표시한다 |
 | 실환경 인수 검증 | 선택 계정을 바꾼 뒤 실제 사용량 캐시와 세션 기록의 귀속을 비교한다. Claude 해시 조회는 첫 실환경 검증에서 확인하고 실제 한도 소진에 의존하는 경우는 고정 입력으로 재현한다 |
