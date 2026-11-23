@@ -421,6 +421,23 @@ describe('상태 파일 보존 기한', () => {
     for (const target of kept) exists(target, out)
   })
 
+  test('미리 보기 뒤 다시 열린 PR 의 로그와 마무리 표시는 남긴다', () => {
+    fx.env.ORCH_GH_CACHE = '1'
+    fx.env.ORCH_GH_CACHE_TTL_SECONDS = '600'
+    const log = file('queue/finish-61.out', 'FINISH-DONE\n')
+    const mark = file('state/finish-started/61', '2026-10-01T10:00:00Z\n')
+    const trash = join(fx.tmp, 'trash')
+    fx.prViews['61'] = { state: 'CLOSED' }
+    const preview = runSweep(['--trash', trash])
+    has(preview, `휴지통으로 옮길 것 ${log}`)
+    has(preview, `휴지통으로 옮길 것 ${mark}`)
+    fx.prViews['61'] = { state: 'OPEN' }
+    const out = runSweep(['--apply', '--trash', trash])
+    exists(log, out)
+    exists(mark, out)
+    assert.ok(!existsSync(trash))
+  })
+
   test('저장소 설정으로 보존 기한을 바꾼다', () => {
     file('config.json', JSON.stringify({ cleanup: { queue_days: 6, state_days: '5', gh_log_days: 3, folder_days: 2 } }))
     const kept = [
