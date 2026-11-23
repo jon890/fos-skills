@@ -1,10 +1,11 @@
 // 모듈 코드를 바꾼 PR 의 통합 테스트 기록 판정. 머지 관문(queue/steps/gate.ts)과 설정 검사표(config-schema.ts)가 쓴다.
 // 꼴과 근거는 docs/features/gate-integration-evidence/design.md 가 소유한다.
 //
-// 설정: config.json 의 queue.integration_tests. 규칙 목록이고 규칙 하나는 { paths, command } 다.
+// 설정: config.json 의 queue.integration_tests. 규칙 하나는 { paths, command, modules? } 다.
 //   paths   바뀐 파일 경로 glob(문자열이나 목록). `<모듈>` 이 꼭 하나 있어야 하고 경로 조각 하나에 맞는다.
 //           `**` 는 `/` 를 넘는 아무 글자, `*` 는 조각 안의 아무 글자, `?` 는 조각 안의 한 글자다. 경로 전체가 맞아야 한다
 //   command 그 모듈의 통합 테스트 명령. `<모듈>` 을 모듈 이름으로 바꾼다
+//   modules 설정하면 이름이 목록에 있는 모듈만 본다
 // 설정이 없거나 빈 목록이면 규칙이 없다. 관문은 바뀐 파일을 읽지 않고 지금과 같다.
 //
 // PR 본문(코드 블록 밖):
@@ -28,7 +29,7 @@ import { isObject } from './json.ts'
 
 export const MODULE_MARK = '<모듈>'
 
-export type IntegrationRule = { paths: RegExp[]; command: string }
+export type IntegrationRule = { paths: RegExp[]; command: string; modules?: ReadonlySet<string> }
 export type IntegrationNeed = { module: string; command: string }
 
 function globSource(glob: string, key: string): string {
@@ -53,7 +54,7 @@ export function integrationRules(config: Config): IntegrationRule[] {
   return raw.map((rule, i) => {
     const key = `queue.integration_tests[${i}]`
     if (!isObject(rule)) throw new ConfigError(`설정 파일의 ${key} 는 { paths, command } 객체여야 한다`)
-    const unknown = Object.keys(rule).filter((name) => name !== 'paths' && name !== 'command').sort()
+    const unknown = Object.keys(rule).filter((name) => !['paths', 'command', 'modules'].includes(name)).sort()
     if (unknown.length > 0) throw new ConfigError(`설정 파일의 ${key} 에 모르는 키가 있다: ${unknown.join(', ')}`)
     const paths = typeof rule.paths === 'string' ? [rule.paths] : rule.paths
     if (!Array.isArray(paths) || paths.length === 0 || !paths.every((p) => typeof p === 'string' && p !== '')) {
@@ -61,7 +62,13 @@ export function integrationRules(config: Config): IntegrationRule[] {
     }
     const command = rule.command
     if (typeof command !== 'string' || !command.trim()) throw new ConfigError(`설정 파일의 ${key}.command 는 비지 않은 문자열이어야 한다`)
-    return { paths: (paths as string[]).map((p) => new RegExp(globSource(p, `${key}.paths`))), command: command.trim() }
+    const parsed: IntegrationRule = { paths: (paths as string[]).map((p) => new RegExp(globSource(p, `${key}.paths`))), command: command.trim() }
+    const modules = rule.modules
+    if (modules === undefined) return parsed
+    if (!Array.isArray(modules) || modules.length === 0 || !modules.every((name) => typeof name === 'string' && name !== '' && !/[/\s]/.test(name))) {
+      throw new ConfigError(`설정 파일의 ${key}.modules 는 슬래시와 공백이 없는 모듈 이름의 비지 않은 목록이어야 한다`)
+    }
+    return { ...parsed, modules: new Set(modules) }
   })
 }
 
@@ -72,7 +79,7 @@ export function integrationNeeds(files: readonly string[], rules: readonly Integ
     for (const rule of rules) {
       for (const path of rule.paths) {
         const module = path.exec(file)?.[1]
-        if (!module) continue
+        if (!module || (rule.modules && !rule.modules.has(module))) continue
         const command = rule.command.split(MODULE_MARK).join(module)
         found.set(`${module}\n${command}`, { module, command })
       }

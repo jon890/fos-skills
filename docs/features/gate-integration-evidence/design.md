@@ -22,7 +22,11 @@
 {
   "queue": {
     "integration_tests": [
-      { "paths": "modules/<모듈>/src/main/**", "command": "./gradlew :<모듈>:integrationTest" }
+      {
+        "paths": "modules/<모듈>/src/main/**",
+        "command": "./gradlew :<모듈>:integrationTest",
+        "modules": ["api", "batch"]
+      }
     ]
   }
 }
@@ -31,6 +35,8 @@
 - `paths` 는 glob 문자열이나 목록이다. glob 마다 모듈 자리 `<모듈>` 이 꼭 하나 있고, 경로 조각 하나(`[^/]+`)에 맞는다.
 - `**` 는 `/` 를 넘는 아무 글자, `*` 는 조각 안의 아무 글자, `?` 는 조각 안의 한 글자다. 경로 전체가 맞아야 한다.
 - `command` 의 `<모듈>` 은 모듈 이름으로 바뀐다. 모듈 자리가 없는 명령도 받는다(모듈마다 같은 명령).
+- `modules` 는 선택 항목이다. 지정하면 `paths` 에서 찾은 모듈 이름이 목록에 정확히 일치할 때만 그 규칙을 적용한다. 각 이름에 슬래시나 공백을 쓸 수 없고, 목록에는 이름이 하나 이상 있어야 한다.
+- `modules` 를 생략한 규칙은 `paths` 에 맞는 모든 모듈에 적용한다. 첫 통합 테스트를 추가하거나 마지막 테스트를 없애면 저장소 설정의 목록도 고친다.
 - 모듈 자리 표기는 스펙 예시와 같은 `<모듈>` 하나로 정했다. 영문 표기를 함께 받으면 같은 뜻의 표기가 둘이 된다.
 - 꼴이 틀리면 `ConfigError` 다. `orch doctor` 는 설정 검사표(`core/config-schema.ts`)로 같은 판정을 `INVALID-CONFIG` 로 알린다.
 
@@ -51,7 +57,7 @@ PR 본문의 코드 블록과 HTML 주석 밖만 읽는다. 코드 블록의 닫
 ## 바뀐 파일
 
 바뀐 파일은 REST(`pulls/<n>/files`)로 페이지 끝까지 읽는다. `gh pr view` 의 `files` 는 100개까지라 쓰지 않는다.
-이름을 바꾼 파일은 옛 경로(`previous_filename`)도 본다. 모듈 A 에서 B 로 옮긴 코드는 두 모듈 모두 기록이 필요하다.
+이름을 바꾼 파일은 옛 경로(`previous_filename`)도 본다. 모듈 A 에서 B 로 옮기면 두 경로 각각에 규칙을 적용한다.
 REST 도 3000개까지만 돌려주므로 그보다 큰 PR 은 모듈을 놓칠 수 있다. 알려진 한계다.
 
 ## 커밋 확인
@@ -73,5 +79,5 @@ REST 도 3000개까지만 돌려주므로 그보다 큰 PR 은 모듈을 놓칠 
 
 ## 검증
 
-- `skills/orch/tests/core-integration-evidence.spec.ts`: 규칙 꼴, 모듈 찾기, 기록 있음·없음, head 와 다른 커밋, 생략 줄과 빈 이유, 여러 모듈.
-- `skills/orch/tests/queue-gate-integration.spec.ts`: 가짜 gh 로 PR 본문과 바뀐 파일을 흉내 내 관문과 머지 큐가 같은 이유로 막고, 생략 줄을 보이고, 규칙이 없으면 바뀐 파일을 읽지 않는지 본다.
+- `skills/orch/tests/core-integration-evidence.spec.ts`: 규칙 형식, 규칙별 모듈 목록, 기록과 생략 줄 확인.
+- `skills/orch/tests/queue-gate-integration.spec.ts`: 가짜 gh 로 관문과 머지 큐가 목록에 든 모듈의 기록을 확인하는지, 생략 이유를 보이는지, 규칙이 없으면 바뀐 파일을 읽지 않는지 본다.
