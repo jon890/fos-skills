@@ -1,0 +1,80 @@
+// 현재 HEAD 를 처음 본 시각을 기록한다. 주기가 지나면 GitHub 에서 HEAD 와 봇 상태를 새로 확인한다.
+// 로컬 기록과 댓글의 표지는 요청 뒤 루프가 재시작하거나 응답을 잃어도 같은 HEAD 에 다시 달지 않게 한다.
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { DEFAULT_REVIEW_REQUEST_AFTER_SEC } from '../../core/auto-merge.ts'
+import { gh } from '../../lib/gh.ts'
+import { withOwnerLock } from '../../lib/owner-lock.ts'
+import { makeParent, pathOf } from '../../lib/paths.ts'
+import { botReviewRunning, hasCurrentBotReceipt, loadBotReviewSnapshot } from '../../lib/review-bot.ts'
+import type { StepContext, StepResult, StepState } from './context.ts'
+import { reporter } from './errors.ts'
+import { log, oneLine } from './shared.ts'
+
+type Observation = { head: string; since: number; requested: string[] }
+
+function readObservations(file: string): Record<string, Observation> {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw e
+  }
+}
+
+export function requestMissingBotReviews(ctx: StepContext, state: StepState, now = Date.now()): StepResult {
+  const { prs } = state
+  const review = ctx.autoMerge.review
+  const bots = review?.trustedBots
+  const command = bots?.find((bot) => bot.requestComment)?.requestComment
+  if (!prs.ok || !bots || !command || review.unknown.length) return {}
+  const delay = (review.requestAfterSec ?? DEFAULT_REVIEW_REQUEST_AFTER_SEC) * 1000
+  const { report, errors } = reporter(ctx)
+  const file = join(pathOf('state', ctx.repo), 'review-requests.json')
+  const failures: string[] = []
+  try {
+    makeParent(file, ctx.repo)
+    withOwnerLock(`${file}.lock`, () => {
+      const records = readObservations(file)
+      const open = new Set(prs.mine.map((pr) => String(pr.number)))
+      for (const number of Object.keys(records)) if (!open.has(number)) delete records[number]
+      for (const pr of prs.mine) {
+        const previous = records[pr.number]
+        if (!/^[0-9a-f]{40}$/.test(pr.head)) continue
+        if (pr.draft || previous?.head !== pr.head) {
+          records[pr.number] = { head: pr.head, since: now, requested: previous?.requested ?? [] }
+          continue
+        }
+        if (previous.requested.includes(pr.head) || now - previous.since < delay) continue
+
+        const snapshot = loadBotReviewSnapshot(ctx.repo, pr, pr.head)
+        if (!snapshot.ok) {
+          failures.push(`#${pr.number} ${snapshot.wait}`)
+          continue
+        }
+        if (!snapshot.ready || bots.some((bot) => hasCurrentBotReceipt(pr.head, snapshot.data, bot) ||
+          botReviewRunning(pr.head, snapshot.data, bot))) {
+          previous.since = now
+          continue
+        }
+        const marker = `<!-- orch-bot-review-request:${pr.head} -->`
+        if (!snapshot.data.comments.some((comment) => comment.body.split(/\r?\n/).includes(marker))) {
+          const done = gh(['api', '--hostname', pr.host, '-X', 'POST', `repos/${pr.slug}/issues/${pr.number}/comments`,
+            '-f', `body=${command}\n\n${marker}`], { cwd: ctx.repo, cache: false })
+          if (done.code !== 0) {
+            failures.push(`#${pr.number} 리뷰 요청 댓글 등록 실패: ${oneLine(done.stderr || done.stdout)}`)
+            continue
+          }
+          log(`BOT-REVIEW-REQUEST #${pr.number} ${pr.head.slice(0, 8)}`)
+        }
+        previous.requested.push(pr.head)
+      }
+      writeFileSync(`${file}.tmp`, `${JSON.stringify(records, null, 2)}\n`)
+      renameSync(`${file}.tmp`, file)
+    })
+  } catch (e) {
+    failures.push(oneLine(e))
+  }
+  report('review-request', failures.join(' | ') || null)
+  return { errors }
+}

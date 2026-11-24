@@ -129,6 +129,8 @@ orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 `worker 역할: 검증`은 인수 검증 worker 를 뜻한다. [검증 지시서 틀](../templates/spec-verify.md)을 쓰고, PR 뒤에는 `리뷰 PR:`, PR 전에는 `보드 항목 id:` 가운데 하나를 남긴다. 구현 worker 와 다른 워크트리를 쓴다.
 
 남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서는 `orch spec review <PR>` 으로 만든다. 이 명령이 [`../templates/spec-review.md`](../templates/spec-review.md) 를 채워 지시서 폴더의 `spec-review-pr-<N>.md` 에 쓴다.
+
+믿는 리뷰 봇을 설정한 저장소에서는 `REVIEW-SPEC-BOT-WAIT` 줄에 봇 이름을 보여 주고 끝난다. 코디네이터가 별도 리뷰 worker 를 맡기려면 `--review-worker` 를 붙인다.
 채우는 값은 PR 번호, 제목, `리뷰 PR:` 과 `브랜치: review/pr-<N>` 줄, 그리고 `worker 선택:` 줄이다. 구현 worker 는 영구 이력에서 브랜치가 PR head 인 가장 늦은 행으로 찾고, 이력의 실제 제공자를 읽고 그 제공자와 반대쪽의 [리뷰 행 조합](agent-selection.md#리뷰-제공자)을 고른다.
 이력에 구현 worker 가 없으면(직접 띄운 PR) `--impl-agent claude|codex` 로 알려 준다. 있는 파일은 `--force` 없이 덮지 않는다. 같은 PR 을 다시 리뷰하면 `--out` 으로 `spec-review-pr-<N>-<꼬리>.md` 처럼 이름을 달리한다. 이 꼴이면 `브랜치:` 줄도 `review/pr-<N>-<꼬리>` 로 채운다. 같은 이름의 브랜치가 이미 로컬이나 원격 추적에 있으면 만들지 않고 다른 꼬리를 안내한다(`--force` 는 같은 브랜치를 다시 쓰는 용도라 보지 않는다).
 **「배경」 첫 줄과 「특히 볼 것」 절의 `{{채울 것: …}}` 두 곳은 코디네이터가 채운다.** 남아 있으면 `spec-lint` 가 `채움` 경고를 낸다.

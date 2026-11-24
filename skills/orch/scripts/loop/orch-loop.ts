@@ -83,6 +83,7 @@
 //     5. CI 감시. steps/ci.ts
 //     5-1. 머지 알림. steps/merged.ts
 //     5-2. 대체 리뷰. steps/review-fallback.ts. 리뷰 봇이 실행 장애로 실패한 PR 에 리뷰 worker 를 띄운다
+//     5-3. 믿는 봇의 리뷰 요청. steps/review-request.ts
 //     6. 멈춤 확인. steps/stalls.ts
 //     6-1. 움직임 확인. steps/movement.ts
 //     6-2. 다음 단계 알림. steps/step-ready.ts
@@ -158,6 +159,7 @@ import { checkQuestions, loadCompletions } from './steps/questions.ts'
 import { relayQueueTurns } from './steps/queue-turns.ts'
 import { refreshPrs } from './steps/refresh.ts'
 import { startReviewFallback } from './steps/review-fallback.ts'
+import { requestMissingBotReviews } from './steps/review-request.ts'
 import { checkReports } from './steps/reports.ts'
 import { iso, log } from './steps/shared.ts'
 import { notifyStepReady } from './steps/step-ready.ts'
@@ -218,6 +220,7 @@ async function tick(config: Context, n: number, kind: TickKind): Promise<number>
     collect(state, await checkCi(ctx, state))
     collect(state, await notifyMerged(ctx, state))
     collect(state, await startReviewFallback(ctx, state))
+    collect(state, requestMissingBotReviews(ctx, state))
     collect(state, await checkStalls(ctx, state))
     collect(state, await checkMovement(ctx, state))
     collect(state, await notifyStepReady(ctx, state))

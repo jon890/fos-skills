@@ -164,8 +164,12 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
       const feature = Boolean(featureBranch(o.repo, p.branch)) || (typeof got.data.body === 'string' && got.data.body.includes('fos-feature-evidence'))
       const target = { host: p.apiHost, slug: `${p.owner}/${p.repo}`, number: n }
       const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base, target }, got.data, review, feature, unresolved)
-      if (!judged.ok) reasons.push({ kind: 'review', text: !review.trustedBots && judged.missing && judged.condition === 'verdict-on-head' ? `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다` : judged.wait })
-      else fixed.push(...(judged.fixed ?? []))
+      if (!judged.ok) {
+        let text = judged.wait
+        if (judged.missing && review.trustedBots) text = `봇 리뷰 대기: ${text}`
+        else if (judged.missing && judged.condition === 'verdict-on-head') text = `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다`
+        reasons.push({ kind: 'review', text })
+      } else fixed.push(...(judged.fixed ?? []))
     }
   }
 
@@ -179,7 +183,11 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
     const accept = (verified: string): boolean => fetchPrRefs(stepContext, state) &&
       acceptsVerifiedCommit(state.repoDir, p.ph, verified, p.base)
     const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false, accept)
-    if (problem) reasons.push({ kind: 'evidence', text: problem })
+    if (problem) {
+      const waitingForBot = review?.trustedBots && problem.startsWith('독립 리뷰 이 완료되지 않았다: 대기') &&
+        reasons.some((reason) => reason.kind === 'review' && reason.text.startsWith('봇 리뷰 대기:'))
+      reasons.push({ kind: 'evidence', text: waitingForBot ? `봇 리뷰 대기: ${problem}` : problem })
+    }
     const integration = integrationReasons(stepContext, state, evidence.data.body ?? '', accept)
     reasons.push(...integration.reasons)
     notes.push(...integration.notes)

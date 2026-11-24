@@ -21,7 +21,7 @@ import type { StepContext } from './context.ts'
 import { log, oneLine } from './shared.ts'
 
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'step-ready', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'slow-tick', 'heavy-slot', 'review-fallback'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'step-ready', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'slow-tick', 'heavy-slot', 'review-fallback', 'review-request'])
 
 // 지난 오류 키를 지운다(머리 주석의 「오류 줄 억제」). runs 는 등록된 Run, primary 는 주 Run 이다
 export function dropStaleErrors(errors: Record<string, string | null>, runs: string[], primary: string | null): void {

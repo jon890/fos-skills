@@ -377,7 +377,7 @@ describe('리뷰', () => {
     }
     withReceipt(HEAD_B)
     assert.match(once(), /AUTO-MERGE-WAIT #1 .*봇 영수증이 없다/)
-    assert.match(String(events('AUTO-MERGE-NO-REVIEW')[0]?.text), /현재 HEAD 의 봇 리뷰를 요청하거나/)
+    assert.match(String(events('AUTO-MERGE-NO-REVIEW')[0]?.text), /봇 리뷰 대기/)
     assert.deepEqual(queueCalls(), [])
 
     withReceipt(HEAD_A)
