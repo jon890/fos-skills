@@ -80,7 +80,7 @@
 
 - PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 `pr-body-<워크트리 이름>.md` 처럼 작업 이름을 넣어 쓰고 PR 이 열릴 때까지 지우지 않는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 `spec-lint` 가 `본문` 경고로 알린다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열거나 열지 않으면 본문을 `handoff/pending/<워크트리 이름>/` 에 두고 그 절대경로를 보고하게 한다. 코디네이터는 worker 의 세션 임시 폴더를 열 수 없다. 저장소의 `.orch/` 에는 두지 않는다
 - 미리보기 HTML 과 리뷰 답변 초안도 worker 세션 임시 폴더에 두게 한다. PR 등록이 허락된 일이면 PR 본문 미리보기는 만들지 않아도 된다. `handoff/` 에는 코디네이터가 읽을 파일만 둔다: 게시가 막혀 대신 게시할 본문(`handoff/pending/<워크트리 이름>/`, 번호가 나오면 `handoff/pr-<PR 번호>/`)과 ask 로 확인받을 본문이다. 자리와 정리는 [`replying.md`](replying.md) 의 「인계 파일을 둔다」 가 소유한다
-  PR 파일을 `handoff/` 바로 아래에 쓰라고 적은 지시서는 `spec-lint` 가 `PR 인계` 경고를 낸다
+  `handoff/` 의 두 꼴 밖 경로나 미리보기를 쓰라고 적은 지시서는 `spec-lint` 가 `인계` 오류로 막는다. `.orch/data/` 는 지시서의 보드 항목 id 폴더만 쓴다(`자료` 오류). 폴더 규칙은 [`overlay.md`](overlay.md) 의 「작업 산출물의 자리와 지우는 때」 가 소유한다
 - PR 을 열게 하면 「PR 은 기준 브랜치를 base 로 따로 연다. 다른 PR 브랜치를 base 로 두지 않는다」 도 적는다.
   앞 PR 브랜치를 base 로 연 PR 은 앞 PR 을 `--delete-branch` 로 머지하면 자동으로 닫히거나 앞 브랜치로 머지된다
 - 지시서 하나는 PR 하나로 쓴다([`SKILL.md`](../SKILL.md) 원칙). 설계 문서만 따로 PR 로 올리지 않고 설계와 구현을 한 PR 에 담는다. PR 이 둘 이상 필요한 일은 지시서를 나누고, 뒤 지시서는 앞 PR 이 머지된 뒤 쓴다.

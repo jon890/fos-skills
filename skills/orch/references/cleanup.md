@@ -364,7 +364,7 @@ orch followup done "$PR" --note "$NOTE"
 | `.orch/queue` 의 끝난 머지 큐 로그와 마무리 로그·pid 파일 | 3일 | `cleanup.queue_days` |
 | `.orch/state/launched-workers` 의 끝난 dispatch 기록, `finish-started` 의 마무리 표시, `auto-merge` 의 자동 머지 로그 | 3일 | `cleanup.state_days` |
 | `.orch/state/gh/logs` 의 날짜별 GitHub 조회 로그 | 1일 | `cleanup.gh_log_days` |
-| `.orch/handoff` 에서 열린 PR, 살아 있는 워크트리, 게시 대기 `pending/` 에 속하지 않는 파일과 폴더. 머지되거나 닫힌 PR 에 속한 것은 기한 없이 옮긴다 | 3일 | `cleanup.handoff_days` |
+| `.orch/handoff`, `.orch/data`, `.orch/specs` | [`overlay.md`](overlay.md) 의 「작업 산출물의 자리와 지우는 때」 | `cleanup.handoff_days`, `cleanup.specs_days` |
 
 열린 PR 의 파일, 실행 중인 큐나 마무리의 로그, 살아 있는 dispatch 의 기록은 기한이 지나도 남긴다. 워크트리가 남은 dispatch 의 기록은 작업을 재개하거나 지시서를 찾을 때 쓴다. 이 기록도 보존한다. PR 이나 dispatch 의 상태를 확인하지 못했을 때도 남긴다. 실패한 마무리 로그와 중간에 멈춘 마무리 로그는 설정을 줄여도 최소 1시간 동안 남긴다. 자동 머지의 종료 알림이 읽을 로그, 워크트리가 남아 있어 마무리 여부를 확인하는 데 필요한 표시, UTC 기준 당일 GitHub 조회 로그도 남긴다.
 
@@ -521,7 +521,7 @@ orch cleanup sweep --repo "$REPO" --run "$RUN_ID" --remove-kept "$WORKTREE" --ap
 
 끝난 작업의 큐 로그, 지시서, 오래된 orch 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 옮긴 파일은 되살릴 수 있다. 큐의 `.out` 로그와 짝인 pid 에는 위 보존 기한과 상태 확인 규칙을 적용한다. 이 명령의 `--queue-days` 는 `cleanup.queue_days` 보다 우선한다.
 handoff 에는 코디네이터가 읽을 파일만 둔다(자리는 [`replying.md`](replying.md) 의 「인계 파일을 둔다」). PR별 산출물은 `handoff/pr-<PR 번호>/` 에 둔다. `orch queue finish` 가 MERGED 를 확인하면 그 폴더를 바로 휴지통으로 옮긴다. 휴지통 이동만 실패하면 원본을 남기고 경고한 뒤 다른 마무리는 계속한다.
-`orch cleanup handoff --apply` 와 정기 정리(`orch cleanup sweep`)는 같은 규칙으로 handoff 를 본다. 이름에 `pr-<번호>` 가 든 파일과 폴더는 그 PR 이 머지되거나 닫히면 옮긴다. 번호가 없는 것은 이름에 살아 있는 워크트리나 열린 PR 브랜치의 이름이 들어 있지 않고 `cleanup.handoff_days` 일이 지나면 옮긴다. `pending/<워크트리 이름>/` 은 그 워크트리가 없어진 뒤 기한이 지나면 옮긴다. `compare-keys/` 와 handoff/.keep 에 적은 이름은 남긴다. 측정 결과처럼 오래 둘 폴더는 .keep 에 적는다. 상태나 목록을 확인하지 못하면 남긴다. 판정은 `scripts/lib/handoff-retention.ts` 맨 위 설명이 소유한다.
+`orch cleanup handoff --apply` 는 정기 정리와 같은 규칙으로 handoff 를 옮긴다. 규칙은 [`overlay.md`](overlay.md) 의 「작업 산출물의 자리와 지우는 때」 가 소유한다. `data/` 는 이 명령이 보지 않고 정기 정리가 보드 항목으로 판정한다.
 **사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
 **코디네이터와 핸들러는 `--run` 을 준다.** 그 Run 의 Task 가 쓴 지시서와 PR 본문만 옮겨 다른 세션의 산출물을 건드리지 않는다.
 `tick` 이나 `after-cleanup` 핸들러에서 부르면 입력의 `run` 을 넘긴다. 큐 로그, 폴더, csv 는 Run 에 묶을 수 없어 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다.
