@@ -6,9 +6,9 @@
 //   2. 미해결 리뷰 스레드가 없다
 //   3. base 와 충돌하지 않는다(mergeable 이 MERGEABLE)
 //   4. 리뷰 설정이 있으면 설정한 리뷰 판정 조건을 충족한다
-//   5. 기능 완료 근거 블록이 필요한 PR 이면 블록이 하나 있고, 검증 커밋이 지금 HEAD 와 같고, 독립 리뷰 줄을 포함해 모두 통과다
-//   6. 설정에 queue.integration_tests 가 있으면 바뀐 모듈마다 통합 테스트 통과 기록이 지금 HEAD 에 있거나 생략 이유가 있다(core/integration-evidence.ts)
-//   7. 공개 저장소면 PR 본문과 댓글·리뷰에 비공개 낱말이 없다(steps/private-words.ts). 걸리면 위치만 낸다
+//   5. 설정에 queue.integration_tests 가 있으면 바뀐 모듈마다 통합 테스트 통과 기록이 지금 HEAD 에 있거나 생략 이유가 있다(core/integration-evidence.ts)
+//   6. 공개 저장소면 PR 본문과 댓글·리뷰에 비공개 낱말이 없다(steps/private-words.ts). 걸리면 위치만 낸다
+// PR 본문의 기능 완료 근거 블록은 보지 않는다(사용자 결정 2026-11-24).
 // 걸린 이유는 첫 이유에서 멈추지 않고 모두 낸다. base 최신화, 겹침 판정, 합친 사본 검사, before-merge 이벤트는 머지 큐만 한다.
 //
 // 옵션은 머지 큐와 같은 이름과 뜻이다(--repo, --required, --required-check, --allow-fail, --allow-fail-check, --threads-cmd, --skipped-is-missing).
@@ -29,7 +29,6 @@
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
 // PR 을 열거나 고쳐 push 한 턴에서 --wait 로 검사한다. GATE-OK 뒤 「준비됨」 status 를 보낸다.
 // HOLD 가 있으면 이유도 status 에 적는다. GATE-FAIL 이면 출력된 조건을 해결한 뒤 다시 검사한다.
-// 독립 리뷰 대기만 남으면 코디네이터에게 리뷰를 요청한다. 봇 리뷰 대기는 상주 루프가 처리한다.
 //
 // MERGE_QUEUE_GH_RETRIES, MERGE_QUEUE_GH_RETRY_SECONDS, MERGE_QUEUE_SLEEP_SCALE 는 머지 큐와 같다.
 

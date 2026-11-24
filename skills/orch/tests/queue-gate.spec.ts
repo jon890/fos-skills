@@ -2,7 +2,6 @@
 // 가짜 gh, git 은 merge-queue.spec.ts 와 같은 것을 쓴다(tests/fixtures/merge-queue-fakes.ts).
 
 import assert from 'node:assert/strict'
-import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -53,19 +52,20 @@ function setup(t: TestContext): Ctx {
   }
   delete env.GH
   delete env.ORCH_DIR
-  // 기능 PR 로 읽히는 지시서. 근거 블록이 필요한 PR 이 된다
+  // 기능 PR 로 읽히는 지시서. 기능 PR 이어도 본문의 완료 근거 블록은 보지 않는다
   mkdirSync(join(tmp, '.orch', 'specs'), { recursive: true })
   writeFileSync(join(tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
   return { tmp, env, writeState: (state) => writeFileSync(stateFile, JSON.stringify(state)) }
 }
 
-const BLOCK = `<!-- fos-feature-evidence -->
-검증 커밋: ${HEAD}
-인수 검증: 통과 | REQ1 실행 기록
-문서 대조: 통과 | 설계 대조
-독립 리뷰: 통과 | 독립 리뷰 결과 링크
-후속 검증: 없음 | 배포 대상 없는 도구 변경
-<!-- /fos-feature-evidence -->`
+// PR 본문은 자유 형식이다. 관문은 이 글로 판정하지 않는다
+const BODY = `## 검증
+- 인수 검증 통과: REQ1 실행 기록
+- 문서 대조: 설계 대조
+- 독립 리뷰: 리뷰 결과 링크
+- 후속 검증: 없음
+
+검증 결과는 자유 형식으로 적는다`
 
 function pr(over: Json = {}): Json {
   return {
@@ -77,25 +77,9 @@ function pr(over: Json = {}): Json {
     baseRefName: 'main',
     headRefOid: HEAD,
     isCrossRepository: false,
-    body: BLOCK,
+    body: BODY,
     ...over,
   }
-}
-
-for (const extraChange of [false, true]) {
-  test(`관문의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, { skip: !HAS_TOOLS }, async (t) => {
-    const c = setup(t)
-    const repo = copyRepo(join(c.tmp, 'repo')).dir
-    c.env.PATH = process.env.PATH
-    c.env.GH = join(bindir, 'gh')
-    delete c.env.MERGE_QUEUE_FAKE_GIT
-    templateGit(repo, ['switch', '-qc', 'feat'])
-    const { verified, head } = verifiedPlan(repo, extraChange)
-    templateGit(repo, ['push', '-qu', 'origin', 'feat'])
-    const result = await gate({ ...c, tmp: repo }, { '1': pr({ headRefOid: head, body: verifiedPlanEvidence(verified) }) }, 0)
-    assert.equal(result.code, extraChange ? 1 : 0, both(result))
-    assert.ok(result.stdout.includes(extraChange ? HEAD_MISMATCH : 'GATE-OK 1'), both(result))
-  })
 }
 
 const FAILED = [{ status: 'COMPLETED', conclusion: 'FAILURE' }]
@@ -150,7 +134,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
 
   test('PR 본문에만 보류 줄이 있어도 gate 는 안내하고 merge 는 거절한다', async (t) => {
     const c = setup(t)
-    const body = `${BLOCK}\n\n- 머지 보류: 본문의 배포 대기\n`
+    const body = `${BODY}\n\n- 머지 보류: 본문의 배포 대기\n`
     const g = await gate(c, { '1': pr({ body }) }, 0)
     assert.equal(g.code, 0, both(g))
     assert.match(g.stdout, /^GATE-OK 1$/m)
@@ -164,7 +148,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
   test('지시서 보류가 본문 보류보다 먼저고 둘 다 없으면 보류 줄이 없다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 지시서 이유\n')
-    const both2 = await gate(c, { '1': pr({ body: `${BLOCK}\n- 머지 보류: 본문 이유\n` }) }, 0)
+    const both2 = await gate(c, { '1': pr({ body: `${BODY}\n- 머지 보류: 본문 이유\n` }) }, 0)
     assert.match(both2.stdout, /^HOLD 지시서 이유$/m)
     assert.doesNotMatch(both2.stdout, /본문 이유/)
     const c2 = setup(t)
@@ -256,7 +240,6 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
       'GATE-FAIL 1',
       '  실패한 체크 1 개',
       '  미해결 리뷰 스레드 2 개',
-      '  기능 완료 근거 블록이 하나 필요하다',
     ])
   })
 
@@ -427,11 +410,14 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.equal(r.code, 0, both(r))
   })
 
-  test('독립 리뷰 줄이 대기면 걸린다', async (t) => {
-    const c = setup(t)
-    const r = await gate(c, { '1': pr({ body: BLOCK.replace('독립 리뷰: 통과', '독립 리뷰: 대기') }) }, 0)
-    assert.equal(r.code, 1, both(r))
-    assert.match(gateReason(r), /독립 리뷰 이 완료되지 않았다: 대기/)
+  // 사용자 결정 2026-11-24: worker 가 적은 본문 글로 관문을 막거나 통과시키지 않는다
+  test('기능 PR 의 본문에 완료 근거 블록이 없거나 대기, 옛 커밋이어도 관문은 막지 않는다', async (t) => {
+    const block = (review: string, commit: string) => `<!-- fos-feature-evidence -->\n검증 커밋: ${commit}\n독립 리뷰: ${review}\n<!-- /fos-feature-evidence -->`
+    for (const body of ['', '<!-- fos-feature-evidence -->', block('대기 | 리뷰 전', HEAD), block('통과 | 링크', 'b'.repeat(40))]) {
+      const r = await gate(setup(t), { '1': pr({ body }) }, 0)
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stdout, /근거/)
+    }
   })
 
   test('진행 중인 체크는 기다리지 않고 걸린다', async (t) => {
@@ -509,11 +495,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
   test('머지 큐와 같은 입력에서 같은 이유를 낸다', async (t) => {
     const cases: { name: string; state: Json; threads: number }[] = [
       { name: '스레드', state: { '1': pr() }, threads: 2 },
-      { name: '근거 블록', state: { '1': pr({ body: '<!-- fos-feature-evidence -->' }) }, threads: 0 },
-      { name: '스레드와 근거 블록', state: { '1': pr({ body: '<!-- fos-feature-evidence -->' }) }, threads: 1 },
-      { name: '독립 리뷰 대기와 스레드', state: { '1': pr({ body: BLOCK.replace('독립 리뷰: 통과', '독립 리뷰: 대기') }) }, threads: 3 },
-      { name: '오래된 검증 커밋', state: { '1': pr({ body: BLOCK.replace(HEAD, 'b'.repeat(40)) }) }, threads: 0 },
-      { name: '실패한 체크와 스레드와 근거 블록', state: { '1': pr({ statusCheckRollup: FAILED, body: '' }) }, threads: 1 },
+      { name: '실패한 체크와 스레드', state: { '1': pr({ statusCheckRollup: FAILED, body: '' }) }, threads: 1 },
       { name: '충돌과 스레드', state: { '1': pr({ mergeable: 'CONFLICTING' }) }, threads: 1 },
     ]
     for (const { name, state, threads } of cases) {
@@ -555,7 +537,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     test('본문과 댓글에 낱말이 있으면 GATE-FAIL 이고 위치만 알린다', async (t) => {
       const c = withWords(setup(t))
       const state = { '1': pr({
-        body: `${BLOCK}\n배경: /srv/${WORD}/data\n`,
+        body: `${BODY}\n배경: /srv/${WORD}/data\n`,
         issue_comments: [{ id: 11, body: '괜찮은 댓글' }, { id: 12, body: `경로는 ${WORD.toUpperCase()} 다` }],
         reviews_rest: [{ id: 21, body: null }],
         review_comments: [{ id: 31, body: `첫 줄\n${WORD}` }],
@@ -578,18 +560,18 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     test('낱말이 없거나 비공개 저장소거나 목록이 없으면 통과한다', async (t) => {
       const clean = await gate(withWords(setup(t)), { '1': pr({ issue_comments: [{ id: 1, body: '문제 없음' }] }) }, 0)
       assert.equal(clean.code, 0, both(clean))
-      const hidden = await gate(withWords(setup(t)), { '1': pr({ body: `${BLOCK}\n${WORD}\n` }), _visibility: 'PRIVATE' }, 0)
+      const hidden = await gate(withWords(setup(t)), { '1': pr({ body: `${BODY}\n${WORD}\n` }), _visibility: 'PRIVATE' }, 0)
       assert.equal(hidden.code, 0, both(hidden))
       const c = setup(t)
       c.env.ORCH_PRIVATE_WORDS = join(c.tmp, 'empty-home', 'private-words.txt')
       c.env.ORCH_MACHINE_DIR = join(c.tmp, 'machine')
-      const none = await gate(c, { '1': pr({ body: `${BLOCK}\n${WORD}\n` }) }, 0)
+      const none = await gate(c, { '1': pr({ body: `${BODY}\n${WORD}\n` }) }, 0)
       assert.equal(none.code, 0, both(none))
       assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /repo view|issues\/1\/comments/)
     })
 
     test('공개 여부를 읽지 못하면 공개로 보고, 댓글을 읽지 못하면 조회 실패다', async (t) => {
-      const unknown = await gate(withWords(setup(t)), { '1': pr({ body: `${BLOCK}\n${WORD}\n` }), _visibility_fails: true }, 0)
+      const unknown = await gate(withWords(setup(t)), { '1': pr({ body: `${BODY}\n${WORD}\n` }), _visibility_fails: true }, 0)
       assert.equal(unknown.code, 1, both(unknown))
       assert.match(gateReason(unknown), /PR 본문 8번째 줄/)
       const failed = await gate(withWords(setup(t)), { '1': pr({ comments_fail: true }) }, 0)
@@ -597,18 +579,19 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
       assert.match(gateReason(failed), /비공개 낱말 검사: 일반 댓글, 리뷰, 코드 줄 댓글 조회 실패/)
     })
 
-    test('본문에서 옮긴 다른 이유 줄의 낱말도 가린다', async (t) => {
+    test('본문에서 옮긴 통합 테스트 생략 이유의 낱말도 가린다', async (t) => {
       const c = withWords(setup(t))
-      const body = BLOCK.replace('인수 검증: 통과 | REQ1 실행 기록', `인수 검증: 대기 | ${WORD} 서버에서 확인`)
-      const g = await gate(c, { '1': pr({ body }), _visibility: 'PRIVATE' }, 0)
-      assert.equal(g.code, 1, both(g))
-      assert.match(gateReason(g), /\*\*\*/)
+      writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { integration_tests: [{ paths: 'modules/<모듈>/src/main/**', command: './gradlew :<모듈>:integrationTest' }] } }))
+      const body = `## 검증\n- 통합 테스트 생략: core ${WORD} 서버에서 확인\n`
+      const g = await gate(c, { '1': pr({ body, files: [{ path: 'modules/core/src/main/A.kt' }] }), _visibility: 'PRIVATE' }, 0)
+      assert.equal(g.code, 0, both(g))
+      assert.match(g.stdout, /통합 테스트 생략 core: .*\*\*\*/)
       assert.ok(!g.stdout.toLowerCase().includes(WORD), both(g))
     })
 
     test('보류 이유에 낱말이 있으면 값 대신 위치를 쓴다', async (t) => {
       const c = withWords(setup(t))
-      const body = `${BLOCK}\n\n- 머지 보류: ${WORD} 서버 확인 전\n`
+      const body = `${BODY}\n\n- 머지 보류: ${WORD} 서버 확인 전\n`
       const g = await gate(c, { '1': pr({ body }), _visibility: 'PRIVATE' }, 0)
       assert.equal(g.code, 0, both(g))
       assert.match(g.stdout, /^HOLD 비공개 낱말이 있어 값을 생략한다\(PR 본문 9번째 줄\)$/m)

@@ -213,7 +213,7 @@ export function rememberMerged(repo: string, branch: string, tip: string, pr: Pr
   if (pr.state !== 'MERGED' || !tip) return
   const entries = readMerged(repo)
   if (entries[branch]?.tip === tip) return
-  // 본문은 크고 판정에 쓰지 않는다. 기능 근거는 부르는 쪽이 새로 읽는다(lib/feature-evidence.ts)
+  // 본문은 크고 판정에 쓰지 않는다. 필요한 쪽이 새로 읽는다
   const { body: _body, ...rest } = pr
   entries[branch] = { tip, pr: rest as Pr }
   writeMerged(repo, entries)

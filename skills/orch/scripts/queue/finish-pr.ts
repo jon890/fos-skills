@@ -21,7 +21,7 @@
 //     3. worker 종료 대기 뒤 lib/routing-log.ts로 PR 관측값을 기록한다. 기록 실패는 정리를 막지 않는다.
 //     4. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
-//        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 워크트리와 지시서를 함께 남긴다(사용자 결정 2026-11-20)
+//        배포 확인보다 먼저 한다. 기능 PR 도 같다
 //        이어서 <orch>/handoff/pr-<PR 번호>/ 만 휴지통으로 옮긴다. 규칙 밖의 옛 파일은 개수만 알리고 남긴다.
 //        worker 정리가 끝나지 않으면 FINISH-FAIL 로 끝내고 원본을 남긴다. 휴지통 이동만 실패하면 경고하고 계속한다.
 //     5. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
@@ -43,20 +43,8 @@
 //     9. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
 //     10. 보드 항목을 고친다(아래 「보드 항목」)
 //
-// 기능 PR(지시서가 기능 루프이거나 본문에 완료 근거 블록이 있다): 단계 6 의 판정 뒤, after-deploy 앞에서 PR 본문을 새로 읽어 완료 근거를 검사한다.
-//     근거가 빠졌거나 틀렸으면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 정리는 그 워크트리도 남긴다(단계 4).
-//     근거를 갱신한 뒤 같은 명령으로 재개한다
-//
-// 배포 뒤 할 일: 기능 PR 의 근거가 「후속 검증: 대기 | <글>」 하나만 남았으면 그 글을 배포 뒤 할 일 목록(lib/followups.ts)에 옮기고
-//     `FOLLOWUP-ADDED #<PR> <글>`(이미 있으면 `FOLLOWUP-KEPT`)을 낸다. 보드에서 연결된 항목에 대기 단계를 더하거나 별도 followup-<PR> 항목을 만든다.
-//     이 마무리에 준 옵션(보드, 마지막 PR 표시 같은 것, replayArgs)을 항목의 finish_args 에 남긴다. followup done 이 그 값을 그대로 쓴다.
-//     --pid-file 의 절대 경로도 항목의 pid_file 에 남긴다. followup done 이 그 파일로 도는 마무리를 알아본다.
-//     지시서, 업무 완료(after-deploy), PR 의 보드 항목은 남기고, 배포를 확인했으면 FINISH-DONE 이다. 단계 4 의 정리는 워크트리를 남기고,
-//     그 PR 의 handoff 산출물도 실패로 세지 않고 함께 남긴다(사용자 결정 2026-11-20). 배포가 실패했거나 시간이 지났으면
-//     옮긴 뒤 FINISH-FAIL 이다. 목록에 옮기지 못하면 FINISH-FAIL 이다.
-//     코디네이터가 `orch followup done <PR>` 로 끝내면 그 명령이 이 마무리를 다시 띄운다. 그때는 목록의 끝난 기록을 후속 검증 통과로 보고
-//     지시서 정리, 업무 완료, 보드 done 까지 간다. 정리도 목록의 끝난 기록을 보고 남겼던 워크트리와 handoff 를 지운다. 본문의 대기를 통과로 바꿔도 같다.
-//     그때는 목록에 남은 그 PR 의 항목도 끝내고 `FOLLOWUP-DONE #<PR>` 을 낸다(보드 단계나 별도 항목도 완료)
+// 기능 PR 도 PR 본문의 완료 근거 글을 읽어 마무리를 막거나 배포 뒤 할 일을 만들지 않는다(사용자 결정 2026-11-24).
+//     배포 뒤 할 일 목록(lib/followups.ts)에 이미 있는 항목은 `orch followup done <PR>` 이 끝내고 이 마무리를 다시 띄운다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -147,7 +135,7 @@ import { gitBin } from '../lib/git.ts'
 import { mergeNotice } from '../core/merge-notice.ts'
 import { recordRouting } from '../lib/routing-log.ts'
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -170,9 +158,7 @@ import { real, realPath } from '../lib/fs.ts'
 import { gh } from '../lib/gh.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
-import { EVIDENCE_START, featureBranch, featureEvidenceProblem, acceptsVerifiedCommit, pendingFollowup } from '../lib/feature-evidence.ts'
-import { followupDone, loadFollowups, updateWithBoard } from '../lib/followups.ts'
-import { markDone, upsertFollowup } from '../core/followups.ts'
+import { featureBranch } from '../lib/feature-evidence.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
@@ -183,7 +169,7 @@ import { releaseClaim } from '../lib/pr-claim.ts'
 import type { Claim } from '../lib/pr-claim.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { answerRequest, boardLines, markPendingDone, requestOfItem } from '../lib/requests.ts'
-import { boardIdOf, branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
+import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows } from '../lib/workers.ts'
 import { emit, oneLine, short } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
@@ -191,8 +177,7 @@ import { orchWord, scriptPath } from '../lib/commands.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const CLEANUP_TRIES = 5
-const KEPT_ON_PURPOSE = /끊긴 worker |끊김인지 확인하지 못한 |기능 후속 검증이 끝나지 않았다/
-const KEPT_FOR_FOLLOWUP = /기능 후속 검증이 끝나지 않았다/
+const KEPT_ON_PURPOSE = /끊긴 worker |끊김인지 확인하지 못한 /
 // 옛 명령의 자식 실행 시간 제한(초). 정리 스크립트만 600초였다
 const RUN_TIMEOUT_MS = 300_000
 const SWEEP_TIMEOUT_MS = 600_000
@@ -437,19 +422,16 @@ function localBranchExists(repo: string, branch: string): boolean {
 // 정리 스크립트를 돌려 그 브랜치의 워크트리와 로컬 브랜치가 사라질 때까지 다시 시도한다. 사라졌으면 true.
 // 로컬 브랜치 이름이 PR 의 head 브랜치 이름과 다르면 head 이름으로는 워크트리가 보이지 않는다.
 // 정리 출력에 그 워크트리를 일부러 남긴 줄(`남김 <경로>: …` 이나 짧은 출력의 `KEPT <경로> …`)이 있는지
-// 돌려주는 값은 남긴 까닭이다. 후속 검증 대기면 'followup', 끊긴 worker 면 'lost', 그런 줄이 없으면 null 이다
-export function keptOnPurpose(output: string, path: string): 'followup' | 'lost' | null {
-  let kept: 'followup' | 'lost' | null = null
+// 돌려주는 값은 남긴 까닭이다. 끊긴 worker 면 'lost', 그런 줄이 없으면 null 이다
+export function keptOnPurpose(output: string, path: string): 'lost' | null {
   for (const line of output.split('\n')) {
     const text = line.trim()
-    if (!(text.startsWith(`남김 ${path}: `) || text.startsWith(`KEPT ${path} `)) || !KEPT_ON_PURPOSE.test(text)) continue
-    if (KEPT_FOR_FOLLOWUP.test(text)) return 'followup'
-    kept = 'lost'
+    if ((text.startsWith(`남김 ${path}: `) || text.startsWith(`KEPT ${path} `)) && KEPT_ON_PURPOSE.test(text)) return 'lost'
   }
-  return kept
+  return null
 }
 
-type Cleanup = { clean: boolean; kept: 'followup' | 'lost' | null }
+type Cleanup = { clean: boolean; kept: 'lost' | null }
 
 // 그래서 보이지 않아도 정리 스크립트를 한 번은 돌린다. 그 스크립트가 PR 을 upstream 이름 등으로 찾아 정리한다
 async function cleanupWorker(args: Args, repo: string, branch: string): Promise<Cleanup> {
@@ -468,7 +450,7 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
     }
     const left = worktreePath(repo, branch)
     if (!left && !localBranchExists(repo, branch)) return { clean: true, kept: null }
-    // 이 PR 의 워크트리를 정리가 끊긴 worker 나 후속 검증 대기로 일부러 남겼으면 다시 돌려도 같다(cleanup/steps/worktrees.ts 의 「남기는 워크트리」).
+    // 이 PR 의 워크트리를 정리가 끊긴 worker 로 일부러 남겼으면 다시 돌려도 같다(cleanup/steps/worktrees.ts 의 「남기는 워크트리」).
     // 다른 워크트리의 남김 줄로는 멈추지 않는다
     const kept = left ? keptOnPurpose(done.stdout, left) : null
     if (kept) return { clean: false, kept }
@@ -782,20 +764,17 @@ async function finish(args: Args, repo: string): Promise<number> {
   const worktree = branch ? worktreePath(repo, branch) : null
   const ended = worktree && args.run ? await tellMerged(args, args.run, worktree, merge) : null
   await recordRouting(repo, Number(args.pr), 'merged')
-  const feature = featureBranch(repo, branch, args.specsDir ?? undefined) || merged.body.includes(EVIDENCE_START)
+  const feature = featureBranch(repo, branch, args.specsDir ?? undefined)
   const problems: string[] = []
   let handoffProblem = false
   // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
-  // 기능 PR 도 같다. 후속 검증이 대기거나 끊긴 worker 의 워크트리면 cleanup-sweep 이 남기고, 여기서는 「정리 남음」 만 알린다(사용자 결정 2026-11-20)
+  // 기능 PR 도 같다. 끊긴 worker 의 워크트리면 cleanup-sweep 이 남기고, 여기서는 「정리 남음」 만 알린다(사용자 결정 2026-11-20)
   const cleanup = await cleanupWorker(args, repo, branch)
   const workerClean = cleanup.clean
   if (!workerClean) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
   }
-  if (cleanup.kept === 'followup' && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
-    // 후속 검증 대기로 남긴 워크트리는 실패가 아니다. handoff 도 워크트리와 함께 남기고, followup done 의 마무리 재실행이 함께 치운다
-    log(`PR ${args.pr} handoff 산출물 유지: 후속 검증이 끝날 때까지 워크트리와 함께 남긴다`)
-  } else if (!workerClean && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
+  if (!workerClean && existsSync(join(orchDir(repo), 'handoff', `pr-${args.pr}`))) {
     log(`PR ${args.pr} handoff 산출물 유지: worker 정리가 끝나지 않았다`)
     problems.push(`PR ${args.pr} handoff 산출물 정리를 기다린다`)
     handoffProblem = true
@@ -822,26 +801,6 @@ async function finish(args: Args, repo: string): Promise<number> {
   const verdict = judgeLast(args, repo, merged)
   const last = verdict.last
   log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${verdict.reason})`)
-
-  if (feature) {
-    // 코디네이터가 후속 검증 근거를 PR 에 갱신할 수 있어 새로 읽는다.
-    const fresh = gh(['pr', 'view', args.pr, '--json', 'body'], { cwd: repo, cache: false })
-    let body = ''
-    try { if (fresh.code === 0) body = JSON.parse(fresh.stdout).body } catch { /* 아래 검사로 실패 */ }
-    // 후속 검증의 대기는 여기서 막지 않고(afterMerge false) 아래에서 배포 뒤 할 일 목록으로 옮긴다
-    const head = String(merged.pr.head ?? '')
-    const problem = typeof body === 'string' ? featureEvidenceProblem(body, head, true, false,
-      (verified) => acceptsVerifiedCommit(repo, head, verified, merged.base, { fetch: true, mergedAt: merged.merge })) : '기능 완료 근거 조회 실패'
-    if (problem) return fail(problem)
-    const waiting = pendingFollowup(body)
-    if (waiting !== null && !followupDone(repo, args.pr)) {
-      if (!/^근거:\s*[^·\s][^·]*·/.test(waiting)) {
-        log(`경고: PR ${args.pr} 의 후속 검증 대기에 근거가 없다. 스펙의 REQ ID 나 지시서의 해당 줄을 적는다`)
-      }
-      return holdForFollowup(args, repo, merged, waiting, deploy, deployed && !handoffProblem, problems, worktree)
-    }
-    if (waiting === null) closeFollowup(args, repo)
-  }
 
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
   try {
@@ -906,82 +865,6 @@ async function finish(args: Args, repo: string): Promise<number> {
   if (item && last) completeRequest(repo, item.id, args.pr, args.run ?? null, closed)
   out('FINISH-DONE')
   return 0
-}
-
-function followupBoardItem(args: Args, repo: string, branch: string, worktree: string | null): string | undefined {
-  const file = boardPath(repo, args.board)
-  if (!existsSync(file)) return undefined
-  const ids = new Set(readBoard(file).map((item) => item?.id))
-  if (args.boardId && ids.has(args.boardId)) return args.boardId
-  const specs = specFiles(args.specsDir ? specsDirOf(args, repo) : pathOf('specs', repo))
-  const given = new Set(specs.filter((spec) => branchesOf(spec.text).includes(branch))
-    .map((spec) => boardIdOf(spec.text)?.id).filter((id): id is string => !!id && ids.has(id)))
-  if (given.size === 1) return [...given][0]
-  return pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)?.id
-}
-
-// 머리 주석의 「배포 뒤 할 일」. 후속 검증 줄을 목록에 옮기고 보드에 보인다. 지시서, 업무 완료(after-deploy), 보드 done 은 남긴다.
-// 배포가 실패했거나 시간이 지났거나 handoff 정리가 남았으면(ok 가 거짓) 옮긴 뒤 FINISH-FAIL 이다. 루프가 배포를 다시 확인한다
-function holdForFollowup(args: Args, repo: string, merged: Merged, text: string, deploy: Deploy, ok: boolean, problems: string[], worktree: string | null): number {
-  const pr = Number(args.pr)
-  let line: string
-  try {
-    const { value: got, board } = updateWithBoard(repo, pr, (items) => {
-      // 이전에 등록한 항목은 위치를 지킨다. 다시 마무리해도 다른 보드 항목에 복제하지 않는다.
-      let boardItem: string | undefined
-      if (!items.some((item) => item.pr === pr)) {
-        try { boardItem = followupBoardItem(args, repo, merged.branch, worktree) }
-        catch (e) { log(`배포 뒤 할 일의 보드 항목을 읽지 못했다: ${oneLine((e as Error).message)}`) }
-      }
-      const made = upsertFollowup(items, { ...(boardItem ? { board_item: boardItem } : {}), pr, title: merged.title, text, merge_commit: merged.merge, deploy, finish_args: replayArgs(args), pid_file: args.pidFile ? resolve(args.pidFile) : null }, new Date().toISOString())
-      return { items: made.items, value: made }
-    }, { file: args.board, bin: args.boardBin })
-    line = got.result === 'added' ? `FOLLOWUP-ADDED #${pr} ${oneLine(text)}` : `FOLLOWUP-KEPT #${pr} ${oneLine(text)}`
-    out(line)
-    if (board.startsWith('실패:')) log(`배포 뒤 할 일을 보드에 보이지 못했다: ${board.slice('실패:'.length).trim()}`)
-    else if (board !== '보드 없음') log(board)
-  } catch (e) {
-    return fail(`배포 뒤 할 일 목록에 옮기지 못했다: ${oneLine((e as Error).message)}. 후속 검증 이 완료되지 않았다: 대기 | ${text}`)
-  }
-  log(`지시서, 업무 완료, 보드는 배포 뒤 할 일을 끝낸 뒤로 남긴다. 끝내면: ${orchWord()} followup done ${pr}`)
-  if (!ok) return fail(problems.join('; ') || '배포를 확인하지 못했다')
-  out('FINISH-DONE')
-  return 0
-}
-
-// 배포 뒤 할 일 항목의 finish_args. `orch followup done` 이 다시 띄우는 마무리가 처음과 같은 보드, 마지막 PR 표시, 지시서 폴더,
-// 배포 설정을 쓰게 한다(PR 558 리뷰). --repo, --pid-file, --not-main, 대기 한도는 다시 띄우는 쪽이 정한다.
-// --sweep-arg 와 업무 번호 정규식은 설정(--config)에서 다시 읽으므로 넣지 않는다
-export function replayArgs(args: Args): string[] {
-  const pairs: Array<[string, string | null | undefined]> = [
-    ['--config', args.config ? resolve(args.config) : null], ['--run', args.run], ['--base-branch', args.baseBranch],
-    ['--specs-dir', args.specsDir], ['--deploy-workflow', args.deployWorkflow], ['--deploy-branch', args.deployBranch],
-    ['--board', args.board], ['--board-id', args.boardId],
-    ['--board-bin', args.boardBin !== (process.env.BOARD_BIN || BOARD_BIN) ? args.boardBin : null],
-  ]
-  return [
-    ...pairs.flatMap(([name, value]) => (value ? [name, value] : [])),
-    ...(args.complete ? ['--complete'] : []), ...(args.intermediate ? ['--intermediate'] : []),
-  ]
-}
-
-// 머리 주석의 「배포 뒤 할 일」 의 본문 통과. 앞 마무리가 목록에 옮긴 항목이 열려 있으면 끝내고 보드도 done 으로 바꾼다.
-// 끝내지 못해도 마무리는 이어 간다. 그 항목은 orch followup done 으로 끝낼 수 있다
-function closeFollowup(args: Args, repo: string): void {
-  const pr = Number(args.pr)
-  try {
-    // 끝난 항목이 없으면 고치지 않는다(보드도 쓰지 않는다). 있으면 같은 잠금 안에서 보드를 done 으로 쓴다
-    if (!loadFollowups(repo).some((one) => one.pr === pr && one.done_at === null)) return
-    const { value: result, board } = updateWithBoard(repo, pr, (items) => {
-      const made = markDone(items, pr, new Date().toISOString(), '본문의 후속 검증이 통과다')
-      return { items: made.items, value: made.result }
-    }, { file: args.board, bin: args.boardBin })
-    if (result !== 'done') return
-    out(`FOLLOWUP-DONE #${pr}`)
-    if (board.startsWith('실패:')) log(`배포 뒤 할 일의 보드를 done 으로 바꾸지 못했다: ${board.slice('실패:'.length).trim()}`)
-  } catch (e) {
-    log(`배포 뒤 할 일을 끝내지 못했다: ${oneLine((e as Error).message)}. 끝내려면: ${orchWord()} followup done ${pr}`)
-  }
 }
 
 // 요청의 자동 완료(머리 주석의 「요청 완료」). 실패해도 마무리는 FINISH-DONE 이다. 답을 직접 보낼 명령을 남긴다

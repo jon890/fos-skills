@@ -8,7 +8,6 @@
 import { linesRev } from '../scripts/lib/board.ts'
 import { racingBoard } from './fixtures/board-race.ts'
 import assert from 'node:assert/strict'
-import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -332,79 +331,31 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.match(r.stdout, /FINISH-DONE/)
     assert.equal(existsSync(join(handoff, 'body.md')), true)
   })
-  const evidence = (c: Ctx, followup: string) => `<!-- fos-feature-evidence -->
-검증 커밋: ${c.state.pr.head}
-인수 검증: 통과 | REQ1 실행 로그
-문서 대조: 통과 | 설계 문서 대조, 후보 없음 근거
-독립 리뷰: 통과 | 별도 코드 검토 결과
-후속 검증: ${followup}
-<!-- /fos-feature-evidence -->`
   const followups = (c: Ctx) => {
     const file = join(c.repo, '.orch', 'state', 'followups.json')
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).items : null
   }
 
-  for (const extraChange of [false, true]) {
-    test(`머지 뒤 마무리의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, async (t) => {
+  // 사용자 결정 2026-11-24: 머지 뒤 마무리는 PR 본문의 완료 근거 블록으로 막거나 배포 뒤 할 일을 만들지 않는다
+  test('기능 PR 은 본문의 후속 검증 대기나 빠진 근거와 상관없이 배포 뒤 할 일을 만들지 않고 업무까지 끝낸다', async (t) => {
+    const block = (c: Ctx, review: string) => `<!-- fos-feature-evidence -->
+검증 커밋: ${c.state.pr.head}
+독립 리뷰: ${review}
+후속 검증: 대기 | 배포 후 smoke
+<!-- /fos-feature-evidence -->`
+    for (const body of [(c: Ctx) => block(c, '통과 | 리뷰 링크'), (c: Ctx) => block(c, '대기 | 리뷰 전'), () => '']) {
       const c = setup(t)
-      const { verified, head } = verifiedPlan(c.wt, extraChange)
-      c.git('merge', '-q', '--no-ff', '-m', 'merge plan PR', head)
-      c.git('push', '-q', 'origin', 'main')
-      c.state.pr.merge = c.git('rev-parse', 'HEAD')
-      c.state.pr.head = head
-      c.state.pr.body = verifiedPlanEvidence(verified)
-      const result = await c.finish(['--specs-dir', c.specs])
-      assert.equal(result.code, extraChange ? 1 : 0, both(result))
-      assert.ok(both(result).includes(extraChange ? HEAD_MISMATCH : 'FINISH-DONE'), both(result))
-    })
-  }
-
-  test('기능 후속 검증이 대기면 워크트리와 handoff 를 남긴 채 배포 뒤 할 일로 옮겨 FINISH-DONE 이고, 끝낸 뒤 다시 돌면 워크트리와 업무까지 끝낸다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke, 코디네이터, CI 실행기')
-    hook(c, taskCompleter())
-    const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')
-    mkdirSync(handoff, { recursive: true })
-    writeFileSync(join(handoff, 'body.md'), '본문')
-    // 큐가 --finish-log-dir 로 정한 pid 파일이다. followup done 이 이 파일로 도는 마무리를 알아본다
-    const pidFile = join(c.repo, 'finish-logs', 'finish-77.pid')
-    mkdirSync(dirname(pidFile), { recursive: true })
-    const args = ['--specs-dir', c.specs, '--complete', '--pid-file', pidFile]
-    // 정리 도구는 후속 검증 대기의 워크트리를 남긴다(docs/features/cleanup-keep-lost/spec.md 의 REQ3)
-    const kept = { FAKE_SWEEP_REMOVES: '0', FAKE_SWEEP_SAY: '남김 <WT>: 기능 후속 검증이 끝나지 않았다: 후속 검증 이 완료되지 않았다: 대기 | 배포 후 smoke' }
-    const waiting = await c.finish(args, kept)
-    assert.equal(waiting.code, 0, both(waiting))
-    assert.match(both(waiting), /후속 검증 대기에 근거가 없다/)
-    assert.match(waiting.stdout, /^FOLLOWUP-ADDED #77 배포 후 smoke, 코디네이터, CI 실행기$/m)
-    assert.match(waiting.stdout, /FINISH-DONE\s*$/)
-    // 사용자 결정(2026-11-20): 후속 검증이 끝날 때까지 워크트리, 지시서, handoff 를 남기고, 남긴 것은 실패로 세지 않는다
-    assert.equal(existsSync(c.wt), true)
-    assert.equal(existsSync(join(handoff, 'body.md')), true)
-    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
-    assert.equal(starting(c.calls(), 'sweep ').length, 1)
-    assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), false)
-    const saved = followups(c)
-    assert.equal(saved.length, 1)
-    assert.equal(saved[0].pr, 77)
-    assert.equal(saved[0].deploy, 'none')
-    assert.equal(saved[0].done_at, null)
-    // 처음 마무리의 옵션을 남겨 followup done 이 그대로 다시 쓴다
-    assert.deepEqual(saved[0].finish_args, ['--specs-dir', c.specs, '--complete'])
-    assert.equal(saved[0].pid_file, pidFile)
-    // 같은 PR 을 다시 돌려도 항목은 하나다
-    const again = await c.finish(args, kept)
-    assert.match(again.stdout, /^FOLLOWUP-KEPT #77 /m)
-    assert.equal(followups(c).length, 1)
-    // 코디네이터가 끝내면(orch followup done) 정리가 남긴 워크트리를 지우고, 본문의 대기를 그대로 둬도 후속 검증 통과로 보고 업무와 지시서까지 끝낸다
-    const file = join(c.repo, '.orch', 'state', 'followups.json')
-    writeFileSync(file, JSON.stringify({ items: saved.map((item: Json) => ({ ...item, done_at: '2026-11-20T00:00:00.000Z' })) }))
-    const done = await c.finish(args)
-    assert.equal(done.code, 0, both(done))
-    assert.doesNotMatch(done.stdout, /FOLLOWUP-/)
-    assert.equal(existsSync(c.wt), false)
-    assert.equal(existsSync(handoff), false)
-    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
-    assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), true)
+      c.state.pr.body = body(c)
+      hook(c, taskCompleter())
+      const done = await c.finish(['--specs-dir', c.specs, '--complete'])
+      assert.equal(done.code, 0, both(done))
+      assert.doesNotMatch(done.stdout, /FOLLOWUP-|근거/)
+      assert.match(done.stdout, /FINISH-DONE\s*$/)
+      assert.equal(followups(c), null)
+      assert.equal(existsSync(c.wt), false)
+      assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+      assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), true)
+    }
   })
 
   test('끊긴 worker 로 남긴 워크트리의 handoff 가 있으면 지금처럼 FINISH-FAIL 이다', async (t) => {
@@ -416,95 +367,6 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'handoff 산출물 정리를 기다린다')
     assert.equal(existsSync(join(handoff, 'body.md')), true)
-  })
-
-  test('후속 검증 대기를 본문에서 통과로 바꿔도 마무리를 이어 간다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = evidence(c, '통과 | 배포 후 smoke 결과 링크')
-    const done = await c.finish(['--specs-dir', c.specs, '--complete'])
-    assert.equal(done.code, 0, both(done))
-    assert.equal(followups(c), null)
-    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
-  })
-
-  test('대기로 목록에 옮긴 뒤 본문을 통과로 바꿔 다시 돌면 목록의 항목도 끝낸다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke')
-    const args = ['--specs-dir', c.specs, '--complete']
-    const waiting = await c.finish(args)
-    assert.match(waiting.stdout, /^FOLLOWUP-ADDED #77 /m)
-    c.state.pr.body = evidence(c, '통과 | 배포 후 smoke 결과 링크')
-    const done = await c.finish(args)
-    assert.equal(done.code, 0, both(done))
-    assert.match(done.stdout, /^FOLLOWUP-DONE #77$/m)
-    const saved = followups(c)
-    assert.equal(saved.length, 1)
-    assert.ok(saved[0].done_at)
-    assert.equal(saved[0].note, '본문의 후속 검증이 통과다')
-    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
-  })
-
-  for (const source of ['지시서', 'PR 연결']) {
-    test(`${source}로 찾은 보드 항목에 배포 뒤 확인 단계를 한 번만 붙인다`, async (t) => {
-      const c = setup(t)
-      const board = join(c.repo, 'board.json')
-      const item = { id: 'feature', status: 'doing', details: [{ text: '1. 구현', done: true }] }
-      const viaSpec = source === '지시서'
-      writeFileSync(board, JSON.stringify({
-        items: [{ ...item, ...(viaSpec ? {} : { pr: '#77' }) }],
-      }))
-      if (viaSpec) {
-        const spec = join(c.specs, 'spec-x.md')
-        writeFileSync(spec, readFileSync(spec, 'utf8') + '\n보드 항목 id: feature\n')
-      }
-      c.state.pr.body = evidence(c, '대기 | 근거: REQ-3 · 배포 후 smoke PR #77')
-      const boardBin = fileURLToPath(new URL('../../../extensions/work-board/bin/board.ts', import.meta.url))
-      const args = ['--specs-dir', c.specs, '--board', board, '--board-bin', boardBin]
-      const first = await c.finish(args)
-      assert.equal(first.code, 0, both(first))
-      assert.match(first.stdout, /^FOLLOWUP-ADDED #77 /m)
-      assert.doesNotMatch(both(first), /후속 검증 대기에 근거가 없다/)
-      const again = await c.finish(args)
-      assert.equal(again.code, 0, both(again))
-      assert.equal(followups(c)[0].board_item, 'feature')
-      const rows = JSON.parse(readFileSync(board, 'utf8')).items
-      assert.deepEqual(rows.map((row: Json) => row.id), ['feature'])
-      assert.deepEqual(rows[0].details, [
-        ...item.details,
-        { text: '2. [wait] 배포 뒤 확인 (PR 77) · 근거: REQ-3 · 배포 후 smoke PR 77', done: false },
-      ])
-    })
-  }
-
-  test('후속 검증이 없음이면 PR 본문의 참고 제안으로 배포 뒤 할 일을 만들지 않는다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = evidence(c, '없음 | 스펙과 지시서에서 요구한 배포 뒤 확인이 없다')
-      + '\n\n## 참고\n- 배포 뒤 응답 시간도 확인해 볼 수 있다.\n'
-    const done = await c.finish(['--specs-dir', c.specs, '--complete'])
-    assert.equal(done.code, 0, both(done))
-    assert.doesNotMatch(done.stdout, /FOLLOWUP-/)
-    assert.equal(followups(c), null)
-  })
-
-  test('배포가 끝나지 않았으면 배포 뒤 할 일로 옮긴 뒤 FINISH-FAIL 이다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke')
-    c.state.runs = []
-    const r = await c.finish(['--specs-dir', c.specs, '--complete', ...DEPLOY])
-    assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /^FOLLOWUP-ADDED #77 배포 후 smoke$/m)
-    assert.match(r.stdout, /FINISH-FAIL/)
-    assert.equal(followups(c)[0].deploy, 'timeout')
-    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
-  })
-
-  test('후속 검증 말고 다른 근거가 빠졌으면 배포 뒤 할 일로 옮기지 않고 FINISH-FAIL 이다', async (t) => {
-    const c = setup(t)
-    c.state.pr.body = evidence(c, '대기 | 배포 후 smoke').replace('독립 리뷰: 통과', '독립 리뷰: 대기')
-    const r = await c.finish(['--specs-dir', c.specs, '--complete'])
-    assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /독립 리뷰 이 완료되지 않았다/)
-    assert.equal(followups(c), null)
   })
 
   test('worker 를 정리하고 배포를 기다리고 업무를 완료 처리하고 보드를 바꾼다', async (t) => {

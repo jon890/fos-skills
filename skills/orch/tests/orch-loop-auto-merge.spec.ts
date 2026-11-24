@@ -6,7 +6,6 @@
 // 큐는 분리 실행이라 틱이 끝난 뒤에도 돈다. 테스트는 인자 파일이 생기기를, 다시 걸지 않음은 pid 가 끝나기를 기다린 뒤 다음 틱을 돌린다.
 
 import assert from 'node:assert/strict'
-import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -996,46 +995,19 @@ describe('여러 Run', () => {
   })
 })
 
-for (const extraChange of [false, true]) {
-  test(`자동 머지의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, async () => {
-    config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
-    git(['switch', '-qc', 'feat-1'])
-    const { verified, head } = verifiedPlan(repo, extraChange)
-    github([pr(1, { headRefOid: head })], { views: { 1: { body: verifiedPlanEvidence(verified), headRefOid: head,
-      reviews: [{ body: 'PASS', commit: { oid: head }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
-    const output = once()
-    if (extraChange) {
-      assert.ok(output.includes(HEAD_MISMATCH), output)
-      assert.equal(queueCalls().length, 0)
-    } else {
-      await queued(1)
-    }
-  })
-}
-
-// 기능 경로는 리뷰 설정이 없어도 인수·문서 근거를 확인한다.
-test('기능 지시서의 근거 누락은 자동 큐를 막고 현재 커밋의 근거로 다시 건다', async () => {
+// 기능 PR 도 본문의 완료 근거 블록을 읽지 않는다. 리뷰 판정이 지금 HEAD 에 있으면 건다(사용자 결정 2026-11-24)
+test('기능 지시서의 PR 은 본문에 완료 근거 블록이 없어도 지금 HEAD 의 리뷰 판정으로 자동 큐에 건다', async () => {
   config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
   spec('specs', 'spec-a.md', ['feat-1'], ['## 할 일', '루프를 쓴다(스펙: 새로 쓴다)'])
-  github([pr(1)], { views: { 1: { body: '', headRefOid: HEAD_A } } })
-  const missing = once()
-  assert.match(missing, /기능 완료 근거/)
-  assert.equal(queueCalls().length, 0)
-  const body = `<!-- fos-feature-evidence -->
-검증 커밋: ${HEAD_A}
-인수 검증: 통과 | REQ1 실제 실행 로그
-문서 대조: 통과 | 설계 대조와 후보 없음 근거
-독립 리뷰: 통과 | 별도 리뷰 결과
-후속 검증: 없음 | 배포 없는 변경
-<!-- /fos-feature-evidence -->`
-  github([pr(1)], { views: { 1: { body, headRefOid: HEAD_A, reviews: [{ body: 'PASS', commit: { oid: HEAD_A }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
-  once()
+  github([pr(1)], { views: { 1: { body: '', headRefOid: HEAD_A, reviews: [{ body: 'PASS', commit: { oid: HEAD_A }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
+  const output = once()
+  assert.doesNotMatch(output, /기능 완료 근거/)
   await queued(1)
 })
 
-test('지시서 없이 본문으로 식별한 기능 PR 도 자동 머지에는 실제 리뷰 정책이 필요하다', () => {
+test('지시서 없는 PR 은 본문에 근거 블록 표시가 있어도 기능 PR 로 보지 않는다', async () => {
   github([pr(1)], { views: { 1: { body: '<!-- fos-feature-evidence -->', headRefOid: HEAD_A } } })
   const output = once()
-  assert.match(output, /queue.auto_review/)
-  assert.equal(queueCalls().length, 0)
+  assert.doesNotMatch(output, /독립 리뷰 정책이 필요하다/)
+  await queued(1)
 })

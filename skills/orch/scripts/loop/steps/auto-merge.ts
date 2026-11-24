@@ -91,7 +91,7 @@ import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations 
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
-import { featureEvidenceProblem, featureLoopRequested, acceptsVerifiedCommit } from '../../lib/feature-evidence.ts'
+import { featureLoopRequested } from '../../lib/feature-evidence.ts'
 import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
@@ -305,14 +305,8 @@ function judgeTarget(
   const data = isObject(got.data) ? got.data : {}
   const bodyHold = typeof data.body === 'string' ? prHold(data.body) : null
   if (bodyHold !== null) return { wait: `PR 본문 보류: ${redactLine(bodyHold, words, 'PR 본문', data.body as string)}` }
-  feature = feature || typeof data.body === 'string' && data.body.includes('fos-feature-evidence')
+  // PR 본문의 기능 완료 근거 블록은 판정에 쓰지 않는다(사용자 결정 2026-11-24). 기능 PR 은 지시서로만 알아본다
   if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 독립 리뷰 정책이 필요하다' }
-  if (feature) {
-    if (typeof data.body !== 'string' || data.headRefOid !== pr.head) return { wait: '기능 완료 근거 또는 HEAD 조회 실패' }
-    // 검증 커밋 뒤에 base 를 합친 merge 만 있으면 받아들인다. 위에서 지금 HEAD 의 CI 가 passed 인 것을 보았다
-    const problem = featureEvidenceProblem(data.body, pr.head, feature, false, (verified) => acceptsVerifiedCommit(ctx.repo, pr.head, verified, pr.base, { fetch: true }))
-    if (problem) return { wait: problem }
-  }
   let basis = noReview
   if (review) {
     const target = { host: pr.host, slug: pr.slug, number: pr.number }

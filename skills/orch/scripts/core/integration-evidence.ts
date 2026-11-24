@@ -21,7 +21,7 @@
 //   기록은 있는데 그 커밋이 아니면 `통합 테스트 기록이 head 가 아니다: <모듈>`
 //   기록이 없으면 `통합 테스트 기록 없음: <모듈> (<명령>)`
 //   맞는 기록이 「검증」 절 밖에만 있으면 `통합 테스트 기록이 검증 절 밖에 있다: <모듈> (<명령>)`
-// accept 는 기능 완료 근거의 검증 커밋과 같은 예외(base 만 합친 merge, 계획 폴더 삭제)를 받는다.
+// accept 는 기록 커밋 뒤의 예외(base 만 합친 merge, 계획 폴더 삭제. lib/feature-evidence.ts 의 acceptsVerifiedCommit)를 받는다.
 
 import { ConfigError, QUEUE_KEYS, section } from './config.ts'
 import type { Config } from './config.ts'

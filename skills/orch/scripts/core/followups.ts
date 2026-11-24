@@ -13,7 +13,7 @@
 //     notified_at   코디네이터에게 알린 시각. 알린 항목은 다시 알리지 않는다
 //     done_at       코디네이터가 끝낸 시각
 //     note          끝낼 때 남긴 한 줄
-//     finish_args   처음 마무리에 준 옵션(queue/finish-pr.ts 의 replayArgs). `orch followup done` 이 그 보드에 쓰고 마무리를 다시 띄울 때 그대로 준다.
+//     finish_args   처음 마무리에 준 옵션(옛 마무리가 남긴 값). `orch followup done` 이 그 보드에 쓰고 마무리를 다시 띄울 때 그대로 준다.
 //                   옛 항목에는 없어 빈 목록으로 읽는다
 //     board_item    배포 뒤 확인 단계를 붙인 보드 항목 ID. 없으면 별도 항목을 쓴다
 //     pid_file      처음 마무리의 pid 파일 절대 경로. `orch followup done` 이 도는 마무리를 이 파일로 알아보고 다시 띄울 때 쓴다.

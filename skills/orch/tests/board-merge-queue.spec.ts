@@ -32,7 +32,7 @@ const LOOP_LOG = [
   'tick 3 2026-11-04T04:10:00.000Z',
   'AUTO-MERGE-WAIT #10 리뷰 보류',
   'AUTO-MERGE-WAIT #11 미해결 스레드 2',
-  'AUTO-MERGE-WAIT #12 기능 완료 근거 없음',
+  'AUTO-MERGE-WAIT #12 보드 보류',
   'tick 4 2026-11-04T04:15:00.000Z',
   'AUTO-MERGE-HELD pid 99 #13 체크 대기 3분 남은 #13 #14',
 ].join('\n')
@@ -41,7 +41,7 @@ test('큐 밖 PR 은 자동 머지를 판정한 마지막 틱의 이유와 그 �
   assert.deepEqual(waitRows(LOOP_LOG), {
     10: { place: 'out', rank: null, reason: '리뷰 보류', at: '2026-11-04T04:10:00.000Z' },
     11: { place: 'out', rank: null, reason: '미해결 스레드 2', at: '2026-11-04T04:00:00.000Z' },
-    12: { place: 'out', rank: null, reason: '기능 완료 근거 없음', at: '2026-11-04T04:10:00.000Z' },
+    12: { place: 'out', rank: null, reason: '보드 보류', at: '2026-11-04T04:10:00.000Z' },
   })
 })
 
@@ -182,7 +182,7 @@ test('큐 명령은 고정 루프 로그에서 기존 JSON 한 줄을 낸다', (
     enabled: true, running: false, prs: {
       10: { place: 'out', rank: null, reason: '리뷰 보류', at: '2026-11-04T04:10:00.000Z' },
       11: { place: 'out', rank: null, reason: '미해결 스레드 2', at: '2026-11-04T04:00:00.000Z' },
-      12: { place: 'out', rank: null, reason: '기능 완료 근거 없음', at: '2026-11-04T04:10:00.000Z' },
+      12: { place: 'out', rank: null, reason: '보드 보류', at: '2026-11-04T04:10:00.000Z' },
     }, error: null,
   }) + '\n')
 })

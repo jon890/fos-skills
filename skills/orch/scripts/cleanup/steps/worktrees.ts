@@ -73,13 +73,10 @@
 //                  줄은 `남김 <경로>: 끊긴 worker <dispatch>, 다시 띄우거나 직접 정리한다` 다(unknown 은 「끊김인지 확인하지 못한 failed dispatch」).
 //                  `orch worker resume` 이나 새 dispatch 가 뜨면 가장 최근 행이 그것이라 다시 보통 규칙을 따른다.
 //                  오류로 끝난 failed(heldDispatch 가 null)는 지금처럼 끝난 것으로 보고 정리한다
-//     후속 검증 대기  PR 이 MERGED 인 기능 PR(본문에 기능 완료 근거 블록이 있거나 lib/feature-evidence.ts 의 featureBranch)의
-//                  featureCompletionProblem 이 있다. `남김 <경로>: 기능 후속 검증이 끝나지 않았다: <이유>` 를 내고 지시서와 함께 남긴다.
-//                  근거를 갱신하면 다음 정리가 지운다(사용자 결정 2026-11-20. 2026-11-04 의 「워크트리는 지우고 지시서만 남긴다」 를 바꿨다)
-//     --remove-kept <경로> 로 준 워크트리는 위 둘을 넘어 정리한다. 지시서도 함께 지운다.
+//     PR 본문의 기능 완료 근거 글로는 남기지 않는다(사용자 결정 2026-11-24)
+//     --remove-kept <경로> 로 준 워크트리는 위 규칙을 넘어 정리한다. 지시서도 함께 지운다.
 //     커밋 안 된 변경, 원격에 없는 커밋, 살아 있는 worker, 터미널 소유 확인은 그대로 막는다.
 //     오래 남은 끊긴 worker 워크트리는 orch doctor 의 KEPT-LOST 가 알린다.
-//     후속 검증 대기는 대기만이 아니라 근거 누락, 실패, 근거 조회 실패도 남긴다(featureCompletionProblem 이 내는 문제 모두).
 //     브랜치가 없는 워크트리(리뷰 워크트리, 저장소 밖 detached)는 보지 않는다. 다시 만들기 쉬워 스펙 범위 밖으로 둔다
 //
 // 건너뜀 (이유를 낸다):
@@ -206,7 +203,6 @@ import { launchesAt } from '../../lib/launched.ts'
 import { idleShellVerdict } from '../../lib/idle-shells.ts'
 import { heldDispatch, isFinished, isLive, judge, readScreens, screenHandles } from '../../lib/worker-state.ts'
 import type { Held } from '../../lib/worker-state.ts'
-import { EVIDENCE_START, featureBranch, featureCompletionProblem } from '../../lib/feature-evidence.ts'
 import { isObject } from '../../core/json.ts'
 import { liveReviewPrs, originBranch, reviewPrOf, reviewPrOfBranch } from '../../lib/review.ts'
 import { blocker as ownershipBlocker, rowHandles } from '../../lib/ownership.ts'
@@ -349,14 +345,6 @@ function heldReason(held: Held): string {
   return `끊김인지 확인하지 못한 failed dispatch ${held.dispatch}(${held.detail}), 다시 띄우거나 직접 정리한다`
 }
 
-// 기능 PR 의 완료 근거가 끝나지 않았으면 그 이유, 아니면 null 이다. 기능 PR 이 아니면 gh 를 부르지 않는다.
-// 판정은 specs.ts 의 specsKept 와 같은 lib/feature-evidence.ts 의 featureCompletionProblem 이다
-function followUpPending(s: Sweep, branch: string, pr: Pr): string | null {
-  const body = String(pr.body ?? '')
-  if (!body.includes(EVIDENCE_START) && !featureBranch(s.repo, branch, s.specsDir ?? undefined)) return null
-  return featureCompletionProblem(s.repo, String(pr.number), branch, s.specsDir ?? undefined, body)
-}
-
 function prInput(pr: Pr): Json {
   const author = isObject(pr.author) && typeof pr.author.login === 'string' ? pr.author.login : null
   return {
@@ -467,11 +455,6 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     const owner = await ownershipBlocker(path, ignored, async () => fresh)
     if (owner) return keep(owner, `남김: ${owner} (${path})`)
   }
-  // 머리 주석의 「남기는 워크트리」 의 후속 검증 대기. 지시서와 함께 워크트리를 남긴다
-  if (m.ok && m.pr?.state === 'MERGED' && !forced) {
-    const pending = followUpPending(s, branch, m.pr)
-    if (pending) return keep(`후속 검증 대기: ${pending}`, `남김 ${path}: 기능 후속 검증이 끝나지 않았다: ${pending}`)
-  }
   const closing = closedOwnTerminals(s, m.pr, mine, terminals, path)
   if (!m.ok) {
     if (closing && m.pr) {
@@ -561,7 +544,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
     log(`  worktree 와 로컬 브랜치를 지울 것 ${branch}`)
     deleteRemote(repo, plan, args.base, false, log)
-    if (forced || !specsKept(s, path, name, branch, m.pr)) {
+    if (forced || !specsKept(s, m.pr)) {
       trashLaunchedSpecs(repo, specsDir, path, false, log, args.liveSpecs, args.trash)
       deleteSpecFiles(specsDir, name, false, log, args.liveSpecs, branch, m.pr)
     }
@@ -618,7 +601,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
   report.removed.push(path)
   deleteRemote(repo, plan, args.base, true, log)
-  if (forced || !specsKept(s, path, name, branch, m.pr)) {
+  if (forced || !specsKept(s, m.pr)) {
     trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
     deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
   }
