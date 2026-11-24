@@ -2,6 +2,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.4 (2026-11-24)
+
+- Orca 가 스크린숏 파일 경로를 돌려주면 요청한 위치에 그 파일을 복사한다.
+
 ## 3.0.3 (2026-11-20)
 
 - 드라이버 링크를 거는 안내가 fos-skills 저장소 `docs/contributing.md` 의 「링크로 설치」 로 옮겨 간 것을 가리켜요
