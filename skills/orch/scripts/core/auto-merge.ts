@@ -16,6 +16,7 @@
 //                      문구만 있으면 통과하는 가짜 통과를 막으려는 것이다). 아래 가운데 하나가 있으면 통과다
 //                        봇 영수증   queue.auto_review.trusted_bots 의 봇이 지금 HEAD 를 확인한 영수증(lib/review-bot.ts)
 //                        리뷰 체크   queue.auto_review.review_checks 의 CI 체크가 지금 HEAD 에서 success 다(core/review-checks.ts)
+//                      리뷰 체크를 먼저 보고, success 면 봇 영수증을 조회하지 않는다(봇 조회 실패로 막지 않는다. lib/review-judgement.ts).
 //                      둘 다 없으면 `리뷰 대기` 이고 missing 이다. 통과하면 근거를 `봇 영수증 <봇>(커밋 <앞 8자리>, <시각>)` 이나
 //                      `리뷰 체크 <이름> success` 로 낸다
 //                      옛 문구 판정 키(pass, block, require, feature_head, fixed_after_block, fallback)는 읽지 않고 ignoredReviewKeys 에 둔다.

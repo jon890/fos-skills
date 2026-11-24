@@ -295,6 +295,19 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     }
   })
 
+  // PR 619 리뷰: 둘 중 하나면 통과라 리뷰 체크가 success 면 봇 조회가 실패해도 막지 않는다
+  test('trusted_bots 와 review_checks 를 함께 두면 리뷰 체크 success 로 봇 조회 실패와 상관없이 통과한다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING], review_checks: ['claude-review'] } } }))
+    const rollup = (conclusion: string) => [{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'claude-review', status: 'COMPLETED', conclusion }]
+    const passed = await gate(c, { '1': pr({ statusCheckRollup: rollup('SUCCESS'), bot_review: undefined }) }, 0)
+    assert.equal(passed.code, 0, both(passed))
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /readThreads=/)
+    const failed = await gate(c, { '1': pr({ statusCheckRollup: rollup('FAILURE'), bot_review: undefined }) }, 0)
+    assert.equal(failed.code, 1, both(failed))
+    assert.match(gateReason(failed), /스레드를 읽지 못했다/)
+  })
+
   test('머지 큐도 이전 영수증을 막고 현재 HEAD 를 확인한 영수증으로 머지한다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
