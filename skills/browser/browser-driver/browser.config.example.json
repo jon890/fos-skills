@@ -12,7 +12,7 @@
     "work": "Profile 2",
     "personal": "Default"
   },
-  "_previewDriver": "사람이 읽을 화면을 띄우는 쪽이 쓸 백엔드. 자동화는 driver 의 ego 가 맡고, 사람이 보는 화면은 orca 가 맞아 따로 둔다. content-preview 의 show-preview.sh 가 읽는다. 비우면 driver 와 자동 감지를 따른다.",
+  "_previewDriver": "사람이 읽을 화면을 띄우는 쪽이 쓸 백엔드. 자동화는 driver 의 ego 가 맡고, 사람이 보는 화면은 orca 가 맞아 따로 둔다. content-preview 의 show-preview.ts 가 읽는다. system 으로 두면 드라이버를 쓰지 않고 시스템 기본 브라우저로 띄운다. 비우면 driver 와 자동 감지를 따른다.",
   "driver": "ego",
   "previewDriver": "orca",
   "cdpPort": 9222
