@@ -213,7 +213,7 @@ const ROWS: Row[] = [
   ),
   // spec
   { group: 'spec', verb: 'lint', script: 'spec/spec-lint.ts', context: ['repo'], legacy: { name: 'spec-lint', flags: [] }, usage: 'orch spec lint' },
-  { group: 'spec', verb: 'review', script: 'spec/review-spec.ts', positional: { flag: '--pr', repeat: false, required: true, what: 'PR 번호' }, context: ['repo', 'specs-dir'], usage: 'orch spec review <PR> [--out <파일>] [--impl-agent claude|codex] [--force]' },
+  { group: 'spec', verb: 'review', script: 'spec/review-spec.ts', positional: { flag: '--pr', repeat: false, required: true, what: 'PR 번호' }, context: ['repo', 'specs-dir'], usage: 'orch spec review <PR> [--out <파일>] [--impl-agent claude|codex] [--review-worker] [--force]' },
   { group: 'spec', verb: 'sync-common', script: 'spec/sync-common.ts', context: ['repo', 'specs-dir'], usage: 'orch spec sync-common [--apply]' },
   { group: 'spec', verb: 'line', script: 'spec/spec-line.ts', legacy: { name: 'spec-line', flags: [] }, usage: 'orch spec line <지시서> [--require-permission]' },
   // doctor. Run 은 문맥으로 채우지 않는다(스펙 DECISION23)

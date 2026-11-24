@@ -493,7 +493,7 @@ async function autoMergeStep(
       const key = `${pr.number}@${pr.head}`
       if (judged.missing && !Object.hasOwn(state.unreviewed, key)) {
         const text = ctx.autoMerge.review?.trustedBots
-          ? `${judged.wait}. 현재 HEAD 의 봇 리뷰를 요청하거나 독립 리뷰 결과를 판정 문구로 남긴다`
+          ? `봇 리뷰 대기: ${judged.wait}`
           : judged.missing === 'verdict-on-head'
             ? `HEAD ${pr.head.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
             : `HEAD ${pr.head.slice(0, 8)} 의 PR 에 판정 문구가 든 리뷰가 없다(${judged.missing}). 독립 리뷰 결과를 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`

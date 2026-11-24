@@ -7,6 +7,7 @@ import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
+import { BOT_SETTING } from './fixtures/codex-review.ts'
 import { recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
 import { fillReviewSpec, implementerOf, reviewBranchFor, reviewerFor, unfilled } from '../scripts/lib/review-spec.ts'
 import { reviewPrOfSpec } from '../scripts/lib/review.ts'
@@ -37,6 +38,20 @@ function make(...args: string[]) {
   return { code: done.status, stdout: done.stdout.trim(), stderr: done.stderr }
 }
 const file = () => join(specs, 'spec-review-pr-262.md')
+
+test('믿는 봇을 설정하면 봇 이름을 보여 주며 코디네이터가 요청하면 리뷰 지시서를 만든다', () => {
+  mkdirSync(join(repo, '.orch'), { recursive: true })
+  const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
+  writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+  const waiting = make('262', '--force')
+  assert.equal(waiting.code, 0, waiting.stdout + waiting.stderr)
+  assert.match(waiting.stdout, /^REVIEW-SPEC-BOT-WAIT #262 봇 리뷰 대기 \(chatgpt-codex-connector\)$/)
+  assert.equal(existsSync(file()), false)
+  assert.deepEqual(gh.calls(), [])
+  const explicit = make('262', '--review-worker', '--impl-agent', 'claude')
+  assert.equal(explicit.code, 0, explicit.stdout + explicit.stderr)
+  assert.equal(existsSync(file()), true)
+})
 
 test('구현 worker 가 Claude 면 Codex 리뷰 지시서를 PR 번호·제목·브랜치로 만든다', () => {
   recordHistory(repo, row('d1', 'fix/precommit', 'claude', '2026-11-10T00:00:00Z'))

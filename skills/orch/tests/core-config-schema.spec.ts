@@ -11,6 +11,7 @@ import { KEYS, PAIRS, RESTART_KEYS, TIMER_MAX_SEC, knownPath, problems } from '.
 import type { Problem } from '../scripts/core/config-schema.ts'
 import { FINISH_KEYS } from '../scripts/core/finish-options.ts'
 import { SAMPLES } from './fixtures/config-samples.ts'
+import { BOT_SETTING } from './fixtures/codex-review.ts'
 
 const READER_KEYS: Record<Section, readonly string[]> = {
   finish: FINISH_KEYS,
@@ -34,6 +35,19 @@ const READER_KEYS: Record<Section, readonly string[]> = {
 const under = (problem: Problem, section: string, key: string) => problem.path === `${section}.${key}` || problem.path.startsWith(`${section}.${key}.`) || problem.path.startsWith(`${section}.${key}[`)
 const valueProblems = (section: string, key: string, value: unknown) =>
   problems({ [section]: { [key]: value } }).filter((problem) => under(problem, section, key) && (problem.kind === 'value' || problem.kind === 'unknown'))
+
+test('봇 리뷰 요청 문구는 한 줄이고 기다리는 시간은 양수다', () => {
+  const review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [{ ...BOT_SETTING, request_comment: '@codex review' }] }
+  assert.equal(knownPath(['queue', 'auto_review', 'request_after_sec']), 'known')
+  assert.deepEqual(valueProblems('queue', 'auto_review', { ...review, request_after_sec: 180 }), [])
+  for (const request_after_sec of [0, -1, '180', null]) {
+    assert.match(valueProblems('queue', 'auto_review', { ...review, request_after_sec })[0]?.reason ?? '', /request_after_sec/)
+  }
+  for (const request_comment of ['', 'a\nb', null]) {
+    const invalid = { ...review, trusted_bots: [{ ...BOT_SETTING, request_comment }] }
+    assert.match(valueProblems('queue', 'auto_review', invalid)[0]?.reason ?? '', /request_comment/)
+  }
+})
 
 describe('키 목록 대조', () => {
   test('검사표의 절은 SECTIONS 와 같다', () => {

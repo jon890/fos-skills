@@ -10,6 +10,7 @@ type Thread = { isResolved: boolean; comments: { nodes: Pick<Comment, 'author' |
 export type BotReviewData = { comments: Comment[]; reviews: Review[]; reviewThreads: Thread[] }
 type Connection = keyof BotReviewData
 type TrustedReview = { ok: true; receipts: ReviewNote[] } | { ok: false; wait: string }
+type BotReviewSnapshot = { ok: true; data: BotReviewData; ready: boolean } | { ok: false; wait: string }
 
 const CONNECTIONS = ['comments', 'reviews', 'reviewThreads'] as const
 const REVIEW_LOOKUP_FAILURE = '믿는 리뷰 봇의 댓글, 리뷰 또는 줄 댓글 스레드를 읽지 못했다'
@@ -20,6 +21,8 @@ query($owner:String!, $repo:String!, $number:Int!,
   repository(owner:$owner, name:$repo) {
     pullRequest(number:$number) {
       headRefOid
+      state
+      isDraft
       comments(first:50, after:$commentsAfter) @include(if:$readComments) {
         pageInfo { hasNextPage endCursor }
         nodes { author { __typename login } body createdAt }
@@ -39,11 +42,17 @@ query($owner:String!, $repo:String!, $number:Int!,
 // gh pr view 는 봇 login 에서 [bot] 을 빼고 계정 종류도 내보내지 않는다.
 // GraphQL 에서 계정 종류와 줄 댓글의 해결 여부를 읽고, 모든 페이지를 다 읽어야 판정한다.
 export function loadTrustedBotReviews(repo: string, target: ReviewTarget, head: string, bots: readonly TrustedReviewBot[]): TrustedReview {
+  const snapshot = loadBotReviewSnapshot(repo, target, head)
+  return snapshot.ok ? judgeTrustedBotReviews(head, snapshot.data, bots) : snapshot
+}
+
+export function loadBotReviewSnapshot(repo: string, target: ReviewTarget, head: string): BotReviewSnapshot {
   const [owner, name] = target.slug.split('/')
   const args = ['api', 'graphql', '--hostname', target.host, '-f', `query=${QUERY}`,
     '-f', `owner=${owner}`, '-f', `repo=${name}`, '-F', `number=${target.number}`]
   const rows: Record<Connection, unknown[]> = { comments: [], reviews: [], reviewThreads: [] }
   const cursors = new Map<Connection, string | null>(CONNECTIONS.map((key) => [key, null]))
+  let ready = true
   while (cursors.size > 0) {
     const pageArgs = [...args,
       '-F', `readComments=${cursors.has('comments')}`, '-F', `readReviews=${cursors.has('reviews')}`,
@@ -56,6 +65,7 @@ export function loadTrustedBotReviews(repo: string, target: ReviewTarget, head: 
     const pr = got.ok ? got.data?.data?.repository?.pullRequest : undefined
     if (!pr) return { ok: false, wait: REVIEW_LOOKUP_FAILURE }
     if (pr.headRefOid !== head) return { ok: false, wait: '믿는 리뷰 봇의 결과를 조회하는 동안 PR HEAD 가 바뀌었다' }
+    ready &&= pr.state === 'OPEN' && pr.isDraft === false
     for (const [key, previous] of cursors) {
       const page = pr[key]
       if (!isObject(page) || !Array.isArray(page.nodes) || !page.nodes.every(isObject) || !isObject(page.pageInfo)) {
@@ -68,7 +78,7 @@ export function loadTrustedBotReviews(repo: string, target: ReviewTarget, head: 
       rows[key].push(...page.nodes)
     }
   }
-  return judgeTrustedBotReviews(head, rows as BotReviewData, bots)
+  return { ok: true, data: rows as BotReviewData, ready }
 }
 
 function fromBot(author: Actor, bot: TrustedReviewBot): boolean {
@@ -80,6 +90,34 @@ function receiptCommit(body: string, bot: TrustedReviewBot): string | null {
   const commits = new Set(Array.from(body.matchAll(bot.reviewedCommit), (match) => match[1]?.toLowerCase()))
   const [commit] = commits
   return commits.size === 1 && commit && /^[0-9a-f]{7,40}$/.test(commit) ? commit : null
+}
+
+export function hasCurrentBotReceipt(head: string, data: BotReviewData, bot: TrustedReviewBot): boolean {
+  const matches = (body: string): boolean => {
+    const commit = receiptCommit(body, bot)
+    return commit !== null && head.startsWith(commit)
+  }
+  return data.comments.some((comment) => fromBot(comment.author, bot) && matches(comment.body)) ||
+    data.reviews.some((review) => fromBot(review.author, bot) && review.state !== 'PENDING' &&
+      review.state !== 'DISMISSED' && review.state !== 'CHANGES_REQUESTED' &&
+      review.commit?.oid.toLowerCase() === head && matches(review.body))
+}
+
+// Codex 는 한 PR 의 요약 댓글을 갱신한다. 같은 head 의 코드 리뷰 상태만 읽는다.
+export function botReviewRunning(head: string, data: BotReviewData, bot: TrustedReviewBot): boolean {
+  if (data.reviews.some((review) => fromBot(review.author, bot) && review.state === 'PENDING' && review.commit?.oid === head)) return true
+  if (bot.login !== 'chatgpt-codex-connector') return false
+  return data.comments.some((comment) => {
+    if (!fromBot(comment.author, bot)) return false
+    const state = /^<!-- codex-review-state:v1 (.+) -->$/m.exec(comment.body)?.[1]
+    if (!state) return false
+    try {
+      const review = JSON.parse(state)?.code_review
+      return review?.commit_sha === head && ['in_progress', 'running', 'pending', 'queued'].includes(review.status)
+    } catch {
+      return false
+    }
+  })
 }
 
 export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: readonly TrustedReviewBot[]): TrustedReview {

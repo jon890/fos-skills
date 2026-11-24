@@ -302,7 +302,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
       if (reason) assert.match(gateReason(r), reason)
     }
     const missing = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: {} }) }, 0)
-    assert.match(gateReason(missing), /리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다/)
+    assert.match(gateReason(missing), /^봇 리뷰 대기: .*리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다/)
   })
 
   test('머지 큐도 이전 영수증을 막고 현재 HEAD 를 확인한 영수증으로 머지한다', async (t) => {

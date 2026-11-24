@@ -66,8 +66,8 @@ export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-h
 // 리뷰 봇이 실행 장애로 실패했을 때 루프가 거는 대체 리뷰(loop/steps/review-fallback.ts 머리 주석). check 는 리뷰 봇의 체크 이름,
 // failWithinSec 은 시작부터 실패까지 이 초 안이면 장애로 보는 기준, passText 와 blockText 는 대체 리뷰가 달 판정 댓글의 첫 줄이다
 export type ReviewFallback = { check: string; failWithinSec: number; passText: string; blockText: string }
-export type TrustedReviewBot = { login: string; receiptMarker: string; reviewedCommit: RegExp }
-export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean; fallback?: ReviewFallback | null; trustedBots?: TrustedReviewBot[] }
+export type TrustedReviewBot = { login: string; receiptMarker: string; reviewedCommit: RegExp; requestComment?: string }
+export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean; fallback?: ReviewFallback | null; trustedBots?: TrustedReviewBot[]; requestAfterSec?: number }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewConfig | null
@@ -81,7 +81,8 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
-export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block', 'fallback', 'trusted_bots']
+export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block', 'fallback', 'trusted_bots', 'request_after_sec']
+export const DEFAULT_REVIEW_REQUEST_AFTER_SEC = 180
 const FALLBACK_KEYS: readonly string[] = ['check', 'fail_within_sec', 'pass_text', 'block_text']
 export const DEFAULT_FAIL_WITHIN_SEC = 120
 export const DEFAULT_PASS_TEXT = '판정: 머지 가능'
@@ -141,8 +142,8 @@ function trustedReviewBots(value: unknown): TrustedReviewBot[] {
   if (!Array.isArray(value) || value.length === 0) throw new ConfigError(`설정 파일의 ${key} 는 비지 않은 목록이어야 한다`)
   const logins = new Set<string>()
   return value.map((entry: unknown) => {
-    if (!isObject(entry) || Object.keys(entry).some((field) => !['login', 'receipt_marker', 'reviewed_commit'].includes(field))) {
-      throw new ConfigError(`설정 파일의 ${key} 항목에는 login, receipt_marker, reviewed_commit 을 쓴다`)
+    if (!isObject(entry) || Object.keys(entry).some((field) => !['login', 'receipt_marker', 'reviewed_commit', 'request_comment'].includes(field))) {
+      throw new ConfigError(`설정 파일의 ${key} 항목에는 login, receipt_marker, reviewed_commit, request_comment 를 쓴다`)
     }
     const { login, receipt_marker: marker, reviewed_commit: commit } = entry
     if (typeof login !== 'string' || !/^[a-z0-9-]+(?:\[bot\])?$/i.test(login)) {
@@ -167,7 +168,11 @@ function trustedReviewBots(value: unknown): TrustedReviewBot[] {
     if (new RegExp(`(?:${commit})|`).exec('')?.length === 1) {
       throw new ConfigError(`설정 파일의 ${key} 항목의 reviewed_commit 에 커밋을 읽을 캡처 그룹이 필요하다`)
     }
-    return { login: normalized, receiptMarker: marker.trim(), reviewedCommit }
+    const requestComment = entry.request_comment
+    if (requestComment !== undefined && (typeof requestComment !== 'string' || !requestComment.trim() || /[\r\n]/.test(requestComment))) {
+      throw new ConfigError(`설정 파일의 ${key} 항목의 request_comment 는 비지 않은 한 줄이어야 한다`)
+    }
+    return { login: normalized, receiptMarker: marker.trim(), reviewedCommit, ...(requestComment === undefined ? {} : { requestComment: requestComment.trim() }) }
   })
 }
 
@@ -190,13 +195,19 @@ function reviewRule(value: unknown): ReviewConfig {
   }
   if (value.feature_head !== undefined && typeof value.feature_head !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.feature_head 는 true 나 false 여야 한다`)
   if (value.fixed_after_block !== undefined && typeof value.fixed_after_block !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.fixed_after_block 는 true 나 false 여야 한다`)
+  const requestAfterSec = value.request_after_sec
+  if (requestAfterSec !== undefined && (typeof requestAfterSec !== 'number' || !Number.isFinite(requestAfterSec) || requestAfterSec <= 0)) {
+    throw new ConfigError(`설정 파일의 ${name}.request_after_sec 는 양수여야 한다`)
+  }
+  const trustedBots = value.trusted_bots === undefined ? undefined : trustedReviewBots(value.trusted_bots)
+  const fallback = reviewFallback(value.fallback, rule as ReviewRule)
   return {
     ...(rule as ReviewRule),
     ...reviewRequire(value.require),
     featureHead: value.feature_head !== false,
     fixedAfterBlock: value.fixed_after_block === true,
-    fallback: reviewFallback(value.fallback, rule as ReviewRule),
-    ...(value.trusted_bots === undefined ? {} : { trustedBots: trustedReviewBots(value.trusted_bots) }),
+    fallback: trustedBots ? null : fallback,
+    ...(trustedBots ? { trustedBots, requestAfterSec: requestAfterSec ?? DEFAULT_REVIEW_REQUEST_AFTER_SEC } : {}),
   }
 }
 

@@ -29,7 +29,7 @@
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
 // PR 을 열거나 고쳐 push 한 턴에서 --wait 로 검사한다. GATE-OK 뒤 「준비됨」 status 를 보낸다.
 // HOLD 가 있으면 이유도 status 에 적는다. GATE-FAIL 이면 출력된 조건을 해결한 뒤 다시 검사한다.
-// 독립 리뷰 대기만 남으면 코디네이터에게 리뷰를 요청하고 그 이유를 status 에 적는다.
+// 독립 리뷰 대기만 남으면 코디네이터에게 리뷰를 요청한다. 봇 리뷰 대기는 상주 루프가 처리한다.
 //
 // MERGE_QUEUE_GH_RETRIES, MERGE_QUEUE_GH_RETRY_SECONDS, MERGE_QUEUE_SLEEP_SCALE 는 머지 큐와 같다.
 

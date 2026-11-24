@@ -1,11 +1,12 @@
 // 리뷰 worker 지시서를 PR 번호로 만든다. templates/spec-review.md 를 PR 메타데이터로 채워 지시서 폴더에 쓴다.
-// 사용법: orch spec review <PR> [--repo DIR] [--specs-dir DIR] [--out FILE] [--impl-agent claude|codex] [--force]
+// 사용법: orch spec review <PR> [--repo DIR] [--specs-dir DIR] [--out FILE] [--impl-agent claude|codex] [--review-worker] [--force]
 //
 //     <PR>           리뷰할 PR 번호(`#12` 도 받는다)
 //     --specs-dir    지시서 폴더. 주지 않으면 진입점이 설정(finish.specs_dir)이나 기본 폴더로 채운다
 //     --out          만들 파일. 기본은 <지시서 폴더>/spec-review-pr-<N>.md. 같은 PR 을 다시 리뷰하면 `-<꼬리>` 를 붙인다(lib/review.ts 의 이름 규칙).
 //                    파일 이름이 spec-review-pr-<N>-<꼬리>.md 꼴이면 `브랜치:` 줄이 review/pr-<N>-<꼬리> 가 된다. 아니면 review/pr-<N> 이다
 //     --impl-agent   구현 worker 의 제공자. 영구 이력에서 구현 worker 를 못 찾을 때(직접 띄운 PR, 이력 도입 전)만 준다
+//     --review-worker 믿는 봇을 설정한 저장소에서도 리뷰 worker 지시서를 만든다
 //     --force        있는 파일을 덮어쓴다. 코디네이터가 채운 「배경」 을 잃으므로 기본은 거부한다. 같은 리뷰 브랜치를 다시 쓰는 용도라 브랜치 중복도 보지 않는다
 //
 // 채우는 것(lib/review-spec.ts 가 소유): PR 번호, 제목, `리뷰 PR:`·`브랜치: review/pr-<N>[-<꼬리>]` 줄, 공통 지시서 경로,
@@ -19,6 +20,7 @@
 //     REVIEW-SPEC-FILL <설명>; <설명>                  코디네이터가 채울 자리표시(만든 파일에 남아 있다)
 //     REVIEW-SPEC-WARN <이유>                         만들었지만 알릴 것(PR 이 열려 있지 않다, 구현 이력의 제공자가 둘 이상이다)
 //     REVIEW-SPEC-EXISTS <파일>                       이미 있어 만들지 않았다. 종료 코드 1
+//     REVIEW-SPEC-BOT-WAIT #<PR> 봇 리뷰 대기 (<봇>)  봇이 리뷰한다. 지시서 없이 종료 코드 0
 //     REVIEW-SPEC-FAIL <이유>                         PR 을 읽지 못했거나 구현 worker 를 모르거나 틀이 맞지 않거나 같은 이름의 리뷰 브랜치가 이미 있다. 종료 코드 1
 // 사용법 오류는 2 다.
 
@@ -28,6 +30,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { bundleRoot } from '../lib/bundle.ts'
+import { autoMergeConfig } from '../lib/auto-merge.ts'
+import { loadConfig } from '../lib/config.ts'
 import { ghJson } from '../lib/gh.ts'
 import { git, mainCheckout } from '../lib/git.ts'
 import { launchHistory } from '../lib/launch-history.ts'
@@ -35,7 +39,7 @@ import { oneLine } from '../lib/output.ts'
 import { pathOf } from '../lib/paths.ts'
 import { fillReviewSpec, implementerOf, reviewBranchFor, reviewerFor, unfilled } from '../lib/review-spec.ts'
 
-const USAGE = '사용법: orch spec review <PR> [--repo DIR] [--specs-dir DIR] [--out FILE] [--impl-agent claude|codex] [--force]'
+const USAGE = '사용법: orch spec review <PR> [--repo DIR] [--specs-dir DIR] [--out FILE] [--impl-agent claude|codex] [--review-worker] [--force]'
 
 // 같은 이름의 브랜치가 이미 있는 곳. 로컬 브랜치(워크트리에 체크아웃된 것 포함)와 원격 추적 브랜치(마지막 fetch 기준, 네트워크는 부르지 않는다)를 본다. 없으면 null 이다
 function branchTaken(repo: string, branch: string): string | null {
@@ -53,7 +57,7 @@ type View = { number: number; title: string; url: string; headRefName: string; s
 export function main(argv: string[]): number {
   const options = {
     pr: { type: 'string' }, repo: { type: 'string' }, 'specs-dir': { type: 'string' }, out: { type: 'string' },
-    'impl-agent': { type: 'string' }, force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+    'impl-agent': { type: 'string' }, 'review-worker': { type: 'boolean' }, force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
   } as const
   let values
   let positionals: string[]
@@ -84,6 +88,17 @@ export function main(argv: string[]): number {
     return 1
   }
   const repo = mainCheckout(resolve(values.repo ?? process.cwd()))
+  if (!values['review-worker']) {
+    try {
+      const bots = autoMergeConfig(loadConfig(repo)).review?.trustedBots
+      if (bots) {
+        process.stdout.write(`REVIEW-SPEC-BOT-WAIT #${number} 봇 리뷰 대기 (${bots.map((bot) => bot.login).join(', ')})\n`)
+        return 0
+      }
+    } catch (e) {
+      return fail((e as Error).message)
+    }
+  }
   const viewed = ghJson<View>(['pr', 'view', number, '--json', 'number,title,url,headRefName,state'], { cwd: repo })
   if (!viewed.ok) return fail(`PR #${number} 를 읽지 못했다: ${viewed.error}`)
   const pr = viewed.data
