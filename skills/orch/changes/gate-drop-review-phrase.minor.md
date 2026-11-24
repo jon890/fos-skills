@@ -1,3 +1,0 @@
-- 자동 머지와 머지 관문이 리뷰 댓글 문구로 통과나 막힘을 정하지 않는다. 지금 HEAD 의 믿는 봇 영수증(`trusted_bots`)이나 리뷰 체크(`review_checks`) success 만 독립 리뷰로 본다.
-- `queue.auto_review` 의 옛 키(`pass`, `block`, `require`, `feature_head`, `fixed_after_block`, `fallback`)는 읽지 않고 `orch doctor` 가 `LEGACY-REVIEW-KEY` 로 알린다.
-- 리뷰 봇 장애 때 대체 리뷰 worker 를 띄우던 기능을 없앤다. 최신화는 리뷰 체크가 도는 동안 기다리고, 리뷰 체크 실패는 worker 에게 보낸다.
