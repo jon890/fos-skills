@@ -17,6 +17,9 @@
 //      그 둘을 주는 백엔드가 환경마다 다르다. 자동화용 백엔드로 띄우면 worktree 명령이 없어
 //      대조를 건너뛰고, 사용자가 로그인해 둔 프로필의 탭을 자동화와 함께 쓰게 된다.
 //      그래서 값을 정할 자리를 두고, 정하지 않았으면 대조를 건너뛴다는 것만 알린다.
+//   6. IDE 안의 탭이 아니라 시스템 기본 브라우저로 보는 사람도 있다. 그 값(system)이면
+//      드라이버를 부르지 않는다. 드라이버가 자동 감지로 IDE 탭을 잡으면 사용자는 미리보기를
+//      찾지 못한다 (실측: Orca 탭에 떠서 사용자가 어디 띄웠는지 되물었다).
 //
 // 사용법:
 //   node show-preview.ts /path/to/preview.html
@@ -170,6 +173,9 @@ function osascript(script: string): string {
   return done.error ? '' : stripNewlines(done.stdout ?? '')
 }
 
+// previewDriver 에 이 값을 두면 시스템 기본 브라우저로 띄운다. browser-driver 의 백엔드 이름과 겹치지 않는다
+const SYSTEM_BROWSER = 'system'
+
 const MISSING = new Set(['ENOENT', 'EACCES', 'ENOTDIR'])
 
 export function main(argv: string[]): number {
@@ -221,7 +227,9 @@ export function main(argv: string[]): number {
   // 미리보기가 쓸 백엔드. 위 4번과 5번이 무엇을 고려해 정하는지 말한다.
   // 찾는 순서는 둘이다. 호출자가 준 환경변수, 그리고 설정 파일의 previewDriver.
   // 둘 다 없으면 값을 주지 않아 드라이버의 자동 감지에 맡긴다.
+  // 값이 SYSTEM_BROWSER 면 드라이버를 거치지 않고 아래의 기본 브라우저 경로로 바로 간다(위 6번).
   const preview = process.env.PREVIEW_BROWSER_DRIVER || previewDriverFromConfig(driver)
+  if (preview === SYSTEM_BROWSER) driver = ''
 
   // 드라이버를 부르는 단일 창구. 정해진 값이 있으면 매번 그 백엔드로 부른다.
   // 직접 드라이버를 부르면 그 호출만 다른 백엔드로 돌아 탭이 갈린다.

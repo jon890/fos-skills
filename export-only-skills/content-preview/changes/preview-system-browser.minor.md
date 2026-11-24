@@ -1,0 +1,1 @@
+- 설정 파일의 `previewDriver` 나 `PREVIEW_BROWSER_DRIVER` 를 `system` 으로 두면 browser-driver 를 거치지 않고 시스템 기본 브라우저로 미리보기를 띄운다. 이미 열린 Chrome 계열이나 Safari 탭이 있으면 그 탭을 갱신한다.
