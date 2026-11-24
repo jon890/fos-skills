@@ -15,6 +15,43 @@ const names = (stdout: string) =>
     .map((line) => line.trim().split(/\s+/)[0])
 
 describe('대상 선택', () => {
+  test('@ 참조를 따라가고 가져온 파일이나 오버레이로 범위를 좁힐 수 있다', () => {
+    const r = new Repo()
+    const rules = '.agents/personal-rules.md'
+    r.file('CLAUDE.md', `@~/${rules}\n@missing.md\n`)
+    r.file('sub/AGENTS.md', '공통 규칙은 @../shared.md 를 참고한다.\n')
+    r.file(rules, '@nested.md\n')
+    r.file('.agents/nested.md', '@personal-rules.md\n')
+    r.file('shared.md', '공통 규칙\n')
+    r.file('.claude/overlays/plan.md', '계획 규칙\n')
+    r.file('.claude/overlays/config.json', '{}\n')
+    const env = { ...process.env, HOME: r.root }
+    const collect = (...args: string[]) => names(r.run('collect_targets', [r.root, ...args], { env }).stdout)
+    assert.deepEqual(collect().sort(), ['.agents/nested.md', rules, '.claude/overlays/plan.md', 'CLAUDE.md', 'shared.md', 'sub/AGENTS.md'])
+    assert.deepEqual(collect('--scope', rules), [rules])
+    assert.deepEqual(collect('--scope', '.claude/overlays'), ['.claude/overlays/plan.md'])
+    assert.deepEqual(collect('--scope', 'sub'), ['sub/AGENTS.md'])
+  })
+
+  test('@ 예시와 저장소 밖을 가리키는 경로는 감사에 포함하지 않는다', () => {
+    const r = new Repo()
+    const outside = new Repo()
+    outside.file('rules.md', '외부 규칙\n')
+    r.link('outside.md', join(outside.root, 'rules.md'))
+    r.file('cache/local.md', '캐시\n')
+    r.file('example.md', '예시\n')
+    r.file('CLAUDE.md', [
+      `@${join(outside.root, 'rules.md')}`,
+      '@outside.md',
+      '@cache/local.md',
+      '인라인 예시: `@example.md`',
+      '~~~markdown',
+      '@example.md',
+      '~~~',
+    ].join('\n'))
+    assert.deepEqual(names(r.run('collect_targets', [r.root]).stdout), ['CLAUDE.md'])
+  })
+
   test('저장소 지침과 오버레이와 참조 문서를 고른다', () => {
     const r = new Repo()
     for (const f of ['AGENTS.md', 'CLAUDE.md', 'sub/AGENTS.md', '.orch/overlay.md', '.claude/plan-overlay.md', 'skills/a/SKILL.md', 'skills/a/references/x.md', '.claude/rules/r.md', '.claude/agents/a.md', '.claude/references/ref.md', '.agents/roles/role.md', '.claude/skills/_shared/s.md', '.codex/agents/a.toml'])
