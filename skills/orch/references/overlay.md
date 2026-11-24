@@ -194,7 +194,7 @@ runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함�
 
 - `merge_command`: bash 명령 문자열. `git merge` 가 충돌로 멈춘 임시 워크트리(MERGE_HEAD 가 base)에서 돈다. 푼 파일은 `git add` 하고, 풀지 못한 파일이 있으면 0 이 아닌 코드로 끝낸다. 환경에 `ORCH_BASE`, `ORCH_BASE_SHA`, `ORCH_PR`, `ORCH_PR_BRANCH` 가 있다
 - `paths`: 계약 파일 정규식 문자열이나 그 목록(Python 정규식, 목록은 `|` 로 잇는다). 충돌 파일이 하나라도 여기 맞지 않으면 합치지 않는다
-- 합친 merge 커밋은 저장소 훅 없이(`--no-verify`) 만들고 강제 push 없이 올린다. 합친 결과는 PR CI 가 검증한다. 기능 완료 근거는 이 커밋을 base 합치기로 받아들인다
+- 합친 merge 커밋은 저장소 훅 없이(`--no-verify`) 만들고 강제 push 없이 올린다. 합친 결과는 PR CI 가 검증한다. 통합 테스트 기록은 이 커밋을 base 합치기로 받아들인다
 
 절차와 출력 줄은 `lib/contract-merge.ts` 머리 주석이 소유한다.
 
