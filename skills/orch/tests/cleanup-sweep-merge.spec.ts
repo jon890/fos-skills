@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { sweepLine } from '../scripts/cleanup/cleanup-sweep.ts'
@@ -122,6 +122,29 @@ describe('머지 판정과 기본 정리', () => {
       assert.ok(existsSync(join(specs, 'spec-nopr.md')))
       assert.ok(existsSync(join(specs, 'spec-common.md')))
       has(out, '지시서 옮김')
+    })
+
+    test('PR 이 없거나 닫힌 지시서, 브랜치 줄 없는 지시서는 cleanup.specs_days 가 지나야 옮긴다', () => {
+      const { specs, trash } = setup()
+      const old = new Date(Date.now() - 4 * 86_400_000)
+      const write = (name: string, text: string, stamp?: Date) => {
+        writeFileSync(join(specs, name), text)
+        if (stamp) utimesSync(join(specs, name), stamp, stamp)
+      }
+      write('spec-nopr-old.md', '브랜치: `nopr-old`\n', old)
+      write('spec-closed-old.md', '브랜치: `closed-old`\n', old)
+      fx.prs['closed-old'] = ['CLOSED', 'c'.repeat(40)]
+      write('spec-nobranch-old.md', '# 메모\n', old)
+      write('spec-nopr-new.md', '브랜치: `nopr-new`\n')
+      write('spec-common.md', '공통\n', old)
+      const out = runSweep(sweepArgs(trash, ['--run', 'run_x', '--apply']))
+      for (const name of ['spec-nopr-old.md', 'spec-closed-old.md', 'spec-nobranch-old.md']) assert.ok(!existsSync(join(specs, name)), name)
+      has(out, 'spec-closed-old.md: 브랜치 closed-old 의 PR 이 닫혔다, 3일 넘게 바뀌지 않았다')
+      for (const name of ['spec-nopr-new.md', 'spec-common.md']) assert.ok(existsSync(join(specs, name)), name)
+      writeFileSync(join(fx.repo, '.orch/config.json'), JSON.stringify({ cleanup: { specs_days: 10 } }))
+      write('spec-nopr-old2.md', '브랜치: `nopr-old2`\n', old)
+      runSweep(sweepArgs(trash, ['--run', 'run_x', '--apply']))
+      assert.ok(existsSync(join(specs, 'spec-nopr-old2.md')))
     })
 
     test('워크트리가 남은 브랜치의 지시서는 옮기지 않는다', () => {

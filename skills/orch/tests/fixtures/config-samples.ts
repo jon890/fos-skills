@@ -129,6 +129,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     state_days: days,
     gh_log_days: days,
     handoff_days: days,
+    specs_days: days,
     folder_days: days,
     data_days: days,
     apply: flag,

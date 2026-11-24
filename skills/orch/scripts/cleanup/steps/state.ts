@@ -7,7 +7,9 @@ import { SWEEP_RETENTION_DAYS } from '../../core/config.ts'
 import { isObject } from '../../core/json.ts'
 import { CLEANUP_KEYS, ConfigError, loadConfig, section } from '../../lib/config.ts'
 import { realPath } from '../../lib/fs.ts'
-import { handoffCandidates, moveHandoffEntry, reasonText } from '../../lib/handoff-retention.ts'
+import { dataCandidates, handoffCandidates, moveRetained, reasonText } from '../../lib/folder-retention.ts'
+import type { RetentionCandidate } from '../../lib/folder-retention.ts'
+import { boardPath } from '../../lib/board-file.ts'
 import { readLaunch } from '../../lib/launched.ts'
 import { LookupError } from '../../lib/ownership.ts'
 import { orchDir, pathOf } from '../../lib/paths.ts'
@@ -91,42 +93,54 @@ function directory(dir: string): boolean {
   try { return lstatSync(dir).isDirectory() } catch { return false }
 }
 
-// handoff 의 끝난 산출물. 판정은 lib/handoff-retention.ts 가 소유한다. 미리 보기면 옮길 것만 알린다
+// 옮길 것을 알리거나(미리 보기) 휴지통으로 옮긴다. label 은 로그의 대상 이름, folder 는 휴지통 안의 폴더다
+function trashRetained(ctx: StepContext, candidates: RetentionCandidate[], label: string, folder: string, days: number): void {
+  const { args, log } = ctx
+  for (const candidate of candidates) {
+    const why = reasonText(candidate, days)
+    if (!args.apply) {
+      log(`${label}을 휴지통으로 옮길 것 ${candidate.path}: ${why}`)
+      continue
+    }
+    try {
+      log(`${label} 옮김 ${candidate.path} -> ${moveRetained(candidate, args.trash, folder)}: ${why}`)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log(`${label}을 남긴다 ${candidate.path}: ${(e as Error).message}`)
+    }
+  }
+}
+
+// handoff 의 끝난 산출물(references/overlay.md 「orch 작업 폴더」). 판정은 lib/folder-retention.ts 가 소유한다
 function sweepHandoff(ctx: StepContext, state: StepState, now: number, handoffDays: number): void {
-  const { repo, args, log } = ctx
+  const { repo, log } = ctx
   const dir = join(orchDir(repo), 'handoff')
   // handoff 가 없으면 GitHub 를 부르지 않는다
   if (!directory(dir)) return
   const lookup = lookupOf(repo)
   const worktrees = new Set(state.listed.map(([worktree]) => basename(worktree)))
-  let open: Set<string> | null
-  try { open = lookup.openHeads() } catch (e) {
-    if (!(e instanceof LookupError)) throw e
-    open = null
-  }
-  const branches = open ? new Set([...open, ...state.listed.map(([, branch]) => branch).filter(Boolean)]) : null
-  let candidates
   try {
-    candidates = handoffCandidates(dir, {
-      now, days: handoffDays, worktrees, branches, prStates: (numbers) => lookup.states(numbers),
-    })
+    const candidates = handoffCandidates(dir, { now, days: handoffDays, worktrees, prStates: (numbers) => lookup.states(numbers) })
+    trashRetained(ctx, candidates, 'handoff 산출물', 'handoff', handoffDays)
   } catch (e) {
     if (!(e instanceof LookupError)) throw e
     log(`handoff 산출물은 남긴다: ${e.message}`)
-    return
   }
-  for (const candidate of candidates) {
-    const why = reasonText(candidate, handoffDays)
-    if (!args.apply) {
-      log(`handoff 산출물을 휴지통으로 옮길 것 ${candidate.path}: ${why}`)
-      continue
-    }
-    try {
-      log(`handoff 산출물 옮김 ${candidate.path} -> ${moveHandoffEntry(candidate, args.trash)}: ${why}`)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log(`handoff 산출물을 남긴다 ${candidate.path}: ${(e as Error).message}`)
-    }
+}
+
+// data/<보드 항목 id>/ 는 그 보드 항목이 지워지면 옮긴다. 보드를 읽지 못하면 남긴다
+function sweepData(ctx: StepContext, now: number, handoffDays: number): void {
+  const { repo, log } = ctx
+  const dir = join(orchDir(repo), 'data')
+  if (!directory(dir)) return
+  let boardIds: Set<string> | null = null
+  try {
+    const board: unknown = JSON.parse(readFileSync(boardPath(repo), 'utf8'))
+    const items = isObject(board) && Array.isArray(board.items) ? board.items : null
+    if (items) boardIds = new Set(items.flatMap((item) => (isObject(item) && typeof item.id === 'string' ? [item.id] : [])))
+  } catch (e) {
+    log(`data 폴더는 남긴다: 보드를 읽지 못했다 (${(e as Error).message})`)
   }
+  trashRetained(ctx, dataCandidates(dir, { now, days: handoffDays, boardIds }), 'data 자료', 'data', handoffDays)
 }
 
 async function sweepRetention(ctx: StepContext, state: StepState): Promise<void> {
@@ -141,7 +155,9 @@ async function sweepRetention(ctx: StepContext, state: StepState): Promise<void>
   const trash = (file: string, subdir: string) => trashRetainedFile(file, subdir, args.trash, args.apply, log)
 
   for (const file of queueLogCandidates({ dir: pathOf('queue', repo), host, days: queueDays })) trash(file, 'queue')
-  sweepHandoff(ctx, state, now, days(config, 'handoff_days', SWEEP_RETENTION_DAYS.handoff_days))
+  const handoffDays = days(config, 'handoff_days', SWEEP_RETENTION_DAYS.handoff_days)
+  sweepHandoff(ctx, state, now, handoffDays)
+  sweepData(ctx, now, handoffDays)
   if (!directory(stateDir)) return
   const cutoff = now - stateDays * RETENTION_DAY_MS
   const active = activeAutoLog(stateDir)

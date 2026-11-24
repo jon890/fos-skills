@@ -398,19 +398,19 @@ describe('handoff-cleanup', () => {
   })
 
   test('csv 와 tsv 는 하루 넘게 지난 것만 옮기고 bin 아래는 뺀다', () => {
-    make('.orch/data/raw.csv', 'a,b\n', 2)
+    make('.orch/extract/raw.csv', 'a,b\n', 2)
     make('.orch/scratch/raw.TSV', 'a\tb\n', 2)
     make('.orch/scratch/new.csv', 'a,b\n', 0)
     make('.orch/bin/lookup.csv', 'a,b\n', 30)
     make('.orch/scratch/notes.txt', 'n', 30)
     ok(['--apply', '--folder-days', '100'])
-    assert.equal(existsSync(join(trash, '.orch/data/raw.csv')), true)
+    assert.equal(existsSync(join(trash, '.orch/extract/raw.csv')), true)
     assert.equal(existsSync(join(trash, '.orch/scratch/raw.TSV')), true)
     for (const rel of ['.orch/scratch/new.csv', '.orch/bin/lookup.csv', '.orch/scratch/notes.txt']) assert.equal(existsSync(join(repo, rel)), true, rel)
   })
 
   test('관리 폴더 안의 오래된 csv 는 남기고 일반 폴더의 csv 는 옮긴다', () => {
-    const protectedFiles = ['study', 'feedback', 'state', 'hooks', 'queue', 'specs', 'bin'].map((name) =>
+    const protectedFiles = ['study', 'feedback', 'state', 'hooks', 'queue', 'specs', 'bin', 'data'].map((name) =>
       make(`.orch/${name}/old.csv`, '후보 데이터', 9))
     const ordinary = make('.orch/scratch/study/old.csv', '추출 데이터', 9)
     const dry = ok(['--folder-days', '100'])
@@ -572,24 +572,25 @@ describe('handoff-cleanup', () => {
       assert.equal(existsSync(preview), true)
     })
 
-    test('열린 PR 브랜치나 워크트리 이름이 든 파일, compare-keys, .keep 의 이름은 오래돼도 남긴다', () => {
+    test('이름 꼴 밖의 파일과 폴더는 워크트리 이름이 들어 있어도 기한이 지나면 옮기고, 기한 안이면 남긴다', () => {
       const live = join(tmp, 'wt', 'test-import-warn')
       sh('git', '-C', repo, 'worktree', 'add', '-q', '-b', 'fix/test-import-warn', live)
       const plan = make('.orch/handoff/plan-test-import-warn-pr.md', '본문', 9)
-      const open = make('.orch/handoff/worker-stalls-preview.html', '<p>', 9)
       const keys = make('.orch/handoff/compare-keys/c1-1.txt', 'base=A', 9)
       age(join(orch, 'handoff/compare-keys'), 9)
-      const kept = make('.orch/handoff/measurements/result.tsv', '측정', 9)
-      age(join(orch, 'handoff/measurements'), 9)
-      make('.orch/handoff/.keep', 'measurements\n')
-      ok(['--apply'], { FAKE_OPEN: JSON.stringify(['feat/worker-stalls']), FAKE_RUN_TASKS: '{}' })
-      for (const target of [plan, open, keys, kept]) assert.equal(existsSync(target), true, target)
+      const fresh = make('.orch/handoff/note.md', '메모', 1)
+      ok(['--apply'], { FAKE_RUN_TASKS: '{}' })
+      assert.equal(existsSync(plan), false)
+      assert.equal(existsSync(keys), false)
+      assert.equal(existsSync(fresh), true)
     })
 
-    test('열린 PR 목록을 읽지 못하면 PR 번호 없는 handoff 파일을 남긴다', () => {
-      const old = make('.orch/handoff/old-reply.md', '옛 파일\n', 9)
-      clean(['--apply'], { FAKE_GH_FAILS: '1' })
-      assert.equal(existsSync(old), true)
+    test('data 폴더는 폴더 기한과 csv 규칙으로 옮기지 않는다', () => {
+      const csv = make('.orch/data/item-done/base.csv', 'a,b\n', 9)
+      age(join(orch, 'data/item-done'), 9)
+      age(join(orch, 'data'), 9)
+      ok(['--apply'], { FAKE_RUN_TASKS: '{}' })
+      assert.equal(existsSync(csv), true)
     })
 
     test('CLOSED, MERGED PR 폴더만 옮기고 OPEN, 비슷한 번호와 다른 자료는 남긴다', () => {

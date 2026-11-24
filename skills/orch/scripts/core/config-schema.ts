@@ -330,6 +330,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     state_days: zodCheck(numberLike('cleanup.state_days', 'nonnegative')),
     gh_log_days: zodCheck(numberLike('cleanup.gh_log_days', 'nonnegative')),
     handoff_days: zodCheck(numberLike('cleanup.handoff_days', 'nonnegative')),
+    specs_days: zodCheck(numberLike('cleanup.specs_days', 'nonnegative')),
     queue_days: zodCheck(numberLike('cleanup.queue_days', 'nonnegative')),
     folder_days: zodCheck(numberLike('cleanup.folder_days', 'nonnegative')),
     data_days: zodCheck(numberLike('cleanup.data_days', 'nonnegative')),

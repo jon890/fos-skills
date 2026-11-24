@@ -446,13 +446,13 @@ describe('상태 파일 보존 기한', () => {
     const merged = file('handoff/pr-565-review-3n09s8zy/out.md', '리뷰', 0)
     const openPr = file('handoff/pr-570/body.md', '본문')
     const stray = file('handoff/plan-old-preview.html', '<p>')
-    const owned = file('handoff/plan-worker-stalls-pr.md', '본문')
+    const owned = file('handoff/pr-571-preview.html', '<p>')
     const fresh = file('handoff/note.md', '메모', 1)
     const pending = file('handoff/pending/gone-worker/body.md', '대기')
     utimesSync(dirname(pending), new Date(Date.now() - 4 * 86_400_000), new Date(Date.now() - 4 * 86_400_000))
     fx.prViews['565'] = { state: 'MERGED' }
     fx.prViews['570'] = { state: 'OPEN' }
-    fx.openHeads = ['feat/worker-stalls']
+    fx.prViews['571'] = { state: 'OPEN' }
     const preview = runSweep(['--trash', trash])
     for (const target of [dirname(merged), stray, dirname(pending)]) has(preview, `handoff 산출물을 휴지통으로 옮길 것 ${target}`)
     exists(merged, preview)
@@ -460,8 +460,30 @@ describe('상태 파일 보존 기한', () => {
     gone(merged, out)
     gone(stray, out)
     gone(pending, out)
-    for (const target of [openPr, owned, fresh]) exists(target, out)
+    gone(owned, out)
+    for (const target of [openPr, fresh]) exists(target, out)
     assert.ok(existsSync(join(trash, 'handoff/pr-565-review-3n09s8zy/out.md')))
+  })
+
+  test('data/<보드 항목 id>/ 는 보드에서 그 항목이 지워지면 옮긴다', () => {
+    const trash = join(fx.tmp, 'trash')
+    writeFileSync(join(fx.repo, 'board.json'), JSON.stringify({ items: [{ id: 'item-live', status: 'doing' }] }))
+    file('config.json', JSON.stringify({ finish: { board: 'board.json' } }))
+    const live = file('data/item-live/base.json', '{}')
+    const removed = file('data/item-gone/base.json', '{}', 0)
+    const loose = file('data/raw.csv', 'a,b\n')
+    const out = runSweep(['--apply', '--trash', trash])
+    exists(live, out)
+    gone(removed, out)
+    gone(loose, out)
+    assert.ok(existsSync(join(trash, 'data/item-gone/base.json')))
+  })
+
+  test('보드를 읽지 못하면 data 폴더를 남긴다', () => {
+    file('config.json', JSON.stringify({ finish: { board: 'missing-board.json' } }))
+    const kept = file('data/item-gone/base.json', '{}')
+    const out = runSweep(['--apply', '--trash', join(fx.tmp, 'trash')])
+    exists(kept, out)
   })
 
   test('cleanup.handoff_days 로 handoff 기한을 바꾼다', () => {
