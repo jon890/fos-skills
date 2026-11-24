@@ -220,7 +220,7 @@ async function tick(config: Context, n: number, kind: TickKind): Promise<number>
     collect(state, await checkCi(ctx, state))
     collect(state, await notifyMerged(ctx, state))
     collect(state, await startReviewFallback(ctx, state))
-    collect(state, requestMissingBotReviews(ctx, state))
+    collect(state, await requestMissingBotReviews(ctx, state))
     collect(state, await checkStalls(ctx, state))
     collect(state, await checkMovement(ctx, state))
     collect(state, await notifyStepReady(ctx, state))
