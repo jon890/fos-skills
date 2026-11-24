@@ -47,7 +47,7 @@ test('루프의 대기 이유를 사람이 읽는 말로 옮기고, 모르는 �
   assert.equal(waitText('미해결 스레드 3'), '미해결 대화 3')
   assert.equal(waitText('리뷰 보류'), '리뷰 보류')
   assert.equal(waitText('리뷰 대기'), '리뷰 대기')
-  assert.equal(waitText('재리뷰 대기: block 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다'), '재리뷰 대기')
+  assert.equal(waitText('HEAD abcdef12 에 현재 HEAD 를 확인한 봇 영수증이나 리뷰 체크(claude-review) 성공이 없다'), '리뷰 대기')
   assert.equal(waitText('지시서 보류: 사용자 확인'), '지시서 보류')
   assert.equal(waitText('core V12 이 #30 V12 을 기다린다'), '마이그레이션 순서 대기(#30 V12)')
   assert.equal(waitText('새 이유'), '새 이유')
