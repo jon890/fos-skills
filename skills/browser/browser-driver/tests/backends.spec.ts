@@ -2,7 +2,7 @@
 // ego 는 input-and-output, ego-space 에서 본다. 실제 브라우저는 열지 않는다.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { golden, type FakeRule, type T } from './helpers.ts'
@@ -143,6 +143,21 @@ describe('orca', () => {
     assert.deepEqual([...readFileSync(out)], [1, 2, 255])
     const { argvs } = backend(t, 'orca', [{ stdout: ok({ data: '' }) }])
     assert.ok(argvs)
+  })
+
+  test('shot 은 Orca 가 돌려준 파일을 요청한 경로에 복사한다', (t) => {
+    const box = new Box(t)
+    box.env.BROWSER_DRIVER = 'orca'
+    const source = join(box.root, 'orca screenshot.png')
+    const out = join(box.root, 'preview.png')
+    const bytes = Buffer.from([1, 2, 255])
+    writeFileSync(source, bytes)
+    box.fake('orca', [{ stdout: ok({ path: source }) }])
+
+    const done = box.run(['shot', 'P', out])
+    assert.deepEqual([done.code, done.stdout, done.stderr], [0, `${out}\n`, ''])
+    assert.deepEqual(readFileSync(out), bytes)
+    assert.deepEqual(readFileSync(source), bytes)
   })
 
   test('shot --size 는 찍기 전에 뷰포트를 바꾸고 다른 백엔드는 거절한다', (t) => {

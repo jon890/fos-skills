@@ -1,6 +1,6 @@
 // orca 백엔드. 워크트리에 탭을 만들고 앱의 로그인 세션을 그대로 쓴다.
 
-import { writeFileSync } from 'node:fs'
+import { copyFileSync, writeFileSync } from 'node:fs'
 import { DriverError, UsageError } from '../errors.ts'
 import { READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT } from '../config.ts'
 import { eprint } from '../io.ts'
@@ -156,13 +156,20 @@ export class OrcaBackend extends Backend {
     if (cmd === 'snap') return this.call('snapshot', 'snapshot', '--page', args[0])
 
     if (cmd === 'shot') {
-      // orca screenshot 은 파일이 아니라 base64 를 JSON 으로 돌려주므로 직접 디코딩한다.
       const out = pyPath(args[1] ?? '/tmp/orca-shot.png')
       const fmt = ['.jpg', '.jpeg'].includes(pySuffix(out).toLowerCase()) ? 'jpeg' : 'png'
       // --size 는 찍기 전에 이 탭의 뷰포트를 바꾼다. 뒤 촬영도 그 크기로 남는다
       if (args[2]) this.call('', 'viewport', '--width', String(args[2][0]), '--height', String(args[2][1]), '--page', args[0])
-      const data = this.call('data', 'screenshot', '--format', fmt, '--page', args[0])
-      writeFileSync(out, b64decode(data))
+      const result = this.call('', 'screenshot', '--format', fmt, '--page', args[0])
+      if (result instanceof Map && result.has('data')) {
+        writeFileSync(out, b64decode(result.get('data')))
+      } else {
+        const source = result instanceof Map ? result.get('path') : undefined
+        if (typeof source !== 'string' || source.length === 0) {
+          throw new DriverError(`응답에 스크린숏 data 또는 path 가 없다: ${dumpJson(result)}`)
+        }
+        copyFileSync(source, out)
+      }
       return out
     }
 
