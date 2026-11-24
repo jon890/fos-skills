@@ -78,7 +78,7 @@ let calls: string[][]
 let failing: Set<string>
 let comments: unknown[]
 let stream: unknown[]
-let streamFor: ((since: string) => unknown[]) | null
+let streamFor: ((args: string[]) => RunResult) | null
 let sent: { argv: string[]; body: string }[]
 let dir: string
 let channelList: unknown[]
@@ -103,7 +103,7 @@ function runner(argv: string[]): RunResult {
     const names: Record<string, string> = { [KIM]: '김철수', [LEE]: '이영희' }
     return names[args[2]] ? ok({ id: args[2], name: names[args[2]] }) : { code: 1, stdout: '', stderr: '멤버 없음' }
   }
-  if (key === 'stream list') return ok(streamFor ? streamFor(args[3]) : stream)
+  if (key === 'stream list') return streamFor ? streamFor(args) : ok(stream)
   if (key === 'post get') return ok(POSTS[args[3]])
   if (key === 'post comment') return ok(comments)
   if (key === 'messenger channels') return ok(channelList)
@@ -162,10 +162,10 @@ describe('받기', () => {
     assert.equal(byId['dooray:task:post:p342'].kind, 'assigned')
     assert.equal(byId['dooray:task:post:p77'].kind, 'cc')
     assert.deepEqual(calls.find((argv) => argv[2] === 'stream'), ['dooray', '--json', 'stream', 'list', '--since', TASK_FEED_SINCE, '--all'])
-    // 지난 받기 커서가 있어도 since 는 피드 전체다(커서로 좁히면 댓글 event 가 빠진다)
+    // 지난 커서가 있으면 피드 원본의 첫 페이지부터 읽는다
     calls = []
     adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
-    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', TASK_FEED_SINCE])
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4), ['--size', '200'])
     // 업무 정보는 업무마다 한 번만 읽는다
     assert.equal(calls.filter((argv) => argv[2] === 'post' && argv[3] === 'get' && argv[5] === 'p81').length, 1)
   })
@@ -414,30 +414,47 @@ describe('시각 없는 댓글 event (웹 방식 stream)', () => {
     assert.equal(commentListCalls().length, 1)
   })
 
-  test('지난 받기 커서가 있어도 피드 전체를 받아 커서 뒤의 시각 없는 댓글 event 가 항목이 된다', () => {
-    // 실제 CLI 는 since 가 걸친 페이지의 시각 없는 event 를 뺀다. 페이지 폭은 피드 밀도에 달려 있어 since 를 피드보다 앞서게 둔다
-    stream = [noTime('c1', 'p81')]
+  test('업무 커서를 읽을 수 없으면 15일 전부터 받는다 (REQ2)', () => {
+    const result = adapter().fetch({ since: SINCE, cursors: { task: '잘못된 커서' } }, 'task')
+    assert.equal(result.items.length, 3)
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4), ['--since', TASK_FEED_SINCE, '--all'])
+    assert.ok(calls.every((argv) => argv[2] !== 'messenger'))
+  })
+
+  test('업무 커서까지 원본을 받아 경계 페이지의 시각 없는 댓글을 남긴다 (REQ2)', () => {
+    const first = String(Date.parse('2026-11-02T05:55:01.000Z')) + '000000'
+    const boundary = String(Date.parse('2026-10-31T06:00:00.000Z')) + '000000'
+    streamFor = (args) => {
+      const cursor = args[args.indexOf('--before') + 1]
+      if (cursor === first) return { ...ok([noTime('c1', 'p81')]), stderr: `ℹ  다음 페이지: --before ${boundary}\n` }
+      return { ...ok([{ type: 'mail' }]), stderr: `ℹ  다음 페이지: --before ${first}\n` }
+    }
     comments = [{ id: 'c1', createdAt: '2026-11-02T14:58:00+09:00' }]
-    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
-    assert.equal(calls.find((argv) => argv[2] === 'stream')![5], TASK_FEED_SINCE)
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } }, 'task')
+    assert.deepEqual(calls.filter((argv) => argv[2] === 'stream').map((argv) => argv.slice(4)), [
+      ['--size', '200'],
+      ['--size', '200', '--before', first],
+    ])
     assert.equal(result.items.length, 1)
     assert.equal(result.items[0].at, '2026-11-02T05:58:00.000Z')
   })
 
-  test('한 페이지가 며칠을 담아도 새 댓글 멘션을 놓치지 않는다 (실제 CLI 의 페이지 필터를 흉내)', () => {
-    // 지난 받기 11-02 05:55Z, 새 댓글 05:58Z. 활동이 적어 마지막 페이지의 커서는 10-31 06:00Z 까지 내려간다.
-    // CLI 는 since 가 그 커서보다 뒤면 그 페이지의 시각 없는 event 를 모두 뺀다. prev-15d 는 커서보다 앞서 남긴다
-    const pageCursor = Date.parse('2026-10-31T06:00:00.000Z')
-    streamFor = (since) => {
-      const sinceMs = since.startsWith('prev-') ? -Infinity : Date.parse(since)
-      return pageCursor >= sinceMs ? [noTime('c1', 'p81')] : []
-    }
-    comments = [{ id: 'c1', createdAt: '2026-11-02T14:58:00+09:00' }]
-    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
-    assert.equal(result.items.length, 1)
-    assert.equal(result.items[0].at, '2026-11-02T05:58:00.000Z')
-    // 반대로 지난 커서 하루 앞(11-01 05:55Z)을 since 로 주면 이 시나리오는 빠진다 — 옛 고침이 부족했던 이유
-    assert.deepEqual(streamFor('2026-11-01T05:55:00.000Z'), [])
+  test('메신저만 요청하면 업무를 부르지 않는다 (REQ3)', () => {
+    const result = adapter().fetch({ since: SINCE, cursors: {} }, 'messenger')
+    assert.ok(result.items.length > 0)
+    assert.ok(result.items.every((item) => item.source === 'messenger'))
+    assert.ok(calls.every((argv) => argv[2] !== 'stream'))
+  })
+
+  test('가득 찬 페이지에 다음 커서가 없으면 피드 전체를 다시 받고 느린 받기로 알린다', () => {
+    streamFor = (args) => args.includes('--size') ? ok(Array.from({ length: 200 }, () => ({}))) : ok(STREAM)
+    const result = adapter().fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } }, 'task')
+    assert.equal(result.items.length, 3)
+    assert.deepEqual(result.fullScanSources, ['task'])
+    assert.deepEqual(calls.filter((argv) => argv[2] === 'stream').map((argv) => argv.slice(4)), [
+      ['--size', '200'],
+      ['--since', TASK_FEED_SINCE, '--all'],
+    ])
   })
 
   test('찾은 댓글 시각은 캐시해 다음 받기에서 댓글 목록을 다시 읽지 않는다', () => {
