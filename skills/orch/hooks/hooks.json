@@ -7,6 +7,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/skills/orch/hooks/block-shared-pr-body.ts\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/skills/orch/hooks/block-background-wait.ts\"",
             "timeout": 10
           },

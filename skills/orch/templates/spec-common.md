@@ -44,14 +44,14 @@
 - 지시서와 스펙이 이미 정한 결정은 바로 실행한다. 코드와 어긋나 지킬 수 없으면 `orch worker ask` 로 묻는다. <!-- orch-rule: no-reconfirm -->
 - **아래만 ask 로 묻는다.** 화면이나 외부 API 계약 변경, 기록된 팀 결정을 뒤집는 것, 외부에 보이는 글, 공유 서버나 DB 에 쓰기, 비용이 드는 작업, 지시서 범위를 넘는 변경, 데이터 삭제.
 - 코디네이터 판단이 필요하면 `orch worker ask` 로 묻고, 사용자가 정할 결정에는 `--decision` 을 붙인다. <!-- orch-rule: worker-ask -->
-- 코디네이터가 읽을 파일(대신 게시할 본문, ask 로 확인받을 본문)만 `orch paths root` 아래 `handoff/` 에 두고 절대경로를 전한다. 그 밖의 PR 본문, 미리보기, 초안은 세션 임시 폴더에 둔다. 자리와 정리는 `references/replying.md` 를 따른다. <!-- orch-rule: handoff-path -->
+- 코디네이터가 읽을 파일(대신 게시할 본문, ask 로 확인받을 본문)만 `orch paths root` 아래 `handoff/` 에 두고 절대경로를 전한다. PR 본문과 커밋 메시지 초안은 `orch paths tmp` 로 만든 고유 임시 폴더에 쓴다. 명령이 출력한 경로를 작업 중에 재사용한다. 자리와 정리는 `references/replying.md` 를 따른다. <!-- orch-rule: handoff-path -->
 - 기준 브랜치와 충돌하면 코디네이터가 후속 지시서를 보낸다. 그 지시대로 이 worker 가 푼다.
 - 변경이 `orch config get queue.integration_tests` 의 규칙에 걸리면 해당 모듈의 테스트를 실행하고 현재 커밋의 결과를 PR 에 적는다. 형식은 `references/verification.md` 를 따른다. <!-- orch-rule: integration-evidence -->
 
 ## 끝내기
 1. 검증 명령을 돌려 통과를 확인한다.
 2. 원격 브랜치를 pull 한 뒤 `git push -u origin HEAD` 로 push 한다.
-3. PR 본문을 파일로 쓴다. 파일 이름에 작업(워크트리) 이름을 넣어 `pr-body-<워크트리 이름>.md` 처럼 짓는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 엉뚱한 본문이 올라간다. 허락 줄이 PR 을 허락했으면 그 파일로 PR 을 연다. 본문 파일은 PR 이 열릴 때까지 지우지 않는다. PR 을 못 열거나 열지 않을 때만 본문을 `handoff/pending/<워크트리 이름>/` 에 두고 그 절대경로를 보고한다. 코디네이터는 worker 의 세션 임시 폴더를 열 수 없다. PR 등록이 허락된 일이면 본문 미리보기는 만들지 않아도 되고, 만들면 세션 임시 폴더에 둔다.
+3. PR 본문은 `orch paths tmp` 로 만든 폴더에 `pr-body-<워크트리 이름>.md` 처럼 작업 이름을 넣어 쓴다. 허락 줄이 PR 을 허락했으면 그 파일로 PR 을 연다. 본문 파일은 PR 이 열릴 때까지 지우지 않는다. PR 을 못 열거나 열지 않을 때만 본문을 `handoff/pending/<워크트리 이름>/` 에 두고 그 절대경로를 보고한다. 코디네이터는 worker 의 세션 임시 폴더를 열 수 없다. PR 등록이 허락된 일이면 본문 미리보기는 만들지 않아도 되고, 만들면 고유 임시 폴더에 둔다.
 4. **게시가 막히면 묻지 않는다.** `gh pr create` 나 리뷰 회신이 거부되거나, 지금 실행의 지시가 GitHub 게시를 막는다고 판단되면 push 까지 하고 본문 파일(회신이면 스레드 id 와 회신 파일) 경로를 status 로 보낸다. 코디네이터가 그 파일로 연다.
 5. 리뷰 지적 처리를 마치고 `orch queue gate` 가 `GATE-OK` 로 통과한 뒤 `준비됨 #<PR 번호>, head <40자리 SHA>` 를 status 로 보낸다. 보류나 실패는 `references/replying.md` 를 따른다. <!-- orch-rule: ready-status -->
 6. **머지될 때까지 맡는다.** CI 실패, 충돌, 리뷰를 직접 처리한다. 기준 브랜치가 앞서 나간 것만으로는 합치지 않는다. 고쳐 push 하면 5 의 gate 를 다시 통과한 뒤 바뀐 head 로 「준비됨 status」를 다시 보낸다. 코디네이터가 머지한다.
