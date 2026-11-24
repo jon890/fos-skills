@@ -13,6 +13,7 @@ import { PLUGIN } from '../lib/install-record.ts'
 
 export const UPDATE_MS = 30 * 60 * 1000
 const COMMAND_MS = 180_000
+const MARKETPLACE = PLUGIN.split('@')[1]
 type Entry = { scope?: unknown; projectPath?: unknown; installPath?: unknown; version?: unknown }
 export type UpdateResult = { configDir: string; scope: string; projectPath?: string; oldVersion: string; result: 'success' | 'failed' | 'skipped'; reason?: string }
 export type UpdateReport = { version: string; checkedAt: number; results: UpdateResult[]; failureNotified?: string; notifyFailure?: boolean }
@@ -112,6 +113,10 @@ function releaseUpdateLock(file: string, token: string): void {
   if (lockContent(file) === token) unlinkSync(file)
 }
 
+function lastLine(command: RunResult): string {
+  return (command.stderr || command.stdout || `종료 코드 ${command.code}`).trim().split('\n').at(-1) ?? ''
+}
+
 async function mainVersion(repository: string, exec: Exec): Promise<string> {
   const head = await exec(['git', 'ls-remote', repository, 'refs/heads/main'], { timeoutMs: 10_000 })
   const sha = /^([0-9a-f]{40})\s+refs\/heads\/main$/m.exec(head.stdout)?.[1]
@@ -151,6 +156,8 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
       throw e
     }
     const results: UpdateResult[] = []
+    // 마켓플레이스 사본이 낡으면 update 가 낡은 버전을 최신으로 본다. 프로필마다 update 전에 한 번 갱신한다.
+    const marketplace = new Map<string, string | undefined>()
     for (const { configDir, entry } of targets) {
       const projectPath = typeof entry.projectPath === 'string' ? entry.projectPath : undefined
       const oldVersion = installedVersion(entry)
@@ -167,13 +174,23 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
         continue
       }
       if (stopping()) break
+      if (!marketplace.has(configDir)) {
+        const refreshed = await exec(['claude', 'plugin', 'marketplace', 'update', MARKETPLACE], {
+          cwd: configDir, env: { CLAUDE_CONFIG_DIR: configDir }, timeoutMs: COMMAND_MS, group: true,
+        })
+        marketplace.set(configDir, refreshed.code === 0 ? undefined : '마켓플레이스 갱신 실패: ' + lastLine(refreshed))
+      }
+      const marketplaceFailure = marketplace.get(configDir)
       const cwd = entry.scope === 'user' ? configDir : String(entry.projectPath)
       const command = await exec(['claude', 'plugin', 'update', PLUGIN, '--scope', entry.scope, '--yes'], {
         cwd, env: { CLAUDE_CONFIG_DIR: configDir }, timeoutMs: COMMAND_MS, group: true,
       })
       const updated = records(configDir).find(row => row.scope === entry.scope && row.projectPath === entry.projectPath)
-      if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success' })
-      else results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'failed', reason: command.code !== 0 ? (command.stderr || command.stdout || `종료 코드 ${command.code}`).trim().split('\n').at(-1) : '설치 기록의 version 이 main 과 다르다' })
+      if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success', ...(marketplaceFailure ? { reason: marketplaceFailure } : {}) })
+      else {
+        const reason = command.code !== 0 ? lastLine(command) : '설치 기록의 version 이 main 과 다르다'
+        results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'failed', reason: marketplaceFailure ? `${reason} (${marketplaceFailure})` : reason })
+      }
     }
     const notifyFailure = results.some(row => row.result === 'failed') && previous?.failureNotified !== version
     const report: UpdateReport = { version, checkedAt: now, results,

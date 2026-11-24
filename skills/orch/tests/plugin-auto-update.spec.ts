@@ -46,6 +46,7 @@ test('설정 폴더와 scope 별 갱신, 설치 기록 검증, 30분 대기를 �
     calls.push({ argv, cwd: opts.cwd, config: opts.env?.CLAUDE_CONFIG_DIR })
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
     if (argv[0] === 'curl') return { code: 0, stdout: JSON.stringify({ version: '1.2.0' }), stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     const file = join(opts.env!.CLAUDE_CONFIG_DIR!, 'plugins', 'installed_plugins.json')
     const value = JSON.parse(readFileSync(file, 'utf8'))
     value.plugins['fos-skills@fos-skills'][0].version = '1.2.0'
@@ -57,9 +58,9 @@ test('설정 폴더와 scope 별 갱신, 설치 기록 검증, 30분 대기를 �
   const report = await updatePlugins({ ...options, now: 1000 })
   assert.equal(report?.results.length, 2)
   assert.ok(report?.results.every(result => result.result === 'success'))
-  assert.deepEqual(calls.filter(call => call.argv[0] === 'claude').map(call => [call.cwd, call.config]), [[f.home, f.home], [project, f.profile]])
+  assert.deepEqual(calls.filter(call => call.argv[2] === 'update').map(call => [call.cwd, call.config]), [[f.home, f.home], [project, f.profile]])
   assert.equal((await updatePlugins({ ...options, now: 1000 + UPDATE_MS - 1 })), null)
-  assert.equal(calls.filter(call => call.argv[0] === 'claude').length, 2)
+  assert.equal(calls.filter(call => call.argv[2] === 'update').length, 2)
   assert.deepEqual((await updatePlugins({ ...options, now: 1000 + UPDATE_MS }))?.results.map(row => row.result), ['success', 'success'])
   assert.equal(readUpdateReport(f.stateDir)?.version, '1.2.0')
 })
@@ -71,6 +72,7 @@ test('갱신 명령이 성공해도 설치 기록이 그대로면 실패하며 �
   const exec = async (argv: string[]) => {
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
     if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     updates++
     return { code: 0, stdout: '', stderr: '', timedOut: false }
   }
@@ -104,6 +106,7 @@ test('작업 폴더를 읽는 설치본에는 갱신 명령이나 폴더 안 git
     calls.push({ argv, cwd: opts.cwd })
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
     if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     throw new Error('개발용 설치에 명령을 실행했다')
   }
   const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec, now: 1000 })
@@ -132,6 +135,7 @@ test('main 보다 높은 설치본을 낮추지 않고 local scope 는 기록된
   const exec = async (argv: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
     if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     updates.push({ cwd: opts.cwd, scope: argv.at(-2)!, config: opts.env?.CLAUDE_CONFIG_DIR })
     const file = join(f.profile, 'plugins', 'installed_plugins.json')
     const value = JSON.parse(readFileSync(file, 'utf8'))
@@ -155,6 +159,7 @@ test('Orca 프로필 기록이 다른 설정 폴더의 캐시를 가리켜도 �
   const exec = async (argv: string[], opts: { env?: Record<string, string | undefined> } = {}) => {
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
     if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     const dir = opts.env!.CLAUDE_CONFIG_DIR!
     updatedDirs.push(dir)
     const file = join(dir, 'plugins', 'installed_plugins.json')
@@ -175,6 +180,7 @@ test('같은 scope 의 프로젝트 설치본은 각각의 갱신 결과를 유�
   const exec = async (argv: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
     if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     const file = join(opts.env!.CLAUDE_CONFIG_DIR!, 'plugins', 'installed_plugins.json')
     const value = JSON.parse(readFileSync(file, 'utf8'))
     value.plugins['fos-skills@fos-skills'].find(row => row.projectPath === opts.cwd).version = '1.2.0'
@@ -187,4 +193,40 @@ test('같은 scope 의 프로젝트 설치본은 각각의 갱신 결과를 유�
   assert.deepEqual(first?.results.map(row => row.projectPath), projects)
   assert.deepEqual(second?.results.map(row => row.projectPath), projects)
   assert.deepEqual(second?.results.map(row => row.result), ['success', 'success'])
+})
+
+test('프로필마다 update 전에 마켓플레이스를 한 번 갱신하고, 실패해도 update 는 시도한다', async t => {
+  const f = fixture(t)
+  const projects = [join(f.root, 'a'), join(f.root, 'b')]
+  for (const project of projects) { mkdirSync(project); f.add(f.profile, 'project', '1.0.0', project) }
+  f.add(f.home, 'user', '1.0.0')
+  const calls: { command: string; config?: string }[] = []
+  const exec = async (argv: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
+    if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
+    if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    const config = opts.env!.CLAUDE_CONFIG_DIR!
+    calls.push({ command: argv.slice(1, argv[2] === 'marketplace' ? 5 : 4).join(' '), config })
+    if (argv[2] === 'marketplace') return config === f.profile
+      ? { code: 1, stdout: '', stderr: 'fetching\nnetwork down\n', timedOut: false }
+      : { code: 0, stdout: '', stderr: '', timedOut: false }
+    const file = join(config, 'plugins', 'installed_plugins.json')
+    const value = JSON.parse(readFileSync(file, 'utf8'))
+    const row = value.plugins['fos-skills@fos-skills'].find((r: { scope: string; projectPath?: string }) => argv.at(-2) === 'user' ? r.scope === 'user' : r.projectPath === opts.cwd)
+    if (config === f.home) row.version = '1.2.0'
+    writeFileSync(file, JSON.stringify(value))
+    return { code: 0, stdout: '', stderr: '', timedOut: false }
+  }
+  const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec, now: 1000 })
+  assert.deepEqual(calls, [
+    { command: 'plugin marketplace update fos-skills', config: f.home },
+    { command: 'plugin update fos-skills@fos-skills', config: f.home },
+    { command: 'plugin marketplace update fos-skills', config: f.profile },
+    { command: 'plugin update fos-skills@fos-skills', config: f.profile },
+    { command: 'plugin update fos-skills@fos-skills', config: f.profile },
+  ])
+  assert.deepEqual(report?.results.map(row => [row.result, row.reason]), [
+    ['success', undefined],
+    ['failed', '설치 기록의 version 이 main 과 다르다 (마켓플레이스 갱신 실패: network down)'],
+    ['failed', '설치 기록의 version 이 main 과 다르다 (마켓플레이스 갱신 실패: network down)'],
+  ])
 })
