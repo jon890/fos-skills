@@ -392,7 +392,7 @@ GitHub 에서 계정 종류가 봇이고 `login` 이 같은 댓글과 리뷰만 
 GitHub 는 스레드 해결 시각을 제공하지 않는다. 관문은 스레드가 지금 해결됐는지와 영수증이 지적보다 늦게 달렸는지를 함께 확인한다.
 `fixed_after_block` 은 기존 판정 문구로 남긴 `block` 에만 적용한다. 봇 지적을 닫은 뒤에는 그 봇에 다시 리뷰를 요청한다.
 
-믿는 봇을 설정하면 `orch spec review` 와 `orch queue gate` 는 봇 리뷰를 기다리라고 안내한다. 별도 리뷰 worker 가 필요하면 `orch spec review <PR> --review-worker` 를 쓴다. 봇을 설정한 저장소에서는 아래의 대체 리뷰 worker 도 띄우지 않는다.
+믿는 봇을 설정하면 `orch spec review <PR>` 와 `orch queue gate <PR>` 는 봇 리뷰를 기다리라고 안내한다. 별도 리뷰 worker 가 필요하면 `orch spec review <PR> --review-worker` 를 쓴다. 봇을 설정한 저장소에서는 아래의 대체 리뷰 worker 도 띄우지 않는다.
 
 `request_comment` 를 적으면 루프가 Ready PR 의 현재 HEAD 를 처음 발견한 뒤 `request_after_sec`(기본 180초) 이상 지난 틱에서 현재 상태를 다시 읽는다. 믿는 봇의 영수증이나 현재 HEAD 에 대한 진행 중 표시가 하나라도 있으면 요청을 미룬다. 진행 중 표시는 GitHub 리뷰 상태와 Codex 요약 댓글에서 읽는다. 요청이 필요하면 첫 번째로 `request_comment` 를 적은 봇에 현재 HEAD 당 한 번 댓글을 단다. 이전 HEAD 에 대한 봇 결과는 새 요청을 막지 않는다. 댓글을 달면 `BOT-REVIEW-REQUEST` 를 루프 로그에 남긴다.
 
