@@ -43,7 +43,7 @@ export class Stop extends Error {}
 export class HeadChanged extends Stop {}
 
 // 필수 체크를 기다리다 넘지 못한 보류(실패, 대기 초과, 나타나지 않음). 다른 보류 이유와 한 번에 내려고 이유(reason)를 따로 둔다.
-// 메시지는 `<PR> <이유>` 다. 머지 큐는 이것을 잡아 스레드, 충돌, 근거 블록의 이유를 함께 모아 STOP 한다(steps/gate.ts)
+// 메시지는 `<PR> <이유>` 다. 머지 큐는 이것을 잡아 스레드, 충돌, 통합 테스트 기록의 이유를 함께 모아 STOP 한다(steps/gate.ts)
 export class CheckStop extends Stop {
   reason: string
   constructor(n: string, reason: string) {

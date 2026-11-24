@@ -2,7 +2,6 @@
 // 가짜 실행 파일, 상태와 공통 도우미는 fixtures/cleanup-sweep.ts 가 소유한다.
 
 import assert from 'node:assert/strict'
-import { HEAD_MISMATCH, verifiedPlan, verifiedPlanEvidence } from './fixtures/verified-plan.ts'
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
@@ -12,33 +11,8 @@ import type { SweepContext } from '../scripts/cleanup/cleanup-sweep.ts'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 describe('머지 판정과 기본 정리', () => {
-  for (const extraChange of [false, true]) {
-    test(`정리의 계획 삭제 검증 (계획 밖 변경 ${extraChange})`, () => {
-      const branch = 'feat-plan'
-      const path = worktree(branch)
-      const specs = join(fx.repo, '.orch/specs')
-      mkdirSync(specs, { recursive: true })
-      const spec = join(specs, 'spec-feat-plan.md')
-      writeFileSync(spec, '브랜치: `feat-plan`\n## 할 일 · 기능\n루프를 쓴다(스펙: 새로 쓴다)\n')
-      const { verified, head } = verifiedPlan(path, extraChange)
-      git('-C', fx.repo, 'merge', '-q', '--no-ff', '-m', 'merge plan PR', head)
-      git('-C', fx.repo, 'push', '-q', 'origin', 'main')
-      const merge = git('-C', fx.repo, 'rev-parse', 'HEAD')
-      squashMerge(branch, path)
-      fx.prViews['1'] = { state: 'MERGED', headRefOid: head, headRefName: branch, baseRefName: 'main',
-        mergeCommit: { oid: merge }, body: verifiedPlanEvidence(verified) }
-      const output = runSweep(['--specs-dir', specs, '--apply'])
-      assert.equal(existsSync(spec), extraChange, output)
-      if (extraChange) {
-        exists(path, output)
-        has(output, HEAD_MISMATCH)
-      } else {
-        gone(path, output)
-      }
-    })
-  }
-
-  test('머지됐고 기능 후속 검증이 대기면 워크트리와 지시서를 함께 남긴다', () => {
+  // 사용자 결정 2026-11-24: PR 본문의 완료 근거 블록은 정리를 막지 않는다
+  test('머지된 기능 PR 은 본문의 후속 검증이 대기여도 워크트리와 지시서를 지운다', () => {
     const path = worktree('feat-domain')
     squashMerge('feat-domain', path)
     const specs = join(fx.repo, '.orch/specs')
@@ -48,17 +22,26 @@ describe('머지 판정과 기본 정리', () => {
     const head = String(fx.prs['feat-domain'][1])
     fx.prViews['1'] = { state: 'MERGED', headRefOid: head, headRefName: 'feat-domain', body: `<!-- fos-feature-evidence -->
 검증 커밋: ${head}
-인수 검증: 통과 | 실제 API 검증 로그
-문서 대조: 통과 | 설계 대조와 후보 없음 근거
-독립 리뷰: 통과 | 별도 리뷰 결과
-후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
+후속 검증: 대기 | 배포 후 smoke
 <!-- /fos-feature-evidence -->` }
-    // 사용자 결정(2026-11-20): 후속 검증 대기면 워크트리도 지시서와 함께 남긴다(2026-11-04 의 지시서만 남기기를 바꿨다)
-    const pending = runSweep(['--specs-dir', '.orch/specs', '--apply'])
-    exists(path, pending)
-    assert.ok(branches().has('feat-domain'))
+    const out = runSweep(['--specs-dir', '.orch/specs', '--apply'])
+    gone(path, out)
+    assert.equal(existsSync(spec), false)
+  })
+
+  test('머지된 PR 의 배포 뒤 할 일이 끝나지 않았으면 지시서는 남긴다', () => {
+    const path = worktree('feat-domain')
+    squashMerge('feat-domain', path)
+    const specs = join(fx.repo, '.orch/specs')
+    mkdirSync(specs, { recursive: true })
+    const spec = join(specs, 'spec-feature.md')
+    writeFileSync(spec, '브랜치: `feat-domain`\n')
+    mkdirSync(join(fx.repo, '.orch/state'), { recursive: true })
+    writeFileSync(join(fx.repo, '.orch/state/followups.json'), JSON.stringify({ items: [{ pr: 1, title: 't', text: '배포 후 smoke', merge_commit: null, deploy: 'none', added_at: '2026-11-20T00:00:00.000Z', notified_at: null, done_at: null, note: null }] }))
+    const out = runSweep(['--specs-dir', '.orch/specs', '--apply'])
+    gone(path, out)
     assert.equal(existsSync(spec), true)
-    has(pending, `남김 ${path}: 기능 후속 검증이 끝나지 않았다`)
+    has(out, '배포 뒤 할 일이 남았다')
   })
 
   test('squash 머지된 worktree 를 터미널, dispatch, 지시서와 함께 정리한다', () => {

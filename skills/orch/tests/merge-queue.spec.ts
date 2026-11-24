@@ -137,27 +137,19 @@ function editStateCmd(c: Ctx, fields: Record<string, unknown>, target = ''): str
 }
 
 describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
-  test('기능 PR 의 근거 누락·오래된 커밋·리뷰 대기를 막고 통과 근거만 머지한다', async (t) => {
-    const c = setup(t)
+  // 사용자 결정 2026-11-24: 머지 관문은 PR 본문의 완료 근거 블록을 보지 않는다
+  test('기능 PR 은 본문에 완료 근거 블록이 없거나 대기, 옛 커밋이어도 다른 조건이 통과면 머지한다', async (t) => {
     const head = 'a'.repeat(40)
-    c.env.FAKE_REMOTE_HEAD = head
-    mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
-    writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
-    const body = `<!-- fos-feature-evidence -->
-검증 커밋: ${head}
-인수 검증: 통과 | REQ1 API와 DB 상태 실행 기록
-문서 대조: 통과 | 설계 대조와 후보 없음의 근거
-독립 리뷰: 통과 | 독립 리뷰 결과 링크
-후속 검증: 없음 | 배포 대상 없는 도구 변경
-<!-- /fos-feature-evidence -->`
-    for (const invalid of ['', body.replace(head, 'b'.repeat(40)), body.replace('독립 리뷰: 통과', '독립 리뷰: 대기')]) {
-      const r = await c.runQueue({ '1': pr({ headRefOid: head, body: invalid }) }, ['1'])
-      assert.equal(r.code, 1, both(r))
-      assert.equal(c.state()['1'].state, 'OPEN')
+    const block = (review: string, commit: string) => `<!-- fos-feature-evidence -->\n검증 커밋: ${commit}\n독립 리뷰: ${review}\n<!-- /fos-feature-evidence -->`
+    for (const body of ['', block('대기 | 리뷰 전', head), block('통과 | 링크', 'b'.repeat(40))]) {
+      const c = setup(t)
+      c.env.FAKE_REMOTE_HEAD = head
+      mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
+      writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+      const r = await c.runQueue({ '1': pr({ headRefOid: head, body }) }, ['1'])
+      assert.equal(r.code, 0, both(r))
+      assert.equal(c.state()['1'].state, 'MERGED')
     }
-    const r = await c.runQueue({ '1': pr({ headRefOid: head, body }) }, ['1'])
-    assert.equal(r.code, 0, both(r))
-    assert.equal(c.state()['1'].state, 'MERGED')
   })
 
   test('옛 completed 실패 캐시가 있어도 STOP 전에 새 실행의 성공을 읽는다', async (t) => {
@@ -283,20 +275,14 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 
   test('멈춘 이유가 둘이면 STOP 줄과 worker 에게 보내는 이유에 모두 낸다', async (t) => {
     const c = setup(t)
-    mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
-    writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
-    const noEvidence = pr({ body: '<!-- fos-feature-evidence -->' })
-    // 스레드와 근거 블록. 앞 판정에서 걸린 이유 하나로 멈추지 않는다
-    let r = await c.runQueue({ '1': noEvidence }, ['--stop-on-hold', '1'], '2')
+    const failed = pr({ statusCheckRollup: FAILED })
+    // 체크 실패도 대기 중에 멈추지 않고 스레드와 같은 줄에 모은다
+    let r = await c.runQueue({ '1': failed }, ['--stop-on-hold', '1'], '1')
     assert.equal(r.code, 1, both(r))
-    has(r.stdout, 'STOP 1 미해결 리뷰 스레드 2 개; 기능 완료 근거 블록이 하나 필요하다\n')
-    // 체크 실패도 대기 중에 멈추지 않고 같은 줄에 모은다
-    r = await c.runQueue({ '1': { ...noEvidence, statusCheckRollup: FAILED } }, ['--stop-on-hold', '1'], '1')
-    assert.equal(r.code, 1, both(r))
-    has(r.stdout, 'STOP 1 실패한 체크 1 개; 미해결 리뷰 스레드 1 개; 기능 완료 근거 블록이 하나 필요하다\n')
+    has(r.stdout, 'STOP 1 실패한 체크 1 개; 미해결 리뷰 스레드 1 개\n')
     lacks(c.log(), 'pr merge')
     // 이유가 둘이어도 worker 에게 알리는 보류로 간다(워크트리가 없어 보내지는 못한다)
-    r = await c.runQueue({ '1': noEvidence }, ['--stop-on-hold', '--sweep-arg', '--run', '--sweep-arg', 'run_x', '1'], '2')
+    r = await c.runQueue({ '1': failed }, ['--stop-on-hold', '--sweep-arg', '--run', '--sweep-arg', 'run_x', '1'], '2')
     has(r.stdout, '1 worker 에게 알리지 않았다: 워크트리 없음')
   })
 
@@ -308,14 +294,12 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     lacks(r.stdout, 'worker 에게')
   })
 
-  test('기능 완료 근거에서 걸리면 합친 사본 검사와 머지 전 명령을 돌리지 않는다', async (t) => {
+  test('관문 조건에서 걸리면 합친 사본 검사와 머지 전 명령을 돌리지 않는다', async (t) => {
     const c = setup(t)
-    mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
-    writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
     const marker = join(c.tmp, 'ran')
-    const r = await c.runQueue({ '1': pr({ body: '' }) }, ['--stop-on-hold', `1:touch ${marker}`])
+    const r = await c.runQueue({ '1': pr() }, ['--stop-on-hold', `1:touch ${marker}`], '1')
     assert.equal(r.code, 1, both(r))
-    has(r.stdout, 'STOP 1 기능 완료 근거 블록이 하나 필요하다')
+    has(r.stdout, 'STOP 1 미해결 리뷰 스레드 1 개')
     assert.equal(existsSync(marker), false)
   })
 
@@ -366,14 +350,12 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     assert.equal(existsSync(c.sweepLog), false)
   })
 
-  test('실패한 체크와 완료 근거 불일치는 재판정하지 않는다', async (t) => {
-    for (const fields of [{ statusCheckRollup: FAILED }, { body: '<!-- fos-feature-evidence -->' }]) {
-      const c = setup(t)
-      const r = await c.runQueue({ '1': pr(fields) }, ['1'])
-      assert.equal(r.code, 1, both(r))
-      lacks(r.stdout, '보류 사유를 다시 판정한다')
-      lacks(c.log(), 'pr merge')
-    }
+  test('실패한 체크는 재판정하지 않는다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: FAILED }) }, ['1'])
+    assert.equal(r.code, 1, both(r))
+    lacks(r.stdout, '보류 사유를 다시 판정한다')
+    lacks(c.log(), 'pr merge')
   })
 
   test('worker 가 고쳐야 하는 보류는 worker 에게 알리려 하고, Run 이나 워크트리가 없으면 그 이유를 찍는다', async (t) => {

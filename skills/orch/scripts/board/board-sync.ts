@@ -49,7 +49,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //
 // 갱신 필요: 끝나지 않은 단계의 글에 이미 머지된 PR 번호(#N)가 있고 이 틱이 그 단계를 끝내지 않으면, 항목 id, 단계 번호, PR 번호를 알린다.
 //     자동으로 끝내지 않는다. 일이 끝났는지는 사람이 정한다. stages 가 가리키는 단계, 사건 꼬리표나 자동 진행 표시가 있는 단계,
-//     머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)과 done 항목은 알리지 않는다. 짧은 출력은 `BOARD <id> update-needed <단계> PR #<번호>` 다.
+//     머지 반영을 미룬 항목(마무리 진행, 다시 판정)과 done 항목은 알리지 않는다. 짧은 출력은 `BOARD <id> update-needed <단계> PR #<번호>` 다.
 //     같은 항목·단계·PR·글은 한 번만 알린다(lib/board-stale.ts 의 기록). 해결돼 목록에서 빠졌다가 다시 생기거나 단계 글이 바뀌면 다시 알린다
 //
 // 모든 항목(done 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
@@ -82,7 +82,6 @@ import { prTaskRef } from '../lib/board.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
 import { boardOwnership, readBoard } from '../lib/board.ts'
 import type { BoardStep } from '../core/board.ts'
-import { featureCompletionProblem } from '../lib/feature-evidence.ts'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -428,9 +427,6 @@ function main(argv: string[]): number {
         const tag = parseEventTag(step.text)!
         if (tag.event === 'release') continue
         const state = stateFor(tag.pr)
-        const completionProblem = tag.event === 'merge' && state === 'MERGED'
-          ? featureCompletionProblem(repo, tag.pr, String(item.branch || '')) : null
-        if (completionProblem) continue
         let reached = tag.event === 'pr' ? state === 'OPEN' || state === 'MERGED' : tag.event === 'merge' && state === 'MERGED'
         if (tag.event === 'deploy' && state === 'MERGED') {
           if (settings === undefined) {
@@ -445,7 +441,7 @@ function main(argv: string[]): number {
         if (reached) after.push(['step', id, String(step.number)])
         else {
           const why = state === null ? 'PR 상태 조회 실패' : state !== 'MERGED' ? `PR 상태 ${state}`
-            : completionProblem ? `기능 완료 근거가 아직 끝나지 않았다: ${completionProblem}` : '사건 조건 미충족'
+            : '사건 조건 미충족'
           brief(`BOARD ${id} event-skipped ${step.number} PR #${tag.pr} ${tag.event}: ${why}`)
         }
       }
@@ -511,13 +507,8 @@ function main(argv: string[]): number {
       const openNumbers = numbers.filter((one) => states.get(one) === 'OPEN')
       const merged = state === 'MERGED'
       details = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
-      const pendingFeature = merged && num ? featureCompletionProblem(repo, num, rows.find((one) => prNumbers(one.pr).has(num))?.branch || branch) : null
       if (unreadable && numbers.length > 1) hold = true
-      if (pendingFeature) {
-        hold = true
-        out(`board-sync: ${id} 는 기능 검증이 남았다: ${pendingFeature}`)
-        brief(`BOARD ${id} pending-feature ${pendingFeature}`)
-      } else if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
+      if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
         // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
         hold = true
         out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)

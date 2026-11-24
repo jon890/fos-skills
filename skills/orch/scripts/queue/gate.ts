@@ -5,10 +5,10 @@
 //   1. 필수 체크가 모두 나타나 끝났고 실패가 없다. 기본은 현재 상태만 보고, --wait 를 주면 필수 체크가 나타나 끝날 때까지 기다린다.
 //   2. 미해결 리뷰 스레드가 없다
 //   3. base 와 충돌하지 않는다(mergeable 이 MERGEABLE)
-//   4. 리뷰 설정이 있으면 설정한 리뷰 판정 조건을 충족한다
-//   5. 기능 완료 근거 블록이 필요한 PR 이면 블록이 하나 있고, 검증 커밋이 지금 HEAD 와 같고, 독립 리뷰 줄을 포함해 모두 통과다
-//   6. 설정에 queue.integration_tests 가 있으면 바뀐 모듈마다 통합 테스트 통과 기록이 지금 HEAD 에 있거나 생략 이유가 있다(core/integration-evidence.ts)
-//   7. 공개 저장소면 PR 본문과 댓글·리뷰에 비공개 낱말이 없다(steps/private-words.ts). 걸리면 위치만 낸다
+//   4. queue.auto_review 에 trusted_bots 나 review_checks 가 있으면 지금 HEAD 의 봇 영수증이나 리뷰 체크 success 가 있다(core/auto-merge.ts 의 judgeReview)
+//   5. 설정에 queue.integration_tests 가 있으면 바뀐 모듈마다 통합 테스트 통과 기록이 지금 HEAD 에 있거나 생략 이유가 있다(core/integration-evidence.ts)
+//   6. 공개 저장소면 PR 본문과 댓글·리뷰에 비공개 낱말이 없다(steps/private-words.ts). 걸리면 위치만 낸다
+// PR 본문의 기능 완료 근거 블록은 보지 않는다(사용자 결정 2026-11-24).
 // 걸린 이유는 첫 이유에서 멈추지 않고 모두 낸다. base 최신화, 겹침 판정, 합친 사본 검사, before-merge 이벤트는 머지 큐만 한다.
 //
 // 옵션은 머지 큐와 같은 이름과 뜻이다(--repo, --required, --required-check, --allow-fail, --allow-fail-check, --threads-cmd, --skipped-is-missing).
@@ -18,8 +18,6 @@
 //
 // 출력(판정 줄은 `orch --full` 이어도 그대로다):
 //   GATE-OK <PR>
-//   REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>
-//                 GATE-OK 뒤에 줄이 더 붙을 수 있다. 리뷰 설정에 fixed_after_block 이 true 이고 block 을 받은 PR 이 재리뷰 없이 풀렸을 때만 낸다.
 //                 조건은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다. GATE-FAIL 일 때는 내지 않는다
 //   통합 테스트 생략 <모듈>: <이유>
 //                 판정 줄과 이유 줄 뒤에 붙는다. PR 본문이 이유를 적어 통합 테스트 기록 없이 넘긴 모듈이다. 판정에는 넣지 않는다
@@ -29,7 +27,6 @@
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
 // PR 을 열거나 고쳐 push 한 턴에서 --wait 로 검사한다. GATE-OK 뒤 「준비됨」 status 를 보낸다.
 // HOLD 가 있으면 이유도 status 에 적는다. GATE-FAIL 이면 출력된 조건을 해결한 뒤 다시 검사한다.
-// 독립 리뷰 대기만 남으면 코디네이터에게 리뷰를 요청한다. 봇 리뷰 대기는 상주 루프가 처리한다.
 //
 // MERGE_QUEUE_GH_RETRIES, MERGE_QUEUE_GH_RETRY_SECONDS, MERGE_QUEUE_SLEEP_SCALE 는 머지 큐와 같다.
 
@@ -58,16 +55,16 @@ function print(lines: string[]): void {
   process.stdout.write(`${lines.join('\n')}\n`)
 }
 
-// 판정 줄과 이유 줄. 이유가 없으면 통과다. 통과일 때 fixed 의 `REVIEW-FIXED …` 줄이 판정 줄 뒤에 붙는다.
+// 판정 줄과 이유 줄. 이유가 없으면 통과다.
 // notes(통합 테스트 생략 줄)는 판정과 상관없이 그 뒤에 붙는다
-export function gateLines(n: string, reasons: GateReason[], fixed: string[] = [], hold: string | null = null, notes: string[] = []): string[] {
-  const lines = [...(reasons.length === 0 ? [`GATE-OK ${n}`, ...fixed] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]), ...notes]
+export function gateLines(n: string, reasons: GateReason[], hold: string | null = null, notes: string[] = []): string[] {
+  const lines = [...(reasons.length === 0 ? [`GATE-OK ${n}`] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]), ...notes]
   return hold === null ? lines : [...lines, `HOLD ${hold}`]
 }
 
-async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[]; fixed: string[]; notes: string[] }> {
+async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[]; notes: string[] }> {
   try {
-    if ((await loadPr(stepContext, state, n)) === 'merged') return { reasons: [{ kind: 'lookup', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }], fixed: [], notes: [] }
+    if ((await loadPr(stepContext, state, n)) === 'merged') return { reasons: [{ kind: 'lookup', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }], notes: [] }
     let ci: GateReason | null = null
     if (state.o.wait) {
       try {
@@ -77,13 +74,13 @@ async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[
         ci = { kind: 'ci', text: e.reason }
       }
     }
-    const { reasons, fixed, notes } = await gateReasons(stepContext, state, ci ? 'none' : 'all')
+    const { reasons, notes } = await gateReasons(stepContext, state, ci ? 'none' : 'all')
     if (ci) reasons.unshift(ci)
-    return { reasons, fixed, notes }
+    return { reasons, notes }
   } catch (e) {
     if (!(e instanceof Stop)) throw e
     // 조회 실패와 HEAD 변경은 확인하지 못한 것이다. 통과로 보지 않고 이유로 낸다
-    return { reasons: [{ kind: 'lookup', text: e.message.startsWith(`${n} `) ? e.message.slice(n.length + 1) : e.message }], fixed: [], notes: [] }
+    return { reasons: [{ kind: 'lookup', text: e.message.startsWith(`${n} `) ? e.message.slice(n.length + 1) : e.message }], notes: [] }
   }
 }
 
@@ -131,8 +128,8 @@ async function mainImpl(argv: string[]): Promise<number> {
     return 2
   }
   try {
-    const { reasons, fixed, notes } = await gate(state, n)
-    print(gateLines(n, reasons, fixed, state.pr?.branch ? mergeHold(state) : null, notes))
+    const { reasons, notes } = await gate(state, n)
+    print(gateLines(n, reasons, state.pr?.branch ? mergeHold(state) : null, notes))
     return reasons.length === 0 ? 0 : 1
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e

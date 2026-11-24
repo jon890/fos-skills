@@ -12,29 +12,15 @@
 //   - prHold           PR 본문의 첫 `머지 보류:` 줄의 이유. 줄 꼴과 이유 규칙은 specHold 와 같고 본문 어디에 있어도 줄 머리면 읽는다.
 //                      worker 가 PR 을 연 뒤 본문에만 적은 보류도 자동 머지·gate·merge 가 지시서 보류와 같게 지키게 하려는 것이다
 //   - boardHold        보드 항목의 next 와 details 가운데 끝나지 않은 줄이 `머지 보류` 로 시작하면 그 줄. 옛 문자열 줄은 끝나지 않은 줄이다
-//   - reviewVerdict    리뷰와 댓글을 늦은 것부터 보고 pass 나 block 에 맞는 첫 본문으로 정한다. 둘 다 맞으면 block 이다
-//   - judgeReview      queue.auto_review.require 의 조건을 적은 순서대로 보고 처음 막힌 조건의 대기 이유를 낸다. 적지 않으면 verdict-on-head 하나다.
-//                      「판정」 은 pass 나 block 문구가 든 리뷰나 댓글이다. 조건은 아래와 같다
-//                        verdict-on-head       reviewScope 안(지금 HEAD)의 마지막 판정이 pass 다. 없으면 `리뷰 대기`, block 이면 `리뷰 보류`
-//                        verdict-seen          PR 전체에 판정이 하나 이상 있다. 없으면 `리뷰 대기`. 리뷰가 아직 돌지 않았거나 결과 없이 실패한 PR 을 막는다
-//                        last-verdict-pass     PR 전체의 마지막 판정이 pass 다. HEAD 가 달라도 된다. 없으면 `리뷰 대기`, block 이면 `리뷰 보류`
-//                        rereview-after-block  PR 전체의 마지막 block 보다 늦은 pass 가 있고, 그 pass 가 HEAD 의 첫 부모 체인에서 block 과 같은 커밋이나
-//                                              그 뒤 커밋을 가리킨다(chainIndex). block 이 없으면 통과다. 아니면 `재리뷰 대기: …`.
-//                                              block 을 받은 PR 이 고친 코드의 리뷰 없이 옛 커밋의 늦은 pass 로 걸리지 않게 하려는 것이다
-//                      queue.auto_review.fixed_after_block 이 true 면 last-verdict-pass 와 rereview-after-block 의 block 이 아래 「반영 완료」 로 풀린다.
-//                      재리뷰가 돌지 않는 저장소(자동 리뷰가 PR 을 열 때만 돌고 재리뷰를 금지한다)에서 block 을 반영한 PR 이 영영 걸리지 않는 것을 막으려는 것이다.
-//                      반영 완료는 셋을 모두 만족할 때다: (a) block 이 가리키는 커밋(chainIndex)이 체인에 있고 HEAD 가 아니다, (b) 그 커밋 뒤에
-//                      base 를 합친 merge 만 있지 않다(reviewScope 의 heads 에 들지 않는다), (c) 입력의 미해결 스레드 수 threads 가 0 이다.
-//                      threads 를 모르면(null, 적지 않음) 풀지 않는다. verdict-on-head 는 풀지 않는다. 그 조건은 HEAD 의 새 판정을 요구한다.
-//                      풀리면 근거에 `반영 완료(REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>)` 를 남기고 judgement.fixed 에 그 줄을 둔다
-//                      `리뷰 대기` 로 멈추면 missing 이다. 모르는 조건 이름이 있으면 어느 조건도 보지 않고 그 이름을 담은 이유로 멈춘다.
-//                      통과하면 조건마다 `<조건> <판정>(커밋 <앞 8자리> 또는 댓글, <시각>)` 꼴의 근거를 낸다
-//   - chainIndex       본문이 가리키는 커밋의 체인 자리. 리뷰는 달린 커밋, 댓글은 쓴 시각 이전의 가장 새 커밋(커밋 시각 기준)이다
-//   - reviewScope      지금 HEAD 의 판정으로 셀 리뷰의 범위. HEAD 부터 첫 부모를 따라 내려가며, 기준 브랜치를 합친 merge 커밋
-//                      만 이어지는 동안 그 앞 커밋의 리뷰도 인정한다. 둘째 부모가 base 밖이면 두 부모가 같은 커밋에서 base 합치기만 거쳤는지 확인한다.
-//                      PR 의 변경을 바꾸지 않은 최신화 때문에 리뷰를 다시 받지 않게 하려는 것이다. 다른 커밋을 만나면 멈춘다.
-//                      since 는 마지막으로 인정한 커밋의 시각이다
-//   - scopedNotes      reviewScope 안의 본문. 리뷰는 달린 커밋으로, 댓글은 since 이후인지로 본다. 옛 HEAD 의 pass 로 새 HEAD 를 걸지 않으려는 것이다
+//   - judgeReview      지금 HEAD 의 독립 리뷰가 있는지 본다. 리뷰 댓글의 문구로는 정하지 않는다(사용자 결정 2026-11-24. 누가 쓴 댓글이든
+//                      문구만 있으면 통과하는 가짜 통과를 막으려는 것이다). 아래 가운데 하나가 있으면 통과다
+//                        봇 영수증   queue.auto_review.trusted_bots 의 봇이 지금 HEAD 를 확인한 영수증(lib/review-bot.ts)
+//                        리뷰 체크   queue.auto_review.review_checks 의 CI 체크가 지금 HEAD 에서 success 다(core/review-checks.ts)
+//                      리뷰 체크를 먼저 보고, success 면 봇 영수증을 조회하지 않는다(봇 조회 실패로 막지 않는다. lib/review-judgement.ts).
+//                      둘 다 없으면 `리뷰 대기` 이고 missing 이다. 통과하면 근거를 `봇 영수증 <봇>(커밋 <앞 8자리>, <시각>)` 이나
+//                      `리뷰 체크 <이름> success` 로 낸다
+//                      옛 문구 판정 키(pass, block, require, feature_head, fixed_after_block, fallback)는 읽지 않고 ignoredReviewKeys 에 둔다.
+//                      orch-doctor 가 지우라고 알린다. trusted_bots 와 review_checks 가 모두 없으면 리뷰 설정이 없는 것(review null)과 같다
 //   - migrationOf      모듈 폴더 아래 Flyway 버전 마이그레이션(`V<버전>__<설명>`). 버전은 `.` 과 `_` 로 나눈 숫자 목록이다.
 //                      반복 마이그레이션(`R__`)과 되돌리기(`U`)는 번호를 차지하지 않아 세지 않는다
 //   - judgeMigrations  base 최고 이하이거나 다른 열린 PR 이나 다른 브랜치의 예약(docs/adr/017-orch-migration-reserve.md)과 같은 번호는 clash 다.
@@ -49,28 +35,18 @@
 import { isObject } from './json.ts'
 import { ConfigError, MIGRATIONS_KEYS, QUEUE_KEYS, section } from './config.ts'
 import { detailText } from './board.ts'
-import { pyRegExp } from './regexp.ts'
 import { LINE_BREAK } from './text.ts'
 import type { Config } from './config.ts'
 import type { BoardDetail, BoardItem } from './board.ts'
 
-export type ReviewRule = { pass: RegExp; block: RegExp }
-// 리뷰 판정 조건의 이름. 뜻은 머리 주석의 「judgeReview」 가 소유한다
-export const REVIEW_CONDITIONS = ['verdict-on-head', 'verdict-seen', 'last-verdict-pass', 'rereview-after-block'] as const
-export type ReviewCondition = (typeof REVIEW_CONDITIONS)[number]
-// queue.auto_review.require 를 적지 않은 저장소의 조합. 조합을 더하기 전의 동작과 같다
-export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-head']
-// require 는 적은 순서대로 볼 조건, unknown 은 모르는 이름이다. unknown 이 있으면 루프가 어느 PR 도 걸지 않는다
-// featureHead 가 거짓이면 기능 PR 에도 verdict-on-head 를 덧붙이지 않는다. 적지 않은 값(undefined)은 참이다
-// fixedAfterBlock 이 참일 때만 block 을 반영한 PR 이 재리뷰 없이 풀린다. 적지 않은 값(undefined)은 거짓이다
-// 리뷰 봇이 실행 장애로 실패했을 때 루프가 거는 대체 리뷰(loop/steps/review-fallback.ts 머리 주석). check 는 리뷰 봇의 체크 이름,
-// failWithinSec 은 시작부터 실패까지 이 초 안이면 장애로 보는 기준, passText 와 blockText 는 대체 리뷰가 달 판정 댓글의 첫 줄이다
-export type ReviewFallback = { check: string; failWithinSec: number; passText: string; blockText: string }
 export type TrustedReviewBot = { login: string; receiptMarker: string; reviewedCommit: RegExp; requestComment?: string }
-export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[]; featureHead?: boolean; fixedAfterBlock?: boolean; fallback?: ReviewFallback | null; trustedBots?: TrustedReviewBot[]; requestAfterSec?: number }
+// trustedBots 와 checks 가운데 하나 이상이 있다. 둘 다 없으면 autoMergeConfig 의 review 는 null 이다
+export type ReviewConfig = { checks: string[]; trustedBots?: TrustedReviewBot[]; requestAfterSec?: number }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewConfig | null
+  // queue.auto_review 에 남은 옛 문구 판정 키. 읽지 않는다
+  ignoredReviewKeys: string[]
   // 예약 파일을 만들 폴더다. watch 에만 든 경로에는 reserve-migration 이 쓰지 않는다.
   dirs: Record<string, string>
   // 모듈별 추가 감시 폴더다. dirs 와 합쳐 Flyway 번호 충돌과 순서를 판정한다.
@@ -80,35 +56,10 @@ export type AutoMergeConfig = {
 }
 
 const BLOCKED_AFTER_SEC = 3600
-const REVIEW_KEYS = ['pass', 'block'] as const
-export const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require', 'feature_head', 'fixed_after_block', 'fallback', 'trusted_bots', 'request_after_sec']
+export const REVIEW_CONFIG_KEYS: readonly string[] = ['trusted_bots', 'request_after_sec', 'review_checks']
+// 리뷰 댓글 문구로 판정하던 옛 키. 있어도 읽지 않고 orch-doctor 가 알린다(머리 주석의 「judgeReview」)
+export const LEGACY_REVIEW_KEYS: readonly string[] = ['pass', 'block', 'require', 'feature_head', 'fixed_after_block', 'fallback']
 export const DEFAULT_REVIEW_REQUEST_AFTER_SEC = 180
-const FALLBACK_KEYS: readonly string[] = ['check', 'fail_within_sec', 'pass_text', 'block_text']
-export const DEFAULT_FAIL_WITHIN_SEC = 120
-export const DEFAULT_PASS_TEXT = '판정: 머지 가능'
-export const DEFAULT_BLOCK_TEXT = '판정: 반영 필요'
-
-// queue.auto_review.fallback. 판정 댓글의 첫 줄은 pass, block 정규식에 맞아야 자동 머지가 읽으므로 맞지 않으면 ConfigError 다
-function reviewFallback(value: unknown, rule: ReviewRule): ReviewFallback | null {
-  const name = 'queue.auto_review.fallback'
-  if (value === undefined) return null
-  if (!isObject(value)) throw new ConfigError(`설정 파일의 ${name} 는 {"check": 체크 이름} 객체여야 한다`)
-  const unknown = Object.keys(value).filter((key) => !FALLBACK_KEYS.includes(key)).sort()
-  if (unknown.length > 0) throw new ConfigError(`설정 파일의 ${name} 에 모르는 키가 있다: ${unknown.join(', ')}`)
-  const text = (key: string, fallback?: string): string => {
-    const got = value[key] ?? fallback
-    if (typeof got !== 'string' || !got.trim() || got.includes('\n')) throw new ConfigError(`설정 파일의 ${name}.${key} 는 비지 않은 한 줄 문자열이어야 한다`)
-    return got
-  }
-  const check = text('check')
-  const failWithinSec = value.fail_within_sec ?? DEFAULT_FAIL_WITHIN_SEC
-  if (typeof failWithinSec !== 'number' || !Number.isFinite(failWithinSec) || failWithinSec <= 0) throw new ConfigError(`설정 파일의 ${name}.fail_within_sec 는 양수여야 한다`)
-  const passText = text('pass_text', DEFAULT_PASS_TEXT)
-  const blockText = text('block_text', DEFAULT_BLOCK_TEXT)
-  if (!rule.pass.test(passText) || rule.block.test(passText)) throw new ConfigError(`설정 파일의 ${name}.pass_text 는 queue.auto_review.pass 에 맞고 block 에 맞지 않아야 한다: ${passText}`)
-  if (!rule.block.test(blockText)) throw new ConfigError(`설정 파일의 ${name}.block_text 는 queue.auto_review.block 에 맞아야 한다: ${blockText}`)
-  return { check, failWithinSec, passText, blockText }
-}
 
 // 값이 모두 비지 않은 문자열인 객체. 아니면 ConfigError
 function stringMap(value: unknown, name: string): Record<string, string> {
@@ -176,55 +127,34 @@ function trustedReviewBots(value: unknown): TrustedReviewBot[] {
   })
 }
 
-function reviewRule(value: unknown): ReviewConfig {
+function reviewChecks(value: unknown): string[] {
+  const key = 'queue.auto_review.review_checks'
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw new ConfigError(`설정 파일의 ${key} 는 체크 이름(비지 않은 문자열)의 비지 않은 목록이어야 한다`)
+  }
+  return [...new Set((value as string[]).map((item) => item.trim()))]
+}
+
+function reviewRule(value: unknown): { review: ReviewConfig | null; ignored: string[] } {
   const name = 'queue.auto_review'
-  if (!isObject(value)) throw new ConfigError(`설정 파일의 ${name} 는 {"pass": 정규식, "block": 정규식} 객체여야 한다`)
+  if (!isObject(value)) throw new ConfigError(`설정 파일의 ${name} 는 {"trusted_bots": [...]} 나 {"review_checks": [...]} 객체여야 한다`)
   const unknown = Object.keys(value)
-    .filter((key) => !REVIEW_CONFIG_KEYS.includes(key))
+    .filter((key) => !REVIEW_CONFIG_KEYS.includes(key) && !LEGACY_REVIEW_KEYS.includes(key))
     .sort()
   if (unknown.length > 0) throw new ConfigError(`설정 파일의 ${name} 에 모르는 키가 있다: ${unknown.join(', ')}`)
-  const rule: Partial<ReviewRule> = {}
-  for (const key of REVIEW_KEYS) {
-    const source = value[key]
-    if (typeof source !== 'string' || !source) throw new ConfigError(`설정 파일의 ${name}.${key} 는 비지 않은 문자열이어야 한다`)
-    try {
-      rule[key] = pyRegExp(source)
-    } catch (e) {
-      throw new ConfigError(`설정 파일의 ${name}.${key} 를 정규식으로 읽지 못했다: ${(e as Error).message}`)
-    }
-  }
-  if (value.feature_head !== undefined && typeof value.feature_head !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.feature_head 는 true 나 false 여야 한다`)
-  if (value.fixed_after_block !== undefined && typeof value.fixed_after_block !== 'boolean') throw new ConfigError(`설정 파일의 ${name}.fixed_after_block 는 true 나 false 여야 한다`)
+  const ignored = Object.keys(value).filter((key) => LEGACY_REVIEW_KEYS.includes(key)).sort()
   const requestAfterSec = value.request_after_sec
   if (requestAfterSec !== undefined && (typeof requestAfterSec !== 'number' || !Number.isFinite(requestAfterSec) || requestAfterSec <= 0)) {
     throw new ConfigError(`설정 파일의 ${name}.request_after_sec 는 양수여야 한다`)
   }
   const trustedBots = value.trusted_bots === undefined ? undefined : trustedReviewBots(value.trusted_bots)
-  const fallback = reviewFallback(value.fallback, rule as ReviewRule)
+  const checks = reviewChecks(value.review_checks)
+  if (!trustedBots && checks.length === 0) return { review: null, ignored }
   return {
-    ...(rule as ReviewRule),
-    ...reviewRequire(value.require),
-    featureHead: value.feature_head !== false,
-    fixedAfterBlock: value.fixed_after_block === true,
-    fallback: trustedBots ? null : fallback,
-    ...(trustedBots ? { trustedBots, requestAfterSec: requestAfterSec ?? DEFAULT_REVIEW_REQUEST_AFTER_SEC } : {}),
+    review: { checks, ...(trustedBots ? { trustedBots, requestAfterSec: requestAfterSec ?? DEFAULT_REVIEW_REQUEST_AFTER_SEC } : {}) },
+    ignored,
   }
-}
-
-// 모르는 이름은 ConfigError 로 막지 않고 unknown 에 둔다. 루프가 멈추면 CI 감시와 정리까지 함께 멈추기 때문이다
-function reviewRequire(value: unknown): { require: ReviewCondition[]; unknown: string[] } {
-  if (value === undefined) return { require: [...DEFAULT_REVIEW_REQUIRE], unknown: [] }
-  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string' || !item)) {
-    throw new ConfigError('설정 파일의 queue.auto_review.require 는 조건 이름(비지 않은 문자열)의 비지 않은 목록이어야 한다')
-  }
-  const names = [...new Set(value as string[])]
-  const known = (name: string): name is ReviewCondition => (REVIEW_CONDITIONS as readonly string[]).includes(name)
-  return { require: names.filter(known), unknown: names.filter((name) => !known(name)) }
-}
-
-// orch-doctor 와 루프가 함께 쓰는 모르는 조건 이름의 문구
-export function unknownConditionsText(unknown: string[]): string {
-  return `queue.auto_review.require 에 모르는 조건이 있다: ${unknown.join(', ')}. 쓸 수 있는 조건: ${REVIEW_CONDITIONS.join(', ')}`
 }
 
 export function autoMergeConfig(config: Config): AutoMergeConfig {
@@ -234,7 +164,7 @@ export function autoMergeConfig(config: Config): AutoMergeConfig {
   const enabled = queue.auto_merge ?? false
   if (typeof enabled !== 'boolean') throw new ConfigError('설정 파일의 queue.auto_merge 는 true 나 false 여야 한다')
 
-  const review = queue.auto_review === undefined ? null : reviewRule(queue.auto_review)
+  const { review, ignored: ignoredReviewKeys } = queue.auto_review === undefined ? { review: null, ignored: [] } : reviewRule(queue.auto_review)
 
   const dirs: Record<string, string> = {}
   if (migrations.dirs !== undefined) {
@@ -251,7 +181,7 @@ export function autoMergeConfig(config: Config): AutoMergeConfig {
     throw new ConfigError('설정 파일의 migrations.blocked_after_sec 는 양수여야 한다')
   }
 
-  return { enabled, review, dirs, watch, before, blockedAfterSec }
+  return { enabled, review, ignoredReviewKeys, dirs, watch, before, blockedAfterSec }
 }
 
 // 줄 머리의 `머지 보류: 이유`. 목록 기호(-, *)와 굵은 글씨(**머지 보류:**, **머지 보류**:)를 모두 받는다.
@@ -293,167 +223,23 @@ export function boardHold(item: BoardItem): string | null {
   return null
 }
 
-// commit 은 리뷰가 달린 커밋(gh 의 reviews[].commit.oid)이다. 댓글처럼 커밋이 없으면 null 이다
-// id 는 gh 가 준 리뷰나 댓글의 id 다. 없으면 로그에 시각으로 대신한다
+// 봇 영수증(lib/review-bot.ts). commit 은 영수증이 확인한 커밋, receiptBot 은 봇 계정이다
 export type ReviewNote = { body: string; at: string; commit?: string | null; id?: string; receiptBot?: string }
 
-// 판정에 세는 리뷰의 범위. heads 는 리뷰를 그대로 인정하는 커밋, since 는 커밋이 없는 본문(댓글)을 세기 시작하는 시각이다
-export type ReviewScope = { heads: string[]; since: string | null }
-// HEAD 부터 첫 부모를 따라 내려간 커밋. at 은 커밋 시각(ISO 8601)이다
-export type ChainCommit = { oid: string; parents: string[]; at: string }
-
-// 머리 주석의 「reviewScope」. chain 이 비었으면 head 하나만 인정하고 댓글은 세지 않는다
-export function reviewScope(head: string, chain: ChainCommit[], inBase: (oid: string) => boolean, baseMergesOnly?: (head: string, reviewed: string) => boolean): ReviewScope {
-  if (chain.length === 0 || chain[0].oid !== head) return { heads: [head], since: null }
-  const heads = [head]
-  let i = 0
-  while (i + 1 < chain.length) {
-    const { parents } = chain[i]
-    if (parents.length !== 2 || parents[0] !== chain[i + 1].oid) break
-    let next = i + 1
-    if (!inBase(parents[1])) {
-      if (!baseMergesOnly) break
-      while (next < chain.length && !baseMergesOnly(chain[i].oid, chain[next].oid)) {
-        const parents = chain[next].parents
-        if (parents.length !== 2 || parents[0] !== chain[next + 1]?.oid) return { heads, since: chain[i].at || null }
-        next++
-      }
-      if (next === chain.length) break
-    }
-    heads.push(...chain.slice(i + 1, next + 1).map((commit) => commit.oid))
-    i = next
-  }
-  return { heads, since: chain[i].at || null }
-}
-
-// 범위 안의 본문만 남긴다. 커밋이 있는 본문은 heads 에 든 것, 없는 본문은 since 이후에 쓴 것이다
-export function scopedNotes(notes: ReviewNote[], scope: ReviewScope): ReviewNote[] {
-  const since = scope.since === null ? Number.NaN : Date.parse(scope.since)
-  return notes.filter((note) => {
-    if (note.commit) return scope.heads.includes(note.commit)
-    const at = Date.parse(note.at)
-    return !Number.isNaN(since) && !Number.isNaN(at) && at >= since
-  })
-}
-
-export type Verdict = { verdict: 'pass' | 'block'; note: ReviewNote }
-
-// 판정 문구가 든 본문을 늦은 것부터 낸다. 둘 다 맞으면 block 이다.
-// 시각을 읽지 못한 본문은 가장 이른 것으로 본다. 시각이 같으면 목록에서 뒤에 있는 것을 늦은 것으로 본다
-export function verdicts(notes: ReviewNote[], rule: ReviewRule): Verdict[] {
-  const time = (at: string) => {
-    const t = Date.parse(at)
-    return Number.isNaN(t) ? -Infinity : t
-  }
-  const found: Verdict[] = []
-  const latest = notes
-    .map((note, index) => ({ note, index, t: time(note.at) }))
-    .sort((a, b) => (a.t === b.t ? b.index - a.index : b.t - a.t))
-  for (const { note } of latest) {
-    if (note.receiptBot) found.push({ verdict: 'pass', note })
-    else if (rule.block.test(note.body)) found.push({ verdict: 'block', note })
-    else if (rule.pass.test(note.body)) found.push({ verdict: 'pass', note })
-  }
-  return found
-}
-
-export function reviewVerdict(notes: ReviewNote[], rule: ReviewRule): 'pass' | 'block' | 'none' {
-  return verdicts(notes, rule)[0]?.verdict ?? 'none'
-}
-
-// 로그에 남기는 판정 근거. 리뷰는 달린 커밋의 앞 8자리, 댓글은 `댓글` 이다
-export function verdictText(v: Verdict): string {
-  if (v.note.receiptBot) return `pass(${v.note.receiptBot} 영수증, 커밋 ${v.note.commit?.slice(0, 8)}, ${v.note.at})`
-  return `${v.verdict}(${v.note.commit ? `커밋 ${v.note.commit.slice(0, 8)}` : '댓글'}, ${v.note.at || '시각 없음'})`
-}
-
-// 본문이 가리키는 커밋의 chain 자리(0 이 HEAD). 리뷰는 달린 커밋, 댓글은 쓴 시각에 이미 있던 가장 새 커밋이다.
-// chain 에 없거나 시각을 읽지 못하면 null 이다
-export function chainIndex(note: ReviewNote, chain: ChainCommit[]): number | null {
-  if (note.commit) {
-    const i = chain.findIndex((c) => c.oid === note.commit)
-    return i < 0 ? null : i
-  }
-  const at = Date.parse(note.at)
-  if (Number.isNaN(at)) return null
-  const i = chain.findIndex((c) => {
-    const t = Date.parse(c.at)
-    return !Number.isNaN(t) && t <= at
-  })
-  return i < 0 ? null : i
-}
-
-// threads 는 미해결 리뷰 스레드 수다. 모르면 null 이나 적지 않는다. 반영 완료(머리 주석의 「judgeReview」)가 쓴다
-export type ReviewInput = { notes: ReviewNote[]; scope: ReviewScope; chain: ChainCommit[]; threads?: number | null }
-// missing 은 판정 문구가 든 본문이 없어 멈췄다는 뜻이다. 루프가 AUTO-MERGE-NO-REVIEW 로 알린다
-// fixed 는 block 을 반영 완료로 풀었을 때의 `REVIEW-FIXED …` 줄이다. 풀지 않았으면 없다
+// missing 은 영수증도 리뷰 체크 성공도 없어 멈췄다는 뜻이다. 루프가 AUTO-MERGE-NO-REVIEW 로 알린다
 export type ReviewJudgement =
-  | { ok: true; basis: string[]; fixed?: string[] }
-  | { ok: false; condition: ReviewCondition | null; wait: string; missing: boolean }
+  | { ok: true; basis: string[] }
+  | { ok: false; wait: string; missing: boolean }
 
-// 리뷰 판정 대기 이유. missing 인 것은 이 이유로 낸다
 export const REVIEW_WAIT = '리뷰 대기'
-export const REVIEW_HOLD = '리뷰 보류'
 
-// block 을 받은 뒤 반영한 PR 인지(머리 주석의 「judgeReview」 의 반영 완료). 맞으면 `REVIEW-FIXED` 줄, 아니면 null 이다
-function fixedAfterBlock(block: Verdict, input: ReviewInput): string | null {
-  if (input.threads !== 0) return null
-  const i = chainIndex(block.note, input.chain)
-  if (i === null || i === 0) return null
-  const reviewed = input.chain[i].oid
-  // 그 커밋 뒤에 base 를 합친 merge 만 있으면 고친 코드가 없다
-  if (input.scope.heads.includes(reviewed)) return null
-  const id = block.note.id || block.note.at || '시각 없음'
-  return `REVIEW-FIXED ${id} ${reviewed.slice(0, 8)}..${input.chain[0].oid.slice(0, 8)}`
-}
-
-// require 의 조건을 적은 순서대로 보고 처음 막힌 조건으로 멈춘다. 모두 통과하면 조건마다의 근거를 낸다.
-// 미해결 스레드, CI, 보류 표시는 조합과 상관없이 루프가 따로 본다(loop/steps/auto-merge.ts 머리 주석의 「자동 머지」 3)
-export function judgeReview(input: ReviewInput, config: ReviewConfig): ReviewJudgement {
-  if (config.unknown.length > 0) return { ok: false, condition: null, wait: unknownConditionsText(config.unknown), missing: false }
-  const all = verdicts(input.notes, config)
-  const basis: string[] = []
-  const fixed: string[] = []
-  const stop = (condition: ReviewCondition, wait: string, missing = false): ReviewJudgement => ({ ok: false, condition, wait, missing })
-  for (const condition of config.require) {
-    if (condition === 'verdict-on-head' || condition === 'last-verdict-pass') {
-      const [last] = condition === 'verdict-on-head' ? verdicts(scopedNotes(input.notes, input.scope), config) : all
-      if (!last) return stop(condition, REVIEW_WAIT, true)
-      if (last.verdict === 'block') {
-        const line = condition === 'last-verdict-pass' && config.fixedAfterBlock ? fixedAfterBlock(last, input) : null
-        if (!line) return stop(condition, REVIEW_HOLD)
-        fixed.push(line)
-        basis.push(`${condition} ${verdictText(last)} 반영 완료, 재리뷰 없음(${line})`)
-        continue
-      }
-      basis.push(`${condition} ${verdictText(last)}`)
-    } else if (condition === 'verdict-seen') {
-      if (all.length === 0) return stop(condition, REVIEW_WAIT, true)
-      basis.push(`${condition} ${verdictText(all[0])}`)
-    } else {
-      const block = all.find((v) => v.verdict === 'block')
-      if (!block) {
-        basis.push(`${condition} block 없음`)
-        continue
-      }
-      // all 은 늦은 것부터라 block 앞의 항목이 block 보다 늦은 판정이다
-      const at = chainIndex(block.note, input.chain)
-      const later = all.slice(0, all.indexOf(block))
-      const pass = later.find((v) => {
-        const i = chainIndex(v.note, input.chain)
-        return i !== null && (at === null || i <= at)
-      })
-      if (!pass) {
-        const line = config.fixedAfterBlock ? fixedAfterBlock(block, input) : null
-        if (!line) return stop(condition, `재리뷰 대기: ${verdictText(block)} 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다`)
-        fixed.push(line)
-        basis.push(`${condition} ${verdictText(block)} 반영 완료, 재리뷰 없음(${line})`)
-        continue
-      }
-      basis.push(`${condition} ${verdictText(block)} 뒤 ${verdictText(pass)}`)
-    }
-  }
-  return fixed.length > 0 ? { ok: true, basis, fixed: [...new Set(fixed)] } : { ok: true, basis }
+// 머리 주석의 「judgeReview」. passedChecks 는 지금 HEAD 에서 success 인 review_checks 의 이름이다
+export function judgeReview(input: { receipts: ReviewNote[]; passedChecks: string[] }, config: ReviewConfig): ReviewJudgement {
+  const basis = [
+    ...input.receipts.map((note) => `봇 영수증 ${note.receiptBot ?? '?'}(커밋 ${(note.commit ?? '').slice(0, 8)}, ${note.at || '시각 없음'})`),
+    ...config.checks.filter((name) => input.passedChecks.includes(name)).map((name) => `리뷰 체크 ${name} success`),
+  ]
+  return basis.length > 0 ? { ok: true, basis } : { ok: false, wait: REVIEW_WAIT, missing: true }
 }
 
 export type Migration = { module: string; version: number[]; label: string; path: string }

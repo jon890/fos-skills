@@ -905,33 +905,32 @@ describe('손으로 쓴 사건 단계', () => {
   })
 })
 
-test('마무리 PID 가 없어도 후속 검증이 남은 기능 항목은 done 으로 바꾸지 않는다', () => {
+// 사용자 결정 2026-11-24: PR 본문의 완료 근거 블록은 보드 완료를 막지 않는다. 머지 사건은 PR MERGED 로 끝난다
+test('머지된 기능 PR 은 본문의 후속 검증이 대기거나 본문 조회가 실패해도 done 으로 바꾼다', () => {
   states['7'] = 'MERGED'
   const head = 'a'.repeat(40)
-  const evidence = { headRefOid: head, headRefName: 'feat/domain', body: `<!-- fos-feature-evidence -->
+  states['evidence:7'] = { headRefOid: head, headRefName: 'feat/domain', body: `<!-- fos-feature-evidence -->
 검증 커밋: ${head}
-인수 검증: 통과 | REQ1 실제 실행 결과
-문서 대조: 통과 | 설계 대조와 후보 없음 근거
-독립 리뷰: 통과 | 독립 검토 결과
-후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
+후속 검증: 대기 | 배포 후 smoke
 <!-- /fos-feature-evidence -->` }
-  states['evidence:7'] = evidence
   const items = [{ id: 'a', status: 'doing', pr: '#7', branch: 'feat/domain', details: ['1. PR #7 머지와 검증'] }]
-  const pending = sync(items)
-  assert.equal(pending.code, 0, pending.result.stderr)
-  assert.equal(pending.board.a.status, 'doing')
-  evidence.body = evidence.body.replace('후속 검증: 대기', '후속 검증: 통과')
-  const complete = sync(items)
-  assert.equal(complete.board.a.status, 'done')
+  const waiting = sync(items)
+  assert.equal(waiting.code, 0, waiting.result.stderr)
+  assert.equal(waiting.board.a.status, 'done')
+  states.evidenceFails = true
+  const failed = sync([{ id: 'b', status: 'doing', pr: '#7', details: ['1. PR #7 머지와 검증'] }])
+  assert.equal(failed.code, 0, failed.result.stderr)
+  assert.equal(failed.board.b.status, 'done')
+  assert.doesNotMatch(failed.result.stdout, /근거/)
 })
 
-test('MERGED 조회 뒤 근거 조회가 실패해도 기능 여부를 추측해 완료하지 않는다', () => {
+test('머지 사건 단계는 본문에 근거 블록이 없어도 PR MERGED 로 끝난다', () => {
   states['7'] = 'MERGED'
-  states.evidenceFails = true
-  const result = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. PR #7 머지와 검증'] }])
-  assert.equal(result.code, 0, result.result.stderr)
-  assert.equal(result.board.a.status, 'doing')
-  assert.match(result.result.stdout, /근거 조회 실패/)
+  states['evidence:7'] = { headRefOid: 'a'.repeat(40), headRefName: 'feat/domain', body: '' }
+  const r = sync([{ id: 'e', status: 'doing', pr: '7', branch: 'feat/domain', details: ['1. 머지 (#7 merge)', '2. 수동 확인'] }])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.e.details[0].done, true)
+  assert.doesNotMatch(r.result.stdout, /기능 완료 근거/)
 })
 
 test('이미 끝난 사건 단계가 있는 둘째 PR 은 수동 단계가 남아도 못 맞춘 머지가 아니다', () => {

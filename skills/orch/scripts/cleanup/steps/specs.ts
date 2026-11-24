@@ -3,9 +3,9 @@
 //     spec-common.md 를 뺀 지시서마다 아래로 정한다(references/overlay.md 「orch 작업 폴더」 의 specs 줄).
 //       - 그 브랜치를 쓰는 워크트리가 있거나, 열린 PR 이 있거나, PR 조회가 실패하면 남긴다
 //       - 줄의 브랜치마다 PR 이 있고 모두 MERGED 면 바로 옮긴다. 같은 이름의 로컬 브랜치가 있으면 끝점이 머지된 PR 의 headRefOid 와 같아야 하고,
-//         기능 PR 의 후속 검증(featureCompletionProblem)과 배포 뒤 할 일(followups.json 의 끝나지 않은 항목)이 대기가 아니어야 한다
+//         배포 뒤 할 일(followups.json)에 그 PR 의 끝나지 않은 항목이 없어야 한다. PR 본문의 기능 완료 근거 글은 보지 않는다
 //       - 그 밖(`브랜치:` 줄이 없거나, PR 이 없거나, 닫힌 PR 뿐이거나 섞였다)은 마지막 수정 뒤 cleanup.specs_days(기본 3)일이 지나면 옮긴다.
-//         머지된 PR 이 하나라도 있으면 그 PR 의 후속 검증과 배포 뒤 할 일을 먼저 보고, 대기면 남긴다
+//         머지된 PR 이 하나라도 있으면 그 PR 의 배포 뒤 할 일을 먼저 보고, 남았으면 남긴다
 //       - 살아 있는 dispatch 가 가리키는 지시서가 아니고 orch 루트 안이다(deleteSpecs)
 //     옮기기 전 `워크트리 없는 지시서 판정 <경로>: <근거>` 한 줄을 낸다.
 //     남기는 이유는 `워크트리 없는 지시서 남김 <경로>: <이유>` 로 낸다(기한 안이라 남기는 지시서는 줄 없이 남긴다)
@@ -15,7 +15,6 @@ import type { StepContext, StepResult, StepState } from './context.ts'
 import { branchTip, prList } from './prs.ts'
 import { branchesOf, deleteSpecs, specCandidates, specsOnBranch } from '../../lib/spec.ts'
 import { dirname, join } from 'node:path'
-import { featureCompletionProblem } from '../../lib/feature-evidence.ts'
 import { launchesAt } from '../../lib/launched.ts'
 import { readText, truthy } from './shared.ts'
 import { readdirSync, statSync } from 'node:fs'
@@ -43,18 +42,18 @@ export function trashLaunchedSpecs(repo: string, specsDir: string | null, path: 
   deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies: [], live, mode: { trash }, apply, log: (line) => log(`  ${line}`) })
 }
 
-// 기능 PR 의 후속 검증이 끝나지 않았으면 지시서를 남긴다. 남기면 true 다.
-// 지울 지시서 후보가 있을 때만 PR 본문을 읽는다. 기능 PR 의 후속 검증이 대기면 worktrees.ts 가 그 앞에서 워크트리까지 남기므로,
-// 여기는 기능 PR 로 알아보지 못한 PR 의 지시서를 지키는 자리다
-export function specsKept(s: Sweep, path: string, name: string, branch: string, pr: Pr | null): boolean {
+// 머지된 PR 의 배포 뒤 할 일(followups.json)이 끝나지 않았으면 지시서를 남긴다. 남기면 true 다.
+// PR 본문의 기능 완료 근거 글은 보지 않는다(사용자 결정 2026-11-24)
+export function specsKept(s: Sweep, pr: Pr | null): boolean {
   const { repo, specsDir, log } = s
   if (!specsDir || pr?.state !== 'MERGED') return false
-  const { specs: named, prBodies } = specCandidates({ specsDir, name, branch, prNumber: pr.number })
-  const launched = launchesAt(repo, path).flatMap((launch) => (launch.spec ? [launch.spec] : []))
-  if (named.length + prBodies.length + launched.length + specsOnBranch(specsDir, branch).length === 0) return false
-  const pending = featureCompletionProblem(repo, String(pr.number), branch, specsDir, String(pr.body ?? ''))
+  const pending = followupPending(repo, pr)
   if (pending) log(`  지시서 남김: ${pending}`)
   return pending !== null
+}
+
+function followupPending(repo: string, pr: Pr): string | null {
+  return loadFollowups(repo).some((f) => f.pr === Number(pr.number) && !f.done_at) ? `PR #${pr.number} 의 배포 뒤 할 일이 남았다` : null
 }
 
 // specs.ts 파일 맨 위 설명의 「워크트리 없는 지시서」. 판정 근거는 옮기기 전 한 줄로 낸다
@@ -92,8 +91,8 @@ function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, spec
       if (!listed.ok) keep = `브랜치 ${branch} 의 PR 조회 실패`
       else if (prs.some((p) => p.state === 'OPEN')) keep = `브랜치 ${branch} 에 열린 PR 이 있다`
       if (keep) break
-      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 후속 검증은 가장 최근에 머지된 PR 기준으로 본다.
-      // 옛 CLOSED PR 과 새 MERGED PR 이 섞여도 머지된 PR 의 후속 검증을 먼저 본다(머지된 PR 이 없을 때만 기한 판정으로 간다)
+      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 배포 뒤 할 일은 가장 최근에 머지된 PR 기준으로 본다.
+      // 옛 CLOSED PR 과 새 MERGED PR 이 섞여도 머지된 PR 의 배포 뒤 할 일을 먼저 본다(머지된 PR 이 없을 때만 기한 판정으로 간다)
       const merged = prs.filter((p) => p.state === 'MERGED')
       if (merged.length === 0) {
         orphan ||= prs.length === 0 ? `브랜치 ${branch} 의 PR 이 없다` : `브랜치 ${branch} 의 PR 이 닫혔다`
@@ -115,8 +114,7 @@ function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, spec
       continue
     }
     if (last) {
-      const pending = featureCompletionProblem(repo, String(last.number), branches[0], specsDir, String(last.body ?? ''))
-        ?? (loadFollowups(repo).some((f) => f.pr === Number(last!.number) && !f.done_at) ? `PR #${last.number} 의 배포 뒤 할 일이 남았다` : null)
+      const pending = followupPending(repo, last)
       if (pending) {
         log(`워크트리 없는 지시서 남김 ${file}: ${pending}`)
         continue

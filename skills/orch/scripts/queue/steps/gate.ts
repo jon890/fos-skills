@@ -1,13 +1,14 @@
 // 머지 전 조건 판정. 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 같은 함수를 쓴다.
-// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 판정, 기능 완료 근거 블록(독립 리뷰 줄 포함),
+// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 조건(봇 영수증이나 리뷰 체크. 리뷰 댓글 문구는 보지 않는다),
 // 통합 테스트 기록(queue.integration_tests 가 있을 때만), 마이그레이션 번호, 공개 저장소의 비공개 낱말(private-words.ts).
 // 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
+// PR 본문의 기능 완료 근거 블록은 판정에 쓰지 않는다. worker 가 적은 글이 아니라 이미 있는 사실만 본다(사용자 결정 2026-11-24).
 
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
 import { judgePrReview } from '../../lib/review-judgement.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { integrationNeeds, integrationProblems, integrationRules } from '../../core/integration-evidence.ts'
-import { acceptsVerifiedCommit, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
+import { acceptsVerifiedCommit } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
 import { migrationReasons } from './migrations.ts'
@@ -105,16 +106,12 @@ export async function loadPr(stepContext: StepContext, state: StepState, n: stri
 // 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
 // notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다.
 // 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
-export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; fixed: string[]; notes: string[] }> {
+export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; notes: string[] }> {
   const o = state.o
   const p = state.p
   const n = p.n
   const reasons: GateReason[] = []
   const facts: string[] = []
-  // 리뷰 판정이 block 을 반영 완료로 푼 `REVIEW-FIXED …` 줄. orch queue gate 가 GATE-OK 뒤에 낸다
-  const fixed: string[] = []
-  // 미해결 스레드 수. 조회하지 못했으면 null 이라 block 을 반영 완료로 풀지 않는다
-  let unresolved: number | null = null
   const notes: string[] = []
 
   if (checks !== 'none') {
@@ -139,7 +136,6 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   } else {
     const t = chomp(threads.stdout)
     facts.push(`threads=${t}`)
-    if (/^\d+$/.test(t)) unresolved = Number(t)
     if (t !== '0') reasons.push({ kind: 'threads', text: `미해결 리뷰 스레드 ${t} 개` })
   }
 
@@ -155,49 +151,38 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
 
   const review = autoMergeConfig(loadConfig(state.repoDir)).review
   if (review) {
-    const got = ghJson<{ reviews: unknown; comments: unknown; headRefOid: string; body: string }>(['pr', 'view', n, '--json', 'reviews,comments,headRefOid,body', '--jq', '.'], { cwd: o.repo, cache: false })
-    if (!got.ok || !got.data || !Array.isArray(got.data.reviews) || !Array.isArray(got.data.comments)) {
+    const got = ghJson<{ statusCheckRollup: unknown; headRefOid: string }>(['pr', 'view', n, '--json', 'statusCheckRollup,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
+    if (!got.ok || !got.data) {
       reasons.push({ kind: 'lookup', text: '리뷰 판정 조회 실패' })
     } else if (got.data.headRefOid !== p.ph) {
       throw new HeadChanged(`${n} 리뷰 조회 중 HEAD 가 바뀌었다`)
     } else {
-      const feature = Boolean(featureBranch(o.repo, p.branch)) || (typeof got.data.body === 'string' && got.data.body.includes('fos-feature-evidence'))
       const target = { host: p.apiHost, slug: `${p.owner}/${p.repo}`, number: n }
-      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base, target }, got.data, review, feature, unresolved)
-      if (!judged.ok) {
-        let text = judged.wait
-        if (judged.missing && review.trustedBots) text = `봇 리뷰 대기: ${text}`
-        else if (judged.missing && judged.condition === 'verdict-on-head') text = `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다`
-        reasons.push({ kind: 'review', text })
-      } else fixed.push(...(judged.fixed ?? []))
+      const judged = judgePrReview(state.repoDir, { head: p.ph, target }, got.data, review)
+      if (!judged.ok) reasons.push({ kind: 'review', text: judged.wait })
     }
   }
 
+  // 본문은 통합 테스트 기록과 비공개 낱말 검사에만 쓴다
   const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
   if (!evidence.ok) {
-    reasons.push({ kind: 'lookup', text: '기능 완료 근거 또는 HEAD 조회 실패' })
+    reasons.push({ kind: 'lookup', text: 'PR 본문 또는 HEAD 조회 실패' })
   } else if (evidence.data.headRefOid !== p.ph) {
     throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${String(evidence.data.headRefOid ?? '').slice(0, 8)}`)
   } else {
-    // 통합 테스트 기록의 커밋도 기능 완료 근거와 같은 예외로 받는다.
+    // 통합 테스트 기록의 커밋은 그 뒤에 base 만 합친 merge 나 계획 폴더 삭제만 있으면 받는다.
     const accept = (verified: string): boolean => fetchPrRefs(stepContext, state) &&
       acceptsVerifiedCommit(state.repoDir, p.ph, verified, p.base)
-    const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false, accept)
-    if (problem) {
-      const waitingForBot = review?.trustedBots && problem.startsWith('독립 리뷰 이 완료되지 않았다: 대기') &&
-        reasons.some((reason) => reason.kind === 'review' && reason.text.startsWith('봇 리뷰 대기:'))
-      reasons.push({ kind: 'evidence', text: waitingForBot ? `봇 리뷰 대기: ${problem}` : problem })
-    }
     const integration = integrationReasons(stepContext, state, evidence.data.body ?? '', accept)
     reasons.push(...integration.reasons)
     notes.push(...integration.notes)
   }
   reasons.push(...migrationReasons(state))
   reasons.push(...privateReasons(stepContext, state, evidence.ok && typeof evidence.data.body === 'string' ? evidence.data.body : null))
-  // 이유와 알림 줄에는 PR 본문에서 옮긴 글(통합 테스트 생략 이유, 근거 칸 값)이 섞인다. gate 출력과 큐 로그로 나가기 전에 비공개 낱말을 가린다
+  // 이유와 알림 줄에는 PR 본문에서 옮긴 글(통합 테스트 생략 이유)이 섞인다. gate 출력과 큐 로그로 나가기 전에 비공개 낱말을 가린다
   const words = readPrivateWords()
-  if (words.length === 0) return { reasons, summary: facts.join(' '), fixed, notes }
-  return { reasons: reasons.map((r) => ({ ...r, text: mask(r.text, words) })), summary: facts.join(' '), fixed, notes: notes.map((note) => mask(note, words)) }
+  if (words.length === 0) return { reasons, summary: facts.join(' '), notes }
+  return { reasons: reasons.map((r) => ({ ...r, text: mask(r.text, words) })), summary: facts.join(' '), notes: notes.map((note) => mask(note, words)) }
 }
 
 // 통합 테스트 기록(core/integration-evidence.ts). 규칙이 없으면 바뀐 파일을 읽지 않는다. 바뀐 파일은 REST 로 끝까지 읽는다(gh pr view 의 files 는 100개까지다).
@@ -214,7 +199,7 @@ function integrationReasons(stepContext: StepContext, state: StepState, body: st
 }
 
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.
-// 충돌이 있으면 큐에서 빼는 충돌 처리로, worker 가 고칠 것(스레드, 근거 블록)이 있으면 worker 에게 알리는 보류로, 그 밖에는 알리지 않는 보류로 간다.
+// 충돌이 있으면 큐에서 빼는 충돌 처리로, worker 가 고칠 것(스레드, 통합 테스트 기록)이 있으면 worker 에게 알리는 보류로, 그 밖에는 알리지 않는 보류로 간다.
 // 체크 실패는 상주 루프의 CI 감시가 worker 에게 알리므로 체크만 걸렸을 때는 알리지 않는다
 // 리뷰 판정 대기와 보류는 일반 보류다. 리뷰 봇 재실행과 worker 수정 중 어느 쪽이 필요한지 알 수 없어 자동 알림을 보내지 않는다
 export function holdWith(state: StepState, reasons: GateReason[]): never {

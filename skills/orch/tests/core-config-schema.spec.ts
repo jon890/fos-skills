@@ -94,11 +94,8 @@ describe('키별 표본', () => {
     assert.equal(valueProblems('inbox', 'enabled', 'false').length, 1)
   })
 
-  test('모르는 리뷰 조건은 queue.auto_review.require 경로로 낸다', () => {
-    const found = problems({ queue: { auto_review: { pass: 'a', block: 'b', require: ['thread-resolved'] } } })
-    assert.equal(found.length, 1)
-    assert.equal(found[0].path, 'queue.auto_review.require')
-    assert.match(found[0].reason, /^모르는 조건이 있다: thread-resolved\. 쓸 수 있는 조건: verdict-on-head, /)
+  test('옛 리뷰 문구 판정 키는 설정 오류가 아니다(orch-doctor 가 LEGACY-REVIEW-KEY 로 알린다)', () => {
+    assert.deepEqual(problems({ queue: { auto_review: { pass: 'a', block: 'b', require: ['thread-resolved'], fallback: { check: 'x' } } } }), [])
   })
 
   test('zod 가 낸 이유는 한국어이고 영어 기본 문구가 없다', () => {

@@ -17,7 +17,7 @@
 
 - `lib/private-words.ts`: 목록, 대소문자를 가리지 않는 부분 문자열 비교, 위치 만들기, 값 가리기, 공개 여부 기억, 훅에서 부르는 명령줄. Node 내장 모듈만 쓴다. `lib/commit-check.ts` 가 훅 폴더에 이 파일을 그대로 복사하기 때문이다.
 - `githooks/dispatch.mjs`: 목록이 있을 때만 검사기 사본을 띄운다. 검사기가 돌지 못하면 목록이 있으므로 거절한다.
-- `queue/steps/private-words.ts`: 관문에서 GitHub 글을 읽어 `private` 이유를 만든다. `private` 은 worker 가 고칠 이유라 머지 큐는 스레드, 근거 블록과 같이 다른 PR 을 먼저 처리한다.
+- `queue/steps/private-words.ts`: 관문에서 GitHub 글을 읽어 `private` 이유를 만든다. `private` 은 worker 가 고칠 이유라 머지 큐는 스레드, 통합 테스트 기록과 같이 다른 PR 을 먼저 처리한다.
 - `queue/steps/spec-hold.ts`, `loop/steps/auto-merge.ts`: 보류 이유를 로그에 쓰기 전에 가린다. 자동 머지는 따로 검사하지 않는다. 띄운 머지 큐의 관문이 막는다.
 - `doctor/orch-doctor.ts`: 목록이 없는 공개 저장소를 알린다.
 

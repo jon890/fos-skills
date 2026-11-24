@@ -75,7 +75,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     try {
       await bringUpToDate(stepContext, state)
     } catch (e) {
-      // 체크를 넘지 못해도 스레드, 충돌, 근거 블록에 걸리는지 함께 보고 이유를 한 번에 낸다
+      // 체크를 넘지 못해도 스레드, 충돌, 통합 테스트 기록에 걸리는지 함께 보고 이유를 한 번에 낸다
       if (e instanceof CheckStop) {
         const rest = await gateReasons(stepContext, state, 'none')
         if (rest.reasons.length > 0) holdWith(state, [{ kind: 'ci', text: e.reason }, ...rest.reasons])

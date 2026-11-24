@@ -30,21 +30,16 @@
 //        `CI <상태>`(이번 틱의 ci 가 없거나 HEAD 가 다르면 `CI 없음`), `이미 건 HEAD`(tried 에 `<PR>@<HEAD>`),
 //        `지시서 보류: <이유>`(lib/auto-merge.ts 의 specHold), `PR 본문 보류: <이유>`(리뷰 조회 때 읽은 본문의 prHold, 지시서 보류와 같은 줄 꼴), `보드 보류: <줄>`(lib/board.ts 의 findBoardItems 로 찾은 항목의 boardHold),
 //        지시서 보류와 PR 본문 보류의 이유에 비공개 낱말(lib/private-words.ts 의 목록)이 있으면 이유 대신 `비공개 낱말이 있어 값을 생략한다(<지시서나 PR 본문> <n>번째 줄)` 를 쓴다(redactLine).
-//        `미해결 스레드 <n>`(THREADS_CMD), 리뷰 판정(queue.auto_review 가 있을 때).
-//        미해결 스레드는 queue.auto_review.require 의 조합과 상관없이 늘 본다. 조합에서 빼 실수로 스레드를 놓친 채 걸지 않으려는 것이다.
-//        리뷰 판정은 require 에 모르는 조건 이름이 있으면 gh 를 부르지 않고 `queue.auto_review.require 에 모르는 조건이 있다: …` 로 멈춘다.
-//        아니면 gh pr view --json reviews,comments,files 의 리뷰와 댓글 전체를 lib/auto-merge.ts 의 judgeReview 에 넘기고, 막힌 조건의 이유
-//        (`리뷰 대기`, `리뷰 보류`, `재리뷰 대기: …`)로 멈춘다. 조건의 뜻은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
-//        미해결 스레드 수(위 THREADS_CMD 의 0)를 judgeReview 에 함께 넘긴다. queue.auto_review.fixed_after_block 이 true 면 block 을 반영한 PR 이 재리뷰 없이 통과한다.
-//        require 를 적지 않으면 verdict-on-head 하나라, 지금 HEAD 의 본문만 센다(reviewScope, scopedNotes). 그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
-//        HEAD 범위와 체인은 git fetch --quiet origin <브랜치> <base> 뒤 git log --first-parent --max-count=50 --format=%H%x09%P%x09%cI <HEAD> 와
-//        git merge-base --is-ancestor <둘째 부모> origin/<base> 로 정한다. 읽지 못하면 빈 체인이라 HEAD 에 달린 리뷰만 세고 댓글은 세지 않으며,
-//        rereview-after-block 은 block 뒤의 pass 를 세지 못해 멈춘다.
-//        판정 문구가 든 본문이 없어 `리뷰 대기` 로 멈추면 unreviewed[<PR>@<HEAD>] 가 없을 때만 AUTO-MERGE-NO-REVIEW 를 그 PR 지시서의 Run 으로 쓰고 기록한다.
-//        text 는 막은 조건이 verdict-on-head 면 `HEAD <앞 8자리> 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로
-//        남기면 다음 틱이 건다`, 다른 조건이면 `HEAD <앞 8자리> 의 PR 에 판정 문구가 든 리뷰가 없다(<조건>). 독립 리뷰 결과를 pass 문구가 든 리뷰나
-//        댓글로 남기면 다음 틱이 건다` 다. 리뷰가 결과 없이 실패한 PR(필수 검사가 아닌 리뷰 봇이 한도로 끝났다)을 코디네이터가 알게 하려는 것이다.
-//        통과하면 judgeReview 의 조건마다의 근거를 `; ` 로 이어 둔다. queue.auto_review 가 없으면 근거는 `queue.auto_review 없음` 이다
+//        `미해결 스레드 <n>`(THREADS_CMD), 리뷰 판정(queue.auto_review 에 trusted_bots 나 review_checks 가 있을 때).
+//        미해결 스레드는 리뷰 설정과 상관없이 늘 본다.
+//        리뷰 판정은 gh pr view --json statusCheckRollup,files,body,headRefOid 와 봇 영수증(lib/review-bot.ts)을 lib/review-judgement.ts 의
+//        judgePrReview 에 넘긴다. 리뷰 댓글의 문구는 보지 않는다. 규칙은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
+//        그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
+//        영수증도 리뷰 체크 성공도 없어 멈추면(missing) unreviewed[<PR>@<HEAD>] 가 없을 때만 AUTO-MERGE-NO-REVIEW 를 그 PR 지시서의 Run 으로 쓰고 기록한다.
+//        text 는 `HEAD <앞 8자리> 에 <없는 것>이 없다. 봇 영수증이나 리뷰 체크가 이 HEAD 에 생기면 다음 틱이 건다` 다.
+//        리뷰가 결과 없이 실패한 PR 을 코디네이터가 알게 하려는 것이다.
+//        통과하면 judgeReview 의 근거를 `; ` 로 이어 둔다. 리뷰 설정이 없으면 근거는 `queue.auto_review 없음` 이다.
+//        기능 PR(지시서의 「루프를 쓴다」)은 리뷰 설정이 없으면 걸지 않고 기다린다
 //        스레드 명령이나 gh 조회가 실패하면 오류 이유로 남기고 그 PR 은 넘어간다.
 //        마무리(finish-<PR>.pid)가 살아 있는지는 보지 않는다. 마무리는 머지를 180분까지 기다려 큐가 그 PR 을 보류한 뒤에도 살아 있다.
 //        merge-with-finish 는 도는 마무리를 그대로 쓰므로 다시 걸어도 마무리가 겹치지 않는다.
@@ -86,12 +81,12 @@ import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSyn
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
-import { beforeCommand, boardHold, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
+import { beforeCommand, boardHold, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, sweepArgs, watchedDirs } from '../../lib/auto-merge.ts'
 import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
-import { featureEvidenceProblem, featureLoopRequested, acceptsVerifiedCommit } from '../../lib/feature-evidence.ts'
+import { featureLoopRequested } from '../../lib/feature-evidence.ts'
 import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
@@ -260,7 +255,7 @@ function addedMigrations(files: unknown, dirs: Record<string, string | string[]>
 }
 
 // 판정(머리 주석의 「자동 머지」 3). wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다.
-// missing 은 판정 문구나 봇 영수증이 없어 멈춘 조건이다. AUTO-MERGE-NO-REVIEW 의 문구를 정한다
+// missing 은 봇 영수증도 리뷰 체크 성공도 없어 멈췄다는 뜻이다. AUTO-MERGE-NO-REVIEW 를 낸다
 function judgeTarget(
   ctx: Context,
   pr: OwnPr,
@@ -271,7 +266,7 @@ function judgeTarget(
   state: AutoMergeState,
   board: { file: string; items: BoardItem[] } | null,
   words: PrivateWord[] = [],
-): { wait: string; missing?: string } | { error: string } | { migrations: Migration[]; basis: string } {
+): { wait: string; missing?: boolean } | { error: string } | { migrations: Migration[]; basis: string } {
   if (pr.draft) return { wait: 'draft' }
   if (stale.has(pr.number)) return { wait: 'CI 규칙을 읽지 못했다' }
   const entry = ci[String(pr.number)]
@@ -298,26 +293,18 @@ function judgeTarget(
   const review = ctx.autoMerge.review
   const watched = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
   const noReview = 'queue.auto_review 없음'
-  // 모르는 조건이면 gh 를 부르지 않고 멈춘다
-  if (review && review.unknown.length > 0) return { wait: unknownConditionsText(review.unknown) }
-  const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files,body,headRefOid'], { cwd: ctx.repo })
+  const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'statusCheckRollup,files,body,headRefOid'], { cwd: ctx.repo })
   if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
   const bodyHold = typeof data.body === 'string' ? prHold(data.body) : null
   if (bodyHold !== null) return { wait: `PR 본문 보류: ${redactLine(bodyHold, words, 'PR 본문', data.body as string)}` }
-  feature = feature || typeof data.body === 'string' && data.body.includes('fos-feature-evidence')
-  if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 독립 리뷰 정책이 필요하다' }
-  if (feature) {
-    if (typeof data.body !== 'string' || data.headRefOid !== pr.head) return { wait: '기능 완료 근거 또는 HEAD 조회 실패' }
-    // 검증 커밋 뒤에 base 를 합친 merge 만 있으면 받아들인다. 위에서 지금 HEAD 의 CI 가 passed 인 것을 보았다
-    const problem = featureEvidenceProblem(data.body, pr.head, feature, false, (verified) => acceptsVerifiedCommit(ctx.repo, pr.head, verified, pr.base, { fetch: true }))
-    if (problem) return { wait: problem }
-  }
+  // PR 본문의 기능 완료 근거 블록은 판정에 쓰지 않는다(사용자 결정 2026-11-24). 기능 PR 은 지시서로만 알아본다
+  if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다' }
   let basis = noReview
   if (review) {
     const target = { host: pr.host, slug: pr.slug, number: pr.number }
-    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base, target }, data, review, feature, Number(count))
-    if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
+    const judged = judgePrReview(ctx.repo, { head: pr.head, target }, data, review)
+    if (!judged.ok) return judged.missing ? { wait: judged.wait, missing: true } : { wait: judged.wait }
     basis = judged.basis.join('; ')
   }
   return { migrations: addedMigrations(data.files, watched), basis }
@@ -492,11 +479,7 @@ async function autoMergeStep(
       log(`AUTO-MERGE-WAIT #${pr.number} ${judged.wait}`)
       const key = `${pr.number}@${pr.head}`
       if (judged.missing && !Object.hasOwn(state.unreviewed, key)) {
-        const text = ctx.autoMerge.review?.trustedBots
-          ? `봇 리뷰 대기: ${judged.wait}`
-          : judged.missing === 'verdict-on-head'
-            ? `HEAD ${pr.head.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
-            : `HEAD ${pr.head.slice(0, 8)} 의 PR 에 판정 문구가 든 리뷰가 없다(${judged.missing}). 독립 리뷰 결과를 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
+        const text = `${judged.wait}. 봇 영수증이나 리뷰 체크가 이 HEAD 에 생기면 다음 틱이 건다`
         if (notifyAutoMerge(ctx, 'AUTO-MERGE-NO-REVIEW', pr.number, text, target.run)) state.unreviewed[key] = iso()
       }
       continue

@@ -4,12 +4,10 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { baseMergesOnly, featureBranch, featureEvidenceProblem, featureLoopRequested, planDeletionOnly } from '../scripts/lib/feature-evidence.ts'
+import { baseMergesOnly, featureBranch, featureLoopRequested, planDeletionOnly } from '../scripts/lib/feature-evidence.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
-import { judgePrReview } from '../scripts/lib/review-judgement.ts'
 import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
-const HEAD = 'a'.repeat(40)
 test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지시서를 모은다', (t) => {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-branch-')))
   t.after(() => rmSync(repo, { recursive: true, force: true }))
@@ -93,14 +91,6 @@ test('branch 없는 옛 기록을 워크트리로 찾고, 누락되거나 다른
   writeFileSync(fallback, implementation)
   assert.equal(featureBranch(repo, 'feat/test'), true)
 })
-const BODY = `<!-- fos-feature-evidence -->
-검증 커밋: ${HEAD}
-인수 검증: 통과 | REQ1 API 응답과 DB 상태 확인, PR 본문의 실행 기록
-문서 대조: 통과 | design과 domain 대조, 후보 없음: 기존 계약 재사용
-독립 리뷰: 통과 | 독립 검토자의 리뷰 링크
-후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기, 기대값은 본문
-<!-- /fos-feature-evidence -->`
-
 test('기능 지시의 첫 줄만 보고 예시와 다른 절은 무시한다', () => {
   for (const heading of ['## 할 일', '## 할 일 · 후속']) {
     for (const prefix of ['', '- ', '1. ', '2) ', '- [ ] ', '* [x] ']) {
@@ -109,31 +99,6 @@ test('기능 지시의 첫 줄만 보고 예시와 다른 절은 무시한다', 
   }
   assert.equal(featureLoopRequested('## 할 일\n루프 없이: 오타\n## 참고\n루프를 쓴다(스펙: a)'), false)
   assert.equal(featureLoopRequested('```md\n## 할 일\n루프를 쓴다(스펙: a)\n```'), false)
-})
-
-test('필수 블록 누락, 예시 사본, 중복과 오래된 HEAD 를 막는다', () => {
-  assert.ok(featureEvidenceProblem('', HEAD, true))
-  assert.equal(featureEvidenceProblem('', HEAD), null)
-  assert.ok(featureEvidenceProblem('```md\n' + BODY + '\n```', HEAD, true))
-  assert.ok(featureEvidenceProblem(BODY + BODY, HEAD))
-  assert.ok(featureEvidenceProblem(BODY, 'b'.repeat(40)))
-  assert.ok(featureEvidenceProblem(BODY.replace('문서 대조: 통과', '문서 대조: 통과 | 중복\n문서 대조: 통과'), HEAD))
-})
-
-test('인수 검증, 문서 대조와 독립 리뷰는 모두 현재 근거가 필요하다', () => {
-  assert.equal(featureEvidenceProblem(BODY, HEAD, true), null)
-  for (const key of ['인수 검증', '문서 대조', '독립 리뷰']) {
-    assert.ok(featureEvidenceProblem(BODY.replace(`${key}: 통과`, `${key}: 대기`), HEAD))
-    assert.ok(featureEvidenceProblem(BODY.replace(new RegExp(`${key}:.*`), `${key}: 통과 | TBD`), HEAD))
-    assert.ok(featureEvidenceProblem(BODY.replace(new RegExp(`${key}:.*\n`), ''), HEAD))
-  }
-})
-
-test('후속 검증 대기는 머지를 허용하지만 완료와 정리는 막는다', () => {
-  assert.equal(featureEvidenceProblem(BODY, HEAD), null)
-  assert.ok(featureEvidenceProblem(BODY, HEAD, true, true))
-  assert.equal(featureEvidenceProblem(BODY.replace('후속 검증: 대기', '후속 검증: 통과'), HEAD, true, true), null)
-  assert.equal(featureEvidenceProblem(BODY.replace('후속 검증: 대기', '후속 검증: 없음'), HEAD, true, true), null)
 })
 
 // 검증 커밋 뒤 base 를 합친 merge 커밋만 있는 HEAD(update-branch 가 만든 꼴)를 임시 git 저장소로 본다.
@@ -197,12 +162,9 @@ describe('baseMergesOnly', () => {
     advanceMain('c.txt')
     const twice = mergeMain()
     assert.equal(baseMergesOnly(tmp, twice, verified, 'main'), true)
-    const body = BODY.replace(HEAD, verified)
-    assert.equal(featureEvidenceProblem(body, twice, true, false, (v) => baseMergesOnly(tmp, twice, v, 'main')), null)
-    assert.ok(featureEvidenceProblem(body, twice, true))
   })
 
-  test('검증 뒤 양쪽에서 base 만 합쳤으면 바깥 merge 의 트리를 확인해 기존 검증과 리뷰를 받는다', () => {
+  test('검증 뒤 양쪽에서 base 만 합쳤으면 바깥 merge 의 트리를 확인해 기존 검증을 받는다', () => {
     advanceMain('b.txt')
     const queued = mergeMain()
     git('branch', 'queued', queued)
@@ -212,17 +174,12 @@ describe('baseMergesOnly', () => {
     git('merge', '-q', '--no-ff', '--no-edit', 'queued')
     const joined = git('rev-parse', 'HEAD')
     git('remote', 'add', 'origin', '.')
-    const reviewed = (head: string) => judgePrReview(tmp, { head, branch: 'feat', base: 'main' }, {
-      reviews: [{ body: 'PASS', commit: { oid: verified }, submittedAt: '2026-01-01T00:00:00Z' }],
-    }, { pass: /PASS/, block: /BLOCK/, require: ['verdict-on-head'], unknown: [] }, false).ok
     assert.equal(baseMergesOnly(tmp, joined, verified, 'main'), true)
-    assert.equal(reviewed(joined), true)
 
     git('reset', '-q', '--hard', local)
     git('merge', '-q', '--no-ff', '--no-commit', 'queued')
     const edited = commit('feat.txt', 'changed in outer merge\n')
     assert.equal(baseMergesOnly(tmp, edited, verified, 'main'), false)
-    assert.equal(reviewed(edited), false)
 
     git('checkout', '-q', 'queued')
     commit('more.txt', 'unverified\n')
@@ -231,7 +188,6 @@ describe('baseMergesOnly', () => {
     git('merge', '-q', '--no-ff', '--no-edit', 'queued')
     const unverified = git('rev-parse', 'HEAD')
     assert.equal(baseMergesOnly(tmp, unverified, verified, 'main'), false)
-    assert.equal(reviewed(unverified), false)
   })
 
   test('검증 뒤 코드 커밋, merge 커밋에 더한 변경, base 밖 브랜치의 merge 는 받아들이지 않는다', () => {
@@ -296,7 +252,6 @@ describe('baseMergesOnly', () => {
     git('commit', '-q', '-m', 'remove completed plan')
     const head = git('rev-parse', 'HEAD')
     assert.equal(planDeletionOnly(tmp, head, plan, 'main'), true)
-    assert.equal(featureEvidenceProblem(BODY.replace(HEAD, plan), head, true, false, undefined, (v) => planDeletionOnly(tmp, head, v, 'main')), null)
   })
 
   test('다른 문서, 다른 계획, 일부 파일을 함께 지우면 계획 삭제 예외를 거부한다', () => {

@@ -634,17 +634,19 @@ describe('저장소 판정', () => {
     assert.doesNotMatch(r.stdout, /DEPRECATED/)
   })
 
-  test('queue.auto_review.require 의 모르는 조건 이름은 INVALID-CONFIG 이고 종료 코드 1 이다', () => {
-    const review = { pass: '통과', block: '보류', require: ['verdict-seen', 'thread-resolved'] }
+  test('queue.auto_review 의 옛 문구 판정 키는 키마다 LEGACY-REVIEW-KEY 로 알리고 종료 코드는 0 이다', () => {
+    const review = { pass: '통과', block: '보류', require: ['verdict-seen', 'thread-resolved'], review_checks: ['claude-review'] }
     write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_merge: true, auto_review: review } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
-    assert.equal(r.code, 1, r.stdout + r.stderr)
-    assert.match(r.stdout, /^INVALID-CONFIG queue\.auto_review\.require 모르는 조건이 있다: thread-resolved\. 쓸 수 있는 조건: verdict-on-head, /m)
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /INVALID-CONFIG/)
+    assert.deepEqual(r.stdout.split('\n').filter((line) => line.startsWith('LEGACY-REVIEW-KEY')).map((line) => line.split(' ')[1]),
+      ['queue.auto_review.block', 'queue.auto_review.pass', 'queue.auto_review.require'])
+    assert.match(r.stdout, /config unset queue\.auto_review\.pass/)
   })
 
-  test('아는 조건만 적은 조합은 INVALID-CONFIG 가 아니다', () => {
-    const review = { pass: '통과', block: '보류', require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'] }
-    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_merge: true, auto_review: review } }))
+  test('리뷰 체크만 적은 설정은 경고가 없다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_merge: true, auto_review: { review_checks: ['claude-review'] } } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')

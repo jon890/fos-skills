@@ -21,7 +21,7 @@
 //      합친 결과의 검증은 PR CI 가 맡는다
 //   pushed 의 head 는 push 한 merge 커밋 SHA 다.
 //
-// 머지 큐의 기능 완료 근거는 이 merge 커밋을 「base 합치기」 로 받아들인다(lib/feature-evidence.ts 의 baseMergesOnly 에 resolved 로 paths 를 준다).
+// 머지 큐의 통합 테스트 기록과 리뷰 판정은 이 merge 커밋을 「base 합치기」 로 받아들인다(lib/feature-evidence.ts 의 baseMergesOnly 에 resolved 로 paths 를 준다).
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

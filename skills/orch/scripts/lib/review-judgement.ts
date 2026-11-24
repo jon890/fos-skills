@@ -1,61 +1,27 @@
-// 자동 머지와 gate 가 같은 리뷰 범위와 조건을 쓴다.
-import { contractSettings } from '../core/contracts.ts'
-import { isObject } from '../core/json.ts'
-import { judgeReview, reviewScope } from './auto-merge.ts'
-import type { ChainCommit, ReviewConfig, ReviewNote, ReviewJudgement } from './auto-merge.ts'
-import { loadConfig } from './config.ts'
-import { baseMergesOnly } from './feature-evidence.ts'
-import { git } from './git.ts'
+// 자동 머지와 gate 가 같은 리뷰 판정을 쓴다. 판정 규칙은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
+import { judgeReview } from './auto-merge.ts'
+import type { ReviewConfig, ReviewJudgement, ReviewNote } from './auto-merge.ts'
+import { reviewCheckPassed } from '../core/review-checks.ts'
 import { loadTrustedBotReviews } from './review-bot.ts'
 import type { ReviewTarget } from './review-bot.ts'
 
-const REVIEW_CHAIN_LIMIT = 50
-
-// gh pr view --json reviews,comments 의 행을 본문 목록으로 바꾼다. at 은 시각 필드 이름이다(리뷰 submittedAt, 댓글 createdAt)
-export function reviewNotes(rows: unknown, at: string): ReviewNote[] {
-  if (!Array.isArray(rows)) return []
-  return rows.filter(isObject).map((row) => {
-    const commit = isObject(row.commit) && typeof row.commit.oid === 'string' && row.commit.oid ? row.commit.oid : null
-    return { body: typeof row.body === 'string' ? row.body : '', at: typeof row[at] === 'string' ? row[at] as string : '', commit, ...(typeof row.id === 'string' && row.id ? { id: row.id } : {}) }
-  })
-}
-
-// 기능 PR 이면 저장소의 require 와 상관없이 verdict-on-head 를 더한다. 저장소가 queue.auto_review.feature_head 를 false 로 두면 더하지 않는다
-export function featureReviewRule(review: ReviewConfig, feature: boolean): ReviewConfig {
-  if (!feature || review.featureHead === false) return review
-  return { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] }
-}
-
-// threads 는 지금 미해결 리뷰 스레드 수다. 모르면 null 이고, 그러면 fixed_after_block 이 켜져 있어도 block 을 풀지 않는다
-export function judgePrReview(repo: string, pr: {
-  head: string; branch: string; base: string; target?: ReviewTarget
-}, data: { reviews?: unknown; comments?: unknown }, review: ReviewConfig, feature: boolean, threads: number | null = null): ReviewJudgement {
+// data.statusCheckRollup 은 gh pr view --json statusCheckRollup 의 값이다. 그 PR 의 지금 HEAD 체크다
+export function judgePrReview(repo: string, pr: { head: string; target?: ReviewTarget }, data: { statusCheckRollup?: unknown }, review: ReviewConfig): ReviewJudgement {
+  // 리뷰 체크를 먼저 본다. 둘 중 하나면 통과라 리뷰 체크가 success 면 봇 조회의 실패나 지적과 상관없이 통과한다(PR 619 리뷰).
+  // 봇이 연 미해결 줄 댓글은 관문의 미해결 리뷰 스레드 검사가 따로 막는다
+  const passedChecks = review.checks.filter((name) => reviewCheckPassed(data.statusCheckRollup, name))
   let receipts: ReviewNote[] = []
-  if (review.trustedBots && review.unknown.length === 0) {
-    if (!pr.target) return { ok: false, condition: null, wait: '믿는 리뷰 봇의 결과를 조회할 PR 정보가 없다', missing: false }
+  if (review.trustedBots && passedChecks.length === 0) {
+    if (!pr.target) return { ok: false, wait: '믿는 리뷰 봇의 결과를 조회할 PR 정보가 없다', missing: false }
     const trusted = loadTrustedBotReviews(repo, pr.target, pr.head, review.trustedBots)
-    if (!trusted.ok) return { ok: false, condition: null, wait: trusted.wait, missing: false }
+    if (!trusted.ok) return { ok: false, wait: trusted.wait, missing: false }
     receipts = trusted.receipts
   }
-  git(repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
-  const listed = git(repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
-  const chain: ChainCommit[] = listed.code === 0 ? listed.stdout.trim().split('\n').filter(Boolean).map((row) => {
-    const [oid, parents, at] = row.split('\t')
-    return { oid, parents: parents ? parents.split(' ') : [], at: at ?? '' }
-  }) : []
-  let resolved: RegExp | null | undefined
-  const scope = reviewScope(pr.head, chain,
-    (oid) => git(repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0,
-    (head, reviewed) => {
-      if (resolved === undefined) resolved = contractSettings(loadConfig(repo))?.paths ?? null
-      return baseMergesOnly(repo, head, reviewed, pr.base, resolved)
-    })
-  const rule = featureReviewRule(review, feature)
-  const notes = [...receipts, ...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
-  const judged = judgeReview({ notes, scope, chain, threads }, rule)
-  if (!judged.ok && judged.missing && rule.trustedBots) {
-    const target = judged.condition === 'verdict-on-head' ? `HEAD ${pr.head.slice(0, 8)} 에` : 'PR 에'
-    return { ...judged, wait: `${target} 리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다` }
-  }
-  return judged
+  const judged = judgeReview({ receipts, passedChecks }, review)
+  if (judged.ok) return judged
+  const sources = [
+    ...(review.trustedBots ? ['현재 HEAD 를 확인한 봇 영수증'] : []),
+    ...(review.checks.length > 0 ? [`리뷰 체크(${review.checks.join(', ')}) 성공`] : []),
+  ]
+  return { ...judged, wait: `HEAD ${pr.head.slice(0, 8)} 에 ${sources.join('이나 ')}이 없다` }
 }

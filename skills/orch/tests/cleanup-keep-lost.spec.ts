@@ -1,4 +1,5 @@
-// 재부팅으로 끊긴 worker 와 후속 검증 대기의 워크트리를 정리 도구가 남기는지 본다(docs/features/cleanup-keep-lost/spec.md).
+// 재부팅으로 끊긴 worker 의 워크트리를 정리 도구가 남기는지 본다(docs/features/cleanup-keep-lost/spec.md).
+// PR 본문의 기능 완료 근거 블록으로는 남기지 않는다(사용자 결정 2026-11-24).
 // 실제 Orca 와 워크트리는 건드리지 않는다. 가짜 orca·gh 와 임시 저장소는 fixtures/cleanup-sweep.ts 가 소유한다.
 
 import assert from 'node:assert/strict'
@@ -111,7 +112,6 @@ describe('끊긴 worker 의 워크트리', () => {
 
   test('짧은 출력에서는 KEPT 줄이다', () => {
     assert.equal(sweepLine('남김 /w/a: 끊긴 worker ctx_lost, 다시 띄우거나 직접 정리한다', { path: null }), 'KEPT /w/a 끊긴 worker ctx_lost, 다시 띄우거나 직접 정리한다')
-    assert.equal(sweepLine('남김 /w/a: 기능 후속 검증이 끝나지 않았다: 기능 완료 근거 조회 실패', { path: null }), 'KEPT /w/a 기능 후속 검증이 끝나지 않았다: 기능 완료 근거 조회 실패')
   })
 
   test('resume 이나 새 dispatch 가 뒤에 끝났으면 보통 규칙대로 지운다', () => {
@@ -147,33 +147,22 @@ describe('끊긴 worker 의 워크트리', () => {
   })
 })
 
-describe('후속 검증 대기', () => {
-  function featurePr(name: string, followUp: string): string {
+describe('PR 본문의 완료 근거', () => {
+  test('기능 PR 의 본문에 후속 검증 대기가 있어도 워크트리와 지시서를 지운다', () => {
+    const name = 'feat-follow'
     const path = mergedWorktree(name)
     const head = String(fx.prs[name][1])
     fx.prViews['1'] = { state: 'MERGED', headRefOid: head, headRefName: name, body: `<!-- fos-feature-evidence -->
 검증 커밋: ${head}
-인수 검증: 통과 | 실제 API 검증 로그
-문서 대조: 통과 | 설계 대조와 후보 없음 근거
-독립 리뷰: 통과 | 별도 리뷰 결과
-후속 검증: ${followUp}
+후속 검증: 대기 | 배포 후 smoke
 <!-- /fos-feature-evidence -->` }
     const specs = join(fx.repo, '.orch/specs')
     mkdirSync(specs, { recursive: true })
-    writeFileSync(join(specs, `spec-${name}.md`), `브랜치: \`${name}\`\n## 할 일 · 기능\n1. 루프를 쓴다(스펙: 새로 쓴다)\n`)
-    return path
-  }
-
-  test('기능 PR 의 후속 검증이 대기면 워크트리와 지시서를 함께 남기고, 통과로 바뀌면 지운다', () => {
-    const path = featurePr('feat-follow', '대기 | 배포 후 smoke, 코디네이터, CI 실행기')
-    const spec = join(fx.repo, '.orch/specs/spec-feat-follow.md')
-    const pending = runSweep(['--specs-dir', '.orch/specs', '--apply'])
-    has(pending, `남김 ${path}: 기능 후속 검증이 끝나지 않았다`)
-    exists(path, pending)
-    assert.ok(existsSync(spec))
-    fx.prViews['1'].body = String(fx.prViews['1'].body).replace('후속 검증: 대기', '후속 검증: 통과')
-    const passed = runSweep(['--specs-dir', '.orch/specs', '--apply'])
-    gone(path, passed)
+    const spec = join(specs, `spec-${name}.md`)
+    writeFileSync(spec, `브랜치: \`${name}\`\n## 할 일 · 기능\n1. 루프를 쓴다(스펙: 새로 쓴다)\n`)
+    const out = runSweep(['--specs-dir', '.orch/specs', '--apply'])
+    lacks(out, '후속 검증')
+    gone(path, out)
     assert.ok(!existsSync(spec))
   })
 })
