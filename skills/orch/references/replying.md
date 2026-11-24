@@ -173,7 +173,7 @@ PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 필수 �
 
 ## 자동 리뷰 workflow 를 바꾼 PR
 
-믿는 리뷰 봇을 설정하지 않은 저장소에서 자동 리뷰 workflow(예: `.github/workflows/claude-code-review.yml`)를 바꾸면 Ready 뒤 코디네이터에게 독립 리뷰를 요청한다.
+믿는 리뷰 봇을 설정하지 않은 저장소에서 자동 리뷰 workflow(예: `.github/workflows/claude-code-review.yml`)를 바꾸면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다.
 기본 브랜치와 workflow 가 다르면 보안 검증으로 자동 리뷰가 건너뛰어질 수 있으므로, 코디네이터가 별도 리뷰 경로를 마련한다.
 독립 리뷰에는 PR URL 과 head SHA, 변경 파일과 검증 결과를 넘긴다. 지적은 PR 을 만든 worker 가 `review-fix` 로 반영한다.
 리뷰 workflow 를 바꾸지 않은 PR 은 기존 자동 리뷰 절차를 따른다.

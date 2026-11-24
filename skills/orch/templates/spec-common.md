@@ -20,7 +20,7 @@
 - 원격 명령은 `orch config get worker.readonly_tools` 에 나온 도구의 읽기 전용 호출만 직접 한다. 지시서의 `허락:` 줄에 있더라도 목록 밖 원격 명령, 원격 쓰기, auto mode 가 막을 수 있는 대량 삭제는 `orch worker ask` 로 맡긴다. <!-- orch-rule: coordinator-commands -->
 - {{DRAFT_PR_RULE}}
 - 믿는 봇을 설정한 저장소에서는 봇이 리뷰한다. 줄 댓글을 반영하고 push 한다. 리뷰 worker 를 부르지 않는다. <!-- orch-rule: trusted-review-bot -->
-- 믿는 봇 설정 없이 자동 리뷰 workflow 를 바꾸면 Ready 뒤 코디네이터에게 독립 리뷰를 요청한다. 결과는 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
+- 믿는 봇을 설정하지 않은 저장소에서 자동 리뷰 workflow 를 바꾸면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. 결과는 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
 - PR 리뷰는 `review-fix` 로 반영한다. 반영 뒤 새 비차단 제안은 ask 없이 다음에 다룬다고 회신하고 resolve 하며, 차단 지적만 다시 반영한다. 첫 리뷰의 회신 기준은 `references/replying.md` 를 따른다. <!-- orch-rule: review-once -->
 - 머지는 하지 않는다. 코디네이터가 한다(워크트리 권한 설정이 `gh pr merge` 를 막는다). **그러나 PR 이 머지될 때까지 이 worker 가 맡는다.** 준비됨을 보낸 뒤에도 CI 실패, 충돌, 리뷰를 코디네이터의 지시를 기다리지 않고 직접 처리한다.
 - 하위 에이전트는 orca 명령을 쓰지 않는다. 스폰 프롬프트에 이 줄을 넣는다.
