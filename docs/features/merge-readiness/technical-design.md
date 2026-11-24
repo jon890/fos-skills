@@ -63,7 +63,7 @@ seam 은 snapshot 값이다. 값을 만드는 쪽이 실제로 둘이라 가상�
 | 머지 큐 차례 시작 | `refuseSpecHold` | `checkReadiness(full, only: hold·draft)`. base 최신화와 체크 대기 전에 빨리 멈춘다 |
 | 머지 큐 체크 대기 실패 뒤 | `gateReasons('none')` | `checkReadiness(full, skip: ci)`. 체크 이유는 대기가 낸 것을 쓴다 |
 | 머지 큐 머지 전 | `gateReasons('failed')` → `holdWith` | `checkReadiness(full)` → `holdWith` |
-| 머지 큐 머지 직전(base 재판정 루프 안) | HEAD 다시 읽기, 체크를 캐시 없이 다시 읽기, `migrationReasons` | `checkReadiness(full, only: ci·head·migration, fresh)`. 원격 브랜치 HEAD 대조는 머지 큐에 남는다 |
+| 머지 큐 머지 직전(base 재판정 루프 안) | HEAD 다시 읽기, 체크를 캐시 없이 다시 읽기, `migrationReasons` | `checkReadiness(full, only: ci·migration, fresh)`. 캐시 없이 읽은 체크 값에 HEAD 가 붙어 있어 HEAD 변경도 이 호출에서 함께 걸린다. 원격 브랜치 HEAD 대조는 머지 큐에 남는다 |
 | 머지 큐 `gh pr merge` 바로 앞 | 중단 확인, 큐 잠금 확인, `refuseSpecHold` | 같은 자리에서 `checkReadiness(full, only: hold·draft)`. 보류 확인이 지금처럼 마지막 확인이다 |
 | 루프 자동 머지 | `judgeTarget` 이 차례로 보고 첫 이유에서 멈춤 | `checkReadiness(light, auto, stopAtFirst, skip: migration)`. 틱이 읽은 값과 루프의 읽기 함수는 `known` 으로 넘긴다 |
 | `finish-pr.ts` | 머지 전 조건을 보지 않는다 | 바뀌지 않는다(DECISION8) |
@@ -258,7 +258,7 @@ doctor 는 아래를 찾으면 `DRAFT-CI-RETIRED <자리>` 경고를 낸다. 종
 
 - **조회 실패**: 통과로 보지 않는다. 값 하나에 `lookup` 이유 하나다. gh 재시도 횟수와 간격(`MERGE_QUEUE_GH_RETRIES`, `MERGE_QUEUE_GH_RETRY_SECONDS`)은 호출부가 `ReadOptions` 로 넘긴 지금 값을 쓴다.
 - **판단 중 HEAD 변경**: 값마다 읽은 HEAD 를 대조하고, 다르면 그 이유 하나만 남긴다. 머지 큐는 다시 시도하고, 관문은 실패로 내고, 루프는 다음 틱에 다시 본다.
-- **판단과 머지 사이**: 머지 큐가 머지 직전에 체크(캐시 없이), HEAD, 마이그레이션을 다시 묻고, `gh pr merge` 바로 앞에서 보류와 draft 를 다시 물은 뒤 `--match-head-commit` 으로 머지한다. 확인의 자리와 순서가 지금과 같다.
+- **판단과 머지 사이**: 머지 큐가 머지 직전에 체크(캐시 없이, HEAD 포함)와 마이그레이션을 다시 묻고, `gh pr merge` 바로 앞에서 보류와 draft 를 다시 물은 뒤 `--match-head-commit` 으로 머지한다. 확인의 자리와 순서가 지금과 같다.
 - **루프의 gh 비용**: 가벼운 범위에서 gh 를 부르는 값은 스레드, PR 조회 한 번, 영수증뿐이고 앞 조건을 모두 넘은 PR 만 읽는다. 후보 하나에 두세 번으로 지금과 같다. REQ6 으로 PR 조회가 캐시를 쓰지 않게 되지만 이 조회까지 오는 PR 은 CI 가 통과했고 보류와 미해결 스레드가 없는 PR 뿐이다. 리뷰 설정이 없는 저장소에서는 모든 PR 이 8번에 걸리므로 PR7 이 8번을 gh 조회 앞으로 옮겨 틱마다의 헛된 조회를 없앤다(DECISION11).
 - **관문과 머지 큐의 gh 비용**: 값을 읽는 호출은 지금 것을 그대로 옮긴다. 조회를 합쳐 호출 수를 줄이는 일은 이번 범위가 아니다.
 - **보드 읽기**: 관문과 머지 큐가 새로 보드 파일을 읽는다. 잠금 없이 한 번 읽는다. 보드는 옆 파일에 쓰고 rename 하므로 반쯤 쓰인 파일을 읽지 않는다. 읽지 못하면 `merge` 단계의 `lookup` 이유라 직접 머지가 멈춘다.
@@ -292,7 +292,7 @@ PR4-PR7 은 바뀌는 동작만 기대값을 고친다. 그때 가짜 gh 테스�
 | --- | --- | --- |
 | PR1 | `core/checks.ts`. 머지 큐의 체크 jq 를 `judgeChecks` 로 바꾸고 필수 체크 이름을 `ruleChecks` 로 읽는다 | 없음 |
 | PR2 | `core/merge-readiness.ts`, `lib/merge-readiness.ts`, ADR. 관문과 머지 큐가 `checkReadiness` 를 쓴다 | 없음 |
-| PR3 | 루프가 `checkReadiness(light)` 를 쓴다. 스레드 기본 명령의 중복이 없어진다 | 루프가 체크를 CI 감시의 기록이 아니라 그 틱의 롤업으로 판단한다. CI 실패 알림 전송이 실패한 틱에만 결과가 다르다. 지금은 기록이 이전 값으로 되돌아가 옛 `passed` 로 걸 수 있고, 바뀐 뒤에는 `CI failed` 로 기다린다 |
+| PR3 | 루프가 `checkReadiness(light)` 를 쓴다. 스레드 기본 명령의 중복이 없어진다 | 루프가 체크를 CI 감시의 기록이 아니라 그 틱의 롤업으로 판단한다. CI 실패 알림 전송이 실패한 틱에만 결과가 다르다. 지금은 기록이 이전 값으로 되돌아가 옛 `passed` 로 걸 수 있고, 바뀐 뒤에는 `CI failed` 로 기다린다(사용자 2026-11-24 수용) |
 | PR4 | 「draft 로 CI 미루기」 옵션 제거(스펙 DECISION12) | `orch queue ready`, `--skipped-is-missing`, `queue.skipped_is_missing`, `pipeline.ready_slots`, `before-ready`·`pr-ready` 이벤트가 없어진다. 결론이 SKIPPED 인 체크는 늘 나타난 체크로 센다. doctor 가 남은 설정을 경고한다 |
 | PR5 | REQ3, REQ2 | 관문이 draft 를 `GATE-FAIL` 로 낸다. 머지 큐가 draft 를 차례 시작에서 보류한다. 관문이 보드 보류를 `HOLD` 로 내고 머지 큐가 보드 보류에 멈춘다. 보류가 여럿이면 모두 낸다. 보류를 읽지 못한 것(본문, 보드, 지시서 폴더)을 관문이 `HOLD` 로 알리고 머지 큐가 멈춘다. 스레드 명령이 숫자가 아닌 것을 내면 관문도 조회 실패로 본다 |
 | PR6 | REQ4 | 체크가 하나도 없으면 준비 안 됨이고 체크 대기가 첫 체크를 기다린다. `queue.allow_no_checks` 가 생긴다. 켠 저장소에서는 루프도 체크 없는 PR 을 통과로 보고 `ci-passed` 를 낸다. 머지 큐가 체크 대기 뒤에도 진행 중·미등장을 본다(DECISION4) |
@@ -335,7 +335,7 @@ PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남�
 | DECISION8 | `finish-pr.ts` | 고치지 않는다 | 작성자 | 머지된 뒤에 돌아 머지 전 조건을 보지 않는다. `featureBranch` 는 마무리 실패 처리에만 쓰여 REQ5 와 무관하다. 스펙 범위 문장도 그렇게 고쳤다(사용자 2026-11-24) |
 | DECISION9 | 조회 합치기 | 하지 않는다. gh PR 조회는 지금 호출 단위와 순서 그대로 값 하나에 한 번이다 | 작성자 | 리팩토링 PR 이 가짜 gh 테스트를 그대로 통과해야 한다. 체크 조회의 HEAD 별 공유 캐시(`checkSnapshot`)도 그대로 쓴다 |
 | DECISION10 | `queue.allow_no_checks` | 설정 파일에서만 읽고 기본은 false | 작성자 | 스펙 DECISION5. 저장소 성격이라 명령마다 줄 값이 아니다 |
-| DECISION11 | 리뷰 설정 없음 조건의 순서 | PR7 에서 보드 보류 바로 뒤, 스레드 조회 앞으로 옮긴다 | 작성자 | 설정만 보는 조건이라 읽는 값이 없다. 지금 자리에 두면 리뷰 설정이 없는 저장소에서 끝내 머지되지 않을 PR 마다 틱마다 스레드 명령과 PR 조회를 부른다. 미해결 스레드가 있는 PR 의 대기 문구가 그 저장소에서만 「리뷰 설정 없음」 으로 바뀐다 |
+| DECISION11 | 리뷰 설정 없음 조건의 순서 | PR7 에서 보드 보류 바로 뒤, 스레드 조회 앞으로 옮긴다 | 사용자 2026-11-24 | 설정만 보는 조건이라 읽는 값이 없다. 지금 자리에 두면 리뷰 설정이 없는 저장소에서 끝내 머지되지 않을 PR 마다 틱마다 스레드 명령과 PR 조회를 부른다. 미해결 스레드가 있는 PR 의 대기 문구가 그 저장소에서만 「리뷰 설정 없음」 으로 바뀐다 |
 | DECISION12 | 평가 순서와 출력 순서 | 조건 표에 두 순서를 따로 둔다 | 작성자 | 루프의 첫 이유 순서와 관문·머지 큐의 이유 줄 순서가 지금 서로 다르다. 순서 하나로는 둘 가운데 하나의 출력이 바뀐다 |
 | DECISION13 | HEAD 변경의 처리 | 조건으로 모으지 않고, 걸리면 다른 이유를 버린다 | 작성자 | 지금도 HEAD 가 바뀌면 그 자리에서 멈춘다. 옛 HEAD 로 읽은 충돌이나 스레드로 worker 에게 알리면 틀린 지시가 된다 |
 
