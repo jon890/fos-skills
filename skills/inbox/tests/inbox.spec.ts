@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { ADAPTERS } from '../scripts/adapters/index.ts'
 import { type Deps, main } from '../scripts/inbox.ts'
-import type { Adapter, AdapterFactory, FetchRequest, FetchResult, InboxItem } from '../scripts/lib/model.ts'
+import type { Adapter, AdapterFactory, FetchRequest, FetchResult, InboxItem, RunResult } from '../scripts/lib/model.ts'
 import { DEFAULT_SIGNATURE, Store } from '../scripts/lib/store.ts'
 
 const NOW = new Date('2026-11-02T06:00:00.000Z')
@@ -514,6 +514,139 @@ describe('맥락과 답변', () => {
     assert.equal(call('board'), 2)
     assert.equal(call('reply', 'x'), 2)
     assert.equal(call('nope'), 2)
+  })
+})
+
+describe('업무 댓글 리액션', () => {
+  const mention = item('1', ['example'], undefined, {
+    id: 'dooray:task:comment:c1',
+    adapter: 'dooray',
+    target: { kind: 'task', postId: 'p1', commentId: 'c1' },
+    excerpt: '반영 확인했습니다. 감사합니다',
+  })
+  let calls: string[][]
+  let version: RunResult
+  let reaction: RunResult
+
+  beforeEach(() => {
+    calls = []
+    version = { code: 0, stdout: '0.35.0\n', stderr: '' }
+    reaction = { code: 0, stdout: '', stderr: '' }
+    writeConfig({ adapters: [{ type: 'dooray' }] })
+    new Store().updateCache((cache) => { cache.items = [mention] })
+    extra = {
+      adapters: ADAPTERS,
+      startFetch: () => {},
+      run: (argv) => {
+        calls.push(argv)
+        if (argv[1] === '--version') return version
+        assert.deepEqual(argv.slice(1, 4), ['post', 'comment', 'react'])
+        return reaction
+      },
+    }
+  })
+
+  const expectedCalls = (emoji: string) => [
+    ['dooray', '--version'],
+    ['dooray', 'post', 'comment', 'react', '--id', 'p1', '--comment-id', 'c1', `--emoji=${emoji}`],
+  ]
+
+  test('미리보기에는 업무와 댓글, 기본 이모지가 보이고 두레이를 호출하지 않는다', () => {
+    assert.equal(call('react', mention.id), 3)
+    assert.match(out, /업무 1.*댓글.*작성자 김철수/)
+    assert.match(out, /"\+1" 리액션/)
+    assert.match(out, /반영 확인했습니다/)
+    assert.match(err, /--yes/)
+    assert.deepEqual(calls, [])
+    assert.equal(new Store().cache().items[0].state, 'new')
+  })
+
+  test('확인한 기본 이모지를 달면 다음 받기 전에도 답함이고 새 알림 수에서 빠진다', () => {
+    const root = repo('a', null)
+    assert.equal(board(root).newCount, 1)
+    assert.equal(call('react', mention.id, '--yes'), 0, err)
+    assert.deepEqual(calls, expectedCalls('+1'))
+    assert.match(out, /리액션을 달았다/)
+    const view = board(root)
+    assert.equal(view.newCount, 0)
+    assert.equal(view.items[0].state, 'answered')
+    assert.equal(call('react', mention.id, '--yes'), 1)
+    assert.match(err, /이미 답한.*넘김/)
+    assert.deepEqual(calls, expectedCalls('+1'))
+  })
+
+  test('옵션을 주면 사람 설정에 저장한 기본값보다 우선한다', () => {
+    writeConfig({ adapters: [{ type: 'dooray' }], reactionEmoji: 'heart' })
+    assert.equal(call('react', mention.id), 3)
+    assert.match(out, /"heart"/)
+    assert.equal(call('react', mention.id, '--emoji', 'clap'), 3)
+    assert.match(out, /"clap"/)
+    assert.deepEqual(calls, [])
+    assert.equal(call('react', mention.id, '--emoji', 'clap', '--yes'), 0, err)
+    assert.deepEqual(calls, expectedCalls('clap'))
+  })
+
+  test('옵션 없이 확인하면 사람 설정의 이모지 이름을 사용한다', () => {
+    writeConfig({ adapters: [{ type: 'dooray' }], reactionEmoji: 'heart' })
+    version.stdout = '0.36.0'
+    assert.equal(call('react', mention.id, '--yes'), 0, err)
+    assert.deepEqual(calls, expectedCalls('heart'))
+  })
+
+  for (const [label, patch, refusal] of [
+    ['담당', { kind: 'assigned' }, /담당·참조.*답장이나 넘김/],
+    ['참조', { kind: 'cc' }, /담당·참조.*답장이나 넘김/],
+    ['댓글 ID 없음', { target: { kind: 'task', postId: 'p1' } }, /댓글을 찾을 수 없다.*답장이나 넘김/],
+    ['메신저', { source: 'messenger' }, /메신저.*넘김/],
+    ['넘긴 상태', { state: 'dismissed' }, /이미 넘긴.*답장/],
+  ] as const) {
+    test(`${label} 항목은 확인했어도 거절한다`, () => {
+      new Store().updateCache((cache) => { cache.items = [{ ...mention, ...patch }] })
+      assert.equal(call('react', mention.id, '--yes'), 1)
+      assert.match(err, refusal)
+      assert.deepEqual(calls, [])
+    })
+  }
+
+  test('넘김 기록에 있는 항목은 확인했어도 거절한다', () => {
+    assert.equal(call('dismiss', mention.id), 0)
+    assert.equal(call('react', mention.id, '--yes'), 1)
+    assert.match(err, /이미 넘긴.*답장/)
+    assert.deepEqual(calls, [])
+  })
+
+  test('세션 오류는 종료 코드 1 로 넘김과 갱신 방법을 알려 주고 상태를 유지한다', () => {
+    reaction = { code: 3, stdout: '', stderr: '웹 세션 만료' }
+    assert.equal(call('react', mention.id, '--yes'), 1)
+    assert.match(err, /리액션을 달지 않았다.*넘김/)
+    assert.match(err, /dooray config set session-cookie -/)
+    assert.equal(new Store().cache().items[0].state, 'new')
+  })
+
+  test('이모지 이름 오류는 두레이 CLI 출력 전체를 전달하고 상태를 유지한다', () => {
+    reaction = { code: 2, stdout: '', stderr: '이모지 문자는 받지 않습니다\n이름을 입력하세요\n' }
+    assert.equal(call('react', mention.id, '--emoji', '👍', '--yes'), 1)
+    assert.deepEqual(calls, expectedCalls('👍'))
+    assert.equal(err, reaction.stderr)
+    assert.equal(new Store().cache().items[0].state, 'new')
+  })
+
+  for (const value of ['0.9.0', '0.34.9', '0.35.0-rc.1', '알 수 없음']) {
+    test(`버전이 ${value} 이면 리액션 요청 없이 CLI 갱신을 안내한다`, () => {
+      version.stdout = value
+      assert.equal(call('react', mention.id, '--yes'), 1)
+      assert.match(err, /dooray-cli 를 0\.35\.0 이상으로 올린다/)
+      assert.deepEqual(calls, [['dooray', '--version']])
+      assert.equal(new Store().cache().items[0].state, 'new')
+    })
+  }
+
+  test('이미 리액션 등록 중이면 같은 항목의 두 번째 호출을 거절한다', () => {
+    new Store().withReactionLock(mention.id, () => {
+      assert.equal(call('react', mention.id, '--yes'), 1)
+      assert.match(err, /등록하는 중/)
+    })
+    assert.deepEqual(calls, [])
   })
 })
 

@@ -913,15 +913,14 @@ export function inboxRows(items) {
   return { shown: rows.filter((item) => item.state !== 'answered'), answered: rows.filter((item) => item.state === 'answered').length }
 }
 
-// 항목 하나에 답하는 요청문. 숫자 단축키가 입력란에 채운다
+// 항목 하나를 살피는 요청문. 숫자 단축키가 입력란에 채운다
 export function replyPrompt(item) {
   const who = (item.from && (item.from.name || item.from.id)) || '보낸 사람'
   return [
-    '업무 알림 ' + item.id + ' 에 답변을 준비해 줘. (' + item.title + ', ' + who + '의 ' + (INBOX_KIND_LABELS[item.kind] || item.kind) + ')',
+    '업무 알림 ' + item.id + ' 을 살펴 줘. (' + item.title + ', ' + who + '의 ' + (INBOX_KIND_LABELS[item.kind] || item.kind) + ')',
     '1. fos-skills 플러그인의 inbox 스킬 절차를 따라 inbox.ts context ' + item.id + ' 로 본문과 앞 대화를 읽어 줘. 사람은 이름으로 풀린 값만 써.',
-    '2. 묻는 것과 내가 답할 것을 한 줄로 정리하고 답변 초안을 써 줘. 받는 사람 멘션과 AI 작성 표기는 inbox.ts 가 붙이니 본문에 넣지 마.',
-    '3. inbox.ts reply ' + item.id + ' --body-file <초안> (--yes 없이) 로 합성한 본문을 미리보기로 보여 주고 내 확인을 받아 줘. 확인 전에는 등록하지 마.',
-    '4. 내가 확인하면 같은 명령에 --yes 를 붙여 등록하고 주소를 알려 줘. 답할 필요가 없다고 하면 inbox.ts dismiss ' + item.id + ' 로 넘겨 줘.',
+    '2. inbox 스킬의 기준으로 답장, 리액션, 넘김 중 권장 동작과 이유를 보여 줘.',
+    '3. 내가 고른 동작을 inbox 스킬 절차대로 진행해 줘. 답장이나 리액션은 미리보기를 보여 주고 내 확인을 받아 줘. 확인 전에는 등록하지 마.',
   ].join('\n')
 }
 
@@ -942,8 +941,8 @@ export function dismissArgv(script, id, undo = false) {
 export const INBOX_PROMPT = [
   '업무 알림함의 새 항목을 훑어 줘.',
   '1. fos-skills 플러그인의 inbox 스킬 절차를 따라 이 저장소의 보드 기준으로 inbox.ts board --repo <이 저장소의 주 checkout> 를 읽어 줘.',
-  '2. 새 항목마다 묻는 것을 한 줄로 정리하고, 답할 것과 넘길 것(답할 필요 없음)을 나눠 보여 줘.',
-  '3. 넘길 것은 내 확인을 받아 inbox.ts dismiss 로 넘기고, 답할 것은 하나씩 초안, 미리보기, 내 확인 순서로 진행해 줘. 확인 전에는 등록하지 마.',
+  '2. 새 항목마다 inbox 스킬의 기준으로 답장, 리액션, 넘김 중 권장 동작과 이유를 보여 줘.',
+  '3. 내가 고른 동작을 inbox 스킬 절차대로 진행해 줘. 답장이나 리액션은 미리보기를 보여 주고 내 확인을 받아 줘. 확인 전에는 등록하지 마.',
 ].join('\n')
 
 // ---- 항목 상태 확인 ----

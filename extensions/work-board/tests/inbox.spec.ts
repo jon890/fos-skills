@@ -41,9 +41,9 @@ test('출처와 머리말을 사람이 읽는 이름으로 바꾼다 (R7)', () =
   assert.equal(inboxTag({ ...ITEM, adapter: 'slack' }), 'slack')
 })
 
-test('답변 요청문은 맥락, 초안, 미리보기, 확인 뒤 등록 순서를 담는다 (R4)', () => {
+test('알림 요청문은 권장 동작과 이유를 보여 주고 등록 전에 확인받는다', () => {
   const text = replyPrompt(ITEM)
-  const order = ['inbox.ts context dooray:task:comment:c1', '초안', '--yes 없이', '확인 전에는 등록하지 마', '--yes 를 붙여']
+  const order = ['inbox.ts context dooray:task:comment:c1', '권장 동작과 이유', '미리보기', '확인 전에는 등록하지 마']
   let at = -1
   for (const part of order) {
     const next = text.indexOf(part)
@@ -51,8 +51,9 @@ test('답변 요청문은 맥락, 초안, 미리보기, 확인 뒤 등록 순서
     at = next
   }
   assert.ok(text.includes('김철수의 멘션'))
+  assert.ok(INBOX_PROMPT.includes('새 항목마다'))
+  assert.ok(INBOX_PROMPT.includes('답장, 리액션, 넘김 중 권장 동작과 이유'))
   assert.ok(INBOX_PROMPT.includes('확인 전에는 등록하지 마'))
-  assert.ok(INBOX_PROMPT.includes('inbox.ts dismiss'))
 })
 
 test('알림함이 켜진 것을 본 뒤에만 명령 실패를 상자로 보인다 (R6, R7)', () => {
