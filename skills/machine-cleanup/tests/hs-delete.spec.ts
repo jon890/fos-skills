@@ -1,7 +1,7 @@
 // hs_delete.ts 가 승인한 것만, 지우기 직전에 다시 확인한 뒤 지우는지 본다(스펙 REQ7, REQ9, REQ10).
 
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, utimesSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
@@ -10,6 +10,8 @@ import { applyArgs, DAY, fakeProc, hermesDb, nowSec, sampleConfig } from './hs-h
 import { keptReason, parseImageItem } from '../scripts/hs_delete.ts'
 
 const LOCKED = { FOS_INFRA_LOCK_HELD: '1' }
+const RULES = '## 백업\n\n| 용도 | 무엇 | 누가 | 보관 |\n| --- | --- | --- | --- |\n' +
+  '| `ops/` | 운영 작업 | ops.sh | 결과 검토 뒤 명시적 정리로 최신 2개 |\n| `db/` | 덤프 | s | 최신 7개 |\n| `mixed/` | 구성 | d.sh | 명시적 정리로 서비스별 최신 1개 |\n'
 
 // 상태를 가진 가짜 docker. FAKE_DOCKER_STATE 파일의 { psFails, inspectFails, used: [이미지ID], images: { 이름: [ID, 태그...] }, onRm: { 이름: 쓰게 될 ID } }
 // 를 읽고, image rm 을 기록한다. onRm 은 그 이미지를 지운 뒤 다른 이미지를 컨테이너가 쓰게 되는 경우를 흉내 낸다
@@ -121,12 +123,80 @@ describe('백업과 휴지통(REQ7)', () => {
     const box = new Sandbox('hsd-')
     const cfg = sampleConfig(box.root)
     const cfgFile = write(join(box.root, 'cfg.json'), JSON.stringify(cfg))
+    write(join(cfg.checkout, cfg.backup.rules), RULES)
     write(join(cfg.backup.root, 'oneoff/x'), 'x')
     write(join(cfg.backup.root, 'keep/x'), 'x')
     const r = box.run('hs_delete', ['backup', '--config', cfgFile, ...applyArgs(box), 'oneoff', '../keep', ''], { env: box.env(LOCKED) })
     assert.equal(r.code, 1)
     assert.ok(!existsSync(join(cfg.backup.root, 'oneoff')))
     assert.ok(existsSync(join(cfg.backup.root, 'keep/x')))
+  })
+
+  // 가상 백업 루트. ops 는 명시적 정리로 최신 2개, db 는 매일 정리가 소유, mixed 는 한 폴더에 서비스가 섞인 명시적 정리다
+  function backups() {
+    const box = new Sandbox('hsd-')
+    const cfg = sampleConfig(box.root)
+    const cfgFile = write(join(box.root, 'cfg.json'), JSON.stringify(cfg))
+    write(join(cfg.checkout, cfg.backup.rules), RULES)
+    const base = nowSec() - 10 * DAY
+    for (const [i, name] of ['d1', 'd2', 'd3', 'd4'].entries()) {
+      const dir = join(cfg.backup.root, 'ops', name)
+      write(join(dir, 'x'), name)
+      utimesSync(dir, base + i * DAY, base + i * DAY)
+    }
+    write(join(cfg.backup.root, 'db/a/x'), 'a')
+    write(join(cfg.backup.root, 'mixed/a/x'), 'a')
+    const run = (args: string[]) => box.run('hs_delete', ['backup', '--config', cfgFile, ...args], { env: box.env(LOCKED) })
+    return { box, cfg, run, ops: (name: string) => join(cfg.backup.root, 'ops', name) }
+  }
+
+  test('--keep N 이면 최신 N개를 남기고 오래된 항목만 지운다(묶음 8)', () => {
+    const b = backups()
+    const dry = b.run(['--keep', '2', 'ops'])
+    assert.equal(dry.code, 0, dry.stderr)
+    assert.match(dry.stdout, /남김 ops: 최신 2개, 지울 것 2개/)
+    assert.match(dry.stdout, /지울 것 .*ops\/d1\n지울 것 .*ops\/d2\n/)
+    assert.ok(existsSync(b.ops('d1')))
+    const done = b.run(['--keep', '2', ...applyArgs(b.box), 'ops'])
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(['d1', 'd2', 'd3', 'd4'].map((n) => existsSync(b.ops(n))), [false, false, true, true])
+    assert.ok(existsSync(join(b.cfg.backup.root, 'ops')))
+  })
+
+  test('명시적 정리 용도는 --keep 이 없거나 규칙보다 적으면 폴더째 지우지 않는다(묶음 8)', () => {
+    const b = backups()
+    const bare = b.run([...applyArgs(b.box), 'ops'])
+    assert.equal(bare.code, 1)
+    assert.match(bare.stderr, /거부 ops: 보관 규칙이 남길 개수를 정한다\(결과 검토 뒤 명시적 정리로 최신 2개\)\. --keep 2 으로 넘긴다/)
+    const few = b.run(['--keep', '1', ...applyArgs(b.box), 'ops'])
+    assert.equal(few.code, 1)
+    assert.match(few.stderr, /--keep 1 이 보관 규칙의 2개보다 적다/)
+    assert.ok(['d1', 'd2', 'd3', 'd4'].every((n) => existsSync(b.ops(n))))
+  })
+
+  test('자동 정리가 소유한 용도와 서비스가 섞인 용도는 거부한다', () => {
+    const b = backups()
+    const r = b.run(['--keep', '5', ...applyArgs(b.box), 'db', 'mixed'])
+    assert.equal(r.code, 1)
+    assert.match(r.stderr, /거부 db: 자동 정리가 소유한다\(최신 7개\)/)
+    assert.match(r.stderr, /거부 mixed: 한 폴더에 여러 대상이 섞여 개수로 지우지 않는다/)
+    assert.ok(existsSync(join(b.cfg.backup.root, 'db/a/x')) && existsSync(join(b.cfg.backup.root, 'mixed/a/x')))
+  })
+
+  test('보관 규칙 표를 읽지 못하면 --keep 없이 폴더째 지우지 않는다', () => {
+    const b = backups()
+    rmSync(join(b.cfg.checkout, b.cfg.backup.rules))
+    const r = b.run([...applyArgs(b.box), 'ops'])
+    assert.equal(r.code, 1)
+    assert.match(r.stderr, /거부 ops: 보관 규칙 표를 읽지 못해 폴더째 지우지 않는다/)
+    assert.ok(existsSync(b.ops('d1')))
+  })
+
+  test('--keep 은 backup 에만, 1 이상의 정수로 받는다', () => {
+    const b = backups()
+    assert.equal(b.run(['--keep', '0', 'ops']).code, 2)
+    assert.equal(b.run(['--keep', 'x', 'ops']).code, 2)
+    assert.equal(b.box.run('hs_delete', ['trash', '--keep', '1', 'f']).code, 2)
   })
 
   test('휴지통 항목은 files 와 info 를 함께 지운다', () => {

@@ -48,10 +48,16 @@ describe('remote 내부 함수', () => {
   })
 })
 
+// 보관 규칙 표가 있는 가상 백업 설정. 표에 없는 용도(old)는 폴더째 지울 수 있다
+function backupConfig(root: string): string {
+  write(join(root, 'checkout/docs/rules.md'), '## 백업\n\n| 용도 | 무엇 | 누가 | 보관 |\n| --- | --- | --- | --- |\n| `db/` | 덤프 | s | 최신 1개 |\n')
+  return JSON.stringify({ checkout: join(root, 'checkout'), backup: { root: join(root, 'srv/backup'), rules: 'docs/rules.md', section: '백업' } })
+}
+
 describe('remote 명령', () => {
   test('입력 파일을 사본 경로로 바꿔 보내고 표준 출력을 파일로 받는다', () => {
     const b = box()
-    const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
+    const cfg = write(join(b.root, 'cfg.json'), backupConfig(b.root))
     const out = join(b.root, 'out.txt')
     // hs_delete 의 사용법 오류는 입력 없이 2 로 끝난다. 보낸 스크립트가 실제로 도는지만 본다
     const r = b.run('remote', ['--host', 'example-host', '--input', cfg, '--json-out', out, 'hs_delete.ts', 'backup', '--config', cfg, 'nope!'])
@@ -63,7 +69,7 @@ describe('remote 명령', () => {
   test('잠금을 얻지 못하면 75 로 끝나고 스크립트는 돌지 않는다', () => {
     const b = box()
     const target = write(join(b.root, 'srv/backup/old/x'), 'x')
-    const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
+    const cfg = write(join(b.root, 'cfg.json'), backupConfig(b.root))
     const r = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'], { env: b.env({ FAKE_FLOCK_BUSY: '1' }) })
     assert.equal(r.code, 75)
     assert.match(r.stderr, /잠금을 300초 안에 얻지 못함/)
@@ -73,7 +79,7 @@ describe('remote 명령', () => {
   test('잠금 아래에서는 지우고, 잠금 없이 --apply 하면 지우지 않는다', () => {
     const b = box()
     const target = write(join(b.root, 'srv/backup/old/x'), 'x')
-    const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
+    const cfg = write(join(b.root, 'cfg.json'), backupConfig(b.root))
     const bare = b.run('remote', ['--host', 'example-host', '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'])
     assert.equal(bare.code, 4)
     assert.ok(existsSync(target))
@@ -85,7 +91,7 @@ describe('remote 명령', () => {
   test('접속에 실패하면 255 와 원인 줄을 내고 아무것도 돌지 않는다', () => {
     const b = box()
     const target = write(join(b.root, 'srv/backup/old/x'), 'x')
-    const cfg = write(join(b.root, 'cfg.json'), JSON.stringify({ backup: { root: join(b.root, 'srv/backup') } }))
+    const cfg = write(join(b.root, 'cfg.json'), backupConfig(b.root))
     const r = b.run('remote', ['--host', 'example-host', '--lock', join(b.root, 'ops.lock'), '--input', cfg, '--input', okClearance(b.root), 'hs_delete.ts', 'backup', '--config', cfg, '--clearance', okClearance(b.root), '--apply', 'old'], { env: b.env({ FAKE_SSH_CODE: '255' }) })
     assert.equal(r.code, 255)
     assert.match(r.stderr, /홈서버에 접속하지 못함/)
