@@ -41,6 +41,8 @@ export type FetchResult = {
   // 다음 받기의 출처별 커서. 그 출처를 읽지 못했으면 키를 넣지 않아 지난 커서에서 다시 읽는다.
   // 일부만 실패한 출처(대화방 하나, 업무 하나)는 커서를 넣고 실패한 곳은 adapter 가 따로 기억한다
   cursors: Record<string, string>
+  // 커서로 이어 받다가 피드 전체를 읽은 출처. 다음 시도까지 기본 주기를 늦춘다.
+  fullScanSources?: string[]
 }
 
 export type Message = { from: Person; at: string; text: string }
@@ -57,7 +59,8 @@ export type Context = {
 
 export interface Adapter {
   readonly name: string
-  fetch(request: FetchRequest): FetchResult
+  readonly sources: readonly string[]
+  fetch(request: FetchRequest, source?: string): FetchResult
   context(item: InboxItem): Context
   resolvePeople(ids: string[]): Map<string, string>
   // 알림 뒤에 내 답이 있는지

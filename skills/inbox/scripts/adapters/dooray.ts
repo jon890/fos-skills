@@ -1,7 +1,7 @@
 // 두레이 adapter. 모든 두레이 호출은 dooray CLI 로 한다. 토큰은 CLI 설정에만 있고 이 파일은 읽지 않는다(D3).
 //
 // 출처:
-//   task       `dooray --json stream list --since prev-15d(피드 전체. 이유는 TASK_FEED_SINCE 주석) --all` (공식 GET /common/v1/streams, jon890/dooray-cli #248 로 더한 명령).
+//   task       `dooray --json stream list` 로 지난 커서까지 받는다(첫 받기는 피드 전체).
 //              --json 은 API 원소를 그대로 낸다. 429 는 CLI 종료 코드 6 이고 다른 실패와 같이 task 오류로 남는다.
 //              원소 하나의 업무 조회가 실패하면 그 원소만 빼고 오류 한 줄에 수를 남긴다
 //              event(type comment) 본문에 내 멤버 링크가 있으면 mention, post 의 담당(to)·참조(cc)에 내가 있으면 assigned·cc
@@ -32,10 +32,9 @@ import type { Adapter, AdapterConfig, AdapterDeps, Context, FetchRequest, FetchR
 export const MAX_CHANNELS = 20
 export const LOG_COUNT = 50
 export const MORE_LOG_COUNT = 300
-// stream 은 항상 피드 전체(2주)보다 넉넉한 기간으로 받는다. dooray CLI 는 시각 없는 댓글 event 를 「페이지 커서가 since 이후인 페이지」 에서만 남긴다.
-// since 가 최근이면 그 시각에 걸친 페이지의 댓글 event 가 통째로 빠지고, 그 페이지가 며칠을 담는지는 피드 밀도에 달려 있다(실측 2026-11-16).
-// 피드보다 앞선 since 는 어떤 페이지도 걸치지 않아 댓글이 빠지지 않는다. 대신 받는 시간이 늘어(약 30초) 받은 댓글 시각은 캐시한다
 export const TASK_FEED_SINCE = 'prev-15d'
+const STREAM_PAGE_SIZE = 200
+const STREAM_ORDER_MARGIN_MS = 60_000
 const SKIP_CHANNEL_TYPES = new Set(['bot', 'me'])
 const EXCERPT = 80
 
@@ -84,18 +83,36 @@ function iso(value: unknown): string {
   return Number.isFinite(time) ? new Date(time).toISOString() : ''
 }
 
+export function taskCursorTime(cursor: string | undefined, now: number): number | null {
+  const ms = Date.parse(cursor ?? '')
+  return Number.isFinite(ms) && ms <= now ? ms : null
+}
+
+// 피드의 숫자 커서는 나노초, 마이크로초, 밀리초 또는 초 단위다.
+function streamCursorTime(cursor: string): number {
+  const digits = cursor.length
+  if (digits >= 18) return Number(cursor.slice(0, -6))
+  if (digits >= 15) return Number(cursor.slice(0, -3))
+  if (digits >= 12) return Number(cursor)
+  return Number(cursor) * 1000
+}
+
 export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter {
   const { run, cache } = deps
   const readMessenger = config.messenger !== false
   const webUrl = typeof config.webUrl === 'string' ? config.webUrl.replace(/\/+$/, '') : ''
 
-  function json(argv: string[]): any {
+  function readJson(argv: string[]): { data: any; stderr: string } {
     const result = run(['dooray', '--json', ...argv])
     if (result.code !== 0) {
       const reason = (result.stderr || result.stdout || `종료 코드 ${result.code}`).trim().split('\n')[0]
       throw new Error(`dooray ${argv.slice(0, 2).join(' ')}: ${reason}`)
     }
-    return JSON.parse(result.stdout || 'null')
+    return { data: JSON.parse(result.stdout || 'null'), stderr: result.stderr }
+  }
+
+  function json(argv: string[]): any {
+    return readJson(argv).data
   }
 
   function me(): Me {
@@ -192,15 +209,46 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     return null
   }
 
-  function fetchTasks(request: FetchRequest, self: Me, now: string): { items: InboxItem[]; failures: string[] } {
-    // 지난 받기 커서로 좁히면 댓글 event 가 빠진다(TASK_FEED_SINCE 주석). 받은 항목은 id 로 합쳐진다
-    const elements = json(['stream', 'list', '--since', TASK_FEED_SINCE, '--all'])
-    if (!Array.isArray(elements)) throw new Error('dooray stream list 출력이 목록이 아니다')
+  function feedItems(value: unknown): Json[] {
+    if (!Array.isArray(value)) throw new Error('dooray stream list 출력이 목록이 아니다')
+    return value
+  }
+
+  function fullFeed(): Json[] {
+    return feedItems(json(['stream', 'list', '--since', TASK_FEED_SINCE, '--all']))
+  }
+
+  function taskFeed(since: number | null): { elements: Json[]; fellBack?: boolean } {
+    if (since === null) return { elements: fullFeed() }
+    // 예전 CLI 의 --since 는 걸친 페이지에서 시각 없는 댓글을 버린다. 페이지 원본과 다음 커서를 그대로 읽는다.
+    const items: Json[] = []
+    let before: string | undefined
+    let previousTime = Infinity
+    const recover = () => ({ elements: fullFeed(), fellBack: true })
+    for (;;) {
+      const argv = ['stream', 'list', '--size', String(STREAM_PAGE_SIZE)]
+      if (before) argv.push('--before', before)
+      const { data, stderr } = readJson(argv)
+      const page = feedItems(data)
+      items.push(...page)
+      if (page.length === 0) return { elements: items }
+      const next = /--before\s+(\d+)\s*$/m.exec(stderr)?.[1]
+      if (!next) return page.length < STREAM_PAGE_SIZE ? { elements: items } : recover()
+      const at = streamCursorTime(next)
+      if (at < since - STREAM_ORDER_MARGIN_MS) return { elements: items }
+      if (at >= previousTime) return recover()
+      before = next
+      previousTime = at
+    }
+  }
+
+  function fetchTasks(request: FetchRequest, self: Me, now: string): { items: InboxItem[]; failures: string[]; fellBack?: boolean } {
+    const { elements, fellBack } = taskFeed(taskCursorTime(request.cursors.task, Date.parse(now)))
     unreadablePosts.clear()
     const items: InboxItem[] = []
     const failures: string[] = []
     // 원소 하나(지운 업무, 권한 없는 업무)가 실패해도 나머지는 받는다. 실패한 원소는 다시 읽지 않는다
-    for (const element of elements as Json[]) {
+    for (const element of elements) {
       try {
         const item = taskElement(element, request, self, now)
         if (item) items.push(item)
@@ -209,7 +257,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
       }
     }
     fillNames(items)
-    return { items, failures }
+    return { items, failures, fellBack }
   }
 
   // 보낸 사람 이름이 피드나 로그에 없으면 member get 으로 푼다. 풀지 못하면 빈 이름으로 두고 context 가 알린다
@@ -347,11 +395,13 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
 
   return {
     name: 'dooray',
+    sources: readMessenger ? ['task', 'messenger'] : ['task'],
 
-    fetch(request: FetchRequest): FetchResult {
+    fetch(request: FetchRequest, source?: string): FetchResult {
       const errors: Record<string, string> = {}
       const cursors: Record<string, string> = {}
       const items: InboxItem[] = []
+      let taskFellBack = false
       let self: Me
       try {
         self = me()
@@ -360,15 +410,18 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
         return { items, errors: { auth: (error as Error).message }, cursors }
       }
       const now = deps.now().toISOString()
-      try {
-        const result = fetchTasks(request, self, now)
-        items.push(...result.items)
-        cursors.task = now
-        if (result.failures.length > 0) errors.task = `업무 ${result.failures.length}개 읽기 실패: ${result.failures[0]}`
-      } catch (error) {
-        errors.task = (error as Error).message
+      if (source === undefined || source === 'task') {
+        try {
+          const result = fetchTasks(request, self, now)
+          items.push(...result.items)
+          cursors.task = now
+          taskFellBack = result.fellBack === true
+          if (result.failures.length > 0) errors.task = `업무 ${result.failures.length}개 읽기 실패: ${result.failures[0]}`
+        } catch (error) {
+          errors.task = (error as Error).message
+        }
       }
-      if (readMessenger) {
+      if (readMessenger && (source === undefined || source === 'messenger')) {
         try {
           const result = fetchMessenger(request, self)
           items.push(...result.items)
@@ -378,7 +431,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
           errors.messenger = (error as Error).message
         }
       }
-      return { items, errors, cursors }
+      return { items, errors, cursors, ...(taskFellBack ? { fullScanSources: ['task'] } : {}) }
     },
 
     context(item: InboxItem): Context {

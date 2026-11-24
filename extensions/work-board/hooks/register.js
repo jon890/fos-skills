@@ -145,11 +145,9 @@ const COMMAND_TIMEOUT_MS = 20000
 const GITHUB_TIMEOUT_MS = 90000
 // bin/worker-marks.ts 는 worker 목록을 다시 읽고 워크트리마다 파일을 훑는다
 const MARKS_TIMEOUT_MS = 30000
-// inbox.ts 는 1분마다 부르고, 두레이에서 받기는 inbox 설정의 주기(기본 5분)가 지났을 때만 한다(D15)
+// inbox.ts 는 1분마다 부른다. 주기가 지난 출처의 받기는 inbox.ts 가 각각 띄운다.
 const INBOX_MS = 60000
 const FEEDBACK_MS = 5 * 60 * 1000
-// 받는 주기에는 두레이 호출이 수십 번 들 수 있어 다른 명령보다 길게 기다린다
-const INBOX_TIMEOUT_MS = 90000
 // main 의 최신 커밋은 세션 시작, /board 열 때, 활성 상태에서 이 주기, 갱신 직후에 읽는다(D2).
 const VERSION_MS = 30 * 60 * 1000
 const VERSION_TIMEOUT_MS = 10000
@@ -1436,7 +1434,7 @@ async function loadInbox($) {
   try {
     const root = (await boardRoot($)) || (await $.session.cwd())
     const script = $.plugin.root + '/skills/inbox/scripts/inbox.ts'
-    const value = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
+    const value = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json']))
     stale = generation !== inboxGeneration
     if (!stale) {
       inbox = value

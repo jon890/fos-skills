@@ -11,7 +11,7 @@
   "adapters": [
     { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com", "excludeProjects": ["EXAMPLE-PROJECT"], "excludeChannels": ["예시 개발방"] }
   ],
-  "intervalMinutes": 5,
+  "messengerIntervalMinutes": 1,
   "days": 7,
   "signature": "🤖 이 메시지는 AI가 작성했고, 작성자가 검토했습니다.",
   "defaultBoard": "/Users/me/work/main-repo"
@@ -21,10 +21,13 @@
 | 키 | 기본값 | 뜻 |
 | --- | --- | --- |
 | `adapters` | 없음(필수) | 켤 adapter 목록. `type` 이 `scripts/adapters/index.ts` 의 이름 하나다 |
-| `intervalMinutes` | 5 | 업무 도구에서 다시 받는 주기. 보드는 1분마다 묻지만 이 주기가 지나야 받는다 |
+| `messengerIntervalMinutes` | 1 | 메신저에서 다시 받는 주기 |
+| `taskIntervalMinutes` | 지난 업무 커서가 있으면 1, 없으면 5 | 업무 피드를 다시 받는 주기. 이 키가 없으면 기존 `intervalMinutes` 값을 쓴다 |
 | `days` | 7 | 이보다 오래된 알림은 보이지 않는다. 두레이 피드는 최근 2주만 준다 |
 | `signature` | AI 작성 표기 | 답변 끝에 붙인다. 빈 문자열이면 붙이지 않는다 |
 | `defaultBoard` | 없음 | 어느 저장소 필터에도 들지 않은 「미분류」 알림을 목록으로 보일 저장소의 주 checkout 경로. 없으면 미분류도 모든 보드에 목록으로 보인다 |
+
+보드는 1분마다 캐시를 읽고, 주기가 지난 출처만 따로 받는다. 두 주기는 0보다 큰 분 단위 숫자로 설정한다.
 
 두레이 adapter 의 키:
 
@@ -67,7 +70,7 @@
 ## 상태
 
 `${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/` 다. 사내 메시지 발췌가 들어 있어 폴더는 0700, 파일은 0600 으로 만든다.
-지워도 다음 받기에서 다시 만든다. 넘김 기록(`dismissed.json`)과 출처별 커서(`last-ok.json`)는 함께 사라져, 다음 받기가 `days` 기간 전체를 다시 읽는다.
+지워도 다음 받기에서 다시 만든다. 넘김 기록과 출처별 커서도 함께 사라진다. 다음 받기는 업무 피드를 15일 전부터, 메신저를 `days` 기간만큼 다시 읽는다.
 파일마다 담는 것은 `scripts/lib/store.ts` 머리 주석이 소유한다.
 
 ## adapter 를 더할 때

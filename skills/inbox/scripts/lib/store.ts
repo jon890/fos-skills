@@ -2,37 +2,42 @@
 //
 // 설정: ${XDG_CONFIG_HOME:-~/.config}/fos-skills/inbox.json. INBOX_CONFIG 로 바꾼다. 없으면 기능이 꺼진다(R6)
 // 상태: ${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/. INBOX_STATE_DIR 로 바꾼다
-//   cache.json      받은 항목, 받은 시각, 출처별 오류
+//   source-cache.json  받은 항목, 출처별 시도 시각·성공 커서·오류
+//   cache.json      이전 버전의 캐시. 새 캐시가 없을 때 읽는다
 //   dismissed.json  넘긴 항목 id 목록. 모든 저장소의 보드가 함께 쓴다(D11)
 //   repos.json      보드가 연 저장소들의 필터 파일 경로 목록. 미분류 판정에 쓴다
-//   last-ok.json    '<adapter>:<출처>' 마다 다 읽은 시각(커서). 다음 받기는 그 뒤만 읽는다
-//   fetch.lock/     받기 잠금. 안의 owner 파일이 잡은 쪽의 표지라 자기 잠금만 푼다
+//   last-ok.json    옛 커서. 새 캐시에 해당 출처가 없을 때 읽는다
+//   fetch-*.lock/   출처별 받기 잠금. cache-write.lock 은 캐시 갱신에만 쓴다
 //   <adapter>-*.json  adapter 의 캐시(이름, 업무 정보, 다시 읽을 대화방 등)
 // 쓰기는 임시 파일에 쓴 뒤 rename 한다. 읽는 쪽이 반쯤 쓴 파일을 보지 않게 하려는 것이다.
 // 사내 메시지 발췌가 들어 있어 폴더는 0700, 파일은 0600 으로 만든다.
 
-import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { peek, withOwnerLock } from '../../../orch/scripts/lib/owner-lock.ts'
+import { alive } from '../../../orch/scripts/lib/process.ts'
 import type { AdapterConfig, Cache, InboxItem } from './model.ts'
 
 export const DEFAULT_SIGNATURE = '🤖 이 메시지는 AI가 작성했고, 작성자가 검토했습니다.'
 export const DEFAULT_INTERVAL_MINUTES = 5
 export const DEFAULT_DAYS = 7
-// 이보다 오래된 잠금은 죽은 세션이 남긴 것으로 보고 다시 잡는다
-export const LOCK_STALE_MS = 10 * 60 * 1000
 
 export type Config = {
   adapters: AdapterConfig[]
-  intervalMinutes: number
+  taskIntervalMinutes?: number
+  messengerIntervalMinutes: number
   days: number
   signature: string
   defaultBoard: string | null
 }
 
+export type SourceState = { attemptedAt: string | null; cursor?: string; authError?: string; fullScan?: boolean }
+
 export type CacheFile = {
   fetchedAt: string | null
+  legacyFetchedAt: string | null
+  sources: Record<string, SourceState>
   items: InboxItem[]
   errors: Record<string, string>
 }
@@ -51,8 +56,8 @@ export function stateDir(): string {
   return join(process.env.XDG_STATE_HOME || join(home(), '.local', 'state'), 'fos-skills', 'inbox')
 }
 
-function positive(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+function positive(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 // 설정이 없으면 null. JSON 이 아니거나 adapters 가 목록이 아니면 던진다
@@ -64,8 +69,9 @@ export function readConfig(path = configPath()): Config | null {
     typeof entry === 'object' && entry !== null && typeof (entry as AdapterConfig).type === 'string')
   return {
     adapters,
-    intervalMinutes: positive(raw.intervalMinutes, DEFAULT_INTERVAL_MINUTES),
-    days: positive(raw.days, DEFAULT_DAYS),
+    taskIntervalMinutes: positive(raw.taskIntervalMinutes) ?? positive(raw.intervalMinutes),
+    messengerIntervalMinutes: positive(raw.messengerIntervalMinutes) ?? 1,
+    days: positive(raw.days) ?? DEFAULT_DAYS,
     // 빈 문자열은 표기를 붙이지 않는다는 뜻이라 그대로 둔다(D7)
     signature: typeof raw.signature === 'string' ? raw.signature : DEFAULT_SIGNATURE,
     defaultBoard: typeof raw.defaultBoard === 'string' && raw.defaultBoard ? raw.defaultBoard : null,
@@ -108,9 +114,11 @@ export class Store implements Cache {
   }
 
   cache(): CacheFile {
-    const value = this.read<Partial<CacheFile>>('cache', {})
+    const value = this.read<Partial<CacheFile> | null>('source-cache', null) ?? this.read<Partial<CacheFile> | null>('cache', null) ?? {}
     return {
       fetchedAt: typeof value.fetchedAt === 'string' ? value.fetchedAt : null,
+      legacyFetchedAt: value.sources ? value.legacyFetchedAt ?? null : value.fetchedAt ?? null,
+      sources: value.sources ?? {},
       items: Array.isArray(value.items) ? value.items : [],
       errors: value.errors && typeof value.errors === 'object' ? value.errors : {},
     }
@@ -124,60 +132,34 @@ export class Store implements Cache {
     return this.read<string[]>('repos', [])
   }
 
-  private token = ''
-
-  private lockDir(): string {
-    return join(this.dir, 'fetch.lock')
+  sourceState(key: string, cache: CacheFile): SourceState {
+    return cache.sources[key] ?? {
+      attemptedAt: cache.legacyFetchedAt,
+      cursor: this.read<Record<string, string>>('last-ok', {})?.[key],
+    }
   }
 
-  // 받기 잠금을 잡으면 true. 이미 다른 세션이 받고 있으면 false 다
-  lock(now: number): boolean {
-    const dir = this.lockDir()
+  private fetchLock(key: string): string {
+    return join(this.dir, `fetch-${encodeURIComponent(key)}.lock`)
+  }
+
+  fetchHeld(key: string): boolean {
+    const owner = peek(this.fetchLock(key))?.owner
+    const match = /^(\d+) \S+$/.exec(owner ?? '')
+    return match !== null && alive(Number(match[1]))
+  }
+
+  withFetchLock<T>(key: string, work: () => T): T {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })
-    try {
-      mkdirSync(dir)
-    } catch {
-      if (this.lockHeld(now)) return false
-      rmSync(dir, { recursive: true, force: true })
-      try {
-        mkdirSync(dir)
-      } catch {
-        return false
-      }
-    }
-    this.token = randomUUID()
-    writeFileSync(join(dir, 'owner'), this.token, { mode: 0o600 })
-    return true
+    return withOwnerLock(this.fetchLock(key), work, { waitMs: 0 })
   }
 
-  // 다른 세션이 받고 있는지. 오래된 잠금은 없는 것으로 본다
-  lockHeld(now: number): boolean {
-    try {
-      return now - statSync(this.lockDir()).mtimeMs < LOCK_STALE_MS
-    } catch {
-      return false
-    }
-  }
-
-  // 받기가 길어질 때 잠금이 오래된 것으로 보이지 않게 시각을 새로 한다
-  touchLock(): void {
-    if (!this.token) return
-    const now = new Date()
-    try {
-      utimesSync(this.lockDir(), now, now)
-    } catch {
-      // 잠금을 빼앗겼으면 할 것이 없다
-    }
-  }
-
-  // 자기가 잡은 잠금만 푼다. 오래돼 다른 세션이 다시 잡은 잠금은 그대로 둔다
-  unlock(): void {
-    if (!this.token) return
-    try {
-      if (readFileSync(join(this.lockDir(), 'owner'), 'utf8') === this.token) rmSync(this.lockDir(), { recursive: true, force: true })
-    } catch {
-      // 잠금이 이미 없다
-    }
-    this.token = ''
+  updateCache(update: (cache: CacheFile) => void): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    withOwnerLock(join(this.dir, 'cache-write.lock'), () => {
+      const cache = this.cache()
+      update(cache)
+      this.write('source-cache', cache)
+    })
   }
 }

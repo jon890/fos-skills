@@ -2,10 +2,11 @@
 // 설정과 상태 폴더는 INBOX_CONFIG, INBOX_STATE_DIR 로 테스트마다 새로 만든다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
+import { ADAPTERS } from '../scripts/adapters/index.ts'
 import { type Deps, main } from '../scripts/inbox.ts'
 import type { Adapter, AdapterFactory, FetchRequest, FetchResult, InboxItem } from '../scripts/lib/model.ts'
 import { DEFAULT_SIGNATURE, Store } from '../scripts/lib/store.ts'
@@ -23,9 +24,10 @@ type FakeState = {
   items: InboxItem[]
   errors: Record<string, string>
   answered: Set<string>
-  fetches: FetchRequest[]
+  fetches: (FetchRequest & { source: string })[]
   replies: { id: string; text: string }[]
   failReply?: boolean
+  duringFetch?: (source: string) => void
   people: Record<string, string>
 }
 
@@ -33,11 +35,16 @@ function fakeFactory(state: FakeState): AdapterFactory {
   return () => {
     const adapter: Adapter = {
       name: 'fake',
-      fetch(request): FetchResult {
-        state.fetches.push(request)
-        // 실패한 출처는 커서를 옮기지 않는다
-        const cursors = Object.fromEntries(['task', 'messenger'].filter((source) => !state.errors[source]).map((source) => [source, now.toISOString()]))
-        return { items: state.items.map((row) => ({ ...row })), errors: state.errors, cursors }
+      sources: ['task', 'messenger'],
+      fetch(request, source = 'task'): FetchResult {
+        state.fetches.push({ ...request, source })
+        state.duringFetch?.(source)
+        const error = state.errors[source]
+        return {
+          items: state.items.filter((row) => row.source === source).map((row) => ({ ...row })),
+          errors: error ? { [source]: error } : {},
+          cursors: error ? {} : { [source]: now.toISOString() },
+        }
       },
       context(row) {
         const ids = ['u1', 'u2']
@@ -149,47 +156,116 @@ describe('설정과 받기', () => {
     assert.equal(view.items[0].from.name, '김철수')
   })
 
-  test('주기 안에서는 다시 받지 않고, 주기가 지나면 받는다 (R1)', () => {
+  test('기존 업무 주기는 유지하고 메신저는 1분마다 받는다 (REQ3)', () => {
     writeConfig({ intervalMinutes: 5 })
     const root = repo('a', null)
     board(root)
     board(root)
-    assert.equal(state.fetches.length, 1)
-    now = new Date(NOW.getTime() + 5 * 60 * 1000)
-    board(root)
-    assert.equal(state.fetches.length, 2)
+    assert.deepEqual(state.fetches.map(({ source }) => source), ['task', 'messenger'])
     assert.equal(state.fetches[0].since, '2026-10-26T06:00:00.000Z')
     assert.deepEqual(state.fetches[0].cursors, {})
-    assert.deepEqual(state.fetches[1].cursors, { task: NOW.toISOString(), messenger: NOW.toISOString() })
+    now = new Date(NOW.getTime() + 60_000)
+    board(root)
+    assert.deepEqual(state.fetches[2].cursors, { messenger: NOW.toISOString() })
+    now = new Date(NOW.getTime() + 5 * 60_000)
+    board(root)
+    assert.deepEqual(state.fetches[3].cursors, { task: NOW.toISOString() })
   })
 
-  test('board 는 받기를 따로 띄우고 지금 캐시를 바로 낸다 (D15)', () => {
-    writeConfig({})
-    state.items = [item('1', ['p1'])]
-    let started = 0
-    extra = { startFetch: () => { started++ } }
+  test('출처별 설정 주기를 쓰고 새 업무 설정이 기존 값에 우선한다 (REQ5)', () => {
+    writeConfig({ intervalMinutes: 5, taskIntervalMinutes: 2, messengerIntervalMinutes: 3 })
     const root = repo('a', null)
-    assert.equal(board(root).items.length, 0)
-    assert.equal(started, 1)
-    assert.equal(state.fetches.length, 0)
-    // 따로 띄운 받기가 끝나면 다음 board 는 받은 항목을 내고 다시 띄우지 않는다
-    assert.equal(call('fetch'), 0)
-    assert.equal(board(root).items.length, 1)
-    assert.equal(started, 1)
+    board(root)
+    now = new Date(NOW.getTime() + 60_000)
+    board(root)
+    assert.equal(state.fetches.length, 2)
+    now = new Date(NOW.getTime() + 2 * 60_000)
+    board(root)
+    assert.deepEqual(state.fetches.slice(2).map(({ source }) => source), ['task'])
+    now = new Date(NOW.getTime() + 3 * 60_000)
+    board(root)
+    assert.deepEqual(state.fetches.slice(2).map(({ source }) => source), ['task', 'messenger'])
   })
 
-  test('다른 세션이 받는 중이면 받지 않고, 10분 넘은 잠금은 무시한다 (D2)', () => {
+  test('board 는 출처별 받기를 따로 띄우고 지금 캐시를 바로 낸다 (REQ4)', () => {
     writeConfig({})
     state.items = [item('1', ['p1'])]
-    const lock = join(process.env.INBOX_STATE_DIR as string, 'fetch.lock')
-    mkdirSync(lock, { recursive: true })
+    const started: [string, string][] = []
+    extra = { startFetch: (key, at) => { started.push([key, at]) } }
     const root = repo('a', null)
     assert.equal(board(root).items.length, 0)
+    assert.deepEqual(started, [['fake:task', NOW.toISOString()], ['fake:messenger', NOW.toISOString()]])
     assert.equal(state.fetches.length, 0)
-    const old = new Date(NOW.getTime() - 11 * 60 * 1000)
-    utimesSync(lock, old, old)
+    now = new Date(NOW.getTime() + 500)
+    for (const [key, at] of started) assert.equal(call('fetch', '--source', key, '--scheduled-at', at), 0, err)
     assert.equal(board(root).items.length, 1)
-    assert.equal(state.fetches.length, 1)
+    now = new Date(NOW.getTime() + 60_000)
+    board(root)
+    assert.deepEqual(started.slice(2), [['fake:messenger', now.toISOString()]])
+  })
+
+  test('업무 받기가 잠겨 있어도 메신저만 받는다 (REQ3)', () => {
+    writeConfig({})
+    const store = new Store()
+    const root = repo('a', null)
+    store.withFetchLock('fake:task', () => {
+      board(root)
+      assert.deepEqual(state.fetches.map(({ source }) => source), ['messenger'])
+      assert.equal(call('fetch', '--force', '--source', 'fake:task'), 0, err)
+      assert.equal(state.fetches.length, 1)
+    })
+    board(root)
+    assert.deepEqual(state.fetches.map(({ source }) => source), ['messenger', 'task'])
+  })
+
+  test('업무 받는 동안 메신저가 쓴 캐시와 업무의 답함 표시를 함께 보존한다', () => {
+    writeConfig({})
+    const task = item('1', ['p1'])
+    state.items = [task]
+    assert.equal(call('fetch'), 0, err)
+    const message = item('m', ['c1'], undefined, { id: 'fake:messenger:m', source: 'messenger' })
+    state.items = [task, message]
+    const body = join(dir, 'body.md')
+    writeFileSync(body, '확인했습니다')
+    state.duringFetch = (source) => {
+      if (source !== 'task') return
+      assert.equal(call('fetch', '--force', '--source', 'fake:messenger'), 0, err)
+      assert.equal(call('reply', task.id, '--body-file', body, '--yes'), 0, err)
+    }
+    now = new Date(NOW.getTime() + 60_000)
+    assert.equal(call('fetch', '--force', '--source', 'fake:task'), 0, err)
+    const cache = new Store().cache()
+    assert.deepEqual(cache.items.map((row) => [row.id, row.state]).sort(), [[message.id, 'new'], [task.id, 'answered']])
+    assert.equal(cache.sources['fake:messenger'].cursor, now.toISOString())
+  })
+
+  test('기존 캐시와 업무 커서를 이어받고 커서가 있는 업무는 1분부터 받는다 (REQ2, REQ3)', () => {
+    writeConfig({ adapters: [{ type: 'dooray', messenger: false }] })
+    const store = new Store()
+    const root = repo('a', null)
+    const legacy = item('1', ['p1'], undefined, { adapter: 'dooray', id: 'dooray:task:1' })
+    store.write('cache', { fetchedAt: NOW.toISOString(), items: [legacy], errors: {} })
+    const calls: string[][] = []
+    extra = {
+      adapters: ADAPTERS,
+      run: (argv) => {
+        calls.push(argv.slice(2))
+        return argv[2] === 'member'
+          ? { code: 0, stdout: '{"id":"me","defaultOrganization":{"id":"org"}}', stderr: '' }
+          : { code: 0, stdout: '[]', stderr: '' }
+      },
+    }
+    now = new Date(NOW.getTime() + 60_000)
+    assert.deepEqual(board(root).items.map((row) => row.id), [legacy.id])
+    assert.equal(calls.length, 0)
+    store.write('last-ok', { 'dooray:task': '잘못된 커서' })
+    board(root)
+    assert.equal(calls.length, 0)
+    store.write('last-ok', { 'dooray:task': NOW.toISOString() })
+    board(root)
+    assert.deepEqual(calls.find(([command]) => command === 'stream'), ['stream', 'list', '--size', '200'])
+    assert.ok(calls.every(([command]) => command !== 'messenger'))
+    assert.equal(store.cache().sources['dooray:task'].cursor, now.toISOString())
   })
 
   test('출처 하나가 실패하면 오류를 남기고 직전 항목을 그대로 보인다 (R7)', () => {
@@ -207,7 +283,8 @@ describe('설정과 받기', () => {
     now = new Date(NOW.getTime() + 12 * 60 * 1000)
     board(root)
     // 실패한 출처만 지난 커서에서 다시 읽고, 성공한 출처는 앞으로 간다
-    assert.deepEqual(state.fetches[2].cursors, { task: new Date(NOW.getTime() + 6 * 60 * 1000).toISOString(), messenger: NOW.toISOString() })
+    assert.deepEqual(state.fetches[4].cursors, { task: new Date(NOW.getTime() + 6 * 60_000).toISOString() })
+    assert.deepEqual(state.fetches[5].cursors, { messenger: NOW.toISOString() })
   })
 
   test('days 보다 오래된 항목은 보이지 않는다', () => {
@@ -440,18 +517,12 @@ describe('맥락과 답변', () => {
   })
 })
 
-describe('잠금 (검토 반영)', () => {
-  test('자기가 잡은 잠금만 풀고, 빼앗긴 잠금은 남긴다', () => {
-    const first = new Store(join(dir, 'lock-state'))
-    const second = new Store(join(dir, 'lock-state'))
-    const t0 = Date.now()
-    assert.equal(first.lock(t0), true)
-    assert.equal(second.lock(t0), false)
-    // 오래된 잠금을 다른 세션이 다시 잡으면, 먼저 잡았던 쪽의 unlock 은 그 잠금을 지우지 않는다
-    assert.equal(second.lock(t0 + 11 * 60 * 1000), true)
-    first.unlock()
-    assert.equal(second.lockHeld(Date.now()), true)
-    second.unlock()
-    assert.equal(second.lockHeld(Date.now()), false)
-  })
+test('받기 프로세스가 죽었으면 다음 받기가 잠금을 회수한다', () => {
+  const store = new Store()
+  const lock = join(store.dir, 'fetch-fake%3Atask.lock')
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(join(lock, 'owner'), '99999999 dead')
+  assert.equal(store.fetchHeld('fake:task'), false)
+  store.withFetchLock('fake:task', () => assert.equal(store.fetchHeld('fake:task'), true))
+  assert.equal(store.fetchHeld('fake:task'), false)
 })

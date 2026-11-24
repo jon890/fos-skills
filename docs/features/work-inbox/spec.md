@@ -50,7 +50,7 @@ streams 의 `event` 원소는 `postId`, 작성자의 `organizationMemberId` 와 
 
 | ID | 요구사항 | 관측할 인수 조건 |
 | --- | --- | --- |
-| R1 | 설정한 adapter 에서 받는 범위의 새 알림을 5분마다 받는다 | 업무 댓글에서 나를 멘션하면 5분 안에 그 업무 프로젝트를 필터로 가진 `/board` 알림 상자에 항목이 보인다 |
+| R1 | 설정한 adapter 에서 새 알림을 받는다. 받는 주기는 [출처별 받기 스펙](../inbox-messenger-fast/spec.md)이 정한다 | 업무 댓글에서 나를 멘션하면 그 업무 프로젝트를 필터로 가진 `/board` 알림 상자에 항목이 보인다 |
 | R2 | 항목은 도구에 관계없는 공통 모델이다 | 가짜 adapter 를 등록하면 `inbox.ts board` 와 보드가 코드 변경 없이 그 항목을 보인다 |
 | R3 | 맥락의 모든 사람은 이름으로 풀린다 | `inbox.ts context <id>` 출력의 작성자가 모두 이름이고, 풀지 못한 id 가 있으면 종료 코드 1 이다 |
 | R4 | 사용자 확인 없이 등록하지 않는다 | `inbox.ts reply` 는 `--yes` 없이 합성한 본문만 내고 종료 코드 3 이다. 답변 요청문은 미리보기와 확인 단계를 담는다 |
@@ -87,7 +87,7 @@ type InboxItem = {
 
 | 동작 | 하는 일 | 두레이 |
 | --- | --- | --- |
-| `fetch(since)` | `since` 뒤의 항목과 출처별 오류를 낸다 | 업무: `dooray --json stream list --since`. 메신저: `messenger channels --since` 로 바뀐 방만 고르고 방마다 `messenger logs` |
+| `sources`, `fetch(request, source)` | 켜진 출처를 알리고 지정한 출처의 항목과 오류를 낸다 | 업무는 피드 커서까지, 메신저는 `messenger channels --since` 로 바뀐 방만 읽는다. [출처별 받기 설계](../inbox-messenger-fast/design.md) |
 | `context(item)` | 본문, 앞 대화, 참여자 | 업무 본문과 댓글 목록, 대화방의 앞 메시지 |
 | `resolvePeople(ids)` | 사람 id 를 이름으로 | `dooray --json member get`, 사람 단위 캐시 |
 | `answered(item)` | 알림 뒤에 내 답이 있는지 | 업무 댓글 목록이나 대화방 메시지에서 알림 시각 뒤의 내 글 |
@@ -102,7 +102,7 @@ Slack adapter 를 더하면 adapter 파일 하나와 등록 줄 하나, 필터 �
 
 | 파일 | 단위 | 내용 |
 | --- | --- | --- |
-| `${XDG_CONFIG_HOME:-~/.config}/fos-skills/inbox.json` | 사람 | 켤 adapter, `intervalMinutes`(기본 5), `days`(기본 7), `signature`, `defaultBoard`(주 checkout 경로), adapter 별 값(두레이 웹 주소 등). 없으면 기능이 꺼진다 |
+| `${XDG_CONFIG_HOME:-~/.config}/fos-skills/inbox.json` | 사람 | 켤 adapter, [출처별 받기 주기](../../../skills/inbox/references/config.md), `days`(기본 7), `signature`, `defaultBoard`(주 checkout 경로), adapter 별 값(두레이 웹 주소 등). 없으면 기능이 꺼진다 |
 | `${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/` | 사람 | 받은 항목 캐시와 받은 시각, 넘김 기록, 이름 캐시, 필터를 가진 저장소 목록 |
 | `<orch 폴더>/config.json` 의 `inbox` 절 | 저장소 | adapter 별 키 아래 볼 범위. 두레이는 `projects`(id 나 코드)와 `channels`(id 나 이름), Slack 은 `channels` |
 
@@ -113,9 +113,9 @@ orch 폴더는 주 checkout 의 `.orch` 다(`ORCH_DIR` 이 있으면 그 값). �
 ### 받기와 표시 (R1, R7)
 
 보드 훅은 1분마다 `node <플러그인 루트>/inbox/scripts/inbox.ts board --repo <주 checkout> --json` 을 부른다.
-이 명령은 지금 캐시를 저장소 필터로 나눠 바로 낸다. 캐시가 `intervalMinutes` 보다 오래됐고 다른 세션이 받고 있지 않으면 `inbox.ts fetch` 를 따로 띄운다.
+이 명령은 지금 캐시를 저장소 필터로 나눠 바로 낸다. 마지막 받기부터 주기가 지난 출처만 `inbox.ts fetch` 로 따로 띄운다.
 받기는 두레이 호출이 수십 번 들 수 있어 보드 훅의 시간 제한 안에서 기다리지 않는다. 그래서 처음 켠 직후의 첫 응답은 빈 목록이고 다음 호출부터 받은 항목이 보인다.
-따로 띄운 받기는 잠금을 잡고 adapter 의 `fetch` 와 새 항목의 `answered`(한 번에 15개까지)를 부른 뒤 캐시를 쓴다. 잠금은 10분이 지나면 다른 세션이 다시 잡을 수 있고, 잡은 쪽만 푼다.
+따로 띄운 받기는 출처별 잠금을 잡고 adapter 의 `fetch` 와 새 항목의 `answered`(출처마다 15개까지)를 부른 뒤 캐시를 쓴다. 받기 프로세스가 끝났으면 다음 받기가 잠금을 회수한다.
 받기가 실패한 출처는 직전 항목을 그대로 두고 오류를 출처마다 남긴다.
 
 ### 답변 흐름 (R4, R10)
@@ -135,7 +135,7 @@ R1, R5, R7 의 실제 동작은 `dooray stream list` 가 배포된 뒤 인수 �
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
 | D1 | 받는 범위 | 업무 댓글 멘션, 나에게 담당·참조로 온 새 업무, 메신저 멘션. 메신저는 실패해도 나머지 알림은 보이고 메신저만 「확인 불가」 로 보인다 | 사용자 2026-11-02 | 미리보기 확인 뒤 메신저를 더했다 |
-| D2 | 확인 주기와 받는 주체 | 보드 훅이 5분마다 받는다. 여러 세션은 사람 단위 캐시를 나눠 써서 주기 안에 한 번만 부른다 | 사용자 2026-11-02 | 지연 최대 5분, 호출 한 번에 수 건 |
+| D2 | 확인 주기와 받는 주체 | 받기 주기는 [출처별 받기 스펙](../inbox-messenger-fast/spec.md)의 REQ3과 REQ5가 대신한다. 여러 세션은 사람 단위 캐시를 함께 쓴다 | 사용자 2026-11-24 | 메신저와 업무를 각자 주기에 받는다 |
 | D3 | 두레이 받기 경로 | dooray-cli 에 `dooray stream list` 명령을 더하고 adapter 가 부른다. dooray-cli PR 이 먼저다 | 사용자 2026-11-02 | 토큰을 CLI 설정 한곳에 둔다 |
 | D4 | 소유 스킬 | 새 스킬 `inbox` 가 모델, adapter, 명령, 답변 절차를 맡고 work-board 는 표시와 요청문만 맡는다 | 사용자 2026-11-02 | 보드 없이 대화 요청으로도 쓴다 |
 | D5 | 이미 답한 것과 넘긴 것 | 알림 뒤에 내 답이 있으면 자동 「답함」, 답할 필요 없는 것은 넘김으로 기록한다 | 사용자 2026-11-02 | 두레이 API 로 읽음 처리를 할 수 없다 |
@@ -148,4 +148,4 @@ R1, R5, R7 의 실제 동작은 `dooray stream list` 가 배포된 뒤 인수 �
 | D12 | 공통 모델과 adapter 계약 | 위 「설계」 의 모델과 표 | 작성자 | 사용자 요청(2026-11-02)의 공통 모델, adapter 동작 목록에 답한 여부 판정을 더했다 |
 | D13 | 사람 단위 파일 위치 | `${XDG_CONFIG_HOME:-~/.config}/fos-skills/inbox.json` 과 `${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/` | 작성자 | 설정과 상태를 나누는 XDG 관례다 |
 | D14 | 메신저 호출 줄이기 | 바뀐 방만, 봇 방과 나와의 대화 제외, 오래된 순으로 한 번에 20개, 남은 방은 커서로 다음 받기에 잇는다 | 작성자 | 사용자가 D1 답에서 호출 수를 줄이라고 했다. 20 은 5분 사이에 바뀌는 방 수보다 넉넉한 값이고, 오래된 순이어야 남은 방을 놓치지 않는다 |
-| D15 | 보드 훅의 호출 주기 | 1분마다 `inbox.ts board` 를 부르고, 받기는 캐시가 5분보다 오래됐을 때만 따로 띄운다 | 작성자 | 다른 보드에서 넘긴 항목을 1분 안에 반영하면서 두레이 호출은 D2 를 지킨다. 받기를 기다리면 훅의 시간 제한에 받기가 죽어 잠금이 남는다 |
+| D15 | 보드 훅의 호출 주기 | 1분마다 `inbox.ts board` 를 부르고 주기가 지난 출처의 받기를 따로 띄운다 | 작성자 | 다른 보드에서 넘긴 항목을 1분 안에 반영하면서 두레이 호출은 D2 를 지킨다. 받기를 기다리면 훅의 시간 제한에 받기가 죽어 잠금이 남는다 |

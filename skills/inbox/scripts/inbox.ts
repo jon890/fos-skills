@@ -2,7 +2,7 @@
 // 설계는 docs/features/work-inbox/spec.md, 파일 형식은 skills/inbox/references/config.md 가 소유한다.
 //
 // 사용:
-//   inbox.ts board --repo <주 checkout> [--json]   보드에 보일 항목. 캐시가 intervalMinutes 보다 오래됐으면 받기를 따로 띄우고 지금 캐시를 낸다
+//   inbox.ts board --repo <주 checkout> [--json]   보드에 보일 항목. 주기가 지난 출처 받기를 따로 띄우고 지금 캐시를 낸다
 //   inbox.ts fetch [--force]                        받기만 한다. --force 는 주기를 무시한다
 //   inbox.ts list [--repo <경로>]                   항목을 사람이 읽는 줄로 낸다. --repo 가 없으면 넘긴 것 말고 모두
 //   inbox.ts context <id>                           본문과 앞 대화를 JSON 으로 낸다. 작성자는 이름으로 푼다
@@ -19,9 +19,11 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { orchDir } from '../../orch/scripts/lib/paths.ts'
+import { OwnerLockBusy } from '../../orch/scripts/lib/owner-lock.ts'
 import { ADAPTERS } from './adapters/index.ts'
-import type { Adapter, AdapterFactory, InboxItem, Runner } from './lib/model.ts'
-import { type CacheFile, type Config, readConfig, Store } from './lib/store.ts'
+import { taskCursorTime } from './adapters/dooray.ts'
+import type { Adapter, AdapterConfig, AdapterFactory, FetchResult, InboxItem, Runner } from './lib/model.ts'
+import { type CacheFile, type Config, DEFAULT_INTERVAL_MINUTES, readConfig, type SourceState, Store } from './lib/store.ts'
 import { boardView, isOff, type RepoFilter, visibleItems } from './lib/view.ts'
 
 // 받기 한 번에 「답함」 을 확인하는 새 항목 수. 항목마다 두레이 호출이 하나씩 든다
@@ -43,7 +45,7 @@ export type Deps = {
   tmpDir: string
   // 받기를 따로 띄운다. board 는 보드 훅의 시간 제한 안에 끝나야 해서 받기를 기다리지 않는다.
   // 없으면 board 가 그 자리에서 받는다(테스트)
-  startFetch?: () => void
+  startFetch?: (key: string, scheduledAt: string) => void
 }
 
 class Refused extends Error {}
@@ -165,70 +167,99 @@ function openSession(config: Config, deps: Deps): { session: Session; errors: Re
   return { session: { config, store, deps, adapters }, errors }
 }
 
-function isStale(session: Session, cache: CacheFile): boolean {
-  const age = session.deps.now().getTime() - Date.parse(cache.fetchedAt ?? '')
-  return !cache.fetchedAt || !(age < session.config.intervalMinutes * 60 * 1000)
+type Source = { adapter: Adapter; entry: AdapterConfig; source: string; key: string }
+
+function sources(session: Session): Source[] {
+  return [...session.adapters.values()].flatMap((adapter) => {
+    const entry = session.config.adapters.find((row) => row.type === adapter.name)
+    return adapter.sources.map((source) => ({ adapter, entry: entry ?? { type: adapter.name }, source, key: `${adapter.name}:${source}` }))
+  })
 }
 
-// 캐시가 오래됐으면 받아서 합친다. 다른 세션이 받고 있으면 지금 캐시를 그대로 쓴다
-export function sync(session: Session, setupErrors: Record<string, string>, force: boolean): CacheFile {
-  const { config, store, deps } = session
-  const now = deps.now()
-  if (!(force || isStale(session, store.cache())) || !store.lock(now.getTime())) return store.cache()
+function fetchErrors(session: Session, cache: CacheFile, setupErrors: Record<string, string>): Record<string, string> {
+  const reported = { ...setupErrors }
+  for (const { adapter, key } of sources(session)) {
+    for (const name of [key, `${adapter.name}:auth`]) {
+      if (cache.errors[name]) reported[name] = cache.errors[name]
+    }
+  }
+  return reported
+}
+
+function isDue(session: Session, source: Source, state: SourceState, now: number): boolean {
+  const { config } = session
+  const canResumeTask = source.adapter.name === 'dooray' && !state.fullScan && taskCursorTime(state.cursor, now) !== null
+  const interval = source.source === 'messenger'
+    ? config.messengerIntervalMinutes
+    : config.taskIntervalMinutes ?? (canResumeTask ? 1 : DEFAULT_INTERVAL_MINUTES)
+  return !(now - Date.parse(state.attemptedAt ?? '') < interval * 60 * 1000)
+}
+
+function sourceItems(items: InboxItem[], source: Source): InboxItem[] {
+  return items.filter((item) => item.adapter === source.adapter.name && item.source === source.source)
+}
+
+function syncSource(session: Session, source: Source, now: Date, force: boolean): void {
+  const { config, store } = session
+  const { adapter, entry, source: name, key } = source
+  let entered = false
   try {
-    // 잠금을 잡은 뒤 다시 읽는다. 앞 받기가 막 쓰고 풀었으면 그 결과 위에 합치거나, 이미 새것이면 받지 않는다
-    const cache = store.cache()
-    if (!force && !isStale(session, cache)) return cache
-    const since = new Date(now.getTime() - config.days * 24 * 60 * 60 * 1000).toISOString()
-    const lastOk = store.read<Record<string, string>>('last-ok', {})
-    const byId = new Map(cache.items.map((item) => [item.id, item]))
-    const errors: Record<string, string> = { ...setupErrors }
-    for (const adapter of session.adapters.values()) {
-      const prefix = `${adapter.name}:`
-      const cursors = Object.fromEntries(Object.entries(lastOk)
-        .filter(([key]) => key.startsWith(prefix))
-        .map(([key, value]) => [key.slice(prefix.length), value]))
-      const result = adapter.fetch({ since, cursors })
-      store.touchLock()
-      for (const [source, message] of Object.entries(result.errors)) errors[`${adapter.name}:${source}`] = message
-      // 출처마다 커서를 옮긴다. 읽지 못한 출처는 커서가 없어 다음 받기가 지난 커서부터 다시 읽는다
-      for (const [source, cursor] of Object.entries(result.cursors)) lastOk[`${adapter.name}:${source}`] = cursor
-      for (const item of result.items) {
+    store.withFetchLock(key, () => {
+      entered = true
+      const cache = store.cache()
+      const state = store.sourceState(key, cache)
+      if (!force && !isDue(session, source, state, now.getTime())) return
+      const since = new Date(now.getTime() - config.days * 24 * 60 * 60 * 1000).toISOString()
+      let result: FetchResult
+      try {
+        result = adapter.fetch({ since, cursors: state.cursor ? { [name]: state.cursor } : {} }, name)
+      } catch (error) {
+        result = { items: [], errors: { [name]: (error as Error).message }, cursors: {} }
+      }
+
+      const byId = new Map(sourceItems(cache.items, source).map((item) => [item.id, item]))
+      for (const item of sourceItems(result.items, source)) {
         const known = byId.get(item.id)
-        // 받은 값으로 갱신하되 답함 표시와 처음 본 시각은 남긴다
         byId.set(item.id, known ? { ...item, state: known.state, at: known.at } : item)
       }
-    }
-    const exclusions = new Map(config.adapters.map((entry) => [entry.type, entry]))
-    const items = [...byId.values()].filter((item) => {
-      if (Date.parse(item.at) < Date.parse(since)) return false
-      const entry = exclusions.get(item.adapter)
-      const key = item.source === 'messenger' ? 'excludeChannels' : 'excludeProjects'
-      const values = entry?.[key]
-      return !Array.isArray(values) || !item.scope.some((scope) => values.includes(scope))
-    })
-    const dismissed = store.dismissed()
-    const pending = items
-      .filter((item) => item.state === 'new' && !dismissed.has(item.id))
-      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
-      .slice(0, MAX_ANSWER_CHECKS)
-    for (const item of pending) {
-      const adapter = session.adapters.get(item.adapter)
-      try {
-        if (adapter?.answered(item)) item.state = 'answered'
-      } catch {
-        // 확인하지 못한 항목은 새 항목으로 둔다. 다음 받기에서 다시 본다
+      const exclusions = entry[name === 'messenger' ? 'excludeChannels' : 'excludeProjects']
+      const items = [...byId.values()].filter((item) =>
+        !(Date.parse(item.at) < Date.parse(since)) &&
+        (!Array.isArray(exclusions) || !item.scope.some((scope) => exclusions.includes(scope))))
+      const dismissed = store.dismissed()
+      const pending = items
+        .filter((item) => item.state === 'new' && !dismissed.has(item.id))
+        .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+        .slice(0, MAX_ANSWER_CHECKS)
+      for (const item of pending) {
+        try {
+          if (adapter.answered(item)) item.state = 'answered'
+        } catch {
+          // 확인하지 못한 항목은 다음 받기에서 다시 본다
+        }
       }
-    }
-    // 받는 동안 reply --yes 가 적은 답함을 덮지 않는다
-    const answeredMeanwhile = new Set(store.cache().items.filter((item) => item.state === 'answered').map((item) => item.id))
-    for (const item of items) if (answeredMeanwhile.has(item.id)) item.state = 'answered'
-    const next: CacheFile = { fetchedAt: now.toISOString(), items, errors }
-    store.write('cache', next)
-    store.write('last-ok', lastOk)
-    return next
-  } finally {
-    store.unlock()
+
+      const attemptedAt = now.toISOString()
+      store.updateCache((latest) => {
+        const answered = new Set(sourceItems(latest.items, source).filter((item) => item.state === 'answered').map((item) => item.id))
+        for (const item of items) if (answered.has(item.id)) item.state = 'answered'
+        latest.items = latest.items.filter((item) => item.adapter !== adapter.name || item.source !== name).concat(items)
+        if (!latest.fetchedAt || attemptedAt > latest.fetchedAt) latest.fetchedAt = attemptedAt
+        latest.sources[key] = {
+          attemptedAt,
+          cursor: result.cursors[name] ?? state.cursor,
+          authError: result.errors.auth,
+          fullScan: result.cursors[name] ? result.fullScanSources?.includes(name) : state.fullScan,
+        }
+        if (result.errors[name]) latest.errors[key] = result.errors[name]
+        else delete latest.errors[key]
+        const auth = adapter.sources.map((s) => latest.sources[`${adapter.name}:${s}`]?.authError).find(Boolean)
+        if (auth) latest.errors[`${adapter.name}:auth`] = auth
+        else delete latest.errors[`${adapter.name}:auth`]
+      })
+    })
+  } catch (error) {
+    if (entered || !(error instanceof OwnerLockBusy)) throw error
   }
 }
 
@@ -243,7 +274,7 @@ function line(item: InboxItem): string {
   return `${mark} ${item.id}  ${item.title}  ${item.from.name || item.from.id} · ${item.kind} · ${item.at}${item.excerpt ? `\n    ${item.excerpt}` : ''}`
 }
 
-type Parsed = { cmd: string; id?: string; repo?: string; json: boolean; force: boolean; bodyFile?: string; yes: boolean; undo: boolean }
+type Parsed = { cmd: string; id?: string; repo?: string; json: boolean; force: boolean; source?: string; scheduledAt?: string; bodyFile?: string; yes: boolean; undo: boolean }
 
 function parse(argv: string[]): Parsed | 'help' {
   if (argv.includes('--help') || argv.includes('-h')) return 'help'
@@ -253,6 +284,8 @@ function parse(argv: string[]): Parsed | 'help' {
       repo: { type: 'string' },
       json: { type: 'boolean' },
       force: { type: 'boolean' },
+      source: { type: 'string' },
+      'scheduled-at': { type: 'string' },
       'body-file': { type: 'string' },
       yes: { type: 'boolean' },
       undo: { type: 'boolean' },
@@ -266,7 +299,12 @@ function parse(argv: string[]): Parsed | 'help' {
   if (['context', 'reply', 'dismiss'].includes(cmd) && !id) throw new Error(`${cmd} 에는 항목 id 가 필요하다`)
   if (cmd === 'board' && !values.repo) throw new Error('board 에는 --repo 가 필요하다')
   if (cmd === 'reply' && !values['body-file']) throw new Error('reply 에는 --body-file 이 필요하다')
+  if (values.source !== undefined && cmd !== 'fetch') throw new Error('--source 는 fetch 에서만 쓴다')
+  if (values['scheduled-at'] !== undefined && (!values.source || !Number.isFinite(Date.parse(values['scheduled-at'])))) {
+    throw new Error('--scheduled-at 에는 출처와 시각이 필요하다')
+  }
   return {
+    source: values.source, scheduledAt: values['scheduled-at'],
     cmd, id, repo: values.repo, json: values.json ?? false, force: values.force ?? false,
     bodyFile: values['body-file'], yes: values.yes ?? false, undo: values.undo ?? false,
   }
@@ -280,12 +318,16 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
     return
   }
   const errors: Record<string, string> = {}
-  let cache: CacheFile
+  let cache = store.cache()
   try {
-    cache = store.cache()
-    if (isStale(session, cache) && !store.lockHeld(deps.now().getTime())) {
-      if (deps.startFetch) deps.startFetch()
-      else cache = sync(session, setupErrors, false)
+    const now = deps.now()
+    for (const source of sources(session)) {
+      if (!isDue(session, source, store.sourceState(source.key, cache), now.getTime()) || store.fetchHeld(source.key)) continue
+      if (deps.startFetch) deps.startFetch(source.key, now.toISOString())
+      else {
+        syncSource(session, source, now, false)
+        cache = store.cache()
+      }
     }
   } catch (error) {
     cache = store.cache()
@@ -300,7 +342,7 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
   const result = {
     enabled: true,
     fetchedAt: cache.fetchedAt,
-    errors: { ...cache.errors, ...errors },
+    errors: { ...fetchErrors(session, cache, setupErrors), ...errors },
     filtered: filter !== null,
     isDefault: isDefault === true,
     newCount: view.newCount,
@@ -331,9 +373,13 @@ function run(a: Parsed, deps: Deps): number {
       boardCommand(a, session, setupErrors)
       return 0
     case 'fetch': {
-      const cache = sync(session, setupErrors, a.force)
+      const selected = sources(session).filter(({ key }) => a.source === undefined || a.source === key)
+      if (a.source !== undefined && selected.length === 0) throw new Refused(`설정에 없는 출처다: ${a.source}`)
+      const scheduled = a.scheduledAt ? new Date(a.scheduledAt) : deps.now()
+      for (const source of selected) syncSource(session, source, scheduled, a.force)
+      const cache = store.cache()
       deps.out(`받은 시각 ${cache.fetchedAt ?? '-'}, 항목 ${cache.items.length}\n`)
-      for (const [source, message] of Object.entries(cache.errors)) deps.out(`! ${source}: ${message}\n`)
+      for (const [source, message] of Object.entries(fetchErrors(session, cache, setupErrors))) deps.out(`! ${source}: ${message}\n`)
       return 0
     }
     case 'list': {
@@ -370,9 +416,9 @@ function run(a: Parsed, deps: Deps): number {
         return 3
       }
       const url = adapter.reply(item, text)
-      const cache = store.cache()
-      for (const row of cache.items) if (row.id === item.id) row.state = 'answered'
-      store.write('cache', cache)
+      store.updateCache((cache) => {
+        for (const row of cache.items) if (row.id === item.id) row.state = 'answered'
+      })
       deps.out(`등록했다${url ? `: ${url}` : ''}\n`)
       return 0
     }
@@ -409,8 +455,8 @@ export function main(argv: string[], deps: Deps): number {
 }
 
 // 받기를 떼어 띄운다. 이 프로세스가 끝나도 받기는 이어지고, 잠금이 같은 시각의 중복 받기를 막는다
-function startDetachedFetch(): void {
-  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', fileURLToPath(import.meta.url), 'fetch'], {
+function startDetachedFetch(key: string, scheduledAt: string): void {
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', fileURLToPath(import.meta.url), 'fetch', '--source', key, '--scheduled-at', scheduledAt], {
     detached: true,
     stdio: 'ignore',
     env: process.env,
