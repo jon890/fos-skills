@@ -186,8 +186,7 @@ PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 필수 �
 독립 리뷰에는 PR URL 과 head SHA, 변경 파일과 검증 결과를 넘긴다. 지적은 PR 을 만든 worker 가 `review-fix` 로 반영한다.
 리뷰 workflow 를 바꾸지 않은 PR 은 기존 자동 리뷰 절차를 따른다.
 
-`REVIEW-FALLBACK` 은 리뷰 봇이 실행 장애로 실패해 상주 루프가 리뷰 worker 를 이미 띄웠다는 알림이다. 독립 리뷰를 따로 맡기지 않고 그 worker 의 판정 댓글을 기다린다.
-`REVIEW-FALLBACK-FAIL` 이면 루프가 띄우지 못한 것이라 지금처럼 독립 리뷰를 맡긴다. 설정은 [`overlay.md`](overlay.md) 의 「리뷰 봇 장애 때 대체 리뷰」 에 있다.
+자동 머지는 리뷰 댓글의 문구로 통과를 정하지 않는다. 봇 영수증이나 리뷰 체크 success 만 독립 리뷰로 본다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」).
 
 ## 리뷰 지적을 반영한다
 

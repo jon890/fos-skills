@@ -297,7 +297,7 @@ orch doctor migrate --repo "$REPO" --apply
 
 ```json
 {
-  "queue": { "auto_merge": true, "auto_review": { "pass": "머지 가능", "block": "반영 필요|반영 후 머지" } },
+  "queue": { "auto_merge": true, "auto_review": { "review_checks": ["claude-review"] } },
   "migrations": {
     "dirs": { "api": "modules/api/src/main/resources/db/migration" },
     "watch": { "api": ["src/main/java/db/migration"] },
@@ -341,46 +341,27 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 
 ### 자동 머지 리뷰 조건
 
-`queue.auto_review.require` 에 조건 이름을 적어 저장소마다 리뷰 판정을 조합한다.
-조건의 뜻은 `scripts/core/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다. 모르는 이름을 적으면 루프가 어느 PR 도 걸지 않고 `orch-doctor` 가 `INVALID-CONFIG` 로 알린다.
+**리뷰 댓글의 문구로 통과나 막힘을 정하지 않는다(사용자 결정 2026-11-24).** 누가 쓴 댓글이든 문구만 있으면 통과하던 가짜 통과를 막으려는 것이다.
+자동 머지와 `orch queue gate` 는 지금 HEAD 에 아래 가운데 하나가 있을 때 독립 리뷰가 있다고 본다. 규칙은 `scripts/core/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다.
 
-`require` 를 적지 않은 저장소는 `verdict-on-head` 하나와 같다. 리뷰 뒤 코드 커밋을 더하면 다시 리뷰를 받아야 건다.
-
-「머지 가능」 판정 뒤 P3 이하만 반영하면 재리뷰를 받지 않는 저장소는 아래처럼 조합한다.
-판정이 한 번도 없으면 걸지 않고, 마지막 판정이 `pass` 면 그 뒤 반영 커밋이 있어도 건다.
-`block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋에 `pass` 가 달릴 때까지 기다린다.
+- 믿는 리뷰 봇의 영수증(`trusted_bots`). 아래 「믿는 리뷰 봇의 영수증」
+- 리뷰로 인정하는 CI 체크(`review_checks`)가 지금 HEAD 에서 success
 
 ```json
-{
-  "queue": {
-    "auto_merge": true,
-    "auto_review": {
-      "pass": "머지 가능",
-      "block": "반영 필요|반영 후 머지",
-      "require": ["verdict-seen", "last-verdict-pass", "rereview-after-block"]
-    }
-  }
-}
+{ "queue": { "auto_merge": true, "auto_review": { "review_checks": ["claude-review"] } } }
 ```
 
-기능 PR 은 `require` 와 상관없이 `verdict-on-head` 도 요구한다. 그래서 위 조합이어도 반영 push 마다 HEAD 에 새 판정이 있어야 건다. 반영 뒤 재리뷰를 받지 않으려면 `auto_review` 에 `"feature_head": false` 를 더한다. 기능 PR 도 `require` 만 보고, 마지막 판정이 `block` 이면 여전히 걸지 않고 기다린다.
+리뷰 체크는 리뷰가 반영할 곳을 찾으면 체크를 실패시키는 워크플로여야 한다. 그 체크를 필수 체크로도 두면 머지 큐가 실패한 리뷰로 머지하지 않는다.
+리뷰 체크의 실패는 다른 체크처럼 CI 감시가 worker 에게 고치라고 보낸다. 리뷰 체크가 그 HEAD 에서 도는 동안 최신화(`pipeline.refresh_slots`)는 HEAD 를 옮기지 않는다.
 
-자동 리뷰가 PR 을 열 때만 돌고 저장소 규칙이 재리뷰를 금지하면, `block` 을 받은 PR 은 반영을 마쳐도 `last-verdict-pass` 와 `rereview-after-block` 을 통과할 길이 없다. 그런 저장소는 `auto_review` 에 `"fixed_after_block": true` 를 더한다. 기본은 `false` 라 더하지 않으면 지금과 같다.
-이 설정이 켜지면 `block` 이 아래 셋을 모두 만족할 때 두 조건이 `block` 을 재리뷰 없이 풀어 준다.
-
-- `block` 이 가리키는 커밋이 PR 체인에 있고 지금 HEAD 가 아니다. 댓글이면 쓴 시각 이전의 가장 새 커밋이다.
-- 그 커밋 뒤에 기준 브랜치를 합친 merge 만 있지 않다. 고친 코드가 있어야 한다.
-- 미해결 리뷰 스레드가 0 이다. 스레드 수를 읽지 못했으면 풀지 않는다.
-
-`verdict-on-head` 는 HEAD 의 새 판정을 요구하는 조건이라 풀지 않는다. 기능 PR 은 `feature_head` 가 `true`(기본)면 `verdict-on-head` 를 더하므로, 재리뷰 없는 흐름이면 `"feature_head": false` 도 함께 둔다.
-풀리면 `AUTO-MERGE-BASIS` 줄과 `orch queue gate` 의 `GATE-OK` 다음 줄에 `REVIEW-FIXED <리뷰 id> <block 커밋 8자리>..<HEAD 8자리>` 가 남는다.
+둘 다 없으면 리뷰 조건 없이 CI 와 미해결 스레드만 본다. 기능 PR(지시서의 「루프를 쓴다」)은 둘 다 없으면 자동 머지가 걸지 않고 기다린다.
+옛 문구 판정 키(`pass`, `block`, `require`, `feature_head`, `fixed_after_block`, `fallback`)는 읽지 않는다. `orch doctor --repo` 가 `LEGACY-REVIEW-KEY` 로 지우라고 알린다. 리뷰 봇 장애 때 대체 리뷰 worker 를 띄우던 기능도 그 판정 댓글로 통과시키던 것이라 함께 없앴다.
 
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.
 
 #### 믿는 리뷰 봇의 영수증
 
-`queue.auto_review.trusted_bots` 에 봇 계정과 영수증 형식을 목록으로 적으면, 자동 머지와 `orch queue gate` 가 기존 판정 문구에 더해 봇 영수증을 확인한다.
-아래 예시를 기존 `auto_review` 에 더한다. `require` 와 `pass`, `block` 은 저장소에 쓰던 값을 그대로 둔다.
+`queue.auto_review.trusted_bots` 에 봇 계정과 영수증 형식을 목록으로 적으면, 자동 머지와 `orch queue gate` 가 봇 영수증을 확인한다.
 
 ```json
 {
@@ -398,29 +379,12 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 GitHub 에서 계정 종류가 봇이고 `login` 이 같은 댓글과 리뷰만 본다. 표지는 한 줄 전체가 `receipt_marker` 와 같아야 한다.
 `reviewed_commit` 은 각 줄의 시작과 끝을 쓸 수 있는 JavaScript 정규식이다. 첫 번째 캡처 그룹에서 7~40자리 16진수를 읽고 영수증에 적힌 자리 전체를 현재 HEAD 와 비교한다. 리뷰에 달린 영수증은 GitHub 가 기록한 리뷰 커밋 전체도 현재 HEAD 와 같아야 한다.
 
-영수증이 유효하면 기존 `require` 가 읽는 `pass` 로 함께 센다. 기준 브랜치를 합친 뒤에도 영수증은 갱신한 HEAD 를 가리켜야 한다.
-봇을 여러 개 등록하면 그중 하나의 유효한 영수증으로 `pass` 를 얻을 수 있다. 지적을 남긴 봇마다 그 봇이 발행한 새 영수증이 필요하다.
+기준 브랜치를 합친 뒤에도 영수증은 갱신한 HEAD 를 가리켜야 한다.
+봇을 여러 개 등록하면 그중 하나의 유효한 영수증으로 통과한다. 지적을 남긴 봇마다 그 봇이 발행한 새 영수증이 필요하다.
 믿는 봇이 연 줄 댓글 스레드가 미해결이거나 그 봇이 지적을 남긴 뒤 현재 HEAD 의 새 영수증을 받지 못했으면 머지를 기다린다. GitHub 의 변경 요청과 영수증이 없는 의견 리뷰를 지적으로 읽는다.
 GitHub 는 스레드 해결 시각을 제공하지 않는다. 관문은 스레드가 지금 해결됐는지와 영수증이 지적보다 늦게 달렸는지를 함께 확인한다.
-`fixed_after_block` 은 기존 판정 문구로 남긴 `block` 에만 적용한다. 봇 지적을 닫은 뒤에는 그 봇에 다시 리뷰를 요청한다.
 
-믿는 봇을 설정하면 `orch spec review <PR>` 와 `orch queue gate <PR>` 는 봇 리뷰를 기다리라고 안내한다. 별도 리뷰 worker 가 필요하면 `orch spec review <PR> --review-worker` 를 쓴다. 봇을 설정한 저장소에서는 아래의 대체 리뷰 worker 도 띄우지 않는다.
+믿는 봇을 설정하면 `orch spec review <PR>` 와 `orch queue gate <PR>` 는 봇 리뷰를 기다리라고 안내한다. 별도 리뷰 worker 가 필요하면 `orch spec review <PR> --review-worker` 를 쓴다.
 
 `request_comment` 를 적으면 루프가 Ready PR 의 현재 HEAD 를 처음 발견한 뒤 `request_after_sec`(기본 180초) 이상 지난 틱에서 현재 상태를 다시 읽는다. 믿는 봇의 영수증이나 현재 HEAD 에 대한 진행 중 표시가 하나라도 있으면 요청을 미룬다. 진행 중 표시는 GitHub 리뷰 상태와 Codex 요약 댓글에서 읽는다. 요청이 필요하면 첫 번째로 `request_comment` 를 적은 봇에 현재 HEAD 당 한 번 댓글을 단다. 이전 HEAD 에 대한 봇 결과는 새 요청을 막지 않는다. 댓글을 달면 `BOT-REVIEW-REQUEST` 를 루프 로그에 남긴다.
 
-### 리뷰 봇 장애 때 대체 리뷰
-
-리뷰 봇이 모델을 부르지도 못하고 몇 초 만에 실패하면(인증, 사용량 한도, 봇 설정 오류) 판정이 없어 자동 머지가 멈춘다.
-`auto_review` 에 `fallback` 을 두면 상주 루프가 코디네이터를 기다리지 않고 그 PR 에 리뷰 worker 를 띄운다.
-
-```json
-{ "queue": { "auto_review": { "pass": "판정: 머지 가능", "block": "판정: 반영 필요", "fallback": { "check": "claude-review", "fail_within_sec": 120 } } } }
-```
-
-- `check` 는 리뷰 봇의 체크 이름이다. 지금 HEAD 에서 그 체크가 실패로 끝났고 시작부터 끝까지 `fail_within_sec`(기본 120)초 안이면 장애로 본다.
-- 필수 체크가 모두 통과한 Ready PR 만 대상이다. 같은 HEAD 에는 한 번만 띄운다.
-- 리뷰 worker 의 지시서는 `orch spec review <PR>` 이 만드는 것과 같은 틀이다. 루프가 「배경」 과 「특히 볼 것」 을 채우고, 리뷰를 등록한 뒤 판정 댓글을 하나 더 달게 한다.
-- 판정 댓글의 첫 줄은 `pass_text`(기본 `판정: 머지 가능`)나 `block_text`(기본 `판정: 반영 필요`)다. 각각 `pass`, `block` 정규식에 맞아야 하고, 맞지 않으면 설정 오류다. 코디네이터가 독립 리뷰 뒤 다는 판정 댓글과 같은 모양이라 자동 머지가 그대로 읽는다.
-- 최신화(`pipeline.refresh_slots`)는 그 HEAD 에서 리뷰 봇 체크가 끝나기 전과, 띄운 리뷰 worker 의 판정 댓글이 달리기 전에는 HEAD 를 옮기지 않는다. 리뷰 봇은 Ready 때만 돌아, 그 전에 HEAD 가 바뀌면 장애를 알아채지 못하고 리뷰 worker 도 HEAD 가 달라 멈춘다.
-- 실패한 체크가 리뷰 봇 체크뿐이면 CI 감시가 구현 worker 에게 「고쳐서 push」 를 보내지 않는다. `CI-FAILED` 의 worker 결과는 `리뷰 봇 체크만 실패` 다.
-- 띄우면 `REVIEW-FALLBACK`, 띄우지 못하면 `REVIEW-FALLBACK-FAIL` 을 그 PR 의 Run 에 보낸다. 실패면 지금처럼 코디네이터가 독립 리뷰를 맡긴다. 동작의 상세는 `scripts/loop/steps/review-fallback.ts` 파일 맨 위 설명이 소유한다.

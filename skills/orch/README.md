@@ -98,7 +98,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
     "shared_paths": ["^modules/common/", "^build\\.gradle\\.kts$"],
     "unit_prefix": "modules/",
     "auto_merge": true,
-    "auto_review": { "pass": "\\*\\*머지 가능\\*\\*", "block": "\\*\\*머지 전 반영 필요\\*\\*" }
+    "auto_review": { "review_checks": ["claude-review"] }
   },
   "migrations": {
     "dirs": { "order-api": "modules/order-api/src/main/resources/db/migration" },
@@ -110,7 +110,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 | 설정 | 바뀌는 동작 |
 | --- | --- |
 | `finish.deploy_workflow`, `deploy_branch` | 머지 뒤 `develop` 의 dev 배포가 성공할 때까지 기다린 다음 업무와 보드를 마무리한다 |
-| `queue.auto_merge`, `auto_review` | 필수 체크가 통과하고, 미해결 스레드가 없고, 자동 리뷰 판정이 `auto_review.require` 의 조건을 모두 만족하는 PR 을 상주 루프가 스스로 머지 큐에 건다. `require` 가 없으면 지금 HEAD 의 판정이 `pass` 여야 한다. 판정 문구가 든 리뷰가 없으면 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조건과 조합 예시는 [`references/overlay.md`](references/overlay.md) 의 「자동 머지 리뷰 조건」 에 있다 |
+| `queue.auto_merge`, `auto_review` | 필수 체크가 통과하고, 미해결 스레드가 없고, 지금 HEAD 에 리뷰 체크(`review_checks`) success 나 믿는 봇의 영수증이 있는 PR 을 상주 루프가 스스로 머지 큐에 건다. 리뷰 댓글의 문구로는 정하지 않는다. 리뷰 결과가 없으면 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 알린다. 설정 예시는 [`references/overlay.md`](references/overlay.md) 의 「자동 머지 리뷰 조건」 에 있다 |
 | `queue.up_to_date_when: overlap` | 앞 PR 과 바꾼 모듈이 겹치지 않으면 base 를 다시 합치지 않고 바로 머지한다. `shared_paths` 를 건드린 PR 은 늘 겹친 것으로 본다 |
 | `pipeline.refresh_slots` | 상주 루프가 뒤처진 PR 에 base 를 머지 차례 전에 미리 합쳐 CI 를 함께 돌린다. 값은 동시에 도는 최신화의 상한이라 CI runner 수보다 작게 둔다. 머지는 머지 큐가 하나씩 한다 |
 | `migrations.dirs`, `before` | 마이그레이션이 든 PR 은 번호 순서를 지켜 머지하고, 머지 직전에 그 모듈의 DB 를 백업한다 |

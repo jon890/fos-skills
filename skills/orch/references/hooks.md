@@ -111,7 +111,7 @@ if (live.length >= LIMIT) {
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `orch config set hooks.timeouts.before-merge 1800 --json` 으로 시간 제한(초)을 늘린다. 이벤트 이름과 초는 상황에 맞춘다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
 | `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
-| `INVALID-CONFIG <경로> <이유>` (그 밖) | `config.json` 의 그 경로에 문제가 있다. 문제 종류는 깨진 JSON(경로 `config.json`), 모르는 절·키·이름, 틀린 값, 짝 규칙 위반이다. 자동 머지 리뷰 조건(`queue.auto_review.require`)이면 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | `orch config set` 으로 그 경로를 고치거나 `orch config unset` 으로 오타 키를 지운다. 깨진 JSON 은 파일을 복구한다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」, `inbox` 절). 문제마다 한 줄이다 |
+| `INVALID-CONFIG <경로> <이유>` (그 밖) | `config.json` 의 그 경로에 문제가 있다. 문제 종류는 깨진 JSON(경로 `config.json`), 모르는 절·키·이름, 틀린 값, 짝 규칙 위반이다 | `orch config set` 으로 그 경로를 고치거나 `orch config unset` 으로 오타 키를 지운다. 깨진 JSON 은 파일을 복구한다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」, `inbox` 절). 문제마다 한 줄이다 |
 | `CLI-DEPS-MISSING <이유>` | 설정 검사표가 쓰는 의존(zod)을 불러오지 못했다. `orch doctor` 가 설정 검사만 건너뛰고 나머지는 돈다. 종료 코드에는 영향이 없다 | 플러그인을 다시 설치하거나(`claude plugin update fos-skills@fos-skills`) 플러그인 폴더에서 `npm ci --ignore-scripts` 를 돈다 |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
