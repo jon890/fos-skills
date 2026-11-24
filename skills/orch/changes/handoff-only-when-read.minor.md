@@ -1,1 +1,0 @@
-- PR 본문과 미리보기는 worker 세션 임시 폴더에 두고, handoff 에는 코디네이터가 읽을 파일만 둔다. 오래된 pending 폴더는 정리하고 `worker ask --temp-ok` 를 더한다.
