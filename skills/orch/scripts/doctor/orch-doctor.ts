@@ -63,7 +63,8 @@
 //     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 저장소 몫 후보·보류를 센다.
 //     fos-skills 에서는 Orca 등록 저장소의 core 몫 후보·보류와 옛 메모도 센다.
 //     반영됨·기각 알림과 머지된 저장소 몫 채택은 출력한 뒤 휴지통으로 옮긴다.
-//     하나 이상이면 FEEDBACK-OPEN 줄을 낸다. 다시 보는 주기와 판정은 references/feedback-review.md 가 소유한다.
+//     하나 이상이면 FEEDBACK-OPEN 줄을 낸다. feedback.reviewer 가 있으면 FEEDBACK-OPEN-DELEGATED 로 알린다.
+//     다시 보는 주기와 판정은 references/feedback-review.md 가 소유한다.
 //     폴더가 없거나 읽지 못하면 내지 않는다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // 공부 후보 판정(늘 본다):
@@ -176,6 +177,7 @@
 //     KEPT-LOST <경로> <dispatch> <끊긴 시각>      끊긴 worker 로 남긴 워크트리가 하루 넘게 있다(위 「남긴 끊긴 worker 판정」). 다음 줄에 직접 정리 명령이 온다
 //     PRIVATE-WORDS-MISSING <목록 경로>           공개 저장소인데 비공개 낱말 목록이 없거나 비었다. 다음 줄에 목록 형식이 온다
 //     FEEDBACK-OPEN <개수> <폴더>                 이 저장소 몫 또는 fos-skills 의 core 몫 개선 후보가 있다
+//     FEEDBACK-OPEN-DELEGATED <개수> reviewer=<담당>  위임된 스킬 개선 후보가 있다
 //     FEEDBACK-NOTICE <제목>: <결과>             받은 반영·기각 결과. 출력 뒤 휴지통으로 옮긴다
 //     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
 //     ORCA-SHAPE worker-list <키,키>              worker-list 행에 orch 가 읽는 키가 없다(위 「Orca 형식 판정」). 다음 줄에 안내가 온다
@@ -191,7 +193,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, FEEDBACK-OPEN-DELEGATED, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -207,6 +209,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
+import { isFeedbackReviewer } from '../core/config.ts'
 import { isObject } from '../core/json.ts'
 import { integrationNeeds, integrationRules } from '../core/integration-evidence.ts'
 import { COMMANDS, isGroup, LAUNCHER_MARK, legacyNames, orchWord, resolveLegacy, resolveNew, scriptIn, SCRIPTS_DIR } from '../lib/commands.ts'
@@ -467,9 +470,8 @@ async function loadSchema(): Promise<{ schema: Schema | null; problem: string | 
   }
 }
 
-function checkRepo(repo: string, schema: Schema | null): string[] {
+function checkRepo(repo: string, schema: Schema | null, read: ReturnType<typeof readConfigFile>): string[] {
   const lines = unknownHandlers(repo).map((file) => `UNKNOWN-HOOK ${file}`)
-  const read = readConfigFile(repo)
   if (schema) {
     // 깨진 JSON, 모르는 절과 키, 틀린 값, 짝 규칙 위반, 옛 칸이 모두 INVALID-CONFIG 다(종료 코드 1). 검사표를 못 불러왔으면 건너뛴다
     if (read.error !== undefined) lines.push(`INVALID-CONFIG config.json ${read.error}`)
@@ -544,7 +546,7 @@ function legacyInboxFilter(repo: string, config: Config): string[] {
   return [`OLD-INBOX-FILTER ${legacy} 의 내용을 ${target} 의 "inbox" 절로 옮긴다(옮긴 뒤 옛 파일을 지운다). 새 번들을 설치한 뒤에만 옮긴다. 옛 파일 읽기는 inbox 의 다음 major 에 없어진다`]
 }
 
-function checkFeedback(repo: string): string[] {
+function checkFeedback(repo: string, config: unknown): string[] {
   const dir = pathOf('feedback', repo)
   const found = scanFeedback(dir)
   if (found.legacy.length) process.stderr.write(`orch-doctor: 옛 개선 후보 메모 ${found.legacy.length}개는 feedback migrate 로 미리 본다: ${dir}\n`)
@@ -559,7 +561,11 @@ function checkFeedback(repo: string): string[] {
       }
     } catch (error) { process.stderr.write(`orch-doctor: 전체 저장소의 개선 후보를 세지 못했다: ${(error as Error).message}\n`) }
   }
-  const lines = count > 0 ? [`FEEDBACK-OPEN ${count} ${dir}`] : []
+  const reviewer = isObject(config) && isObject(config.feedback) ? config.feedback.reviewer : undefined
+  const lines: string[] = []
+  if (count > 0) {
+    lines.push(isFeedbackReviewer(reviewer) ? `FEEDBACK-OPEN-DELEGATED ${count} reviewer=${reviewer}` : `FEEDBACK-OPEN ${count} ${dir}`)
+  }
   const trash = process.env.ORCH_FEEDBACK_TRASH || join(homedir(), '.Trash', 'orch-feedback')
   for (const candidate of found.candidates) {
     const status = candidate.values.상태
@@ -911,7 +917,8 @@ async function executeMain(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
   const { schema, problem: schemaProblem } = await loadSchema()
-  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema), ...shellSshAgentLines(), ...mainDoctorLines(repo), ...privateWordsLines(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
+  const config = readConfigFile(repo)
+  const repoLines = [...(schemaProblem ? [`CLI-DEPS-MISSING ${schemaProblem}`] : []), ...checkRepo(repo, schema, config), ...shellSshAgentLines(), ...mainDoctorLines(repo), ...privateWordsLines(repo), ...checkFeedback(repo, config.value), ...checkStudy(repo), ...checkCalls(repo)]
   const hookDir = join(pathOf('hooks', repo))
   if (existsSync(hookDir)) {
     for (const name of readdirSync(hookDir)) {

@@ -807,6 +807,18 @@ describe('저장소 판정', () => {
     assert.equal(existsSync(join(dir, 'd.md')), false)
     assert.equal(existsSync(join(tmp, 'feedback-trash', basename(tmp), 'd.md')), true)
     assert.equal(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ feedback: { reviewer: 'bot:feedback-bot' } }))
+    const delegated = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(delegated.code, 0, delegated.stderr)
+    assert.equal(delegated.stdout, 'OK-SCRIPTS 0\nFEEDBACK-OPEN-DELEGATED 2 reviewer=bot:feedback-bot\n')
+
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ feedback: { reviewer: 'bad reviewer' } }))
+    const invalid = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(invalid.code, 1)
+    assert.match(invalid.stdout, /^INVALID-CONFIG feedback\.reviewer /m)
+    assert.match(invalid.stdout, /^FEEDBACK-OPEN 2 /m)
+    assert.doesNotMatch(invalid.stdout, /FEEDBACK-OPEN-DELEGATED/)
   })
 
   test('fos-skills doctor는 등록된 다른 저장소의 core 후보도 센다', () => {
@@ -835,7 +847,8 @@ describe('저장소 판정', () => {
     assert.match(r.stdout, new RegExp(`FEEDBACK-OPEN 1 ${core}`))
   })
 
-  test('core 반영됨과 저장소 몫 중복 기각은 doctor가 각각 한 번 보이고 정리한다', () => {
+  test('판정을 위임해도 core 반영됨과 저장소 몫 중복 기각은 doctor가 각각 한 번 보이고 정리한다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ feedback: { reviewer: 'bot:feedback-bot' } }))
     const dir = join(tmp, '.orch', 'feedback')
     for (const [slug, target, status] of [
       ['core', 'core 스킬', '반영됨 #123 (1.2.3)'],
@@ -898,6 +911,8 @@ describe('저장소 판정', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
     write(join(tmp, '.orch', 'feedback', 'reviewed', 'wt-old.md'), '판정함\n')
+    assert.equal(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, 'OK-SCRIPTS 0\n')
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ feedback: { reviewer: 'bot:feedback-bot' } }))
     assert.equal(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, 'OK-SCRIPTS 0\n')
   })
 

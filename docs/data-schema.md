@@ -80,6 +80,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 
 | 절 | 키 | 타입 | 기본값 | 담는 것 |
 | --- | --- | --- | --- | --- |
+| `feedback` | `reviewer` | 영문이나 숫자로 시작하고 영문, 숫자, 밑줄, 점, 콜론, 하이픈만 쓰는 문자열 | 없음 | 스킬 개선 후보의 판정을 맡는 이름. [피드백 검토 주기](../skills/orch/references/feedback-review.md#주기)를 따른다 |
 | `routing` | `review_author` | 비지 않은 GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
 | `routing` | `review_pattern` | JS 정규식 문자열(`m`). P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
 | `routing` | `size_pattern` | JS 정규식 문자열(`m`). 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |

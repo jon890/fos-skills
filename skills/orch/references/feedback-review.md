@@ -1,6 +1,6 @@
 # 스킬 개선 후보 다시 보기
 
-worker 가 공통 지시서의 「스킬 개선 후보 보고」 절을 따라 쌓은 후보와 코디네이터가 직접 겪은 후보를 코디네이터가 다시 보고, 고칠 것만 골라 사용자에게 올리는 절차다.
+worker 가 공통 지시서의 「스킬 개선 후보 보고」 절을 따라 쌓은 후보와 코디네이터가 직접 겪은 후보를 다시 보고, 고칠 것만 골라 사용자에게 올리는 절차다.
 모으기만 하고 다시 보지 않으면 같은 후보가 쌓이기만 하고, 다시 볼 때마다 기준이 달라 같은 후보가 개선 필요와 제외를 오간다.
 
 ## 후보 파일
@@ -23,7 +23,7 @@ worker 가 공통 지시서의 「스킬 개선 후보 보고」 절을 따라 �
 ```
 
 `orch feedback list` 는 이름·상태·제목을 탭으로 나눠 낸다. `--open` 은 후보와 보류만 낸다.
-`README.md` 와 하위 폴더는 읽지 않는다. 대상 칸이 없는 기존 파일은 `확인 필요` 로 읽고 core 몫 후보로 본다. doctor 는 원래 저장소 몫의 후보·보류만 `FEEDBACK-OPEN` 으로 센다. fos-skills doctor 는 모든 core 몫도 센다.
+`README.md` 와 하위 폴더는 읽지 않는다. 대상 칸이 없는 기존 파일은 `확인 필요` 로 읽고 core 몫 후보로 본다. doctor 는 원래 저장소 몫의 후보와 보류를 센다. fos-skills doctor 는 모든 core 몫도 센다.
 
 ### 옛 메모 옮기기
 
@@ -34,6 +34,8 @@ doctor 가 옛 메모 파일을 알리면 `orch feedback migrate` 로 미리보�
 
 **`orch-doctor` 가 `FEEDBACK-OPEN <개수> <폴더>` 를 내면 그날 안에 다시 본다.** 스킬을 열 때마다 doctor 가 열린 후보를 센다.
 여러 worker 의 머지가 끝난 뒤처럼 후보가 한꺼번에 늘어난 때에도 본다. 다음 worker 가 같은 함정에 다시 빠지기 전에 고칠 것을 정하려는 것이다.
+
+다른 담당이 판정할 때는 코디네이터가 `orch config set feedback.reviewer bot:feedback-bot` 처럼 담당 이름을 설정한다. 설정한 뒤에는 코디네이터가 후보를 판정할 차례를 건너뛰고, doctor 는 열린 후보가 있을 때 `FEEDBACK-OPEN-DELEGATED <개수> reviewer=<담당>` 으로 알린다. `orch request send` 로 반영 요청이 들어오면 PR 로 처리한다. 반영 결과는 아래 「올리기와 반영」을 따라 core 스킬 몫은 `orch feedback notify` 로, 저장소 몫은 doctor 로 알린다. `orch config unset feedback.reviewer` 를 실행하면 코디네이터가 다시 판정한다.
 
 ## 판정
 

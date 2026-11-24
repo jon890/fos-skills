@@ -1,10 +1,10 @@
 import { isObject } from './json.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'plugin' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox' | 'worker'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'plugin' | 'heavy' | 'migrations' | 'adr' | 'contracts' | 'board' | 'review' | 'docker' | 'routing' | 'inbox' | 'worker' | 'feedback'
 
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'plugin', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox', 'worker']
+export const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'plugin', 'heavy', 'migrations', 'adr', 'contracts', 'board', 'review', 'docker', 'routing', 'inbox', 'worker', 'feedback']
 
 export class ConfigError extends Error {}
 
@@ -86,6 +86,12 @@ export const REVIEW_KEYS: readonly string[] = ['prepare']
 
 // PR 종료 관측값의 저장소별 읽기 규칙.
 export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern', 'usage_boost']
+
+export const FEEDBACK_KEYS: readonly string[] = ['reviewer']
+
+export function isFeedbackReviewer(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(value)
+}
 
 // inbox 절의 아는 키. 알림 필터이고 inbox 스킬(skills/inbox/scripts/inbox.ts)이 읽는다. docs/data-schema.md 「config.json 에 더하는 절」 표의 inbox 행이다.
 // enabled 는 false 로 그 저장소의 알림을 끄고, 나머지는 adapter 이름이다. adapter 를 더하면 이 목록에도 더한다

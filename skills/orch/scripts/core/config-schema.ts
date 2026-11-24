@@ -30,6 +30,7 @@ import {
   DOCKER_KEYS,
   HEAVY_KEYS,
   HOOK_EVENT_NAMES,
+  isFeedbackReviewer,
   MIGRATIONS_KEYS,
   REMOVED_CONFIG_KEYS,
   SECTIONS,
@@ -289,6 +290,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     auto_advance: viaConfig('board', 'auto_advance', autoAdvanceOf),
   },
   review: { prepare: zodCheck(text) },
+  feedback: { reviewer: zodCheck(leaf(isFeedbackReviewer, 'feedback.reviewer 는 영문이나 숫자로 시작하고 영문, 숫자, 밑줄, 점, 콜론, 하이픈만 쓰는 문자열이어야 한다')) },
   routing: {
     review_author: zodCheck(nonEmptyText),
     review_pattern: zodCheck(capturePattern('routing.review_pattern', 5, 'js')),
