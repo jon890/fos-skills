@@ -386,6 +386,35 @@ test('스펙과 설계 양식은 실제 사용자 확인을 요구한다', () =>
   assert.equal(r.code, 0, r.stdout)
 })
 
+test('설계 양식 주석의 결정 표 예시를 검사기가 받는다', () => {
+  const specTemplate = join(ROOT, 'skills/spec/templates/spec.md')
+  const designTemplate = join(ROOT, 'skills/technical-design/templates/design.md')
+  if (!existsSync(specTemplate) || !existsSync(designTemplate)) return
+  const design = readFileSync(designTemplate, 'utf8')
+  // 양식 주석 안의 표 줄을 꺼낸다. 머리 줄 다음에 구분 줄을 넣어 실제 표로 만든다
+  const commented = [...design.matchAll(/^<!-- (\|.*\|) -->$/gm)].map((m) => m[1])
+  const decision = commented.filter((row) => row.startsWith('| ID |') || row.startsWith('| DECISION'))
+  const adr = commented.filter((row) => !decision.includes(row))
+  assert.equal(decision.length, 2, '양식에 DECISION 표 머리와 예시 행이 있다')
+  assert.equal(adr.length, 2, '양식에 ADR 결정 기록 표 머리와 예시 행이 있다')
+  const table = (rows: string[]) => [rows[0], `|${' --- |'.repeat(rows[0].split('|').length - 2)}`, ...rows.slice(1)].join('\n')
+  const withDecision = (body: string) => design.replace(/## 결정\n[\s\S]*$/, `## 결정\n${body}\n`)
+  const repo = new Repo('plan-template-decision-')
+  repo.file('spec.md', readFileSync(specTemplate, 'utf8').replace(/^(# .*\n)/, '$1확인: 2026-11-02\n'))
+  const run = (body: string) => {
+    repo.file('design.md', withDecision(body))
+    return check(repo, 'spec.md', '--design', 'design.md')
+  }
+  let r = run(table(decision))
+  assert.equal(r.code, 0, r.stdout)
+  r = run(`${table(adr)}\n\n${table(decision)}`)
+  assert.equal(r.code, 0, r.stdout)
+  // ADR 결정 기록 표만 있으면 결정 표를 대신하지 않는다고 알린다
+  r = run(table(adr))
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /ADR 결정 기록 표는 결정 표를 대신하지 않는다/)
+})
+
 test('경로는 심볼릭 링크를 먼저 따라간 뒤 `..` 를 처리한다', () => {
   const repo = new Repo('plan-symlink-')
   repo.file('docs/nested/.keep')
