@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 4.2.2 (2026-11-24)
+
+- CLAUDE.md와 AGENTS.md가 @ 경로로 불러오는 저장소 안의 Markdown 파일과 .claude/overlays/의 Markdown 파일을 감사에 포함한다.
+
 ## 4.2.1 (2026-11-15)
 
 - 오버레이의 상대 경로를 해당 스킬 번들에서도 찾고, 굵은 항목 이름을 절 참조로 인정한다.

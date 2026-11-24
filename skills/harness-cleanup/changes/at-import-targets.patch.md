@@ -1,1 +1,0 @@
-- CLAUDE.md와 AGENTS.md가 @ 경로로 불러오는 저장소 안의 Markdown 파일과 .claude/overlays/의 Markdown 파일을 감사에 포함한다.
