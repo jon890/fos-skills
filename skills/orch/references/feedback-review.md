@@ -35,7 +35,7 @@ doctor 가 옛 메모 파일을 알리면 `orch feedback migrate` 로 미리보�
 **`orch-doctor` 가 `FEEDBACK-OPEN <개수> <폴더>` 를 내면 그날 안에 다시 본다.** 스킬을 열 때마다 doctor 가 열린 후보를 센다.
 여러 worker 의 머지가 끝난 뒤처럼 후보가 한꺼번에 늘어난 때에도 본다. 다음 worker 가 같은 함정에 다시 빠지기 전에 고칠 것을 정하려는 것이다.
 
-다른 담당이 판정할 때는 코디네이터가 `orch config set feedback.reviewer bot:feedback-bot` 처럼 담당 이름을 설정한다. 설정한 뒤에는 코디네이터가 후보를 판정할 차례를 건너뛰고, doctor 는 열린 후보가 있을 때 `FEEDBACK-OPEN-DELEGATED <개수> reviewer=<담당>` 으로 알린다. `orch request send` 로 반영 요청이 들어오면 PR 로 처리하고, 반영 뒤 `orch feedback notify` 로 알린다. `orch config unset feedback.reviewer` 를 실행하면 코디네이터가 다시 판정한다.
+다른 담당이 판정할 때는 코디네이터가 `orch config set feedback.reviewer bot:feedback-bot` 처럼 담당 이름을 설정한다. 설정한 뒤에는 코디네이터가 후보를 판정할 차례를 건너뛰고, doctor 는 열린 후보가 있을 때 `FEEDBACK-OPEN-DELEGATED <개수> reviewer=<담당>` 으로 알린다. `orch request send` 로 반영 요청이 들어오면 PR 로 처리한다. 반영 결과는 아래 「올리기와 반영」을 따라 core 스킬 몫은 `orch feedback notify` 로, 저장소 몫은 doctor 로 알린다. `orch config unset feedback.reviewer` 를 실행하면 코디네이터가 다시 판정한다.
 
 ## 판정
 
