@@ -106,6 +106,15 @@ test('set 은 문자와 JSON 을 구분하고 배치 변경과 이전 값을 낸
   assert.deepEqual(Object.keys(get()), ['routing', 'pipeline', 'queue', 'hooks', 'finish'])
 })
 
+test('피드백 판정 담당을 설정하고 지울 수 있으며 잘못된 이름은 거절한다', () => {
+  const key = 'feedback.reviewer'
+  ok(['set', key, 'bot:feedback-bot'])
+  refused(['set', key, 'bad reviewer'], /feedback\.reviewer/)
+  assert.equal(ok(['get', key]).stdout, '"bot:feedback-bot"\n')
+  ok(['unset', key])
+  refused(['get', key], /설정 파일에 없다/)
+})
+
 test('새 오류와 같은 문구의 오류는 거절하고 기존의 다른 오류는 경고한다', () => {
   put({ pipeline: { tick_sec: -1, digest_sec: -1 }, queue: { typo: 1 }, queu: {} })
   refused(['set', 'pipeline.tick_sec', '-2', '--json'], /pipeline.tick_sec/)

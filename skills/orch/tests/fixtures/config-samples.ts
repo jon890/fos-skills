@@ -84,6 +84,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     auto_advance: flag,
   },
   review: { prepare: { good: ['', 'make prepare'], bad: [1, null, ['x']] } },
+  feedback: { reviewer: { good: ['bot:feedback-bot', 'team.feedback-reviewer_1'], bad: ['', ' ', 'bot name', 'bot\n', 'bot\u001b', ':bot', 1, null] } },
   routing: {
     review_author: { good: ['review-bot'], bad: ['', 1] },
     review_pattern: { good: ['(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+(\\d+)'], bad: ['(\\d+)', '(', '', 1] },
