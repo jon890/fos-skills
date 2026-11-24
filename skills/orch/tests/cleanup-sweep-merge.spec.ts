@@ -147,6 +147,27 @@ describe('머지 판정과 기본 정리', () => {
       assert.ok(existsSync(join(specs, 'spec-nopr-old2.md')))
     })
 
+    test('옛 CLOSED PR 과 새 MERGED PR 이 섞인 브랜치도 배포 뒤 할 일이 남았으면 기한이 지나도 남긴다', () => {
+      const { specs, trash } = setup()
+      const old = new Date(Date.now() - 4 * 86_400_000)
+      const rows = JSON.stringify([
+        { number: 9, state: 'MERGED', headRefOid: 'a'.repeat(40), headRefName: 'mixed', isCrossRepository: false },
+        { number: 8, state: 'CLOSED', headRefOid: 'b'.repeat(40), headRefName: 'mixed', isCrossRepository: false },
+      ])
+      fx.ghRaw['mixed'] = rows
+      fx.ghRaw['mixed-done'] = rows.replaceAll('"mixed"', '"mixed-done"').replace('"number":9', '"number":19')
+      for (const [name, branch] of [['spec-mixed.md', 'mixed'], ['spec-mixed-done.md', 'mixed-done']]) {
+        writeFileSync(join(specs, name), `브랜치: \`${branch}\`\n`)
+        utimesSync(join(specs, name), old, old)
+      }
+      mkdirSync(join(fx.repo, '.orch/state'), { recursive: true })
+      writeFileSync(join(fx.repo, '.orch/state/followups.json'), JSON.stringify({ items: [{ pr: 9, text: '배포 뒤 확인', deploy: 'success', done_at: null }] }))
+      const out = runSweep(sweepArgs(trash, ['--run', 'run_x', '--apply']))
+      assert.ok(existsSync(join(specs, 'spec-mixed.md')))
+      has(out, 'spec-mixed.md: PR #9 의 배포 뒤 할 일이 남았다')
+      assert.ok(!existsSync(join(specs, 'spec-mixed-done.md')))
+    })
+
     test('워크트리가 남은 브랜치의 지시서는 옮기지 않는다', () => {
       const { specs, trash } = setup()
       const path = worktree('still-here')

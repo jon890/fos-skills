@@ -4,7 +4,8 @@
 //       - 그 브랜치를 쓰는 워크트리가 있거나, 열린 PR 이 있거나, PR 조회가 실패하면 남긴다
 //       - 줄의 브랜치마다 PR 이 있고 모두 MERGED 면 바로 옮긴다. 같은 이름의 로컬 브랜치가 있으면 끝점이 머지된 PR 의 headRefOid 와 같아야 하고,
 //         기능 PR 의 후속 검증(featureCompletionProblem)과 배포 뒤 할 일(followups.json 의 끝나지 않은 항목)이 대기가 아니어야 한다
-//       - 그 밖(`브랜치:` 줄이 없거나, PR 이 없거나, 닫힌 PR 뿐)은 마지막 수정 뒤 cleanup.specs_days(기본 3)일이 지나면 옮긴다
+//       - 그 밖(`브랜치:` 줄이 없거나, PR 이 없거나, 닫힌 PR 뿐이거나 섞였다)은 마지막 수정 뒤 cleanup.specs_days(기본 3)일이 지나면 옮긴다.
+//         머지된 PR 이 하나라도 있으면 그 PR 의 후속 검증과 배포 뒤 할 일을 먼저 보고, 대기면 남긴다
 //       - 살아 있는 dispatch 가 가리키는 지시서가 아니고 orch 루트 안이다(deleteSpecs)
 //     옮기기 전 `워크트리 없는 지시서 판정 <경로>: <근거>` 한 줄을 낸다.
 //     남기는 이유는 `워크트리 없는 지시서 남김 <경로>: <이유>` 로 낸다(기한 안이라 남기는 지시서는 줄 없이 남긴다)
@@ -91,12 +92,15 @@ function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, spec
       if (!listed.ok) keep = `브랜치 ${branch} 의 PR 조회 실패`
       else if (prs.some((p) => p.state === 'OPEN')) keep = `브랜치 ${branch} 에 열린 PR 이 있다`
       if (keep) break
-      if (prs.length === 0 || prs.some((p) => p.state !== 'MERGED')) {
+      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 후속 검증은 가장 최근에 머지된 PR 기준으로 본다.
+      // 옛 CLOSED PR 과 새 MERGED PR 이 섞여도 머지된 PR 의 후속 검증을 먼저 본다(머지된 PR 이 없을 때만 기한 판정으로 간다)
+      const merged = prs.filter((p) => p.state === 'MERGED')
+      if (merged.length === 0) {
         orphan ||= prs.length === 0 ? `브랜치 ${branch} 의 PR 이 없다` : `브랜치 ${branch} 의 PR 이 닫혔다`
         continue
       }
-      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 후속 검증은 최신 PR 기준으로 본다
-      const pr = prs[0]
+      if (merged.length < prs.length) orphan ||= `브랜치 ${branch} 에 닫힌 PR 이 섞였다`
+      const pr = merged[0]
       // 같은 이름을 다시 쓴 로컬 브랜치가 머지된 끝점과 다르면 새 작업이다
       const tip = branchTip(repo, branch)
       if (tip && truthy(pr.headRefOid) && tip !== String(pr.headRefOid)) {
