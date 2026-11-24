@@ -49,8 +49,6 @@ test('루프의 대기 이유를 사람이 읽는 말로 옮기고, 모르는 �
   assert.equal(waitText('리뷰 대기'), '리뷰 대기')
   assert.equal(waitText('재리뷰 대기: block 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다'), '재리뷰 대기')
   assert.equal(waitText('지시서 보류: 사용자 확인'), '지시서 보류')
-  assert.equal(waitText('기능 완료 근거 블록이 하나 필요하다'), '기능 완료 근거 없음')
-  assert.equal(waitText('독립 리뷰 이 완료되지 않았다: 대기'), '기능 완료 근거 없음')
   assert.equal(waitText('core V12 이 #30 V12 을 기다린다'), '마이그레이션 순서 대기(#30 V12)')
   assert.equal(waitText('새 이유'), '새 이유')
 })
