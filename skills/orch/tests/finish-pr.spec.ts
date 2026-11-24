@@ -358,6 +358,29 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     }
   })
 
+  // PR 619 리뷰: 목록에 이미 있는 끝나지 않은 항목은 지시서와 업무 완료를 지킨다. 새 항목은 만들지 않는다
+  test('배포 뒤 할 일 목록에 끝나지 않은 항목이 있으면 지시서와 업무 완료를 남기고, 끝낸 뒤 다시 돌면 이어 간다', async (t) => {
+    const c = setup(t)
+    hook(c, taskCompleter())
+    const file = join(c.repo, '.orch', 'state', 'followups.json')
+    mkdirSync(dirname(file), { recursive: true })
+    const item = { pr: 77, title: 't', text: '배포 후 smoke', merge_commit: null, deploy: 'none', added_at: '2026-11-20T00:00:00.000Z', notified_at: null, done_at: null, note: null }
+    writeFileSync(file, JSON.stringify({ items: [item] }))
+    const args = ['--specs-dir', c.specs, '--complete']
+    const waiting = await c.finish(args)
+    assert.equal(waiting.code, 0, both(waiting))
+    assert.match(waiting.stdout, /followup done 77/)
+    assert.match(waiting.stdout, /FINISH-DONE\s*$/)
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
+    assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), false)
+    assert.equal(followups(c).length, 1)
+    writeFileSync(file, JSON.stringify({ items: [{ ...item, done_at: '2026-11-21T00:00:00.000Z' }] }))
+    const done = await c.finish(args)
+    assert.equal(done.code, 0, both(done))
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+    assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), true)
+  })
+
   test('끊긴 worker 로 남긴 워크트리의 handoff 가 있으면 지금처럼 FINISH-FAIL 이다', async (t) => {
     const c = setup(t)
     const handoff = join(c.repo, '.orch', 'handoff', 'pr-77')

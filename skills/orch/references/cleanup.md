@@ -340,7 +340,7 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 ### 배포 뒤 할 일
 
 **마무리는 PR 본문의 `후속 검증` 줄로 막거나 배포 뒤 할 일을 만들지 않는다(사용자 결정 2026-11-24).** 배포 뒤 확인은 보드 항목의 단계로 남긴다.
-아래 목록은 그 전에 옮겨진 항목을 알리고 끝내는 데 쓴다. 끝나지 않은 항목이 있는 PR 의 지시서는 정리가 남긴다.
+아래 목록은 그 전에 옮겨진 항목을 알리고 끝내는 데 쓴다. 끝나지 않은 항목이 있는 PR 은 정리가 지시서를 남기고, 마무리도 지시서, 업무 완료, 보드를 남긴 채 FINISH-DONE 이다.
 목록은 저장소마다 `<orch 루트>/state/followups.json` 하나다. `orch status` 의 `FOLLOWUPS`, `FOLLOWUP` 줄과 `orch followup list` 로 보고, 보드 파일이 있으면 `followup-<PR>` 항목(wait)으로도 보인다.
 상주 루프가 머지 커밋의 배포를 확인하면(배포 설정 `finish.deploy_workflow` 가 있으면 그 실행으로, 없으면 머지 즉시) 확인된 항목을 묶어 `FOLLOWUP-READY` 를 한 번 보낸다. 알린 항목은 다시 알리지 않는다. 판정과 기록은 `scripts/lib/followups.ts` 머리 주석이 소유한다.
 알림을 받으면 배포된 환경에서 그 글대로 확인하고 결과를 PR 이나 업무에 남긴 뒤 끝낸다.

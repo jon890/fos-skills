@@ -13,13 +13,18 @@ function field(row: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' ? value : null
 }
 
-const started = (row: Record<string, unknown>) => Date.parse(field(row, 'startedAt') ?? '')
+// 시작 시각을 읽지 못한 실행(대기 중인 재실행은 startedAt 이 없다)은 가장 늦게 시작한 것으로 본다(PR 619 리뷰).
+// 옛 success 가 대기 중인 재실행을 가려 통과로 보이거나 최신화가 HEAD 를 옮기지 않게 하려는 것이다
+const started = (row: Record<string, unknown>) => {
+  const at = Date.parse(field(row, 'startedAt') ?? '')
+  return Number.isNaN(at) ? Infinity : at
+}
 
-// 이름이 check 인 체크 가운데 가장 늦게 시작한 것. 없으면 null 이다
+// 이름이 check 인 체크 가운데 가장 늦게 시작한 것. 시각이 같으면 목록에서 뒤의 것이다. 없으면 null 이다
 function latestRun(rollup: unknown, check: string): Record<string, unknown> | null {
   if (!Array.isArray(rollup)) return null
   const rows = rollup.filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null && (field(row as Record<string, unknown>, 'name') ?? field(row as Record<string, unknown>, 'context')) === check)
-  return rows.reduce<Record<string, unknown> | null>((best, row) => (best === null || started(row) > started(best) ? row : best), null)
+  return rows.reduce<Record<string, unknown> | null>((best, row) => (best === null || started(row) >= started(best) ? row : best), null)
 }
 
 // 머리 주석의 「통과」

@@ -44,7 +44,9 @@
 //     10. 보드 항목을 고친다(아래 「보드 항목」)
 //
 // 기능 PR 도 PR 본문의 완료 근거 글을 읽어 마무리를 막거나 배포 뒤 할 일을 만들지 않는다(사용자 결정 2026-11-24).
-//     배포 뒤 할 일 목록(lib/followups.ts)에 이미 있는 항목은 `orch followup done <PR>` 이 끝내고 이 마무리를 다시 띄운다
+//     배포 뒤 할 일 목록(lib/followups.ts)에 그 PR 의 끝나지 않은 항목이 이미 있으면 단계 6 의 판정 뒤 지시서, 업무 완료(after-deploy),
+//     보드를 남기고 FINISH-DONE 이다(배포가 실패했거나 handoff 정리가 남았으면 FINISH-FAIL). 목록을 읽지 못하면 FINISH-FAIL 이다.
+//     `orch followup done <PR>` 이 항목을 끝내고 이 마무리를 다시 띄우면 나머지를 이어 간다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -161,6 +163,7 @@ import { pollSeconds } from '../lib/gh-budget.ts'
 import { featureBranch } from '../lib/feature-evidence.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
+import { loadFollowups } from '../lib/followups.ts'
 import { cleanupPrHandoff } from '../lib/pr-handoff.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
@@ -801,6 +804,18 @@ async function finish(args: Args, repo: string): Promise<number> {
   const verdict = judgeLast(args, repo, merged)
   const last = verdict.last
   log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${verdict.reason})`)
+
+  // 배포 뒤 할 일 목록에 이미 있는 끝나지 않은 항목은 지킨다(PR 619 리뷰). 새 항목은 만들지 않는다.
+  // 지시서, 업무 완료(after-deploy), 보드 done 을 남기고, `orch followup done` 이 항목을 끝낸 뒤 다시 띄우는 마무리가 이어 간다
+  let pendingFollowup = false
+  try { pendingFollowup = loadFollowups(repo).some((item) => item.pr === Number(args.pr) && item.done_at === null) }
+  catch (e) { return fail(`배포 뒤 할 일 목록을 읽지 못했다: ${oneLine((e as Error).message)}`) }
+  if (pendingFollowup) {
+    log(`지시서, 업무 완료, 보드는 배포 뒤 할 일을 끝낸 뒤로 남긴다. 끝내면: ${orchWord()} followup done ${args.pr}`)
+    if (!deployed || handoffProblem) return fail(problems.join('; ') || '배포를 확인하지 못했다')
+    out('FINISH-DONE')
+    return 0
+  }
 
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
   try {
