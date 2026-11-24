@@ -87,7 +87,7 @@ orch config unset contracts.merge_command contracts.paths
 | `cleanup` | `repo`, `gh_host`, `run` | 문자열이나 null. 정리할 저장소, GitHub 호스트, Orca Run id |
 | `cleanup` | `orch_dir`, `previews`, `board` | 문자열이나 null. orch 작업 폴더, 함께 정리할 미리보기 폴더, 보드 파일. 미리보기는 content-preview 의 산출물이라 주지 않으면 보지 않는다 |
 | `cleanup` | `trash` | 문자열이나 null. 휴지통 폴더. 기본은 `~/.Trash/orch-cleanup-<날짜>` |
-| `cleanup` | `queue_days`, `state_days`, `gh_log_days`, `folder_days`, `data_days` | null, 또는 0 이상의 유한한 수나 그렇게 읽히는 문자열. 큐 로그, 상태 파일, GitHub 조회 로그, 폴더, 데이터 파일의 기준 일수. 파일 범위와 기본값은 [정리](cleanup.md#정리)를 따른다 |
+| `cleanup` | `queue_days`, `state_days`, `gh_log_days`, `handoff_days`, `specs_days`, `folder_days`, `data_days` | null, 또는 0 이상의 유한한 수나 그렇게 읽히는 문자열. 큐 로그, 상태 파일, GitHub 조회 로그, 폴더, 데이터 파일의 기준 일수. 파일 범위와 기본값은 [정리](cleanup.md#정리)를 따른다 |
 | `cleanup` | `data_ext` | 문자열이나 null. 데이터 파일 확장자 |
 | `cleanup` | `apply` | 참거짓. true 면 정리를 적용한다 |
 | `queue` | `required` | 비지 않은 문자열, 또는 비지 않은 문자열 목록(빈 목록 허용). 필수 체크 이름 |
@@ -217,13 +217,25 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | --- | --- |
 | `overlay.md` | 이 문서가 다루는 저장소 규칙 |
 | `config.json` | 위 「마무리 설정 파일」 |
-| `specs/` | 지시서와 `spec-common.md`. PR 본문 파일은 두지 않는다. 게시가 막혔을 때만 `handoff/pending/<워크트리 이름>/` 에 둔다 |
+| `specs/` | 지시서와 `spec-common.md`. 지우는 때는 아래 「작업 산출물의 자리와 지우는 때」 |
 | `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
 | `state/` | 상주 루프와 충돌 알림이 기억하는 것. 생존·완료·끊김·미답변 기록과 무거운 검사 대기열이 있다. 알림은 Orca Run 메일함이 소유한다([`data-schema.md`](../../../docs/data-schema.md)) |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
 | `bin/` | 저장소 포장 스크립트 |
 | `feedback/` | worker 가 쌓은 스킬 개선 후보. 다시 보는 법은 [`feedback-review.md`](feedback-review.md) |
 | `study/` | 일하다 생긴 공부 후보. 후보마다 `<slug>.md` 하나다. 모으고 글로 잇는 법은 [`study-candidates.md`](study-candidates.md) |
+
+### 작업 산출물의 자리와 지우는 때
+
+작업 중에 생기는 파일은 아래 표대로 둔다. 지시서 검사(`spec-lint`)가 표 밖의 자리를 막고, 정기 정리(`orch cleanup sweep`, 루프도 부른다)가 표대로 휴지통 폴더로 옮긴다. 사람이 확인하고 지울 일을 없애려는 것이다(사용자 결정 2026-11-24).
+정리는 모두 미리 보기와 `--apply` 를 나누고, 기한은 `cleanup` 절의 설정으로 바꾼다. 판정 코드는 `scripts/lib/folder-retention.ts` 와 `scripts/cleanup/steps/specs.ts` 맨 위 설명에 있다.
+
+| 폴더 | 담는 것 | 이름 꼴 | 지우는 때 |
+| --- | --- | --- | --- |
+| 세션 임시 폴더 | 한 번 쓰고 끝나는 파일(PR 본문 초안, 미리보기, 조사 결과) | 자유 | OS 가 지운다 |
+| `handoff/` | 코디네이터가 읽어야 하는 것만(대신 게시할 본문, ask 로 확인받을 본문) | `pr-<번호>/`, `pending/<워크트리 이름>/` 두 꼴만 | `pr-<번호>/` 는 그 PR 이 머지되거나 닫히면 바로. `pending/` 은 그 워크트리가 없어지고 `cleanup.handoff_days`(기본 3)일 뒤. 두 꼴 밖의 이름은 이름에 든 PR 이 닫혔으면 바로, 아니면 같은 기한 뒤 |
+| `data/` | 여러 날 다시 돌리는 검증 도구와 그 기준값(모델 비교 자료 포함) | `data/<보드 항목 id>/` | 그 보드 항목을 지우면(`orch board del`, `del --done` 포함) 다음 정기 정리 때. 폴더가 아닌 파일은 `cleanup.handoff_days` 일 뒤 |
+| `specs/` | 지시서와 `spec-common.md` | 지금 이름 규칙 | 워크트리 정리 때. 워크트리 없이 남은 지시서는 PR 이 모두 머지됐으면 바로, 열린 PR, 살아 있는 worker, 대기 중인 배포 뒤 확인 어디에도 속하지 않으면 `cleanup.specs_days`(기본 3)일 뒤. `spec-common.md` 는 남긴다 |
 
 ## 저장소 스크립트에서 orch 부르기
 

@@ -80,8 +80,11 @@
 //     본문        PR 본문 파일 이름이 `pr-body.md`, `body.md` 처럼 작업 이름 없는 고정 공용 이름이다. 세션 임시 폴더를 나눠 쓰면 다른 PR 의 본문이
 //                 덮이거나 올라간다(ai-analysis #1338). 이름에 작업(워크트리) 이름을 넣는다. `예외:`, `담당:` 줄은 보지 않는다.
 //                 경고이고 종료 코드에 넣지 않는다
-//     PR 인계     PR 본문·미리보기·리뷰 답변 파일을 handoff 바로 아래에 두면 머지 뒤 어느 PR 파일인지 알 수 없다.
-//                 handoff/pr-<PR 번호>/ 또는 번호 전 handoff/pending/ 아래에 둔다. 경고이고 종료 코드에 넣지 않는다
+//     인계        handoff/ 아래 경로가 `pr-<번호>/` 나 `pending/<워크트리 이름>/` 두 꼴 밖이거나, 두 꼴 안이라도 미리보기
+//                 (`preview` 가 든 이름이나 `.html`)처럼 한 번 쓰고 끝나는 파일이다. 꼴과 지우는 때는 references/overlay.md
+//                 「orch 작업 폴더」 표가 소유한다. 꼴 밖 파일이 정리되지 않고 쌓였다(2026-11-24). 오류다
+//     자료        `.orch/data/<x>` 나 `$(orch paths root)/data/<x>` 의 x 가 지시서의 `보드 항목 id` 가 아니다. data 는 보드 항목을
+//                 지우면 함께 정리하므로 이름이 보드 id 여야 한다. 보드 항목 id 가 없는 지시서는 보지 않는다. 오류다
 //     제목        `# ` 제목 줄도 `보드 항목 id:` 줄도 없다. 보드 항목 제목이 업무 연결 줄, `## 목표` 첫 문장, 워크트리 이름으로 밀려나
 //                 보드에 업무 목적이 보이지 않을 수 있다(lib/board.ts 의 specTitle). 경고이고 종료 코드에 넣지 않는다
 //     보드        `보드 항목 id:` 줄에 id 뒤 설명이 붙었다. id 는 백틱 안의 글이나 공백 앞 첫 토큰으로만 읽는다(lib/spec.ts 의 boardIdOf).
@@ -152,7 +155,11 @@ const COMMON = 'spec-common.md'
 // PR 본문 파일 이름이 작업 이름 없이 고정된 공용 이름. 세션 임시 폴더를 여럿이 나눠 쓰면 다른 PR 의 본문이 덮이거나 올라간다
 const BODY_NAME = /(?:^|[\s`'"(/=])((?:pr[-_]?body|pr[-_]?description|body)\.md)(?![\w-])/g
 const BODY_HINT = '고정된 공용 이름이라 다른 작업의 PR 본문과 섞인다. 파일 이름에 작업(워크트리) 이름을 넣는다(예: pr-body-<워크트리 이름>.md)'
-const HANDOFF_PR_FILE = /handoff\/(?!pr-(?:\d+|<PR 번호>)\/|pending\/)([^\s`'"/]*(?:body|preview|review|reply|replies|mapping)[^\s`'"/]*\.(?:md|html|tsv))/gi
+// handoff/ 아래 경로. 두 꼴(`pr-<번호>/`, `pending/`)은 이름 자리표시(`<PR 번호>`, `<번호>`, `<N>`)도 받는다
+const HANDOFF_PATH = /(?<![\w-])handoff\/((?:<[^>\n]*>|[^\s`'"()<])+)/g
+const HANDOFF_FORM = /^(?:pr-(?:[1-9]\d*|<[^>]+>)|pending)\//
+const ONE_TIME_FILE = /(?:preview[^/]*|\.html)$/i
+const DATA_PATH = /(?:\.orch|paths root\)"?)\/data\/((?:<[^>\n]*>|[^\s`'"()/<])+)/g
 const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
 const REMOTE_HINT = 'Codex worker 는 ssh 가 권한 거부로 막힌다. 원격 조회가 필요한 일은 worker 선택을 claude 로 바꾸고 후보 밖 이유를 적는다(references/agent-selection.md)'
 // 공통 지시서의 백틱 안 낱말 가운데 디스크에서 확인할 절대경로와 홈 경로. 자리표시와 변수, glob 이 든 낱말은 뺀다
@@ -629,6 +636,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
       }
     }
     let inResume = false
+    const boardId = boardIdOf(spec.lines.join('\n'))?.id ?? ''
     spec.lines.forEach((line, index) => {
       const no = index + 1
       if (/^#{1,6}\s/.test(line)) inResume = /^#{1,6}\s*재개/.test(line)
@@ -638,7 +646,16 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
         warnings.push(`${spec.name}:${no}: 임시: \`${path}\` 는 ${inResume ? RESUME_TEMP_HINT : TEMP_HINT}`)
       }
       for (const m of line.matchAll(BODY_NAME)) warnings.push(`${spec.name}:${no}: 본문: \`${m[1]}\` 는 ${BODY_HINT}`)
-      for (const m of line.matchAll(HANDOFF_PR_FILE)) warnings.push(`${spec.name}:${no}: PR 인계: \`handoff/${m[1]}\` 는 PR 번호 폴더에 둔다`)
+      for (const m of line.matchAll(HANDOFF_PATH)) {
+        const rest = m[1].replace(/[.,;:]+$/, '')
+        if (!HANDOFF_FORM.test(rest)) errors.push(`${spec.name}:${no}: 인계: \`handoff/${rest}\` 는 \`pr-<번호>/\` 나 \`pending/<워크트리 이름>/\` 아래에만 둔다`)
+        else if (ONE_TIME_FILE.test(rest)) errors.push(`${spec.name}:${no}: 인계: \`handoff/${rest}\` 는 한 번 쓰는 파일이라 세션 임시 폴더에 둔다`)
+      }
+      if (boardId) {
+        for (const m of line.matchAll(DATA_PATH)) {
+          if (m[1] !== boardId && !/^<[^>]+>$/.test(m[1])) errors.push(`${spec.name}:${no}: 자료: \`data/${m[1]}\` 는 \`data/${boardId}/\` 로 둔다(보드 항목 id)`)
+        }
+      }
       for (const phrase of forbidden) {
         if (line.includes(phrase) && !NEGATION.some((n) => line.includes(n))) {
           errors.push(`${spec.name}:${no}: 금지: \`${phrase.trim()}\` 를 요구한다`)

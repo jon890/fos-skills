@@ -1,12 +1,14 @@
 // 워크트리 없는 지시서 (저장소마다 리뷰 흔적 뒤에 한 번. --specs-dir 를 줬을 때):
 //     워크트리가 먼저 지워지면 worktrees.ts 의 워크트리 순회가 그 지시서를 만나지 못해 쌓인다. --specs-dir 바로 아래 .md 가운데
-//     `브랜치:` 줄이 있는 지시서마다 아래를 모두 채우면 --trash 로 옮긴다.
-//       - 줄의 브랜치마다 PR 이 있고 모두 MERGED 다(OPEN 이 하나라도 있거나 조회가 실패하면 남긴다)
-//       - 그 브랜치를 쓰는 워크트리가 없다. 같은 이름의 로컬 브랜치가 있으면 끝점이 머지된 PR 의 headRefOid 와 같다
-//       - 기능 PR 의 후속 검증이 대기가 아니다(featureCompletionProblem)
+//     spec-common.md 를 뺀 지시서마다 아래로 정한다(references/overlay.md 「orch 작업 폴더」 의 specs 줄).
+//       - 그 브랜치를 쓰는 워크트리가 있거나, 열린 PR 이 있거나, PR 조회가 실패하면 남긴다
+//       - 줄의 브랜치마다 PR 이 있고 모두 MERGED 면 바로 옮긴다. 같은 이름의 로컬 브랜치가 있으면 끝점이 머지된 PR 의 headRefOid 와 같아야 하고,
+//         기능 PR 의 후속 검증(featureCompletionProblem)과 배포 뒤 할 일(followups.json 의 끝나지 않은 항목)이 대기가 아니어야 한다
+//       - 그 밖(`브랜치:` 줄이 없거나, PR 이 없거나, 닫힌 PR 뿐이거나 섞였다)은 마지막 수정 뒤 cleanup.specs_days(기본 3)일이 지나면 옮긴다.
+//         머지된 PR 이 하나라도 있으면 그 PR 의 후속 검증과 배포 뒤 할 일을 먼저 보고, 대기면 남긴다
 //       - 살아 있는 dispatch 가 가리키는 지시서가 아니고 orch 루트 안이다(deleteSpecs)
-//     옮기기 전 `워크트리 없는 지시서 판정 <경로>: 브랜치 <b> PR #<N> MERGED, 그 브랜치의 워크트리 없음` 한 줄을 낸다.
-//     남기는 이유는 `워크트리 없는 지시서 남김 <경로>: <이유>` 로 낸다(PR 이 없는 지시서는 줄 없이 남긴다)
+//     옮기기 전 `워크트리 없는 지시서 판정 <경로>: <근거>` 한 줄을 낸다.
+//     남기는 이유는 `워크트리 없는 지시서 남김 <경로>: <이유>` 로 낸다(기한 안이라 남기는 지시서는 줄 없이 남긴다)
 //
 import type { Args, Log, Pr, Sweep } from './shared.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
@@ -16,7 +18,10 @@ import { dirname, join } from 'node:path'
 import { featureCompletionProblem } from '../../lib/feature-evidence.ts'
 import { launchesAt } from '../../lib/launched.ts'
 import { readText, truthy } from './shared.ts'
-import { readdirSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
+import { SWEEP_RETENTION_DAYS } from '../../core/config.ts'
+import { CLEANUP_KEYS, ConfigError, loadConfig, section } from '../../lib/config.ts'
+import { loadFollowups } from '../../lib/followups.ts'
 import { realPath } from '../../lib/fs.ts'
 
 // 지시서와 PR 본문 파일을 지운다. live 는 살아 있는 dispatch 의 지시서 실경로 집합이고 null 이면 둘 다 남긴다.
@@ -52,24 +57,30 @@ export function specsKept(s: Sweep, path: string, name: string, branch: string, 
   return pending !== null
 }
 
-// specs.ts 파일 맨 위 설명의 「워크트리 없는 지시서」. --specs-dir 폴더 바로 아래 지시서의 `브랜치:` PR 이 모두 MERGED 이고 그 브랜치를 쓰는
-// 워크트리가 없으면 휴지통으로 옮긴다. 워크트리가 먼저 지워진 지시서는 워크트리 순회가 만나지 못해 쌓이기 때문이다.
-// 살아 있는 dispatch 가 쓰는 지시서와 기능 후속 검증이 남은 지시서는 남긴다. 판정 근거는 옮기기 전 한 줄로 낸다
-function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {
+// specs.ts 파일 맨 위 설명의 「워크트리 없는 지시서」. 판정 근거는 옮기기 전 한 줄로 낸다
+function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log, specsDays: number, now: number): void {
   if (!specsDir) return
   const dir: string = specsDir
   let names: string[] = []
   try {
-    names = readdirSync(dir).filter((name) => name.endsWith('.md')).sort()
+    names = readdirSync(dir).filter((name) => name.endsWith('.md') && name !== 'spec-common.md').sort()
   } catch {
     return
+  }
+  const trash = (file: string, proof: string) => {
+    log(`워크트리 없는 지시서 판정 ${file}: ${proof}`)
+    deleteSpecs({ root: dirname(realPath(specsDir)), specs: [file], prBodies: [], live: args.liveSpecs, mode: { trash: args.trash }, apply: args.apply, log: (line) => log(`  ${line}`) })
+  }
+  const old = (file: string) => {
+    try { return statSync(file).mtimeMs < now - specsDays * 86_400_000 } catch { return false }
   }
   for (const name of names) {
     const file = join(dir, name)
     const branches = [...new Set(branchesOf(readText(file) ?? ''))]
-    if (branches.length === 0) continue
     const proofs: string[] = []
     let keep = ''
+    // 열린 PR 에도 머지에도 속하지 않는다(브랜치 줄 없음, PR 없음, 닫힌 PR 뿐). 기한이 지나야 옮긴다
+    let orphan = branches.length === 0 ? '`브랜치:` 줄이 없다' : ''
     let last: Pr | null = null
     for (const branch of branches) {
       if (checkedOut.has(branch)) {
@@ -79,11 +90,17 @@ function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, spec
       const listed = prList(repo, branch)
       const prs = listed.prs.filter((p) => !truthy(p.isCrossRepository) && p.headRefName === branch)
       if (!listed.ok) keep = `브랜치 ${branch} 의 PR 조회 실패`
-      else if (prs.length === 0) keep = `브랜치 ${branch} 의 PR 이 없다`
-      else if (prs.some((p) => p.state !== 'MERGED')) keep = `브랜치 ${branch} 에 머지되지 않은 PR 이 있다`
+      else if (prs.some((p) => p.state === 'OPEN')) keep = `브랜치 ${branch} 에 열린 PR 이 있다`
       if (keep) break
-      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 후속 검증은 최신 PR 기준으로 본다
-      const pr = prs[0]
+      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 후속 검증은 가장 최근에 머지된 PR 기준으로 본다.
+      // 옛 CLOSED PR 과 새 MERGED PR 이 섞여도 머지된 PR 의 후속 검증을 먼저 본다(머지된 PR 이 없을 때만 기한 판정으로 간다)
+      const merged = prs.filter((p) => p.state === 'MERGED')
+      if (merged.length === 0) {
+        orphan ||= prs.length === 0 ? `브랜치 ${branch} 의 PR 이 없다` : `브랜치 ${branch} 의 PR 이 닫혔다`
+        continue
+      }
+      if (merged.length < prs.length) orphan ||= `브랜치 ${branch} 에 닫힌 PR 이 섞였다`
+      const pr = merged[0]
       // 같은 이름을 다시 쓴 로컬 브랜치가 머지된 끝점과 다르면 새 작업이다
       const tip = branchTip(repo, branch)
       if (tip && truthy(pr.headRefOid) && tip !== String(pr.headRefOid)) {
@@ -93,21 +110,31 @@ function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, spec
       last = pr
       proofs.push(`브랜치 ${branch} PR #${pr.number} MERGED`)
     }
-    if (keep || !last) {
-      if (keep && !keep.endsWith('PR 이 없다')) log(`워크트리 없는 지시서 남김 ${file}: ${keep}`)
+    if (keep) {
+      log(`워크트리 없는 지시서 남김 ${file}: ${keep}`)
       continue
     }
-    const pending = featureCompletionProblem(repo, String(last.number), branches[0], specsDir, String(last.body ?? ''))
-    if (pending) {
-      log(`워크트리 없는 지시서 남김 ${file}: ${pending}`)
+    if (last) {
+      const pending = featureCompletionProblem(repo, String(last.number), branches[0], specsDir, String(last.body ?? ''))
+        ?? (loadFollowups(repo).some((f) => f.pr === Number(last!.number) && !f.done_at) ? `PR #${last.number} 의 배포 뒤 할 일이 남았다` : null)
+      if (pending) {
+        log(`워크트리 없는 지시서 남김 ${file}: ${pending}`)
+        continue
+      }
+    }
+    if (orphan) {
+      if (old(file)) trash(file, `${[...proofs, orphan].join(', ')}, ${specsDays}일 넘게 바뀌지 않았다`)
       continue
     }
-    log(`워크트리 없는 지시서 판정 ${file}: ${proofs.join(', ')}, 그 브랜치의 워크트리 없음`)
-    deleteSpecs({ root: dirname(realPath(specsDir)), specs: [file], prBodies: [], live: args.liveSpecs, mode: { trash: args.trash }, apply: args.apply, log: (line) => log(`  ${line}`) })
+    trash(file, `${proofs.join(', ')}, 그 브랜치의 워크트리 없음`)
   }
 }
 
 export async function cleanupSpecs(ctx: StepContext, state: StepState): Promise<StepResult> {
-  sweepStaleSpecs(ctx.repo, ctx.args, state.remaining, state.specsDir, ctx.log)
+  const config = section<Record<string, unknown>>(loadConfig(ctx.repo), 'cleanup', CLEANUP_KEYS)
+  const raw = config.specs_days
+  const days = raw === undefined || raw === null ? SWEEP_RETENTION_DAYS.specs_days : Number(raw)
+  if (!Number.isFinite(days) || days < 0) throw new ConfigError('cleanup.specs_days 는 0 이상의 유한한 수여야 한다')
+  sweepStaleSpecs(ctx.repo, ctx.args, state.remaining, state.specsDir, ctx.log, days, Date.now())
   return {}
 }

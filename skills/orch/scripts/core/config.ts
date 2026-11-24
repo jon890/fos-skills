@@ -127,7 +127,7 @@ export const HOOK_EVENT_NAMES: readonly string[] = [
 
 // cleanup 절의 아는 키. cleanup/handoff-cleanup.ts 의 OPTIONS 에서 옵션 이름의 하이픈을 밑줄로 바꾼 것이다(config 와 help 는 뺀다).
 // sweep 전용 키는 SWEEP_RETENTION_KEYS 에 둔다
-export const SWEEP_RETENTION_DAYS = { state_days: 3, gh_log_days: 1 } as const
+export const SWEEP_RETENTION_DAYS = { state_days: 3, gh_log_days: 1, handoff_days: 3, specs_days: 3 } as const
 export const SWEEP_RETENTION_KEYS = Object.keys(SWEEP_RETENTION_DAYS)
 export const CLEANUP_KEYS: readonly string[] = ['repo', 'gh_host', 'run', 'orch_dir', 'previews', 'board', 'trash', 'queue_days', 'folder_days', 'data_days', 'data_ext', 'apply', ...SWEEP_RETENTION_KEYS]
 

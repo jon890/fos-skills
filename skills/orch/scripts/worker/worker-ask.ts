@@ -1,7 +1,7 @@
 // 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문을 보낸 뒤, 답을 기다리지 않고 끝난다.
 //
 // 사용: worker-ask.ts --from HANDLE (--question TEXT | --question-file FILE)
-//                    [--options CSV] [--run ID] [--force] [--decision]
+//                    [--options CSV] [--run ID] [--force] [--decision] [--temp-ok]
 //       worker-ask.ts --check-answer TEXT (--question TEXT | --question-file FILE)
 // --question-file: 질문 본문을 파일에서 읽는다. 긴 결정 블록을 셸 인자로 붙이지 않고 파일 경로로 보내려는 것이다.
 // --question 과 함께 줄 수 없고, 파일이 없거나 비었으면 사용법 오류(2)다. --decision 이면 파일 내용의 첫 줄을 검사한다.
@@ -18,7 +18,9 @@
 // 안내 한 줄만 내고 무시한다. 옛 규칙대로 도는 worker 가 어떤 값을 넘겨도 멈추지 않게 하려는 것이다.
 // 세션 임시 폴더 경로(`$TMPDIR` 값 아래, `/var/folders/`, `/private/tmp/claude-`, `/tmp/claude-`, 글자 그대로의 `$TMPDIR/`)가 질문 본문에 있으면
 // 보내지 않고 2 로 끝난다. 코디네이터는 세션 임시 폴더가 달라 그 파일을 열지 못한다. 판정은 lib/temp-path.ts 의 sessionTempPaths 다.
-// 안내는 stderr 에 낸다. 넘길 파일은 `$(orch paths root)/handoff/` 에 두고 절대경로로 적는다(공통 지시서 「파일 자리」).
+// 안내는 stderr 에 낸다. 코디네이터가 읽을 파일은 `$(orch paths root)/handoff/` 에 두고 절대경로로 적는다(공통 지시서 `handoff-path`).
+// --temp-ok: 질문의 임시 경로가 코디네이터가 열 필요 없는 기록용이라는 뜻이다. 이 검사를 건너뛴다. 한 번 쓰고 끝나는 파일은
+// 세션 임시 폴더에 두므로, 그 경로를 알리기만 하는 질문까지 막지 않으려는 것이다(R17, 2026-11-24).
 // 종료: 0 보냈다(`ASKED <질문 id>`) 또는 바로 답을 받았다(`answer: `), 2 사용법·실행 오류(--decision 형식 위반, --resume, 다시 불러도 바쁜 Orca,
 // 끝난 dispatch 가 아닌 ask 실패 포함), 3 Run 메일함으로 대신 보냄, 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
 // 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나, 시간 초과인데 질문 ID 가 없거나,
@@ -78,9 +80,10 @@ function asked(id: string, output: string): void {
 
 const USAGE = [
   '사용법: orch worker ask --from HANDLE (--question TEXT | --question-file FILE)',
-  '                        [--options CSV] [--run ID] [--force] [--decision]',
+  '                        [--options CSV] [--run ID] [--force] [--decision] [--temp-ok]',
   '        orch worker ask --check-answer TEXT (--question TEXT | --question-file FILE)',
   'HANDLE 은 dispatch 머리말의 --from 값이다. 질문을 전경에서 보내고 긴 본문은 --question-file 로 준다.',
+  '질문에 세션 임시 폴더 경로가 있으면 거절한다. 코디네이터가 읽을 파일은 "$(orch paths root)/handoff/" 에 두고, 기록용 경로면 --temp-ok 를 붙인다.',
   '사용자가 정할 결정에만 --decision 을 붙인다. 한 질문에 결정 블록을 최대 4개 담는다.',
   '  결정: 무엇을 정하는지 한 줄',
   '  배경: 왜 지금 정해야 하는지',
@@ -275,6 +278,7 @@ async function main(argv: string[]): Promise<number> {
       'max-wait': { type: 'string' },
       force: { type: 'boolean', default: false },
       decision: { type: 'boolean', default: false },
+      'temp-ok': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
     } as const
     // `--question "- 선택지"` 처럼 값이 - 로 시작해도 값으로 받는다
@@ -339,10 +343,10 @@ async function main(argv: string[]): Promise<number> {
     err(`${USAGE}\nworker-ask: --question 이나 --question-file 이 필요하다`)
     return 2
   }
-  const temps = sessionTempPaths(question)
+  const temps = values['temp-ok'] ? [] : sessionTempPaths(question)
   if (temps.length) {
     for (const path of temps) err(`worker-ask: 질문에 세션 임시 폴더 경로가 있어 보내지 않았다: ${path}`)
-    err('worker-ask: 코디네이터는 세션 임시 폴더가 달라 그 파일을 열지 못한다. 파일을 "$(orch paths root)/handoff/" 로 옮기고 그 절대경로로 다시 보낸다')
+    err('worker-ask: 코디네이터는 세션 임시 폴더가 달라 그 파일을 열지 못한다. 코디네이터가 읽을 파일이면 "$(orch paths root)/handoff/" 로 옮기고 그 절대경로로 다시 보낸다. 읽을 필요 없는 기록용 경로면 --temp-ok 를 붙인다')
     return 2
   }
   if (values.decision) {

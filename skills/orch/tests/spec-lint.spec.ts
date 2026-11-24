@@ -174,12 +174,29 @@ describe('지시서 검사', () => {
     assert.equal(count(r.stdout, '경로:'), 1, r.stdout)
   })
 
-  test('PR 인계 파일을 handoff 바로 아래에 두는 지시서는 경고한다', () => {
-    const a = spec('spec-handoff', 'PR 답변을 `handoff/review-reply.md` 에 둔다\n측정은 `handoff/measure.tsv` 에 둔다\nPR 파일은 `handoff/pr-77/review-reply.md` 에 둔다\n')
+  test('handoff 의 두 꼴 밖 경로와 한 번 쓰는 파일은 오류다', () => {
+    const a = spec('spec-handoff', [
+      'PR 답변을 `handoff/review-reply.md` 에 둔다',
+      '측정은 `handoff/measure.tsv` 에 둔다',
+      '미리보기는 `handoff/pr-77/preview.html` 에 둔다',
+      'PR 파일은 `handoff/pr-77/review-reply.md` 에 둔다',
+      '대신 게시할 본문은 `handoff/pending/<워크트리 이름>/body.md` 와 `handoff/pr-<PR 번호>/body.md` 에 둔다',
+      '옛 자리 `.omc/handoffs/specs/` 는 옮긴다',
+    ].join('\n') + '\n')
     const r = lint([a])
-    assert.equal(r.code, 0, r.stdout)
-    assert.match(r.stdout, /PR 인계: `handoff\/review-reply\.md`/)
-    assert.equal(count(r.stdout, 'PR 인계:'), 1, r.stdout)
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /인계: `handoff\/review-reply\.md` 는 `pr-<번호>\/` 나/)
+    assert.match(r.stdout, /인계: `handoff\/measure\.tsv`/)
+    assert.match(r.stdout, /인계: `handoff\/pr-77\/preview\.html` 는 한 번 쓰는 파일/)
+    assert.equal(count(r.stdout, '인계:'), 3, r.stdout)
+  })
+
+  test('data 경로는 지시서의 보드 항목 id 폴더여야 한다', () => {
+    const a = spec('spec-data', '보드 항목 id: `item-a`\n기준값은 `.orch/data/item-a/base.json` 에 둔다\n도구는 `.orch/data/tools/run.ts` 에 둔다\n자리는 `$(orch paths root)/data/<보드 항목 id>/` 다\n')
+    const r = lint([a])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /자료: `data\/tools` 는 `data\/item-a\/` 로 둔다/)
+    assert.equal(count(r.stdout, '자료:'), 1, r.stdout)
   })
 
   test('첫 글자 뒤의 한글도 식별자 글자로 본다', () => {

@@ -38,9 +38,9 @@
 
 두 PR 이 모두 준비됨을 보내면 평소 리뷰(PR 자동 리뷰나 리뷰 worker)와 별도로 숨긴 리뷰를 맡긴다.
 
-1. 섞을 순서를 정한다. `node -e "console.log(Math.random() < 0.5 ? 'base=A' : 'base=B')"` 의 결과를 `"$(orch paths root)/handoff/compare-keys/<비교 id>-<건 번호>.txt"` 에 적는다.
+1. 섞을 순서를 정한다. `node -e "console.log(Math.random() < 0.5 ? 'base=A' : 'base=B')"` 의 결과를 `"$(orch paths root)/data/<보드 항목 id>/compare-keys/<비교 id>-<건 번호>.txt"` 에 적는다.
    `base=A` 는 `A.diff` 가 지금 모델의 PR 이고 `B.diff` 가 후보 모델의 PR 이라는 뜻이다. `base=B` 는 그 반대다. 리뷰 결과를 풀 때도 이 뜻으로 읽는다.
-2. 리뷰 폴더 `"$(orch paths root)/handoff/<비교 id>-<건 번호>/"` 에 `gh pr diff <PR>` 출력을 순서 파일대로 `A.diff`, `B.diff` 로 둔다. 커밋 메시지, PR 번호, 브랜치 이름은 넣지 않는다. 커밋 끝 줄과 브랜치가 모델을 드러낸다.
+2. 리뷰 폴더 `"$(orch paths root)/data/<보드 항목 id>/<비교 id>-<건 번호>/"` 에 `gh pr diff <PR>` 출력을 순서 파일대로 `A.diff`, `B.diff` 로 둔다. 커밋 메시지, PR 번호, 브랜치 이름은 넣지 않는다. 커밋 끝 줄과 브랜치가 모델을 드러낸다.
    원래 지시서에서 `브랜치:` 줄과 `worker 선택:` 줄을 뺀 본문을 같은 폴더의 `spec.md` 로 둔다. 두 줄에 모델 이름이 있다.
 3. [`templates/spec-compare-review.md`](../templates/spec-compare-review.md) 로 Claude 리뷰어와 Codex 리뷰어의 지시서를 하나씩 써서 띄운다. 리뷰어는 리뷰 폴더만 읽는다. 지시서에 원래 지시서 경로와 순서 파일 경로를 적지 않는다.
 4. 두 리뷰어가 같은 쪽을 고른 건만 그 쪽의 이김으로 센다. 다르면 갈림이다.
