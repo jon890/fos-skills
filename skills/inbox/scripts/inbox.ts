@@ -7,8 +7,9 @@
 //   inbox.ts list [--repo <경로>]                   항목을 사람이 읽는 줄로 낸다. --repo 가 없으면 넘긴 것 말고 모두
 //   inbox.ts context <id>                           본문과 앞 대화를 JSON 으로 낸다. 작성자는 이름으로 푼다
 //   inbox.ts reply <id> --body-file <파일> [--yes]  받는 사람 멘션과 signature 를 붙여 등록한다. --yes 가 없으면 합성한 본문만 낸다
+//   inbox.ts react <id> [--emoji <이름>] [--yes]     업무 댓글에 리액션을 단다. --yes 가 없으면 대상과 이모지만 보여 준다
 //   inbox.ts dismiss <id> [--undo]                  넘긴 것으로 적는다. 모든 저장소의 보드에서 사라진다
-// 종료 코드: 0 성공, 1 거절·실패(이유는 stderr), 2 사용법 오류, 3 확인 필요(reply 에 --yes 없음)
+// 종료 코드: 0 성공, 1 거절·실패(이유는 stderr), 2 사용법 오류, 3 확인 필요(reply, react 에 --yes 없음)
 // 설정 파일이 없으면 board --json 은 {"enabled": false} 를 내고 0, 다른 명령은 1 이다(R6).
 // 명령 실행은 import.meta.main 안에만 둔다. 테스트는 main 에 가짜 adapter 와 Runner 를 넣는다.
 
@@ -34,7 +35,7 @@ export const CONFIG_FILE = 'config.json'
 // 두레이 명령 하나를 기다리는 한도. 넘으면 그 호출만 실패로 친다
 const COMMAND_TIMEOUT_MS = 60000
 
-const USAGE = '사용법: inbox.ts {board,fetch,list,context,reply,dismiss} [id] [--repo R] [--json] [--force] [--body-file F] [--yes] [--undo]'
+const USAGE = '사용법: inbox.ts {board,fetch,list,context,reply,react,dismiss} [id] [--repo R] [--json] [--force] [--body-file F] [--emoji 이름] [--yes] [--undo]'
 
 export type Deps = {
   run: Runner
@@ -274,7 +275,7 @@ function line(item: InboxItem): string {
   return `${mark} ${item.id}  ${item.title}  ${item.from.name || item.from.id} · ${item.kind} · ${item.at}${item.excerpt ? `\n    ${item.excerpt}` : ''}`
 }
 
-type Parsed = { cmd: string; id?: string; repo?: string; json: boolean; force: boolean; source?: string; scheduledAt?: string; bodyFile?: string; yes: boolean; undo: boolean }
+type Parsed = { cmd: string; id?: string; repo?: string; json: boolean; force: boolean; source?: string; scheduledAt?: string; bodyFile?: string; emoji?: string; yes: boolean; undo: boolean }
 
 function parse(argv: string[]): Parsed | 'help' {
   if (argv.includes('--help') || argv.includes('-h')) return 'help'
@@ -287,6 +288,7 @@ function parse(argv: string[]): Parsed | 'help' {
       source: { type: 'string' },
       'scheduled-at': { type: 'string' },
       'body-file': { type: 'string' },
+      emoji: { type: 'string' },
       yes: { type: 'boolean' },
       undo: { type: 'boolean' },
     },
@@ -294,11 +296,12 @@ function parse(argv: string[]): Parsed | 'help' {
     strict: true,
   })
   const [cmd, id, ...rest] = positionals
-  if (!cmd || !['board', 'fetch', 'list', 'context', 'reply', 'dismiss'].includes(cmd)) throw new Error(`명령이 필요하다: ${cmd ?? ''}`)
+  if (!cmd || !['board', 'fetch', 'list', 'context', 'reply', 'react', 'dismiss'].includes(cmd)) throw new Error(`명령이 필요하다: ${cmd ?? ''}`)
   if (rest.length > 0) throw new Error(`모르는 인자: ${rest.join(' ')}`)
-  if (['context', 'reply', 'dismiss'].includes(cmd) && !id) throw new Error(`${cmd} 에는 항목 id 가 필요하다`)
+  if (['context', 'reply', 'react', 'dismiss'].includes(cmd) && !id) throw new Error(`${cmd} 에는 항목 id 가 필요하다`)
   if (cmd === 'board' && !values.repo) throw new Error('board 에는 --repo 가 필요하다')
   if (cmd === 'reply' && !values['body-file']) throw new Error('reply 에는 --body-file 이 필요하다')
+  if (values.emoji !== undefined && cmd !== 'react') throw new Error('--emoji 는 react 에서만 쓴다')
   if (values.source !== undefined && cmd !== 'fetch') throw new Error('--source 는 fetch 에서만 쓴다')
   if (values['scheduled-at'] !== undefined && (!values.source || !Number.isFinite(Date.parse(values['scheduled-at'])))) {
     throw new Error('--scheduled-at 에는 출처와 시각이 필요하다')
@@ -306,7 +309,41 @@ function parse(argv: string[]): Parsed | 'help' {
   return {
     source: values.source, scheduledAt: values['scheduled-at'],
     cmd, id, repo: values.repo, json: values.json ?? false, force: values.force ?? false,
-    bodyFile: values['body-file'], yes: values.yes ?? false, undo: values.undo ?? false,
+    bodyFile: values['body-file'], emoji: values.emoji, yes: values.yes ?? false, undo: values.undo ?? false,
+  }
+}
+
+function reactCommand(a: Parsed, { config, store, deps, adapters }: Session): number {
+  const id = a.id as string
+  const emoji = a.emoji ?? config.reactionEmoji
+  let entered = false
+  const react = () => {
+    entered = true
+    const item = findItem(store, id)
+    if (store.dismissed().has(id) || item.state === 'dismissed') {
+      throw new Refused('이미 넘긴 알림이다. 답장이 필요하면 넘김을 되돌린 뒤 답장한다')
+    }
+    if (item.state === 'answered') throw new Refused('이미 답한 알림이다. 목록에서 치우려면 넘김을 권한다')
+    const adapter = adapters.get(item.adapter)
+    if (!adapter?.react) throw new Refused('이 알림은 리액션을 지원하지 않는다. 답장이나 넘김을 권한다')
+    adapter.react(item, emoji, { confirmed: a.yes })
+    if (!a.yes) {
+      const author = item.from.name ? ` · 작성자 ${item.from.name}` : ''
+      deps.out(`「${item.title}」 댓글${author}\n`)
+      if (item.excerpt) deps.out(`「${item.excerpt}」\n`)
+      deps.out(`${JSON.stringify(emoji)} 리액션을 단다\n`)
+      deps.err('확인한 뒤 같은 명령에 --yes 를 붙인다\n')
+      return 3
+    }
+    store.markAnswered(id)
+    deps.out(`「${item.title}」 댓글에 ${JSON.stringify(emoji)} 리액션을 달았다\n`)
+    return 0
+  }
+  try {
+    return a.yes ? store.withReactionLock(id, react) : react()
+  } catch (error) {
+    if (!entered && error instanceof OwnerLockBusy) throw new Refused('이 알림에 리액션을 등록하는 중이다. 잠시 뒤 다시 확인한다')
+    throw error
   }
 }
 
@@ -416,12 +453,12 @@ function run(a: Parsed, deps: Deps): number {
         return 3
       }
       const url = adapter.reply(item, text)
-      store.updateCache((cache) => {
-        for (const row of cache.items) if (row.id === item.id) row.state = 'answered'
-      })
+      store.markAnswered(item.id)
       deps.out(`등록했다${url ? `: ${url}` : ''}\n`)
       return 0
     }
+    case 'react':
+      return reactCommand(a, session)
     case 'dismiss': {
       const dismissed = store.dismissed()
       if (a.undo) dismissed.delete(a.id as string)

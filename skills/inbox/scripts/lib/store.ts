@@ -8,6 +8,7 @@
 //   repos.json      보드가 연 저장소들의 필터 파일 경로 목록. 미분류 판정에 쓴다
 //   last-ok.json    옛 커서. 새 캐시에 해당 출처가 없을 때 읽는다
 //   fetch-*.lock/   출처별 받기 잠금. cache-write.lock 은 캐시 갱신에만 쓴다
+//   react-*.lock/   같은 항목에 리액션을 동시에 다는 것을 막는다
 //   <adapter>-*.json  adapter 의 캐시(이름, 업무 정보, 다시 읽을 대화방 등)
 // 쓰기는 임시 파일에 쓴 뒤 rename 한다. 읽는 쪽이 반쯤 쓴 파일을 보지 않게 하려는 것이다.
 // 사내 메시지 발췌가 들어 있어 폴더는 0700, 파일은 0600 으로 만든다.
@@ -29,6 +30,7 @@ export type Config = {
   messengerIntervalMinutes: number
   days: number
   signature: string
+  reactionEmoji: string
   defaultBoard: string | null
 }
 
@@ -74,6 +76,7 @@ export function readConfig(path = configPath()): Config | null {
     days: positive(raw.days) ?? DEFAULT_DAYS,
     // 빈 문자열은 표기를 붙이지 않는다는 뜻이라 그대로 둔다(D7)
     signature: typeof raw.signature === 'string' ? raw.signature : DEFAULT_SIGNATURE,
+    reactionEmoji: typeof raw.reactionEmoji === 'string' ? raw.reactionEmoji : '+1',
     defaultBoard: typeof raw.defaultBoard === 'string' && raw.defaultBoard ? raw.defaultBoard : null,
   }
 }
@@ -152,6 +155,17 @@ export class Store implements Cache {
   withFetchLock<T>(key: string, work: () => T): T {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })
     return withOwnerLock(this.fetchLock(key), work, { waitMs: 0 })
+  }
+
+  withReactionLock<T>(id: string, work: () => T): T {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    return withOwnerLock(join(this.dir, `react-${encodeURIComponent(id)}.lock`), work, { waitMs: 0 })
+  }
+
+  markAnswered(id: string): void {
+    this.updateCache((cache) => {
+      for (const row of cache.items) if (row.id === id) row.state = 'answered'
+    })
   }
 
   updateCache(update: (cache: CacheFile) => void): void {

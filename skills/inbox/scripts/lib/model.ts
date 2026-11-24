@@ -22,7 +22,7 @@ export type InboxItem = {
   // ISO 8601
   at: string
   excerpt: string
-  // 답변을 등록할 곳. adapter 만 읽는다
+  // 답변이나 리액션을 등록할 곳. adapter 만 읽는다
   target: Record<string, string>
   state: ItemState
 }
@@ -69,6 +69,8 @@ export interface Adapter {
   compose(item: InboxItem, body: string, signature: string): string
   // 합성한 본문을 등록하고 주소나 '' 를 낸다. 실패하면 던진다
   reply(item: InboxItem, text: string): string
+  // 리액션 대상을 확인한다. confirmed 가 true 일 때만 CLI 로 등록한다
+  react?(item: InboxItem, emoji: string, options: { confirmed: boolean }): void
 }
 
 export type RunResult = { code: number; stdout: string; stderr: string }
