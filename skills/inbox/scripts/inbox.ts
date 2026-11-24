@@ -7,7 +7,7 @@
 //   inbox.ts list [--repo <경로>]                   항목을 사람이 읽는 줄로 낸다. --repo 가 없으면 넘긴 것 말고 모두
 //   inbox.ts context <id>                           본문과 앞 대화를 JSON 으로 낸다. 작성자는 이름으로 푼다
 //   inbox.ts reply <id> --body-file <파일> [--yes]  받는 사람 멘션과 signature 를 붙여 등록한다. --yes 가 없으면 합성한 본문만 낸다
-//   inbox.ts react <id> [--emoji <이름>] [--yes]     업무 댓글에 리액션을 단다. --yes 가 없으면 대상과 이모지만 보여 준다
+//   inbox.ts react <id> [--emoji <이름>] [--yes]     업무 댓글이나 메신저 멘션에 리액션을 단다. --yes 가 없으면 대상과 이모지만 보여 준다
 //   inbox.ts dismiss <id> [--undo]                  넘긴 것으로 적는다. 모든 저장소의 보드에서 사라진다
 // 종료 코드: 0 성공, 1 거절·실패(이유는 stderr), 2 사용법 오류, 3 확인 필요(reply, react 에 --yes 없음)
 // 설정 파일이 없으면 board --json 은 {"enabled": false} 를 내고 0, 다른 명령은 1 이다(R6).
@@ -327,16 +327,17 @@ function reactCommand(a: Parsed, { config, store, deps, adapters }: Session): nu
     const adapter = adapters.get(item.adapter)
     if (!adapter?.react) throw new Refused('이 알림은 리액션을 지원하지 않는다. 답장이나 넘김을 권한다')
     adapter.react(item, emoji, { confirmed: a.yes })
+    const place = item.source === 'messenger' ? '메시지' : '댓글'
     if (!a.yes) {
       const author = item.from.name ? ` · 작성자 ${item.from.name}` : ''
-      deps.out(`「${item.title}」 댓글${author}\n`)
+      deps.out(`「${item.title}」 ${place}${author}\n`)
       if (item.excerpt) deps.out(`「${item.excerpt}」\n`)
       deps.out(`${JSON.stringify(emoji)} 리액션을 단다\n`)
       deps.err('확인한 뒤 같은 명령에 --yes 를 붙인다\n')
       return 3
     }
     store.markAnswered(id)
-    deps.out(`「${item.title}」 댓글에 ${JSON.stringify(emoji)} 리액션을 달았다\n`)
+    deps.out(`「${item.title}」 ${place}에 ${JSON.stringify(emoji)} 리액션을 달았다\n`)
     return 0
   }
   try {

@@ -597,7 +597,7 @@ describe('업무 댓글 리액션', () => {
     ['담당', { kind: 'assigned' }, /담당·참조.*답장이나 넘김/],
     ['참조', { kind: 'cc' }, /담당·참조.*답장이나 넘김/],
     ['댓글 ID 없음', { target: { kind: 'task', postId: 'p1' } }, /댓글을 찾을 수 없다.*답장이나 넘김/],
-    ['메신저', { source: 'messenger' }, /메신저.*넘김/],
+    ['메시지 ID 없는 메신저', { source: 'messenger', target: { kind: 'messenger', channelId: 'ch1' } }, /메신저 메시지를 찾을 수 없다.*넘김/],
     ['넘긴 상태', { state: 'dismissed' }, /이미 넘긴.*답장/],
   ] as const) {
     test(`${label} 항목은 확인했어도 거절한다`, () => {
@@ -648,6 +648,81 @@ describe('업무 댓글 리액션', () => {
     })
     assert.deepEqual(calls, [])
   })
+})
+
+describe('메신저 멘션 리액션', () => {
+  const mention = item('1', ['example'], undefined, {
+    id: 'dooray:messenger:ch1:m1',
+    adapter: 'dooray',
+    source: 'messenger',
+    title: '개발방',
+    target: { kind: 'messenger', channelId: 'ch1', logId: 'm1' },
+    excerpt: '배포 끝났습니다. 감사합니다',
+  })
+  let calls: string[][]
+  let version: RunResult
+  let reaction: RunResult
+
+  beforeEach(() => {
+    calls = []
+    version = { code: 0, stdout: '0.36.0\n', stderr: '' }
+    reaction = { code: 0, stdout: '', stderr: '' }
+    writeConfig({ adapters: [{ type: 'dooray' }] })
+    new Store().updateCache((cache) => { cache.items = [mention] })
+    extra = {
+      adapters: ADAPTERS,
+      startFetch: () => {},
+      run: (argv) => {
+        calls.push(argv)
+        if (argv[1] === '--version') return version
+        assert.deepEqual(argv.slice(1, 3), ['messenger', 'react'])
+        return reaction
+      },
+    }
+  })
+
+  const reactCall = (emoji: string) => ['dooray', 'messenger', 'react', 'ch1', 'm1', `--emoji=${emoji}`]
+
+  test('미리보기에는 대화방과 메시지, 이모지가 보이고 리액션을 달지 않는다', () => {
+    assert.equal(call('react', mention.id), 3)
+    assert.match(out, /개발방.*메시지.*작성자 김철수/)
+    assert.match(out, /"\+1" 리액션/)
+    assert.match(err, /--yes/)
+    assert.deepEqual(calls, [['dooray', '--version']])
+    assert.equal(new Store().cache().items[0].state, 'new')
+  })
+
+  test('확인하면 그 메시지에 리액션을 달고 답함이 된다', () => {
+    const root = repo('a', null)
+    assert.equal(board(root).newCount, 1)
+    assert.equal(call('react', mention.id, '--emoji', 'clap', '--yes'), 0, err)
+    assert.deepEqual(calls, [['dooray', '--version'], reactCall('clap')])
+    assert.match(out, /메시지에 "clap" 리액션을 달았다/)
+    assert.equal(board(root).newCount, 0)
+    assert.equal(new Store().cache().items[0].state, 'answered')
+  })
+
+  test('세션 오류는 종료 코드 1 로 넘김과 갱신 방법을 알려 주고 상태를 유지한다', () => {
+    reaction = { code: 3, stdout: '', stderr: '웹 세션 만료' }
+    assert.equal(call('react', mention.id, '--yes'), 1)
+    assert.match(err, /리액션을 달지 않았다.*넘김/)
+    assert.match(err, /dooray config set session-cookie -/)
+    assert.deepEqual(calls, [['dooray', '--version'], reactCall('+1')])
+    assert.equal(new Store().cache().items[0].state, 'new')
+  })
+
+  for (const value of ['0.35.0', '0.36.0-rc.1', '알 수 없음']) {
+    test(`버전이 ${value} 이면 미리보기부터 거절하고 넘김을 권한다`, () => {
+      version.stdout = value
+      for (const args of [[], ['--yes']]) {
+        calls = []
+        assert.equal(call('react', mention.id, ...args), 1)
+        assert.match(err, /dooray-cli 를 0\.36\.0 이상으로 올린다.*넘김/)
+        assert.deepEqual(calls, [['dooray', '--version']])
+      }
+      assert.equal(new Store().cache().items[0].state, 'new')
+    })
+  }
 })
 
 test('받기 프로세스가 죽었으면 다음 받기가 잠금을 회수한다', () => {

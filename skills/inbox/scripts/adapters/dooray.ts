@@ -19,6 +19,9 @@
 //   messenger  false 면 메신저를 읽지 않는다. 기본 true
 //   webUrl     업무 링크의 앞부분. 없으면 링크 없이 보인다
 //
+// 리액션: 업무 댓글은 `dooray post comment react`(0.35.0 이상), 메신저 멘션은 `dooray messenger react <방> <메시지>`(0.36.0 이상).
+//   둘 다 웹 세션을 쓰고, 세션 없음·만료는 CLI 종료 코드 3 이다.
+//
 // 두레이 호출은 CLI 의 인증 방식(토큰 또는 웹 SESSION 쿠키)과 무관하다. 어느 쪽이든 같은 명령과 JSON 으로 읽는다.
 // 실측(dooray CLI 0.33.0 웹 방식, 2026-11-14): member get me, stream list --all, messenger channels·logs, post get, post comment list 가 모두 성공했다.
 //   웹 stream 의 event(type comment)에는 시각 칸이 없다(body, creator, id, postId, read, type 뿐). 그래서 같은 업무의 댓글 목록에서 그 댓글의 createdAt 을 찾아 쓴다.
@@ -38,6 +41,8 @@ const STREAM_ORDER_MARGIN_MS = 60_000
 const SKIP_CHANNEL_TYPES = new Set(['bot', 'me'])
 const EXCERPT = 80
 const MIN_REACTION_MINOR = 35
+// dooray messenger react 가 들어간 버전
+const MIN_MESSENGER_REACTION_MINOR = 36
 
 type Json = Record<string, any>
 type Me = { id: string; orgId: string }
@@ -114,6 +119,30 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
 
   function json(argv: string[]): any {
     return readJson(argv).data
+  }
+
+  // 리액션 명령이 들어간 dooray-cli 인지 본다. 0.minor.0 의 사전 배포판은 그 명령이 없을 수 있어 거절한다
+  function requireVersion(minMinor: number, purpose: string, advice = ''): void {
+    const version = run(['dooray', '--version'])
+    const parts = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.stdout.trim())
+    const upgrade = `dooray-cli 를 0.${minMinor}.0 이상으로 올린다`
+    const tail = advice ? `. ${advice}` : ''
+    if (version.code !== 0 || !parts) throw new Error(`dooray-cli 버전을 확인할 수 없다. ${upgrade}${tail}`)
+    const [, major, minor, patch, prerelease] = parts
+    if (Number(major) === 0 && (Number(minor) < minMinor ||
+        (Number(minor) === minMinor && Number(patch) === 0 && prerelease))) {
+      throw new Error(`${purpose} ${upgrade}${tail}`)
+    }
+  }
+
+  // 리액션 CLI 결과를 알린다. 종료 코드 3 은 웹 세션 없음·만료다(REQ7)
+  function finishReaction(result: { code: number; stdout: string; stderr: string }): void {
+    if (result.code === 3) {
+      throw new Error('웹 세션이 없거나 만료되어 리액션을 달지 않았다. 이 알림은 넘김을 권한다.\n다시 시도하려면 dooray config set session-cookie - 로 웹 세션을 갱신한다')
+    }
+    if (result.code !== 0) {
+      throw new Error(result.stderr.trimEnd() || result.stdout.trimEnd() || `dooray 종료 코드 ${result.code}`)
+    }
   }
 
   function me(): Me {
@@ -499,35 +528,26 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     },
 
     react(item, emoji, { confirmed }): void {
-      if (item.source === 'messenger') throw new Error('메신저 멘션에는 리액션을 달 수 없다. 넘김을 권한다')
       if (item.kind === 'assigned' || item.kind === 'cc') {
         throw new Error('담당·참조로 온 업무 알림에는 리액션을 달 댓글이 없다. 답장이나 넘김을 권한다')
       }
-      if (item.source !== 'task' || item.target.kind !== 'task' || !item.target.postId || !item.target.commentId) {
+      const target = item.target
+      if (item.source === 'messenger') {
+        if (target.kind !== 'messenger' || !target.channelId || !target.logId) {
+          throw new Error('리액션을 달 메신저 메시지를 찾을 수 없다. 답장이나 넘김을 권한다')
+        }
+        // 낮은 버전에서는 미리보기 단계부터 거절한다(REQ10). 메신저 리액션 명령이 없다
+        requireVersion(MIN_MESSENGER_REACTION_MINOR, '메신저 멘션에 리액션을 달려면', '이 알림은 넘김을 권한다')
+        if (!confirmed) return
+        finishReaction(run(['dooray', 'messenger', 'react', target.channelId, target.logId, `--emoji=${emoji}`]))
+        return
+      }
+      if (item.source !== 'task' || target.kind !== 'task' || !target.postId || !target.commentId) {
         throw new Error('리액션을 달 업무나 댓글을 찾을 수 없다. 답장이나 넘김을 권한다')
       }
       if (!confirmed) return
-
-      const version = run(['dooray', '--version'])
-      const parts = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.stdout.trim())
-      const upgrade = `dooray-cli 를 0.${MIN_REACTION_MINOR}.0 이상으로 올린다`
-      if (version.code !== 0 || !parts) {
-        throw new Error(`dooray-cli 버전을 확인할 수 없다. ${upgrade}`)
-      }
-      const [, major, minor, patch, prerelease] = parts
-      // 0.35.0 사전 배포판에는 API 키 방식 지원이 없을 수 있다
-      if (Number(major) === 0 && (Number(minor) < MIN_REACTION_MINOR ||
-          (Number(minor) === MIN_REACTION_MINOR && Number(patch) === 0 && prerelease))) {
-        throw new Error(`리액션을 달려면 ${upgrade}`)
-      }
-
-      const result = run(['dooray', 'post', 'comment', 'react', '--id', item.target.postId, '--comment-id', item.target.commentId, `--emoji=${emoji}`])
-      if (result.code === 3) {
-        throw new Error('웹 세션이 없거나 만료되어 리액션을 달지 않았다. 이 알림은 넘김을 권한다.\n다시 시도하려면 dooray config set session-cookie - 로 웹 세션을 갱신한다')
-      }
-      if (result.code !== 0) {
-        throw new Error(result.stderr.trimEnd() || result.stdout.trimEnd() || `dooray 종료 코드 ${result.code}`)
-      }
+      requireVersion(MIN_REACTION_MINOR, '리액션을 달려면')
+      finishReaction(run(['dooray', 'post', 'comment', 'react', '--id', target.postId, '--comment-id', target.commentId, `--emoji=${emoji}`]))
     },
   }
 }
