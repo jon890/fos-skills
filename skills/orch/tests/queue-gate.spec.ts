@@ -243,55 +243,61 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     ])
   })
 
-  test('리뷰 설정이 있으면 HEAD 의 리뷰 판정이 필요하다', async (t) => {
+  // 사용자 결정 2026-11-24: 리뷰 댓글 문구로 판정하지 않는다. 봇 영수증이나 리뷰 체크만 본다
+  test('리뷰 댓글의 문구만으로는 통과하지 않는다. 옛 문구 판정 키만 있으면 리뷰 설정이 없는 것과 같다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['verdict-on-head'] } } }))
-    const r = await gate(c, { '1': pr({ reviews: [], comments: [] }) }, 0)
-    assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /GATE-FAIL 1/)
-    assert.match(gateReason(r), /HEAD aaaaaaaa 에 리뷰 판정이 없다/)
-    const passed = await gate(c, { '1': pr({ reviews: [{ body: 'PASS', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD } }], comments: [] }) }, 0)
-    assert.equal(passed.code, 0, both(passed))
+    const blocked = await gate(c, { '1': pr({ reviews: [{ body: 'BLOCK', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD } }], comments: [] }) }, 0)
+    assert.equal(blocked.code, 0, both(blocked))
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { review_checks: ['claude-review'] } } }))
+    const phrase = await gate(c, { '1': pr({ reviews: [{ body: 'PASS', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD } }], comments: [{ body: '판정: 머지 가능', createdAt: '2026-01-01T00:00:00Z' }] }) }, 0)
+    assert.equal(phrase.code, 1, both(phrase))
+    assert.match(gateReason(phrase), /HEAD aaaaaaaa 에 리뷰 체크\(claude-review\) 성공이 없다/)
   })
 
-  test('믿는 봇 영수증을 뒤 페이지까지 읽고 require 의 pass 로 센다', async (t) => {
+  test('리뷰 체크가 지금 HEAD 에서 success 면 통과하고, 실패나 진행 중이면 막는다', async (t) => {
     const c = setup(t)
-    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING],
-      require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'] }
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
-    const priorBlock = { body: 'BLOCK', submittedAt: '2026-01-01T00:01:00Z', commit: { oid: HEAD } }
-    const r = await gate(c, { '1': pr({ reviews: [priorBlock], comments: [],
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { review_checks: ['claude-review'] } } }))
+    const rollup = (conclusion: string | null, status = 'COMPLETED') => [{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'claude-review', status, conclusion }]
+    const passed = await gate(c, { '1': pr({ statusCheckRollup: rollup('SUCCESS') }) }, 0)
+    assert.equal(passed.code, 0, both(passed))
+    for (const [conclusion, status] of [['FAILURE', 'COMPLETED'], [null, 'IN_PROGRESS']] as const) {
+      const r = await gate(c, { '1': pr({ statusCheckRollup: rollup(conclusion, status) }) }, 0)
+      assert.equal(r.code, 1, both(r))
+    }
+  })
+
+  test('믿는 봇 영수증을 뒤 페이지까지 읽고 지금 HEAD 의 리뷰로 센다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
+    const r = await gate(c, { '1': pr({ reviews: [], comments: [],
       bot_review: { split: 'comments', comments: [receipt(HEAD)] },
-    }), _log_rows: [`${HEAD}\t\t2026-01-01T00:00:00Z`] }, 0)
+    }) }, 0)
     assert.equal(r.code, 0, both(r))
     assert.match(r.stdout, /^GATE-OK 1$/m)
   })
 
-  test('믿는 봇을 설정해도 기존 판정 문구로 통과할 수 있고 봇 지적이나 조회 실패는 머지를 막는다', async (t) => {
+  test('믿는 봇을 설정하면 봇 지적이나 조회 실패, 영수증 없음은 머지를 막는다', async (t) => {
     const c = setup(t)
-    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
-    const reviews = [{ body: 'PASS', submittedAt: '2026-01-01T00:02:00Z', commit: { oid: HEAD } }]
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
     const cases = [
-      { data: {}, reason: null },
+      { data: { comments: [receipt(HEAD)] }, reason: null },
       { data: undefined, reason: /스레드를 읽지 못했다/ },
       { data: { headRefOid: 'b'.repeat(40) }, reason: /PR HEAD 가 바뀌었다/ },
-      { data: { reviewThreads: [{ isResolved: false, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:01:00Z' }] } }] },
+      { data: { comments: [receipt(HEAD)], reviewThreads: [{ isResolved: false, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:01:00Z' }] } }] },
         reason: /봇의 미해결 줄 댓글 스레드/ },
+      { data: {}, reason: /^HEAD aaaaaaaa 에 현재 HEAD 를 확인한 봇 영수증이 없다$/ },
     ]
     for (const { data, reason } of cases) {
-      const r = await gate(c, { '1': pr({ reviews, comments: [], bot_review: data }) }, 0)
+      const r = await gate(c, { '1': pr({ reviews: [{ body: 'PASS', submittedAt: '2026-01-01T00:02:00Z', commit: { oid: HEAD } }], comments: [], bot_review: data }) }, 0)
       assert.equal(r.code, reason ? 1 : 0, both(r))
       if (reason) assert.match(gateReason(r), reason)
     }
-    const missing = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: {} }) }, 0)
-    assert.match(gateReason(missing), /^봇 리뷰 대기: .*리뷰 판정 문구나 현재 HEAD 를 확인한 봇 영수증이 없다/)
   })
 
   test('머지 큐도 이전 영수증을 막고 현재 HEAD 를 확인한 영수증으로 머지한다', async (t) => {
     const c = setup(t)
-    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
     const withReceipt = (head: string) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)] } }) })
     const blocked = await queue(c, withReceipt('b'.repeat(40)), 0)
     assert.equal(blocked.code, 1, both(blocked))
@@ -304,31 +310,12 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
 
   test('페이지를 끝까지 읽을 수 없으면 중간에 찾은 영수증으로 통과하지 않는다', async (t) => {
     const c = setup(t)
-    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
     for (const pageInfo of [{ hasNextPage: true, endCursor: 'same' }, { endCursor: null }]) {
       const result = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(HEAD)], pageInfo } }) }, 0)
       assert.equal(result.code, 1, both(result))
       assert.match(gateReason(result), /스레드를 읽지 못했다/)
     }
-  })
-
-  test('모르는 require 조건은 봇 영수증을 조회하기 전에 막는다', async (t) => {
-    const c = setup(t)
-    const auto_review = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING], require: ['unknown'] }
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review } }))
-    const result = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(HEAD)] } }) }, 0)
-    assert.equal(result.code, 1, both(result))
-    assert.match(gateReason(result), /모르는 조건/)
-    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /readThreads=/)
-  })
-
-  test('기능 PR 은 설정에 HEAD 조건이 없어도 현재 HEAD 의 판정이 필요하다', async (t) => {
-    const c = setup(t)
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['last-verdict-pass'] } } }))
-    const r = await gate(c, { '1': pr({ reviews: [{ body: 'PASS', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: 'b'.repeat(40) } }], comments: [] }) }, 0)
-    assert.equal(r.code, 1, both(r))
-    assert.match(gateReason(r), /HEAD aaaaaaaa 에 리뷰 판정이 없다/)
   })
 
   test('리뷰 설정이 없으면 리뷰 없이 통과한다', async (t) => {
@@ -337,67 +324,15 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.equal(r.code, 0, both(r))
   })
 
-  test('머지 큐와 gate 는 이전 HEAD 와 보류 판정을 막는다', async (t) => {
+  test('머지 큐와 gate 는 리뷰 체크가 없는 PR 에 같은 이유를 낸다', async (t) => {
     const c = setup(t)
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK' } } }))
-    for (const [body, oid, reason] of [['PASS', 'b'.repeat(40), '리뷰 판정이 없다'], ['BLOCK', HEAD, '리뷰 보류']]) {
-      const state = { '1': pr({ reviews: [{ body, submittedAt: '2026-01-01T00:00:00Z', commit: { oid } }], comments: [] }) }
-      const g = await gate(c, state, 0)
-      const q = await queue(c, state, 0)
-      assert.equal(g.code, 1, both(g))
-      assert.equal(q.code, 1, both(q))
-      assert.match(gateReason(g), new RegExp(reason))
-      assert.equal(gateReason(g), queueReason(q))
-    }
-  })
-
-  describe('block 을 반영한 PR(fixed_after_block)', () => {
-    const REVIEWED = 'b'.repeat(40)
-    const rows = [`${HEAD}\t${REVIEWED}\t2026-01-02T00:00:00Z`, `${REVIEWED}\t\t2026-01-01T00:00:00Z`]
-    const review = (commit: string) => ({ id: 'PRR_1', body: 'BLOCK', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: commit } })
-    const config = (c: Ctx, over: Json = {}) =>
-      writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'], feature_head: false, ...over } } }))
-
-    test('block 뒤 새 커밋이 있고 스레드가 0 이면 통과하고 REVIEW-FIXED 줄을 낸다', async (t) => {
-      const c = setup(t)
-      config(c, { fixed_after_block: true })
-      const r = await gate(c, { '1': pr({ reviews: [review(REVIEWED)], comments: [] }), _log_rows: rows }, 0)
-      assert.equal(r.code, 0, both(r))
-      assert.deepEqual(r.stdout.trim().split('\n').filter((line) => /^(GATE-|REVIEW-FIXED)/.test(line)), ['GATE-OK 1', `REVIEW-FIXED PRR_1 ${REVIEWED.slice(0, 8)}..${HEAD.slice(0, 8)}`])
-    })
-
-    test('미해결 스레드가 남으면 막고 REVIEW-FIXED 줄을 내지 않는다', async (t) => {
-      const c = setup(t)
-      config(c, { fixed_after_block: true })
-      const r = await gate(c, { '1': pr({ reviews: [review(REVIEWED)], comments: [] }), _log_rows: rows }, 2)
-      assert.equal(r.code, 1, both(r))
-      assert.match(gateReason(r), /미해결 리뷰 스레드 2 개/)
-      assert.doesNotMatch(r.stdout, /REVIEW-FIXED/)
-    })
-
-    test('block 뒤 커밋이 없으면 리뷰 보류로 막는다', async (t) => {
-      const c = setup(t)
-      config(c, { fixed_after_block: true })
-      const r = await gate(c, { '1': pr({ reviews: [review(HEAD)], comments: [] }), _log_rows: [`${HEAD}\t\t2026-01-02T00:00:00Z`] }, 0)
-      assert.equal(r.code, 1, both(r))
-      assert.match(gateReason(r), /리뷰 보류/)
-    })
-
-    test('설정을 켜지 않으면 지금처럼 막는다', async (t) => {
-      const c = setup(t)
-      config(c)
-      const r = await gate(c, { '1': pr({ reviews: [review(REVIEWED)], comments: [] }), _log_rows: rows }, 0)
-      assert.equal(r.code, 1, both(r))
-      assert.match(gateReason(r), /리뷰 보류/)
-    })
-  })
-
-  test('모르는 리뷰 조건은 gate 를 막는다', async (t) => {
-    const c = setup(t)
-    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['unknown'] } } }))
-    const r = await gate(c, { '1': pr({ reviews: [], comments: [] }) }, 0)
-    assert.equal(r.code, 1, both(r))
-    assert.match(gateReason(r), /모르는 조건/)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { review_checks: ['claude-review'] } } }))
+    const state = { '1': pr() }
+    const g = await gate(c, state, 0)
+    const q = await queue(c, state, 0)
+    assert.equal(g.code, 1, both(g))
+    assert.equal(q.code, 1, both(q))
+    assert.equal(gateReason(g), queueReason(q))
   })
 
   test('같은 이름 체크의 이전 실패보다 새 통과를 센다', async (t) => {

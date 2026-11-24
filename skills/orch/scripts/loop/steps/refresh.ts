@@ -12,12 +12,8 @@
 //        차례 기록)의 차례 PR 이면 `머지 큐의 차례다`. 큐 밖에서 HEAD 가 바뀌면 그 PR 이 STOP 으로 멈추기 때문이다.
 //        이번 틱의 CI 가 그 HEAD 에서 passed 가 아니면 `CI <상태 또는 없음>`. 도는 CI 를 끊거나 실패를 덮지 않으려는 것이다.
 //        상태는 필수 체크만으로 정한 것(CI 항목의 required, 없으면 state)이다. 필수가 아닌 리뷰 봇이 실패해도 최신화를 미루지 않는다.
-//        queue.auto_review.fallback 이 있으면 아래 두 가지도 기다린다. 리뷰 봇 체크(fallback.check)가 그 HEAD 에서 아직 돌면
-//        (core/review-fallback.ts 의 reviewRunning) `리뷰 봇 <체크> 이 끝나지 않았다`. 리뷰 봇은 Ready 때만 돌아, 끝나기 전에 HEAD 를 옮기면
-//        새 HEAD 에는 리뷰 체크가 없어 장애를 판정하지 못하고 대체 리뷰도 뜨지 않는다.
-//        state/review-fallback.json 에 그 (PR, HEAD) 의 launched 기록이 있고 기록 시각 뒤에 판정 문구(queue.auto_review 의 pass, block)가 든
-//        리뷰나 댓글이 없으면(gh pr view --json reviews,comments, core/review-fallback.ts 의 verdictSince) `대체 리뷰 판정 대기`.
-//        조회가 실패하면 `대체 리뷰 판정을 읽지 못했다` 로 미룬다. 리뷰 worker 는 띄울 때의 HEAD 를 리뷰하므로, 그 사이 HEAD 가 바뀌면 멈춘다.
+//        queue.auto_review.review_checks 가 있으면 그 체크가 그 HEAD 에서 아직 돌 때도 기다린다(core/review-checks.ts 의 reviewRunning)
+//        `리뷰 체크 <체크> 이 끝나지 않았다`. 끝나기 전에 HEAD 를 옮기면 그 리뷰 결과를 버리게 된다.
 //        lib/refresh.ts 의 aheadInQueue 가 큐의 앞 PR 을 내면 `머지 큐의 앞 PR #<번호> 이 머지된 뒤 최신화한다`.
 //        쓴 자리가 refresh_slots 이상이면 `최신화 자리 <쓴 수>/<상한> 가 찼다`. 부르기 직전에 차례 기록을 다시 읽어 차례 PR 이 되었으면 차례다
 //     4. update: lib/gh.ts 의 updateBranch(이유 refresh, expected_head_sha 는 판정한 HEAD)를 부른다. 성공하면 기록의 value 가 updated 이고
@@ -35,34 +31,22 @@
 import { scriptPath } from '../../lib/commands.ts'
 import { SEND_MS } from '../../lib/conflicts.ts'
 import type { Found } from '../../lib/conflicts.ts'
-import { reviewRunning, verdictSince } from '../../core/review-fallback.ts'
-import { ghJson, updateBranch } from '../../lib/gh.ts'
+import { reviewRunning } from '../../core/review-checks.ts'
+import { updateBranch } from '../../lib/gh.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, verdict as refreshVerdict, writeRefresh } from '../../lib/refresh.ts'
 import type { ForkFiles } from '../../lib/refresh.ts'
-import { reviewNotes } from '../../lib/review-judgement.ts'
 import { LIVE_DISPATCH, worktreePaths } from '../../lib/workers.ts'
 import type { Context, StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { processes, queueTurns } from './queue-turns.ts'
-import { readRecords as readFallbackRecords, recordFile as fallbackFile } from './review-fallback.ts'
-import type { FallbackRecord } from './review-fallback.ts'
 import { iso, log, oneLine, ownerOf, relay } from './shared.ts'
 import type { CiEntry, Lookup, OwnPr } from './shared.ts'
 
 // 머리 주석의 「최신화」 3 의 리뷰 봇 기다리기. 기다릴 이유, 없으면 null 이다
-function reviewWait(ctx: Context, pr: OwnPr, fallbacks: () => Record<string, FallbackRecord>): string | null {
-  const review = ctx.autoMerge.review
-  const fallback = review?.fallback
-  if (!review || !fallback) return null
-  if (reviewRunning(pr.rollup, fallback.check)) return `리뷰 봇 ${fallback.check} 이 끝나지 않았다`
-  const record = fallbacks()[`${pr.number}@${pr.head}`]
-  if (record?.value !== 'launched') return null
-  const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments'], { cwd: ctx.repo })
-  if (!got.ok || typeof got.data !== 'object' || got.data === null) return '대체 리뷰 판정을 읽지 못했다'
-  const data = got.data as { reviews?: unknown; comments?: unknown }
-  const notes = [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
-  return verdictSince(notes, record.at, review) ? null : '대체 리뷰 판정 대기'
+function reviewWait(ctx: Context, pr: OwnPr): string | null {
+  const running = ctx.autoMerge.review?.checks.find((check) => reviewRunning(pr.rollup, check))
+  return running === undefined ? null : `리뷰 체크 ${running} 이 끝나지 않았다`
 }
 
 // 머리 주석의 「최신화」. 오류가 있으면 이유를 `; ` 로 이어 내고, 없으면 null 이다
@@ -99,8 +83,6 @@ async function refreshBehind(ctx: Context, mine: OwnPr[], ci: Record<string, CiE
     }
     return changed.get(n) ?? null
   }
-  let fallbackRecords: Record<string, FallbackRecord> | null = null
-  const fallbacks = () => (fallbackRecords ??= readFallbackRecords(fallbackFile(ctx.repo)))
   const errors = new Set<string>()
   const wait = (pr: OwnPr, why: string) => log(`REFRESH-WAIT #${pr.number} ${why}`)
   for (const pr of [...mine].sort((a, b) => a.number - b.number)) {
@@ -127,7 +109,7 @@ async function refreshBehind(ctx: Context, mine: OwnPr[], ci: Record<string, CiE
       wait(pr, `CI ${state ?? '없음'}(${judged.reason})`)
       continue
     }
-    const reviewing = reviewWait(ctx, pr, fallbacks)
+    const reviewing = reviewWait(ctx, pr)
     if (reviewing !== null) {
       wait(pr, `${reviewing}(${judged.reason})`)
       continue

@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { baseMergesOnly, featureBranch, featureLoopRequested, planDeletionOnly } from '../scripts/lib/feature-evidence.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
-import { judgePrReview } from '../scripts/lib/review-judgement.ts'
 import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지시서를 모은다', (t) => {
@@ -165,7 +164,7 @@ describe('baseMergesOnly', () => {
     assert.equal(baseMergesOnly(tmp, twice, verified, 'main'), true)
   })
 
-  test('검증 뒤 양쪽에서 base 만 합쳤으면 바깥 merge 의 트리를 확인해 기존 검증과 리뷰를 받는다', () => {
+  test('검증 뒤 양쪽에서 base 만 합쳤으면 바깥 merge 의 트리를 확인해 기존 검증을 받는다', () => {
     advanceMain('b.txt')
     const queued = mergeMain()
     git('branch', 'queued', queued)
@@ -175,17 +174,12 @@ describe('baseMergesOnly', () => {
     git('merge', '-q', '--no-ff', '--no-edit', 'queued')
     const joined = git('rev-parse', 'HEAD')
     git('remote', 'add', 'origin', '.')
-    const reviewed = (head: string) => judgePrReview(tmp, { head, branch: 'feat', base: 'main' }, {
-      reviews: [{ body: 'PASS', commit: { oid: verified }, submittedAt: '2026-01-01T00:00:00Z' }],
-    }, { pass: /PASS/, block: /BLOCK/, require: ['verdict-on-head'], unknown: [] }, false).ok
     assert.equal(baseMergesOnly(tmp, joined, verified, 'main'), true)
-    assert.equal(reviewed(joined), true)
 
     git('reset', '-q', '--hard', local)
     git('merge', '-q', '--no-ff', '--no-commit', 'queued')
     const edited = commit('feat.txt', 'changed in outer merge\n')
     assert.equal(baseMergesOnly(tmp, edited, verified, 'main'), false)
-    assert.equal(reviewed(edited), false)
 
     git('checkout', '-q', 'queued')
     commit('more.txt', 'unverified\n')
@@ -194,7 +188,6 @@ describe('baseMergesOnly', () => {
     git('merge', '-q', '--no-ff', '--no-edit', 'queued')
     const unverified = git('rev-parse', 'HEAD')
     assert.equal(baseMergesOnly(tmp, unverified, verified, 'main'), false)
-    assert.equal(reviewed(unverified), false)
   })
 
   test('검증 뒤 코드 커밋, merge 커밋에 더한 변경, base 밖 브랜치의 merge 는 받아들이지 않는다', () => {

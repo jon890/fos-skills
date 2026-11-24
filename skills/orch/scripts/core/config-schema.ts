@@ -24,7 +24,7 @@
 
 import * as z from 'zod'
 import { taskAdapterOf } from './task-adapters.ts'
-import { autoMergeConfig, REVIEW_CONFIG_KEYS, unknownConditionsText } from './auto-merge.ts'
+import { autoMergeConfig, LEGACY_REVIEW_KEYS, REVIEW_CONFIG_KEYS } from './auto-merge.ts'
 import { autoAdvanceOf } from './auto-advance.ts'
 import {
   DOCKER_KEYS,
@@ -158,14 +158,12 @@ function viaConfig(name: Section, key: string, judge: (config: Config) => unknow
 
 const REVIEW_ENTRY: Check = {
   kind: 'core',
-  names: REVIEW_CONFIG_KEYS,
+  // 옛 문구 판정 키는 읽지 않지만 설정 오류로 막지 않는다. orch-doctor 가 LEGACY-REVIEW-KEY 로 지우라고 알린다
+  names: [...REVIEW_CONFIG_KEYS, ...LEGACY_REVIEW_KEYS],
   check: (value) => {
     try {
-      const unknown = autoMergeConfig({ queue: { auto_review: value } }).review?.unknown ?? []
-      if (unknown.length === 0) return []
-      // 모르는 조건은 루프가 멈추지 않게 ConfigError 가 아닌 목록으로 돌아온다. 경로는 그 목록의 키다
-      const reason = unknownConditionsText(unknown).replace(/^queue\.auto_review\.require 에 /, '')
-      return [{ path: 'queue.auto_review.require', reason, kind: 'value' }]
+      autoMergeConfig({ queue: { auto_review: value } })
+      return []
     } catch (e) {
       return asProblem('queue.auto_review', e)
     }

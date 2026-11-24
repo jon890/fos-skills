@@ -369,69 +369,29 @@ describe('worker 판단', () => {
   })
 })
 
-describe('리뷰 봇과 대체 리뷰', () => {
-  const AUTO_REVIEW = { pass: '판정: 머지 가능', block: '판정: 반영 필요', fallback: { check: 'claude-review' } }
+describe('리뷰 체크', () => {
   const review = (status: string, conclusion: string | null): Json => ({ __typename: 'CheckRun', name: 'claude-review', status, conclusion })
 
-  test('리뷰 봇 체크가 아직 돌면 미루고, 끝나면 건다. fallback 이 없으면 기다리지 않는다', () => {
-    config({}, { auto_review: AUTO_REVIEW })
+  test('리뷰 체크가 아직 돌면 미루고, 끝나면 건다', () => {
+    config({}, { auto_review: { review_checks: ['claude-review'] } })
     const a = branch('feat-7', { 'modules/api/A.java': 'api\n' })
     advanceMain({ 'contracts/a.yaml': 'b\n' })
     prs({ number: 7, name: 'feat-7', head: a.head, rollup: [...passed(), review('IN_PROGRESS', null)] })
     const output = once()
     assert.deepEqual(updates(), [])
-    assert.deepEqual(lines(output, 'REFRESH-WAIT'), ['REFRESH-WAIT #7 리뷰 봇 claude-review 이 끝나지 않았다(공용 경로: contracts/a.yaml)'])
+    assert.deepEqual(lines(output, 'REFRESH-WAIT'), ['REFRESH-WAIT #7 리뷰 체크 claude-review 이 끝나지 않았다(공용 경로: contracts/a.yaml)'])
     prs({ number: 7, name: 'feat-7', head: a.head, rollup: [...passed(), review('COMPLETED', 'SUCCESS')] })
     once()
     assert.deepEqual(updates(), [[7, a.head]])
   })
 
-  test('fallback 이 없으면 리뷰 봇 체크가 돌아도 건다', () => {
-    config({}, { auto_review: { pass: AUTO_REVIEW.pass, block: AUTO_REVIEW.block } })
+  test('review_checks 가 없으면 그 이름의 체크가 돌아도 건다', () => {
+    config({}, { auto_review: { pass: '판정: 머지 가능', block: '판정: 반영 필요', fallback: { check: 'claude-review' } } })
     const a = branch('feat-7', { 'modules/api/A.java': 'api\n' })
     advanceMain({ 'contracts/a.yaml': 'b\n' })
     prs({ number: 7, name: 'feat-7', head: a.head, rollup: [...passed(), review('IN_PROGRESS', null)] })
     once()
     assert.deepEqual(updates(), [[7, a.head]])
-  })
-
-  test('대체 리뷰를 띄운 HEAD 는 그 뒤 판정이 달릴 때까지 미루고, 판정이 달리면 건다', () => {
-    config({}, { auto_review: AUTO_REVIEW })
-    const a = branch('feat-7', { 'modules/api/A.java': 'api\n' })
-    const b = branch('feat-8', { 'modules/web/W.java': 'web\n' })
-    advanceMain({ 'contracts/a.yaml': 'b\n' })
-    const at = '2026-11-20T17:14:11.000Z'
-    // 8 은 다른 HEAD 에 띄운 기록이라 기다리지 않는다
-    write(orchFile('state', 'review-fallback.json'), JSON.stringify({
-      [`7@${a.head}`]: { at, check: 'claude-review', sec: 30, value: 'launched' },
-      '8@0000000000000000000000000000000000000000': { at, check: 'claude-review', sec: 30, value: 'launched' },
-    }))
-    // 띄우기 전의 판정과 판정 문구가 없는 댓글은 세지 않는다
-    const comments = [
-      { body: '판정: 머지 가능', createdAt: '2026-11-20T17:00:00Z' },
-      { body: '리뷰를 시작했다', createdAt: '2026-11-20T17:20:00Z' },
-    ]
-    ghExtra = [{ args: ['pr', 'view', '7'], stdout: `${JSON.stringify({ reviews: [], comments })}\n` }]
-    prs({ number: 7, name: 'feat-7', head: a.head }, { number: 8, name: 'feat-8', head: b.head })
-    const output = once()
-    assert.deepEqual(updates(), [[8, b.head]])
-    assert.deepEqual(lines(output, 'REFRESH-WAIT'), ['REFRESH-WAIT #7 대체 리뷰 판정 대기(공용 경로: contracts/a.yaml)'])
-    ghExtra = [{ args: ['pr', 'view', '7'], stdout: `${JSON.stringify({ reviews: [], comments: [...comments, { body: '판정: 반영 필요\n차단 1건', createdAt: '2026-11-20T17:40:00Z' }] })}\n` }]
-    prs({ number: 7, name: 'feat-7', head: a.head }, { number: 8, name: 'feat-8', head: b.head })
-    once()
-    assert.deepEqual(updates(), [[8, b.head], [7, a.head]])
-  })
-
-  test('판정 조회가 실패하면 미룬다', () => {
-    config({}, { auto_review: AUTO_REVIEW })
-    const a = branch('feat-7', { 'modules/api/A.java': 'api\n' })
-    advanceMain({ 'contracts/a.yaml': 'b\n' })
-    write(orchFile('state', 'review-fallback.json'), JSON.stringify({ [`7@${a.head}`]: { at: '2026-11-20T17:14:11.000Z', check: 'claude-review', sec: 30, value: 'launched' } }))
-    ghExtra = [{ args: ['pr', 'view', '7'], stderr: 'gh offline\n', code: 1 }]
-    prs({ number: 7, name: 'feat-7', head: a.head })
-    const output = once()
-    assert.deepEqual(updates(), [])
-    assert.deepEqual(lines(output, 'REFRESH-WAIT'), ['REFRESH-WAIT #7 대체 리뷰 판정을 읽지 못했다(공용 경로: contracts/a.yaml)'])
   })
 })
 

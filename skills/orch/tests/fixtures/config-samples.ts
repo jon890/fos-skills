@@ -36,8 +36,8 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     poll_max_sec: wholeSec,
     ci_expected_sec: wholeSec,
     auto_review: {
-      good: [{ pass: 'LGTM', block: 'BLOCK' }, { pass: 'LGTM', block: 'BLOCK', require: ['verdict-on-head'], feature_head: false }],
-      bad: ['x', { pass: 'a' }, { pass: '', block: 'b' }, { pass: '(', block: 'b' }, { pass: 'a', block: 'b', require: ['thread-resolved'] }, { pass: 'a', block: 'b', feature_head: 'no' }],
+      good: [{ review_checks: ['claude-review'] }, { pass: 'LGTM', block: 'BLOCK', require: ['verdict-on-head'], feature_head: false }],
+      bad: ['x', { review_checks: [] }, { review_checks: 'claude-review' }, { review_checks: ['a'], hold: 'x' }, { request_after_sec: 0 }],
     },
     integration_tests: {
       good: [[], [{ paths: 'modules/<모듈>/src/main/**', command: './gradlew :<모듈>:integrationTest', modules: ['api'] }], [{ paths: ['a/<모듈>/**', 'b/<모듈>/*.kt'], command: 'make it' }]],

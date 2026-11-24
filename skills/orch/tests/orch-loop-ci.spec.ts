@@ -449,37 +449,14 @@ describe('worker 에게 보내기', () => {
     assert.equal(received('ci-failed').length, 1)
   })
 
-  describe('대체 리뷰가 설정된 리뷰 봇 체크', () => {
-    const FALLBACK = { pass: '판정: 머지 가능', block: '판정: 반영 필요', fallback: { check: 'claude-review' } }
-
-    test('실패한 체크가 리뷰 봇 체크뿐이면 worker 에게 보내지 않고 CI-FAILED 에 리뷰 봇 체크만 실패를 적는다', () => {
-      config({ queue: { required: ['test'], auto_review: FALLBACK } })
-      worker(1, 'running')
-      github([pr(1, [check('test', 'SUCCESS'), check('claude-review', 'FAILURE')])])
-      once()
-      assert.deepEqual(sends(), [])
-      assert.deepEqual(
-        events().map((line) => [line.kind, line.text]),
-        [['CI-FAILED', 'claude-review: 리뷰 봇 체크만 실패']],
-      )
-    })
-
-    test('리뷰 봇 체크와 다른 체크가 함께 실패하면 worker 에게 보낸다', () => {
-      config({ queue: { required: ['test'], auto_review: FALLBACK } })
-      worker(1, 'running')
-      github([pr(1, [check('test', 'FAILURE'), check('claude-review', 'FAILURE')])])
-      once()
-      assert.equal(sends().length, 1)
-    })
-
-    test('fallback 이 없으면 리뷰 봇 체크만 실패해도 지금처럼 worker 에게 보낸다', () => {
-      config({ queue: { required: ['test'], auto_review: { pass: FALLBACK.pass, block: FALLBACK.block } } })
-      worker(1, 'running')
-      github([pr(1, [check('test', 'SUCCESS'), check('claude-review', 'FAILURE')])])
-      once()
-      assert.equal(sends().length, 1)
-      assert.deepEqual(events().map((line) => line.text), ['claude-review: 보냈다 d1'])
-    })
+  // 사용자 결정 2026-11-24: 리뷰 체크의 실패는 리뷰가 반영할 곳을 찾은 것이라 다른 체크처럼 worker 에게 보낸다
+  test('리뷰 체크(review_checks)만 실패해도 worker 에게 보낸다', () => {
+    config({ queue: { required: ['test'], auto_review: { review_checks: ['claude-review'] } } })
+    worker(1, 'running')
+    github([pr(1, [check('test', 'SUCCESS'), check('claude-review', 'FAILURE')])])
+    once()
+    assert.equal(sends().length, 1)
+    assert.deepEqual(events().map((line) => line.text), ['claude-review: 보냈다 d1'])
   })
 
   describe('취소된 체크', () => {

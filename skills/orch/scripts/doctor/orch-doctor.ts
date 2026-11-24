@@ -46,7 +46,8 @@
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
 //     <orch 루트>/config.json 의 문제는 모두 INVALID-CONFIG <경로> <이유> 와 종료 코드 1 이다. 문제는 설정 검사표(core/config-schema.ts)의 problems 가 모은다.
 //     JSON 이 깨졌으면 경로가 config.json 이다. 종류는 모르는 절·키·이름, 틀린 값, 짝 규칙 위반, 5.2.0 에서 지운 옛 칸이다.
-//     모르는 리뷰 조건 이름(queue.auto_review.require)도 여기 든다. 상주 루프는 이 설정으로 멈추지 않고 PR 만 걸지 않아, 여기서 알리지 않으면 자동 머지가 조용히 서 있다.
+//     queue.auto_review 의 옛 문구 판정 키(pass, block, require, feature_head, fixed_after_block, fallback)는 INVALID-CONFIG 가 아니라 키마다
+//     LEGACY-REVIEW-KEY 경고다. 읽지 않으므로 지우라고 알린다. 종료 코드를 바꾸지 않는다.
 //     검사표는 zod 에 기대므로 불러오지 못하면(의존 설치 실패) CLI-DEPS-MISSING <이유> 한 줄을 내고 설정 검사만 건너뛴다. 종료 코드는 바꾸지 않는다.
 //     ORCH_CONFIG_SCHEMA 는 테스트 전용이다. 검사표 모듈 대신 그 경로의 파일을 불러와 불러오기 실패를 흉내 낸다.
 //     UNKNOWN-HOOK 은 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
@@ -164,6 +165,7 @@
 //     INVALID-CONFIG <경로> <이유>                설정 파일의 문제 하나. 깨진 JSON(경로 config.json), 모르는 절·키, 틀린 값, 짝 규칙 위반, 삭제한 옛 설정 칸(이유에 고칠 명령이 든다)
 //     INTEGRATION-MODULE-NOT-FOUND <설정 경로> <모듈>  해당 규칙의 paths 에 맞는 추적 파일이 없는 모듈이다. 종료 코드에는 영향이 없다
 //     CLI-DEPS-MISSING <이유>                    설정 검사표가 쓰는 의존(zod)을 불러오지 못했다. 설정 검사만 건너뛴다. 플러그인을 다시 설치하거나 플러그인 폴더에서 npm ci 를 돈다. 종료 코드에는 영향이 없다
+//     LEGACY-REVIEW-KEY queue.auto_review.<키> ...  읽지 않는 옛 리뷰 문구 판정 키다. 지우는 명령을 붙인다. 종료 코드에는 영향이 없다
 //     OLD-INBOX-FILTER <옛 파일> ...              옛 알림 필터(<orch 루트>/config/notification.json)가 있다. config.json 의 inbox 절로 옮기는 법을 알린다. 종료 코드에는 영향이 없다
 //     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
@@ -193,7 +195,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, FEEDBACK-OPEN-DELEGATED, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, LEGACY-REVIEW-KEY, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, FEEDBACK-OPEN-DELEGATED, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -211,6 +213,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { isFeedbackReviewer } from '../core/config.ts'
 import { isObject } from '../core/json.ts'
+import { LEGACY_REVIEW_KEYS } from '../core/auto-merge.ts'
 import { integrationNeeds, integrationRules } from '../core/integration-evidence.ts'
 import { COMMANDS, isGroup, LAUNCHER_MARK, legacyNames, orchWord, resolveLegacy, resolveNew, scriptIn, SCRIPTS_DIR } from '../lib/commands.ts'
 import { LEGACY_INBOX_FILTER, readConfigFile } from '../lib/config.ts'
@@ -488,7 +491,16 @@ function checkRepo(repo: string, schema: Schema | null, read: ReturnType<typeof 
   const config = (isObject(read.value) ? read.value : {}) as Config
   lines.push(...legacyInboxFilter(repo, config))
   lines.push(...missingAdrReservation(repo, config))
+  lines.push(...legacyReviewKeys(config))
   return lines
+}
+
+// 머리 주석의 LEGACY-REVIEW-KEY. queue.auto_review 의 옛 문구 판정 키는 읽지 않는다. 종료 코드에는 영향이 없다
+function legacyReviewKeys(config: Config): string[] {
+  const review = isObject(config.queue) ? (config.queue as Record<string, unknown>).auto_review : undefined
+  if (!isObject(review)) return []
+  return Object.keys(review).filter((key) => LEGACY_REVIEW_KEYS.includes(key)).sort().map((key) =>
+    `LEGACY-REVIEW-KEY queue.auto_review.${key} 는 읽지 않는다. 리뷰 댓글 문구로 판정하지 않는다(trusted_bots 나 review_checks 를 쓴다). 고칠 명령: ${orchWord()} config unset queue.auto_review.${key}`)
 }
 
 function missingIntegrationModules(repo: string, config: Config): string[] {

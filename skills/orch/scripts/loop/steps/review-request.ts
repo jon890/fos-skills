@@ -27,7 +27,7 @@ export function requestMissingBotReviews(ctx: StepContext, state: StepState, now
   const review = ctx.autoMerge.review
   const bots = review?.trustedBots
   const command = bots?.find((bot) => bot.requestComment)?.requestComment
-  if (!prs.ok || !bots || !command || review.unknown.length) return {}
+  if (!prs.ok || !bots || !command) return {}
   const delay = (review.requestAfterSec ?? DEFAULT_REVIEW_REQUEST_AFTER_SEC) * 1000
   const { report, errors } = reporter(ctx)
   const file = join(pathOf('state', ctx.repo), 'review-requests.json')

@@ -318,208 +318,65 @@ describe('대상 고르기', () => {
   })
 })
 
+// 사용자 결정 2026-11-24: 리뷰 댓글 문구로 판정하지 않는다. 봇 영수증이나 리뷰 체크(review_checks)만 본다
 describe('리뷰', () => {
-  const review = { pass: '^통과', block: '^보류' }
-  const reviews = (...bodies: string[]) => bodies.map((body, i) => ({ body, submittedAt: `2026-01-0${i + 1}T00:00:00Z`, commit: { oid: HEAD_A } }))
+  const checks = { review_checks: ['claude-review'] }
+  const reviewCheck = (conclusion: string) => [{ __typename: 'CheckRun', name: 'claude-review', status: 'COMPLETED', conclusion }]
+  const phrases = { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_A } }], comments: [{ body: '판정: 머지 가능', createdAt: '2026-01-01T00:00:00Z' }] }
 
-  // repo 의 feat-1 에 커밋을 만들고 origin 에 올린 뒤 그 SHA 를 낸다
-  function commit(message: string, file = message): string {
-    write(join(repo, file), `${message}\n`)
-    // 지시서와 설정은 추적하지 않는다. 브랜치를 바꿀 때 사라지지 않게 그 파일만 더한다
-    git(['add', file])
-    git(['commit', '-q', '-m', message])
-    const done = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', env })
-    return done.stdout.trim()
-  }
-
-  function push(): void {
-    git(['push', '-q', 'origin', 'main', 'feat-1'])
-  }
-
-  // feat-1 에서 리뷰할 커밋을 만들고, main 을 한 칸 올린 뒤 feat-1 에 합친다. code 면 합치기 전에 코드 커밋을 하나 더한다
-  function mergedAfterReview(code: boolean): { reviewed: string; head: string } {
-    git(['checkout', '-q', '-b', 'feat-1'])
-    const reviewed = commit('reviewed')
-    if (code) commit('code')
-    git(['checkout', '-q', 'main'])
-    commit('base')
-    git(['checkout', '-q', 'feat-1'])
-    git(['merge', '-q', '--no-edit', '--no-ff', 'main'])
-    const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', env }).stdout.trim()
-    git(['checkout', '-q', 'main'])
-    push()
-    return { reviewed, head }
-  }
-
-  test('마지막 리뷰 본문이 block 이면 걸지 않는다', () => {
-    config({ queue: { auto_review: review } })
-    github([pr(1)], { views: { 1: { reviews: reviews('통과', '보류: 고칠 것') } } })
+  test('리뷰 댓글 문구만 있으면 걸지 않고 AUTO-MERGE-NO-REVIEW 를 그 HEAD 에 한 번만 쓴다', () => {
+    config({ queue: { auto_review: checks } })
+    github([pr(1)], { views: { 1: phrases } })
     const output = once()
-    assert.match(output, /AUTO-MERGE-WAIT #1 리뷰 보류/)
-    assert.deepEqual(events('AUTO-MERGE'), [])
-    assert.deepEqual(events('AUTO-MERGE-NO-REVIEW'), [])
-  })
-
-  test('마지막 리뷰 본문이 pass 면 건다', async () => {
-    config({ queue: { auto_review: review } })
-    github([pr(1)], { views: { 1: { reviews: reviews('보류: 고칠 것', '통과') } } })
-    once()
-    assert.deepEqual(await queued(), queueArgs('1'))
-  })
-
-  test('이전 봇 영수증에는 재리뷰를 알리고 현재 HEAD 의 영수증을 받으면 큐에 건다', async () => {
-    config({ queue: { auto_review: { ...review, trusted_bots: [BOT_SETTING] } } })
-    const withReceipt = (commit: string) => {
-      const page = (nodes: Json[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
-      const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page() }
-      github([pr(1)], { botReview: { args: ['api', 'graphql', 'readThreads=true'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) } })
-    }
-    withReceipt(HEAD_B)
-    assert.match(once(), /AUTO-MERGE-WAIT #1 .*봇 영수증이 없다/)
-    assert.match(String(events('AUTO-MERGE-NO-REVIEW')[0]?.text), /봇 리뷰 대기/)
-    assert.deepEqual(queueCalls(), [])
-
-    withReceipt(HEAD_A)
-    assert.match(once(), /AUTO-MERGE-BASIS #1 .*chatgpt-codex-connector 영수증/)
-    assert.deepEqual(await queued(), queueArgs('1'))
-  })
-
-  test('옛 HEAD 의 pass 만 있으면 걸지 않고 AUTO-MERGE-NO-REVIEW 를 그 HEAD 에 한 번만 쓴다', () => {
-    config({ queue: { auto_review: review } })
-    const old = [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }]
-    github([pr(1)], { views: { 1: { reviews: old } } })
-    const output = once()
-    assert.match(output, /AUTO-MERGE-WAIT #1 리뷰 대기/)
-    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.match(output, new RegExp(`AUTO-MERGE-WAIT #1 HEAD ${HEAD_A.slice(0, 8)} 에 리뷰 체크\\(claude-review\\) 성공이 없다`))
     const [event] = events('AUTO-MERGE-NO-REVIEW')
     assert.equal(event?.pr, 1, JSON.stringify(events()))
-    assert.match(String(event.text), new RegExp(`^HEAD ${HEAD_A.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다`))
+    assert.match(String(event.text), /봇 영수증이나 리뷰 체크가 이 HEAD 에 생기면 다음 틱이 건다$/)
     assert.deepEqual(Object.keys(autoMergeState().unreviewed as Json), [`1@${HEAD_A}`])
     once()
     assert.equal(events('AUTO-MERGE-NO-REVIEW').length, 1, JSON.stringify(events()))
     assert.deepEqual(queueCalls(), [])
   })
 
-  test('리뷰 뒤에 기준 브랜치를 합친 merge 커밋만 있으면 앞 HEAD 의 pass 로 건다', async () => {
-    config({ queue: { auto_review: review } })
-    const { reviewed, head } = mergedAfterReview(false)
-    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: reviewed } }] } } })
-    once()
-    assert.deepEqual(await queued(), queueArgs('1'))
-    assert.deepEqual(events('AUTO-MERGE-NO-REVIEW'), [])
-  })
-
-  test('리뷰 뒤에 코드 커밋이 섞이면 merge 커밋이 끝이어도 앞 HEAD 의 pass 로 걸지 않는다', () => {
-    config({ queue: { auto_review: review } })
-    const { reviewed, head } = mergedAfterReview(true)
-    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: reviewed } }] } } })
-    const output = once()
-    assert.match(output, /AUTO-MERGE-WAIT #1 리뷰 대기/)
-    assert.equal(events('AUTO-MERGE-NO-REVIEW').length, 1, JSON.stringify(events()))
+  test('리뷰 체크가 지금 HEAD 에서 success 면 걸고 근거를 AUTO-MERGE-BASIS 로 남긴다. 실패면 걸지 않는다', async () => {
+    config({ queue: { auto_review: checks } })
+    github([pr(1)], { views: { 1: { statusCheckRollup: reviewCheck('FAILURE') } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 HEAD .* 리뷰 체크\(claude-review\) 성공이 없다/)
     assert.deepEqual(queueCalls(), [])
-  })
-
-  test('커밋이 없는 댓글은 HEAD 커밋 뒤에 쓴 것만 센다', async () => {
-    config({ queue: { auto_review: review } })
-    git(['checkout', '-q', '-b', 'feat-1'])
-    const head = commit('head')
-    git(['checkout', '-q', 'main'])
-    push()
-    const before = [{ body: '통과', createdAt: '2000-01-01T00:00:00Z' }]
-    github([pr(1, { headRefOid: head })], { views: { 1: { comments: before } } })
-    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 대기/)
-    const later = [{ body: '통과', createdAt: '2999-01-01T00:00:00Z' }]
-    github([pr(1, { headRefOid: head })], { views: { 1: { comments: later } } })
-    once()
+    github([pr(1)], { views: { 1: { statusCheckRollup: reviewCheck('SUCCESS') } } })
+    assert.match(once(), /AUTO-MERGE-BASIS #1 HEAD aaaaaaaa 리뷰 체크 claude-review success/)
     assert.deepEqual(await queued(), queueArgs('1'))
   })
-})
 
-describe('리뷰 조건 조합', () => {
-  const combo = { pass: '^통과', block: '^보류', require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'] }
-
-  function commit(message: string): string {
-    write(join(repo, message), `${message}\n`)
-    git(['add', message])
-    git(['commit', '-q', '-m', message])
-    return spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', env }).stdout.trim()
-  }
-
-  test('require 를 적지 않은 설정은 verdict-on-head 와 같아 옛 HEAD 의 pass 로 걸지 않는다', () => {
-    config({ queue: { auto_review: { pass: '^통과', block: '^보류' } } })
-    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }] } } })
-    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 대기/)
+  test('이전 봇 영수증에는 재리뷰를 알리고 현재 HEAD 의 영수증을 받으면 큐에 건다', async () => {
+    config({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } })
+    const withReceipt = (commit: string) => {
+      const page = (nodes: Json[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
+      const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page() }
+      github([pr(1)], { views: { 1: phrases }, botReview: { args: ['api', 'graphql', 'readThreads=true'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) } })
+    }
+    withReceipt(HEAD_B)
+    assert.match(once(), /AUTO-MERGE-WAIT #1 .*봇 영수증이 없다/)
+    assert.match(String(events('AUTO-MERGE-NO-REVIEW')[0]?.text), /봇 영수증이 없다/)
     assert.deepEqual(queueCalls(), [])
-  })
 
-  test('마지막 판정이 옛 HEAD 의 pass 면 걸고 통과 근거를 AUTO-MERGE-BASIS 로 남긴다', async () => {
-    config({ queue: { auto_review: combo } })
-    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }] } } })
-    const output = once()
+    withReceipt(HEAD_A)
+    assert.match(once(), /AUTO-MERGE-BASIS #1 .*봇 영수증 chatgpt-codex-connector/)
     assert.deepEqual(await queued(), queueArgs('1'))
-    const pass = 'pass(커밋 bbbbbbbb, 2026-01-01T00:00:00Z)'
-    assert.match(output, new RegExp(`AUTO-MERGE-BASIS #1 HEAD aaaaaaaa verdict-seen ${pass.replace(/[()]/g, '\\$&')}; last-verdict-pass `))
-    assert.match(output, /rereview-after-block block 없음/)
   })
 
-  test('판정이 하나도 없으면 걸지 않고 AUTO-MERGE-NO-REVIEW 에 막은 조건을 적는다', () => {
-    config({ queue: { auto_review: combo } })
-    github([pr(1)], { views: { 1: { comments: [{ body: '감사합니다', createdAt: '2026-01-01T00:00:00Z' }] } } })
-    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 대기/)
-    const [event] = events('AUTO-MERGE-NO-REVIEW')
-    assert.match(String(event?.text), new RegExp(`^HEAD ${HEAD_A.slice(0, 8)} 의 PR 에 판정 문구가 든 리뷰가 없다\\(verdict-seen\\)`), JSON.stringify(events()))
-    assert.deepEqual(queueCalls(), [])
-  })
-
-  test('마지막 판정이 block 이면 그 뒤에 커밋만 있어도 걸지 않는다', () => {
-    config({ queue: { auto_review: combo } })
-    const reviews = [
-      { body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } },
-      { body: '보류: 고칠 것', submittedAt: '2026-01-02T00:00:00Z', commit: { oid: HEAD_B } },
-    ]
-    github([pr(1)], { views: { 1: { reviews } } })
-    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 보류/)
-    assert.deepEqual(events('AUTO-MERGE-NO-REVIEW'), [])
-    assert.deepEqual(queueCalls(), [])
-  })
-
-  test('block 뒤 새 커밋의 pass 가 있으면 그 뒤 반영 커밋이 있어도 걸고, block 보다 앞 커밋의 늦은 pass 로는 걸지 않는다', async () => {
-    config({ queue: { auto_review: combo } })
-    git(['checkout', '-q', '-b', 'feat-1'])
-    const first = commit('first')
-    const fixed = commit('fixed')
-    const head = commit('p3')
-    git(['checkout', '-q', 'main'])
-    git(['push', '-q', 'origin', 'main', 'feat-1'])
-    const stale = [
-      { body: '보류: 고칠 것', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: fixed } },
-      { body: '통과', submittedAt: '2026-01-02T00:00:00Z', commit: { oid: first } },
-    ]
-    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: stale } } })
-    assert.match(once(), new RegExp(`AUTO-MERGE-WAIT #1 재리뷰 대기: block\\(커밋 ${fixed.slice(0, 8)}`))
-    assert.deepEqual(queueCalls(), [])
-    const rereviewed = [
-      { body: '보류: 고칠 것', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: first } },
-      { body: '통과', submittedAt: '2026-01-02T00:00:00Z', commit: { oid: fixed } },
-    ]
-    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: rereviewed } } })
-    const output = once()
+  test('옛 문구 판정 키만 있으면 리뷰 설정이 없는 것과 같아 리뷰 없이 건다', async () => {
+    config({ queue: { auto_review: { pass: '^통과', block: '^보류', require: ['verdict-seen'] } } })
+    github([pr(1)], { views: { 1: { reviews: [{ body: '보류: 고칠 것', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_A } }] } } })
+    assert.match(once(), /AUTO-MERGE-BASIS #1 HEAD aaaaaaaa queue\.auto_review 없음/)
     assert.deepEqual(await queued(), queueArgs('1'))
-    assert.match(output, new RegExp(`rereview-after-block block\\(커밋 ${first.slice(0, 8)}, 2026-01-01T00:00:00Z\\) 뒤 pass\\(커밋 ${fixed.slice(0, 8)}`))
   })
 
-  test('미해결 스레드가 있으면 조합이 통과해도 걸지 않는다', () => {
-    config({ queue: { auto_review: combo } })
+  test('미해결 스레드가 있으면 리뷰 체크가 통과해도 걸지 않는다', () => {
+    config({ queue: { auto_review: checks } })
     write(join(tmp, 'threads-1'), '2\n')
-    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }] } } })
+    github([pr(1)], { views: { 1: { statusCheckRollup: reviewCheck('SUCCESS') } } })
     assert.match(once(), /AUTO-MERGE-WAIT #1 미해결 스레드 2/)
-    assert.deepEqual(queueCalls(), [])
-  })
-
-  test('모르는 조건 이름이 있으면 루프는 멈추지 않고 그 PR 을 걸지 않으며 이유를 로그에 남긴다', () => {
-    config({ queue: { auto_review: { ...combo, require: ['verdict-seen', 'thread-resolved'] } } })
-    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_A } }] } } })
-    assert.match(once(), /AUTO-MERGE-WAIT #1 queue\.auto_review\.require 에 모르는 조건이 있다: thread-resolved\./)
     assert.deepEqual(queueCalls(), [])
   })
 })
@@ -996,18 +853,26 @@ describe('여러 Run', () => {
 })
 
 // 기능 PR 도 본문의 완료 근거 블록을 읽지 않는다. 리뷰 판정이 지금 HEAD 에 있으면 건다(사용자 결정 2026-11-24)
-test('기능 지시서의 PR 은 본문에 완료 근거 블록이 없어도 지금 HEAD 의 리뷰 판정으로 자동 큐에 건다', async () => {
-  config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
+test('기능 지시서의 PR 은 본문에 완료 근거 블록이 없어도 지금 HEAD 의 리뷰 체크로 자동 큐에 건다', async () => {
+  config({ queue: { auto_review: { review_checks: ['claude-review'] } } })
   spec('specs', 'spec-a.md', ['feat-1'], ['## 할 일', '루프를 쓴다(스펙: 새로 쓴다)'])
-  github([pr(1)], { views: { 1: { body: '', headRefOid: HEAD_A, reviews: [{ body: 'PASS', commit: { oid: HEAD_A }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
+  github([pr(1)], { views: { 1: { body: '', headRefOid: HEAD_A, statusCheckRollup: [{ __typename: 'CheckRun', name: 'claude-review', status: 'COMPLETED', conclusion: 'SUCCESS' }] } } })
   const output = once()
   assert.doesNotMatch(output, /기능 완료 근거/)
   await queued(1)
 })
 
+test('기능 지시서의 PR 은 리뷰 설정(trusted_bots, review_checks)이 없으면 걸지 않는다', () => {
+  config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
+  spec('specs', 'spec-a.md', ['feat-1'], ['## 할 일', '루프를 쓴다(스펙: 새로 쓴다)'])
+  github([pr(1)], { views: { 1: { reviews: [{ body: 'PASS', commit: { oid: HEAD_A }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
+  assert.match(once(), /AUTO-MERGE-WAIT #1 기능 자동 머지는 queue\.auto_review 의 trusted_bots 나 review_checks 가 필요하다/)
+  assert.equal(queueCalls().length, 0)
+})
+
 test('지시서 없는 PR 은 본문에 근거 블록 표시가 있어도 기능 PR 로 보지 않는다', async () => {
   github([pr(1)], { views: { 1: { body: '<!-- fos-feature-evidence -->', headRefOid: HEAD_A } } })
   const output = once()
-  assert.doesNotMatch(output, /독립 리뷰 정책이 필요하다/)
+  assert.doesNotMatch(output, /trusted_bots 나 review_checks 가 필요하다/)
   await queued(1)
 })

@@ -1,5 +1,5 @@
 // 기능 PR 판별과 기록 커밋의 예외 판정.
-//   featureBranch, featureLoopRequested  지시서로 기능 루프 PR 인지 본다. 리뷰 판정(lib/review-judgement.ts)이 기능 PR 에 verdict-on-head 를 더할 때 쓴다
+//   featureBranch, featureLoopRequested  지시서로 기능 루프 PR 인지 본다. 머지 뒤 마무리와 자동 머지(기능 PR 은 리뷰 설정이 필요하다)가 쓴다
 //   acceptsVerifiedCommit  기록한 커밋 뒤에 base 만 합친 merge 나 계획 폴더 삭제만 있는지 본다. 통합 테스트 기록(core/integration-evidence.ts)이 쓴다
 // PR 본문의 기능 완료 근거 블록은 관문, 마무리, 정리, 보드 어디서도 판정에 쓰지 않는다(사용자 결정 2026-11-24).
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
