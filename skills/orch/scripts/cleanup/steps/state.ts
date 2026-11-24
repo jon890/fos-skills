@@ -93,19 +93,20 @@ function directory(dir: string): boolean {
   try { return lstatSync(dir).isDirectory() } catch { return false }
 }
 
-// 옮길 것을 알리거나(미리 보기) 휴지통으로 옮긴다. label 은 로그의 대상 이름, folder 는 휴지통 안의 폴더다
-function trashRetained(ctx: StepContext, candidates: RetentionCandidate[], label: string, folder: string, days: number): void {
+// 옮길 것을 알리거나(미리 보기) 휴지통으로 옮긴다. label 은 로그의 대상 이름(주격), object 는 목적격, folder 는 휴지통 안의 폴더다.
+// 줄 꼴은 짧은 출력 규칙(output.ts 의 sweepLine)과 맞춘다
+function trashRetained(ctx: StepContext, candidates: RetentionCandidate[], label: string, object: string, folder: string, days: number): void {
   const { args, log } = ctx
   for (const candidate of candidates) {
     const why = reasonText(candidate, days)
     if (!args.apply) {
-      log(`${label}을 휴지통으로 옮길 것 ${candidate.path}: ${why}`)
+      log(`${object} 휴지통으로 옮길 것 ${candidate.path}: ${why}`)
       continue
     }
     try {
       log(`${label} 옮김 ${candidate.path} -> ${moveRetained(candidate, args.trash, folder)}: ${why}`)
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log(`${label}을 남긴다 ${candidate.path}: ${(e as Error).message}`)
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log(`${object} 남긴다 ${candidate.path}: ${(e as Error).message}`)
     }
   }
 }
@@ -120,7 +121,7 @@ function sweepHandoff(ctx: StepContext, state: StepState, now: number, handoffDa
   const worktrees = new Set(state.listed.map(([worktree]) => basename(worktree)))
   try {
     const candidates = handoffCandidates(dir, { now, days: handoffDays, worktrees, prStates: (numbers) => lookup.states(numbers) })
-    trashRetained(ctx, candidates, 'handoff 산출물', 'handoff', handoffDays)
+    trashRetained(ctx, candidates, 'handoff 산출물', 'handoff 산출물을', 'handoff', handoffDays)
   } catch (e) {
     if (!(e instanceof LookupError)) throw e
     log(`handoff 산출물은 남긴다: ${e.message}`)
@@ -140,7 +141,7 @@ function sweepData(ctx: StepContext, now: number, handoffDays: number): void {
   } catch (e) {
     log(`data 폴더는 남긴다: 보드를 읽지 못했다 (${(e as Error).message})`)
   }
-  trashRetained(ctx, dataCandidates(dir, { now, days: handoffDays, boardIds }), 'data 자료', 'data', handoffDays)
+  trashRetained(ctx, dataCandidates(dir, { now, days: handoffDays, boardIds }), 'data 자료', 'data 자료를', 'data', handoffDays)
 }
 
 async function sweepRetention(ctx: StepContext, state: StepState): Promise<void> {

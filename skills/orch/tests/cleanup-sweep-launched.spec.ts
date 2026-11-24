@@ -455,6 +455,11 @@ describe('상태 파일 보존 기한', () => {
     fx.prViews['571'] = { state: 'OPEN' }
     const preview = runSweep(['--trash', trash])
     for (const target of [dirname(merged), stray, dirname(pending)]) has(preview, `handoff 산출물을 휴지통으로 옮길 것 ${target}`)
+    fx.env.ORCH_OUTPUT = 'short'
+    const short = runSweepFull(['--trash', trash]).stdout
+    delete fx.env.ORCH_OUTPUT
+    for (const target of [dirname(merged), stray, dirname(pending), owned]) has(short, `WOULD-REMOVE ${target}\n`)
+    has(short, 'SWEEP-DRY 4 0')
     exists(merged, preview)
     const out = runSweep(['--apply', '--trash', trash])
     gone(merged, out)
