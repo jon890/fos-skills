@@ -5,7 +5,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { hookCommand, mask, pieces, stripHeredocs } from './shell-text.ts'
 
 const PR_COMMAND = /^\s*(?:(?:[\w]+=[^\s]+|command|env)\s+)*(?:[^\s]*\/)?gh\s+pr\s+(?:create|edit)(?=\s|$)/
-const BODY_FILE = /(?:^|\s)(?:--body-file|-F)(?:=|\s+)(\S+)/g
+const BODY_FILE = /(?:^|\s)(?:--body-file(?:=|\s+)|-F(?:=|\s+)?)(\S+)/g
 
 function canonical(directory: string): string {
   try {
