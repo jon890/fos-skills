@@ -55,6 +55,21 @@ function escapeBrackets(label: string): string {
   return label.replace(BRACKET, (token) => token === '[' ? '&#91;' : token === ']' ? '&#93;' : token)
 }
 
+function linkLabel(candidate: string): string {
+  // 정규식이 먼저 읽은 독립 대괄호가 닫힌 뒤에 실제 링크가 시작할 수 있다.
+  let depth = 1
+  let start = 0
+  for (const bracket of candidate.matchAll(BRACKET)) {
+    if (bracket[0] === '[') {
+      if (depth === 0) start = bracket.index + 1
+      depth++
+    } else if (bracket[0] === ']') {
+      depth = Math.max(0, depth - 1)
+    }
+  }
+  return candidate.slice(start)
+}
+
 type Cache = { posts: Map<string, Lookup>; missingCli: boolean }
 
 function checkBody(md: string, cache: Cache): { errors: string[]; warnings: string[] } {
@@ -70,9 +85,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     const id = internal?.[2] ?? webId
     if (!id) continue
 
-    // 링크 앞에 붙은 독립된 [참고] 같은 글은 표시 글에서 뺀다.
-    const rawLabel = inline ? md.slice(link.index + 1, link.index + 1 + link[1].length) : ''
-    const label = POST_REF.test(rawLabel) ? rawLabel : rawLabel.replace(/^(?:[^\[\]\r\n]*\][ \t]+\[)+/u, '')
+    const label = inline ? linkLabel(md.slice(link.index + 1, link.index + 1 + link[1].length)) : ''
     const fixedLabel = escapeBrackets(label)
     const post = cache.posts.get(id) ?? (cache.missingCli ? 'missing-cli' : lookupPost(id))
     if (!cache.posts.has(id)) {

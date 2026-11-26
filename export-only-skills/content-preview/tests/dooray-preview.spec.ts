@@ -293,6 +293,13 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
+  test('링크 앞의 독립된 대괄호 문구를 링크 표시 글에 넣지 않는다', () => {
+    const body = '[참고 [보충]] 다음 업무를 확인하세요. [example/18 제목](dooray://example/tasks/post-example "working")'
+    const done = preview('comment', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
   test('표시 글의 대괄호와 두레이 웹 주소를 각각 고치도록 안내한다', () => {
     const body = [
       '[참고] [example/18 [Example] 제목](dooray://example/tasks/post-example "working")',
