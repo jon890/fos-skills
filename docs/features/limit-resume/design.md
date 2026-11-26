@@ -47,7 +47,7 @@ orch worker resume --dispatch <옛 dispatch id> [--run <Run>] [--repo DIR] [--ti
 
 | 줄 | 뜻 |
 | --- | --- |
-| `RESUME-TARGET <dispatch> kind=<limited|restart|settled> task=<Task> worktree=<경로> agent=<claude|codex>` | 대상 판정 |
+| `RESUME-TARGET <dispatch> kind=<limited\|restart\|settled> task=<Task> worktree=<경로> agent=<claude\|codex>` | 대상 판정 |
 | `RESUME-SCREEN` 과 들여 쓴 줄 | 옛 터미널 화면 끝 20줄(`limited` 만). 닫기 전에 남긴다 |
 | `RESUME-SESSION <세션 id> home=<기록 폴더> terminal=<새 터미널>` | 새 터미널의 실행기가 찾은 세션 |
 | `RESUME-WARN <이유>` | 진행은 하지만 알릴 것(기록에 지시서 경로 없음 같은 것) |

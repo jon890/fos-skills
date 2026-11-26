@@ -41,7 +41,7 @@
 
 | module | 맡는 일 | 맡지 않는 일 |
 | --- | --- | --- |
-| `core/merge-readiness.ts`(신규) | 조건 표(조건마다 종류, 단계, 범위, 필요한 값, 판단 함수, 문구), snapshot 과 이유의 타입, 조건을 도는 순서와 범위·`only`·`skip`·`stopAtFirst` 의 적용, 보드 항목 찾기(이미 읽은 항목 목록을 받는 순수 함수) | gh, git, 파일을 읽지 않는다(ADR-028) |
+| `core/merge-readiness.ts`(신규) | 조건 표(조건마다 종류, 단계, 범위, 필요한 값, 판단 함수, 문구), snapshot 과 이유의 타입, 조건을 도는 순서와 범위·`only`·`skip`·`stopAtFirst` 의 적용, 보드 항목 찾기(이미 읽은 항목 목록을 받는 순수 함수) | gh, git, 파일을 읽지 않는다([ADR-028](../../adr/028-orch-core-layer.md)) |
 | `core/checks.ts`(신규) | 롤업 행 고르기(`currentChecks`), 실패·진행 중·미등장·없음 판단(`judgeChecks`). `lib/gh.ts` 의 `ciState`, `requiredCiState`, `currentChecks` 는 이 파일을 다시 내보낸다 | 필수 체크 이름 조회 |
 | `lib/merge-readiness.ts`(신규) | 값 하나하나를 읽는 함수, core 가 달라는 값만 읽어 다시 묻는 반복, `checkReadiness`. 스레드 기본 명령, mergeable `UNKNOWN` 재시도, 비공개 낱말로 이유 가리기도 여기 둔다 | 조건의 뜻과 순서. 조건을 더하거나 빼지 않고 표를 따로 돌지 않는다 |
 | `queue/steps/gate.ts` | `gateReasons` 가 `checkReadiness` 를 부르는 얇은 함수가 된다. 이유 종류를 머지 큐의 동작(충돌 처리, worker 알림, 일반 보류)으로 옮기는 `holdWith` 는 남는다 | 조건 판단 |
@@ -318,7 +318,7 @@ PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남�
 - `queue/gate.ts`, `queue/merge_queue.ts`, `loop/steps/auto-merge.ts` 의 파일 맨 위 설명
 - [`docs/flow.md`](../../flow.md) 의 자동 머지 그림, `docs/data-schema.md`
 - `skills/orch/references/cleanup.md`, `spec-writing.md` 의 보류 설명, `replying.md` 의 `HOLD` 설명(여러 줄), `overlay.md` 의 「기능 PR 만 리뷰 설정이 필요하다」 문장
-- ADR-016 의 「적용 범위」 줄(PR3)과 「감당할 것」 보탬(PR7)
+- [ADR-016](../../adr/016-orch-auto-merge.md) 의 「적용 범위」 줄(PR3)과 「감당할 것」 보탬(PR7)
 
 ## 결정
 
@@ -326,7 +326,7 @@ PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남�
 
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
-| DECISION1 | seam 의 자리 | snapshot 값. 판단과 조건 순회는 core, 읽기는 lib | 작성자 | ADR-028. 값을 만드는 쪽이 둘(직접 조회, 루프의 틱 값)이고 테스트가 값을 직접 만든다. 순회를 lib 에도 두면 범위와 단계 규칙이 두 벌이 된다 |
+| DECISION1 | seam 의 자리 | snapshot 값. 판단과 조건 순회는 core, 읽기는 lib | 작성자 | [ADR-028](../../adr/028-orch-core-layer.md). 값을 만드는 쪽이 둘(직접 조회, 루프의 틱 값)이고 테스트가 값을 직접 만든다. 순회를 lib 에도 두면 범위와 단계 규칙이 두 벌이 된다 |
 | DECISION2 | 두 단계의 표현 | 질문에 단계를 넣지 않고 이유마다 단계를 붙인다 | 작성자 | 관문은 한 번 물어 `ready` 이유로 실패하고 `merge` 이유를 `HOLD` 로 내야 한다. 단계를 질문에 넣으면 두 번 물어야 한다 |
 | DECISION3 | 루프만 보는 조건 | 「이미 건 HEAD」 와 「리뷰 설정 없음」 을 `ask.auto` 가 있을 때만 켜지는 조건으로 표에 둔다 | 작성자 | 첫 이유 하나만 남기는 루프의 문구 순서를 표 하나로 지킨다. 표 밖에 두면 루프가 조건 사이에 끼워 넣는 코드를 따로 가져야 한다 |
 | DECISION4 | 체크 대기 뒤 판단 | 머지 큐도 대기 뒤에 진행 중·미등장을 본다 | 작성자 | 스펙 REQ1. 지금은 대기 직후 새 체크가 붙으면 머지 직전 확인에서 멈춘다. 멈추는 것은 같고 자리와 문구만 앞당겨진다 |
@@ -345,5 +345,5 @@ PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남�
 | 결정 | 종류 | ADR 또는 필요 없음의 이유 | 현재 규칙의 원본 |
 | --- | --- | --- | --- |
 | 머지 전 조건의 원본은 조건 표 하나이고, 호출부는 범위만 고르며 보류는 머지 단계에서만 막는다 | architecture | 새 ADR 이 필요하다. 번호는 PR2 가 받는다. 되돌리려면 관문, 머지 큐, 루프의 코드와 출력 계약을 함께 바꿔야 하고, 뒤에 work-board 가 이 결과를 받는 작업이 이 결정을 다시 참조한다. 기각한 대안은 「호출부마다 조건 목록을 두고 공통 함수만 나눠 쓴다」 와 「단계를 질문으로 나눈다」 다. ADR 이 가리킬 코드가 PR2 에서 생기므로 그때 쓴다 | `skills/orch/scripts/core/merge-readiness.ts` 의 조건 표 |
-| 루프가 준비된 PR 을 스스로 건다 | architecture | [ADR-016](../../adr/016-orch-auto-merge.md) 을 대체하지 않는다. 루프의 판단이 큐를 걸기 전의 사전 확인이라는 점은 가벼운 범위로 유지된다. 「적용 범위」 줄의 판정 자리는 PR3 이 고친다. REQ5 로 거는 대상이 좁아지는 것은 PR7 이 지금까지의 방식대로 「감당할 것(날짜 보탬)」 에 적는다 | ADR-016 |
-| 값 판단은 core, 외부 실행은 lib | architecture | [ADR-028](../../adr/028-orch-core-layer.md) 을 그대로 따른다. 새 core 파일 둘은 경계 검사를 받는다 | ADR-028 |
+| 루프가 준비된 PR 을 스스로 건다 | architecture | [ADR-016](../../adr/016-orch-auto-merge.md) 을 대체하지 않는다. 루프의 판단이 큐를 걸기 전의 사전 확인이라는 점은 가벼운 범위로 유지된다. 「적용 범위」 줄의 판정 자리는 PR3 이 고친다. REQ5 로 거는 대상이 좁아지는 것은 PR7 이 지금까지의 방식대로 「감당할 것(날짜 보탬)」 에 적는다 | [ADR-016](../../adr/016-orch-auto-merge.md) |
+| 값 판단은 core, 외부 실행은 lib | architecture | [ADR-028](../../adr/028-orch-core-layer.md) 을 그대로 따른다. 새 core 파일 둘은 경계 검사를 받는다 | [ADR-028](../../adr/028-orch-core-layer.md) |
