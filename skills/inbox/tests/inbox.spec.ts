@@ -2,7 +2,7 @@
 // 설정과 상태 폴더는 INBOX_CONFIG, INBOX_STATE_DIR 로 테스트마다 새로 만든다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -447,6 +447,90 @@ describe('저장소 필터 (R8, R9)', () => {
     state.items = [item('home', ['smarthome']), item('loose', ['etc'])]
     board(home)
     assert.deepEqual(board(main).items.map((row) => row.id), ['fake:task:loose'])
+  })
+})
+
+describe('보드에서 프로젝트와 대화방 숨기기', () => {
+  function seed() {
+    const task = item('1', ['p1', 'PROJECT'], undefined, { adapter: 'dooray', scopeName: '개발 프로젝트' })
+    const sameProject = item('2', ['p1', 'PROJECT'], undefined, { adapter: 'dooray' })
+    const channel = item('3', ['c1', '개발방'], undefined, { adapter: 'dooray', source: 'messenger', title: '개발방' })
+    const sameTitle = item('4', ['c2', '개발방'], undefined, { adapter: 'dooray', source: 'messenger', title: '개발방' })
+    const other = item('5', ['p2', 'OTHER'], undefined, { adapter: 'dooray' })
+    const store = new Store()
+    store.write('source-cache', { ...store.cache(), items: [task, sameProject, channel, sameTitle, other] })
+    extra = { startFetch: () => {} }
+    return { task, sameProject, channel, sameTitle, other, store }
+  }
+
+  test('미리보기는 이름만 보여 주고 확정하면 이 보드의 목록과 건수만 줄인다', () => {
+    const main = repo('main', null)
+    const otherRepo = repo('other', null)
+    writeConfig({ defaultBoard: otherRepo })
+    const { task, sameProject, channel, sameTitle, other, store } = seed()
+
+    assert.equal(call('mute', task.id, '--repo', main), 3, err)
+    assert.match(out, /프로젝트 「개발 프로젝트」/)
+    assert.equal(existsSync(join(main, '.orch', 'config.json')), false)
+    assert.equal(call('mute', task.id, '--repo', main, '--yes'), 0, err)
+    assert.equal(call('mute', task.id, '--repo', main, '--yes'), 0, err)
+    assert.equal(call('mute', channel.id, '--repo', main), 3, err)
+    assert.match(out, /대화방 「개발방」/)
+    assert.equal(call('mute', channel.id, '--repo', main, '--yes'), 0, err)
+
+    const view = board(main)
+    assert.deepEqual(view.items.map((row: InboxItem) => row.id), [sameTitle.id, other.id])
+    assert.equal(view.newCount, 2)
+    assert.equal(view.filtered, false)
+    assert.equal(board(otherRepo).newCount, 5)
+    assert.equal(store.cache().items.length, 5)
+    assert.equal(call('list'), 0, err)
+    assert.match(out, new RegExp(sameProject.id))
+    assert.equal(call('list', '--repo', main), 0, err)
+    assert.doesNotMatch(out, new RegExp(sameProject.id))
+
+    assert.equal(call('mute-list', '--repo', main, '--json'), 0, err)
+    assert.deepEqual(JSON.parse(out), [
+      { kind: 'project', value: 'p1', name: '개발 프로젝트' },
+      { kind: 'channel', value: 'c1', name: '개발방' },
+    ])
+    assert.equal(call('unmute', 'project', 'p1', '--repo', main), 0, err)
+    assert.equal(board(main).newCount, 4)
+    assert.equal(call('unmute', 'channel', 'c1', '--repo', main), 0, err)
+    assert.equal(board(main).newCount, 5)
+  })
+
+  test('기본 보드의 미분류 목록과 다른 보드의 미분류 수에도 그 보드의 숨김만 적용한다', () => {
+    const main = legacyRepo('main', { dooray: { projects: ['p2'] } })
+    const otherRepo = repo('other', { dooray: { channels: ['c2'], excludeChannels: ['c1'] } })
+    writeConfig({ defaultBoard: main })
+    const { task, channel, other } = seed()
+    const configFile = join(main, '.orch', 'config.json')
+    writeFileSync(configFile, JSON.stringify({ board: { enabled: false } }))
+    board(otherRepo)
+    assert.equal(board(main).newCount, 4)
+    assert.equal(board(otherRepo).unclassified, 2)
+    assert.equal(call('mute', task.id, '--repo', main, '--yes'), 0, err)
+    assert.deepEqual(JSON.parse(readFileSync(configFile, 'utf8')), {
+      board: { enabled: false },
+      inbox: { dooray: { projects: ['p2'], excludeProjects: ['p1'] } },
+    })
+    const view = board(main)
+    assert.deepEqual(view.items.map((row: InboxItem) => row.id), [other.id, channel.id])
+    assert.equal(view.newCount, 2)
+    assert.equal(board(otherRepo).unclassified, 2)
+  })
+
+  test('한 보드가 자기 프로젝트를 숨겨도 다른 보드의 분류가 달라지지 않는다', () => {
+    const main = repo('main', { dooray: { projects: ['p2'] } })
+    const otherRepo = repo('other', { dooray: { projects: ['p1'] } })
+    writeConfig({ defaultBoard: main })
+    const { task } = seed()
+    assert.equal(board(otherRepo).newCount, 2)
+    const before = board(main)
+    assert.equal(call('mute', task.id, '--repo', otherRepo, '--yes'), 0, err)
+    assert.equal(board(otherRepo).newCount, 0)
+    assert.deepEqual(board(main).items, before.items)
   })
 })
 

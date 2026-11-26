@@ -46,7 +46,7 @@ const MIN_MESSENGER_REACTION_MINOR = 36
 
 type Json = Record<string, any>
 type Me = { id: string; orgId: string }
-type PostInfo = { projectId: string; projectCode: string; taskNumber: string; subject: string }
+type PostInfo = { projectId: string; projectCode: string; projectName?: string; taskNumber: string; subject: string }
 
 // 두레이 본문의 링크 표기를 읽을 글로 바꾼다. 「[@이름](dooray://…)」 은 「@이름」 이 된다
 export function plainText(text: string): string {
@@ -162,6 +162,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     const info = {
       projectId: String(value?.project?.id ?? ''),
       projectCode: String(value?.project?.code ?? ''),
+      projectName: String(value?.project?.name ?? ''),
       taskNumber: String(value?.taskNumber ?? ''),
       subject: String(value?.subject ?? ''),
     }
@@ -184,6 +185,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
       title: [info.taskNumber, info.subject].filter(Boolean).join(' '),
       url: taskUrl(postId),
       scope: [info.projectId, info.projectCode].filter(Boolean),
+      ...(info.projectName ? { scopeName: info.projectName } : {}),
       from,
       at,
       excerpt: excerptOf(text),

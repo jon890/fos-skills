@@ -111,3 +111,15 @@ node --disable-warning=ExperimentalWarning "$INBOX" dismiss "$ID"
 사용자는 보드의 알림 상자에서 `x` 다음 번호로 직접 넘길 수도 있다. 보드도 이 명령을 부른다. 잘못 넘긴 항목은 같은 명령에 `--undo` 를 붙여 되돌린다.
 
 답장을 등록한 주소, 리액션을 단 댓글이나 메시지와 이모지, 또는 넘긴 항목을 한 줄로 보고한다.
+
+## 이 보드에서 프로젝트나 대화방 숨기기
+
+`mute` 는 알림의 프로젝트나 대화방 이름을 보여 주고 종료 코드 3을 낸다. 사용자가 이름을 확인하면 같은 명령에 `--yes` 를 붙인다. 그 저장소의 보드에서 같은 프로젝트나 대화방의 알림과 건수가 빠진다.
+
+```bash
+node --disable-warning=ExperimentalWarning "$INBOX" mute "$ID" --repo "$REPO"
+node --disable-warning=ExperimentalWarning "$INBOX" mute-list --repo "$REPO"
+node --disable-warning=ExperimentalWarning "$INBOX" unmute project "$VALUE" --repo "$REPO"
+```
+
+되돌릴 때는 `mute-list` 에 나온 종류(`project` 또는 `channel`)와 값(`$VALUE`)을 `unmute` 에 넘긴다.

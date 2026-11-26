@@ -566,6 +566,47 @@ test('넘기기에 실패하면 알림을 남기고 이유를 toast 로 보인�
   await ui.unmount()
 })
 
+test('m 다음 번호로 이름을 확인하고 y 를 눌러야 같은 출처의 알림이 모두 사라진다', async ($, on) => {
+  const task = { ...INBOX_ITEMS[0], scope: ['p1', '개발'], scopeName: '어드민 개발' }
+  const sameProject = { ...task, id: 'dooray:task:comment:c2' }
+  const channel = { ...INBOX_ITEMS[2], scope: ['c1', '예시 개발방'], state: 'new' }
+  const calls = []
+  let items = [task, sameProject, channel]
+  await start($, on, (argv) => {
+    if (!String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')) return { exitCode: 1, stdout: '', stderr: '없음' }
+    if (argv[3] === 'mute') {
+      calls.push(argv.slice(3))
+      items = items.filter((item) => item.source === 'messenger')
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    return { exitCode: 0, stderr: '', stdout: JSON.stringify({ enabled: true, newCount: items.length, items }) }
+  })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Button', key: 'inbox-mute' })).props.hotkey).toBe('m')
+  await ui.press({ key: 'inbox-mute' })
+  await ui.press({ key: 'inbox-reply-' + channel.id })
+  expect(await ui.find({ type: 'Text', text: /대화방 「예시 개발방」/ })).toBeTruthy()
+  await ui.press({ key: 'inbox-mute' })
+  expect(await ui.find({ type: 'Button', key: 'inbox-mute-confirm' })).toBeFalsy()
+  expect(calls).toEqual([])
+
+  await ui.press({ key: 'inbox-mute' })
+  await ui.press({ key: 'inbox-reply-' + task.id })
+  expect(await ui.find({ type: 'Text', text: /프로젝트 「어드민 개발」/ })).toBeTruthy()
+  expect((await ui.find({ type: 'Button', key: 'inbox-mute-confirm' })).props.hotkey).toBe('y')
+  expect(calls).toEqual([])
+  await ui.press({ key: 'inbox-mute-confirm' })
+  expect(calls).toHaveLength(1)
+  expect(calls[0].slice(0, 3)).toEqual(['mute', task.id, '--repo'])
+  expect(calls[0][4]).toBe('--yes')
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-' + task.id })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-' + sameProject.id })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-' + channel.id })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^알림  1/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-undo' })).toBeFalsy()
+  await ui.unmount()
+})
+
 test('알림함이 켜진 적 없이 inbox 명령이 실패하면 알림 상자를 그리지 않는다 (R6)', async ($, on) => {
   await start($, on, (argv) => String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
     ? { exitCode: 1, stdout: '', stderr: 'node 를 찾지 못했다' }
