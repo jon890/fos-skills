@@ -1400,7 +1400,9 @@ async function loadGithub($) {
   loadRepoUrl($)
   let succeeded = false
   try {
-    live.prs = parsePullRequests(await github($, 'prs'))
+    // live 는 기다리는 사이 loadLive 가 새 객체로 바꿀 수 있다. 결과를 받은 뒤의 live 에 넣는다
+    const prs = parsePullRequests(await github($, 'prs'))
+    live.prs = prs
     delete live.errors.prs
     succeeded = true
   } catch (failure) {
