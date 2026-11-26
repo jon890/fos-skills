@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { hookCommand, mask, pieces, stripHeredocs } from './shell-text.ts'
 
-const PR_COMMAND = /^\s*(?:(?:[\w]+=[^\s]+|command|env)\s+)*(?:[^\s]*\/)?gh\s+pr\s+(?:create|edit)(?=\s|$)/
+const REPO_OPTION = /(?:(?:--repo(?:=|\s+)|-R(?:=|\s+)?)\S+\s+)*/
+const PR_COMMAND = new RegExp(
+  /^\s*(?:(?:\w+=\S+|command|env)\s+)*(?:\S*\/)?gh\s+/.source
+  + REPO_OPTION.source + /pr\s+/.source + REPO_OPTION.source + /(?:create|edit)(?=\s|$)/.source,
+)
 const BODY_FILE = /(?:^|\s)(?:--body-file(?:=|\s+)|-F(?:=|\s+)?)(\S+)/g
 
 function canonical(directory: string): string {
