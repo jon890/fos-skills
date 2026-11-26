@@ -148,6 +148,7 @@
 //     orch worker resume 과 launch-worker --terminal 은 직접 연 터미널을 worker-start --terminal 로 잇는다. Orca 는 그 터미널을
 //     `ownershipState` external, `retainedReason` external_terminal 로 적어 소유 확인이 「터미널 소유 상태 조회 실패」 로 남겼다(2026-11-20 AiSdtSkill).
 //     끝난 dispatch 이고 그 dispatch 의 띄우기 기록(lib/launched.ts)이 이 경로와 바로 그 터미널을 적었으면 소유 확인에서 뺀다. 닫는 시점은 위와 같다.
+//     external 인지는 삭제 직전에 새로 읽은 worker 행으로 본다. 스냅샷 뒤에 사용자가 넘겨받았으면 그 상태로 막는다.
 //     기록이 없거나 다른 터미널을 적었거나 터미널이 비어 있으면 예전처럼 남긴다.
 //
 // 다른 Run (--run 을 줬을 때):
@@ -456,9 +457,10 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     if (held) return keep(heldReason(held), `남김 ${path}: ${heldReason(held)}`)
     if (args.run) args.foreign = await foreignHandles(args.run, async () => fresh)
     // 원래 user_owned 였던 예외와 기록한 터미널로 이어 쓴 external 터미널만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
+    // external 은 삭제 직전에 새로 읽은 행으로 본다. 스냅샷 뒤에 사용자가 넘겨받아 user_owned 가 됐으면 빼지 않아 소유 확인이 막는다
     const previouslyTaken = new Set([
       ...mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]),
-      ...externalLaunched(repo, mine),
+      ...externalLaunched(repo, workersAt(fresh, path)),
     ])
     const ignored = new Set([...taken].filter((handle) => previouslyTaken.has(handle)))
     const owner = await ownershipBlocker(path, ignored, async () => fresh)

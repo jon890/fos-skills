@@ -221,6 +221,19 @@ describe('resume 으로 이은 끝난 worker 의 터미널', () => {
     has(calls(), 'orca terminal close --terminal term_o')
   })
 
+  test('스냅샷 뒤에 사용자가 그 터미널을 넘겨받았으면 새로 읽은 소유 상태로 남긴다', () => {
+    const path = worktree('feat-resumed-taken')
+    squashMerge('feat-resumed-taken', path)
+    resumedTerminal(path)
+    // 이 fixture 에서 Run 목록 조회는 workers, 삭제 직전 새 조회는 all_workers 를 읽는다
+    const [worker] = fx.workers
+    fx.allWorkers = [{ ...worker, resource: { ...(worker.resource as Row), ownershipState: 'user_owned', retainedReason: 'user_takeover' } }]
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    exists(path, out)
+    has(out, '남김: 사용자 보유 터미널')
+    lacks(calls(), 'terminal close')
+  })
+
   test('기록이 없거나 기록한 터미널이 다르면 남긴다', () => {
     for (const [label, record] of Object.entries({ none: false as const, other: { terminal: 'term_other' }, unknown: { terminal: null } })) {
       const path = worktree(`feat-resumed-${label}`)
