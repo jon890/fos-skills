@@ -10,8 +10,8 @@
 | 구분 | 대상 |
 | --- | --- |
 | 플러그인에 담는다 | `.claude-plugin/plugin.json` 의 `skills` 배열에 등록한 스킬 |
-| 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
-| 플러그인과 함께 복사되지만 스킬이 아니다 | `modules/`, `scripts/`, `githooks/`, `docs/` |
+| 팀에도 내보내는 원본을 스킬로 등록한다 | `export-only-skills/` 의 `content-preview` 와 `korean-check` ([ADR-034](adr/034-export-only-skills-registered.md)) |
+| 플러그인과 함께 복사되지만 스킬이 아니다 | `modules/`, `types/`, `scripts/`, `githooks/`, `docs/` |
 | 플러그인이 싣는 훅 | `skills/orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
 | 플러그인이 싣는 mod | `extensions/work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
 | Codex 가 싣는 것 | `.codex-plugin/plugin.json` 의 `skills` 배열뿐이다. 훅과 mod 는 Claude Code 전용이라 싣지 않는다([ADR-007](adr/007-codex-manifest-without-hooks.md)) |
@@ -27,6 +27,8 @@
 | `skills/<이름>/` | 설치 스킬과 그 스킬의 references·templates·scripts·hooks·tests |
 | `export-only-skills/<이름>/` | 팀 내보내기 원본. 플러그인 스킬로도 등록한다 |
 | `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
+| `extensions/study-feedback-panel/` | 공부 후보와 스킬 개선 후보를 보는 패널 |
+| `types/` | 확장 기능이 타입 검사에 쓰는 선언 |
 | `modules/` | 여러 영역의 테스트와 코드가 함께 쓰는 공용 모듈. 스킬이 아니다. 팀 저장소로 내보내지 않는다 |
 | `modules/kit/` | 옛 Python 명령과 같은 글자를 내는 실행용 helper(argparse 꼴 옵션 펼치기, `str.splitlines` 같은 Python 꼴). `scripts/` 와 `githooks/` 는 import 하고, 스킬과 도구는 복사본을 둔다(설계 [`features/node-runtime/design.md`](features/node-runtime/design.md) 「공통 꼴 모듈 kit」) |
 | `modules/work-board/` | orch 와 work-board 가 사용하는 보드 항목의 형식, 줄 지문, 기본 파일 위치 |
@@ -79,12 +81,12 @@
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령 | orch 명령의 `BOARD_BIN` 기본값, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
-| `skills/plan/scripts/{verify_task,check_feature,run_doc_checks,overlay_paths,plan_number}.ts` | 계획서 검사, 스펙·설계 형식 검사, 레포 설정의 문서 검사 명령 실행, 하위 프로젝트 판정과 오버레이 탐색 순서, plan 번호 계산. 옵션, 출력 줄, 종료 코드는 각 머리 주석이 소유한다 | plan·spec·technical-design·implementation·docs-audit·docs-consolidate·review-fix 의 단계, `skills/plan/tests/` |
+| `skills/plan/scripts/{verify_task,check_feature,run_doc_checks,overlay_paths,plan_number,pr_size}.ts` | 계획서 검사, 스펙·설계 형식 검사, 레포 설정의 문서 검사 명령 실행, 하위 프로젝트 판정과 오버레이 탐색 순서, plan 번호 계산, PR 크기 계산. 옵션, 출력 줄, 종료 코드는 각 머리 주석이 소유한다 | plan·spec·technical-design·implementation·docs-audit·docs-consolidate·review-fix 의 단계, `skills/plan/tests/` |
 | `skills/browser/browser-driver/` | 브라우저 백엔드 중립 계층. 팀 저장소에는 `browser` 스킬과 함께 실린다. 명령 목록은 `help` 가, 백엔드 규칙은 그 폴더의 `README.md` 가 소유한다 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts`, `skills/presentation/scripts/check-deck.ts` |
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |
-| `scripts/runtime-policy.json` | TypeScript 이행 상태의 원본(남은 영역, 허용 JS 진입, 최소 Node) | `scripts/runtime-policy.ts` |
-| `scripts/tests/plugin-manifest.spec.ts` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
+| `scripts/runtime-policy.json` | TypeScript 이행 상태의 원본 | `scripts/runtime-policy.ts` |
+| `scripts/tests/plugin-manifest.spec.ts` | 스킬 원본 디렉터리와 `skills` 배열이 일치하는지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.ts` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
 | `scripts/export-to-team.ts` | 공용 스킬을 팀 저장소로 내보낸다. 플러그인 배포와 무관하게 그대로 동작한다. 인자는 스크립트 머리 주석이 소유한다 | 사람, `githooks/post-commit` |
 | `scripts/export-lists.ts` | `export-to-team.ts` 의 내보내는 목록을 그 파일의 글에서 읽는다 | `githooks/post-commit.ts`, `scripts/tests/exported-imports.spec.ts` |
@@ -98,7 +100,7 @@
 | --- | --- |
 | 스킬 본문의 `$SKILL_DIR` | 스킬을 로드할 때 붙는 `Base directory for this skill` 줄의 값이다. 캐시 안의 스킬 디렉터리를 가리킨다 |
 | 스킬 문서의 `../export-only-skills/korean-check` 같은 형제 경로 | 캐시 안에서 그대로 풀린다 |
-| `implementation`, `review-fix`, `spec`, `technical-design`, `docs-audit`, `docs-consolidate` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
+| `implementation`, `review-fix`, `spec`, `technical-design`, `docs-audit` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
 | `skills/orch/scripts/lib/commit-check.ts` 가 복사하는 `korean-check` | 자기 번들의 형제 폴더 `export-only-skills/korean-check` 의 `scripts/` 와 `references/` 다. import 하지 않고 worker 워크트리의 훅 폴더에 복사한다. 캐시에서도 같은 상대 경로다 |
 | `export-only-skills/content-preview/scripts/style-check.ts` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
 | `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `skills/browser/browser-driver/` 또는 기존 팀 사본의 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `skills/browser/browser-driver/` 에서 찾는다 |
@@ -107,8 +109,8 @@
 
 루트 `bin/` 에는 orch 실행기 `orch` 하나만 둔다. 설치 기록에서 번들을 골라 `skills/orch/bin/orch.ts` 에 넘기기만 한다. 번들 고르기의 원본은 `skills/orch/scripts/lib/install-record.ts` 이고, 실행기 머리 주석이 그 사본임을 적는다. `browser-driver` 명령은 팀 저장소의 플러그인이 PATH 에 추가한다. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 가 소유한다.
 
-`${CLAUDE_PLUGIN_ROOT}` 는 쓰지 않는다. 스킬 본문에서만 치환되고 `references/` 파일과 Bash 명령에서는 치환되지 않으며, 링크 설치에서는 값이 없기 때문이다.
-`$SKILL_DIR` 은 플러그인 설치와 링크 설치에서 같은 방식으로 얻는다.
+스킬 문서에서 다른 스킬의 경로를 구할 때는 `$SKILL_DIR` 을 쓴다. 플러그인 설치와 링크 설치에서 같은 방식으로 얻을 수 있다.
+훅 설정 파일인 `hooks.json` 에서는 `${CLAUDE_PLUGIN_ROOT}` 로 훅 경로를 찾는다.
 
 ## 저장소 밖에서 이 저장소를 가리키는 경로
 
@@ -133,10 +135,7 @@
 `~/.claude/skills/plan` 같은 같은 이름의 링크와 함께 두면 둘 다 목록에 뜨고 어느 쪽도 다른 쪽을 가리지 않는다.
 전환할 때 링크를 지우는 순서는 [flow.md](flow.md) 의 「링크 설치에서 옮기기」 가 소유한다.
 
-팀 저장소의 플러그인은 `content-preview` 와 `korean-check` 의 사본을 넣는다.
-두 스킬의 원본은 여기 있지만, 스킬로는 사본을 넣는 팀 저장소의 플러그인으로 받는다.
-그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
-이 플러그인은 두 원본 디렉터리를 캐시에 복사하되 `skills` 배열에서 제외하므로 함께 설치해도 중복으로 뜨지 않는다.
+이 플러그인은 `content-preview` 와 `korean-check` 의 원본을 `skills` 배열에 등록한다([ADR-034](adr/034-export-only-skills-registered.md)). 팀 플러그인도 설치하면 두 스킬과 `browser` 가 접두사만 다르게 두 번 보인다.
 
 - 사본은 `scripts/export-to-team.ts` 가 원본과 같은 내용으로 유지한다.
 - 팀 양식 스킬은 자기 플러그인 안의 사본을 상대 경로로 읽는다. 이 플러그인의 유무와 무관하다.
@@ -158,11 +157,10 @@
 | --- | --- |
 | `node scripts/run-tests.ts` | 저장소의 모든 node 테스트와 tsc |
 | `node scripts/runtime-policy.ts --pending` | 허용 목록 밖의 새 Python·셸 파일과 JS 진입이 없다. 영역마다 남은 파일 수를 낸다 |
-| `node scripts/run-tests.ts scripts/tests` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `export-to-team.spec.ts` 가 `export-to-team.ts` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
-| `node scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 설치 스킬 16개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
+| `node scripts/run-tests.ts scripts/tests` | 스킬 원본 디렉터리와 두 매니페스트의 `skills` 배열이 일치한다. `version` 은 `.claude-plugin/plugin.json` 에 있고 플러그인 CHANGELOG 의 첫 버전과 같다. 마켓플레이스의 소스가 `./` 다. `export-to-team.spec.ts` 가 `export-to-team.ts` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
+| `node scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 `.claude-plugin/plugin.json` 의 `skills` 에 등록한 스킬이 모두 인식된다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
-`claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
-설치 테스트가 `claude plugin validate . --json` 의 결과에서 오류가 없고 경고가 버전 경고 하나뿐인지를 확인한다.
+설치 테스트는 `claude plugin validate . --json` 이 오류와 경고 없이 통과하는지 확인한다.
 
 ## 다음 차수
 
@@ -190,7 +188,7 @@
 ## orch 코어와 핸들러
 
 이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
-상주 루프의 자동 진행 가운데 문서 PR 바로 머지, 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 뒤처진 PR 의 base 합치기는 `pipeline.refresh_slots`([ADR-020](adr/020-orch-loop-refresh.md)), 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge`([ADR-016](adr/016-orch-auto-merge.md))로 켠다.
+머지 순서 파일(`state/order.json`), 뒤처진 draft 의 base 합치기(`pipeline.update_behind_drafts`), 문서 PR 바로 머지, 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 뒤처진 PR 의 base 합치기는 `pipeline.refresh_slots`([ADR-020](adr/020-orch-loop-refresh.md)), 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge`([ADR-016](adr/016-orch-auto-merge.md))로 켠다.
 이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
@@ -218,52 +216,16 @@ core 는 core 안의 상대 모듈, 허용한 내장 모듈과 `config-schema.ts
 [ADR-028](adr/028-orch-core-layer.md)이 선택 이유를, [경계 검사](../skills/orch/tests/core-boundary.spec.ts)가 허용 의존과 외부 상태 접근 금지를 소유한다.
 
 ```
-skills/orch/scripts/<묶음>/<명령>.ts     명령. 폴더는 명령 표(lib/commands.ts)의 묶음과 같다. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
-skills/orch/scripts/orch-doctor.py       doctor 의 Python 진입점. ts_shim.py 와 함께 scripts/ 바로 아래에 남는다. 옛 .py 진입점은 이 둘 외에는 orch 5.0.0 에서 지웠다
-skills/orch/scripts/loop/orch-loop.ts    상주 루프의 진입 파일. 분리된 프로세스로 돈다. 사용법과 틱의 단계 순서는 머리 주석이 소유한다
-skills/orch/scripts/loop/lifecycle.ts    루프의 시작·멈춤·잠금과, 틱 자식을 띄우고 loop.json 을 쓰는 부모
-skills/orch/scripts/loop/steps/<단계>.ts 틱의 단계 하나씩. 그 단계가 하는 일과 알림은 파일 머리 주석이 소유한다
-skills/orch/scripts/lib/commands.ts      명령 표. 새 꼴과 옛 이름을 스크립트 경로와 인자로 푸는 유일한 원본이다. 스크립트끼리 부르는 경로는 scriptPath 로 푼다
-skills/orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받은 명령이 진행 중인 자식을 끊는 일 한 벌. 함수와 반환 형태는 머리 주석이 소유한다
-skills/orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
-skills/orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
-skills/orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
-skills/orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할. 셸에서 부르는 명령은 paths/orch_paths.ts
-skills/orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
-skills/orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
-skills/orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
-skills/orch/scripts/lib/config.ts        config.json 파일 읽기. 값 검사와 키 목록은 core/config.ts 를 호출하고 재수출한다
-skills/orch/scripts/core/overlap.ts      입력 파일 목록의 단위 겹침 판정. lib/overlap.ts 는 재수출한다
-skills/orch/scripts/core/queue-options.ts 머지 큐 옵션 목록과 설정 키 변환 표. lib/queue-options.ts 는 재수출한다
-skills/orch/scripts/core/finish-options.ts finish-pr 옵션 목록. lib/finish-options.ts 는 재수출한다
-skills/orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
-skills/orch/scripts/core/auto-merge.ts   상주 루프의 자동 머지 값 판정. lib/auto-merge.ts 는 재수출한다
-skills/orch/scripts/lib/refresh.ts       최신화 파일 조회와 기록. 값 판정은 core/refresh.ts 가 소유하고 재수출한다
-skills/orch/scripts/lib/queue-turn.ts    머지 큐의 차례 기록 한 벌. 머지 큐가 쓰고 상주 루프가 읽는다
-skills/orch/scripts/lib/reservations.ts  마이그레이션 번호와 ADR 번호 예약 한 벌. 파일, 잠금, 함수와 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
-skills/orch/scripts/core/completion.ts  worker_done 과 앞선 준비 상태 대조. lib/completion.ts 는 기존 비교기를 넘기는 호환 함수다
-skills/orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/loop.ts          상주 루프의 파일·프로세스 조회와 기록. 값 판정은 core/loop.ts 의 judgeLoop 가 맡는다
-skills/orch/scripts/lib/workers.ts       브랜치의 워크트리와 그 worker 행 찾기 한 벌. 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/commit-check.ts  worker 워크트리에 한국어 커밋 검사 훅을 건다. 훅 폴더의 구성과 걸지 않는 경우는 머리 주석이 소유한다
-skills/orch/scripts/lib/worktree-config.ts 워크트리 단위 git 설정을 켜는 판정과 잠금이 겹칠 때 다시 쓰기 한 벌. 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
-skills/orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
-skills/orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경
-skills/orch/scripts/lib/guard/orca       핸들러 PATH 앞에 두는 shim. 확장자가 없어 CommonJS 로 읽히므로 타입 문법 없이 guard.ts 를 import() 한다
-skills/orch/scripts/lib/guard/gh
-skills/orch/scripts/lib/guard/guard.ts   거부 규칙
-skills/orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부른다
-skills/orch/githooks/dispatch.mjs        worker 워크트리에 복사해 거는 git 훅 본체. 타입 문법 없는 ESM 이다. 하는 일과 종료 코드는 머리 주석이 소유한다
-skills/orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
-skills/orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
-skills/orch/tests/core-*.spec.ts         값 입력 검증과 경계·중복 검사. 순수 테스트는 외부 실행 환경을 바꾸지 않는다
-skills/orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
-skills/orch/tests/golden/                고정 입력과 stdout·stderr·종료 코드·종료 뒤 상태. fixtures/golden-run.ts 가 비교한다
-skills/orch/tests/loop-order/            Run 이 둘인 루프 틱의 로그 줄·결과 줄·orca 와 gh 호출 순서. fixtures/loop-order-run.ts 가 비교한다
-extensions/work-board/bin/board.ts           보드 편집 명령. 보드 파일 쓰기를 맡는다
+skills/orch/scripts/<명령 묶음>/  사용자 명령. 묶음과 스크립트 경로는 lib/commands.ts 가 정한다
+skills/orch/scripts/loop/         상주 루프의 진입, 생명 주기와 틱 단계
+skills/orch/scripts/core/         입력값을 받아 결과를 정하는 순수 로직
+skills/orch/scripts/lib/          Git, GitHub, 파일, 프로세스 등 외부 상태를 다루는 공용 코드
+skills/orch/hooks/                Claude Code 실행 훅
+skills/orch/githooks/             worker 워크트리용 Git 훅
+skills/orch/tests/                테스트와 테스트 데이터
 ```
+
+파일별 책임은 파일 맨 위 설명을 따른다. 옛 Python 출력과 호환되는 규칙은 [`lib/py.ts`](../skills/orch/scripts/lib/py.ts)에 있다.
 
 `skills/orch/scripts/` 의 명령은 외부 조회·기록에 `lib/`, 값 판정에 `core/` 를 import 한다. core 는 실행 모듈을 import 하지 않는다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
 `modules/work-board/` 의 `path.ts` 와 `item.ts` 는 보드 파일의 기본 위치와 항목 형식, 줄 지문을 정의한다. orch 와 보드 편집 명령이 두 파일을 참조한다.
@@ -288,10 +250,9 @@ orch 는 하위 프로세스로 보드 편집 명령을 실행한다. work-board
 | 기능 | 코어 | 저장소 |
 | --- | --- | --- |
 | 상주 루프와 주기 실행 | `orch-loop.ts` 의 틱 | `tick.ts`, `pipeline.tick_sec` |
-| 머지 순서 | `state/order.json` | 없음 |
 | 마이그레이션 번호 예약 | `reserve-migration.ts`, `lib/reservations.ts` | `migrations.dirs` |
 | ADR 번호 예약 | `orch queue reserve --kind adr`, `lib/reservations.ts` | `adr.dirs` |
-| 자동 머지 | 루프의 틱(판정은 `core/merge-readiness.ts` 의 조건 표, 순서와 마이그레이션은 `lib/auto-merge.ts`) | `queue.auto_merge`, `queue.auto_review`, `migrations.*`, 지시서, PR 본문, 보드의 `머지 보류` 줄 |
+| 자동 머지 | 루프의 틱(판정은 `core/merge-readiness.ts` 의 조건 표, 순서와 마이그레이션은 `core/auto-merge.ts`) | `queue.auto_merge`, `queue.auto_review`, `migrations.*`, 지시서, PR 본문, 보드의 `머지 보류` 줄 |
 | 바로 머지 판정 | 머지 큐의 단위 겹침 판정 | `queue.*` |
 | 문서 PR 바로 머지 | 루프 | `pipeline.docs_merge`, `queue.docs_glob` |
 | 원격 브랜치 삭제, 쌓인 PR 의 base 옮기기 | `after-merge` 코어 동작, 틱 | 없음 |
@@ -300,7 +261,6 @@ orch 는 하위 프로세스로 보드 편집 명령을 실행한다. work-board
 | 로컬 검증 뒤 머지 | 합친 사본 만들기와 HEAD 대조 | `verify-merged.ts` |
 | 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. 사용처는 `lib/conflicts.ts` 머리 주석이 소유한다 | 없음 |
 | 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
-| 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
 | 뒤처진 ready PR 미리 최신화 | 틱의 최신화(`lib/refresh.ts`), 머지 큐의 차례 기록(`lib/queue-turn.ts`) | `pipeline.refresh_slots`, `pipeline.refresh_worker_paths`, `queue.*` |
 | 질문 감시 | 루프의 틱과 `orch-loop.ts` | `worker-question.ts` |
 | 무거운 검사 대기열 | `heavy-slot.ts` | `heavy.*` 분류 정규식과 `wait_idle` |
@@ -313,7 +273,7 @@ orch 는 하위 프로세스로 보드 편집 명령을 실행한다. work-board
 | --- | --- | --- |
 | worker 터미널 직접 입력 금지 | PreToolUse hook, 가드 shim | PreToolUse hook 은 대상이 worker 터미널이면 거부한다. 대상이 변수이거나 조회가 실패해도 거부한다. 가드 shim 은 핸들러의 `orca terminal send` 를 대상과 무관하게 거부한다. 핸들러는 worker 에게 쓸 일이 없고, 보내는 일은 `send-to-worker` 가 한다 |
 | 다른 사람 PR 제외 | `lib/gh.ts` | 루프, 원격 브랜치 정리, 충돌 알림, ready 전환은 `pipeline.authors` 의 PR 만 본다 |
-| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 코어 전용 머지와 base 합치기 호출(CLI, REST, GraphQL)을 거부한다. 거부 목록은 `lib/guard/guard.ts` 머리 주석이 소유한다. 가드는 실수 방지 장치이고 보안 경계가 아니다. 코어는 머지 차례가 온 PR 과 뒤처진 draft 에만 base 를 합친다 |
+| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 코어 전용 머지와 base 합치기 호출(CLI, REST, GraphQL)을 거부한다. 거부 목록은 `lib/guard/guard.ts` 머리 주석이 소유한다. 가드는 실수 방지 장치이고 보안 경계가 아니다. 코어는 머지 차례가 온 PR 과 `pipeline.refresh_slots` 의 최신화 대상인 ready PR 에 base 를 합친다 |
 | 무거운 검사 대기열 | `heavy-slot.ts` | 같은 PC 의 무거운 검사를 자리 수로 제한한다 |
 | 지시서 삭제 | `lib/spec.ts` 한 경로 | 살아 있는 dispatch 의 지시서와, 그 목록을 읽지 못한 실행에서는 지우지 않는다 |
 

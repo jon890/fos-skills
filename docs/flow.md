@@ -21,14 +21,16 @@
 
 `orch` 가 전체 전이를 조율한다. **인수 검증 계획은 구현 전에 plan 에서 만들고, verify 가 누락을 대조한 뒤 실제로 실행한다.**
 
-| 단계 | 해결하는 것 | 다음으로 가는 기준 |
-| --- | --- | --- |
-| `spec` | 목표·범위·사용자 동작·권한·REQ1 같은 요구사항과 인수 조건 | 제품 결정이 닫혔고 사용자가 확인했다 |
-| `technical-design` | 모듈 책임·데이터 소유권·호출·상태 변경·검증 전략 | 주요 기술 결정이 닫혔고 기존 원칙·계약과 대조하고 독립 검토했다 |
-| `plan` | PR 하나의 작업·순서·변경 파일·검증 명령 | 스펙·설계와 연결된 계획을 critic 이 검토했다 |
-| `implementation` | 계획한 구현과 개발 테스트 | 구현 결과와 개발 검증 증거를 넘겼다 |
-| `verify` | 독립 코드·문서 리뷰와 실제 경계의 인수 검증 | 필수 인수 조건을 확인했고 완료를 막는 문제가 없다 |
-| `docs-consolidate` | 기능 문서 정합성과 공통화 후보 | 문서가 맞고 후보 또는 후보 없음의 근거가 남았다 |
+| 단계 | 해결하는 것 |
+| --- | --- |
+| `spec` | 목표·범위·사용자 동작·권한·REQ1 같은 요구사항과 인수 조건 |
+| `technical-design` | 모듈 책임·데이터 소유권·호출·상태 변경·검증 전략 |
+| `plan` | PR 하나의 작업·순서·변경 파일·검증 명령 |
+| `implementation` | 계획한 구현과 개발 테스트 |
+| `verify` | 독립 코드·문서 리뷰와 실제 경계의 인수 검증 |
+| `docs-consolidate` | 기능 문서 정합성과 공통화 후보 |
+
+다음 단계로 넘어갈 조건은 [기능 문서 계약의 「인계」](../skills/spec/references/feature-docs.md#인계)를 따른다.
 
 ### 단계를 도는 방식
 
@@ -133,7 +135,7 @@ claude plugin details fos-skills@fos-skills
 
 이 설치로 매니페스트의 skills 배열에 등록한 스킬을 받는다.
 `content-preview` 와 `korean-check` 는 원본을 `export-only-skills/` 에 두고 이 플러그인의 스킬로도 등록한다([ADR-034](adr/034-export-only-skills-registered.md)).
-사본을 넣는 팀 저장소의 플러그인도 설치했으면 같은 스킬이 접두사만 다르게 두 번 보인다.
+팀 플러그인도 설치했으면 `content-preview`, `korean-check`, `browser` 는 접두사만 다르게 두 번 보인다.
 파일은 이 플러그인의 설치 캐시에도 남으므로 경로로 직접 읽고 실행할 수 있다.
 
 ```mermaid
@@ -215,7 +217,6 @@ flowchart TD
 ## 링크 설치에서 옮기기
 
 `~/.claude/skills/<이름>` 링크로 쓰던 머신을 플러그인으로 옮기는 순서다.
-`content-preview` 와 `korean-check` 는 이 플러그인의 스킬 목록에 없으므로, 팀 저장소의 플러그인으로 받을 수 있는지 별도로 확인한다.
 매니페스트가 main 에 머지된 뒤에 한 번에 진행한다.
 
 ```mermaid
@@ -232,18 +233,18 @@ flowchart TD
     H --> I
 ```
 
-1. 설치하고 `claude plugin details fos-skills@fos-skills` 가 스킬 여섯 개를 보이는지 확인한다. 여섯이 아니면 링크를 지우지 않는다.
+1. 설치하고 `claude plugin details fos-skills@fos-skills` 가 `.claude-plugin/plugin.json` 의 `skills` 에 등록한 스킬을 모두 보여 주는지 확인한다. 빠진 스킬이 있으면 링크를 지우지 않는다.
 2. 저장소 밖에서 링크 경로를 적은 곳을 찾는다.
 
    ```bash
-   grep -rnE '\.claude/skills/(implementation|content-preview|docs-audit|harness-cleanup|korean-check|plan|pr-review|review-fix)' \
+   grep -rnE '\.claude/skills/' \
      ~/.claude/CLAUDE.md ~/.claude/references ~/.claude/rules
    ```
 
-3. 찾은 경로의 `~/.claude/skills/<스킬>/` 을 `~/personal/fos-skills/<스킬>/` 로 고친다. 캐시 경로는 갱신할 때마다 바뀌므로 적지 않는다.
+3. 찾은 경로의 `~/.claude/skills/<스킬>/` 을 `~/personal/fos-skills/skills/<스킬>/` 또는 `~/personal/fos-skills/export-only-skills/<스킬>/` 중 원본이 있는 경로로 고친다. 캐시 경로는 갱신할 때마다 바뀌므로 적지 않는다.
 4. 다른 저장소의 스킬이나 오버레이가 `~/.claude/skills/<스킬>/` 아래 파일을 실행하면 그 스킬의 링크는 그 저장소를 고칠 때까지 남긴다. 설명으로만 적은 경로는 링크를 남길 이유가 아니다.
 5. 나머지 링크를 지운다. `~/.claude/scripts/` 와 `~/.claude/rules/` 의 링크는 지우지 않는다. 스킬 링크가 아니라 체크아웃 안의 파일을 가리킨다.
-6. 세션을 새로 열어 `fos-skills:` 접두사가 붙은 스킬 여섯 개가 뜨는지 확인한다. 두 내보내기 전용 스킬은 팀 저장소의 플러그인을 설치했으면 그쪽에만 뜨고, 받을 수 없으면 뜨지 않는다.
+6. 세션을 새로 열어 `fos-skills:` 접두사가 붙은 `plugin.json` 에 등록한 스킬이 모두 뜨는지 확인한다.
 
 | 상황 | 동작 |
 | --- | --- |
@@ -293,12 +294,13 @@ flowchart TD
     subgraph T[상주 루프]
         TK[tick]
         SR[session-resume]
+        DP[decision-pending]
     end
     class L,LA,Q,D,LO,ST c1
     class OPEN,CP,CF,CM,CO c2
     class BM,VM,AM,AQ,AD c3
     class BC,AC c4
-    class TK,SR c5
+    class TK,SR,DP c5
     classDef c1 fill:#E8F1FB,stroke:#3B7DD8,stroke-width:1.5px,color:#0B2545
     classDef c2 fill:#E9F7EF,stroke:#2E9E5B,stroke-width:1.5px,color:#0E3B22
     classDef c3 fill:#FFF4E0,stroke:#E09A1A,stroke-width:1.5px,color:#4A3000
@@ -318,20 +320,20 @@ flowchart TD
 | 이벤트 | 내는 명령 | 시점 | 거부 | 코어 동작 | 핸들러가 맡을 일의 예 |
 | --- | --- | --- | --- | --- | --- |
 | `before-launch` | `launch-worker` | 워크트리를 만든 뒤, `worker-start` 전 | 예 | 지시서 검사, 허락 줄, deny 규칙 | 저장소의 동시 worker 상한, 준비되지 않은 개발 환경 거부 |
-| `worker-launched` | `launch-worker` | `LAUNCHED` 를 낸 뒤 | 아니오 | `LAUNCHED` 줄과 `launch.effective` | 개발 서버 접속 설정을 워크트리에 복사 |
+| `worker-launched` | `launch-worker`, `send-to-worker` | 첫 worker 를 띄워 `LAUNCHED` 를 낸 뒤, 또는 후속 dispatch 의 이력과 보드를 갱신한 뒤 | 아니오 | worker 실행 설정과 배정 기록 | 개발 서버 접속 설정을 워크트리에 복사 |
 | `worker-question` | `orch-loop` | 기술 question 이나 일반 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄 | 메신저 알림 |
 | `decision-pending` | `orch-loop` | 새 사용자 결정 질문이나 보드의 미완료 결정 줄을 찾을 때 | 아니오 | `DECISION-PENDING`, 현재 코디네이터에게 묻기 요청 | 저장소의 결정 요청 전달 |
 | `worker-done` | `orch-loop` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
 | `worker-lost` | `orch-loop` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER-LOST` 메시지과 상태 기록 | runner 호스트 상태 확인 |
 | `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 핸들러가 없으면 `error` 멈춤마다 `pipeline.stall_error_retries` 번까지 `orch worker send` 로 「계속 진행해」 를 보낸다. 상한에 닿았거나 `error` 가 아니거나 핸들러가 0 이 아니면(거부는 넘김) 그 Run 에 `WORKER-STALLED` 메시지 | 핸들러가 있으면 핸들러가 먼저 돌고 코어 기본은 돌지 않는다. 핸들러는 다시 시도시킬지와 횟수를 달리 정한다 |
-| `ci-passed` | `orch-loop` | CI 가 통과한 것을 처음 본 때. `queue.allow_no_checks` 를 켠 저장소에서는 필수 체크 이름이 없고 지금 HEAD 에 체크가 하나도 없을 때도 난다 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
+| `ci-passed` | `orch-loop` | CI 가 통과한 것을 처음 본 때. `queue.allow_no_checks` 를 켠 저장소에서는 필수 체크 이름이 없고 지금 HEAD 에 체크가 하나도 없을 때도 난다 | 아니오 | 현재 HEAD 의 CI 통과 기록 | 없음 |
 | `ci-failed` | `orch-loop` | 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 살아 있는 dispatch 의 worker 에게 알림. Run 에 `CI-FAILED` 메시지 | runner 장애면 다시 실행 |
 | `ci-missing` | `orch-loop` | ready 뒤 `pipeline.ci_missing_after_sec` 안에 필수 체크가 나타나지 않을 때 | 아니오 | `CI-MISSING` 줄 | runner 재시작 |
 | `pr-conflict` | `notify-conflicts`, `orch-loop` | base 와 충돌하는 내 PR 을 (PR, PR HEAD, 충돌 파일) 마다 처음 본 때 | 아니오 | 그 PR 을 만든 worker 에게 base 를 합치라고 보낸다. dispatch 가 끝났으면 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 `CONFLICT-ORPHAN` 줄. 새 worker 는 띄우지 않는다 | 없음 |
 | `before-merge` | `merge_queue` | PR 마다 머지 직전, HEAD 를 고정한 뒤 | 예 | 머지 조건 확인 | DB 마이그레이션 PR 앞의 백업 |
 | `verify-merged` | `merge_queue` | `queue.verify_merged_when` 이 맞는 PR 의 합친 사본을 만든 뒤 | 예 | 사본 생성, HEAD 대조, 사본 삭제 | 사본에서 로컬 CI 실행 |
 | `after-merge` | `merge_queue` | PR 하나가 MERGED 인 것을 확인한 뒤 | 아니오 | 원격 브랜치 삭제, 그 브랜치를 base 로 둔 내 PR 의 base 옮기기 | 없음 |
-| `after-queue` | `merge_queue`, `orch-loop` | 큐가 끝나거나 보류나 큐 도중의 설정 오류로 멈춘 뒤, 하나라도 머지했을 때 | 아니오 | `pipeline.after_queue_interval_sec` 로 묶기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
+| `after-queue` | `merge_queue` | 큐가 끝나거나 보류나 큐 도중의 설정 오류로 멈춘 뒤, 하나라도 머지했고 핸들러가 있을 때 | 아니오 | 이번 큐에서 머지한 PR 목록을 핸들러에 넘기기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
 | `after-deploy` | `finish-pr` | 배포 판정과 마지막 PR 판정 뒤, 보드 done 앞. 배포 워크플로가 없으면 정리 직후. `last_of_task` 는 마지막 PR 판정(`!`, `~`, 없으면 `lib/last-pr.ts`)이다. `deploy` 가 `failure` 나 `timeout` 이어도 내고, 그때는 보드 done 을 하지 않는다 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
 | `before-cleanup` | `cleanup-sweep` | 워크트리 하나를 지우기 직전. `--apply` 일 때만 | 예 | 소유와 머지 확인 | 저장소가 남길 워크트리 거부 |
 | `after-cleanup` | `cleanup-sweep` | 저장소 하나의 정리(`--apply`)가 끝난 뒤 | 아니오 | 지운 것과 남긴 것 출력 | 저장소 캐시 폴더 정리 |
@@ -355,7 +357,7 @@ flowchart TD
 | 충돌 해결, CI 고침, 리뷰 반영 worker 가 보드에 새 항목을 만들고 충돌 지시서가 base 마다 쌓인다 | `launch-worker`, 충돌 처리, `finish-pr` | 지시서의 `중간 과정: PR #N` 줄을 보면 그 PR 의 기존 항목에 한 줄만 남긴다. 충돌 지시서는 PR 마다 `spec-conflict-<PR>.md` 하나이고, 마무리가 머지 뒤 지운다([ADR-015](adr/015-board-decide-clear.md)) |
 | 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. Run 에 `QUEUE-CONFLICT` 메시지를 보낸다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
 | 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-016](adr/016-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
-| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에, `pipeline.update_behind_drafts` 가 draft 에, 상주 루프의 최신화가 머지 큐와 같은 판정으로 갱신이 필요한 ready PR 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
+| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에, 상주 루프의 최신화가 머지 큐와 같은 판정으로 갱신이 필요한 ready PR 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
 | 머지 큐의 맨 앞 PR 이 막히면 뒤의 머지할 수 있는 PR 이 모두 기다린다 | `merge_queue` | 보류한 PR 은 큐에서 빼고 다음 PR 로 간다(기본. 옛 동작은 `--stop-on-hold`). 차례 PR 이 base 를 합쳐 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. worker 가 고쳐야 하는 보류는 그 worker 에게 이유를 보낸다 |
 | 공용 경로를 건드린 PR 이 머지마다 차례가 와야 base 를 합치고 CI 를 다시 기다려, PR 마다 CI 한 번씩 줄을 선다 | `orch-loop` 의 `tick`, `merge_queue` | `pipeline.refresh_slots` 를 켠 저장소에서 틱이 뒤처진 PR 에 `update-branch` 를 미리 PR 마다 걸어 CI 를 함께 돌린다. 동시에 도는 수는 그 값까지다. 도는 머지 큐의 차례 PR 과 큐의 앞 PR 과 겹치는 PR 은 건드리지 않는다. 머지 큐는 지금처럼 하나씩 머지하되 차례가 온 PR 이 이미 최신이고 통과했으면 기다리지 않는다([ADR-020](adr/020-orch-loop-refresh.md)) |
 
@@ -420,7 +422,7 @@ flowchart TD
     Q -->|없음| P{merge_queue 프로세스}
     P -->|있음| X
     P -->|없음| C[등록된 Run 의 지시서 브랜치에 든 내 열린 PR]
-    C --> R{"조건 표(checkReadiness light): draft 아님, 그 틱의 CI passed, 같은 HEAD 를 건 적 없음, 보류 표시 없음, 미해결 스레드 0, 리뷰 판정 통과"}
+    C --> R{"조건 표(light) 통과"}
     R -->|아니오| W[AUTO-MERGE-WAIT 로그만. 리뷰 조건이 판정 없음으로 막히면 AUTO-MERGE-NO-REVIEW 를 HEAD 마다 한 번]
     R -->|예| M{마이그레이션}
     M -->|번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같음| CL[MIGRATION-CLASH 알림, 걸지 않음]
