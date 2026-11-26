@@ -33,7 +33,7 @@ function setup(t: TestContext, config: Config = { queue: { auto_review: REVIEW }
   const ctx = stepContext({ ...context(repo, undefined, undefined), autoMerge: autoMergeConfig(config) }, 1)
   const snapshot = (head = HEAD, comments: unknown[] = [], overrides = {}, postRule: FakeRule = { code: 0 }) => {
     const page = (nodes: unknown[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
-    const pullRequest = { headRefOid: head, state: 'OPEN', isDraft: false, comments: page(comments), reviews: page(), reviewThreads: page(), ...overrides }
+    const pullRequest = { headRefOid: head, state: 'OPEN', isDraft: false, commits: { nodes: [HEAD, NEXT].map((oid) => ({ commit: { oid } })) }, comments: page(comments), reviews: page(), reviewThreads: page(), ...overrides }
     fake.setRules([
       { args: ['api', 'graphql'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) },
       { args: ['api', 'POST', 'repos/o/r/issues/12/comments'], ...postRule },
@@ -142,6 +142,16 @@ test('다른 믿는 봇이 막는 지적을 남겼으면 한 봇의 앞 리뷰�
   const blocking = { author: second, state: 'CHANGES_REQUESTED', submittedAt: '2026-01-01T00:03:00Z', body: '', commit: { oid: HEAD } }
   const next = { ...PR, head: NEXT }
   snapshot(NEXT, [receipt(HEAD)], { reviews: { nodes: [blocking], pageInfo: { hasNextPage: false } } })
+  tick(0, next)
+  tick(180_000, next)
+  assert.equal(posts().length, 1)
+})
+
+// PR 651 리뷰: force-push 로 지워진 커밋의 리뷰는 인정하지 않으니 새 HEAD 에 다시 요청한다
+test('리뷰한 커밋이 지금 PR 커밋 목록에 없으면 다시 요청한다', (t) => {
+  const { tick, snapshot, posts } = setup(t)
+  const next = { ...PR, head: NEXT }
+  snapshot(NEXT, [receipt('c'.repeat(40))])
   tick(0, next)
   tick(180_000, next)
   assert.equal(posts().length, 1)

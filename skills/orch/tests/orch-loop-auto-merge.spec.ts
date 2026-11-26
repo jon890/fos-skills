@@ -404,7 +404,7 @@ describe('리뷰', () => {
     config({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } })
     const withReceipt = (commit: string, threads: Json[] = []) => {
       const page = (nodes: Json[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
-      const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page(threads) }
+      const pullRequest = { headRefOid: HEAD_A, commits: { nodes: [HEAD_B, HEAD_A].map((oid) => ({ commit: { oid } })) }, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page(threads) }
       github([pr(1)], { views: { 1: phrases }, botReview: { args: ['api', 'graphql', 'readThreads=true'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) } })
     }
     const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: `**<sub><sub>![P${level} Badge](https://img.shields.io/badge/P${level}-yellow?style=flat)</sub></sub>  제목**`, originalCommit: { oid: HEAD_B } }] } })

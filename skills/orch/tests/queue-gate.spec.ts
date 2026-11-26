@@ -383,7 +383,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
     const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${level} Badge] 제목`, originalCommit: { oid: 'b'.repeat(40) } }] } })
-    const withReceipt = (head: string, level: number) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)], reviewThreads: [finding(level)] } }) })
+    const withReceipt = (head: string, level: number) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)], reviewThreads: [finding(level)], commits: [head, HEAD] } }) })
     const blocked = await queue(c, withReceipt('b'.repeat(40), 2), 0)
     assert.equal(blocked.code, 1, both(blocked))
     assert.match(queueReason(blocked), /봇이 P1·P2 지적을 남겼다/)

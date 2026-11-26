@@ -146,6 +146,7 @@ function blockingThread(body: string | undefined): boolean {
 //   - 줄 댓글은 첫 줄 배지로 등급을 읽는다. P0·P1·P2 이거나 배지를 읽지 못하면 막는 지적이다.
 //     리뷰 본문의 지적(CHANGES_REQUESTED, 영수증이 맞지 않는 COMMENTED)은 등급을 몰라 막는 지적이고, R 과 같은 시각이거나 뒤면 막는다. 그 리뷰의 줄 댓글은 위처럼 커밋으로 본다. 시각을 읽지 못하면 막는다.
 //     막는 지적이 없으면 R 을 지금 HEAD 의 리뷰로 인정한다. 있으면 고친 커밋에서 다시 리뷰받을 때까지 기다린다.
+//   - R 이 지금 HEAD 가 아니면 R 의 커밋이 지금 PR 커밋 목록(마지막 100개)에 있어야 한다. 없으면(force-push 로 지웠거나 목록 밖) 기다린다.
 //   - R 이 지금 HEAD 가 아닌데 지금 HEAD 에서 봇 리뷰가 도는 중이면 그 결과를 기다린다.
 //   - 배지는 작성자가 Bot 이고 trusted_bots 의 login 인 글만 읽는다. 누구나 쓸 수 있는 글로 통과시키지 않는다(사용자 2026-11-24).
 export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: readonly TrustedReviewBot[]): TrustedReview {
@@ -212,6 +213,10 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
     const blocked = threads.some((first) => blockingThread(first.body) && sameOrAfter(first)) || findings.some((at) => at >= last.time)
     if (blocked) {
       return { ok: false, wait: `${bot.login} 봇이 P1·P2 지적을 남겼다. 고친 커밋에서 현재 HEAD 의 영수증을 다시 받아야 한다` }
+    }
+    // force-push 로 지워진 커밋의 리뷰를 인정하지 않는다. 리뷰한 커밋이 지금 PR 커밋 목록에 없으면 기다린다(PR 651 리뷰)
+    if (last.earlier && order(last.reviewed.toLowerCase()) < 0) {
+      return { ok: false, wait: `${bot.login} 봇이 리뷰한 커밋이 지금 PR 커밋 목록에 없다. 현재 HEAD 의 영수증을 다시 받아야 한다` }
     }
     if (last.earlier && botReviewRunning(head, data, bot)) {
       return { ok: false, wait: `${bot.login} 봇이 현재 HEAD 를 리뷰하는 중이다` }

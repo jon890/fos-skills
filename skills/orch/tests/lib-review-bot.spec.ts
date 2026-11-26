@@ -46,8 +46,10 @@ test('리뷰 영수증은 GitHub 가 기록한 커밋과도 맞아야 한다', (
   assert.deepEqual(judge({ reviews: [{ ...returned, commit: { oid: OLD } }] }), { ok: true, receipts: [] })
   // 영수증 앞자리가 맞는 다른 커밋의 리뷰는 지금 HEAD 의 것이 아니라 앞 커밋의 리뷰다
   const other = HEAD.slice(0, 10) + OLD.slice(10)
-  const earlier = judge({ reviews: [{ ...returned, commit: { oid: other } }] })
+  const earlier = judge({ reviews: [{ ...returned, commit: { oid: other } }], commits: [other, HEAD] })
   assert.ok(earlier.ok && earlier.receipts[0].earlier === true && earlier.receipts[0].commit === other)
+  // 리뷰한 커밋이 지금 PR 커밋 목록에 없으면(force-push 로 지웠다) 인정하지 않는다
+  assert.equal(judge({ reviews: [{ ...returned, commit: { oid: other } }] }).ok, false)
   const result = judge({ reviews: [{ ...returned, commit: { oid: HEAD } }] })
   assert.ok(result.ok && result.receipts.length === 1)
 })
@@ -57,8 +59,9 @@ test('커밋 앞자리는 7자리부터 허용하며 영수증에 적힌 자리�
   const withCommit = (commit: string) => ({ ...comment, body: body.replace(HEAD.slice(0, 10), commit) })
   assert.deepEqual(judge({ comments: [withCommit(HEAD.slice(0, 6))] }), { ok: true, receipts: [] })
   for (const commit of [HEAD.slice(0, 7) + 'bbb', HEAD.slice(0, 39) + 'b']) {
-    const result = judge({ comments: [withCommit(commit)] })
+    const result = judge({ comments: [withCommit(commit)], commits: [commit, HEAD] })
     assert.ok(result.ok && result.receipts[0].earlier === true, commit)
+    assert.equal(judge({ comments: [withCommit(commit)] }).ok, false, commit)
   }
   for (const commit of [HEAD.slice(0, 7), HEAD]) {
     const result = judge({ comments: [withCommit(commit)] })
@@ -188,4 +191,13 @@ test('앞 영수증의 커밋과 같거나 뒤 커밋의 P1·P2 줄 댓글은 �
   assert.ok(judge({ comments: [receipt(OLD)], reviewThreads: [at(MID, 3)], commits }).ok)
   assert.equal(judge({ comments: [receipt(MID)], reviewThreads: [at(null)], commits }).ok, false)
   assert.equal(judge({ comments: [receipt(MID)], reviewThreads: [at(OLD)], commits: [] }).ok, false)
+})
+
+// PR 651 리뷰: force-push 로 지워진 커밋의 영수증은 지적이 없어도 인정하지 않고, 재리뷰 요청도 막지 않는다
+test('리뷰한 커밋이 지금 PR 커밋 목록에 없으면 앞 리뷰를 인정하지 않는다', () => {
+  assert.deepEqual(judge({ comments: [receipt(OLD)], commits: [HEAD] }), {
+    ok: false, wait: `${BOT.login} 봇이 리뷰한 커밋이 지금 PR 커밋 목록에 없다. 현재 HEAD 의 영수증을 다시 받아야 한다`,
+  })
+  assert.equal(judgeTrustedBotReviews(HEAD, { reviews: [], comments: [receipt(OLD)], reviewThreads: [] }, trustedBots!).ok, false)
+  assert.ok(judge({ comments: [receipt(HEAD)], commits: [HEAD] }).ok)
 })
