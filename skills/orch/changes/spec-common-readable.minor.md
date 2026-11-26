@@ -1,3 +1,0 @@
-- 공통 지시서 틀을 규칙 한 줄과 이유·예외 하위 bullet 로 다시 썼다. 저장소 사본은 `orch spec sync-common` 으로 맞춘다
-- 리뷰 반영 뒤 재리뷰는 P1·P2 를 고쳐 push 했을 때만 받는다. P3~P5 만 반영한 push 는 재리뷰 없이 머지할 수 있다
-- `orch spec sync-common` 이 표지가 붙은 줄 아래 하위 목록을 그 규칙의 일부로 비교하고 교체한다. 지금까지는 `SYNC-MANUAL` 로 멈췄다

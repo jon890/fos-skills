@@ -1,5 +1,11 @@
 # CHANGELOG: orch
 
+## 7.98.0 (2026-11-26)
+
+- 공통 지시서 틀을 규칙 한 줄과 이유·예외 하위 bullet 로 다시 썼다. 저장소 사본은 `orch spec sync-common` 으로 맞춘다
+- 리뷰 반영 뒤 재리뷰는 P1·P2 를 고쳐 push 했을 때만 받는다. P3~P5 만 반영한 push 는 재리뷰 없이 머지할 수 있다
+- `orch spec sync-common` 이 표지가 붙은 줄 아래 하위 목록을 그 규칙의 일부로 비교하고 교체한다. 지금까지는 `SYNC-MANUAL` 로 멈췄다
+
 ## 7.97.4 (2026-11-26)
 
 - `orch queue gate` 와 머지 큐가 머지 전 조건을 한 조건 표(`core/merge-readiness.ts`)로 판단한다. 출력, 종료 코드와 gh 호출 순서는 그대로다. 루프 자동 머지는 다음 PR 에서 같은 표를 쓴다.
