@@ -9,7 +9,9 @@ const POST_REF = /^([^\s/]+)\/(\d+)(?=\s|$)/u
 const BRACKET = /\\[^\r\n]|[\[\]]/gu
 const WORKFLOW = /^(registered|working|closed|backlog)$/
 // 정상 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 표시 글을 그대로 읽는다.
-const LINKS = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)|https:\/\/[^\s<>()\[\]"']+/giu
+const INLINE_LINK = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)/gu
+const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:dooray|https?):\/\/[^\s<>]+)>|(?<address>(?:dooray|https?):\/\/[^\s<>()\[\]"']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"']+)/gimu
+const HTML_ATTRIBUTE = /\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/gu
 
 type Post = { project: { code: string }; number: string | number; subject?: string; workflowClass?: string }
 type Lookup = Post | 'missing-cli' | 'unavailable'
@@ -31,9 +33,9 @@ function lookupPost(id: string): Lookup {
   return 'unavailable'
 }
 
-function webPostId(target: string, inline: boolean): string | undefined {
-  if (inline && target.startsWith('/')) return WEB_PATH.exec(target.split(/[?#]/u, 1)[0])?.[1]
-  if (!/^https:\/\//i.test(target)) return
+function webPostId(target: string): string | undefined {
+  if (target.startsWith('/')) return WEB_PATH.exec(target.split(/[?#]/u, 1)[0])?.[1]
+  if (!/^https?:\/\//i.test(target)) return
   const url = URL.parse(target)
   if (url?.hostname.endsWith('.dooray.com')) return WEB_PATH.exec(url.pathname)?.[1]
 }
@@ -42,7 +44,7 @@ function escapeBrackets(label: string): string {
   return label.replace(BRACKET, (token) => token === '[' ? '&#91;' : token === ']' ? '&#93;' : token)
 }
 
-function linkLabel(candidate: string): string {
+function labelStart(candidate: string): number {
   // 정규식이 먼저 읽은 독립 대괄호가 닫힌 뒤에 실제 링크가 시작할 수 있다.
   let depth = 1
   let start = 0
@@ -54,23 +56,57 @@ function linkLabel(candidate: string): string {
       depth = Math.max(0, depth - 1)
     }
   }
-  return candidate.slice(start).replace(/[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/gu, ' ')
+  return start
 }
 
-function* findLinks(md: string): Generator<{ label?: string; target: string; title?: string }> {
-  for (const { offset, text } of maskedBlocks(md)) {
-    for (const match of text.matchAll(LINKS)) {
-      if (match[1] === undefined) {
-        yield { target: match[0].replace(/[.,!?;:]+$/u, '') }
-        continue
+function unwrapAddress(target: string): string {
+  return target.startsWith('<') ? target.slice(1, -1) : target
+}
+
+type Link = {
+  kind: 'inline' | '참조식 정의' | 'HTML 링크' | '자동 링크' | '주소만 적은 링크'
+  target: string
+  label?: string
+  workflow?: string
+}
+
+function* otherLinks(text: string): Generator<Link> {
+  for (const { groups } of text.matchAll(OTHER_LINK)) {
+    const { reference, anchor, auto, address } = groups!
+    if (reference) {
+      yield { kind: '참조식 정의', target: unwrapAddress(reference) }
+    } else if (anchor) {
+      for (const attribute of anchor.matchAll(HTML_ATTRIBUTE)) {
+        if (attribute[1].toLowerCase() !== 'href') continue
+        const target = attribute[2] ?? attribute[3] ?? attribute[4]
+        if (target) yield { kind: 'HTML 링크', target: target.trim() }
+        break
       }
-      const start = offset + match.index + 1
-      yield {
-        label: linkLabel(md.slice(start, start + match[1].length)),
-        target: match[2].startsWith('<') ? match[2].slice(1, -1) : match[2],
-        title: match[3] ?? match[4] ?? match[5],
-      }
+    } else if (auto) {
+      yield { kind: '자동 링크', target: auto }
+    } else {
+      yield { kind: '주소만 적은 링크', target: address.replace(/[.,!?;:]+$/u, '') }
     }
+  }
+}
+
+function* findLinks(md: string): Generator<Link> {
+  for (const { offset, text } of maskedBlocks(md)) {
+    let cursor = 0
+    for (const match of text.matchAll(INLINE_LINK)) {
+      const start = match.index + 1
+      const candidate = md.slice(offset + start, offset + start + match[1].length)
+      const labelAt = labelStart(candidate)
+      yield* otherLinks(text.slice(cursor, match.index + labelAt))
+      yield {
+        kind: 'inline',
+        label: candidate.slice(labelAt).replace(/[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/gu, ' '),
+        target: unwrapAddress(match[2]),
+        workflow: match[2].startsWith('<') ? undefined : match[3],
+      }
+      cursor = match.index + match[0].length
+    }
+    yield* otherLinks(text.slice(cursor))
   }
 }
 
@@ -79,10 +115,10 @@ type Cache = { posts: Map<string, Lookup>; missingCli: boolean }
 function checkBody(md: string, cache: Cache): { errors: string[]; warnings: string[] } {
   const errors: string[] = []
   const warnings: string[] = []
-  for (const { label: shownLabel, target, title } of findLinks(md)) {
-    const inline = shownLabel !== undefined
-    const internal = inline ? INTERNAL.exec(target) : null
-    const webId = webPostId(target, inline)
+  for (const { kind, label: shownLabel, target, workflow: shownWorkflow } of findLinks(md)) {
+    const inline = kind === 'inline'
+    const internal = INTERNAL.exec(target.split(/[?#]/u, 1)[0].replace(/\/$/u, ''))
+    const webId = webPostId(target)
     const id = internal?.[2] ?? webId
     if (!id) continue
 
@@ -108,13 +144,17 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
       : undefined
     const workflow = typeof post !== 'string' && WORKFLOW.test(post.workflowClass ?? '')
       ? post.workflowClass
-      : WORKFLOW.test(title ?? '') ? title : 'registered'
+      : WORKFLOW.test(shownWorkflow ?? '') ? shownWorkflow : 'registered'
     const replacement = shown && !mismatch ? fixedLabel : actualLabel ?? `PROJECT/NUMBER ${fixedLabel || '제목'}`
     const example = `[${replacement}](dooray://${internal?.[1] ?? 'ORG_ID'}/tasks/${id} "${workflow}")`
 
     const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}`
     if (fixedLabel !== label) errors.push(`오류: 업무 링크 표시 글 「${label}」의 대괄호를 &#91; 과 &#93; 으로 바꾸세요.${fix}`)
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)
+    else if (!inline) errors.push(`오류: 두레이 업무를 가리키는 ${kind}를 표시 글과 상태값을 갖춘 인라인 링크로 바꾸세요.${fix}`)
+    else if (target !== internal?.[0] || !WORKFLOW.test(shownWorkflow ?? '')) {
+      errors.push(`오류: 두레이 업무 주소는 dooray://조직ID/tasks/업무ID 꼴로 쓰고 등록·진행·완료 등의 상태값을 큰따옴표로 감싸세요.${fix}`)
+    }
     if (mismatch) errors.push(`오류: 업무 링크 표시 글 「${label}」과 실제 업무 ${ref} 가 다릅니다. 연결할 업무를 확인하세요.${fix}`)
   }
   return { errors, warnings }

@@ -366,8 +366,59 @@ describe('dooray-preview task, comment', () => {
       `[example/20 제목](\n\n${address} "working")`,
     ]) {
       const done = preview('comment', body)
-      assert.equal(done.code, 0, done.stderr)
-      assert.deepEqual(done.calls, [])
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /주소만 적은 링크를 .*인라인 링크로 바꾸세요/u)
+      assert.doesNotMatch(done.stderr, /표시 글.*실제 업무/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  const internalAddress = 'dooray://example/tasks/post-example'
+  const webAddress = 'https://example.dooray.com/project/tasks/post-example'
+  const unsupportedLinks = [
+    ['참조식 정의', (address: string) => `[example/18 제목][task]\n\n[task]: ${address} "working"`],
+    ['참조식 정의', (address: string) => `[unused]:\n  <${address}>`],
+    ['자동 링크', (address: string) => `<${address}>`],
+    ['HTML 링크', (address: string) => `<A data-example="href='https://example.com/'" HREF='${address}'>제목</A>`],
+    ['주소만 적은 링크', (address: string) => `업무 주소 ${address}.`],
+  ] as const
+
+  test('참조식 정의, 자동 링크, HTML 링크, 주소만 적은 링크를 인라인 형식으로 안내한다', () => {
+    for (const [kind, makeBody] of unsupportedLinks) {
+      for (const [address, org] of [[internalAddress, 'example'], [webAddress, 'ORG_ID']]) {
+        const done = preview('comment', makeBody(address))
+        assert.equal(done.code, 1, makeBody(address))
+        assert.ok(done.stderr.includes(address === internalAddress ? kind : '웹 주소를 dooray:// 링크로'), done.stderr)
+        assert.ok(done.stderr.includes(`고친 예 [example/18 &#91;Example&#93; 제목](dooray://${org}/tasks/post-example "working")`), done.stderr)
+        assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      }
+    }
+    const done = preview('task', `<${internalAddress}>`, 'missing')
+    assert.equal(done.code, 1, done.stderr)
+    assert.match(done.stderr, /인라인 링크로 바꾸세요/u)
+  })
+
+  test('코드 예제 안의 다른 링크 형식은 검사하지 않는다', () => {
+    const examples = unsupportedLinks.map(([, makeBody]) => makeBody(internalAddress))
+    const body = ['```text', ...examples, '```', '`<' + internalAddress + '>`'].join('\n')
+    const done = preview('task', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, [])
+  })
+
+  test('업무 인라인 링크는 주소와 큰따옴표로 감싼 상태값을 요구한다', () => {
+    for (const target of [
+      internalAddress,
+      `${internalAddress} 'working'`,
+      `${internalAddress} (working)`,
+      `<${internalAddress}> "working"`,
+      `${internalAddress} "example"`,
+      `${internalAddress}?example=value "working"`,
+    ]) {
+      const done = preview('task', `[example/18 제목](${target})`)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /상태값을 큰따옴표로 감싸세요/u)
+      assert.ok(done.stderr.includes(`고친 예 [example/18 제목](${internalAddress} "working")`))
     }
   })
 
@@ -392,6 +443,8 @@ describe('dooray-preview task, comment', () => {
       '[example](dooray://example/pages/page-example "publish")',
       '[example](https://example.com/project/tasks/post-example)',
       '[example](https://example.dooray.com.example.com/project/tasks/post-example)',
+      '<a href="https://example.com/task/project-example/post-example">예제</a>',
+      '[example][reference]\n\n[reference]: https://example.com/project/tasks/post-example',
     ].join('\n')
     const done = preview('task', body)
     assert.equal(done.code, 0)
