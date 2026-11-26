@@ -68,7 +68,6 @@ export type ReadinessSnapshot = { pr: ReadinessPr; facts: FactValues }
 export type ReadinessPolicy = {
   required: string[]
   allowFail: string[]
-  skippedIsMissing: boolean
   allowNoChecks: boolean
   review: ReviewConfig | null
   integrationRules: IntegrationRule[]

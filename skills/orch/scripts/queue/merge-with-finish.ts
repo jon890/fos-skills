@@ -61,7 +61,7 @@
 // 명령줄에 없는 머지 큐 옵션을 채운다. 키와 옵션의 대응은 lib/queue-options.ts 가 소유한다.
 // required 는 문자열 목록도 받아 이름마다 `--required-check` 로 넘기고(이름에 쉼표가 있어도 나뉘지 않는다), docs_glob 은 목록을 쉼표로 잇고,
 // shared_paths 는 정규식 목록도 받아 `|` 로 잇는다.
-// skipped_is_missing, update_docs_on_overlap, require_up_to_date 는 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
+// update_docs_on_overlap, require_up_to_date 는 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
 // unit_groups 는 단위 이름 목록의 목록이고 안쪽 목록마다 `--unit-group a,b` 가 된다.
 // shared_groups 는 이름에서 정규식(목록이면 `|` 로 잇는다)으로 가는 객체이고 이름마다 `--shared-group 이름=정규식` 이 된다.
 // poll_min_sec, poll_max_sec, ci_expected_sec 는 1 이상의 정수(초)이고 같은 이름의 옵션(`--poll-min-sec` 따위)이 된다.

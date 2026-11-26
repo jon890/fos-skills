@@ -255,13 +255,17 @@ flowchart TD
 ## orch 이벤트
 
 이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)).
-상주 루프의 자동 머지(`queue.auto_merge`)와 뒤처진 PR 최신화(`pipeline.refresh_slots`), ready 슬롯(`pipeline.ready_slots`)은 구현했다. 문서 PR 바로 머지, `after-queue` 묶기, `ci-missing` 은 아직 내는 코드가 없다. [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이 그 키를 「읽는 코드가 없다」 로 적는다.
+상주 루프의 자동 머지(`queue.auto_merge`)와 뒤처진 PR 최신화(`pipeline.refresh_slots`)는 구현했다. 문서 PR 바로 머지, `after-queue` 묶기, `ci-missing` 은 아직 내는 코드가 없다. [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이 그 키를 「읽는 코드가 없다」 로 적는다.
 이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
 
 orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
 
 ```mermaid
+---
+config:
+  look: handDrawn
+---
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"'Noto Sans KR', sans-serif","fontSize":"14px","lineColor":"#7A8594","primaryTextColor":"#1D1F23","edgeLabelBackground":"#FFFFFF","clusterBkg":"#FAFAFA"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":60,"padding":14}}}%%
 flowchart TD
     subgraph W[worker]
@@ -272,12 +276,12 @@ flowchart TD
         LA --> ST[worker-stalled]
     end
     subgraph P[PR 과 CI]
-        D --> BR[before-ready] --> R[pr-ready]
-        R --> CP[ci-passed]
-        R --> CF[ci-failed]
-        R --> CM[ci-missing]
-        R --> CO[pr-conflict]
+        OPEN[PR 열기] --> CP[ci-passed]
+        OPEN --> CF[ci-failed]
+        OPEN --> CM[ci-missing]
+        OPEN --> CO[pr-conflict]
     end
+    LA --> OPEN
     subgraph M[머지 큐]
         CP --> BM[before-merge] --> VM[verify-merged] --> AM[after-merge]
         AM --> AQ[after-queue]
@@ -291,7 +295,7 @@ flowchart TD
         SR[session-resume]
     end
     class L,LA,Q,D,LO,ST c1
-    class BR,R,CP,CF,CM,CO c2
+    class OPEN,CP,CF,CM,CO c2
     class BM,VM,AM,AQ,AD c3
     class BC,AC c4
     class TK,SR c5
@@ -320,8 +324,6 @@ flowchart TD
 | `worker-done` | `orch-loop` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
 | `worker-lost` | `orch-loop` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER-LOST` 메시지과 상태 기록 | runner 호스트 상태 확인 |
 | `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 핸들러가 없으면 `error` 멈춤마다 `pipeline.stall_error_retries` 번까지 `orch worker send` 로 「계속 진행해」 를 보낸다. 상한에 닿았거나 `error` 가 아니거나 핸들러가 0 이 아니면(거부는 넘김) 그 Run 에 `WORKER-STALLED` 메시지 | 핸들러가 있으면 핸들러가 먼저 돌고 코어 기본은 돌지 않는다. 핸들러는 다시 시도시킬지와 횟수를 달리 정한다 |
-| `before-ready` | `ci-ready`, `orch-loop` | draft 를 ready 로 바꾸기 전 | 예 | 겹침과 충돌 보류, ready 슬롯 | 이 저장소에서 CI 를 돌릴 수 없는 시간대 거부 |
-| `pr-ready` | `ci-ready`, `orch-loop` | ready 로 바꾼 뒤 | 아니오 | 없음 | 리뷰 요청 |
 | `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
 | `ci-failed` | `orch-loop` | 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 살아 있는 dispatch 의 worker 에게 알림. Run 에 `CI-FAILED` 메시지 | runner 장애면 다시 실행 |
 | `ci-missing` | `orch-loop` | ready 뒤 `pipeline.ci_missing_after_sec` 안에 필수 체크가 나타나지 않을 때 | 아니오 | `CI-MISSING` 줄 | runner 재시작 |

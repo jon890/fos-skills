@@ -21,7 +21,7 @@ draft 로 CI 를 미루던 저장소 옵션을 제거한다. 옛 설정 파일�
 `lib/commands.ts`에서 `orch queue ready`를 retired로 표시하고 CLI가 안내 한 줄과 종료 코드 2를 내게 한다. `queue/ci-ready.ts` 및 전용 테스트를 제거한다. `before-ready`, `pr-ready`를 `lib/events.ts`의 이벤트와 `core/config.ts`의 이름 목록에서 걷어내고, 일반 이벤트 동작을 보는 테스트는 남은 이벤트로 옮긴다.
 ### 2. 옛 설정과 doctor 경고
 
-`core/config.ts`와 `core/config-schema.ts`에서 `queue.skipped_is_missing`, `pipeline.ready_slots`를 읽지 않는 키로 남긴다. doctor는 해당 키와 옛 이벤트 핸들러 파일, `.orch/overlay.md`에 남은 두 명령을 `DRAFT-CI-RETIRED`로 알려 준다. 경고만으로는 실패하지 않는다. 테스트는 옛 키와 핸들러가 남은 저장소에서 이 경고와 종료 코드 0을 확인한다.
+`core/config.ts`와 `core/config-schema.ts`에서 `queue.skipped_is_missing`, `pipeline.ready_slots`, `hooks.timeouts.before-ready`, `hooks.timeouts.pr-ready`를 읽지 않는 키로 남긴다. doctor는 해당 키와 옛 이벤트 핸들러 파일, `.orch/overlay.md`에 남은 두 명령을 `DRAFT-CI-RETIRED`로 알려 준다. 경고만으로는 실패하지 않는다. 테스트는 옛 키와 핸들러가 남은 저장소에서 doctor의 종료 코드 0, 정상 이벤트 핸들러 실행, 머지 성공을 확인한다.
 ### 3. 체크 판단과 호출부 정리
 
 관문 및 큐 옵션에서 `--skipped-is-missing`을 제거한다. 설정 전달, `checkReadiness`의 정책, `checkSnapshot`의 캐시 키, 루프 CI 감시와 자동 머지 및 최신화에서도 불필요해진 인자를 뺀다. 루프도 `currentChecks`로 같은 HEAD의 체크를 고른다. 캐시 만료 검증은 실제로 필수 체크가 빠진 경우로 유지한다.
@@ -80,6 +80,7 @@ git diff --check
 | `skills/orch/tests/config-docs.spec.ts` | 수정 |
 | `skills/orch/tests/config-schema-readers.spec.ts` | 수정 |
 | `skills/orch/tests/core-checks.spec.ts` | 수정 |
+| `skills/orch/tests/core-config-schema.spec.ts` | 수정 |
 | `skills/orch/tests/core-merge-readiness.spec.ts` | 수정 |
 | `skills/orch/tests/lib-commands.spec.ts` | 수정 |
 | `skills/orch/tests/lib-config.spec.ts` | 수정 |

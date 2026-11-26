@@ -771,6 +771,31 @@ describe('저장소 판정', () => {
     assert.match(r.stdout, /^UNKNOWN-HOOK .*befor-merge\.ts$/m)
   })
 
+  test('옛 draft CI 키와 핸들러 및 오버레이 줄의 위치를 경고하고 성공한다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({
+      queue: { skipped_is_missing: false },
+      pipeline: { ready_slots: 0 },
+      hooks: { timeouts: { 'before-ready': 15, 'pr-ready': null } },
+    }))
+    write(join(tmp, '.orch', 'hooks', 'before-ready.ts'), '')
+    write(join(tmp, '.orch', 'hooks', 'pr-ready.ts'), '')
+    write(join(tmp, '.orch', 'overlay.md'), '# 오버레이\n`orch queue ready 1`\n`gh pr create --draft`\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { ORCH_OUTPUT: 'short' } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const warnings = r.stdout.split('\n').filter(line => line.startsWith('DRAFT-CI-RETIRED ')).sort()
+    assert.deepEqual(warnings, [
+      '.orch/overlay.md:2',
+      '.orch/overlay.md:3',
+      join(tmp, '.orch', 'hooks', 'before-ready.ts'),
+      join(tmp, '.orch', 'hooks', 'pr-ready.ts'),
+      'hooks.timeouts.before-ready',
+      'hooks.timeouts.pr-ready',
+      'pipeline.ready_slots',
+      'queue.skipped_is_missing',
+    ].map(where => `DRAFT-CI-RETIRED ${where}`).sort())
+    assert.doesNotMatch(r.stdout, /INVALID-CONFIG|UNKNOWN-HOOK/)
+  })
+
   test('대상이 없는 옛 메모는 다른 저장소 doctor 가 할 일로 세지 않는다', () => {
     const dir = join(tmp, '.orch', 'feedback')
     write(join(dir, 'wt-a.md'), '후보\n')

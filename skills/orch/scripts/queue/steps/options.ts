@@ -42,7 +42,6 @@ export function parseArgs(argv: string[], command: 'merge' | 'gate' = 'merge'): 
     pollMinSec: '60',
     pollMaxSec: '300',
     ciExpectedSec: '',
-    skippedMissing: false,
     copyDir: '',
     lastOfTask: [],
     chains: [],
@@ -93,7 +92,6 @@ export function parseArgs(argv: string[], command: 'merge' | 'gate' = 'merge'): 
     else if (arg === '--keep-branch') o.keepBranch = true
     else if (arg === '--continue-on-hold') o.continueOnHold = true
     else if (arg === '--stop-on-hold') o.continueOnHold = false
-    else if (arg === '--skipped-is-missing') o.skippedMissing = true
     else if (arg === '--stop-on-overlap') o.overlap = true
     else if (arg === '--update-docs-on-overlap') o.updateDocs = o.overlap = true
     else if (arg === '--no-sweep') o.sweep = false

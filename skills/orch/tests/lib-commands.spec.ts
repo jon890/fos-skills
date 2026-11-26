@@ -30,9 +30,9 @@ describe('표의 행', () => {
   test('보드 자동 진행 확인 명령은 전용 스크립트로 푼다', () => {
     assert.equal(ok(['board', 'auto-check', 'a']).command.script, 'board/auto-check.ts')
   })
-  test('모든 행의 스크립트가 있다', () => {
+  test('실행하는 명령에는 스크립트가 있다', () => {
     for (const c of COMMANDS) {
-      assert.ok(existsSync(join(SCRIPTS, c.script)), `${form(c)} → ${c.script}`)
+      assert.ok(c.retired || existsSync(join(SCRIPTS, c.script)), `${form(c)} → ${c.script}`)
     }
   })
 
@@ -56,6 +56,7 @@ describe('표의 행', () => {
     }
     const missing: string[] = []
     for (const c of COMMANDS) {
+      if (c.retired && !existsSync(join(SCRIPTS, c.script))) continue
       const src = readFileSync(join(SCRIPTS, c.script), 'utf8')
       for (const name of ['repo', 'run', 'specs-dir', 'loop-repo'] as const) {
         const takes = new RegExp(`(?<![\\w-])['"]?${name}['"]?: \\{ type: 'string'`).test(src)
@@ -207,6 +208,7 @@ test('scriptIn 은 묶음 폴더에 없으면 폴더 바로 아래 같은 이름
 test('scriptPath 는 모든 행의 스크립트를 이 번들의 묶음 폴더 아래 있는 파일로 푼다', () => {
   assert.equal(SCRIPTS_DIR, SCRIPTS.replace(/\/$/, ''))
   for (const c of COMMANDS) {
+    if (c.retired && !existsSync(join(SCRIPTS, c.script))) continue
     const file = scriptPath(basename(c.script))
     assert.ok(existsSync(file), file)
     assert.equal(basename(dirname(file)), c.group, form(c))

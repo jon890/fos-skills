@@ -7,7 +7,6 @@
 //   queue 키        lib/queue-defaults.ts 의 queueDefaults 와 queue/steps/options.ts 의 parseArgs(검증 포함), lib/gh.ts 의 requiredNames
 //   queue·pipeline  core/refresh.ts 의 refreshSettings(refresh_slots 를 1 로 두고 부른다)
 //   pipeline 시간   loop/steps/context.ts 의 context, lib/movement.ts 의 movementSettings
-//   ready_slots     queue/ci-ready.ts 를 가짜 gh 로 돌린다(readySlots 는 내보내지 않는다)
 //   finish 시간 키  queue/finish-pr.ts 를 가짜 gh(PR 이 닫힘)로 돌린다(parse 는 내보내지 않는다). 설정 오류·사용법 오류(종료 코드 2)가 없어야 한다
 
 import assert from 'node:assert/strict'
@@ -29,7 +28,6 @@ import { SAMPLES } from './fixtures/config-samples.ts'
 import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
 
 const FINISH_PR = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
-const CI_READY = fileURLToPath(new URL('../scripts/queue/ci-ready.ts', import.meta.url))
 
 // PR 이 닫혔다고 답하는 가짜 gh. 설정을 읽고 나면 FINISH-FAIL(종료 코드 1)로 바로 끝난다. 다른 호출은 실패한다
 const FAKE_GH = `#!/usr/bin/env node
@@ -170,23 +168,6 @@ function runScript(script: string, args: string[]) {
   const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', script, ...args], { env: childEnv(), encoding: 'utf8', timeout: 60_000 })
   return { code: done.status, out: done.stdout, err: done.stderr, both: `종료 코드 ${done.status}\n--- stdout\n${done.stdout}\n--- stderr\n${done.stderr}` }
 }
-
-describe('ci-ready 의 pipeline.ready_slots', () => {
-  test('good 값은 설정 오류 없이 지나간다(그 뒤 조회는 가짜 gh 에서 실패한다)', () => {
-    for (const value of good('pipeline', 'ready_slots')) {
-      const repo = repoWith({ pipeline: { ready_slots: value } } as Config)
-      const done = runScript(CI_READY, ['--repo', repo, '--dry-run', '1'])
-      assert.doesNotMatch(done.err, /ready_slots/, `pipeline.ready_slots = ${JSON.stringify(value)} 를 ci-ready 가 거절했다\n${done.both}`)
-    }
-  })
-
-  test('대조군: 0 은 ci-ready 가 설정 오류(종료 코드 2)로 거절한다', () => {
-    const repo = repoWith({ pipeline: { ready_slots: 0 } } as Config)
-    const done = runScript(CI_READY, ['--repo', repo, '--dry-run', '1'])
-    assert.equal(done.code, 2, done.both)
-    assert.match(done.err, /pipeline\.ready_slots/)
-  })
-})
 
 describe('finish-pr 의 시간 키', () => {
   const keys = ['merge_timeout', 'deploy_timeout', 'poll_interval', 'worker_done_timeout']

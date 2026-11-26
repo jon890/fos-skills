@@ -68,11 +68,12 @@ describe('키 목록 대조', () => {
 })
 
 describe('키별 표본', () => {
+  const legacyKeys = ['routing.usage_boost', 'queue.skipped_is_missing', 'pipeline.ready_slots']
   for (const [section, keys] of Object.entries(SAMPLES)) {
     for (const [key, sample] of Object.entries(keys)) {
       test(`${section}.${key}`, () => {
         assert.ok(sample.good.length > 0)
-        assert.ok(sample.bad.length > 0 || (section === 'routing' && key === 'usage_boost'))
+        assert.ok(sample.bad.length > 0 || legacyKeys.includes(`${section}.${key}`))
         for (const value of sample.good) assert.deepEqual(valueProblems(section, key, value), [], `good ${JSON.stringify(value)}`)
         for (const value of sample.bad) {
           const found = valueProblems(section, key, value).filter((problem) => problem.kind === 'value')

@@ -30,7 +30,6 @@
 //       상주 루프가 그 Run 의 살아 있는 dispatch 화면에서 같은 멈춤을 pipeline.stall_ticks 의 틱 수만큼 본 때 낸다.
 //       핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 내고, 아니면 그 멈춤에는 다시 내지 않는다(loop/steps/stalls.ts 의 「멈춤 확인」).
 //       10 은 처리하지 않고 코디네이터에게 넘긴다는 뜻이다(HOOK-REJECT). 같은 상태가 이어지는 동안 since 는 그대로라 핸들러는 since 로 횟수를 센다
-//   before-ready, pr-ready  pr, ready_count(이미 ready 인 내 PR 수), slots
 //   ci-passed, ci-failed, ci-missing  pr, checks(이름, 상태, 결론, URL 의 목록), required(이름 목록)
 //   pr-conflict  pr, base_head, files, worker(터미널이 없으면 null), action
 //       action 은 notified(살아 있는 dispatch 에 보냄), resumed(남은 터미널에 후속 지시서로 이어 씀), orphan(이어 쓰지 못함), stalled(시작 확인 시간 초과)다
@@ -131,6 +130,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, section } from './config.ts'
+import { RETIRED_DRAFT_CI_EVENTS } from '../core/config.ts'
 import { inside, isFile, real } from './fs.ts'
 import { mainCheckout } from './git.ts'
 import { ghBin } from './gh.ts'
@@ -158,8 +158,6 @@ export const EVENTS: Readonly<Record<string, EventSpec>> = Object.freeze({
   'worker-lost': spec(false),
   // 거부는 넘김이다. 핸들러가 처리하지 않고 코디네이터에게 넘긴다(loop/steps/stalls.ts 의 「멈춤 확인」)
   'worker-stalled': spec(true),
-  'before-ready': spec(true),
-  'pr-ready': spec(false),
   'ci-passed': spec(false),
   'ci-failed': spec(false),
   'ci-missing': spec(false),
@@ -257,7 +255,7 @@ function timeoutSec(event: string, repo: string, root: string): number {
   }
   const table = timeouts as Record<string, unknown>
   const unknown = Object.keys(table)
-    .filter((key) => !Object.hasOwn(EVENTS, key))
+    .filter((key) => !Object.hasOwn(EVENTS, key) && !RETIRED_DRAFT_CI_EVENTS.includes(key))
     .sort()
   if (unknown.length > 0) throw new ConfigError(`설정 파일의 hooks.timeouts 에 모르는 이벤트가 있다: ${unknown.join(', ')}`)
   const value = table[event]

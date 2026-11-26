@@ -17,7 +17,6 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | --- | --- |
 | `launch-worker.ts` | `before-launch`, `worker-launched` |
 | `orch doctor --run` | `session-resume` |
-| `ci-ready.ts` | `before-ready`, `pr-ready` |
 | `notify-conflicts.ts` | `pr-conflict` |
 | `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
 | `finish-pr.ts` | `after-deploy` |

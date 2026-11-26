@@ -105,7 +105,6 @@ export type Options = {
   pollMinSec: string
   pollMaxSec: string
   ciExpectedSec: string
-  skippedMissing: boolean
   copyDir: string
   lastOfTask: string[]
   chains: string[][]

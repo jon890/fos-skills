@@ -48,7 +48,6 @@ export type ReadOptions = {
   threadsCmd?: string
   required?: string[]
   allowFail?: string[]
-  skippedIsMissing?: boolean
   allowNoChecks?: boolean
   retries?: number
   retrySeconds?: number
@@ -103,7 +102,7 @@ const READERS: { [K in FactName]: (c: ReadContext) => Fact<Facts[K]> | Promise<F
   async checks(c) {
     const { target, read } = c
     for (let attempt = 1; ; attempt++) {
-      const got = checkSnapshot(read.ghRepo ?? target.repo, String(target.number), target.head, c.ask.fresh === true, c.policy.required, c.policy.skippedIsMissing)
+      const got = checkSnapshot(read.ghRepo ?? target.repo, String(target.number), target.head, c.ask.fresh === true, c.policy.required)
       if (got.ok) {
         const pr = got.data
         if (pr === null) return fail('체크 조회 실패')
@@ -233,7 +232,6 @@ export function readinessPolicy(repo: string, read: ReadOptions): ReadinessPolic
   return {
     required: read.required ?? [],
     allowFail: read.allowFail ?? [],
-    skippedIsMissing: read.skippedIsMissing === true,
     allowNoChecks: read.allowNoChecks === true,
     review: autoMerge.review,
     integrationRules: integrationRules(config),

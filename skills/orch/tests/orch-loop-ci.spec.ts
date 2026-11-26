@@ -367,13 +367,14 @@ describe('필수 체크 이름', () => {
     assert.ok(!events().some((line) => line.kind === 'WATCH-ERROR'), JSON.stringify(events()))
   })
 
-  test('queue.skipped_is_missing 이고 필수 체크가 SKIPPED 면 이벤트가 없다', () => {
+  test('옛 queue.skipped_is_missing 설정이 있어도 SKIPPED 필수 체크는 ci-passed 를 낸다', () => {
     config({ queue: { skipped_is_missing: true } })
     github([pr(1, [check('test', 'SKIPPED')])])
     once()
-    assert.deepEqual(received('ci-passed'), [])
-    assert.deepEqual(received('ci-failed'), [])
-    assert.deepEqual(events(), [])
+    const inputs = received('ci-passed')
+    assert.equal(inputs.length, 1)
+    assert.deepEqual(inputs[0].required, ['test'])
+    assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'passed' } })
   })
 
   test('규칙을 읽지 못한 base 의 PR 은 이전 값을 그대로 옮겨, 다시 읽은 틱에 같은 HEAD 의 실패를 다시 알리지 않는다', () => {

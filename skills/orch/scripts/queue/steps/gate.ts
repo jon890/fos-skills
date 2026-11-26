@@ -101,7 +101,6 @@ export function readOptions(stepContext: StepContext, state: StepState): ReadOpt
     threadsCmd: o.threadsCmd,
     required: state.requiredChecks,
     allowFail: o.allowFail,
-    skippedIsMissing: o.skippedMissing,
     allowNoChecks: true,
     retries: state.ghRetries,
     retrySeconds: state.ghRetrySeconds,

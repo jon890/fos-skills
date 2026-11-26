@@ -39,7 +39,6 @@ export async function queueChecks(stepContext: StepContext, state: StepState, fr
   if (rows === null) return null
   return judgeChecks(rows, {
     required: state.requiredChecks,
-    skippedIsMissing: state.o.skippedMissing,
     allowFail: state.o.allowFail,
     allowNoChecks: true,
   })

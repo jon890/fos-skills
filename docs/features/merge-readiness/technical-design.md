@@ -185,12 +185,12 @@ type ReadinessSnapshot = { pr: { number: number; head: string; base: string; dra
 
 ```ts
 // core/checks.ts
-judgeChecks(rows, { required, skippedIsMissing, allowFail, allowNoChecks }):
+judgeChecks(rows, { required, allowFail, allowNoChecks }):
   { state: 'passed' | 'failed' | 'pending'; failed: string[]; allowedFailed: string[]; pending: number; missing: string[]; none: boolean; checks: CiCheck[] }
 ```
 
 머지 큐의 jq(`FAIL_SEL`, `PENDING`, `ROLL_NAMES`, `state.q`)와 `lib/gh.ts` 의 `ciState` 가 이 함수 하나로 합쳐진다.
-`none` 은 남은 행이 하나도 없다는 뜻이고, `allowNoChecks` 가 false 면 `pending` 이다. 필수 체크 이름이 있는데 체크가 없으면 지금처럼 미등장이다. `skippedIsMissing` 인자는 PR4 가 지운다.
+`none` 은 남은 행이 하나도 없다는 뜻이고, `allowNoChecks` 가 false 면 `pending` 이다. 필수 체크 이름이 있는데 체크가 없으면 지금처럼 미등장이다. 결론이 SKIPPED 인 필수 체크도 나타난 체크로 센다.
 필수 체크 이름은 머지 큐도 `lib/gh.ts` 의 `ruleChecks` 로 읽는다. `--required` 가 있으면 지금처럼 그 값을 쓰고 규칙 API 를 부르지 않는다.
 `ruleChecks` 는 플랜 제한으로 빈 목록을 돌려줬는지를 함께 알려 주게 넓혀 머지 큐의 경고 로그를 유지한다. 규칙 출력을 해석하지 못한 경우는 지금처럼 예외로 올린다.
 체크가 끝난 시각을 읽는 jq(`SETTLED_JQ`, `RUNNING_SINCE_JQ`)는 기다리는 간격을 정할 뿐 판단이 아니라 그대로 둔다.
@@ -248,7 +248,7 @@ work-board 의 `ciPassed` 는 이번에 바꾸지 않는다(스펙 DECISION9).
 
 doctor 는 아래를 찾으면 `DRAFT-CI-RETIRED <자리>` 경고를 낸다. 종료 코드는 바꾸지 않는다.
 
-- 설정 파일의 `queue.skipped_is_missing`, `pipeline.ready_slots`
+- 설정 파일의 `queue.skipped_is_missing`, `pipeline.ready_slots`, `hooks.timeouts.before-ready`, `hooks.timeouts.pr-ready`
 - `.orch/hooks/` 의 `before-ready`, `pr-ready` 핸들러 파일
 - 저장소 오버레이(`.orch/overlay.md`)의 `orch queue ready` 나 `gh pr create --draft` 문구
 
@@ -293,10 +293,10 @@ PR4-PR7 은 바뀌는 동작만 기대값을 고친다. 그때 가짜 gh 테스�
 | PR1 | `core/checks.ts`. 머지 큐의 체크 jq 를 `judgeChecks` 로 바꾸고 필수 체크 이름을 `ruleChecks` 로 읽는다 | 없음 |
 | PR2 | `core/merge-readiness.ts`, `lib/merge-readiness.ts`, ADR. 관문과 머지 큐가 `checkReadiness` 를 쓴다 | 없음 |
 | PR3 | 루프가 `checkReadiness(light)` 를 쓴다. 스레드 기본 명령의 중복이 없어진다 | 루프가 체크를 CI 감시의 기록이 아니라 그 틱의 롤업으로 판단한다. CI 실패 알림 전송이 실패한 틱에만 결과가 다르다. 지금은 기록이 이전 값으로 되돌아가 옛 `passed` 로 걸 수 있고, 바뀐 뒤에는 `CI failed` 로 기다린다(사용자 2026-11-24 수용) |
-| PR4 | 「draft 로 CI 미루기」 옵션 제거(스펙 DECISION12) | `orch queue ready`, `--skipped-is-missing`, `queue.skipped_is_missing`, `pipeline.ready_slots`, `before-ready`·`pr-ready` 이벤트가 없어진다. 결론이 SKIPPED 인 체크는 늘 나타난 체크로 센다. doctor 가 남은 설정을 경고한다 |
+| PR4 | 「draft 로 CI 미루기」 옵션 제거(스펙 DECISION12) | `orch queue ready`, `--skipped-is-missing`, `queue.skipped_is_missing`, `pipeline.ready_slots`, `before-ready`·`pr-ready` 이벤트가 없어진다. 결론이 SKIPPED 인 체크는 늘 나타난 체크로 센다. doctor 가 남은 설정을 경고한다. `hooks.timeouts.before-ready` 와 `hooks.timeouts.pr-ready` 는 무시하고 doctor 에서 알린다 |
 | PR5 | REQ3, REQ2 | 관문이 draft 를 `GATE-FAIL` 로 낸다. 머지 큐가 draft 를 차례 시작에서 보류한다. 관문이 보드 보류를 `HOLD` 로 내고 머지 큐가 보드 보류에 멈춘다. 보류가 여럿이면 모두 낸다. 보류를 읽지 못한 것(본문, 보드, 지시서 폴더)을 관문이 `HOLD` 로 알리고 머지 큐가 멈춘다. 스레드 명령이 숫자가 아닌 것을 내면 관문도 조회 실패로 본다 |
 | PR6 | REQ4 | 체크가 하나도 없으면 준비 안 됨이고 체크 대기가 첫 체크를 기다린다. `queue.allow_no_checks` 가 생긴다. 켠 저장소에서는 루프도 체크 없는 PR 을 통과로 보고 `ci-passed` 를 낸다. 머지 큐가 체크 대기 뒤에도 진행 중·미등장을 본다(DECISION4) |
-| PR7 | REQ5, REQ6 | 리뷰 설정이 없으면 루프가 모든 PR 을 기다린다. 그 문구에서 「기능」 이 빠지고 평가 순서가 gh 조회 앞으로 온다. 루프의 PR 조회와 스레드 명령이 캐시를 쓰지 않고 HEAD 가 다르면 기다린다. HEAD 변경 문구가 하나로 모이고, 체크 조회 중의 HEAD 변경도 머지 큐가 다시 시도한다 |
+| PR7 | REQ5, REQ6, 스펙 DECISION15 | 리뷰 설정이 없으면 루프가 모든 PR 을 기다린다. 그 문구에서 「기능」 이 빠지고 평가 순서가 gh 조회 앞으로 온다. 루프의 PR 조회와 스레드 명령이 캐시를 쓰지 않고 HEAD 가 다르면 기다린다. HEAD 변경 문구가 하나로 모이고, 체크 조회 중의 HEAD 변경도 머지 큐가 다시 시도한다. P1·P2 지적이 없으면 마지막으로 끝난 리뷰를 이후 커밋에도 인정한다(스펙 DECISION15) |
 
 PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남겨 두어야 한다. 조건의 차이는 `ReadinessAsk` 의 임시 값 `compat` 로, 읽는 방식의 차이는 `known` 의 읽기 함수로 남기고 뒤 PR 이 하나씩 지운다.
 

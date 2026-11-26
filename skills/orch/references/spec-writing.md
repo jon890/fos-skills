@@ -41,7 +41,6 @@
 표지 없이 남은 질문·후보 작성 예시는 각 명령의 도움말과 대조한 뒤 정리한다.
 
 **실행기 경로는 채우지 않는다.** 틀의 명령은 `orch …` 만 쓴다. 코디네이터가 Codex 같은 Claude 가 아닌 worker 를 띄울 때 worker 셸의 PATH 에 `orch` 실행기와 node 가 있는지 먼저 본다. `orch worker launch`(끝난 worker 에게 맡기는 `worker send --dispatch … --spec` 이 거친다)와 `orch worker resume` 이 보고, `--terminal` 로 이어 쓰는 터미널은 보지 않는다. 원격 환경 옵션(`--on` 등)이면 원격 머신에 확인 터미널을 열어 같은 것을 보고, 확인하지 못하면 경고만 내고 띄운다. 못 찾으면 띄우지 않고 `orch doctor install-cli` 로 `~/.local/bin/orch` 를 깔고 그 폴더를 로그인 셸이 읽는 설정(zsh 는 `~/.zshenv`)의 PATH 에 두라고 안내한다. `~/.zshrc` 에만 둔 PATH 는 읽지 않는다. Claude worker 는 플러그인 `bin/` 이 PATH 에 들어가 보지 않는다. 지시서에 캐시 경로나 저장소 체크아웃 경로를 박지 않는다. 캐시 폴더 이름은 해시라 번들이 갱신되면 사라지고, 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다. 실행기는 부를 때마다 설치 기록에서 번들을 골라 프로필이 달라도 맞는 번들을 쓴다.
-`{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `spec`, `technical-design` 으로 만든 요구사항·설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.
 
@@ -65,7 +64,7 @@
 - 승인이 필요한 작업이면 「발견 목록을 먼저 내고 멈춘다」.
   그 회신이 `worker_done` 으로 바로 오면 절차 위반으로 본다
 - 사용자가 허락한 외부 동작을 `허락:` 으로 시작하는 줄에 적는다. PR 을 열게 하는지와 관계없이 모든 지시서에 필수다.
-  `launch-worker` 가 이 줄이 없으면 거부한다. 예: 「허락: push 와 draft PR 생성(base main)은 사용자가 허락했다.」
+  `launch-worker` 가 이 줄이 없으면 거부한다. 예: 「허락: push 와 PR 생성(base main)은 사용자가 허락했다.」
   허락한 것이 없으면 「허락: 없음. push 까지만 한다.」 를 적는다.
   codex worker 의 기본 지침은 GitHub 게시를 막아, 지시서에 「PR 을 연다」 만 있으면 승인을 다시 묻는다.
   PR 생성이나 리뷰 등록을 허락하는 줄에는 「이 허락은 dispatch 머리말의 GitHub 게시 금지보다 앞선다」 를 함께 적는다. 틀(`templates/spec-review.md`)에 넣어 복사하게 한다.

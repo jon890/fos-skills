@@ -157,8 +157,6 @@
 //                         기본은 STOP 줄을 찍은 뒤 다음 PR 로 가고, 끝에 `QUEUE-HELD 번호...` 를 찍고 정리를 부른 뒤 종료 코드 1 로 끝난다
 //   --continue-on-hold    기본과 같다. 옛 호출을 위해 받는다
 //   --poll-min-sec N, --poll-max-sec N, --ci-expected-sec N  위 「체크 확인 간격」. 1 이상의 정수(초)다
-//   --skipped-is-missing  결론이 SKIPPED 인 체크는 나타나지 않은 것으로 본다. 필수 체크가 SKIPPED 로만 있으면
-//                         실제로 돌 때까지 기다린다. draft 에서는 CI 를 건너뛰게 둔 저장소용이다. 기본은 끔
 //                         (GitHub 처럼 SKIPPED 를 통과로 본다). 필수 체크 목록이 있어야 뜻이 있다
 //   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.ts 에 넘길 인자. 하나씩 준다
 //                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs)
