@@ -22,6 +22,7 @@
 //   ref       href="#x" 링크가 가리키는 id 가 없다
 //   source    id 가 src- 로 시작하는 출처 항목을 가리키는 링크가 없다
 //   id        같은 id 가 두 번 나온다
+//   diagram   흐름도 아래에 한 줄 설명이 없다
 //   name      파일 이름이 영문 소문자, 숫자와 - 로 된 슬러그가 아니다
 //
 // HTML 해석: Node 에 내장 해석기가 없어 이 파일에 작은 해석기를 둔다. 옛 Python html.parser 와 같은 규칙으로
@@ -131,9 +132,9 @@ export function unescape(text: string): string {
 
 type Attrs = [string, string | null][]
 export type Handlers = {
-  start(tag: string, attrs: Attrs, line: number): void
+  start(tag: string, attrs: Attrs, line: number, offset: number): void
   startend(tag: string, attrs: Attrs, line: number): void
-  end(tag: string, line: number): void
+  end(tag: string, line: number, offset: number): void
   data(text: string, line: number): void
 }
 
@@ -200,7 +201,7 @@ export function parseHtml(text: string, handlers: Handlers): void {
       if (!close) break
       const gt = text.indexOf('>', i)
       if (gt < 0) break
-      handlers.end(raw, lineAt(i))
+      handlers.end(raw, lineAt(i), gt + 1)
       raw = null
       i = gt + 1
       continue
@@ -218,7 +219,7 @@ export function parseHtml(text: string, handlers: Handlers): void {
       if (parsed.selfClosing) {
         handlers.startend(parsed.tag, parsed.attrs, at)
       } else {
-        handlers.start(parsed.tag, parsed.attrs, at)
+        handlers.start(parsed.tag, parsed.attrs, at, i)
         if (parsed.tag === 'plaintext') {
           if (parsed.end < n) handlers.data(text.slice(parsed.end), lineAt(parsed.end))
           break
@@ -238,7 +239,7 @@ export function parseHtml(text: string, handlers: Handlers): void {
       }
       const named = /^<\/([a-zA-Z][^\t\n\r\f />\0]*)/.exec(text.slice(i, gt + 1))
       // `</` 뒤에 글자가 없으면 주석처럼 읽어 건너뛴다
-      if (named) handlers.end(named[1].toLowerCase(), lineAt(i))
+      if (named) handlers.end(named[1].toLowerCase(), lineAt(i), gt + 1)
       i = gt + 1
     } else if (text.startsWith('<!--', i)) {
       // 닫는 꼴은 `-->` 와 `--!>` 다. 뒤에 그런 꼴이 없을 때만 `<!-->`, `<!--->` 가 빈 주석으로 닫힌다
@@ -265,6 +266,14 @@ export function parseHtml(text: string, handlers: Handlers): void {
 // ── 검사 ──
 
 type Problem = [number, string, string]
+type Element = {
+  tag: string
+  line: number
+  diagram: boolean
+  caption: boolean
+  hasCaption: boolean
+}
+const SVG_CSS_ATTRS = new Set(['clip-path', 'cursor', 'fill', 'filter', 'marker', 'marker-end', 'marker-mid', 'marker-start', 'mask', 'stroke'])
 const allowed = (url: string) => {
   const trimmed = url.replace(new RegExp(`^${PY_SPACE}+|${PY_SPACE}+$`, 'g'), '')
   return trimmed === '' || trimmed.startsWith('data:') || trimmed.startsWith('#')
@@ -272,7 +281,7 @@ const allowed = (url: string) => {
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 class Checker {
-  stack: [string, number][] = []
+  stack: Element[] = []
   problems: Problem[] = []
   ids = new Map<string, number>()
   links: [string, number][] = []
@@ -295,6 +304,8 @@ class Checker {
     const a = new Map<string, string>()
     for (const [key, value] of attrs) a.set(key, value ?? '')
     let names = RESOURCE_ATTRS[tag] ?? []
+    const inSvg = tag === 'svg' || this.stack.some((element) => element.tag === 'svg')
+    if (inSvg && tag !== 'a') names = [...new Set([...names, 'href', 'xlink:href'])]
     if (tag === 'input' && (a.get('type') ?? '').toLowerCase() === 'image') names = ['src']
     if (tag === 'meta' && (a.get('http-equiv') ?? '').toLowerCase() === 'refresh' && (a.get('content') ?? '').toLowerCase().includes('url=')) {
       this.add('external', '<meta http-equiv=refresh> 가 다른 주소로 넘긴다', line)
@@ -308,6 +319,11 @@ class Checker {
       }
     }
     if (a.has('style')) this.checkCss(a.get('style') as string, line)
+    if (inSvg) {
+      for (const [name, value] of a) {
+        if (SVG_CSS_ATTRS.has(name)) this.checkCss(value, line)
+      }
+    }
     if (a.has('id')) {
       const id = a.get('id') as string
       if (this.ids.has(id)) this.add('id', `id "${id}" 가 ${this.ids.get(id)}줄에도 있다`, line)
@@ -319,12 +335,27 @@ class Checker {
 
   start(tag: string, attrs: Attrs, line: number): void {
     this.attrs(tag, attrs, line)
-    if (!VOID.has(tag)) this.stack.push([tag, line])
+    const parent = this.stack.at(-1)
+    const elementClass = attrs.find(([name]) => name === 'class')?.[1] ?? ''
+    const diagram = tag === 'figure' && elementClass.split(/\s+/).includes('diagram')
+    const caption = tag === 'figcaption' && parent?.diagram === true
+    if (parent?.diagram) parent.hasCaption = false
+    if (!VOID.has(tag)) this.stack.push({ tag, line, diagram, caption, hasCaption: false })
     if (tag === 'style') this.inStyle = true
   }
 
   startend(tag: string, attrs: Attrs, line: number): void {
     this.attrs(tag, attrs, line)
+    const parent = this.stack.at(-1)
+    if (parent?.diagram) parent.hasCaption = false
+  }
+
+  close(): void {
+    const element = this.stack.pop()!
+    if (element.diagram && !element.hasCaption) {
+      this.add('diagram', '흐름도 아래에 <figcaption> 으로 한 줄 설명을 쓴다', element.line)
+    }
+    if (element.caption) this.stack.at(-1)!.hasCaption = element.hasCaption
   }
 
   end(tag: string, line: number): void {
@@ -334,17 +365,18 @@ class Checker {
       this.add('tag', `여는 태그 없이 </${tag}> 가 나온다`, line)
       return
     }
-    if (this.stack.at(-1)![0] === tag) {
-      this.stack.pop()
+    if (this.stack.at(-1)!.tag === tag) {
+      this.close()
       return
     }
-    if (this.stack.some(([t]) => t === tag)) {
+    if (this.stack.some((element) => element.tag === tag)) {
       // 사이에 닫히지 않은 태그를 모두 보고하고 짝을 맞춘다
-      while (this.stack.at(-1)![0] !== tag) {
-        const [t, opened] = this.stack.pop()!
-        this.add('tag', `<${t}> 가 닫히지 않고 </${tag}> 를 만났다`, opened)
+      while (this.stack.at(-1)!.tag !== tag) {
+        const element = this.stack.at(-1)!
+        this.add('tag', `<${element.tag}> 가 닫히지 않고 </${tag}> 를 만났다`, element.line)
+        this.close()
       }
-      this.stack.pop()
+      this.close()
     } else {
       this.add('tag', `여는 태그 없이 </${tag}> 가 나온다`, line)
     }
@@ -352,10 +384,14 @@ class Checker {
 
   data(text: string, line: number): void {
     if (this.inStyle) this.checkCss(text, line)
+    const caption = this.stack.findLastIndex((element) => element.caption)
+    if (caption >= 0 && text.split(SPACES).some(Boolean) && !this.stack.slice(caption + 1).some((element) => HIDDEN.has(element.tag))) {
+      this.stack[caption].hasCaption = true
+    }
   }
 
   finish(): Problem[] {
-    for (const [t, opened] of this.stack) this.add('tag', `<${t}> 가 닫히지 않았다`, opened)
+    for (const element of this.stack) this.add('tag', `<${element.tag}> 가 닫히지 않았다`, element.line)
     const targets = new Set(this.links.map(([target]) => target))
     for (const [target, line] of this.links) {
       if (!this.ids.has(target)) this.add('ref', `#${target} 를 가리키지만 그 id 가 없다`, line)

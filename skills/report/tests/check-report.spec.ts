@@ -76,6 +76,42 @@ describe('검사', () => {
     assert.equal(s.run(s.write(OK_BODY.replace('body{color:#000}', '/* url(https://x.example/a.png) */body{color:#000}'))).code, 0)
   })
 
+  test('흐름도의 인라인 SVG 와 아래 설명을 허용한다', (t) => {
+    const s = setup(t)
+    const body = OK_BODY.replace('</section>', `
+      <figure class="diagram">
+        <svg><defs><marker id="arrow"><path d="M0 0"/></marker></defs>
+          <path d="M0 0" marker-end="url(#arrow)"/><text>요청</text>
+        </svg>
+        <figcaption><strong>서비스</strong>가 요청을 처리한다.</figcaption>
+      </figure></section>`)
+    const done = s.run(s.write(body))
+    assert.equal(done.code, 0, done.stdout)
+  })
+
+  test('흐름도 아래 설명이 없거나 비어 있으면 실패한다', (t) => {
+    const s = setup(t)
+    for (const contents of [
+      '<svg></svg>',
+      '<svg></svg><figcaption>&nbsp;</figcaption>',
+      '<figcaption>위에 있는 설명</figcaption><svg></svg>',
+      '<pre><code class="language-mermaid">flowchart LR</code></pre>',
+    ]) {
+      const done = s.run(s.write(OK_BODY.replace('</section>', `<figure class="diagram">${contents}</figure></section>`)))
+      assert.equal(done.code, 1, done.stdout)
+      assert.match(done.stdout, /: diagram: /)
+    }
+  })
+
+  test('흐름도의 SVG 속성이 외부 파일을 가리키면 실패한다', (t) => {
+    const s = setup(t)
+    const done = s.run(s.write(OK_BODY.replace('</section>', `
+      <figure class="diagram"><svg><path marker-end="url(arrows.svg#end)"/></svg>
+        <figcaption>요청을 보내는 흐름이다.</figcaption></figure></section>`)))
+    assert.equal(done.code, 1, done.stdout)
+    assert.match(done.stdout, /: external: .*arrows\.svg#end/)
+  })
+
   test('위반 줄은 줄 번호 순이고 끝 줄에 건수를 낸다', (t) => {
     const s = setup(t)
     const body = OK_BODY.replace('</head>', '<script src="https://cdn.example.com/a.js"></script></head>').replace('href="#src-A1"', 'href="#src-B9"').replace('<nav>', '<nav id="concl">')
