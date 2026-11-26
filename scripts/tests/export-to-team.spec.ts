@@ -226,13 +226,13 @@ describe('export-to-team 이 내보내지 않는 파일과 권한', () => {
     assert.equal(run(e).code, 2)
   })
 
-  test('그 커밋에 내보낼 도구 폴더가 없으면 2 다', (t) => {
+  test('그 커밋에 내보낼 스킬 폴더가 없으면 2 다', (t) => {
     const e = setup(t)
-    git(e.repo, ['rm', '-q', '-r', 'tools'])
-    git(e.repo, ['commit', '-q', '-m', 'no tools'])
+    git(e.repo, ['rm', '-q', '-r', e.skill])
+    git(e.repo, ['commit', '-q', '-m', 'missing skill'])
     const done = run(e, '--source-ref', 'HEAD')
     assert.equal(done.code, 2)
-    assert.match(done.stderr, /그 커밋에 내보낼 디렉터리가 없다: HEAD/)
+    assert.match(done.stderr, /그 원본에 내보낼 스킬 디렉터리가 없다/)
   })
 })
 
