@@ -111,7 +111,9 @@ worker 줄 끝의 빨간 글은 손이 필요하다는 뜻이에요. 「멈춤 4
 
 ## 보드에 항목 적기
 
-보드 파일은 저장소 git 루트의 `.omc/board.json` 이에요. 창은 Claude 를 띄운 폴더의 저장소 보드를 보여요. 세션 도중 명령이 다른 저장소로 `cd` 해도 창은 바뀌지 않아요. orch 설정에 `finish.board` 가 있으면 창도 orch 와 같은 그 파일을 읽어요. orch 가 worker 를 띄우고 PR 을 머지할 때마다 항목과 단계를 자동으로 고쳐요.
+보드 파일은 저장소 Git 루트의 `.orch/board.json`이에요. Git 밖에서 Claude를 띄우면 홈의 `~/.orch/board.json`을 보여요. 세션 중 다른 폴더로 `cd`해도 시작 위치를 기준으로 보드를 골라요. orch 설정에 `finish.board`가 있으면 그 파일을 읽어요. orch가 worker를 띄우거나 PR을 머지할 때 항목과 단계를 자동으로 고쳐요.
+
+새 파일이 없으면 `.omc/handoffs/board.json`, `.omc/board.json` 순서로 기존 보드를 찾아 사용해요. `orch doctor migrate`로 이전할 파일을 먼저 볼 수 있어요.
 보기와 지우기, 상태와 단계는 `orch board` 로 처리해요. `board.json` 은 직접 고치지 않아요. 새 항목을 만들거나 제목·PR 같은 칸을 고칠 때는 플러그인의 `extensions/work-board/bin/board.ts` 를 써요.
 
 ```bash

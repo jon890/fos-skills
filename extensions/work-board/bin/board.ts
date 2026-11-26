@@ -1,6 +1,6 @@
 // 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 //
-// 파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
+// 파일 위치: git 루트 또는 홈의 .orch/board.json. 없으면 기존 .omc 보드를 찾는다. --file 로 바꿀 수 있다.
 // 기본 위치는 modules/work-board/path.ts 의 defaultBoardPath 를 orch 와 함께 쓴다.
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
@@ -109,7 +109,8 @@ const HELP = `${USAGE}
 
 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 
-파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
+파일 위치는 git 루트의 .orch/board.json 이다. git 밖이면 ~/.orch/board.json 이다.
+새 파일이 없으면 기존 .omc 보드를 쓴다. --file 로 위치를 바꿀 수 있다.
 
 사용:
   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]

@@ -11,6 +11,7 @@ let repo: string
 let saved: string | undefined
 beforeEach(() => {
   repo = realpathSync(mkdtempSync(join(tmpdir(), 'board-file-')))
+  assert.equal(spawnSync('git', ['init', '-q', repo]).status, 0)
   saved = process.env.ORCH_DIR
   delete process.env.ORCH_DIR
 })
@@ -24,8 +25,10 @@ function config(board: unknown, dir = '.orch') {
   writeFileSync(join(repo, dir, 'config.json'), JSON.stringify({ finish: { board } }))
 }
 test('명시 값, finish.board, 옛 위치를 포함한 기본 위치 순서로 고른다', () => {
-  assert.equal(boardPath(repo), join(repo, '.omc/board.json'))
+  assert.equal(boardPath(repo), join(repo, '.orch/board.json'))
   mkdirSync(join(repo, '.omc/handoffs'), { recursive: true })
+  writeFileSync(join(repo, '.omc/board.json'), '{}')
+  assert.equal(boardPath(repo), join(repo, '.omc/board.json'))
   writeFileSync(join(repo, '.omc/handoffs/board.json'), '{}')
   assert.equal(boardPath(repo), join(repo, '.omc/handoffs/board.json'))
   config('custom/board.json')
@@ -65,5 +68,5 @@ test('워크트리의 설정과 상대 보드 경로는 주 checkout 기준이�
   assert.equal(boardPath(wt), join(repo, 'chosen.json'))
   assert.equal(boardPath(wt, 'explicit.json'), join(repo, 'explicit.json'))
   config('')
-  assert.equal(boardPath(wt), join(wt, '.omc/board.json'))
+  assert.equal(boardPath(wt), join(wt, '.orch/board.json'))
 })

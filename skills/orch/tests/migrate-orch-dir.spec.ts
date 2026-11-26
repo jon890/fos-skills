@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -27,7 +27,8 @@ const OWN_SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 const FAKE_ORCA = `const fs = require('node:fs')
 if (process.env.FAKE_ORCA_FAILS === '1') process.exit(1)
 const say = (value) => fs.writeSync(1, JSON.stringify(value) + '\\n')
-if (process.argv.includes('task-list')) say({ ok: true, result: { tasks: JSON.parse(process.env.FAKE_TASKS || '[]') } })
+if (process.argv.includes('repo') && process.argv.includes('list')) say({ ok: true, result: { repos: JSON.parse(process.env.FAKE_REPOS || '[]') } })
+else if (process.argv.includes('task-list')) say({ ok: true, result: { tasks: JSON.parse(process.env.FAKE_TASKS || '[]') } })
 else say({ ok: true, result: { workers: JSON.parse(process.env.FAKE_WORKERS || '[]'), scope: { source: 'all' } } })
 `
 const FAKE_PGREP = `const fs = require('node:fs')
@@ -110,7 +111,8 @@ function setup(t: TestContext): Ctx {
     ORCA: join(bin, 'orca'),
     PGREP: join(bin, 'pgrep'),
   }
-  for (const key of ['ORCH_DIR', 'GIT', 'FAKE_TASKS', 'FAKE_WORKERS', 'FAKE_ORCA_FAILS', 'FAKE_PS', 'FAKE_PGREP_FAILS']) delete env[key]
+  for (const key of ['ORCH_DIR', 'GIT', 'FAKE_TASKS', 'FAKE_WORKERS', 'FAKE_REPOS', 'FAKE_ORCA_FAILS', 'FAKE_PS', 'FAKE_PGREP_FAILS']) delete env[key]
+  env.HOME = join(tmp, 'home')
   const sh = (...cmd: string[]): string => {
     const done = spawnSync(cmd[0], cmd.slice(1), { env, encoding: 'utf8' })
     assert.equal(done.status, 0, `${cmd.join(' ')} 가 실패했다: ${done.stderr}`)
@@ -162,6 +164,139 @@ function readJson(target: string): unknown {
 }
 
 describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
+  test('공유 보드는 한 번 옮기고 같은 파일을 가리키는 설정을 모두 갱신한다', async (t) => {
+    const c = setup(t)
+    const owner = join(c.tmp, 'owner with space')
+    const peer = join(c.tmp, 'peer')
+    const separate = join(c.tmp, 'separate')
+    for (const dir of [owner, peer, separate]) c.sh('git', 'init', '-q', dir)
+    const source = c.write('../owner with space/.omc/handoffs/board.json', '{"items":[],"note":".omc/handoffs/specs/keep"}\n')
+    const target = join(owner, '.orch', 'board.json')
+    const ownConfig = c.write('../owner with space/.orch/config.json', '{"finish":{"board":".omc/handoffs/board.json"}}')
+    const mainConfig = c.write('.orch/config.json', JSON.stringify({ finish: { board: source } }))
+    const peerConfig = c.write('../peer/.claude/orch-finish.json', '{"finish":{"board":"../owner with space/.omc/handoffs/board.json","run":"peer"}}')
+    const otherConfig = c.write('../separate/.orch/config.json', '{"finish":{"board":".omc/board.json"}}')
+    const env = {
+      ORCH_OUTPUT: 'short',
+      FAKE_REPOS: JSON.stringify([{ path: peer }, { path: separate }]),
+      FAKE_WORKERS: JSON.stringify([{
+        dispatchStatus: 'completed', terminalState: 'active', resource: { ownershipState: 'owned', worktreeId: `repo::${separate}` },
+      }]),
+    }
+    const before = [mainConfig, ownConfig, peerConfig, otherConfig, source].map(file => readFileSync(file, 'utf8'))
+    const preview = await c.migrate([], { env })
+    assert.match(preview.stdout, /WOULD-MOVE .*owner with space\/.omc\/handoffs\/board.json .*owner with space\/.orch\/board.json/)
+    assert.equal(preview.stdout.match(/^WOULD-BOARD-CONFIG /gm)?.length, 3)
+    assert.deepEqual([mainConfig, ownConfig, peerConfig, otherConfig, source].map(file => readFileSync(file, 'utf8')), before)
+    assert.equal(existsSync(target), false)
+    const applied = await c.migrate(['--apply'], { env })
+    assert.equal(applied.stdout.match(/^BOARD-CONFIG /gm)?.length, 3, applied.stdout)
+    assert.match(applied.stdout, /^MOVED .*board.json .*board.json$/m)
+    assert.equal(existsSync(source), false)
+    assert.equal(readFileSync(target, 'utf8'), before[4])
+    assert.deepEqual(readJson(mainConfig), { finish: { board: target } })
+    assert.deepEqual(readJson(ownConfig), { finish: { board: '.orch/board.json' } })
+    assert.deepEqual(readJson(peerConfig), { finish: { board: '../owner with space/.orch/board.json', run: 'peer' } })
+    assert.equal(readFileSync(otherConfig, 'utf8'), before[3])
+    assert.equal((await c.migrate(['--apply'], { env })).stdout.trim(), 'NOTHING')
+  })
+
+  test('워크트리 안 보드를 옮겨도 상대경로는 주 checkout 기준으로 남긴다', async (t) => {
+    const c = setup(t)
+    const worktree = join(c.tmp, 'wt')
+    c.sh('git', '-C', c.repo, 'worktree', 'add', '-q', '-b', 'board-wt', worktree)
+    const old = c.write('../wt/.omc/board.json', '{"items":[]}')
+    const config = c.write('.orch/config.json', '{"finish":{"board":"../wt/.omc/board.json"}}')
+    const preview = await c.migrate([])
+    assert.match(preview.stdout, /바꿀 보드 설정 \.orch\/config.json finish.board -> \.\.\/wt\/\.orch\/board.json/)
+    await c.migrate(['--apply'])
+    assert.equal(existsSync(old), false)
+    assert.deepEqual(readJson(config), { finish: { board: '../wt/.orch/board.json' } })
+    assert.equal(c.sh(process.execPath, ORCH_PATHS, '--repo', c.repo, 'board'), join(worktree, '.orch/board.json'))
+  })
+
+  test('워크트리를 지정하면 그 워크트리의 기본 보드를 옮긴다', async (t) => {
+    const c = setup(t)
+    const worktree = join(c.tmp, 'wt')
+    c.sh('git', '-C', c.repo, 'worktree', 'add', '-q', '-b', 'board-wt', worktree)
+    const main = c.write('.omc/board.json', '{"items":[{"id":"main"}]}')
+    const old = c.write('../wt/.omc/board.json', '{"items":[{"id":"worktree"}]}')
+    const preview = await c.migrate([], { repo: worktree })
+    assert.match(preview.stdout, /옮길 것 \.\.\/wt\/\.omc\/board.json -> \.\.\/wt\/\.orch\/board.json/)
+    await c.migrate(['--apply'], { repo: worktree })
+    assert.equal(existsSync(old), false)
+    assert.deepEqual(readJson(join(worktree, '.orch/board.json')), { items: [{ id: 'worktree' }] })
+    assert.deepEqual(readJson(main), { items: [{ id: 'main' }] })
+    assert.equal(c.sh(process.execPath, ORCH_PATHS, '--repo', worktree, 'board'), join(worktree, '.orch/board.json'))
+  })
+
+  test('공유 보드의 원본을 git 이 추적하면 수동 이전 방법만 안내한다', async (t) => {
+    const c = setup(t)
+    const owner = join(c.tmp, 'owner with space')
+    c.sh('git', 'init', '-q', owner)
+    const original = '{"items":[]}'
+    const old = c.write('../owner with space/.omc/board.json', original)
+    c.sh('git', '-C', owner, 'add', '.omc/board.json')
+    c.sh('git', '-C', owner, 'commit', '-qm', 'track board')
+    const contents = JSON.stringify({ finish: { board: old } })
+    const config = c.write('.orch/config.json', contents)
+    for (const args of [[], ['--apply']]) {
+      const { stdout } = await c.migrate(args, { code: 1, env: { ORCH_OUTPUT: 'short' } })
+      assert.match(stdout, /^TRACKED mkdir -p .* && git -C '.*owner with space' mv \.omc\/board.json \.orch\/board.json$/m)
+      assert.match(stdout, /^MANUAL-BOARD-CONFIG \.orch\/config.json finish.board -> .*owner with space\/\.orch\/board.json$/m)
+      assert.doesNotMatch(stdout, /^(?:WOULD-MOVE|MOVED|BOARD-CONFIG) /m)
+      assert.equal(readFileSync(old, 'utf8'), original)
+      assert.equal(readFileSync(config, 'utf8'), contents)
+      assert.equal(existsSync(join(owner, '.orch/board.json')), false)
+      assert.equal(c.sh('git', '-C', owner, 'status', '--porcelain'), '')
+    }
+  })
+
+  test('별개 보드가 이미 있으면 보드와 설정을 그대로 둔다', async (t) => {
+    const c = setup(t)
+    const old = c.write('.omc/board.json', '{"items":[{"id":"old"}]}')
+    const fresh = c.write('.orch/board.json', '{"items":[{"id":"new"}]}')
+    const settings = '{"finish":{"board":".omc/board.json"}}'
+    const config = c.write('.orch/config.json', settings)
+    for (const args of [[], ['--apply']]) {
+      const result = await c.migrate(args, { code: 1 })
+      assert.match(result.stdout, /겹침 .omc\/board.json -> .orch\/board.json/)
+      assert.doesNotMatch(result.stdout, /바꿀 보드 설정/)
+      assert.equal(readFileSync(config, 'utf8'), settings)
+      assert.deepEqual(readJson(old), { items: [{ id: 'old' }] })
+      assert.deepEqual(readJson(fresh), { items: [{ id: 'new' }] })
+    }
+  })
+
+  test('새 경로를 만든 뒤 중단됐으면 남은 설정을 갱신하고 옛 이름을 지운다', async (t) => {
+    const c = setup(t)
+    const old = c.write('.omc/board.json', '{"items":[]}')
+    c.write('.orch/config.json', '{"finish":{"board":".orch/board.json"}}')
+    const peer = join(c.tmp, 'peer')
+    c.sh('git', 'init', '-q', peer)
+    const config = c.write('../peer/.orch/config.json', JSON.stringify({ finish: { board: old } }))
+    const fresh = join(c.repo, '.orch/board.json')
+    linkSync(old, fresh)
+    await c.migrate(['--apply'], { env: { FAKE_REPOS: JSON.stringify([{ path: peer }]) } })
+    assert.equal(existsSync(old), false)
+    assert.deepEqual(readJson(fresh), { items: [] })
+    assert.deepEqual(readJson(config), { finish: { board: fresh } })
+  })
+
+  test('git 밖에서는 홈의 옛 보드를 옮긴다', async (t) => {
+    const c = setup(t)
+    const plain = join(c.tmp, 'plain')
+    const old = c.write('../home/.omc/board.json', '{"items":[]}')
+    mkdirSync(plain)
+    const preview = await c.migrate([], { repo: plain })
+    assert.match(preview.stdout, /옮길 것 ..\/home\/.omc\/board.json -> ..\/home\/.orch\/board.json/)
+    assert.ok(existsSync(old))
+    await c.migrate(['--apply'], { repo: plain })
+    assert.equal(existsSync(old), false)
+    assert.deepEqual(readJson(join(c.tmp, 'home/.orch/board.json')), { items: [] })
+    assert.equal(existsSync(join(plain, '.orch/board.json')), false)
+  })
+
   test('미리보기는 옮길 것과 참조를 보이고 아무것도 바꾸지 않는다', async (t) => {
     const c = setup(t)
     handoffsLayout(c)
@@ -173,6 +308,8 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
       '옮길 것 .omc/handoffs/specs -> .orch/specs',
       '옮길 것 .omc/handoffs/queue -> .orch/queue',
       '옮길 것 .omc/state/wait-important-lost.json -> .orch/state/wait-important-lost.json',
+      '옮길 것 .omc/handoffs/board.json -> .orch/board.json',
+      '바꿀 보드 설정 .orch/config.json finish.board -> .orch/board.json',
       '바꿀 옛 경로 .omc/handoffs/specs/spec-a.md:1:',
       '옛 경로 참조(스크립트. 옛 폴더를 다시 만들 수 있어 옮긴 뒤 고친다) .omc/handoffs/bin/merge.sh:1:',
     ]) {
@@ -206,14 +343,15 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.equal(readFileSync(join(orch, 'overlay.md'), 'utf8'), '- 지시서: `.orch/specs/`\n- 큐: `.orch/queue/q.out`\n')
     const config = readJson(join(orch, 'config.json')) as { finish: Record<string, string>; cleanup: Record<string, string> }
     assert.equal(config.finish.specs_dir, '.orch/specs')
-    assert.equal(config.finish.board, '.omc/handoffs/board.json')
+    assert.equal(config.finish.board, '.orch/board.json')
     assert.deepEqual(config.cleanup, { previews: '.omc/previews' })
     assert.ok(existsSync(join(orch, 'queue/q.out')))
     assert.ok(existsSync(join(orch, 'state/wait-important-lost.json')))
-    for (const rel of ['.omc/handoffs/board.json', '.omc/handoffs/bin/merge.sh', '.omc/state/session.json', '.omc/previews/a.html']) {
+    for (const rel of ['.orch/board.json', '.omc/handoffs/bin/merge.sh', '.omc/state/session.json', '.omc/previews/a.html']) {
       assert.ok(existsSync(join(c.repo, rel)), `${rel} 이 남아야 한다`)
     }
     assert.ok(!existsSync(join(c.repo, '.claude/orch-overlay.md')))
+    assert.ok(!existsSync(join(c.repo, '.omc/handoffs/board.json')))
     assert.ok(readFileSync(join(c.repo, '.git/info/exclude'), 'utf8').split('\n').includes('/.orch/'))
     assert.equal(c.sh('git', '-C', c.repo, 'status', '--porcelain', '--', '.orch'), '')
     assert.ok(stdout.includes('설정 cleanup.omc 를 지운다'), stdout)
@@ -239,7 +377,8 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
       assert.ok(existsSync(join(orch, rel)), rel)
     }
     assert.ok(!existsSync(join(c.repo, '.omc/orch')))
-    assert.ok(existsSync(join(c.repo, '.omc/board.json')))
+    assert.ok(existsSync(join(c.repo, '.orch/board.json')))
+    assert.ok(!existsSync(join(c.repo, '.omc/board.json')))
   })
 
   test('앞 단계가 만든 대상 폴더에 합치고 orch 폴더를 중첩하지 않는다', async (t) => {
@@ -259,7 +398,7 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.ok(!existsSync(join(c.repo, '.omc/orch')))
   })
 
-  test('더한 쌍은 있는 폴더에 합치고 보드는 옮기지 않는다', async (t) => {
+  test('더한 쌍은 있는 폴더에 합치고 옛 기본 위치의 보드는 따로 옮긴다', async (t) => {
     const c = setup(t)
     c.write('.orch/specs/spec-new.md', '새\n')
     c.write('.omc/handoffs/specs/spec-old.md', '옛\n')
@@ -267,10 +406,11 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     c.write('.omc/handoffs/report/a.md', '조사\n')
     c.write('.omc/handoffs/board.json', '{}')
     const { stdout } = await c.migrate(['--move', '.omc/handoffs/bin=.orch/bin', '--move', '.omc/handoffs=.orch/notes', '--apply'])
-    for (const rel of ['.orch/specs/spec-new.md', '.orch/specs/spec-old.md', '.orch/bin/merge.sh', '.orch/notes/report/a.md', '.omc/handoffs/board.json']) {
+    for (const rel of ['.orch/specs/spec-new.md', '.orch/specs/spec-old.md', '.orch/bin/merge.sh', '.orch/notes/report/a.md', '.orch/board.json']) {
       assert.ok(existsSync(join(c.repo, rel)), rel)
     }
-    assert.ok(stdout.includes('남김 .omc/handoffs/board.json'), stdout)
+    assert.ok(stdout.includes('옮김 .omc/handoffs/board.json -> .orch/board.json'), stdout)
+    assert.ok(!existsSync(join(c.repo, '.orch/notes/board.json')))
   })
 
   test('겹침이 있으면 아무것도 옮기지 않는다', async (t) => {

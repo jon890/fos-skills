@@ -59,8 +59,7 @@ export function loadConfig(repo: string, opts: { file?: string } = {}): Config {
 
 // 검사 없이 읽는다. 파일이 없으면 exists false, JSON 이 깨졌거나 읽지 못했으면 error 에 이유, 아니면 value 다.
 // loadConfig 는 검사하며 읽어 던지지만, 설정 문제를 모두 알리는 곳(orch doctor)은 검사표(core/config-schema.ts)로 따로 본다.
-export function readConfigFile(repo: string): { file: string; exists: boolean; value?: unknown; error?: string } {
-  const file = pathOf('config', repo)
+export function readConfigFile(repo: string, file = pathOf('config', repo)): { file: string; exists: boolean; value?: unknown; error?: string } {
   if (!isFile(file)) return { file, exists: false }
   try {
     return { file, exists: true, value: JSON.parse(readFileSync(file, 'utf8')) }
@@ -71,14 +70,14 @@ export function readConfigFile(repo: string): { file: string; exists: boolean; v
 
 // change 는 잠금 안에서 다시 읽은 값만 받는다. undefined 반환은 쓰지 않는다는 뜻이다.
 // 검사표를 import 하지 않아 기존 설정 읽기는 npm 의존 없이 계속 돈다.
-export function updateConfig(repo: string, change: (value: unknown, exists: boolean) => unknown, opts: LockOptions = {}): void {
-  const file = pathOf('config', repo)
+export function updateConfig(repo: string, change: (value: unknown, exists: boolean) => unknown, opts: LockOptions & { file?: string } = {}): void {
+  const file = opts.file ?? pathOf('config', repo)
   withFileLock(file, lock => {
-    const read = readConfigFile(repo)
+    const read = readConfigFile(repo, file)
     if (read.error) throw new ConfigError(`설정 파일을 읽지 못했다: ${file}: ${read.error}`)
     const next = change(read.exists ? read.value : {}, read.exists)
     if (next === undefined) return
-    ensure('config', repo)
+    if (opts.file === undefined) ensure('config', repo)
     const temp = `${file}.${process.pid}.tmp`
     try {
       writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, 'utf8')

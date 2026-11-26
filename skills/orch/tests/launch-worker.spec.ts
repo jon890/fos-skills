@@ -141,6 +141,7 @@ beforeEach(() => {
   env = {
     ...process.env,
     ...GIT_ENV,
+    HOME: worktree,
     // 가짜 orca 의 #! 줄과 launch-worker 가 부르는 spec-line 이 이 테스트의 node 를 쓰게 한다
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
     NODE_BIN: process.execPath,
@@ -1726,6 +1727,7 @@ test('설정에 보드가 없고 파일도 없으면 알리지 않는다', () =>
 })
 
 test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단계를 둔다', () => {
+  env.HOME = tmp
   const file = join(tmp, '.omc', 'board.json')
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify({ items: [] }))

@@ -29,8 +29,9 @@ test('띄운 기록은 항목과 단계로 고르고 깨진 줄과 마지막 줄
 test('첫 미완료 자동 단계만 기록하고 사건 꼬리표는 비교할 글에서 뺀다', t => {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'record-step-')))
   t.after(() => rmSync(repo, { recursive: true, force: true }))
-  const old = { ORCH_DIR: process.env.ORCH_DIR, BOARD_BIN: process.env.BOARD_BIN }
+  const old = { ORCH_DIR: process.env.ORCH_DIR, BOARD_BIN: process.env.BOARD_BIN, HOME: process.env.HOME }
   process.env.ORCH_DIR = join(repo, '.orch')
+  process.env.HOME = repo
   delete process.env.BOARD_BIN
   t.after(() => { for (const [key, value] of Object.entries(old)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
   assert.equal(recordStepLaunch(repo, 'a', 'ctx', null, 2), false)

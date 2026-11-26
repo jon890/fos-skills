@@ -1,0 +1,36 @@
+{
+  "name": "board-path",
+  "description": "보드 기본 위치와 이전 명령을 함께 바꾼다.",
+  "pr_scope": "REQ1부터 REQ6까지 한 PR에서 구현한다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-26",
+  "spec": "docs/features/board-orch-dir/spec.md",
+  "design": "docs/features/board-orch-dir/technical-design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ4",
+        "REQ5",
+        "REQ6"
+      ]
+    }
+  ]
+}

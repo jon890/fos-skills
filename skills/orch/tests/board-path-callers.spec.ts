@@ -21,9 +21,9 @@ beforeEach(() => {
   saved = { ...process.env }
   repo = realpathSync(mkdtempSync(join(tmpdir(), 'board-callers-')))
   chosen = join(repo, 'chosen.json')
-  fallback = join(repo, '.omc/board.json')
+  fallback = join(repo, '.orch/board.json')
   mkdirSync(join(repo, '.orch'))
-  mkdirSync(join(repo, '.omc'))
+  process.env.HOME = repo
   delete process.env.ORCH_DIR
   delete process.env.BOARD_BIN
   process.env.GIT_CEILING_DIRECTORIES = repo

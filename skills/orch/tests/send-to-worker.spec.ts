@@ -114,6 +114,7 @@ beforeEach(() => {
   writeFileSync(launch, recorder('launch'))
   env = {
     ...process.env,
+    HOME: tmp,
     // 가짜 orca 의 #! 줄이 이 테스트의 node 를 쓰게 한다
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
     ORCA: join(binDir, 'orca'),

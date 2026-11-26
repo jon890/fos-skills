@@ -16,6 +16,7 @@ beforeEach(() => {
   mkdirSync(join(repo, '.omc'))
   mkdirSync(join(repo, '.orch'))
   process.env.ORCH_DIR = join(repo, '.orch')
+  process.env.HOME = repo
   process.env.GIT_CEILING_DIRECTORIES = repo
   delete process.env.BOARD_BIN
   file = join(repo, '.omc/board.json')

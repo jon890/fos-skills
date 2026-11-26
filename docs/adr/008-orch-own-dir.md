@@ -13,7 +13,7 @@
   - `.omc/orch/` 를 표준으로 굳힌다. 폴더 이름만 정리될 뿐 oh-my-claudecode 에 기대는 문제가 그대로다.
   - 스크립트마다 새 위치가 없으면 옛 위치를 읽는다. 옮긴 뒤에도 분기가 남고, 두 위치에 파일이 함께 생기면 어느 쪽이 맞는지 알 수 없다.
   - 설정 이름을 `.orch/AGENTS.md` 로 한다. Codex 같은 에이전트가 그 폴더의 일반 지침으로 읽는 관례와 겹친다.
-  - 보드(`board.json`)도 `.orch/` 로 옮긴다. 보드는 사용자의 업무 보드라 work-board 가 소유한다. orch 는 설정의 `board` 값이나 work-board 의 기본 위치를 받기만 한다.
+  - 당시에는 보드 경로를 옮기는 안을 기각했다. 보드 파일의 소유권은 work-board 에 있다. 2026-11-26에 기본 위치를 `.orch/`로 옮기기로 했다. [보드 이전 스펙](../features/board-orch-dir/spec.md)에 범위와 호환 규칙이 있다.
   - 미리보기 폴더(`.omc/previews/`)를 orch 가 계속 정리한다. 미리보기는 content-preview 의 산출물이라 `bin/orch.ts handoff-cleanup` 은 설정으로 폴더를 줄 때만 본다.
 - **결과**:
   - 얻는 것: oh-my-claudecode 가 없는 저장소에서도 orch 스크립트가 같은 경로로 돈다. 정리 스크립트는 `.orch` 와 설정이 지정한 폴더만 건드린다.

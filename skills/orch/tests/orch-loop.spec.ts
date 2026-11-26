@@ -137,6 +137,7 @@ beforeEach(() => {
   gh = fakeBin(tmp, 'gh', [])
   env = {
     ...process.env,
+    HOME: repo,
     // 가짜 orca 의 #! 줄과 핸들러가 이 테스트의 node 를 쓰게 한다
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
     ORCA: join(binDir, 'orca'),

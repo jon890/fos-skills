@@ -12,9 +12,11 @@ const PANE = {
 const board = (title: string) => JSON.stringify({ updatedAt: '2026-11-26T10:00:00+09:00', items: [{ id: 'x', title, status: 'doing' }] })
 // 폴더마다 보드 파일 하나. /a-wt 는 /a 의 워크트리, /c 는 git 밖 폴더다
 const BOARDS: Record<string, string> = {
-  '/a/.omc/board.json': board('A 항목'),
+  '/a/.orch/board.json': board('A 항목'),
+  '/a/.omc/board.json': board('A 옛 항목'),
   '/b/.omc/board.json': board('B 항목'),
-  '/c/.omc/board.json': board('C 항목'),
+  '/c/.omc/board.json': board('C 옛 항목'),
+  '/home/.orch/board.json': board('홈 항목'),
 }
 const COMMON: Record<string, string> = { '/a': '/a/.git', '/a-wt': '/a/.git', '/b': '/b/.git' }
 
@@ -31,6 +33,9 @@ async function start($, on, launch: string, moved: string) {
     if (e.argv[0] === 'git' && e.argv.includes('--git-common-dir')) {
       const common = COMMON[e.init?.cwd ?? moved]
       return { value: common ? { exitCode: 0, stdout: common + '\n', stderr: '' } : { exitCode: 128, stdout: '', stderr: 'not a git repository' } }
+    }
+    if (e.argv[0] === 'node' && e.argv.includes('require("node:os").homedir()')) {
+      return { value: { exitCode: 0, stdout: '/home\n', stderr: '' } }
     }
     return { value: { exitCode: 1, stdout: '', stderr: '없음' } }
   })
@@ -55,6 +60,7 @@ const title = async ($, text: string) => {
 test('REQ1: 다른 저장소로 cd 해도 시작 저장소의 보드를 보이고, 명령은 모두 시작 폴더에서 돈다', async ($, on) => {
   const seen = await start($, on, '/a', '/b')
   expect(await title($, 'A 항목')).toBeTruthy()
+  expect(await title($, 'A 옛 항목')).toBeUndefined()
   expect(await title($, 'B 항목')).toBeUndefined()
   expect(seen.reads.filter((path) => path.startsWith('/b/'))).toEqual([])
   expect(seen.runs.length).toBeGreaterThan(0)
@@ -67,9 +73,10 @@ test('REQ2: 시작 폴더가 같은 저장소의 워크트리면 주 checkout �
   expect(seen.reads.filter((path) => path.startsWith('/b/'))).toEqual([])
 })
 
-test('REQ3: git 밖 폴더에서 띄운 세션은 그 폴더의 보드를 보이고 cd 한 저장소를 읽지 않는다', async ($, on) => {
+test('git 밖에서 띄운 세션은 홈 보드를 보이고 cd 한 저장소를 읽지 않는다', async ($, on) => {
   const seen = await start($, on, '/c', '/b')
-  expect(await title($, 'C 항목')).toBeTruthy()
+  expect(await title($, '홈 항목')).toBeTruthy()
+  expect(await title($, 'C 옛 항목')).toBeUndefined()
   expect(seen.reads.filter((path) => path.startsWith('/b/'))).toEqual([])
 })
 

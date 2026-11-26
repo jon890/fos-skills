@@ -77,7 +77,7 @@ describe('orch_paths.ts', () => {
 
   test('root, board 와 원본에 없던 hooks, hooks-state 도 받는다', () => {
     assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'root']).stdout, `${join(repo, '.orch')}\n`)
-    assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'board']).stdout, `${join(repo, '.omc/board.json')}\n`)
+    assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'board']).stdout, `${join(repo, '.orch/board.json')}\n`)
     assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'hooks']).stdout, `${join(repo, '.orch/hooks')}\n`)
     assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'hooks-state']).stdout, `${join(repo, '.orch/state/hooks')}\n`)
   })

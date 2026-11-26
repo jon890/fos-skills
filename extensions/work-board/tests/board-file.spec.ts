@@ -11,8 +11,9 @@ test('창의 보드 파일은 orch 와 같이 finish.board, 기본 위치 순서
   const shared = join(repo, 'shared', 'board.json')
   const run = (args: string[]) => spawnSync(process.execPath, [tool, ...args], { env: { ...process.env, ORCH_DIR: join(repo, '.orch'), GIT_CEILING_DIRECTORIES: repo }, encoding: 'utf8' })
   try {
+    assert.equal(spawnSync('git', ['init', '-q', repo]).status, 0)
     mkdirSync(join(repo, '.orch'))
-    assert.deepEqual(JSON.parse(run(['--repo', repo]).stdout), { path: join(repo, '.omc/board.json'), error: null })
+    assert.deepEqual(JSON.parse(run(['--repo', repo]).stdout), { path: join(repo, '.orch/board.json'), error: null })
     writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: shared } }))
     assert.deepEqual(JSON.parse(run(['--repo', repo]).stdout), { path: shared, error: null })
     writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 3 } }))
