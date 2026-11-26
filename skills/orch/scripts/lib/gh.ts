@@ -8,9 +8,10 @@
 // 호스트: `gh api` 는 origin 을 보지 않고 기본 호스트로 간다. 그래서 GitHub Enterprise 저장소에서 `api user` 를 그냥 부르면
 // 다른 호스트의 사용자가 오거나 null 이 된다. 호스트는 PR URL 에서 읽어(apiTarget) GH_HOST 나 --hostname 으로 준다.
 //
-// 필수 체크 판정: 규칙 조회(RULES_JQ, ruleChecks)와 실패 판정(FAILED_CONCLUSIONS, FAILED_STATES)은 머지 큐(merge_queue.ts)와
-// 상주 루프(orch-loop.ts)가 함께 쓴다. 머지 큐가 통과로 보는 PR 을 루프가 실패로 알리면 코디네이터가 어느 쪽을 믿을지 모른다.
+// 머지 큐와 상주 루프는 이 모듈에서 필수 체크 규칙을 조회하고 core/checks.ts 에서 롤업을 판단한다.
 
+import { currentChecks, judgeChecks } from '../core/checks.ts'
+import type { CiCheck } from '../core/checks.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './config.ts'
 import { NO_LIMIT_MS, run } from './proc.ts'
 import type { RunResult } from './proc.ts'
@@ -19,6 +20,9 @@ import type { BudgetOptions } from './gh-budget.ts'
 import { git, mainCheckout } from './git.ts'
 import type { Visibility } from './private-words.ts'
 import { parseVisibility } from './private-words.ts'
+
+export { FAILED_CONCLUSIONS, FAILED_STATES, cancelledOnly, ciState, currentChecks, failedCheck, requiredCiState } from '../core/checks.ts'
+export type { CiCheck, CiState } from '../core/checks.ts'
 
 type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean; repoFromCwd?: boolean } & Pick<BudgetOptions, 'cacheKey' | 'ttlSeconds' | 'refresh'>
 const contexts = new Map<string, { root: string; origin: string; expires: number }>()
@@ -133,13 +137,8 @@ export function parseNames(text: string): string[] {
   if (!Array.isArray(parsed) || !parsed.every((name) => typeof name === 'string')) throw new Error(`필수 체크 이름 목록이 아니다: ${text}`)
   return parsed.filter((name) => name)
 }
-// 실패로 보는 체크 실행의 결론과 커밋 상태의 상태. 롤업의 값은 GraphQL enum 이라 머지 큐의 jq test(정규식)와 같은 집합이다
-export const FAILED_CONCLUSIONS: readonly string[] = ['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']
-export const FAILED_STATES: readonly string[] = ['FAILURE', 'ERROR']
-
 export type Names = { ok: true; names: string[] } | { ok: false; error: string }
-export type CiCheck = { name: string; status: string | null; conclusion: string | null; url: string | null }
-export type CiState = { state: 'passed' | 'failed' | 'pending'; checks: CiCheck[] }
+type RuleChecks = { ok: true; names: string[]; planLimited?: true } | { ok: false; error: string; parseError?: unknown }
 
 // 무료 플랜의 비공개 저장소는 규칙 API 를 읽을 수 없다(HTTP 403 과 Upgrade to GitHub Pro). 필수 체크 목록이 없는 것으로 다룬다
 export function rulesPlanLimited(stderr: string): boolean {
@@ -147,17 +146,22 @@ export function rulesPlanLimited(stderr: string): boolean {
 }
 
 // base 의 저장소 규칙이 정한 필수 체크 이름. 플랜 제한은 빈 목록이다. slug 는 owner/repo 다.
-export function ruleChecks(host: string, slug: string, base: string): Names {
+// 큐는 플랜 제한을 로그에 남기고, 해석 오류는 원래 예외로 전파하므로 둘을 구분해 받는다.
+export function ruleChecks(host: string, slug: string, base: string, { reportDetails = false } = {}): RuleChecks {
   const path = `repos/${slug}/rules/branches/${base}`
   const done = gh(['api', '--hostname', host, path, '--jq', RULES_JQ], { cache: false })
   if (done.code === 0) {
     try {
-      return { ok: true, names: parseNames(done.stdout.trim()) }
+      const output = reportDetails ? done.stdout.replace(/\n+$/, '') : done.stdout.trim()
+      return { ok: true, names: parseNames(output) }
     } catch (e) {
-      return { ok: false, error: `gh api ${path} 의 출력을 읽지 못했다: ${(e as Error).message}` }
+      const error = `gh api ${path} 의 출력을 읽지 못했다: ${(e as Error).message}`
+      return reportDetails ? { ok: false, error, parseError: e } : { ok: false, error }
     }
   }
-  if (rulesPlanLimited(done.stderr)) return { ok: true, names: [] }
+  if (rulesPlanLimited(done.stderr)) {
+    return reportDetails ? { ok: true, names: [], planLimited: true } : { ok: true, names: [] }
+  }
   return { ok: false, error: `gh api ${path} 가 종료 코드 ${done.code} 로 끝났다: ${(done.stderr || done.stdout).trim()}` }
 }
 
@@ -176,36 +180,6 @@ export function requiredNames(repo: string, host: string, slug: string, base: st
   return { ok: true, names: value.split(',').filter((name) => name) }
 }
 
-function field(row: Record<string, unknown>, key: string): string | null {
-  const value = row[key]
-  return typeof value === 'string' ? value : null
-}
-
-// 롤업 행의 이름. 체크 실행은 name, 커밋 상태는 context 다(머지 큐의 `.name // .context`)
-function checkName(row: Record<string, unknown>): string {
-  return field(row, 'name') ?? field(row, 'context') ?? ''
-}
-
-function failedRow(row: Record<string, unknown>): boolean {
-  return FAILED_CONCLUSIONS.includes(field(row, 'conclusion') ?? '') || FAILED_STATES.includes(field(row, 'state') ?? '')
-}
-
-// 머지 큐의 PENDING 과 같다. 체크 실행은 status 가 COMPLETED 가 아니면, 커밋 상태는 state 가 PENDING 이나 EXPECTED 면 아직이다
-function pendingRow(row: Record<string, unknown>): boolean {
-  const state = field(row, 'state')
-  return (field(row, 'status') ?? 'COMPLETED') !== 'COMPLETED' || state === 'PENDING' || state === 'EXPECTED'
-}
-
-// ciState 가 낸 체크가 실패인가. status 는 체크 실행의 status 나 커밋 상태의 state 다. 체크 실행의 status 에는 FAILURE, ERROR 가 없다
-export function failedCheck(check: CiCheck): boolean {
-  return FAILED_CONCLUSIONS.includes(check.conclusion ?? '') || FAILED_STATES.includes(check.status ?? '')
-}
-
-// 실패한 체크가 모두 CANCELLED 인가. 코디네이터가 CI 를 일부러 취소하면 코드 실패가 아니라서 worker 에게 고치라고 보내지 않는다
-export function cancelledOnly(failed: readonly CiCheck[]): boolean {
-  return failed.length > 0 && failed.every((check) => check.conclusion === 'CANCELLED' && !FAILED_STATES.includes(check.status ?? ''))
-}
-
 export type CheckSnapshot = { headRefOid: string; statusCheckRollup: unknown }
 
 // HEAD 별 공유 스냅샷. 멈추거나 머지하기 직전에는 refresh 로 재실행도 확인한다.
@@ -217,83 +191,13 @@ export function checkSnapshot(repo: string, number: string, head: string, refres
     ttlSeconds: (result) => {
       try {
         const pr = JSON.parse(result.stdout) as CheckSnapshot
-        const rows = currentChecks(pr.statusCheckRollup, head)
         if (pr.headRefOid !== head) return 0
-        if (rows.length === 0 || rows.some(pendingRow)) return 60
-        const names = new Set(rows
-          .filter((row) => !skippedMissing || field(row, 'conclusion') !== 'SKIPPED')
-          .map(checkName))
-        if (required.some((name) => !names.has(name))) return 60
-        return 300
+        const rows = currentChecks(pr.statusCheckRollup, head)
+        const checks = judgeChecks(rows, { required, skippedIsMissing: skippedMissing, allowNoChecks: false })
+        return checks.none || checks.pending > 0 || checks.missing.length > 0 ? 60 : 300
       } catch { return 0 }
     },
   })
-}
-
-// gh 는 commits(last:1) 의 롤업을 낸다. HEAD 와 같은 응답에서 읽고 도중의 push 는 호출자가 막는다.
-// 같은 워크플로와 이름의 더 늦게 시작한 실행이 확인되면 이전 실행을 뺀다. 시각을 모르면 실패를 숨기지 않는다.
-export function currentChecks(rollup: unknown, head?: string): Record<string, unknown>[] {
-  const rows = (Array.isArray(rollup) ? rollup : []).filter(
-    (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
-  ).filter((row) => !head || !field(row, 'headSha') || field(row, 'headSha') === head)
-  const workflow = (row: Record<string, unknown>): string | null => {
-    const flat = field(row, 'workflowName')
-    if (flat) return flat
-    const suite = row.checkSuite as { workflowRun?: { workflow?: { name?: unknown } } } | null
-    const name = suite?.workflowRun?.workflow?.name
-    return typeof name === 'string' && name ? name : null
-  }
-  const sameSource = (a: Record<string, unknown>, b: Record<string, unknown>): boolean => {
-    const left = workflow(a), right = workflow(b)
-    return left !== null && left === right || left === null && right === null && !!field(a, 'context') && !!field(b, 'context')
-  }
-  const started = (row: Record<string, unknown>): number => {
-    const value = field(row, 'startedAt') ?? ''
-    return value.startsWith('0001-') ? Number.NaN : Date.parse(value)
-  }
-  return rows.filter((row) => !rows.some((newer) =>
-    sameSource(row, newer) && checkName(row) !== '' && checkName(newer) === checkName(row) &&
-    started(newer) > started(row),
-  ))
-}
-
-// PR 의 statusCheckRollup 으로 CI 상태를 정한다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다.
-//   failed   롤업의 체크 하나라도 실패다(FAILED_CONCLUSIONS, FAILED_STATES). 필수 체크가 아니어도 실패다(머지 큐의 waitChecks 가 멈춘다)
-//   passed   실패가 없고, 필수 체크가 모두 나타났고, 롤업의 체크가 모두 끝났다. 필수가 아닌 체크가 아직 돌면 머지 큐도 기다리므로 pending 이다
-//   pending  그 밖. 체크가 하나도 없을 때도 pending 이다. 머지 큐는 「지금 있는 체크만 기다린다」 로 바로 넘어가지만, 루프는 체크가
-//            붙기 전에 ci-passed 를 내지 않는다
-// required 가 비면(규칙 없음, 플랜 제한) 나타난 체크 전부로 판정하는 것과 같다.
-// skippedIsMissing 이면 결론이 SKIPPED 인 체크를 나타나지 않은 것으로 본다(머지 큐의 --skipped-is-missing).
-// checks 는 롤업에 나타난 체크 전부다. 실패한 것은 failedCheck 로 고른다.
-export function ciState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState {
-  const rows = currentChecks(rollup, head)
-  const seen = rows.filter((row) => !(skippedIsMissing && field(row, 'conclusion') === 'SKIPPED'))
-  const checks = seen.map((row) => ({
-    name: checkName(row),
-    status: field(row, 'status') ?? field(row, 'state'),
-    conclusion: field(row, 'conclusion'),
-    url: field(row, 'detailsUrl') ?? field(row, 'targetUrl'),
-  }))
-  if (seen.some(failedRow)) return { state: 'failed', checks }
-  const missing = required.some((name) => !seen.some((row) => checkName(row) === name))
-  if (seen.length === 0 || missing || seen.some(pendingRow)) return { state: 'pending', checks }
-  return { state: 'passed', checks }
-}
-
-// 필수 체크만으로 정한 CI 상태다. 상주 루프의 최신화가 쓴다(loop/steps/refresh.ts 머리 주석의 「최신화」).
-//   failed   필수 체크 하나라도 실패다. 필수가 아닌 체크(리뷰 봇 같은 것)의 실패와 진행은 보지 않는다
-//   pending  필수 체크가 빠졌거나 아직 돈다
-//   passed   필수 체크가 모두 나타나 끝났고 실패가 없다
-// required 가 비면 ciState 와 같다. 필수 체크를 모르면 무엇을 빼야 할지 모르기 때문이다
-export function requiredCiState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState['state'] {
-  if (required.length === 0) return ciState(rollup, required, skippedIsMissing, head).state
-  const wanted = new Set(required)
-  const rows = currentChecks(rollup, head)
-    .filter((row) => wanted.has(checkName(row)))
-    .filter((row) => !(skippedIsMissing && field(row, 'conclusion') === 'SKIPPED'))
-  if (rows.some(failedRow)) return 'failed'
-  const missing = required.some((name) => !rows.some((row) => checkName(row) === name))
-  return missing || rows.some(pendingRow) ? 'pending' : 'passed'
 }
 
 // 체크 이름이 같아도 다른 workflow 일 수 있다. Actions URL 의 run 으로 workflow ID 를 읽고,

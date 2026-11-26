@@ -2,7 +2,6 @@
 
 import { scriptPath } from '../../lib/commands.ts'
 import type { ConfigError } from '../../lib/config.ts'
-import { FAILED_CONCLUSIONS, FAILED_STATES } from '../../lib/gh.ts'
 
 // 첫 판정 뒤에 base 가 움직여 다시 판정하는 횟수의 상한. 넘으면 멈춘다
 export const REJUDGE_LIMIT = 5
@@ -14,12 +13,6 @@ export const QUEUE_EVENTS = ['before-merge', 'verify-merged', 'after-merge', 'af
 export type QueueEvent = (typeof QUEUE_EVENTS)[number]
 export type GhPr = { number: number; author: { login: string } | null; url: string }
 
-// 롤업에 나타난 체크 이름(체크 실행은 name, 커밋 상태는 context)
-export const ROLL_NAMES = '[.statusCheckRollup[] | (.name // .context)]'
-export const ROLL_NAMES_NO_SKIPPED = '[.statusCheckRollup[] | select((.conclusion // "") != "SKIPPED") | (.name // .context)]'
-export const PENDING =
-  '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" ' +
-  'or (.state // "") == "EXPECTED")] | length'
 // 롤업의 마지막 끝난 시각. 체크 실행은 completedAt, 커밋 상태는 startedAt 이다. 시각이 없는 체크가 하나라도 있으면 빈 값이다
 export const SETTLED_JQ =
   '[.statusCheckRollup[] | (.completedAt // .startedAt // "")] | ' +
@@ -30,10 +23,6 @@ export const RUNNING_SINCE_JQ =
   'map(select(. != "" and (startswith("0001-") | not))) | if length == 0 then "" else min end'
 // 체크가 끝난 뒤 새 체크가 붙는지 다시 보기 전에 기다리는 초. waitChecks 의 nap(60) 과 같다
 export const SETTLED_SEC = 60
-// 실패 판정의 목록은 상주 루프와 한 벌이다(lib/gh.ts 머리 주석의 「필수 체크 판정」)
-export const FAIL_SEL =
-  `select(((.conclusion // "") | test("${FAILED_CONCLUSIONS.join('|')}")) ` + `or ((.state // "") | test("${FAILED_STATES.join('|')}")))`
-
 // 사용법 오류. 종료 코드 2 로 끝난다. 메시지가 비면 머리 주석을 찍는다
 export class Usage extends Error {}
 
@@ -173,7 +162,7 @@ export class StepState {
   ghRetries = 3
   ghRetrySeconds = 10
   pr: Pr | null = null
-  q: { required: string[]; missing: string; failed: string; allowedFailed: string } = { required: [], missing: '', failed: '', allowedFailed: '' }
+  requiredChecks: string[] = []
   // 차례 기록(lib/queue-turn.ts)의 prs. 차례 PR 부터 큐 끝까지다
   remaining: number[] = []
   turnWarned = false

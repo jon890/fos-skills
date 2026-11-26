@@ -6,9 +6,10 @@ import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from '../../lib/gh.ts'
 import { oneLine, short } from '../../lib/output.ts'
 import { NO_LIMIT_MS, runInherit, stopping } from '../../lib/proc.ts'
 import { TURN_PHASES } from '../../lib/queue-turn.ts'
+import { queueChecks, sortedCheckNames } from './checks.ts'
 import { gateReasons, holdWith, loadPr } from './gate.ts'
 import type { GhPr, StepContext } from './model.ts'
-import { CheckStop, HeadChanged, NotReady, PENDING } from './model.ts'
+import { CheckStop, HeadChanged, NotReady } from './model.ts'
 import type { StepState } from './model.ts'
 import { ownsQueueLock } from '../../lib/queue-lock.ts'
 import { migrationReasons } from './migrations.ts'
@@ -83,7 +84,8 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       throw e
     }
 
-    for (const name of (await field(stepContext, state, n, 'statusCheckRollup', state.q.allowedFailed)).split('\n')) {
+    const checks = await queueChecks(stepContext, state)
+    for (const name of sortedCheckNames(checks?.allowedFailed ?? []).flatMap((name) => name.split('\n'))) {
       if (name) out(`경고: ${n} 실패를 허용한 체크 ${name}`)
     }
     const gate = await gateReasons(stepContext, state, 'failed')
@@ -123,10 +125,12 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     const ph2 = await field(stepContext, state, n, 'headRefOid', '.headRefOid')
     if (p.ph !== ph2) throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
     // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
-    const latestFailed = await field(stepContext, state, n, 'statusCheckRollup', state.q.failed, true)
-    const latestPending = await field(stepContext, state, n, 'statusCheckRollup', PENDING)
-    const latestMissing = await field(stepContext, state, n, 'statusCheckRollup', `${state.q.missing} | length`)
-    if (latestFailed !== '0' || latestPending !== '0' || latestMissing !== '0') stop(`${n} 머지 직전 체크가 바뀌었다 fails=${latestFailed} pending=${latestPending} missing=${latestMissing}`)
+    const latestFailed = (await queueChecks(stepContext, state, true))?.failed.length
+    const latestPending = (await queueChecks(stepContext, state))?.pending
+    const latestMissing = (await queueChecks(stepContext, state))?.missing.length
+    if (latestFailed !== 0 || latestPending !== 0 || latestMissing !== 0) {
+      stop(`${n} 머지 직전 체크가 바뀌었다 fails=${latestFailed ?? ''} pending=${latestPending ?? ''} missing=${latestMissing ?? ''}`)
+    }
     if (!p.cross) {
       if (git('fetch', '-q', 'origin', p.branch).code !== 0) stop(`${n} 원격 브랜치 fetch 실패`)
       const rh = git('rev-parse', '-q', '--verify', `origin/${p.branch}`).stdout.trim()
