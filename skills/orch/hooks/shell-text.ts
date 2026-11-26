@@ -63,6 +63,10 @@ export function pieces(masked: string): Piece[] {
 }
 
 export function hookCommand(): string | null {
+  return hookInvocation()?.command ?? null
+}
+
+export function hookInvocation(): { command: string; cwd: string } | null {
   let data: unknown
   try {
     data = JSON.parse(readFileSync(0, 'utf8'))
@@ -70,8 +74,11 @@ export function hookCommand(): string | null {
     return null
   }
   if (typeof data !== 'object' || data === null) return null
-  const hook = data as { tool_name?: unknown; tool_input?: { command?: unknown } | null }
+  const hook = data as { cwd?: unknown; tool_name?: unknown; tool_input?: { command?: unknown } | null }
   if (hook.tool_name !== 'Bash') return null
   const command = hook.tool_input?.command
-  return typeof command === 'string' ? command : ''
+  return {
+    command: typeof command === 'string' ? command : '',
+    cwd: typeof hook.cwd === 'string' ? hook.cwd : process.cwd(),
+  }
 }

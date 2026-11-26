@@ -1,8 +1,8 @@
 // PreToolUse(Bash): gh pr create/edit 에서 공유 임시 폴더 바로 아래의 본문 파일을 거부한다.
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, resolve } from 'node:path'
-import { hookCommand, mask, pieces, stripHeredocs } from './shell-text.ts'
+import { dirname, resolve } from 'node:path'
+import { hookInvocation, mask, pieces, stripHeredocs } from './shell-text.ts'
 
 const REPO_OPTION = /(?:(?:--repo(?:=|\s+)|-R(?:=|\s+)?)\S+\s+)*/
 const PR_COMMAND = new RegExp(
@@ -19,18 +19,18 @@ function canonical(directory: string): string {
   }
 }
 
-function inSharedRoot(argument: string): boolean {
+function inSharedRoot(argument: string, cwd: string): boolean {
   const root = tmpdir()
   const expand = (value: string) => value.replace(/^\$(?:\{TMPDIR\}|TMPDIR(?!\w))(?=\/|$)/, () => root)
   // "$TMPDIR/file" 과 "${TMPDIR}"/file 모두 받는다. 작은따옴표 안의 변수는 셸도 펼치지 않는다.
   const file = argument.replace(/^"([^"]*)"|^'([^']*)'|^[^'"]+/, (part, double, single) =>
     single ?? expand(double ?? part))
-  if (!isAbsolute(file)) return false
-  const parent = canonical(dirname(resolve(file)))
+  if (file === '-' || file.includes('$') || file.includes('`')) return false
+  const parent = canonical(dirname(resolve(cwd, file)))
   return [root, '/tmp', '/var/tmp'].some((directory) => canonical(directory) === parent)
 }
 
-function unsafeBody(command: string): boolean {
+function unsafeBody(command: string, cwd: string): boolean {
   const text = stripHeredocs(command)
   const masked = mask(text)
   for (const { start, end } of pieces(masked)) {
@@ -39,14 +39,14 @@ function unsafeBody(command: string): boolean {
     if (!prefix) continue
     for (const match of segment.slice(prefix[0].length).matchAll(BODY_FILE)) {
       const argumentStart = start + prefix[0].length + match.index + match[0].length - match[1].length
-      if (inSharedRoot(text.slice(argumentStart, argumentStart + match[1].length))) return true
+      if (inSharedRoot(text.slice(argumentStart, argumentStart + match[1].length), cwd)) return true
     }
   }
   return false
 }
 
-const command = hookCommand()
-if (command !== null && unsafeBody(command)) {
+const invocation = hookInvocation()
+if (invocation && unsafeBody(invocation.command, invocation.cwd)) {
   const decision = {
     hookEventName: 'PreToolUse',
     permissionDecision: 'deny',

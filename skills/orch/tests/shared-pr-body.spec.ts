@@ -31,7 +31,7 @@ test('Bash 훅은 공유 임시 폴더 바로 아래의 PR 본문만 막는다',
   const invoke = (command: string) => {
     const r = spawnSync(process.execPath, [fileURLToPath(HOOK)], {
       env: { ...process.env, TMPDIR: '/tmp/shared temp' }, encoding: 'utf8',
-      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+      input: JSON.stringify({ cwd: '/tmp/shared temp/worktree', tool_name: 'Bash', tool_input: { command } }),
     })
     assert.equal(r.status, 0, r.stderr)
     return r.stdout
@@ -45,6 +45,7 @@ test('Bash 훅은 공유 임시 폴더 바로 아래의 PR 본문만 막는다',
     'gh pr --repo=owner/repo edit 42 --body-file /tmp/body.md',
     'gh pr edit 42 -F"$TMPDIR/pr-body.md"',
     'gh pr create --body-file /tmp/body.md',
+    'gh pr create --body-file ../body.md',
     ...(process.platform === 'darwin' ? ['gh pr create --body-file /private/tmp/body.md'] : []),
     'gh pr create \\\n --body-file /tmp/body.md',
   ]) {
@@ -54,6 +55,7 @@ test('Bash 훅은 공유 임시 폴더 바로 아래의 PR 본문만 막는다',
   }
   for (const command of [
     'gh pr create --body-file "$scratch/pr-body.md"',
+    'gh pr create --body-file body.md',
     'gh pr create -F"$TMPDIR/orch-abcdef/pr-body.md"',
     'gh pr edit --body-file "$TMPDIR/orch-abcdef/pr-body.md"',
     'gh pr create --body-file -',
