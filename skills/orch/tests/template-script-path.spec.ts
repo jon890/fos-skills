@@ -9,10 +9,12 @@ const template = readFileSync(new URL('../templates/spec-common.md', import.meta
 const entry = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
 const scripts = fileURLToPath(new URL('../scripts', import.meta.url))
 
-test('공통 지시서의 표지 항목은 한 줄이고 실행기 설치와 인자 설명은 싣지 않는다', () => {
+test('공통 지시서의 표지 항목은 규칙 한 줄과 하위 bullet 이고 실행기 설치와 인자 설명은 넣지 않는다', () => {
   assert.doesNotMatch(template, /ORCH_SCRIPTS|\$SKILL_DIR|bin\/orch\.ts|installed_plugins|command -v orch/)
   for (const [name, item] of ruleBodies(template)) {
-    assert.equal(item.body.split('\n').length, 1, name)
+    const [head, ...rest] = item.body.split('\n')
+    assert.ok(head.includes(`orch-rule: ${name}`), name)
+    for (const line of rest) assert.match(line, /^ {2,3}- \S/, `${name}: ${line}`)
   }
 })
 
