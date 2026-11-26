@@ -224,7 +224,6 @@ test('worker·큐·정리·보드 쓰기의 실제 진입점은 부수 효과 �
     ['queue/merge-with-finish.ts', ['--repo', repo, '123']],
     ['queue/merge_queue.ts', ['--repo', repo, '123']],
     ['queue/finish-pr.ts', ['--repo', repo, '123']],
-    ['queue/ci-ready.ts', ['--repo', repo, '123']],
     ['queue/notify-conflicts.ts', ['--repo', repo]],
     ['queue/reserve-migration.ts', ['--repo', repo, '--prune']],
     ['cleanup/cleanup-sweep.ts', ['--repo', repo, '--apply']],

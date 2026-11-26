@@ -17,12 +17,10 @@
 | 검증 명령 | worker 와 코디네이터가 돌릴 포맷, lint, 테스트 명령 | 2, 6 |
 | 머지 조건 | 필수 체크 이름(`--required` 로 넘길 값), base 최신을 품게 할지(`--require-up-to-date`), 관리자 우회 가능 여부, 머지 방식(merge, squash) | 7 |
 | 합친 사본 검사 | 같은 파일을 고친 PR 을 base 와 합친 사본에서 돌릴 `hooks/verify-merged.ts`, 사본 폴더(`--copy-dir`), 겹치지 않아도 검사할지(`--verify-merged-when`), 검사 없이 머지할 문서 glob(`--docs-glob`). 폴더는 저장소 hook 이 워크트리를 허용하는 곳이다 | 6, 7 |
-| draft 로 CI 미루기 | draft PR 에서 CI 를 돌리지 않는 저장소인지. 켜면 worker 는 PR 을 draft 로 열고, 코디네이터가 검증 뒤 `orch queue ready` 로 ready 로 바꾼다 | 2, 7 |
 | 무거운 검사 분류 | 같은 PC 에서 혼자 돌아야 하는 전체 검사와 브라우저 검사 명령, 대기열을 거치지 않아도 되는 가벼운 명령 | 6 |
 | 문서 PR 의 CI | 문서만 바꾼 PR 이 CI 를 생략하는지, 그때 머지 큐에 줄 `--docs-glob` | 7 |
 | 머지 전 명령 | DB 마이그레이션이 든 PR 앞의 백업 명령과 인자, 보관 개수 | 7 |
 | 머지 뒤 명령 | `hooks/after-queue.ts`가 머지 뒤 한 번 돌릴 배포 명령. 문서 PR 만 머지했을 때 건너뛸지(`CODE_PRS`) | 7 |
-| draft 때 건너뛴 체크 | draft 에서 CI 를 건너뛰게 둔 저장소면 `--skipped-is-missing` | 7 |
 | 마이그레이션 순서 | 마이그레이션 PR 끼리의 머지 순서, 모듈별 선후, 공유 DB 에 적용하지 않는 규칙. 번호는 `orch queue reserve` 로 예약한다. SQL 은 `migrations.dirs` 에, `--kind java` 는 `migrations.watch` 폴더에 경로를 받는다. 번호 붙은 ADR 은 `--kind adr` 로 `adr.dirs` 폴더에 받는다 | 2, 7 |
 | CI runner 장애 대응 | runner 가 offline 이 됐을 때 누가 무엇을 하는지, 끊긴 실행을 다시 돌리는 명령 | 4, 7 |
 | 원격 접속 규칙 | 개발 서버 조회에 쓸 접속 설정, 읽기만 허용하는지 | 2 |
@@ -94,7 +92,6 @@ orch config unset contracts.merge_command contracts.paths
 | `queue` | `method` | `merge`, `squash`, `rebase` 중 하나 |
 | `queue` | `verify_merged_when` | `overlap`, `code`, `always` 중 하나 |
 | `queue` | `docs_glob` | 비지 않은 문자열, 또는 비지 않은 문자열만 든 비지 않은 목록 |
-| `queue` | `skipped_is_missing` | `--skipped-is-missing`. true 나 false 다 |
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `unit_prefix` 는 비지 않은 문자열이다. `shared_paths` 는 비지 않은 Python 정규식 문자열이나 그 비지 않은 목록이고 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
 | `queue` | `shared_groups` | 이름마다 `--shared-group 이름=정규식` 하나. 값은 이름(영문, 숫자, `_`, `-`)에서 비지 않은 Python 정규식 문자열이나 그 목록(`\|` 로 잇는다)으로 가는 비지 않은 객체다. PR 과 base 가 같은 묶음을 둘 다 바꿨을 때만 겹침이다. 의미와 전제는 [`cleanup.md`](cleanup.md) 의 「언제 overlap 을 쓰는가」 가 소유한다 |
@@ -105,8 +102,7 @@ orch config unset contracts.merge_command contracts.paths
 | `queue` | `auto_merge`, `auto_review` | 상주 루프의 자동 머지. 키 뜻은 저장소 `docs/data-schema.md` 의 「config.json 에 더하는 절」 이 소유한다 |
 | `queue` | `integration_tests` | 머지 관문(`orch queue gate`, 머지 큐)이 바뀐 모듈의 통합 테스트 기록을 확인하는 규칙 목록. 규칙의 `modules` 에 이름을 지정하면 경로가 맞아도 목록에 있는 모듈만 확인한다. 모듈 목록을 생략하면 경로가 맞는 모든 모듈을 확인한다. 플러그인을 먼저 갱신한 뒤 `modules` 를 추가한다. 설정 예시와 기록 형식은 `docs/features/gate-integration-evidence/design.md` 에 있다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초(양수, 타이머 상한 이하)로 가는 객체. 핸들러의 시간 제한을 바꾼다. 기본값과 모르는 이벤트 처리는 `scripts/lib/events.ts` 머리 주석이 소유한다 |
-| `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 비지 않은 문자열 목록(빈 목록 허용). 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
-| `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
+| `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 비지 않은 문자열 목록(빈 목록 허용). 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이며 타이머 상한 이하이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
 | `pipeline` | `slow_sec` | 보드 동기화와 정리 같은 느린 단계를 따로 도는 주기(초)다. 양수이며 타이머 상한 이하이고 기본은 없음(틱마다 함께 돈다)이다. 주면 느린 단계가 빠른 틱(머지, CI, 메시지 확인)을 막지 않아 `tick_sec` 을 짧게 둘 수 있다. 예: `tick_sec` 60, `slow_sec` 600 |
 | `pipeline` | `request_ack_sec` | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 알리기까지의 시간(초)이다. 양수이며 타이머 상한 이하이고 기본 1800 이다. 루프가 틱마다 읽는다([`requests.md`](requests.md)) |
@@ -287,7 +283,6 @@ orch doctor migrate --repo "$REPO" --apply
 - 같은 파일을 고친 PR 은 `hooks/verify-merged.ts`에서 `cd "$copy" && ./gradlew test`를 돌리고 `--copy-dir worktrees/repo`로 머지한다
 - 공통 지시서: `.orch/specs/spec-common.md`
 - 검증: `scripts/verify.sh format`, `scripts/verify.sh test`
-- draft PR 은 CI 를 돌리지 않는다. worker 는 `gh pr create --draft` 로 열고, 코디네이터가 `orch queue ready` 로 ready 로 바꾼다
 - 머지 전 명령: DB 마이그레이션이 든 PR 은 `PR:./bin/backup-db.sh <db> "before-pr-$PR"`. DB 마다 최근 2개만 보관
 - CI runner 가 offline 이면 묻지 않고 runner 호스트를 재부팅하고, 끊긴 실행은 `gh run rerun --failed` 로 다시 돌린다
 - 공부 후보: 글쓰기 스킬은 `blog-writer`, 글은 `~/blog` 저장소에 둔다

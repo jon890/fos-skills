@@ -122,19 +122,9 @@ worker 가 고쳐야 하는 보류(미해결 리뷰 스레드, 통합 테스트 
 
 PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대기, 충돌과 미해결 스레드, 머지 결과 확인)의 순서와 종료 코드는 `merge_queue.ts` 머리 주석이 소유한다.
 
-### draft 로 CI 를 미루는 저장소
-
-**오버레이가 「draft PR 은 CI 를 돌리지 않는다」 고 정한 저장소에서만 쓴다.** 그 저장소의 worker 는 PR 을 draft 로 연다.
-코디네이터가 6단계 검증을 마친 PR 을 `ci-ready.ts` 로 ready 로 바꿔 CI 를 시작한다. 그다음 머지 큐에 넣는다.
-겹친 PR 둘을 함께 ready 로 바꾸면 앞 PR 이 머지된 뒤 뒤 PR 의 CI 를 다시 돌려야 하므로, 스크립트가 겹치거나 충돌하는 PR 을 보류한다.
-판정과 종료 코드는 스크립트 머리 주석이 소유한다.
-
-```bash
-orch queue ready 101 102
-```
-
 ### 머지 전 조건만 미리 보기
 
+worker 는 처음부터 ready 상태로 PR 을 연다.
 `orch queue gate <PR>` 은 머지 큐가 머지 전에 보는 조건(체크, 미해결 리뷰 스레드, 충돌, 설정한 리뷰 조건, 설정한 통합 테스트 기록, 공개 저장소의 PR 본문과 댓글에 든 비공개 낱말)을 머지 없이 돌린다. PR 본문의 기능 완료 근거 블록은 보지 않는다.
 통과하면 `GATE-OK <PR>`, 걸리면 `GATE-FAIL <PR>` 과 걸린 이유를 한 줄씩 낸다(종료 코드 0, 1). 판정은 머지 큐와 같은 함수가 하므로 큐가 멈출 이유를 큐에 걸기 전에 안다.
 리뷰 조건은 리뷰 댓글의 문구를 보지 않는다. 지금 HEAD 의 리뷰 체크 success 나 믿는 봇의 영수증만 센다([자동 머지 리뷰 조건](overlay.md#자동-머지-리뷰-조건)). 조건의 정확한 뜻은 `scripts/core/auto-merge.ts` 머리 주석의 「judgeReview」 가 소유한다.
@@ -291,12 +281,6 @@ orch queue merge 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
 ```bash
 orch queue merge --copy-dir "$COPY_DIR" 101 102
 ```
-
-### draft 때 건너뛴 필수 체크
-
-draft 에서 CI 를 건너뛰게 둔 저장소는 같은 HEAD 에 결론이 `SKIPPED` 인 실행이 남는다. GitHub 는 `SKIPPED` 를 통과로 본다.
-ready 로 바꾼 직후 새 실행이 붙기 전에 머지 큐가 그 체크를 보면 CI 없이 머지한다.
-그런 저장소는 오버레이가 `--skipped-is-missing` 을 정한다. 조건은 스크립트 머리 주석이 소유한다.
 
 ### 머지 뒤 명령
 

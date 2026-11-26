@@ -1,6 +1,6 @@
 // CI 감시: 내 열린 PR 가운데 draft 가 아닌 것마다 필수 체크 상태를 정한다. 다른 사람의 PR 과 draft 는 보지 않는다.
 //     필수 체크 이름은 lib/gh.ts 의 requiredNames(queue.required, 없으면 base 의 저장소 규칙. 같은 base 의 규칙은 틱마다 한 번 읽는다),
-//     상태는 ciState(queue.skipped_is_missing 을 따른다)다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다. 필수가 아닌 체크의 실패도
+//     상태는 ciState다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다. 필수가 아닌 체크의 실패도
 //     failed 이고, passed 는 실패가 없고 필수 체크가 모두 나타났고 롤업의 체크가 모두 끝난 때다. 필수 체크 목록이 비면 나타난 체크 전부로
 //     판정한다. 루프는 --allow-fail 을 모른다. 머지 큐에 --allow-fail 을 주는 저장소에서는 루프가 실패로 알린 PR 도 큐는 머지할 수 있다.
 //     base 조회가 실패하거나 예외가 나면 기존 worker 전달로 돌아간다.
@@ -124,9 +124,9 @@ async function watchCi(
       continue
     }
     judgedNames.set(pr.number, names.names)
-    const judged = ciState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
+    const judged = ciState(pr.rollup, names.names, pr.head)
     // 최신화는 필수 체크만 본다(refresh.ts 머리 주석의 「최신화」). 알림은 지금처럼 state 로 판정한다
-    const required = requiredCiState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
+    const required = requiredCiState(pr.rollup, names.names, pr.head)
     const entry: CiEntry = { head: pr.head, state: judged.state, ...(required === judged.state ? {} : { required }) }
     ci[key] = entry
     if (before && before.head === entry.head && before.state === entry.state) continue

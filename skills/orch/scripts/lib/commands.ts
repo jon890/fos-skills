@@ -34,7 +34,7 @@ export type Command = {
   passthrough: boolean
   legacy: { name: string; flags: string[] } | null
   usage: string
-  retired?: { since: string; doc: string }
+  retired?: { since: string; doc: string; guidance?: string }
 }
 
 type Row = Partial<Command> & Pick<Command, 'group' | 'verb' | 'script' | 'usage'>
@@ -142,7 +142,11 @@ const ROWS: Row[] = [
   },
   { group: 'queue', verb: 'run', script: 'queue/merge_queue.ts', context: ['repo'], legacy: { name: 'merge_queue', flags: [] }, usage: 'orch queue run <PR>...' },
   { group: 'queue', verb: 'finish', script: 'queue/finish-pr.ts', context: ['repo', 'run'], legacy: { name: 'finish-pr', flags: [] }, usage: 'orch queue finish <PR>' },
-  { group: 'queue', verb: 'ready', script: 'queue/ci-ready.ts', context: ['repo'], legacy: { name: 'ci-ready', flags: [] }, usage: 'orch queue ready <PR>...' },
+  {
+    group: 'queue', verb: 'ready', script: 'queue/ci-ready.ts', legacy: { name: 'ci-ready', flags: [] },
+    usage: 'orch queue ready (폐기됨)',
+    retired: { since: 'draft-ci', doc: 'skills/orch/references/cleanup.md', guidance: 'PR 은 처음부터 ready 상태로 연다.' },
+  },
   { group: 'queue', verb: 'gate', script: 'queue/gate.ts', context: ['repo'], legacy: null, usage: 'orch queue gate <PR>' },
   { group: 'queue', verb: 'conflicts', script: 'queue/notify-conflicts.ts', context: ['repo', 'run'], legacy: { name: 'notify-conflicts', flags: [] }, usage: 'orch queue conflicts' },
   { group: 'queue', verb: 'overlap', script: 'queue/overlap_units.ts', context: ['repo'], legacy: { name: 'overlap_units', flags: [] }, usage: 'orch queue overlap --base <ref> --head <ref>' },

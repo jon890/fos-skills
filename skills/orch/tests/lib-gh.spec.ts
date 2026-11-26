@@ -223,42 +223,40 @@ describe('ciState', () => {
     assert.ok(read().ok)
     assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 5)
   })
-  for (const skippedMissing of [false, true]) {
-    test(`미등장 필수 체크의 캐시는 60초 뒤 만료한다 (skippedMissing=${skippedMissing})`, (t) => {
-      const originalNow = Date.now
-      const savedCache = process.env.ORCH_GH_CACHE
-      let now = originalNow()
-      Date.now = () => now
-      process.env.ORCH_GH_CACHE = '1'
-      t.after(() => {
-        Date.now = originalNow
-        if (savedCache === undefined) delete process.env.ORCH_GH_CACHE
-        else process.env.ORCH_GH_CACHE = savedCache
-        fake.setRules(RULES)
-      })
-      const repo = mkdtempSync(join(dir, 'snapshot-missing-'))
-      const set = (statusCheckRollup: unknown[]) => fake.setRules([{ stdout: JSON.stringify({ headRefOid: 'head', statusCheckRollup }) }])
-      const completed = run('test', 'SUCCESS')
-      const incomplete = [completed, ...(skippedMissing ? [run('review', 'SKIPPED')] : [])]
-      const complete = [completed, commitStatus('review', 'SUCCESS')]
-      set(incomplete)
-      const withoutRequirements = checkSnapshot(repo, '7', 'head')
-      assert.ok(withoutRequirements.ok)
-      assert.deepEqual(withoutRequirements.data.statusCheckRollup, incomplete)
-      const read = () => {
-        const result = checkSnapshot(repo, '7', 'head', false, ['test', 'review'], skippedMissing)
-        assert.ok(result.ok)
-        return result.data.statusCheckRollup
-      }
-      assert.deepEqual(read(), incomplete)
-      assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 2)
-      set(complete)
-      now += 59_000
-      assert.deepEqual(read(), incomplete)
-      now += 1000
-      assert.deepEqual(read(), complete)
+  test('미등장 필수 체크의 캐시는 60초 뒤 만료한다', (t) => {
+    const originalNow = Date.now
+    const savedCache = process.env.ORCH_GH_CACHE
+    let now = originalNow()
+    Date.now = () => now
+    process.env.ORCH_GH_CACHE = '1'
+    t.after(() => {
+      Date.now = originalNow
+      if (savedCache === undefined) delete process.env.ORCH_GH_CACHE
+      else process.env.ORCH_GH_CACHE = savedCache
+      fake.setRules(RULES)
     })
-  }
+    const repo = mkdtempSync(join(dir, 'snapshot-missing-'))
+    const set = (statusCheckRollup: unknown[]) => fake.setRules([{ stdout: JSON.stringify({ headRefOid: 'head', statusCheckRollup }) }])
+    const completed = run('test', 'SUCCESS')
+    const incomplete = [completed]
+    const complete = [completed, commitStatus('review', 'SUCCESS')]
+    set(incomplete)
+    const withoutRequirements = checkSnapshot(repo, '7', 'head')
+    assert.ok(withoutRequirements.ok)
+    assert.deepEqual(withoutRequirements.data.statusCheckRollup, incomplete)
+    const read = () => {
+      const result = checkSnapshot(repo, '7', 'head', false, ['test', 'review'])
+      assert.ok(result.ok)
+      return result.data.statusCheckRollup
+    }
+    assert.deepEqual(read(), incomplete)
+    assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 2)
+    set(complete)
+    now += 59_000
+    assert.deepEqual(read(), incomplete)
+    now += 1000
+    assert.deepEqual(read(), complete)
+  })
   test('HEAD 키로 옛 캐시를 격리하고 같은 HEAD 재실행은 refresh 로 읽어 캐시도 갱신한다', (t) => {
     process.env.ORCH_GH_CACHE = '1'
     t.after(() => { process.env.ORCH_GH_CACHE = '0'; fake.setRules(RULES) })
@@ -270,14 +268,14 @@ describe('ciState', () => {
     set('new', 'SUCCESS')
     const newer = checkSnapshot(repo, '7', 'new')
     assert.ok(newer.ok)
-    assert.equal(ciState(newer.data.statusCheckRollup, ['test'], false, 'new').state, 'passed')
+    assert.equal(ciState(newer.data.statusCheckRollup, ['test'], 'new').state, 'passed')
     set('new', 'FAILURE')
     const cached = checkSnapshot(repo, '7', 'new')
     assert.ok(cached.ok)
-    assert.equal(ciState(cached.data.statusCheckRollup, ['test'], false, 'new').state, 'passed')
+    assert.equal(ciState(cached.data.statusCheckRollup, ['test'], 'new').state, 'passed')
     const fresh = checkSnapshot(repo, '7', 'new', true)
     assert.ok(fresh.ok)
-    assert.equal(ciState(fresh.data.statusCheckRollup, ['test'], false, 'new').state, 'failed')
+    assert.equal(ciState(fresh.data.statusCheckRollup, ['test'], 'new').state, 'failed')
     const updated = checkSnapshot(repo, '7', 'new')
     assert.deepEqual(updated, fresh)
     assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 3)
@@ -288,35 +286,35 @@ describe('ciState', () => {
   test('같은 HEAD 와 workflow 의 새 실행이 있으면 옛 취소를 세지 않는다', () => {
     const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
     const newer = attempt('SUCCESS', '2026-10-30T02:00:00Z')
-    assert.equal(ciState([newer, old], ['test'], false, 'head').state, 'passed')
-    assert.equal(ciState([old, { ...newer, conclusion: null, status: 'IN_PROGRESS' }], ['test'], false, 'head').state, 'pending')
-    assert.equal(ciState([old, { ...newer, conclusion: 'FAILURE' }], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([newer, old], ['test'], 'head').state, 'passed')
+    assert.equal(ciState([old, { ...newer, conclusion: null, status: 'IN_PROGRESS' }], ['test'], 'head').state, 'pending')
+    assert.equal(ciState([old, { ...newer, conclusion: 'FAILURE' }], ['test'], 'head').state, 'failed')
     // gh pr view 의 실제 JSON 은 checkSuite 대신 workflowName 으로 낸다.
     assert.equal(ciState([
       { ...run('test', 'CANCELLED'), workflowName: 'CI', startedAt: '2026-10-30T01:00:00Z' },
       { ...run('test', 'SUCCESS'), workflowName: 'CI', startedAt: '2026-10-30T02:00:00Z' },
-    ], ['test'], false, 'head').state, 'passed')
+    ], ['test'], 'head').state, 'passed')
   })
   test('같은 이름의 이전 실패보다 새 통과를 센다', () => {
     const old = attempt('FAILURE', '2026-10-30T01:00:00Z')
     const newer = attempt('SUCCESS', '2026-10-30T02:00:00Z')
-    assert.equal(ciState([old, newer], ['test'], false, 'head').state, 'passed')
-    assert.equal(ciState([newer, old], ['test'], false, 'head').state, 'passed')
-    assert.equal(ciState([newer, { ...old, startedAt: '2026-10-30T03:00:00Z' }], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([old, newer], ['test'], 'head').state, 'passed')
+    assert.equal(ciState([newer, old], ['test'], 'head').state, 'passed')
+    assert.equal(ciState([newer, { ...old, startedAt: '2026-10-30T03:00:00Z' }], ['test'], 'head').state, 'failed')
   })
   test('다른 워크플로, HEAD 또는 시각을 모르는 실행으로 실패를 덮지 않는다', () => {
     const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
-    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'Other')], ['test'], false, 'head').state, 'failed')
-    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'failed')
-    assert.equal(ciState([attempt('FAILURE', '2026-10-30T01:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'pending')
-    assert.equal(ciState([old, attempt('SUCCESS', 'invalid')], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'Other')], ['test'], 'head').state, 'failed')
+    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], 'head').state, 'failed')
+    assert.equal(ciState([attempt('FAILURE', '2026-10-30T01:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], 'head').state, 'pending')
+    assert.equal(ciState([old, attempt('SUCCESS', 'invalid')], ['test'], 'head').state, 'failed')
     const queued = attempt(null, '0001-01-01T00:00:00Z', 'CI', 'QUEUED')
-    assert.equal(ciState([old, queued], ['test'], false, 'head').state, 'failed')
-    assert.equal(ciState([attempt('SUCCESS', '2026-10-30T01:00:00Z'), queued], ['test'], false, 'head').state, 'pending')
-    assert.equal(ciState([run('test', 'CANCELLED'), run('test', 'SUCCESS')], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([old, queued], ['test'], 'head').state, 'failed')
+    assert.equal(ciState([attempt('SUCCESS', '2026-10-30T01:00:00Z'), queued], ['test'], 'head').state, 'pending')
+    assert.equal(ciState([run('test', 'CANCELLED'), run('test', 'SUCCESS')], ['test'], 'head').state, 'failed')
   })
   test('필수 체크가 모두 나타나 성공으로 끝나고 실패가 없으면 passed 이고 checks 는 나타난 체크 전부다', () => {
-    const got = ciState([run('test', 'SUCCESS'), run('lint', 'SUCCESS'), run('extra', 'NEUTRAL')], ['test', 'lint'], false)
+    const got = ciState([run('test', 'SUCCESS'), run('lint', 'SUCCESS'), run('extra', 'NEUTRAL')], ['test', 'lint'])
     assert.equal(got.state, 'passed')
     assert.deepEqual(
       got.checks.map((c) => c.name),
@@ -325,45 +323,44 @@ describe('ciState', () => {
   })
 
   test('필수가 아닌 체크가 실패하면 failed 다(머지 큐의 기본 판정과 같다)', () => {
-    assert.equal(ciState([run('test', 'SUCCESS'), run('extra', 'FAILURE')], ['test'], false).state, 'failed')
-    assert.equal(ciState([run('test', 'SUCCESS'), commitStatus('ci/extra', 'ERROR')], ['test'], false).state, 'failed')
+    assert.equal(ciState([run('test', 'SUCCESS'), run('extra', 'FAILURE')], ['test']).state, 'failed')
+    assert.equal(ciState([run('test', 'SUCCESS'), commitStatus('ci/extra', 'ERROR')], ['test']).state, 'failed')
   })
 
   test('필수가 아닌 체크가 아직 돌면 머지 큐처럼 기다리므로 pending 이다', () => {
-    assert.equal(ciState([run('test', 'SUCCESS'), run('extra', null, 'IN_PROGRESS')], ['test'], false).state, 'pending')
+    assert.equal(ciState([run('test', 'SUCCESS'), run('extra', null, 'IN_PROGRESS')], ['test']).state, 'pending')
   })
 
   test('체크 실행의 실패 결론마다 failed 다', () => {
     for (const conclusion of ['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']) {
-      assert.equal(ciState([run('test', conclusion), run('lint', null, 'IN_PROGRESS')], ['test', 'lint'], false).state, 'failed', conclusion)
+      assert.equal(ciState([run('test', conclusion), run('lint', null, 'IN_PROGRESS')], ['test', 'lint']).state, 'failed', conclusion)
     }
   })
 
   test('커밋 상태는 name 이 없어 context 로 찾고, state 가 FAILURE 나 ERROR 면 failed 다', () => {
     for (const state of ['FAILURE', 'ERROR']) {
-      const got = ciState([commitStatus('ci/legacy', state)], ['ci/legacy'], false)
+      const got = ciState([commitStatus('ci/legacy', state)], ['ci/legacy'])
       assert.equal(got.state, 'failed', state)
       assert.deepEqual(got.checks, [{ name: 'ci/legacy', status: state, conclusion: null, url: 'https://status.example.com/ci/legacy' }])
     }
-    assert.equal(ciState([commitStatus('ci/legacy', 'SUCCESS')], ['ci/legacy'], false).state, 'passed')
-    assert.equal(ciState([commitStatus('ci/legacy', 'PENDING')], ['ci/legacy'], false).state, 'pending')
+    assert.equal(ciState([commitStatus('ci/legacy', 'SUCCESS')], ['ci/legacy']).state, 'passed')
+    assert.equal(ciState([commitStatus('ci/legacy', 'PENDING')], ['ci/legacy']).state, 'pending')
   })
 
   test('필수 체크 하나가 아직 나타나지 않았거나 끝나지 않았으면 pending 이다', () => {
-    assert.equal(ciState([run('test', 'SUCCESS')], ['test', 'lint'], false).state, 'pending')
-    assert.equal(ciState([run('test', 'SUCCESS'), run('lint', null, 'IN_PROGRESS')], ['test', 'lint'], false).state, 'pending')
+    assert.equal(ciState([run('test', 'SUCCESS')], ['test', 'lint']).state, 'pending')
+    assert.equal(ciState([run('test', 'SUCCESS'), run('lint', null, 'IN_PROGRESS')], ['test', 'lint']).state, 'pending')
   })
 
   test('필수 목록이 비면 나타난 체크 전부로 판정하고, 체크가 하나도 없으면 pending 이다', () => {
-    assert.equal(ciState([run('a', 'SUCCESS'), run('b', 'SUCCESS')], [], false).state, 'passed')
-    assert.equal(ciState([run('a', 'SUCCESS'), run('b', 'FAILURE')], [], false).state, 'failed')
-    assert.equal(ciState([], [], false).state, 'pending')
-    assert.equal(ciState(null, [], false).state, 'pending')
+    assert.equal(ciState([run('a', 'SUCCESS'), run('b', 'SUCCESS')], []).state, 'passed')
+    assert.equal(ciState([run('a', 'SUCCESS'), run('b', 'FAILURE')], []).state, 'failed')
+    assert.equal(ciState([], []).state, 'pending')
+    assert.equal(ciState(null, []).state, 'pending')
   })
 
-  test('skippedIsMissing 이면 SKIPPED 인 필수 체크는 나타나지 않은 것이고, 아니면 통과로 본다', () => {
-    assert.equal(ciState([run('test', 'SKIPPED')], ['test'], true).state, 'pending')
-    assert.equal(ciState([run('test', 'SKIPPED')], ['test'], false).state, 'passed')
+  test('SKIPPED 인 필수 체크는 통과로 본다', () => {
+    assert.equal(ciState([run('test', 'SKIPPED')], ['test']).state, 'passed')
   })
 })
 

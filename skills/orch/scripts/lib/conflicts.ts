@@ -1,6 +1,6 @@
 // 열린 PR 의 충돌 찾기, PR 하나의 처리, (PR, PR HEAD, 충돌 파일) 마다 한 번 알린 기록의 한 벌이다.
 // 사용처: notify-conflicts.ts(머지 직후 한 번 보기), orch-loop.ts(틱의 마지막 단계). PR HEAD 받기(fetchPrHead)와
-// base 받기(baseHead)는 ci-ready 도 쓴다. 충돌 판정은 lib/git.ts 의 conflicts(merge-tree) 한 벌이다.
+// 충돌 판정은 lib/git.ts 의 conflicts(merge-tree) 한 벌이다.
 // GitHub 의 mergeable 은 머지 직후 한동안 UNKNOWN 이라 쓰지 않는다.
 //
 // 실패는 예외 대신 { ok: false, error } 로 낸다. 부르는 쪽이 조회 실패(종료 코드 2)나 보류로 바꾼다.

@@ -118,6 +118,13 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.equal(r.stdout.trim().split('\n').filter((line) => /^GATE-/.test(line)).join('\n'), 'GATE-OK 1')
   })
 
+  test('제거된 --skipped-is-missing 플래그를 거절한다', async (t) => {
+    const c = setup(t)
+    const r = await gate(c, { '1': pr() }, 0, ['--skipped-is-missing'])
+    assert.equal(r.code, 2, both(r))
+    assert.match(r.stderr, /모르는 옵션: --skipped-is-missing/)
+  })
+
   for (const line of ['머지 보류: real 확인 전', '- **머지 보류:** real 확인 전', '머지 보류:']) {
     test(`보류 줄이 있으면 gate 는 안내하고 merge 는 거절한다: ${line}`, async (t) => {
       const c = setup(t)

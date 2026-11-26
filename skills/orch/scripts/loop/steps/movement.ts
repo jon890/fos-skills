@@ -58,13 +58,12 @@ function foreignMergeWaits(repo: string, localOrchDir: string, now: number): (wo
   // 절대경로 ORCH_DIR 을 물려받아도 다른 저장소에서 이 루프의 설정이나 PR 번호 기록을 읽지 않는다.
   const override = real(orchDir(repo)) === localOrchDir ? '' : undefined
   const config = loadConfig(repo, { file: pathOf('config', repo, override) })
-  const skipped = config.queue?.skipped_is_missing === true
   const states = new Map<number, CiEntry['state'] | null>()
   return mergeWaits(paths, openPrs(repo, config), now, readRefresh(refreshFile(repo, override)), (pr) => {
     if (!states.has(pr.number)) {
       try {
         const names = requiredNames(repo, pr.host, pr.slug, pr.base, config)
-        states.set(pr.number, names.ok ? ciState(pr.rollup, names.names, skipped, pr.head).state : null)
+        states.set(pr.number, names.ok ? ciState(pr.rollup, names.names, pr.head).state : null)
       } catch {
         states.set(pr.number, null)
       }

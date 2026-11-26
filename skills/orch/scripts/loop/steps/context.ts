@@ -5,7 +5,7 @@
 //
 // 설정: pipeline.tick_sec(양수, 기본 300), pipeline.slow_sec(양수, 없으면 null. orch-loop.ts 머리 주석의 「느린 단계」), pipeline.digest_sec(양수, 기본 1800), pipeline.request_ack_sec(양수, 기본 1800. requests.ts), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. stalls.ts 머리 주석의 「멈춤 확인」),
 //     pipeline.stall_error_retries(0 이상의 정수, 기본 3. lib/stall-retry.ts),
-//     pipeline.idle_min, pipeline.idle_exited(movement.ts 머리 주석의 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
+//     pipeline.idle_min, pipeline.idle_exited(movement.ts 머리 주석의 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required,
 //     queue.auto_merge, queue.auto_review, migrations.dirs, migrations.before, migrations.blocked_after_sec(lib/auto-merge.ts 의 autoMergeConfig 가 읽는다.
 //     auto-merge.ts 머리 주석의 「자동 머지」), queue.sweep_args(자동 머지가 큐에 --sweep-arg 로 넘긴다),
 //     pipeline.refresh_slots, pipeline.refresh_worker_paths 와 머지 큐의 최신화 키(lib/refresh.ts 의 refreshSettings 가 읽는다. refresh.ts 머리 주석의 「최신화」).
@@ -47,7 +47,6 @@ export type Context = {
   digestSec: number
   // pipeline.request_ack_sec. 받은 요청에 받음 답이 없을 때 보낸 쪽에 알리기까지의 시간(초, steps/requests.ts)
   requestAckSec: number
-  skippedIsMissing: boolean
   stallTicks: Record<StallState, number>
   // pipeline.stall_error_retries. 저장소 핸들러가 없을 때 error 멈춤마다 다시 진행시키는 최대 횟수(lib/stall-retry.ts)
   stallErrorRetries: number
@@ -79,9 +78,7 @@ export function context(repo: string, run: string | undefined, specsDir: string 
   const config = loadConfig(repo)
   const pipeline = section<{ tick_sec?: unknown; slow_sec?: unknown; stall_ticks?: unknown; stall_error_retries?: unknown; digest_sec?: unknown; request_ack_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
   const finish = section<{ run?: unknown; specs_dir?: unknown }>(config, 'finish', FINISH_KEYS)
-  const queue = section<{ skipped_is_missing?: unknown; sweep_args?: unknown }>(config, 'queue', QUEUE_KEYS)
-  const skipped = queue.skipped_is_missing ?? false
-  if (typeof skipped !== 'boolean') throw new ConfigError('설정 파일의 queue.skipped_is_missing 은 true 나 false 여야 한다')
+  const queue = section<{ sweep_args?: unknown }>(config, 'queue', QUEUE_KEYS)
   const tickSec = pipeline.tick_sec ?? DEFAULT_TICK_SEC
   if (typeof tickSec !== 'number' || !Number.isFinite(tickSec) || tickSec <= 0) {
     throw new ConfigError(`설정 파일의 pipeline.tick_sec 은 양수여야 한다: ${JSON.stringify(tickSec)}`)
@@ -110,7 +107,6 @@ export function context(repo: string, run: string | undefined, specsDir: string 
     specsDir: specsDir || optionalString(finish.specs_dir, 'finish.specs_dir'),
     tickSec,
     slowSec: slowSec as number | null,
-    skippedIsMissing: skipped,
     stallTicks: stallTicks(pipeline.stall_ticks),
     stallErrorRetries,
     autoAdvance: autoAdvanceOf(config),

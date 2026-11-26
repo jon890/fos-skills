@@ -8,7 +8,7 @@ const HEAD = 'a'.repeat(40)
 const OTHER = 'b'.repeat(40)
 const pass = { name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }
 const policy: ReadinessPolicy = {
-  required: ['Tests'], allowFail: [], skippedIsMissing: false, allowNoChecks: true,
+  required: ['Tests'], allowFail: [], allowNoChecks: true,
   review: null, integrationRules: [], migrationDirs: {}, privateWords: false,
 }
 // 모든 조건을 통과하는 값. 테스트마다 하나만 바꾼다

@@ -194,6 +194,14 @@ writeFileSync('received.json', JSON.stringify({ input: JSON.parse(readFileSync(0
     await assert.rejects(fire('tick', {}, ctx(repo).ctx), ConfigError)
   })
 
+  test('폐기된 draft CI 이벤트의 시간 제한이 남아 있어도 다른 핸들러가 실행된다', async () => {
+    const repo = makeRepo()
+    handler(repo, 'tick', '')
+    timeouts(repo, { 'before-ready': 0, 'pr-ready': 3 })
+    const result = await fire('tick', {}, ctx(repo).ctx)
+    assert.equal(result.result, 'pass')
+  })
+
   test('모르는 이벤트 이름으로 부르면 예외다', async () => {
     await assert.rejects(fire('before-merg', {}, ctx(makeRepo()).ctx), /모르는 이벤트/)
   })
@@ -334,10 +342,10 @@ describe('시간 제한', { concurrency: true }, () => {
     process.env.ORCH_KILL_GRACE_SEC = '1'
     t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
     const repo = makeRepo()
-    timeouts(repo, { 'before-ready': 1 })
+    timeouts(repo, { 'before-merge': 1 })
     handler(
       repo,
-      'before-ready',
+      'before-merge',
       `import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 process.on('SIGTERM', () => {})
@@ -349,7 +357,7 @@ setInterval(() => {}, 1000)
     const { ctx: c } = ctx(repo)
     let grandchild = 0
     try {
-      const r = await fire('before-ready', {}, c)
+      const r = await fire('before-merge', {}, c)
       grandchild = Number(readFileSync(join(repo, 'grandchild.pid'), 'utf8'))
       assert.equal(r.result, 'timeout')
       assert.equal(r.code, null)
@@ -433,11 +441,11 @@ describe('잠금', { concurrency: true }, () => {
   test('죽은 pid 나 깨진 내용의 잠금은 회수하고 바로 돌며 실행 뒤 잠금 파일이 없다', async () => {
     for (const content of [String(deadPid()), 'garbage']) {
       const repo = makeRepo()
-      handler(repo, 'pr-ready', '')
-      const lock = lockFile(repo, 'pr-ready')
+      handler(repo, 'ci-passed', '')
+      const lock = lockFile(repo, 'ci-passed')
       mkdirSync(join(lock, '..'), { recursive: true })
       writeFileSync(lock, content)
-      const r = await fire('pr-ready', {}, ctx(repo).ctx)
+      const r = await fire('ci-passed', {}, ctx(repo).ctx)
       assert.equal(r.result, 'pass', `잠금 내용 ${content} 에서 pass 가 아니다`)
       assert.ok(r.durationMs < 5000, `회수하지 않고 기다렸다: ${r.durationMs}ms`)
       assert.deepEqual(readdirSync(join(lock, '..')), [], '잠금 파일이나 회수용 파일이 남았다')

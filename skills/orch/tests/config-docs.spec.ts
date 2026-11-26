@@ -39,7 +39,6 @@ test('마무리와 정리의 키는 문서 표에 모두 있고 타입을 설명
   }
   const schema = read('../../../docs/data-schema.md')
   for (const key of ['tick_sec', 'digest_sec']) assert.ok(schema.includes(`| \`${key}\` | 양수, 타이머 상한 이하 |`), key)
-  assert.ok(schema.includes('| `ready_slots` | 1 이상의 정수 |'))
   assert.ok(schema.includes('`config.json.lock`'))
   assert.match(schema, /기존 명령이 읽을 때의 검사는 그대로/)
 })

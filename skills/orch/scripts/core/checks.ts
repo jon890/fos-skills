@@ -66,14 +66,12 @@ export function currentChecks(rollup: unknown, head?: string): Record<string, un
 
 type CheckOptions = {
   required: readonly string[]
-  skippedIsMissing: boolean
   allowFail?: readonly string[]
   allowNoChecks: boolean
 }
 
-// 큐에서는 SKIPPED 옵션이 필수 체크의 등장 여부에만 영향을 준다.
 export function judgeChecks(rows: readonly Record<string, unknown>[], options: CheckOptions) {
-  const { required, skippedIsMissing, allowFail, allowNoChecks } = options
+  const { required, allowFail, allowNoChecks } = options
   const failed: string[] = []
   const allowedFailed: string[] = []
   const seen = new Set<string>()
@@ -81,7 +79,7 @@ export function judgeChecks(rows: readonly Record<string, unknown>[], options: C
   const checks = rows.map((row) => {
     const name = checkName(row)
     const conclusion = field(row, 'conclusion')
-    if (name !== null && !(skippedIsMissing && conclusion === 'SKIPPED')) seen.add(name)
+    if (name !== null) seen.add(name)
     if (failedRow(row)) {
       if (name !== null && allowFail?.includes(name)) allowedFailed.push(name)
       else failed.push(name ?? '')
@@ -101,24 +99,16 @@ export function judgeChecks(rows: readonly Record<string, unknown>[], options: C
   return { state, failed, allowedFailed, pending, missing, none, checks }
 }
 
-export function ciState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState {
-  const rows = loopChecks(rollup, skippedIsMissing, head)
-  const { state, checks } = judgeChecks(rows, { required, skippedIsMissing, allowNoChecks: false })
+export function ciState(rollup: unknown, required: readonly string[], head?: string): CiState {
+  const rows = currentChecks(rollup, head)
+  const { state, checks } = judgeChecks(rows, { required, allowNoChecks: false })
   return { state, checks }
 }
 
 // 루프의 최신화는 필수 체크만 본다. 필수 체크 이름이 비면 나타난 체크를 모두 본다.
-export function requiredCiState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState['state'] {
-  const rows = loopChecks(rollup, skippedIsMissing, head)
+export function requiredCiState(rollup: unknown, required: readonly string[], head?: string): CiState['state'] {
+  const rows = currentChecks(rollup, head)
   const wanted = new Set(required)
   const selected = wanted.size === 0 ? rows : rows.filter((row) => wanted.has(checkName(row) ?? ''))
-  return judgeChecks(selected, { required, skippedIsMissing, allowNoChecks: false }).state
-}
-
-// 루프는 SKIPPED 옵션이 켜지면 해당 행을 실패와 진행 중 여부에서도 뺀다. 루프 자동 머지도 이 행을 checkReadiness 에 넘긴다(PR4 가 옵션과 함께 지운다)
-export function loopChecks(rollup: unknown, skippedIsMissing: boolean, head?: string): Record<string, unknown>[] {
-  const rows = currentChecks(rollup, head)
-  // 루프의 공개 함수는 이름 없는 행을 빈 이름으로 다룬다.
-  return rows.filter((row) => !skippedIsMissing || field(row, 'conclusion') !== 'SKIPPED')
-    .map((row) => checkName(row) === null ? { ...row, name: '' } : row)
+  return judgeChecks(selected, { required, allowNoChecks: false }).state
 }

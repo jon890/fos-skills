@@ -521,7 +521,7 @@ describe('orch 명령 판정', () => {
 
   test('문서의 새 꼴은 명령 표로 확인하고 산문은 보지 않는다', () => {
     const skill = join(tmp, 'skill')
-    write(join(skill, 'SKILL.md'), '`orch loop start` 로 띄운다. orch 루트는 `.orch` 다.\n```bash\norch wait --ack "$D"\norch nope x\n```\n`orch loop nope` 와 `orch` 스킬\n')
+    write(join(skill, 'SKILL.md'), '`orch loop start` 로 띄운다. orch 루트는 `.orch` 다.\n```bash\norch wait --ack "$D"\norch nope x\n```\n`orch loop nope` 와 `orch` 스킬\n- `orch queue ready` 는 폐기됐다. <!-- orch-compat -->\n')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 1, r.stdout + r.stderr)
     assert.equal(r.stdout, 'MISSING SKILL.md:4 orch nope x\nMISSING SKILL.md:6 orch loop nope\n')
@@ -769,6 +769,31 @@ describe('저장소 판정', () => {
     assert.doesNotMatch(r.stdout, /INVALID-CONFIG/)
     assert.match(r.stdout, /^OK-SCRIPTS 0$/m)
     assert.match(r.stdout, /^UNKNOWN-HOOK .*befor-merge\.ts$/m)
+  })
+
+  test('옛 draft CI 키와 핸들러 및 오버레이 줄의 위치를 경고하고 성공한다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({
+      queue: { skipped_is_missing: false },
+      pipeline: { ready_slots: 0 },
+      hooks: { timeouts: { 'before-ready': 15, 'pr-ready': null } },
+    }))
+    write(join(tmp, '.orch', 'hooks', 'before-ready.ts'), '')
+    write(join(tmp, '.orch', 'hooks', 'pr-ready.ts'), '')
+    write(join(tmp, '.orch', 'overlay.md'), '# 오버레이\n`orch queue ready 1`\n`gh pr create --draft`\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { ORCH_OUTPUT: 'short' } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const warnings = r.stdout.split('\n').filter(line => line.startsWith('DRAFT-CI-RETIRED ')).sort()
+    assert.deepEqual(warnings, [
+      '.orch/overlay.md:2',
+      '.orch/overlay.md:3',
+      join(tmp, '.orch', 'hooks', 'before-ready.ts'),
+      join(tmp, '.orch', 'hooks', 'pr-ready.ts'),
+      'hooks.timeouts.before-ready',
+      'hooks.timeouts.pr-ready',
+      'pipeline.ready_slots',
+      'queue.skipped_is_missing',
+    ].map(where => `DRAFT-CI-RETIRED ${where}`).sort())
+    assert.doesNotMatch(r.stdout, /INVALID-CONFIG|UNKNOWN-HOOK/)
   })
 
   test('대상이 없는 옛 메모는 다른 저장소 doctor 가 할 일로 세지 않는다', () => {

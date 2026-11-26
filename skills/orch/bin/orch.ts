@@ -218,9 +218,9 @@ async function main(argv: string[]): Promise<number> {
       return 0
     }
     const retired = commands.COMMANDS.find(c => c.retired && c.group === first && (c.verb === null || c.verb === rest[0]))
-    if (retired) {
+    if (retired?.retired) {
       const { retiredMessage } = await import('../scripts/lib/retired.ts')
-      err(retiredMessage(commands.form(retired), retired.retired!.doc))
+      err(retiredMessage(commands.form(retired), retired.retired.doc, retired.retired.guidance))
       return 2
     }
     const stripped = stripFull(rest)
@@ -234,7 +234,7 @@ async function main(argv: string[]): Promise<number> {
     }
     if (resolved.command.retired) {
       const { retiredMessage } = await import('../scripts/lib/retired.ts')
-      err(retiredMessage(commands.form(resolved.command), resolved.command.retired.doc))
+      err(retiredMessage(commands.form(resolved.command), resolved.command.retired.doc, resolved.command.retired.guidance))
       return 2
     }
     const file = commands.scriptIn(dir, resolved.command.script)
@@ -279,15 +279,15 @@ async function main(argv: string[]): Promise<number> {
     err(`${USAGE}\norch: 스크립트 이름이 아니다: ${given}`)
     return 2
   }
-  const file = commands.scriptIn(dir, bare)
-  if (file === null) {
-    err(`orch: ${join(dir, `${bare}.ts`)} 가 없다. 쓸 수 있는 이름: ${names(commands, dir)}`)
-    return 2
-  }
   const legacy = commands.resolveLegacy(bare, printing ? [] : rest)
   if (!printing && legacy?.command.retired) {
     const { retiredMessage } = await import('../scripts/lib/retired.ts')
-    err(retiredMessage(legacy.hint, legacy.command.retired.doc))
+    err(retiredMessage(legacy.hint, legacy.command.retired.doc, legacy.command.retired.guidance))
+    return 2
+  }
+  const file = commands.scriptIn(dir, bare)
+  if (file === null) {
+    err(`orch: ${join(dir, `${bare}.ts`)} 가 없다. 쓸 수 있는 이름: ${names(commands, dir)}`)
     return 2
   }
   if (legacy) err(`orch: 새 꼴: ${legacy.hint}`)

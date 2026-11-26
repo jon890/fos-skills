@@ -2,7 +2,7 @@
 // merge_queue.ts 와 merge-with-finish.ts 가 함께 import 한다. 바꾸면 값이 숫자여도 PR 번호로 읽지 않는 판정이 함께 바뀐다.
 //
 // 아래 QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS, QUEUE_NAMED 는 config.json 의 queue 키를 머지 큐 옵션으로 바꾸는 표다.
-// merge-with-finish.ts 가 쓴다. 표들의 키를 합치면 lib/config.ts 의 QUEUE_KEYS 와 같은 집합이다(lib-config.spec.ts 가 본다).
+// merge-with-finish.ts 가 쓴다. 표에 없는 QUEUE_KEYS 는 다른 명령이 읽거나 폐기된 키다(lib-config.spec.ts 가 본다).
 // merge-with-finish.ts 는 import 하면 명령이 돌아 테스트가 읽을 수 없으므로 표를 이 모듈에 둔다.
 
 export const QUEUE_VALUE_OPTIONS: readonly string[] = [
@@ -48,7 +48,6 @@ export const QUEUE_VALUES: Readonly<Record<string, string>> = {
 export const QUEUE_NUMBERS: readonly string[] = ['poll_min_sec', 'poll_max_sec', 'ci_expected_sec']
 // queue 절의 참거짓 키와 값 없는 머지 큐 옵션
 export const QUEUE_FLAGS: Readonly<Record<string, string>> = {
-  skipped_is_missing: '--skipped-is-missing',
   update_docs_on_overlap: '--update-docs-on-overlap',
   require_up_to_date: '--require-up-to-date',
 }

@@ -22,7 +22,7 @@ export async function field(stepContext: StepContext, state: StepState, n: strin
 export async function checkRows(stepContext: StepContext, state: StepState, fresh = false): Promise<Record<string, unknown>[] | null> {
   const { n, ph } = state.p
   for (let attempt = 1; ; attempt++) {
-    const got = checkSnapshot(state.o.repo, n, ph, fresh, state.requiredChecks, state.o.skippedMissing)
+    const got = checkSnapshot(state.o.repo, n, ph, fresh, state.requiredChecks)
     if (got.ok) {
       const pr = got.data
       if (pr === null) return null

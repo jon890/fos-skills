@@ -33,6 +33,7 @@ import {
   isFeedbackReviewer,
   MIGRATIONS_KEYS,
   REMOVED_CONFIG_KEYS,
+  RETIRED_DRAFT_CI_EVENTS,
   SECTIONS,
 } from './config.ts'
 import type { Config, Section } from './config.ts'
@@ -176,7 +177,10 @@ function zodCheck(schema: z.ZodType): Check {
 
 // ---- 키별 검사 --------------------------------------------------------------------------------------------
 
-const eventTimeouts = z.strictObject(Object.fromEntries(HOOK_EVENT_NAMES.map((name) => [name, timer.optional()])))
+const eventTimeouts = z.strictObject({
+  ...Object.fromEntries(HOOK_EVENT_NAMES.map((name) => [name, timer.optional()])),
+  ...Object.fromEntries(RETIRED_DRAFT_CI_EVENTS.map((name) => [name, z.unknown().optional()])),
+})
 
 const unitGroups = leaf((value) => {
   if (!Array.isArray(value) || value.length === 0) return false
@@ -216,7 +220,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     shared_paths: zodCheck(regexpSource('queue.shared_paths', '|')),
     shared_groups: zodCheck(sharedGroups),
     unit_prefix: zodCheck(nonEmptyText),
-    skipped_is_missing: zodCheck(bool),
+    skipped_is_missing: zodCheck(z.unknown()),
     update_docs_on_overlap: zodCheck(bool),
     require_up_to_date: zodCheck(bool),
     sweep_args: zodCheck(stringList),
@@ -234,7 +238,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     slow_sec: zodCheck(timer),
     digest_sec: zodCheck(timer),
     request_ack_sec: zodCheck(timer),
-    ready_slots: zodCheck(z.number().int().min(1)),
+    ready_slots: zodCheck(z.unknown()),
     docs_merge: zodCheck(bool),
     after_queue_interval_sec: zodCheck(z.number().min(0)),
     ci_missing_after_sec: zodCheck(z.number().min(0)),

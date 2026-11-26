@@ -103,7 +103,7 @@ export function isOwnPr(pr: { author: { login: string } }, authors: string[]): b
 // base 를 합치는 유일한 경로다. 머지 차례가 온 PR(merge-turn), 뒤처진 draft(behind-draft), 상주 루프가 머지 차례 전에
 // 미리 최신화하는 ready PR(refresh. loop/steps/refresh.ts 머리 주석의 「최신화」)에만 부른다.
 // reason 은 호출 이유를 출력과 기록에 남기려고 받는다. draft 여부는 부르는 쪽이 gh 조회에서 받아 넘긴다.
-// refresh 는 draft 를 거부한다. draft 는 CI 를 미루는 저장소가 있어 최신화해도 머지 차례를 앞당기지 못한다.
+// refresh 는 머지 준비가 되지 않은 draft 를 거부한다.
 // host 를 주면 `api --hostname <host>` 로 부른다. `gh api` 는 origin 을 보지 않아 PR URL 의 호스트를 넘겨야 한다.
 // expectedHead 를 주면 끝에 `-f expected_head_sha=<SHA>` 를 붙인다. 검사한 HEAD 뒤에 push 된 커밋이 있으면 GitHub 가 거부한다.
 export function updateBranch(
@@ -184,16 +184,16 @@ export type CheckSnapshot = { headRefOid: string; statusCheckRollup: unknown }
 
 // HEAD 별 공유 스냅샷. 멈추거나 머지하기 직전에는 refresh 로 재실행도 확인한다.
 export function checkSnapshot(repo: string, number: string, head: string, refresh = false,
-  required: readonly string[] = [], skippedMissing = false,
+  required: readonly string[] = [],
 ): ReturnType<typeof ghJson<CheckSnapshot>> {
   return ghJson<CheckSnapshot>(['pr', 'view', number, '--json', 'statusCheckRollup,headRefOid', '--jq', '.'], {
-    cwd: repo, cacheKey: JSON.stringify(['checks', number, head, required, skippedMissing]), refresh,
+    cwd: repo, cacheKey: JSON.stringify(['checks', number, head, required]), refresh,
     ttlSeconds: (result) => {
       try {
         const pr = JSON.parse(result.stdout) as CheckSnapshot
         if (pr.headRefOid !== head) return 0
         const rows = currentChecks(pr.statusCheckRollup, head)
-        const checks = judgeChecks(rows, { required, skippedIsMissing: skippedMissing, allowNoChecks: false })
+        const checks = judgeChecks(rows, { required, allowNoChecks: false })
         return checks.none || checks.pending > 0 || checks.missing.length > 0 ? 60 : 300
       } catch { return 0 }
     },

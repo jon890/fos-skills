@@ -48,6 +48,7 @@
 //     JSON 이 깨졌으면 경로가 config.json 이다. 종류는 모르는 절·키·이름, 틀린 값, 짝 규칙 위반, 5.2.0 에서 지운 옛 칸이다.
 //     queue.auto_review 의 옛 문구 판정 키(pass, block, require, feature_head, fixed_after_block, fallback)는 INVALID-CONFIG 가 아니라 키마다
 //     LEGACY-REVIEW-KEY 경고다. 읽지 않으므로 지우라고 알린다. 종료 코드를 바꾸지 않는다.
+//     draft 로 CI 를 미루던 설정 키, 이벤트 핸들러, 오버레이 안내는 DRAFT-CI-RETIRED 로 알린다. 종료 코드를 바꾸지 않는다.
 //     검사표는 zod 에 기대므로 불러오지 못하면(의존 설치 실패) CLI-DEPS-MISSING <이유> 한 줄을 내고 설정 검사만 건너뛴다. 종료 코드는 바꾸지 않는다.
 //     ORCH_CONFIG_SCHEMA 는 테스트 전용이다. 검사표 모듈 대신 그 경로의 파일을 불러와 불러오기 실패를 흉내 낸다.
 //     UNKNOWN-HOOK 은 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
@@ -166,6 +167,7 @@
 //     INTEGRATION-MODULE-NOT-FOUND <설정 경로> <모듈>  해당 규칙의 paths 에 맞는 추적 파일이 없는 모듈이다. 종료 코드에는 영향이 없다
 //     CLI-DEPS-MISSING <이유>                    설정 검사표가 쓰는 의존(zod)을 불러오지 못했다. 설정 검사만 건너뛴다. 플러그인을 다시 설치하거나 플러그인 폴더에서 npm ci 를 돈다. 종료 코드에는 영향이 없다
 //     LEGACY-REVIEW-KEY queue.auto_review.<키> ...  읽지 않는 옛 리뷰 문구 판정 키다. 지우는 명령을 붙인다. 종료 코드에는 영향이 없다
+//     DRAFT-CI-RETIRED <자리>                    읽지 않는 옛 draft CI 설정이다. 종료 코드에는 영향이 없다
 //     OLD-INBOX-FILTER <옛 파일> ...              옛 알림 필터(<orch 루트>/config/notification.json)가 있다. config.json 의 inbox 절로 옮기는 법을 알린다. 종료 코드에는 영향이 없다
 //     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
@@ -195,7 +197,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, LEGACY-REVIEW-KEY, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, FEEDBACK-OPEN-DELEGATED, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, KEPT-LOST, OLD-INBOX-FILTER, LEGACY-REVIEW-KEY, DRAFT-CI-RETIRED, PRIVATE-WORDS-MISSING, FEEDBACK-OPEN, FEEDBACK-OPEN-DELEGATED, STUDY-OPEN, ORCA-SHAPE, CODEX-OUTDATED, CLI-*(CLI-DEPS-MISSING 포함), OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -211,7 +213,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { isFeedbackReviewer } from '../core/config.ts'
+import { isFeedbackReviewer, RETIRED_DRAFT_CI_EVENTS } from '../core/config.ts'
 import { isObject } from '../core/json.ts'
 import { LEGACY_REVIEW_KEYS } from '../core/auto-merge.ts'
 import { integrationNeeds, integrationRules } from '../core/integration-evidence.ts'
@@ -474,7 +476,8 @@ async function loadSchema(): Promise<{ schema: Schema | null; problem: string | 
 }
 
 function checkRepo(repo: string, schema: Schema | null, read: ReturnType<typeof readConfigFile>): string[] {
-  const lines = unknownHandlers(repo).map((file) => `UNKNOWN-HOOK ${file}`)
+  const lines = unknownHandlers(repo).map((file) =>
+    RETIRED_DRAFT_CI_EVENTS.includes(basename(file, '.ts')) ? `DRAFT-CI-RETIRED ${file}` : `UNKNOWN-HOOK ${file}`)
   if (schema) {
     // 깨진 JSON, 모르는 절과 키, 틀린 값, 짝 규칙 위반, 옛 칸이 모두 INVALID-CONFIG 다(종료 코드 1). 검사표를 못 불러왔으면 건너뛴다
     if (read.error !== undefined) lines.push(`INVALID-CONFIG config.json ${read.error}`)
@@ -492,6 +495,14 @@ function checkRepo(repo: string, schema: Schema | null, read: ReturnType<typeof 
   lines.push(...legacyInboxFilter(repo, config))
   lines.push(...missingAdrReservation(repo, config))
   lines.push(...legacyReviewKeys(config))
+  if (Object.hasOwn(config.queue ?? {}, 'skipped_is_missing')) lines.push('DRAFT-CI-RETIRED queue.skipped_is_missing')
+  if (Object.hasOwn(config.pipeline ?? {}, 'ready_slots')) lines.push('DRAFT-CI-RETIRED pipeline.ready_slots')
+  const timeouts = config.hooks?.timeouts
+  if (isObject(timeouts)) {
+    for (const event of RETIRED_DRAFT_CI_EVENTS) {
+      if (Object.hasOwn(timeouts, event)) lines.push(`DRAFT-CI-RETIRED hooks.timeouts.${event}`)
+    }
+  }
   return lines
 }
 
@@ -815,6 +826,7 @@ const WAIT_READER_FIX = '  고칠 것: orch wait 은 없어졌다. Orca 깨움�
 
 function checkCalls(repo: string): string[] {
   const root = mainCheckout(repo)
+  const overlay = join(orchDir(root), 'overlay.md')
   const lines: string[] = []
   for (const file of callFiles(root)) {
     const script = !/\.(?:md|json)$/i.test(file)
@@ -825,8 +837,11 @@ function checkCalls(repo: string): string[] {
       continue
     }
     rows.forEach((text, i) => {
-      if (text.includes('orch-compat') || (i > 0 && rows[i - 1].includes('orch-compat'))) return
       const where = `${relative(root, file)}:${i + 1}`
+      if (file === overlay && /\b(?:orch\s+queue\s+ready|gh\s+pr\s+create\s+--draft)(?![\w-])/.test(text)) {
+        lines.push(`DRAFT-CI-RETIRED ${where}`)
+      }
+      if (text.includes('orch-compat') || (i > 0 && rows[i - 1].includes('orch-compat'))) return
       const old = OLD_CALL.exec(text)
       if (old) {
         const name = old[1] ?? old[2]
@@ -869,7 +884,7 @@ function codeParts(rows: string[]): { index: number; text: string }[] {
 function newFormMissing(doc: string, rows: string[], skillDir: string, seen: Set<string>): string[] {
   const lines: string[] = []
   for (const { index, text } of codeParts(rows)) {
-    if (text.includes('orch-compat') || (index > 0 && rows[index - 1].includes('orch-compat'))) continue
+    if (rows[index].includes('orch-compat') || (index > 0 && rows[index - 1].includes('orch-compat'))) continue
     for (const m of text.matchAll(NEW_FORM)) {
       const tokens = m[1].split(/\s+/)
       const shown = `orch ${tokens.slice(0, 2).join(' ')}`

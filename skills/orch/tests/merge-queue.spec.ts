@@ -416,18 +416,30 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     }
   })
 
-  test('SKIPPED 필수 체크는 --skipped-is-missing 일 때만 나타나지 않은 것으로 본다', async (t) => {
+  test('SKIPPED 필수 체크가 있는 PR 을 머지한다', async (t) => {
     const c = setup(t)
     const skipped = [{ name: 'verify', status: 'COMPLETED', conclusion: 'SKIPPED' }]
-    let r = await c.runQueue({ '1': pr({ statusCheckRollup: skipped }) }, ['--required', 'verify', '1'])
-    assert.equal(r.code, 0, both(r))
-    r = await c.runQueue({ '1': pr({ statusCheckRollup: skipped }) }, ['--required', 'verify', '--skipped-is-missing', '--check-timeout', '0', '1'])
-    assert.equal(r.code, 1, both(r))
-    has(r.stdout, '나타나지 않은 필수 체크 verify')
-    const ran = { left: 3, checks: [check('verify')] }
-    r = await c.runQueue({ '1': pr({ statusCheckRollup: skipped, appear: ran }) }, ['--required', 'verify', '--skipped-is-missing', '1'])
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: skipped }) }, ['--required', 'verify', '1'])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 MERGED')
+  })
+
+  test('폐기된 draft CI 이벤트의 시간 제한이 남아 있어도 머지한다', async (t) => {
+    const c = setup(t)
+    config(c, { hooks: { timeouts: { 'before-ready': 15, 'pr-ready': 30 } } })
+    const seen = join(c.tmp, 'before.txt')
+    hook(c, 'before-merge', recorder(seen))
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(inputs(seen)[0]?.event, 'before-merge')
+    has(r.stdout, '1 MERGED')
+  })
+
+  test('제거된 --skipped-is-missing 플래그를 거절한다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr() }, ['--skipped-is-missing', '1'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '모르는 옵션: --skipped-is-missing')
   })
 
   test('after-queue 핸들러는 머지한 PR 로 한 번 돈다', async (t) => {

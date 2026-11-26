@@ -20,7 +20,7 @@ export const QUEUE_LOOP_KEYS: readonly string[] = ['auto_merge', 'auto_review']
 export const QUEUE_GATE_KEYS: readonly string[] = ['integration_tests']
 
 // queue 절의 아는 키 전부. skills/orch/references/overlay.md 「마무리 설정 파일」 표의 queue 행이다.
-// merge-with-finish 가 머지 큐 옵션으로 바꾸고, orch-loop 가 필수 체크 판정에 required 와 skipped_is_missing 을, 자동 머지에 QUEUE_LOOP_KEYS 를 읽는다
+// merge-with-finish 가 머지 큐 옵션으로 바꾸고, orch-loop 가 필수 체크 판정에 required 를, 자동 머지에 QUEUE_LOOP_KEYS 를 읽는다
 export const QUEUE_KEYS: readonly string[] = [
   'required',
   'verify_merged_when',
@@ -30,7 +30,7 @@ export const QUEUE_KEYS: readonly string[] = [
   'shared_paths',
   'shared_groups',
   'unit_prefix',
-  'skipped_is_missing',
+  'skipped_is_missing', // 읽지 않는 옛 키. doctor 가 알린다.
   'update_docs_on_overlap',
   'require_up_to_date',
   'sweep_args',
@@ -49,7 +49,7 @@ export const PIPELINE_KEYS: readonly string[] = [
   'slow_sec',
   'digest_sec',
   'request_ack_sec',
-  'ready_slots',
+  'ready_slots', // 읽지 않는 옛 키. doctor 가 알린다.
   'docs_merge',
   'after_queue_interval_sec',
   'ci_missing_after_sec',
@@ -104,6 +104,9 @@ export const WORKER_KEYS: readonly string[] = ['commit_check', 'readonly_tools']
 // docker 절의 아는 키. 값의 판정은 core/docker.ts 의 dockerRules 가 소유한다.
 export const DOCKER_KEYS: readonly string[] = ['containers', 'images']
 
+// 폐기된 이벤트의 시간 제한은 설정 파일에서 읽지 않고 doctor 에서 알린다.
+export const RETIRED_DRAFT_CI_EVENTS: readonly string[] = ['before-ready', 'pr-ready']
+
 // 이벤트 핸들러의 이벤트 이름. lib/events.ts 의 EVENTS 키와 같은 순서이고, skills/orch/tests/lib-events.spec.ts 가 두 목록이 같은지 본다.
 // hooks.timeouts 의 아는 이름이다
 export const HOOK_EVENT_NAMES: readonly string[] = [
@@ -114,8 +117,6 @@ export const HOOK_EVENT_NAMES: readonly string[] = [
   'worker-done',
   'worker-lost',
   'worker-stalled',
-  'before-ready',
-  'pr-ready',
   'ci-passed',
   'ci-failed',
   'ci-missing',

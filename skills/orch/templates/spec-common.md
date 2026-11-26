@@ -28,7 +28,6 @@
   - 지시서가 정한 PR 만 연다.
 - 원격 명령은 `orch config get worker.readonly_tools` 에 나온 도구의 읽기 전용 호출만 직접 한다. <!-- orch-rule: coordinator-commands -->
   - 목록 밖 원격 명령, 원격 쓰기, auto mode 가 막을 수 있는 대량 삭제는 `허락:` 줄에 있어도 `orch worker ask` 로 맡긴다.
-- {{DRAFT_PR_RULE}}
 - 믿는 봇을 설정한 저장소에서는 봇이 리뷰하므로 리뷰 worker 를 부르지 않는다. <!-- orch-rule: trusted-review-bot -->
   - 봇의 줄 댓글을 반영하고 push 한다.
 - 믿는 봇이 없는 저장소에서 자동 리뷰 workflow 를 바꾸면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. <!-- orch-rule: review-workflow -->

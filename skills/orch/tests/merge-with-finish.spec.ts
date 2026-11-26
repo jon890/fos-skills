@@ -407,16 +407,12 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     assert.ok(line.endsWith(`--repo ${c.tmp} 449`), line)
   })
 
-  test('참거짓 키', async (t) => {
+  test('옛 skipped_is_missing 설정을 머지 큐에 넘기지 않는다', async (t) => {
     const c = setup(t)
     c.writeConfig({ queue: { skipped_is_missing: true } })
-    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
-    let [line] = await c.lines('queue')
-    has(line, '--skipped-is-missing')
-    c.reset()
-    c.writeConfig({ queue: { skipped_is_missing: false } })
-    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
-    ;[line] = await c.lines('queue')
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    const [line] = await c.lines('queue')
     lacks(line, '--skipped-is-missing')
   })
 
@@ -523,7 +519,6 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
       { method: 3 },
       { required: '' },
       [],
-      { skipped_is_missing: 'yes' },
     ]
     for (const queue of bad) {
       c.writeConfig({ queue } as Json)

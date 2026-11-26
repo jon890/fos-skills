@@ -28,7 +28,7 @@
 //        판정은 lib/merge-readiness.ts 의 checkReadiness(light, auto, stopAtFirst, skip: migration)다. 조건, 순서, 대기 문구는
 //        core/merge-readiness.ts 의 조건 표가 소유한다(ADR-037). 처음 걸린 이유의 wait 로 `AUTO-MERGE-WAIT #<PR> <wait>` 를 로그에만 쓰고 넘어간다.
 //        이 단계가 넘기는 값(known)은 아래다. 그 밖의 값(봇 영수증)은 checkReadiness 가 읽는다.
-//        - 체크: 이번 틱의 롤업(OwnPr.rollup)을 CI 감시가 읽은 필수 체크 이름(ciNames)으로 판단한다(core/checks.ts 의 loopChecks).
+//        - 체크: 이번 틱의 롤업(OwnPr.rollup)을 CI 감시가 읽은 필수 체크 이름(ciNames)으로 판단한다(core/checks.ts 의 currentChecks).
 //          CI 감시의 기록(ci)은 보지 않는다. 그 PR 의 base 규칙을 읽지 못했으면 `CI 규칙을 읽지 못했다`, 이번 틱에 이름이 없으면 `CI 없음` 이다.
 //        - 지시서 보류: lib/auto-merge.ts 의 specHold. 이유에 비공개 낱말(lib/private-words.ts 의 목록)이 있으면 위치로 바꾼다(redactLine).
 //        - 보드 항목: 위에서 한 번 읽은 목록.
@@ -81,7 +81,7 @@ import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loopChecks } from '../../core/checks.ts'
+import { currentChecks } from '../../core/checks.ts'
 import { isObject } from '../../core/json.ts'
 import type { Fact, Facts } from '../../core/merge-readiness.ts'
 import { beforeCommand, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, sweepArgs, watchedDirs } from '../../lib/auto-merge.ts'
@@ -281,7 +281,7 @@ async function judgeTarget(
     ? { ok: false, error: 'CI 규칙을 읽지 못했다', wait: 'CI 규칙을 읽지 못했다' }
     : names === undefined
       ? { ok: false, error: 'CI 없음', wait: 'CI 없음' }
-      : { ok: true, value: loopChecks(pr.rollup, ctx.skippedIsMissing, pr.head) }
+      : { ok: true, value: currentChecks(pr.rollup, pr.head) }
   const threads = (): Fact<string> => {
     const [owner, name] = pr.slug.split('/')
     const command = process.env.THREADS_CMD || defaultThreadsCmd(LOOP_DIR)
@@ -319,7 +319,6 @@ async function judgeTarget(
     {
       known: { checks, specHold: { ok: true, value: hold }, boardItems: { ok: true, value: items }, threads, holdBody, reviewRollup },
       required: names ?? [],
-      skippedIsMissing: ctx.skippedIsMissing,
       allowNoChecks: false,
     },
   )

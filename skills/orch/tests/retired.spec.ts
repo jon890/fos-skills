@@ -25,3 +25,18 @@ test('옛 명령과 NEXT_WAIT 직접 경로는 Orca 조회 없이 한 줄과 2 �
   }
   assert.deepEqual(bin.calls(), [])
 })
+
+test('orch queue ready 는 PR 을 조회하지 않고 안내 한 줄과 종료 코드 2 를 낸다', t => {
+  const gh = fakeBin(tempDir('retired-ready-', t), 'gh', [{ code: 9 }])
+  for (const command of [['queue', 'ready'], ['ci-ready']]) {
+    const got = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'skills/orch/bin/orch.ts', ...command, '123'], {
+      encoding: 'utf8',
+      env: { ...process.env, ORCH_SCRIPTS_DIR: resolve('skills/orch/scripts'), GH: gh.path },
+    })
+    assert.equal(got.status, 2, got.stderr)
+    assert.equal(got.stdout, '')
+    assert.equal(got.stderr.trim().split('\n').length, 1, got.stderr)
+    assert.match(got.stderr, /^RETIRED orch queue ready: .*ready 상태로 연다/)
+  }
+  assert.deepEqual(gh.calls(), [])
+})

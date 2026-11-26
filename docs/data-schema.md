@@ -29,7 +29,7 @@
 | 10 | 거부. `HOOK-REJECT` | 실패로 본다 |
 | 그 밖, 시간 초과 | 실패. 거부처럼 멈추고 `HOOK-FAIL` | 실패. 코어 동작은 이어 가고 `HOOK-FAIL` |
 
-거부할 수 있는 이벤트는 `before-launch`, `before-ready`, `before-merge`, `verify-merged`, `before-cleanup`, `worker-stalled` 다.
+거부할 수 있는 이벤트는 `before-launch`, `before-merge`, `verify-merged`, `before-cleanup`, `worker-stalled` 다.
 `worker-stalled` 에서는 막을 동작이 없어 10 과 그 밖의 코드가 넘김이다. 핸들러가 처리하지 않고, 코어가 그 Run 메일함에 `WORKER-STALLED` 를 쓴다. 로그에는 10 이면 `HOOK-REJECT`, 그 밖이면 `HOOK-FAIL` 이 남는다.
 거부를 1 이 아니라 10 으로 둔 것은 의도한 거부와 예외로 죽은 핸들러를 구분하기 위해서다. node 는 잡지 않은 예외에 1 을 낸다.
 
@@ -86,13 +86,12 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `routing` | `size_pattern` | JS 정규식 문자열(`m`). 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
 | `routing` | `usage_boost` | 값이 남아 있으면 시작할 때 삭제를 안내한다 | 없음 | [모델 사용 한도 회피](features/exhausted-model-avoid/spec.md)가 시작 전에 고른 모델의 한도를 확인한다. 옛 설정은 제거할 때까지 읽을 수 있다 |
 | `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 이름이 자유로운 객체. 값은 문자열이나 유한한 수의 목록(빈 목록 허용) | 절이 없으면 필터 없이 모두 보인다 | [저장소별 알림 필터](../skills/inbox/references/config.md#저장소-필터). `dooray.excludeProjects` 와 `dooray.excludeChannels` 는 이 보드에서 숨길 범위다. `enabled: false` 면 이 보드의 알림을 끈다. 옛 자리 `config/notification.json` 은 `inbox` 절이 없을 때 한 major 동안 읽는다 |
-| `hooks` | `timeouts` | 이벤트 이름에서 양수이며 타이머 상한 이하의 초로 가는 객체. 모르는 이벤트 이름은 받지 않는다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
+| `hooks` | `timeouts` | 이벤트 이름에서 양수이며 타이머 상한 이하의 초로 가는 객체. 모르는 이벤트 이름은 받지 않는다 | 위 「위치와 실행」 | 핸들러 시간 제한. 폐기된 `before-ready`, `pr-ready` 값은 무시하고 doctor 가 알린다 |
 | `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | 양수, 타이머 상한 이하 | 300 | 틱 간격 |
 | `pipeline` | `slow_sec` | 양수, 타이머 상한 이하 | 없음(느린 단계도 틱마다 함께 돈다) | 느린 단계(보드 동기화, 업무 주소 채우기, 정리)를 빠른 틱과 따로 도는 주기. 느린 틱이 3 × `slow_sec`(적어도 30분)을 넘기면 끊고 `WATCH-ERROR slow-tick` 을 낸다. 있으면 부모가 느린 틱 자식을 따로 띄워 빠른 틱을 막지 않는다. 동작은 `loop/orch-loop.ts` 머리 주석의 「느린 단계」 가 소유한다 |
 | `pipeline` | `digest_sec` | 양수, 타이머 상한 이하 | 1800 | 안내성 루프 알림(WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED)을 DIGEST 하나로 모아 보내는 주기(초) |
 | `pipeline` | `request_ack_sec` | 양수, 타이머 상한 이하 | 1800 | 받은 요청에 받음·보류·거절 답이 없을 때 보낸 쪽에 REQUEST-NO-ACK 를 한 번 보내기까지의 시간(초). 틱마다 다시 읽는다([ADR-035](adr/035-orch-main-coordinator.md)) |
-| `pipeline` | `ready_slots` | 1 이상의 정수 | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |
 | `pipeline` | `docs_merge` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 문서 PR 바로 머지는 하지 않는다 |
 | `pipeline` | `after_queue_interval_sec` | 0 이상의 유한한 수 | 0 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `after-queue` 는 묶이지 않는다 |
 | `pipeline` | `ci_missing_after_sec` | 0 이상의 유한한 수 | 600 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `ci-missing` 을 내는 코드도 아직 없다 |

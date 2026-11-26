@@ -55,6 +55,13 @@ describe('loadConfig', () => {
     assert.deepEqual(loadConfig(repo, { file: file(JSON.stringify(body)) }), body)
   })
 
+  test('폐기된 draft CI 키는 설정을 열거나 절을 읽을 때 오류가 아니다', () => {
+    const body = { queue: { skipped_is_missing: true }, pipeline: { ready_slots: 0 } }
+    const config = loadConfig(repo, { file: file(JSON.stringify(body)) })
+    assert.deepEqual(section(config, 'queue', QUEUE_KEYS), body.queue)
+    assert.deepEqual(section(config, 'pipeline', PIPELINE_KEYS), body.pipeline)
+  })
+
   test('file 을 주지 않으면 <orch 루트>/config.json 을 읽는다', () => {
     mkdirSync(join(repo, '.orch'), { recursive: true })
     writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ queue: { method: 'squash' } }))
@@ -169,14 +176,14 @@ describe('QUEUE_KEYS', () => {
       for (const match of cells[2].matchAll(/`([a-z_]+)`/g)) documented.add(match[1])
     }
     assert.ok(documented.size > 0, 'queue 행을 찾지 못했다')
-    assert.deepEqual([...QUEUE_KEYS].sort(), [...documented].sort())
+    assert.deepEqual(QUEUE_KEYS.filter((key) => key !== 'skipped_is_missing').sort(), [...documented].sort())
   })
 
-  test('merge-with-finish 가 머지 큐 옵션으로 바꾸는 표들의 키를 합치면 QUEUE_KEYS 에서 QUEUE_LOOP_KEYS 와 QUEUE_GATE_KEYS 를 뺀 집합과 같고 표끼리 겹치지 않는다', () => {
+  test('merge-with-finish 가 머지 큐 옵션으로 바꾸는 표들의 키를 합치면 QUEUE_KEYS 에서 루프와 관문 전용 키 및 옛 키를 뺀 집합과 같고 표끼리 겹치지 않는다', () => {
     const tables = [QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS, QUEUE_NAMED].map((table) => Object.keys(table))
     const union = tables.flat()
     assert.equal(new Set(union).size, union.length, `두 표에 든 키가 있다: ${union.join(', ')}`)
-    assert.deepEqual([...union].sort(), QUEUE_KEYS.filter((key) => !QUEUE_LOOP_KEYS.includes(key) && !QUEUE_GATE_KEYS.includes(key)).sort())
+    assert.deepEqual([...union].sort(), QUEUE_KEYS.filter((key) => key !== 'skipped_is_missing' && !QUEUE_LOOP_KEYS.includes(key) && !QUEUE_GATE_KEYS.includes(key)).sort())
   })
 
   test('queue 절은 QUEUE_KEYS 로 required, method, docs_glob 이 함께 통과하고 모르는 키(requird)는 ConfigError 다', () => {

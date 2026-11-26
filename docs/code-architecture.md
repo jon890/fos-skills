@@ -190,7 +190,7 @@
 ## orch 코어와 핸들러
 
 이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
-상주 루프의 자동 진행 가운데 문서 PR 바로 머지, 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. ready 슬롯은 `pipeline.ready_slots`, 뒤처진 PR 의 base 합치기는 `pipeline.refresh_slots`([ADR-020](adr/020-orch-loop-refresh.md)), 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge`([ADR-016](adr/016-orch-auto-merge.md))로 켠다.
+상주 루프의 자동 진행 가운데 문서 PR 바로 머지, 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 뒤처진 PR 의 base 합치기는 `pipeline.refresh_slots`([ADR-020](adr/020-orch-loop-refresh.md)), 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge`([ADR-016](adr/016-orch-auto-merge.md))로 켠다.
 이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
@@ -288,7 +288,6 @@ orch 는 하위 프로세스로 보드 편집 명령을 실행한다. work-board
 | 기능 | 코어 | 저장소 |
 | --- | --- | --- |
 | 상주 루프와 주기 실행 | `orch-loop.ts` 의 틱 | `tick.ts`, `pipeline.tick_sec` |
-| runner 수만큼 draft 를 ready 로 | ready 슬롯 | `pipeline.ready_slots`, `before-ready.ts` |
 | 머지 순서 | `state/order.json` | 없음 |
 | 마이그레이션 번호 예약 | `reserve-migration.ts`, `lib/reservations.ts` | `migrations.dirs` |
 | ADR 번호 예약 | `orch queue reserve --kind adr`, `lib/reservations.ts` | `adr.dirs` |
