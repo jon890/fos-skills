@@ -1347,6 +1347,18 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     lacks(c.log(), 'pr merge')
   })
 
+  test('before-merge 뒤에 생긴 보드 보류도 실제 머지를 막는다', async (t) => {
+    const c = setup(t)
+    const board = join(c.tmp, 'board.json')
+    config(c, { finish: { board } })
+    const items = [{ id: 'job', status: 'doing', pr: '#1', next: ['머지 보류 최종 확인'] }]
+    hook(c, 'before-merge', `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(board)}, ${JSON.stringify(JSON.stringify({ items }))})\n`)
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'GATE-HOLD 보드 보류: 머지 보류 최종 확인')
+    lacks(c.log(), 'pr merge')
+  })
+
   test('before-merge 가 10 이면 그 PR 은 HOOK-REJECT 로 멈추고 머지하지 않는다', async (t) => {
     const c = setup(t)
     hook(c, 'before-merge', recorder(join(c.tmp, 'in.jsonl'), 10, '백업이 없다'))

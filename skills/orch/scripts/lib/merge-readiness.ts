@@ -6,10 +6,10 @@
 // gh 와 git 의 인자, cwd, 캐시 옵션은 옮기기 전 호출과 같다. 테스트의 가짜 실행기가 인자로 응답을 고른다.
 // 보류 이유는 읽을 때 비공개 낱말을 위치로 바꾸고(redactLine), 나머지 이유와 알림 줄은 돌려주기 직전에 가린다(mask).
 
-import { existsSync } from 'node:fs'
 import { autoMergeConfig, prHold, watchedDirs } from '../core/auto-merge.ts'
 import { currentChecks } from '../core/checks.ts'
 import { integrationRules } from '../core/integration-evidence.ts'
+import { isObject } from '../core/json.ts'
 import { acceptedCandidates, judgeReadiness } from '../core/merge-readiness.ts'
 import type { Fact, FactName, Facts, Reason, ReadinessAsk, ReadinessPolicy, ReadinessSnapshot } from '../core/merge-readiness.ts'
 import { readBoard } from './board.ts'
@@ -17,12 +17,13 @@ import { boardPath } from './board-file.ts'
 import { loadConfig } from './config.ts'
 import { acceptsVerifiedCommit } from './feature-evidence.ts'
 import { checkSnapshot, gh, ghJson, ghRepoVisibility } from './gh.ts'
+import { oneLine } from './output.ts'
 import { commentRows, findingsText, mask, readPrivateWords, redactLine, repoVisibility, textFindings } from './private-words.ts'
 import { NO_LIMIT_MS, run, runAsync } from './proc.ts'
 import type { RunResult } from './proc.ts'
 import { addedPaths } from './reservations.ts'
 import { judgeTrustedBotReviews, loadBotReviewSnapshot } from './review-bot.ts'
-import { specTargets } from './spec-targets.ts'
+import { specReadError, specTargets } from './spec-targets.ts'
 
 export type { ConditionKind, Reason, ReasonKind, ReadinessAsk, ReadinessSnapshot } from '../core/merge-readiness.ts'
 export { blocksMerge, blocksReady } from '../core/merge-readiness.ts'
@@ -68,6 +69,18 @@ const fail = (error: string, wait?: string): { ok: false; error: string; wait?: 
 const nap = (read: ReadOptions, seconds: number): Promise<void> => (read.nap ?? ((s: number) => new Promise((resolve) => setTimeout(resolve, s * 1000))))(seconds)
 const chomp = (text: string): string => text.replace(/\n+$/, '')
 const git = (...args: string[]): RunResult => run(['git', ...args], { timeoutMs: NO_LIMIT_MS })
+
+// 보드가 없으면 빈 목록이다. 그 밖의 읽기 실패는 보류가 없는 것으로 판단하지 않는다
+export function readReadinessBoard(repo: string): Fact<Facts['boardItems']> {
+  const file = boardPath(repo)
+  try {
+    return { ok: true, value: readBoard(file).filter(isObject) }
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? { ok: true, value: [] }
+      : fail(`보드를 읽지 못했다: ${oneLine((error as Error).message)}`)
+  }
+}
 
 function owner(target: PrTarget): [string, string] {
   const [o, r] = target.slug.split('/')
@@ -119,7 +132,9 @@ const READERS: { [K in FactName]: (c: ReadContext) => Fact<Facts[K]> | Promise<F
     const threads = await runAsync(['bash', '-c', c.read.threadsCmd ?? ''], { env, timeoutMs: NO_LIMIT_MS })
     // 옛 명령은 스레드 명령의 stderr 를 받지 않고 그대로 흘렸다
     if (threads.stderr) process.stderr.write(threads.stderr)
-    return threads.code !== 0 ? fail('스레드 조회 실패') : { ok: true, value: chomp(threads.stdout) }
+    const count = threads.stdout.trim()
+    if (threads.code !== 0 || !/^\d+$/.test(count)) return fail('스레드 조회 실패')
+    return { ok: true, value: count.replace(/^0+(?=\d)/, '') }
   },
   // UNKNOWN 이면 20초 간격으로 네 번까지 다시 읽는다
   async mergeable(c) {
@@ -208,20 +223,16 @@ const READERS: { [K in FactName]: (c: ReadContext) => Fact<Facts[K]> | Promise<F
     return { ok: true, value: hold === null || words.length === 0 ? hold : redactLine(hold, words, 'PR 본문', got.stdout) }
   },
   specHold(c) {
-    const target = c.target.branch ? specTargets(c.target.repo).get(c.target.branch) : undefined
+    if (!c.target.branch) return { ok: true, value: null }
+    const { targets, unreadable } = specTargets(c.target.repo)
+    if (unreadable.length > 0) return fail(specReadError(unreadable))
+    const target = targets.get(c.target.branch)
     const hold = target?.hold ?? null
     const words = readPrivateWords()
     return { ok: true, value: hold === null || words.length === 0 ? hold : redactLine(hold, words, '지시서', target?.text ?? '') }
   },
-  // 보드 파일이 없으면 빈 목록이고, 읽지 못하면 ok: false 다
   boardItems(c) {
-    const file = boardPath(c.target.repo)
-    if (!existsSync(file)) return { ok: true, value: [] }
-    try {
-      return { ok: true, value: readBoard(file) }
-    } catch (e) {
-      return fail(`보드를 읽지 못했다: ${(e as Error)?.message ?? String(e)}`)
-    }
+    return readReadinessBoard(c.target.repo)
   },
 }
 

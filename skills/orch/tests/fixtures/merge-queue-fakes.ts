@@ -15,6 +15,7 @@ process.env.ORCH_PRIVATE_WORDS ??= '/dev/null'
 //   쌓인 PR 칸: _based(`pr list --base` 가 내는 열린 PR 목록. `pr edit <n> --base` 가 그 PR 을 뺀다), _list_fails,
 //   _edit_fails, _user(`api user` 의 login. 기본 me), _visibility(`repo view --json visibility` 의 값. 기본 PUBLIC, _visibility_fails 면 1).
 //   비공개 낱말 검사가 읽는 PR 의 글(REST): issue_comments, reviews_rest, review_comments(각 {id, body} 목록. 없으면 빈 목록), comments_fail.
+//   body_view_fails 면 머지 보류를 확인하는 본문 단독 조회가 실패한다.
 // 가짜 git 은 rev-parse --verify 와 ls-remote 만 상태로 답하고 나머지는 0 으로 끝난다. 그 밖의 rev-parse 는 저장소 밖처럼
 // 128 로 끝난다. 이벤트 실행기가 주 checkout 을 찾을 때 --repo 를 그대로 쓰게 하기 위해서다. merge-queue.spec.ts 만 쓰고,
 // merge-queue-overlap.spec.ts 는 진짜 git 과 임시 저장소를 쓴다.
@@ -148,6 +149,7 @@ if (args[0] === 'pr' && args[1] === 'view') {
     process.exit(1)
   }
   const pr = state[args[2]]
+  if (pr.body_view_fails && args[args.indexOf('--json') + 1] === 'body') process.exit(1)
   // orch 가 직접 push 한 브랜치 끝을 GitHub 이 보여 주는 것을 흉내 낸다
   if (pr.head_from) {
     const real = spawnSync('git', ['--git-dir', pr.head_from, 'rev-parse', 'refs/heads/' + pr.headRefName], { encoding: 'utf8' }).stdout.trim()

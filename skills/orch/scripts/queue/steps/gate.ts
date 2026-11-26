@@ -12,9 +12,7 @@ import type { GateReason, StepState } from './model.ts'
 import { field } from './pr.ts'
 import { log, nap, out, stop } from './runtime.ts'
 
-// ci 는 체크, threads·evidence·migration·private 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
-export type { GateKind, GateReason } from './model.ts'
-
+// none 은 체크를 빼고, failed 는 실패한 체크만 보고, all 은 진행 중이거나 나타나지 않은 체크도 본다
 export type GateChecks = 'none' | 'failed' | 'all'
 
 // PR 하나의 값을 읽어 state.pr 과 필수 체크 목록을 채운다. 이미 MERGED 면 merged, OPEN 이 아니면 멈춘다
@@ -108,13 +106,10 @@ export function readOptions(stepContext: StepContext, state: StepState): ReadOpt
   }
 }
 
-// 관문과 머지 큐가 지금 동작을 지키려고 남긴 compat 값(설계 「커밋과 PR 순서」)
-const COMPAT = { noDraft: true, oldHolds: true, checkHeadStop: true } as const
-
 // 머지 전 조건을 묻는다. head 이유는 머지 큐가 다시 시도하는 HeadChanged 로, 체크 조회 중의 HEAD 변경은 다시 시도하지 않는 보류로 던진다
 export async function askReadiness(stepContext: StepContext, state: StepState, ask: Omit<ReadinessAsk, 'scope'>) {
   const n = state.p.n
-  const readiness = await checkReadiness(readinessTarget(state), { scope: 'full', ...ask, compat: { ...COMPAT, ...ask.compat } }, readOptions(stepContext, state))
+  const readiness = await checkReadiness(readinessTarget(state), { scope: 'full', ...ask, compat: { checkHeadStop: true, ...ask.compat } }, readOptions(stepContext, state))
   const head = readiness.reasons.find((r) => r.kind === 'head')
   if (head?.code === 'head-checks') stop(`${n} ${head.text}`)
   if (head) throw new HeadChanged(`${n} ${head.text}`)
@@ -122,29 +117,17 @@ export async function askReadiness(stepContext: StepContext, state: StepState, a
 }
 
 // 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
-// notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다. 보류는 묻지 않는다(관문은 HOLD 줄로, 머지 큐는 refuseSpecHold 로 따로 본다).
+// notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다
 // 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
-export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; notes: string[] }> {
-  const skip: ConditionKind[] = checks === 'none' ? ['ci', 'hold'] : ['hold']
-  const readiness = await askReadiness(stepContext, state, { skip, compat: { checksAfterWait: checks === 'failed' } })
-  return { reasons: readiness.reasons.map((r) => ({ kind: r.kind as GateReason['kind'], text: r.text })), summary: readiness.summary, notes: readiness.notes }
+export function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks) {
+  const skip: ConditionKind[] = checks === 'none' ? ['ci'] : []
+  return askReadiness(stepContext, state, { skip, compat: { checksAfterWait: checks === 'failed' } })
 }
 
-// 관문의 HOLD 줄. 지시서 보류가 먼저고, 없으면 PR 본문의 보류다. 본문을 읽지 못하면 보류 없음으로 둔다(PR5 가 알리게 바꾼다)
-export async function holdLine(stepContext: StepContext, state: StepState): Promise<string | null> {
-  const readiness = await askReadiness(stepContext, state, { only: ['hold'] })
-  return readiness.reasons.find((r) => r.kind === 'hold')?.text ?? null
-}
-
-// 머지 큐의 보류 확인. 본문을 읽지 못하면 멈추고, 보류가 있으면 GATE-HOLD 줄을 내고 멈춘다
-export async function refuseSpecHold(stepContext: StepContext, state: StepState): Promise<void> {
+// 큐 차례 시작과 실제 머지 직전에 draft 와 보류를 확인한다
+export async function refuseMergeHold(stepContext: StepContext, state: StepState): Promise<void> {
   const readiness = await askReadiness(stepContext, state, { only: ['hold', 'draft'] })
-  const lookup = readiness.reasons.find((r) => r.kind === 'lookup')
-  if (lookup) stop(`${state.p.n} ${lookup.text}`)
-  const hold = readiness.reasons.find((r) => r.kind === 'hold')
-  if (!hold) return
-  out(`GATE-HOLD ${hold.text}`)
-  stop(`${state.p.n} 머지 보류: ${hold.text}`)
+  if (readiness.reasons.length > 0) holdWith(state, readiness.reasons)
 }
 
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.
@@ -153,7 +136,9 @@ export async function refuseSpecHold(stepContext: StepContext, state: StepState)
 // 리뷰 판정 대기와 보류는 일반 보류다. 리뷰 봇 재실행과 worker 수정 중 어느 쪽이 필요한지 알 수 없어 자동 알림을 보내지 않는다
 export function holdWith(state: StepState, reasons: GateReason[]): never {
   const n = state.p.n
-  const joined = reasons.map((r) => r.text).join('; ')
+  const holds = reasons.filter((r) => r.kind === 'hold')
+  for (const hold of holds) out(`GATE-HOLD ${hold.text}`)
+  const joined = reasons.map((r) => (r === holds[0] ? `머지 보류: ${r.text}` : r.text)).join('; ')
   if (reasons.some((r) => r.kind === 'conflict')) throw new Conflict(`${n} ${joined}`)
   if (reasons.some((r) => r.kind === 'threads' || r.kind === 'evidence' || r.kind === 'migration' || r.kind === 'private')) {
     // 스레드는 worker 가 고치는 동안 다른 PR 을 먼저 처리하고 정리 전에 한 번 다시 본다
