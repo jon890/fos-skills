@@ -20,7 +20,7 @@
 //
 //     NEST   괄호 2겹 중첩
 //     SECT   `§` 사용
-//     TILDE  한 단락에 이스케이프하지 않은 물결표 2개 이상 (취소선 오작동)
+//     TILDE  한 단락에 이스케이프하지 않은 물결표 2개 이상 (취소선 오작동). 숫자 범위(50~100)도 세고 이스케이프한 형태를 보여 준다
 //     DASH   제목과 평문의 엠대시 (목록과 표의 이름-설명 구분은 허용)
 //
 // 나머지 축은 다른 곳이 맡는다.
@@ -49,6 +49,16 @@ const LIST_ITEM = new RegExp(`^(?:[-*+]|\\p{Nd}+\\.)[${SPACE}]`, 'u')
 
 // 홈 경로의 물결표는 범위 표기가 아니다. \w 는 Python 처럼 유니코드 글자와 숫자와 밑줄이다
 const HOME_PATH = /~\/[\p{L}\p{N}_./-]+/gu
+
+// 양쪽이 숫자인 범위(50~100). GitHub 는 이것도 취소선으로 짝지으므로 세되, 고쳐 쓸 형태를 그대로 보여 준다
+const NUMERIC_RANGE = /\p{Nd}[\p{Nd}.,]*~\p{Nd}[\p{Nd}.,]*/gu
+const TILDE_MESSAGE = '한 단락에 물결표가 2개 이상이다: 범위는 「부터 … 까지」나 - 로 풀어 쓰거나 \\~ 로 이스케이프한다'
+
+// 숫자 범위가 있으면 이스케이프한 형태를 덧붙인다. 같은 범위는 한 번만 보인다
+function tildeMessage(text: string): string {
+  const ranges = [...new Set((text.match(NUMERIC_RANGE) ?? []).map((range) => range.replace(/[.,]+$/, '').replace('~', '\\~')))]
+  return ranges.length ? `${TILDE_MESSAGE}. 숫자 범위는 이렇게 쓴다: ${ranges.join(', ')}` : TILDE_MESSAGE
+}
 
 // 검사 전에 줄에서 지울 것. 남기면 이들 안의 문자가 위반으로 잡힌다.
 const CODE_SPAN = /`[^`]*`/g
@@ -83,8 +93,9 @@ export function checkLines(path: string, lines: string[]): Finding[] {
   const flush = () => {
     if (para.length) {
       const text = para.map(([, body]) => body).join(' ').replaceAll('\\~', '')
-      const tildes = text.replace(HOME_PATH, '').split('~').length - 1
-      if (tildes >= 2) found.push({ path, line: para[0][0], code: 'TILDE', message: '한 단락에 물결표가 2개 이상이다: 범위는 「부터 … 까지」나 - 로 풀어 쓰거나 \\~ 로 이스케이프한다' })
+      const counted = text.replace(HOME_PATH, '')
+      const tildes = counted.split('~').length - 1
+      if (tildes >= 2) found.push({ path, line: para[0][0], code: 'TILDE', message: tildeMessage(counted) })
     }
     para = []
   }
