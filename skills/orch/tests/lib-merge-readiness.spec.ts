@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeRun } from '../../../modules/testkit/fake-run.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
-import { checkReadiness } from '../scripts/lib/merge-readiness.ts'
+import { checkReadiness, defaultThreadsCmd } from '../scripts/lib/merge-readiness.ts'
 import type { PrTarget } from '../scripts/lib/merge-readiness.ts'
 import { withRun } from '../scripts/lib/proc.ts'
 
@@ -89,4 +89,8 @@ test('known 으로 준 읽기 함수는 그 값이 필요할 때 한 번만 불�
   assert.equal(called, 1)
   assert.deepEqual(got.reasons.map((r) => r.text), ['미해결 리뷰 스레드 2 개'])
   assert.deepEqual(ghCalls(fake.calls()), [])
+})
+
+test('스레드 기본 명령은 진입 폴더에서 review_threads.ts 로 정규화하지 않고 잇는다(옛 명령과 같은 글자)', () => {
+  assert.equal(defaultThreadsCmd('/x/scripts/loop'), `node '/x/scripts/loop/../../../review-fix/scripts/review_threads.ts' list --count "$OWNER" "$REPO" "$PR"`)
 })
