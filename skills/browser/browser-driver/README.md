@@ -7,10 +7,12 @@
 **지금 무엇이 잡혔고 왜 잡혔는지는 `doctor` 가 낸다.** 이 문서는 둘 다 다시 적지 않는다.
 
 ```bash
-B=~/.claude/scripts/browser-driver
-$B help
-$B doctor
+B="$SKILL_DIR/browser-driver/browser_driver.ts"
+"$B" help
+"$B" doctor
 ```
+
+`$SKILL_DIR` 은 browser 스킬 폴더다. 정의는 `../SKILL.md` 에 있다. 아래 예시의 `"$B"` 는 이 드라이버 경로다.
 
 이 문서는 그 둘이 내지 않는 것을 담는다. 백엔드 선택 규칙, 백엔드마다 갈리는 동작, 새 백엔드 추가다.
 
@@ -165,9 +167,9 @@ ego 는 그 줄을 반환값 뒤에 줄바꿈 없이 붙이므로 그대로 두�
 
   ```sh
   export BROWSER_EGO_SPACE='양식 등록'
-  PAGE=$($B open 'https://example.com')
-  $B pages
-  $B reset
+  PAGE=$("$B" open 'https://example.com')
+  "$B" pages
+  "$B" reset
   ```
 
   작업이 끝나면 같은 이름으로 `reset` 을 불러 공간까지 닫는다.
@@ -195,9 +197,9 @@ ego 는 그 줄을 반환값 뒤에 줄바꿈 없이 붙이므로 그대로 두�
   프로필을 적지 않으면 `open` 과 같은 규칙으로 고른다.
 
   ```sh
-  $B pages Default          # 29:p2<TAB>agent<TAB>https://...
-  $B close 29:p2            # 골라 닫는다
-  BROWSER_EGO_SPACE='양식 등록' $B reset Default   # 에이전트가 연 것을 닫고 공간도 닫는다
+  "$B" pages Default          # 29:p2<TAB>agent<TAB>https://...
+  "$B" close 29:p2            # 골라 닫는다
+  BROWSER_EGO_SPACE='양식 등록' "$B" reset Default   # 에이전트가 연 것을 닫고 공간도 닫는다
   ```
 
   **`reset` 은 `BROWSER_EGO_SPACE` 로 이름 준 공간에서만 돈다.** 기본 공간(`browser-driver/<프로필 id>`)은
@@ -219,8 +221,8 @@ ego 는 그 줄을 반환값 뒤에 줄바꿈 없이 붙이므로 그대로 두�
   끝에 `reset` 을 부르지 못하고 끝난 작업이 공간을 남기는 경우다.
 
   ```sh
-  $B spaces '<접두>'          # 47<TAB>양식 등록<TAB>2   (id, 이름, 탭 수)
-  $B reset --space-id 47      # BROWSER_EGO_SPACE 없이도 그 공간만 닫는다
+  "$B" spaces '<접두>'          # 47<TAB>양식 등록<TAB>2   (id, 이름, 탭 수)
+  "$B" reset --space-id 47      # BROWSER_EGO_SPACE 없이도 그 공간만 닫는다
   ```
 
   `spaces` 는 에이전트가 가진 공간(`ownership` 이 `agent`)만 낸다. 접두를 주면 그 이름으로 시작하는
@@ -282,8 +284,8 @@ ego 는 그 줄을 반환값 뒤에 줄바꿈 없이 붙이므로 그대로 두�
 | 4 | ego 의 `isDefault` | 셋 다 없을 때만 여기로 떨어진다 |
 
 ```bash
-BROWSER_EGO_PROFILE="Profile 2" $B open "https://example.com"
-BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
+BROWSER_EGO_PROFILE="Profile 2" "$B" open "https://example.com"
+BROWSER_EGO_PURPOSE=personal    "$B" open "https://example.com"
 ```
 
 용도 이름을 두는 자리가 2번이다. 프로필 id 는 머신마다 다르므로 호출자가 그것을
@@ -300,10 +302,8 @@ BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 `open` 은 정해진 프로필과 실제 공간 이름을 표준 오류로 한 줄 알린다. 4번으로 떨어졌을 때만 문구가 경고로 바뀌어,
 지정을 빠뜨린 호출이 출력에서 눈에 띈다.
 
-```
-프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal; 공간: 양식 등록
-경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>); 공간: browser-driver/Profile 2
-```
+- `프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal; 공간: 양식 등록`
+- `경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>); 공간: browser-driver/Profile 2`
 
 `doctor` 도 프로필 판정과 공간의 기준 이름을 각각 한 줄 낸다. 돌리기 전에 어디로 갈지 여기서 본다.
 프로필 이름으로 지정했거나 ego 기본 프로필에 맡긴 경우에는 브라우저 조회 없이 id 를 알 수 없어,
@@ -338,7 +338,7 @@ BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 값은 orca 의 셀렉터 표기를 그대로 쓴다.
 
 ```bash
-ORCA_WORKTREE="path:$HOME/projects/MyRepo" $B open "file:///tmp/preview.html"
+ORCA_WORKTREE="path:$HOME/projects/MyRepo" "$B" open "file:///tmp/preview.html"
 ```
 
 `open` 은 어느 워크트리에 열렸는지 표준 오류로 한 줄 알린다.

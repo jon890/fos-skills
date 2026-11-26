@@ -7,22 +7,23 @@
 
 ## 지시 문구
 
-아래 블록을 스폰 프롬프트나 지시서에 붙인다. `SPACE_NAME` 과 `ASK_HOW` 를 채운다.
+아래 블록을 스폰 프롬프트나 지시서에 붙인다. `SPACE_NAME`, `ASK_HOW`, `DRIVER_PATH` 를 채운다.
 
 - `SPACE_NAME`: 그 작업만의 공간 이름. 저장소, 브랜치, 용도를 넣는다(예: `my-repo feat-x 시나리오 생성`). 맡는 쪽마다 다르게 준다
 - `ASK_HOW`: 맡는 쪽이 사용자 확인을 받는 길. 하위 에이전트면 「작업을 멈추고 결과로 질문을 돌려준다」, Orca worker 면 「`orca orchestration ask` 로 코디네이터에게 묻는다」
+- `DRIVER_PATH`: SKILL.md 2단계에서 찾은 드라이버의 절대 경로. 맡는 쪽은 스킬 폴더를 모를 수 있어 경로를 채워 준다
 
 ```text
 브라우저 작업은 browser 스킬(fos-skills:browser)을 따른다. 스킬을 부를 수 없으면 아래를 지킨다.
 
 - CLI 와 공개 API 로 되는 일이면 브라우저를 쓰지 않는다. 브라우저로 가는 이유를 결과에 한 줄 적는다.
 - 저장소에 .claude/browser-overlay.md 가 있으면 먼저 읽고 그 순서를 따른다.
-- 드라이버는 ~/.claude/scripts/browser-driver 다. 명령은 `browser-driver help` 로 본다.
+- 드라이버는 B='DRIVER_PATH' 로 정하고 "$B" 로 부른다. 명령은 `"$B" help` 로 본다.
 - 모든 호출 앞에 BROWSER_EGO_SPACE='SPACE_NAME' 을 붙인다. 다른 이름이나 기본 공간을 쓰지 않는다.
 - 개인 계정 서비스는 BROWSER_EGO_PURPOSE=personal 을 함께 붙인다.
 - 로그인 화면이 나오면 자격 증명을 넣지 않고 멈춘다. ASK_HOW. 질문에 공간 이름 'SPACE_NAME' 을 적어 사용자가 그 공간에서 로그인하게 한다.
 - 결제, 삭제, 권한 변경, 결재 상신, 외부로 보내는 등록처럼 되돌리기 어려운 버튼은 누르기 전에 ASK_HOW. 누를 버튼과 채운 값을 질문에 적는다.
-- 끝나면 성공이든 실패든 BROWSER_EGO_SPACE='SPACE_NAME' browser-driver reset 을 부른다.
+- 끝나면 성공이든 실패든 BROWSER_EGO_SPACE='SPACE_NAME' "$B" reset 을 부른다.
 - 새로 안 화면 순서와 함정은 결과에 적는다. 오버레이에 더할지는 맡긴 쪽이 정한다.
 ```
 

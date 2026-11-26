@@ -73,7 +73,7 @@ node "$SKILL_DIR/scripts/check-deck.ts" "$DECK"            # 구조·JS·금지�
 node "$SKILL_DIR/scripts/check-deck.ts" "$DECK" --browser  # 세로 넘침까지
 ```
 
-`--browser` 는 이 저장소의 `skills/browser/browser-driver`(팀 사본은 `tools/browser-driver`)를 먼저 찾고, 없으면 `~/.claude/scripts/browser-driver` 를 쓴다. 둘 다 없으면 그 항목만 건너뛴다.
+`--browser` 는 저장소의 `skills/browser/browser-driver`, 팀 저장소가 아직 옮기지 않았을 때의 옛 자리 `tools/browser-driver`, `~/.claude/scripts/browser-driver` 순으로 드라이버를 찾는다. 셋 다 없으면 그 항목만 건너뛴다.
 
 검사기가 보는 것과 사람이 봐야 하는 것이 갈린다.
 

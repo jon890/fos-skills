@@ -113,16 +113,25 @@ describe('show-preview 드라이버 선택', () => {
     assert.deepEqual(lines(s.log).map((line) => line.split(' ')[0]), ['uname', 'osascript', 'osascript', 'osascript', 'osascript', 'open'])
   })
 
-  test('스킬이 놓인 위치에서 위로 올라가며 tools/browser-driver 를 찾는다', (t) => {
-    // 팀 사본의 배치(<루트>/plugins/<플러그인>/skills/content-preview/scripts)에서도 다섯 단계 안에 닿는다
+  // 팀 사본의 배치(<루트>/plugins/<플러그인>/skills/content-preview/scripts)에 스크립트를 두고 driverDir 에 드라이버를 둔다
+  function teamLayout(t: T, driverDir: string[]) {
     const s = setup(t)
     const deep = join(s.root, 'a', 'b', 'skills', 'content-preview', 'scripts')
     mkdirSync(join(s.root, 'a', 'b', 'skills', 'content-preview'), { recursive: true })
     run(['cp', '-R', s.scripts, deep])
-    s.driver(join(s.root, 'a', 'tools', 'browser-driver', 'browser_driver.ts'), OK(s.wantDir))
+    s.driver(join(s.root, ...driverDir, 'browser_driver.ts'), OK(s.wantDir))
     const done = run([...command(deep), 'p.html'], { cwd: s.work, env: { ...s.env, PWD: s.work } })
     assert.equal(done.code, 0)
     assert.equal(lines(s.log)[0].split(' ')[0], 'browser_driver.ts')
+  }
+
+  test('스킬이 놓인 위치에서 위로 올라가며 skills/browser/browser-driver 를 찾는다', (t) => {
+    teamLayout(t, ['a', 'b', 'skills', 'browser', 'browser-driver'])
+  })
+
+  test('팀 저장소의 옛 자리 tools/browser-driver 도 찾는다', (t) => {
+    // 팀 main 이 드라이버를 browser 스킬 안으로 옮기기 전에는 이 자리에만 있다. 다섯 단계 안에 닿는다
+    teamLayout(t, ['a', 'tools', 'browser-driver'])
   })
 })
 
