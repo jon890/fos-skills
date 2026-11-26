@@ -84,7 +84,7 @@ ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loo
 | --- | --- | --- |
 | `skills/browser/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview`, `presentation` |
 
-- `browser-driver` 의 소유자는 `browser` 스킬이에요. 팀 저장소에는 `tools/browser-driver` 로 들어가요.
+- `browser-driver` 의 소유자는 `browser` 스킬이에요. 팀 저장소에는 `skills/browser` 아래에 스킬과 함께 들어가요.
 - 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
 - 이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 넣지 않아요. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 에 있어요.
 
