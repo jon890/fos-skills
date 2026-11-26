@@ -68,10 +68,10 @@ node scripts/run-tests.ts scripts/tests/runtime-policy.spec.ts
 | `extensions/study-feedback-panel/orca-plugin.json` | 신규 |
 | `extensions/study-feedback-panel/tsconfig.json` | 신규 |
 | `extensions/study-feedback-panel/src/panel.check.ts` | 신규 |
-| `extensions/study-feedback-panel/src/panel.test.tsx` | 신규 |
+| `extensions/study-feedback-panel/src/panel.test.mts` | 신규 |
 | `extensions/study-feedback-panel/src/panel.tsx` | 신규 |
 | `extensions/study-feedback-panel/src/protocol.ts` | 신규 |
-| `extensions/study-feedback-panel/src/worker.test.ts` | 신규 |
+| `extensions/study-feedback-panel/src/worker.test.mts` | 신규 |
 | `extensions/study-feedback-panel/src/worker.ts` | 신규 |
 | `extensions/study-feedback-panel/src/summary.ts` | 신규 |
 | `extensions/study-feedback-panel/src/delivery.ts` | 신규 |

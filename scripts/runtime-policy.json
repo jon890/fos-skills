@@ -22,9 +22,9 @@
   "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/", "skills/presentation/", "skills/browser/", "skills/plan/", "skills/harness-cleanup/", "skills/machine-cleanup/", "skills/spec/", "skills/technical-design/", "skills/implementation/", "skills/docs-audit/", "skills/docs-consolidate/", "skills/review-fix/", "export-only-skills/content-preview/", "export-only-skills/korean-check/"],
   "bare_imports": [
     { "path": "extensions/study-feedback-panel/src/panel.tsx", "name": "orca" },
-    { "path": "extensions/study-feedback-panel/src/panel.test.tsx", "name": "orca/testing" },
+    { "path": "extensions/study-feedback-panel/src/panel.test.mts", "name": "orca/testing" },
     { "path": "extensions/study-feedback-panel/src/panel.check.ts", "name": "orca/testing" },
-    { "path": "extensions/study-feedback-panel/src/worker.test.ts", "name": "orca/testing" },
+    { "path": "extensions/study-feedback-panel/src/worker.test.mts", "name": "orca/testing" },
     { "path": "extensions/study-feedback-panel/src/worker.ts", "name": "orca/worker" },
     { "path": "extensions/work-board/tests/*.test.ts", "name": "claude-code/testing" },
     { "path": "skills/orch/scripts/core/config-schema.ts", "name": "zod" }
