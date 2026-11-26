@@ -34,6 +34,25 @@ test('draws study, feedback, repository totals and work in progress', async () =
   }
 })
 
+test('shows an empty repository tab and keeps open PRs when the summary omits every repository', async () => {
+  const data = exampleScreen()
+  data.summary!.study = []
+  data.summary!.feedback = []
+  data.summary!.repositories = []
+  const view = await mount(panel, { host: mockHost({ requests: { 'studyPanel.get': () => data } }) })
+  try {
+    await view.select({ label: '공부·피드백 목록' }, 'repos')
+    assert.equal(view.valueOf({ label: '공부·피드백 목록' }), 'repos')
+    assert.match(view.summary().join('\n'), /집계한 저장소가 없어요/)
+    assert.ok(view.find({ text: '요약에 저장소 이름 없음' }))
+    assert.ok(view.find({ text: 'PR #12 · 초안' }))
+    assert.deepEqual(view.errors, [])
+    assert.deepEqual(view.warnings, [])
+  } finally {
+    await view.unmount()
+  }
+})
+
 test('requires a reason, shows accepted and waiting states and ignores older events', async () => {
   const data = exampleScreen()
   const received: Choice[] = []
