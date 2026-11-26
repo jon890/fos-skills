@@ -2,7 +2,7 @@
 // 계약은 docs/features/model-auto-routing/spec.md 와 design.md 다. 이름 꼴과 세대 비교는 lib/model-generation.ts 가 소유한다.
 //
 // 기록: <머신 폴더>/model-watch.json(lib/machine.ts). Codex CLI 와 계정이 머신에 하나라 목록 읽기는 머신에 한 번이다.
-//     { checked_at, baseline, models, found, repos: { <저장소>: { checked_at, announced, tables: { "<키>": { at } } } } }
+//     { checked_at, baseline, models, found, decided: { <모델>: { at, via } }, repos: { <저장소>: { checked_at, announced, tables: { "<키>": { at } } } } }
 //     checked_at 은 목록을 마지막으로 읽은 시각(ms), models 는 그때 읽은 목록, found 는 기준점 뒤에 나타난 현재 세대 모델이다.
 //     repos 는 저장소마다 마지막으로 본 시각, 알린 모델(announced), 보드에 쓴 모델(boarded), 표에서 다룬 바꿈이다. 옆 잠금 파일 안에서 읽고 rename 으로 쓴다.
 // 주기: 머신의 checked_at 에서 WATCH_MS(24시간)가 지나면 어느 저장소의 루프든 목록을 다시 읽는다. 읽지 못해도(codex 없음, 실패) checked_at 을 쓴다.
@@ -14,6 +14,10 @@
 //     그 저장소의 보드 파일이 있으면 decide 항목 `model-new-<모델>`(제목 「새 모델 <모델>」)을 더한다. 보드에 쓰지 못하면 `MODEL-BOARD-FAIL <모델>: <이유>` 다.
 //     보드 쓰기에 성공한 모델은 boarded 에 따로 둔다. 실패한 모델은 다음에 목록을 읽을 때 같은 항목 ID 로 보드 쓰기만 다시 한다.
 //     보내지 못해도 announced 에 넣는다. 같은 모델을 다시 알리지 않는다는 스펙을 따른다. 루프 로그에는 남는다.
+// 결정 기록: 부를 때마다 그 저장소 보드에서 done 인 `model-new-<모델>` 항목을 찾아 머신 기록의 decided 에 { at, via: 보드 경로 } 로 남긴다.
+//     decided 에 든 모델은 어느 저장소에도 MODEL-NEW 를 보내지 않고 보드 항목도 더하지 않는다. 결정의 기록이 보드 항목 상태뿐이라
+//     보드를 옮기거나 지우면 결정이 사라져 다른 저장소의 루프가 같은 질문을 다시 올렸다(2026-11-23 OCR, gpt-6.2-astra).
+//     보드 기록은 이미 있는 항목을 다시 쓰지 않는다. 닫은 항목을 decide 로 되살리지 않기 위해서다.
 // 낡은 목록: 새로 읽은 목록에서 어느 계열의 최신 세대가 이미 본 세대(저장된 목록의 현재 세대, 기준점, found)보다 낮으면(olderList)
 //     현재 세대(isCurrent)끼리 비교한다. 높은 세대가 Previous generation 으로만 남은 목록도 낮아진 목록이다.
 //     models 를 덮지 않고 저장된 목록을 둔다. checked_at 은 쓰고 `MODEL-LIST-OLDER <이유>` 를 한 번 알린다. 다음 날 다시 읽는다.
@@ -34,7 +38,7 @@ import { defaultBase } from '../lib/git.ts'
 import { machineDir } from '../lib/machine.ts'
 import { codexBin, compareGeneration, isCurrent, parseCodexModels, parseModel, staleRows, type CodexModel } from '../lib/model-generation.ts'
 import { boardPath } from '../lib/board-file.ts'
-import { BOARD_BIN } from '../lib/board.ts'
+import { BOARD_BIN, readBoard } from '../lib/board.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { readSelectionTable } from '../lib/limit-table.ts'
@@ -49,6 +53,7 @@ export type WatchState = {
   baseline: string[] | null
   models: CodexModel[] | null
   found: string[]
+  decided: Record<string, { at: number; via: string }>
   repos: Record<string, RepoWatch>
 }
 export type Notice = { kind: string; text: string }
@@ -57,7 +62,11 @@ type Exec = (argv: string[], opts?: RunOptions) => RunResult
 // 건너뛴 것은 기록하지 않는다. 보드를 나중에 만든 저장소도 다음에 목록을 읽을 때 항목을 받는다
 export const BOARD_SKIPPED = Symbol('board-skipped')
 type BoardResult = string | null | typeof BOARD_SKIPPED
-export type WatchOptions = { stateFile?: string; now?: number; exec?: Exec; notify: (notice: Notice) => void; board?: (id: string, title: string) => BoardResult }
+// decisions 는 그 저장소 보드에서 done 인 항목 id 와 보드 경로를 낸다. 보드가 없거나 읽지 못하면 빈 목록이다
+export type Decisions = () => { ids: Set<string>; via: string }
+export type WatchOptions = { stateFile?: string; now?: number; exec?: Exec; notify: (notice: Notice) => void; board?: (id: string, title: string) => BoardResult; decisions?: Decisions }
+
+export const modelItemId = (slug: string): string => `model-new-${slug.replace(/[^a-z0-9-]/g, '-')}`
 
 export function watchFile(): string {
   return join(machineDir(), 'model-watch.json')
@@ -79,6 +88,10 @@ export function readWatch(file: string): WatchState {
     baseline: list(raw.baseline),
     models: Array.isArray(raw.models) ? raw.models as CodexModel[] : null,
     found: list(raw.found) ?? [],
+    decided: Object.fromEntries(Object.entries(object(raw.decided)).flatMap(([slug, value]) => {
+      const d = object(value)
+      return typeof d.at === 'number' ? [[slug, { at: d.at, via: typeof d.via === 'string' ? d.via : '' }]] : []
+    })),
     repos,
   }
 }
@@ -126,8 +139,21 @@ export function boardWriter(repo: string, exec: Exec): (id: string, title: strin
     let file: string
     try { file = boardPath(repo) } catch (e) { return (e as Error).message }
     if (!existsSync(file)) return BOARD_SKIPPED
+    try { if (readBoard(file).some((item) => item?.id === id)) return null } catch { /* 읽지 못하면 보드 명령이 판단한다 */ }
     const done = exec(scriptCommand(process.env.BOARD_BIN || BOARD_BIN, ['set', id, 'decide', '--title', title, '--file', file]), { timeoutMs: 30_000 })
     return done.code === 0 ? null : (done.stderr || done.stdout).trim().split('\n').pop() || `종료 코드 ${done.code}`
+  }
+}
+
+// 그 저장소 보드에서 done 인 항목 id. 보드가 없거나 읽지 못하면 빈 목록이다
+export function boardDecisions(repo: string): ReturnType<Decisions> {
+  let file = ''
+  try {
+    file = boardPath(repo)
+    if (!existsSync(file)) return { ids: new Set(), via: file }
+    return { ids: new Set(readBoard(file).filter((item) => item?.status === 'done').map((item) => String(item.id))), via: file }
+  } catch {
+    return { ids: new Set(), via: file }
   }
 }
 
@@ -165,11 +191,27 @@ export function watchModels(repo: string, opts: WatchOptions): void {
       writeWatch(file, state)
       if (older) opts.notify({ kind: 'MODEL-LIST-OLDER', text: older })
     }
+    // 결정 기록은 목록을 다시 읽지 않는 틱에도 본다. 보드 항목을 닫은 뒤 보드를 옮겨도 결정이 남는다
+    const open = state.found.filter((slug) => !state.decided[slug])
+    if (open.length > 0) {
+      const done = (opts.decisions ?? (() => boardDecisions(repo)))()
+      const decided = open.filter((slug) => done.ids.has(modelItemId(slug)))
+      if (decided.length > 0) {
+        state = { ...state, decided: { ...state.decided, ...Object.fromEntries(decided.map((slug) => [slug, { at: now, via: done.via }])) } }
+        writeWatch(file, state)
+      }
+    }
     const mine: RepoWatch = state.repos[repo] ?? { checked_at: null, announced: [], boarded: [], tables: {} }
     if (!state.models || (mine.checked_at !== null && state.checked_at !== null && mine.checked_at >= state.checked_at)) return
     const models = state.models
     const notices: Notice[] = []
     for (const slug of state.found) {
+      // 결정한 모델은 알리지도 보드에 더하지도 않는다. 기록에는 넣어 결정 기록이 지워져도 이 저장소에 다시 알리지 않는다
+      if (state.decided[slug]) {
+        if (!mine.announced.includes(slug)) mine.announced.push(slug)
+        if (!mine.boarded.includes(slug)) mine.boarded.push(slug)
+        continue
+      }
       if (!mine.announced.includes(slug)) {
         mine.announced.push(slug)
         const description = models.find((m) => m.slug === slug)?.description ?? ''
@@ -177,7 +219,7 @@ export function watchModels(repo: string, opts: WatchOptions): void {
       }
       // 보드 쓰기는 성공할 때까지 목록을 읽을 때마다 같은 항목 ID 로 다시 한다. Run 알림은 다시 보내지 않는다
       if (mine.boarded.includes(slug)) continue
-      const failed = board(`model-new-${slug.replace(/[^a-z0-9-]/g, '-')}`, `새 모델 ${slug}`)
+      const failed = board(modelItemId(slug), `새 모델 ${slug}`)
       if (typeof failed === 'string') notices.push({ kind: 'MODEL-BOARD-FAIL', text: `${slug}: ${failed}` })
       else if (failed === null) mine.boarded.push(slug)
     }

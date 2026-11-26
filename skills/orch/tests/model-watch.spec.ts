@@ -9,7 +9,7 @@ import { copyRepo, git, gitEnv } from '../../../modules/testkit/git.ts'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { run } from '../scripts/lib/proc.ts'
 import type { RunOptions } from '../scripts/lib/proc.ts'
-import { BOARD_SKIPPED, boardWriter, FIRST_COMPARE, newModels, olderList, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
+import { BOARD_SKIPPED, boardDecisions, boardWriter, FIRST_COMPARE, newModels, olderList, readWatch, TABLE_PATH, WATCH_MS, watchModels, type Notice } from '../scripts/loop/model-watch.ts'
 
 const DAY = WATCH_MS
 const entry = (slug: string, description: string, visibility = 'list') => ({ slug, visibility, description, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] })
@@ -50,7 +50,7 @@ function watch(repo: string, now: number, file = join(tmp, 'machine', 'model-wat
 
 describe('새 모델', () => {
   test('첫 목록을 기준점으로 두고 FIRST_COMPARE 만 새 모델로 알린다', () => {
-    const state = newModels({ checked_at: null, baseline: null, models: null, found: [], repos: {} }, TODAY.map(m => ({ slug: m.slug, visibility: m.visibility, description: m.description, efforts: ['low'] })))
+    const state = newModels({ checked_at: null, baseline: null, models: null, found: [], decided: {}, repos: {} }, TODAY.map(m => ({ slug: m.slug, visibility: m.visibility, description: m.description, efforts: ['low'] })))
     assert.deepEqual(FIRST_COMPARE, ['gpt-6.2-astra'])
     assert.ok(!state.baseline!.includes('gpt-6.2-astra'))
     assert.ok(state.baseline!.includes('gpt-6.2-sol'))
@@ -173,6 +173,52 @@ describe('보드와 여러 저장소', () => {
     assert.equal(boardWriter(bare, exec)('x', 'y'), BOARD_SKIPPED)
   })
 
+})
+
+describe('결정 기록', () => {
+  test('한 저장소 보드에서 닫은 새 모델 항목은 머신에 결정으로 남아 다른 저장소에도, 보드를 옮긴 뒤에도 다시 올리지 않는다', () => {
+    const a = join(tmp, 'a')
+    const b = join(tmp, 'b')
+    mkdirSync(a)
+    mkdirSync(b)
+    codexList(TODAY)
+    const file = join(tmp, 'machine', 'model-watch.json')
+    const written: string[] = []
+    const board = (id: string) => { written.push(id); return null }
+    let done = new Set<string>()
+    const run = (repo: string, now: number) => {
+      const notices: Notice[] = []
+      watchModels(repo, { stateFile: file, now, exec, notify: (n) => notices.push(n), board, decisions: () => ({ ids: done, via: `${repo}/board.json` }) })
+      return notices.map((n) => n.kind)
+    }
+    assert.deepEqual(run(a, 0), ['MODEL-NEW'])
+    // 코디네이터가 a 의 보드에서 항목을 닫는다. 다음 틱(목록을 다시 읽지 않는 틱)에 결정으로 남는다
+    done = new Set(['model-new-gpt-6-2-astra'])
+    assert.deepEqual(run(a, 1000), [])
+    assert.deepEqual(Object.keys(readWatch(file).decided), ['gpt-6.2-astra'])
+    assert.equal(readWatch(file).decided['gpt-6.2-astra'].via, `${a}/board.json`)
+    // 보드를 옮겨 닫힌 항목이 사라져도, 다른 저장소의 루프가 처음 봐도 다시 알리거나 보드에 더하지 않는다
+    done = new Set()
+    process.env.CODEX_BIN = join(tmp, 'missing-codex')
+    assert.deepEqual(run(b, 2000), [])
+    assert.deepEqual(run(a, DAY), [])
+    assert.deepEqual(written, ['model-new-gpt-6-2-astra'])
+  })
+
+  test('기본 결정 읽기는 그 저장소 보드의 done 항목을 내고, 보드 기록은 이미 있는 항목을 decide 로 되살리지 않는다', () => {
+    const { dir: repo } = copyRepo(join(tmp, 'boarded'))
+    const file = join(repo, '.omc', 'board.json')
+    mkdirSync(join(repo, '.omc'))
+    writeFileSync(file, JSON.stringify({ updatedAt: new Date(0).toISOString(), items: [
+      { id: 'model-new-gpt-6-2-astra', title: '새 모델 gpt-6.2-astra', status: 'done' },
+      { id: 'model-new-gpt-6-3-sol', title: '새 모델 gpt-6.3-sol', status: 'decide' },
+    ] }))
+    assert.deepEqual([...boardDecisions(repo).ids], ['model-new-gpt-6-2-astra'])
+    assert.equal(boardWriter(repo, exec)('model-new-gpt-6-2-astra', '새 모델 gpt-6.2-astra'), null)
+    const item = JSON.parse(readFileSync(file, 'utf8')).items.find((i: { id: string }) => i.id === 'model-new-gpt-6-2-astra')
+    assert.equal(item.status, 'done')
+    assert.deepEqual([...boardDecisions(join(tmp, 'none')).ids], [])
+  })
 })
 
 describe('보드 다시 쓰기', () => {
