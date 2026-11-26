@@ -17,10 +17,9 @@
 // 업무 번호를 담을 그룹이 하나 이상 있어야 한다. 업무 번호는 영문, 숫자, `._/-` 만 받는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다(lib/gh.ts 의 ghBin).
 
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
 import { objectOr } from '../core/json.ts'
-import { isFile } from './fs.ts'
 import { ghJson } from './gh.ts'
 import { orcaJson } from './orca.ts'
 import { FINISHED_DISPATCH } from './worker-state.ts'
@@ -68,25 +67,30 @@ export function rulesFrom(finish: Record<string, unknown>, repo: string): LastPr
   return { taskPattern: pattern('task_pattern'), specTaskPattern: pattern('spec_task_pattern'), specsDir: dir && !isAbsolute(dir) ? join(repo, dir) : dir }
 }
 
-// 지시서 폴더의 spec-*.md 경로와 내용. 이름 순이다. 폴더를 읽지 못하면 빈 목록이다
-export function specFiles(dir: string): { path: string; text: string }[] {
+// 이름 순으로 읽는다. 없는 폴더와 읽을 수 없는 폴더·파일을 구분한다
+export function readSpecFiles(dir: string): { files: { path: string; text: string }[]; unreadable: string[] } {
+  const files: { path: string; text: string }[] = []
+  const unreadable: string[] = []
   let names: string[]
   try {
     names = readdirSync(dir)
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unreadable.push(dir)
+    return { files, unreadable }
   }
-  const found: { path: string; text: string }[] = []
   for (const name of names.filter((n) => n.startsWith('spec-') && n.endsWith('.md')).sort()) {
     const path = join(dir, name)
-    if (!isFile(path)) continue
     try {
-      found.push({ path, text: readFileSync(path, 'utf8') })
-    } catch {
-      continue
+      if (statSync(path).isFile()) files.push({ path, text: readFileSync(path, 'utf8') })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unreadable.push(path)
     }
   }
-  return found
+  return { files, unreadable }
+}
+
+export function specFiles(dir: string): { path: string; text: string }[] {
+  return readSpecFiles(dir).files
 }
 
 function list(repo: string, args: string[]): Record<string, unknown>[] | null {

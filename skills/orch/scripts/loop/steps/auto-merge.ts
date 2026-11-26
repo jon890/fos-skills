@@ -30,7 +30,7 @@
 //        이 단계가 넘기는 값(known)은 아래다. 그 밖의 값(봇 영수증)은 checkReadiness 가 읽는다.
 //        - 체크: 이번 틱의 롤업(OwnPr.rollup)을 CI 감시가 읽은 필수 체크 이름(ciNames)으로 판단한다(core/checks.ts 의 currentChecks).
 //          CI 감시의 기록(ci)은 보지 않는다. 그 PR 의 base 규칙을 읽지 못했으면 `CI 규칙을 읽지 못했다`, 이번 틱에 이름이 없으면 `CI 없음` 이다.
-//        - 지시서 보류: lib/auto-merge.ts 의 specHold. 이유에 비공개 낱말(lib/private-words.ts 의 목록)이 있으면 위치로 바꾼다(redactLine).
+//        - 지시서 보류: lib/spec-targets.ts 에서 읽는다. 조회가 실패한 틱에는 자동 머지를 걸지 않는다. 이유에 비공개 낱말이 있으면 위치로 바꾼다(redactLine).
 //        - 보드 항목: 위에서 한 번 읽은 목록.
 //        - 미해결 스레드: THREADS_CMD(없으면 defaultThreadsCmd)를 저장소 폴더에서 OWNER, REPO, PR, GH_HOST 로 돌린다. 숫자가 아니면 조회 실패다.
 //        - PR 본문 보류와 리뷰 체크: gh pr view --json statusCheckRollup,files,body,headRefOid 한 번을 나눠 쓴다. 본문 보류도 redactLine 을 거친다.
@@ -86,17 +86,14 @@ import { isObject } from '../../core/json.ts'
 import type { Fact, Facts } from '../../core/merge-readiness.ts'
 import { beforeCommand, prHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, sweepArgs, watchedDirs } from '../../lib/auto-merge.ts'
 import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
-import { readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
 import { featureLoopRequested } from '../../lib/feature-evidence.ts'
-import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
-import { checkReadiness, defaultThreadsCmd } from '../../lib/merge-readiness.ts'
+import { checkReadiness, defaultThreadsCmd, readReadinessBoard } from '../../lib/merge-readiness.ts'
 import type { PrTarget } from '../../lib/merge-readiness.ts'
-import { specTargets } from '../../lib/spec-targets.ts'
-import { boardPath } from '../../lib/board-file.ts'
+import { specReadError, specTargets } from '../../lib/spec-targets.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
 import { turnLine } from '../../lib/queue-turn.ts'
@@ -474,17 +471,16 @@ async function autoMergeStep(
   }
 
   // 3. 대상과 판정. 같은 브랜치는 앞 Run 의 지시서가 정한다
-  const targets = specTargets(ctx.repo, runs)
+  const { targets, unreadable } = specTargets(ctx.repo, runs)
+  if (unreadable.length > 0) {
+    errors.add(specReadError(unreadable))
+    return
+  }
   // 보드는 틱에 한 번 읽는다. 읽지 못하면 보류 표시를 놓친 채 걸지 않도록 이 틱은 걸지 않는다
-  let items: BoardItem[] = []
-  const boardFile = boardPath(ctx.repo)
-  if (isFile(boardFile)) {
-    try {
-      items = readBoard(boardFile).filter(isObject) as BoardItem[]
-    } catch (e) {
-      errors.add(`보드를 읽지 못했다: ${oneLine(e)}`)
-      return
-    }
+  const board = readReadinessBoard(ctx.repo)
+  if (!board.ok) {
+    errors.add(board.error)
+    return
   }
   const ready: Candidate[] = []
   const words = readPrivateWords()
@@ -492,7 +488,7 @@ async function autoMergeStep(
     const target = targets.get(pr.branch)
     if (!target) continue
     const hold = target.hold === null ? null : redactLine(target.hold, words, '지시서', target.text)
-    const judged = await judgeTarget(ctx, pr, hold, featureLoopRequested(target.text), names?.get(pr.number), stale, state, items, words)
+    const judged = await judgeTarget(ctx, pr, hold, featureLoopRequested(target.text), names?.get(pr.number), stale, state, board.value, words)
     if ('error' in judged) {
       errors.add(judged.error)
       continue

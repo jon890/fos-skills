@@ -109,19 +109,25 @@ test('보류는 merge 단계다. blocksReady 는 false, blocksMerge 는 true 다
   assert.equal(blocksReady(judgeReadiness(snap({ threads: { ok: true, value: '1' } }), policy, full)), true)
 })
 
-test('compat oldHolds 는 보드 보류를 보지 않고 지시서 보류가 있으면 본문 보류를 내지 않는다', () => {
+test('지시서, 본문, 보드 보류를 모두 내고 조회 실패도 보류 단계로 알린다', () => {
   const board = [{ id: 'x', branch: 'feat/x', status: 'doing', next: ['머지 보류 사용자 확인'] }]
   const s = snap({ specHold: { ok: true, value: '지시서' }, holdBody: { ok: true, value: '본문' }, boardItems: { ok: true, value: board } })
   assert.deepEqual(texts(s), ['지시서', '본문', '보드 보류: 머지 보류 사용자 확인'])
-  assert.deepEqual(texts(s, { scope: 'full', compat: { oldHolds: true } }), ['지시서'])
-  const lookup = snap({ holdBody: { ok: false, error: 'PR 본문을 읽지 못해 머지 보류 줄을 확인할 수 없다' }, specHold: { ok: true, value: '지시서' } })
-  assert.deepEqual(judgeReadiness(lookup, policy, { scope: 'full', only: ['hold'], compat: { oldHolds: true } }).reasons.map((r) => [r.kind, r.stage]), [['hold', 'merge'], ['lookup', 'merge']])
+  const lookup = snap({
+    holdBody: { ok: false, error: '본문 조회 실패' },
+    boardItems: { ok: false, error: '보드 조회 실패' },
+    specHold: { ok: true, value: '지시서' },
+  })
+  assert.deepEqual(judgeReadiness(lookup, policy, { scope: 'full', only: ['hold'] }).reasons.map((r) => [r.kind, r.stage, r.text]), [
+    ['hold', 'merge', '지시서'], ['lookup', 'merge', '본문 조회 실패'], ['lookup', 'merge', '보드 조회 실패'],
+  ])
 })
 
-test('draft 는 compat noDraft 가 아니면 걸린다', () => {
+test('draft 는 준비 단계에서 걸린다', () => {
   const s = snap({}, { draft: true })
-  assert.deepEqual(texts(s), ['draft PR 이다'])
-  assert.deepEqual(texts(s, { scope: 'full', compat: { noDraft: true } }), [])
+  const judged = judgeReadiness(s, policy, full)
+  assert.deepEqual(judged.reasons.map((r) => [r.code, r.stage, r.text]), [['draft', 'ready', 'draft PR 이다']])
+  assert.equal(blocksReady(judged), true)
 })
 
 test('light 범위의 이유는 full 이유 가운데 light 조건의 것과 같다', () => {

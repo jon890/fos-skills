@@ -1,5 +1,6 @@
 // lib/merge-readiness.ts 의 값 읽기만 본다. 조건의 뜻은 core-merge-readiness.spec.ts 가 본다
 import assert from 'node:assert/strict'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeRun } from '../../../modules/testkit/fake-run.ts'
@@ -23,20 +24,39 @@ function setup(t: Parameters<typeof tempDir>[1]) {
 
 const ghCalls = (calls: { argv: string[] }[]) => calls.filter((c) => c.argv[0].endsWith('gh')).map((c) => c.argv.slice(1).join(' '))
 
-test('읽을 필요가 없는 값은 읽지 않는다. 보류만 물으면 본문 보류와 지시서만 읽는다', async (t) => {
+test('보류만 물으면 본문, 지시서, 보드를 읽는다. 없는 지시서 폴더와 보드는 보류 없음이다', async (t) => {
   const repo = setup(t)
   const fake = fakeRun({ gh: [{ args: ['--jq', '.body'], stdout: '본문\n머지 보류: 배포 대기\n' }], git: [{ code: 1 }] })
-  const got = await withRun(fake.run, () => checkReadiness(target(repo), { scope: 'full', only: ['hold'], compat: { oldHolds: true } }))
+  const got = await withRun(fake.run, () => checkReadiness(target(repo), { scope: 'full', only: ['hold'] }))
   assert.deepEqual(got.reasons.map((r) => [r.kind, r.text]), [['hold', '배포 대기']])
   assert.deepEqual(ghCalls(fake.calls()), ['pr view 7 --json body --jq .body'])
-  assert.deepEqual(Object.keys(got.snapshot.facts).sort(), ['holdBody', 'specHold'])
+  assert.deepEqual(got.snapshot.facts, {
+    holdBody: { ok: true, value: '배포 대기' },
+    specHold: { ok: true, value: null },
+    boardItems: { ok: true, value: [] },
+  })
 })
 
 test('본문 보류를 읽지 못하면 ok: false 이고 그 문구가 lookup 이유다', async (t) => {
   const repo = setup(t)
   const fake = fakeRun({ gh: [{ code: 1, stderr: 'boom' }], git: [{ code: 1 }] })
-  const got = await withRun(fake.run, () => checkReadiness(target(repo), { scope: 'full', only: ['hold'], compat: { oldHolds: true } }))
+  const got = await withRun(fake.run, () => checkReadiness(target(repo), { scope: 'full', only: ['hold'] }))
   assert.deepEqual(got.reasons.map((r) => [r.kind, r.stage, r.text]), [['lookup', 'merge', 'PR 본문을 읽지 못해 머지 보류 줄을 확인할 수 없다']])
+})
+
+test('폴더 자리에 파일이 있거나 보드를 파싱하지 못하면 두 조회가 모두 보류 단계에서 걸린다', async (t) => {
+  const repo = setup(t)
+  const specs = join(repo, 'specs')
+  const board = join(repo, 'board.json')
+  mkdirSync(join(repo, '.orch'))
+  writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ finish: { specs_dir: specs, board } }))
+  writeFileSync(specs, '')
+  writeFileSync(board, '{')
+  const fake = fakeRun({ gh: [{ stdout: '머지 보류: 본문 이유\n' }], git: [{ code: 1 }] })
+  const got = await withRun(fake.run, () => checkReadiness(target(repo), { scope: 'full', only: ['hold'] }))
+  assert.equal(got.snapshot.facts.specHold?.ok, false)
+  assert.equal(got.snapshot.facts.boardItems?.ok, false)
+  assert.deepEqual(got.reasons.map((r) => [r.kind, r.stage]), [['lookup', 'merge'], ['hold', 'merge'], ['lookup', 'merge']])
 })
 
 test('HEAD 가 다른 값을 읽으면 뒤 값은 읽지 않는다', async (t) => {

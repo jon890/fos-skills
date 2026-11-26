@@ -152,15 +152,78 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
   })
 
-  test('지시서 보류가 본문 보류보다 먼저고 둘 다 없으면 보류 줄이 없다', async (t) => {
+  test('지시서, 본문, 보드 보류와 여러 줄의 출력을 모두 확인한다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'specs', 'spec-hold.md'), '브랜치: `feat`\n머지 보류: 지시서 이유\n')
-    const both2 = await gate(c, { '1': pr({ body: `${BODY}\n- 머지 보류: 본문 이유\n` }) }, 0)
-    assert.match(both2.stdout, /^HOLD 지시서 이유$/m)
-    assert.doesNotMatch(both2.stdout, /본문 이유/)
+    const board = join(c.tmp, 'board.json')
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ finish: { board } }))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'job', status: 'doing', pr: '#1', next: ['머지 보류 보드 이유'] }] }))
+    const state = { '1': pr({ body: `${BODY}\n- 머지 보류: 본문 이유\n` }) }
+    const reasons = ['지시서 이유', '본문 이유', '보드 보류: 머지 보류 보드 이유']
+    const g = await gate(c, state, 0)
+    assert.equal(g.code, 0, both(g))
+    assert.deepEqual(g.stdout.split('\n').filter((line) => line.startsWith('HOLD ')), reasons.map((reason) => `HOLD ${reason}`))
+    const q = await queue(c, state, 0)
+    assert.equal(q.code, 1, both(q))
+    assert.deepEqual(q.stdout.split('\n').filter((line) => line.startsWith('GATE-HOLD ')), reasons.map((reason) => `GATE-HOLD ${reason}`))
+    assert.equal(queueReason(q), `머지 보류: ${reasons.join('; ')}`)
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
     const c2 = setup(t)
     const none = await gate(c2, { '1': pr() }, 0)
     assert.doesNotMatch(none.stdout, /^HOLD /m)
+  })
+
+  test('보드 보류만 있어도 직접 머지를 막는다', async (t) => {
+    const c = setup(t)
+    const board = join(c.tmp, 'board.json')
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ finish: { board } }))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'job', status: 'doing', branch: 'feat', next: ['머지 보류 확인 대기'] }] }))
+    const q = await queue(c, { '1': pr() }, 0)
+    assert.equal(q.code, 1, both(q))
+    assert.match(q.stdout, /^GATE-HOLD 보드 보류: 머지 보류 확인 대기$/m)
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+  })
+
+  test('세 보류 조회가 실패하면 관문은 모두 알리고 직접 머지는 멈춘다', async (t) => {
+    const c = setup(t)
+    const specs = join(c.tmp, 'unreadable-specs')
+    const board = join(c.tmp, 'board.json')
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ finish: { board, specs_dir: specs } }))
+    writeFileSync(specs, '')
+    writeFileSync(board, '{')
+    const state = { '1': pr({ body_view_fails: true }) }
+    const g = await gate(c, state, 0)
+    assert.equal(g.code, 0, both(g))
+    assert.deepEqual(g.stdout.match(/^HOLD (지시서|PR 본문|보드)/gm), ['HOLD 지시서', 'HOLD PR 본문', 'HOLD 보드'])
+    const q = await queue(c, state, 0)
+    assert.equal(q.code, 1, both(q))
+    assert.match(queueReason(q), /지시서를 읽지 못해.*PR 본문을 읽지 못해.*보드를 읽지 못했다/)
+    assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
+  })
+
+  test('draft 는 관문에서 실패하고 머지 큐가 체크를 읽기 전에 멈춘다', async (t) => {
+    const c = setup(t)
+    const state = { '1': pr({ isDraft: true }) }
+    const g = await gate(c, state, 0)
+    assert.equal(g.code, 1, both(g))
+    assert.equal(gateReason(g), 'draft PR 이다')
+    const log = c.env.FAKE_LOG!
+    writeFileSync(log, '')
+    const q = await queue(c, state, 0)
+    assert.equal(q.code, 1, both(q))
+    assert.equal(queueReason(q), 'draft PR 이다')
+    assert.doesNotMatch(readFileSync(log, 'utf8'), /statusCheckRollup|pr update-branch|pr merge/)
+  })
+
+  test('정수가 아닌 스레드 출력은 관문과 큐에서 조회 실패다', async (t) => {
+    const c = setup(t)
+    const state = { '1': pr() }
+    const g = await gate(c, state, 'unknown')
+    assert.equal(g.code, 1, both(g))
+    assert.equal(gateReason(g), '스레드 조회 실패')
+    const q = await queue(c, state, 'unknown')
+    assert.equal(q.code, 1, both(q))
+    assert.equal(queueReason(q), '스레드 조회 실패')
   })
 
   test('앞 Run 의 지시서 보류를 gate 와 merge 가 함께 따른다', async (t) => {
@@ -474,7 +537,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
 
   test('gateLines 는 이유가 없으면 한 줄, 있으면 판정 줄과 이유 줄이다', () => {
     assert.deepEqual(gateLines('7', []), ['GATE-OK 7'])
-    assert.deepEqual(gateLines('7', [{ kind: 'ci', text: 'a' }, { kind: 'threads', text: 'b' }]), ['GATE-FAIL 7', '  a', '  b'])
+    assert.deepEqual(gateLines('7', [{ kind: 'ci', stage: 'ready', text: 'a' }, { kind: 'threads', stage: 'ready', text: 'b' }]), ['GATE-FAIL 7', '  a', '  b'])
   })
 
   // 가상 낱말만 쓴다. 실제 목록(~/.config/orch/private-words.txt)은 읽지 않는다

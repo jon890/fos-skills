@@ -495,6 +495,15 @@ describe('보류 표시', () => {
     assert.equal(errors.length, 1, JSON.stringify(events()))
     assert.match(String(errors[0].text), /^auto-merge: 보드를 읽지 못했다/)
   })
+
+  test('등록한 지시서 폴더를 읽지 못한 틱에는 자동 머지를 걸지 않는다', () => {
+    write(join(repo, 'unreadable-specs'), '')
+    write(orchFile('state', 'loop-runs', 'run_b.json'), JSON.stringify({ run: 'run_b', specs_dir: 'unreadable-specs', registered_at: '2026-01-02T00:00:00Z' }))
+    github([pr(1)])
+    once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.ok(events('WATCH-ERROR').some((row) => /^auto-merge: 지시서를 읽지 못해 머지 보류를 확인할 수 없다/.test(String(row.text))))
+  })
 })
 
 describe('다시 걸지 않음', () => {

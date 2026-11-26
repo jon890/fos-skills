@@ -2,6 +2,7 @@
 //
 // 머지 큐가 머지 전에 보는 조건을 머지 없이 한 번 돌려 본다. worker 는 「준비됨」 을 보내기 전에 이 명령이 통과해야 한다.
 // 조건은 머지 큐와 같은 조건 표(core/merge-readiness.ts, ADR-037)가 판정한다. 규칙을 두 곳에 두지 않는다.
+// draft PR 은 준비되지 않은 것으로 본다.
 //   1. 필수 체크가 모두 나타나 끝났고 실패가 없다. 기본은 현재 상태만 보고, --wait 를 주면 필수 체크가 나타나 끝날 때까지 기다린다.
 //   2. 미해결 리뷰 스레드가 없다
 //   3. base 와 충돌하지 않는다(mergeable 이 MERGEABLE)
@@ -21,12 +22,12 @@
 //                 조건은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다. GATE-FAIL 일 때는 내지 않는다
 //   통합 테스트 생략 <모듈>: <이유>
 //                 판정 줄과 이유 줄 뒤에 붙는다. PR 본문이 이유를 적어 통합 테스트 기록 없이 넘긴 모듈이다. 판정에는 넣지 않는다
-//   HOLD <이유>     지시서나 PR 본문의 머지 보류 이유(비공개 낱말이 있으면 값 대신 위치). 평소 조건을 모두 본 뒤 별도 줄로 낸다. gate 종료 코드에는 넣지 않는다
+//   HOLD <이유>     지시서·PR 본문·보드의 머지 보류나 조회 실패를 한 줄씩 낸다. 보류는 gate 종료 코드에 넣지 않는다
 //   GATE-FAIL <PR>
 //     <이유>        걸린 이유를 한 줄씩. PR 을 읽지 못하거나 이미 MERGED 이거나 OPEN 이 아니어도 GATE-FAIL 이다
 // 종료 코드: 0 통과, 1 걸림(조회 실패 포함. 확인하지 못했으면 통과로 보지 않는다), 2 사용법 오류(설정 파일 오류 포함)
 // PR 을 열거나 고쳐 push 한 턴에서 --wait 로 검사한다. GATE-OK 뒤 「준비됨」 status 를 보낸다.
-// HOLD 가 있으면 이유도 status 에 적는다. GATE-FAIL 이면 출력된 조건을 해결한 뒤 다시 검사한다.
+// HOLD 가 있으면 이유를 모두 status 에 적는다. GATE-FAIL 이면 출력된 조건을 해결한 뒤 다시 검사한다.
 //
 // MERGE_QUEUE_GH_RETRIES, MERGE_QUEUE_GH_RETRY_SECONDS, MERGE_QUEUE_SLEEP_SCALE 는 머지 큐와 같다.
 
@@ -40,9 +41,8 @@ import type { run } from '../lib/proc.ts'
 import { withRun } from '../lib/proc.ts'
 import { queueDefaults } from '../lib/queue-defaults.ts'
 import { waitChecks } from './steps/checks.ts'
-import type { GateReason } from './steps/gate.ts'
-import { gateReasons, holdLine, loadPr } from './steps/gate.ts'
-import type { StepContext } from './steps/model.ts'
+import { gateReasons, loadPr } from './steps/gate.ts'
+import type { GateReason, StepContext } from './steps/model.ts'
 import { CheckStop, Stop, StepState, Usage } from './steps/model.ts'
 import { parseArgs, usageText } from './steps/options.ts'
 import { readQueueEnv } from './steps/setup.ts'
@@ -56,30 +56,31 @@ function print(lines: string[]): void {
 
 // 판정 줄과 이유 줄. 이유가 없으면 통과다.
 // notes(통합 테스트 생략 줄)는 판정과 상관없이 그 뒤에 붙는다
-export function gateLines(n: string, reasons: GateReason[], hold: string | null = null, notes: string[] = []): string[] {
-  const lines = [...(reasons.length === 0 ? [`GATE-OK ${n}`] : [`GATE-FAIL ${n}`, ...reasons.map((r) => `  ${r.text}`)]), ...notes]
-  return hold === null ? lines : [...lines, `HOLD ${hold}`]
+export function gateLines(n: string, reasons: GateReason[], notes: string[] = []): string[] {
+  const ready = reasons.filter((r) => r.stage === 'ready')
+  const holds = reasons.filter((r) => r.stage === 'merge')
+  const result = ready.length === 0 ? [`GATE-OK ${n}`] : [`GATE-FAIL ${n}`, ...ready.map((r) => `  ${r.text}`)]
+  return [...result, ...notes, ...holds.map((r) => `HOLD ${r.text}`)]
 }
 
 async function gate(state: StepState, n: string): Promise<{ reasons: GateReason[]; notes: string[] }> {
   try {
-    if ((await loadPr(stepContext, state, n)) === 'merged') return { reasons: [{ kind: 'lookup', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }], notes: [] }
+    if ((await loadPr(stepContext, state, n)) === 'merged') return { reasons: [{ kind: 'lookup', stage: 'ready', text: '이미 MERGED 라 머지 전 조건을 볼 필요가 없다' }], notes: [] }
     let ci: GateReason | null = null
     if (state.o.wait) {
       try {
         await waitChecks(stepContext, state)
       } catch (e) {
         if (!(e instanceof CheckStop)) throw e
-        ci = { kind: 'ci', text: e.reason }
+        ci = { kind: 'ci', stage: 'ready', text: e.reason }
       }
     }
     const { reasons, notes } = await gateReasons(stepContext, state, ci ? 'none' : 'all')
-    if (ci) reasons.unshift(ci)
-    return { reasons, notes }
+    return { reasons: ci ? [ci, ...reasons] : reasons, notes }
   } catch (e) {
     if (!(e instanceof Stop)) throw e
     // 조회 실패와 HEAD 변경은 확인하지 못한 것이다. 통과로 보지 않고 이유로 낸다
-    return { reasons: [{ kind: 'lookup', text: e.message.startsWith(`${n} `) ? e.message.slice(n.length + 1) : e.message }], notes: [] }
+    return { reasons: [{ kind: 'lookup', stage: 'ready', text: e.message.startsWith(`${n} `) ? e.message.slice(n.length + 1) : e.message }], notes: [] }
   }
 }
 
@@ -128,8 +129,8 @@ async function mainImpl(argv: string[]): Promise<number> {
   }
   try {
     const { reasons, notes } = await gate(state, n)
-    print(gateLines(n, reasons, state.pr?.branch ? await holdLine(stepContext, state) : null, notes))
-    return reasons.length === 0 ? 0 : 1
+    print(gateLines(n, reasons, notes))
+    return reasons.some((r) => r.stage === 'ready') ? 1 : 0
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
     process.stderr.write(`${e.message}\n`)

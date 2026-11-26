@@ -78,10 +78,6 @@ export type ReadinessPolicy = {
 
 // 호출부마다 다른 지금 동작을 남기는 임시 값(설계 「커밋과 PR 순서」). 뒤 PR 이 하나씩 지운다
 export type ReadinessCompat = {
-  // draft 조건을 보지 않는다(PR5 가 지운다)
-  noDraft?: boolean
-  // 보드 보류를 보지 않고, 지시서 보류가 있으면 본문 보류를 내지 않는다(PR5)
-  oldHolds?: boolean
   // 체크 대기 뒤라 실패한 체크만 본다(PR6)
   checksAfterWait?: boolean
   // 체크 조회 중의 HEAD 변경을 code head-checks 로 따로 낸다. 머지 큐가 다시 시도하지 않는 보류로 다룬다(PR7)
@@ -160,7 +156,6 @@ function reviewPassed(ctx: Ctx): string[] {
 export const CONDITIONS: readonly Condition[] = [
   {
     id: 'draft', kind: 'draft', stage: 'ready', scope: 'light', evaluate: 1, output: 1,
-    active: (ctx) => !ctx.ask.compat?.noDraft,
     needs: () => [],
     judge(ctx) {
       return ctx.pr.draft ? { reasons: [reason(this, 'draft', 'draft PR 이다', 'draft', 'draft')] } : {}
@@ -209,7 +204,6 @@ export const CONDITIONS: readonly Condition[] = [
   },
   {
     id: 'hold-board', kind: 'hold', stage: 'merge', scope: 'light', evaluate: 5, output: 11,
-    active: (ctx) => !ctx.ask.compat?.oldHolds,
     needs: () => ['boardItems'],
     judge(ctx) {
       const items = value(ctx, 'boardItems') ?? []
@@ -232,10 +226,8 @@ export const CONDITIONS: readonly Condition[] = [
   },
   {
     id: 'hold-body', kind: 'hold', stage: 'merge', scope: 'light', evaluate: 7, output: 10,
-    // 지금은 지시서 보류가 있으면 본문 보류를 내지 않는다. 그래도 본문은 읽고, 읽지 못하면 멈춘다
-    needs: (ctx) => (ctx.ask.compat?.oldHolds ? ['holdBody', 'specHold'] : ['holdBody']),
+    needs: () => ['holdBody'],
     judge(ctx) {
-      if (ctx.ask.compat?.oldHolds && value(ctx, 'specHold')) return {}
       const hold = value(ctx, 'holdBody')
       return hold ? { reasons: [reason(this, 'hold-body', hold, 'hold', `PR 본문 보류: ${hold}`)] } : {}
     },

@@ -7,8 +7,8 @@ import { oneLine, short } from '../../lib/output.ts'
 import { NO_LIMIT_MS, runInherit, stopping } from '../../lib/proc.ts'
 import { TURN_PHASES } from '../../lib/queue-turn.ts'
 import { queueChecks, sortedCheckNames } from './checks.ts'
-import { askReadiness, gateReasons, holdWith, loadPr, refuseSpecHold } from './gate.ts'
-import type { GateReason, GhPr, StepContext } from './model.ts'
+import { askReadiness, gateReasons, holdWith, loadPr, refuseMergeHold } from './gate.ts'
+import type { GhPr, StepContext } from './model.ts'
 import { CheckStop, HeadChanged, NotReady } from './model.ts'
 import type { StepState } from './model.ts'
 import { ownsQueueLock } from '../../lib/queue-lock.ts'
@@ -27,7 +27,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   const prCommand = colon >= 0 ? item.slice(colon + 1) : null
   if ((await loadPr(stepContext, state, n)) === 'merged') return
   const p = state.p
-  await refuseSpecHold(stepContext, state)
+  await refuseMergeHold(stepContext, state)
 
   p.beforeHead = null
   p.judgments = 0
@@ -41,7 +41,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   const kind = o.docsGlob && docsOnly(stepContext, state) ? 'docs' : 'code'
   refuseWhenStopping(n)
   if (state.queueLock && !ownsQueueLock(state.queueLock, state.queueLockToken)) stop(`${n} 머지 큐 잠금을 잃었다`)
-  await refuseSpecHold(stepContext, state)
+  await refuseMergeHold(stepContext, state)
   turn(stepContext, state, TURN_PHASES.merge)
   const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
   // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
@@ -77,7 +77,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       // 체크를 넘지 못해도 스레드, 충돌, 통합 테스트 기록에 걸리는지 함께 보고 이유를 한 번에 낸다
       if (e instanceof CheckStop) {
         const rest = await gateReasons(stepContext, state, 'none')
-        if (rest.reasons.length > 0) holdWith(state, [{ kind: 'ci', text: e.reason }, ...rest.reasons])
+        if (rest.reasons.length > 0) holdWith(state, [{ kind: 'ci', stage: 'ready', text: e.reason }, ...rest.reasons])
       }
       throw e
     }
@@ -136,7 +136,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       if (p.ph !== rh) stop(`${n} head 불일치 pr=${p.ph.slice(0, 8)} remote=${rh.slice(0, 8)}`)
     }
     const migration = await askReadiness(stepContext, state, { only: ['migration'] })
-    if (migration.reasons.length) holdWith(state, migration.reasons.map((r) => ({ kind: r.kind as GateReason['kind'], text: r.text })))
+    if (migration.reasons.length) holdWith(state, migration.reasons)
     if (!p.judgedBase) return
     if (remoteBase(stepContext, state) === p.judgedBase) return
     log(`${n} 판정한 뒤 base(${p.base}) 가 움직였다. 새로 들어온 변경으로 다시 판정한다`)
