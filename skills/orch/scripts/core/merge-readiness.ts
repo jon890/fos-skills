@@ -1,5 +1,6 @@
 // 「머지해도 되나」 의 조건 표와 판단(설계 docs/features/merge-readiness/technical-design.md, ADR-037).
-// 관문(orch queue gate)과 머지 큐는 lib/merge-readiness.ts 의 checkReadiness 로 이 판단을 부르고 범위(light, full)만 고른다.
+// 관문(orch queue gate), 머지 큐, 루프 자동 머지는 lib/merge-readiness.ts 의 checkReadiness 로 이 판단을 부르고 범위(light, full)만 고른다.
+// 루프만 보는 조건(이미 건 HEAD, 리뷰 설정 없음)은 ask.auto 가 있을 때만 켜진다.
 // 조건을 더하거나 빼거나 순서를 바꾸는 일은 아래 CONDITIONS 표에서만 한다. 값은 읽지 않는다(ADR-028). 값을 읽는 일은 lib 가 한다.
 //
 // 판단은 snapshot(PR 하나에 대해 읽은 값의 묶음)을 받아 이유 목록을 낸다. 판단에 필요한 값이 snapshot 에 없으면 그 이름을 need 로 돌려주고,
@@ -18,7 +19,7 @@ import type { IntegrationRule } from './integration-evidence.ts'
 import { reviewCheckPassed } from './review-checks.ts'
 
 // 조건의 종류. 호출부는 이 값으로 only, skip 을 고르고 머지 큐는 이유의 종류로 보류 방식을 고른다
-export type ConditionKind = 'draft' | 'ci' | 'threads' | 'conflict' | 'review' | 'evidence' | 'migration' | 'private' | 'hold'
+export type ConditionKind = 'draft' | 'ci' | 'attempted' | 'threads' | 'conflict' | 'review' | 'evidence' | 'migration' | 'private' | 'hold'
 // 이유의 종류. 조건의 종류에 mergeable(충돌 판정 불가), lookup(조회 실패), head(판단 중 HEAD 변경)를 더한다
 export type ReasonKind = ConditionKind | 'mergeable' | 'lookup' | 'head'
 // ready 는 「준비됨을 알려도 되나」, merge 는 「지금 머지해도 되나」 단계다. merge 단계에서 막는 조건은 ready 단계 조건을 모두 포함한다
@@ -86,10 +87,14 @@ export type ReadinessCompat = {
   checksAfterWait?: boolean
   // 체크 조회 중의 HEAD 변경을 code head-checks 로 따로 낸다. 머지 큐가 다시 시도하지 않는 보류로 다룬다(PR7)
   checkHeadStop?: boolean
+  // 리뷰 설정 없음(review-config)을 기능 PR 에만 건다. 기능 PR 인지는 루프가 지시서로 정해 넘긴다(PR7)
+  featureOnly?: { feature: boolean }
 }
 
 export type ReadinessAsk = {
   scope: 'light' | 'full'
+  // 루프가 사람 지시 없이 머지를 걸 때만 준다. attempted 는 이 HEAD 로 이미 걸었는지다
+  auto?: { attempted: boolean }
   only?: ConditionKind[]
   skip?: ConditionKind[]
   stopAtFirst?: boolean
@@ -152,7 +157,7 @@ function reviewPassed(ctx: Ctx): string[] {
   return review.checks.filter((name) => reviewCheckPassed(value(ctx, 'reviewRollup'), name))
 }
 
-// 조건 표. 순서와 문구는 설계의 「조건 표」 와 같다. 루프만 보는 조건(이미 건 HEAD, 리뷰 설정 없음)은 루프가 이 표를 쓰는 PR3 이 더한다
+// 조건 표. 순서와 문구는 설계의 「조건 표」 와 같다. 루프만 보는 두 조건은 관문과 머지 큐가 쓰지 않아 출력 순서를 끝에 둔다
 export const CONDITIONS: readonly Condition[] = [
   {
     id: 'draft', kind: 'draft', stage: 'ready', scope: 'light', evaluate: 1, output: 1,
@@ -180,9 +185,19 @@ export const CONDITIONS: readonly Condition[] = [
         if (pending !== 0 || missing !== 0) {
           const names = missing ? checks?.missing.join(', ') : ''
           reasons.push(reason(this, 'ci-pending', `체크가 아직 끝나지 않았다(진행 중 ${pending ?? '?'}, 나타나지 않은 필수 체크 ${names || missing?.toString() || '?'})`, 'ci', 'CI pending'))
+        } else if (failed === 0 && checks?.none && !ctx.policy.allowNoChecks) {
+          reasons.push(reason(this, 'ci-none', 'PR 에 CI 체크가 하나도 없다', 'ci', 'CI pending'))
         }
       }
       return { reasons, summary: [`fails=${failed ?? ''}`] }
+    },
+  },
+  {
+    id: 'attempted', kind: 'attempted', stage: 'merge', scope: 'light', evaluate: 3, output: 12,
+    active: (ctx) => ctx.ask.auto !== undefined,
+    needs: () => [],
+    judge(ctx) {
+      return ctx.ask.auto?.attempted ? { reasons: [reason(this, 'attempted', '이미 건 HEAD', 'attempted', '이미 건 HEAD')] } : {}
     },
   },
   {
@@ -224,6 +239,16 @@ export const CONDITIONS: readonly Condition[] = [
       if (ctx.ask.compat?.oldHolds && value(ctx, 'specHold')) return {}
       const hold = value(ctx, 'holdBody')
       return hold ? { reasons: [reason(this, 'hold-body', hold, 'hold', `PR 본문 보류: ${hold}`)] } : {}
+    },
+  },
+  {
+    // 리뷰 설정이 없으면 루프가 스스로 걸지 않는다. PR7 전까지는 기능 PR 에만 건다(compat featureOnly)
+    id: 'review-config', kind: 'review', stage: 'merge', scope: 'light', evaluate: 8, output: 13,
+    active: (ctx) => ctx.ask.auto !== undefined && ctx.policy.review === null && (ctx.ask.compat?.featureOnly?.feature ?? true),
+    needs: () => [],
+    judge() {
+      const text = '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다'
+      return { reasons: [reason(this, 'review-config', text, 'review', text)] }
     },
   },
   {
