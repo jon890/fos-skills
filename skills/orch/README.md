@@ -70,6 +70,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 - Orca 앱과 `orca` CLI 가 필요하다. worker 는 Orca orchestration 으로 띄운다
 - PATH 에 node 24 이상이 있어야 한다. node 가 낮으면 스킬을 열 때 `NODE-TOO-OLD` 로 알린다
 - `gh` 에 로그인돼 있어야 PR 을 확인하고 머지한다
+- CI 가 없는 저장소에서 머지하려면 `.orch/config.json` 의 `queue.allow_no_checks` 를 켠다. 필수 체크 이름을 설정해 두면 해당 체크가 나타날 때까지 기다린다
 - 같은 PC 의 무거운 검사를 대기열로 돌리는 `heavy-slot` 은 perl 이 PATH 에 있어야 한다
 - 스킬을 열 때 설치본이 원본 main 보다 낡았으면 갱신 명령을 보여 준다
 - 저장소마다 다른 기준 브랜치, 검증 명령, 머지 조건은 `<저장소>/.orch/overlay.md` 에, 배포 워크플로와 보드 위치는 `.orch/config.json` 에, 업무 완료 같은 저장소 고유 동작은 `.orch/hooks/<이벤트>.ts` 에 둔다. 없으면 기본값으로 동작한다
@@ -99,6 +100,9 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
     "unit_prefix": "modules/",
     "auto_merge": true,
     "auto_review": { "review_checks": ["claude-review"] }
+  },
+  "pipeline": {
+    "refresh_slots": 1
   },
   "migrations": {
     "dirs": { "order-api": "modules/order-api/src/main/resources/db/migration" },
@@ -140,10 +144,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
         정리    워크트리, 브랜치, worker 터미널, 지시서를 지웠습니다
 ```
 
-진행 보드는 코디네이터 세션의 `/board` 창으로 본다. 아래는 같은 구성의 데모 저장소에서 2026-10-27 에 찍은 화면이다.
-목표와 결정 필요가 맨 위에 오고, 항목마다 막대와 지금 단계, 그 항목을 맡은 worker 가 보인다.
-
-![데모 저장소의 /board 창. 오늘 목표 1/4, 결정 필요 항목 둘이 보인다](../../docs/images/board.png)
+[`/board` 창 예시](../../extensions/work-board/README.md#work-board)
 
 ## 함께 쓰는 스킬
 

@@ -21,7 +21,7 @@ node scripts/run-tests.ts
 claude plugin test .
 ```
 
-- `node scripts/run-tests.ts` 는 Node 24 이상에서 node 테스트와 tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
+- `node scripts/run-tests.ts` 는 Node 24 이상에서 node 테스트와 tsc 타입 검사를 함께 돌아요. CI 는 같은 실행기를 여러 shard 로 나눠 돌려요.
 - `claude plugin test .` 는 `claude-code/testing` 을 쓰는 TypeScript 테스트를 돌려요. 로그인이나 API 키가 필요하지 않아요. 위 명령에 들지 않으니 따로 돌려요.
 
 `run-tests.ts` 는 아래 옵션을 받아요. 사용법 전체는 파일 맨 위 설명에 있어요.
@@ -33,7 +33,7 @@ claude plugin test .
 | 동시 수 낮추기 | `node scripts/run-tests.ts --concurrency 4` | 기본은 CPU 수 이하, 최대 8이에요. worker 여럿이 함께 검증할 때 낮춰요 |
 | 오래 걸릴 때 | `--background` 로 띄우고 `--wait` 로 기다리기 | 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요 |
 
-CI 는 PR 과 main push 에서 돌아요. Claude Code CLI 2.1.309 를 npm 으로 설치해 `claude plugin test .` 를 돌리고, 이어서 `node scripts/run-tests.ts` 를 돌려요.
+CI 는 PR 과 main push 에서 돌아요. 각 shard 가 `node scripts/run-tests.ts --shard` 로 맡은 테스트를 돌려요. 첫 shard 에서 `claude plugin test .` 와 타입 검사도 해요. `Tests` job 은 모든 shard 의 결과를 모아요.
 
 ## PR
 
@@ -44,12 +44,7 @@ CI 는 PR 과 main push 에서 돌아요. Claude Code CLI 2.1.309 를 npm 으로
 
 ## 고치는 동안
 
-설치본은 main 에 push 한 뒤에만 바뀌어요.
-그래서 고치는 동안에는 작업 트리를 그 세션에만 로드해요.
-
-```bash
-claude --plugin-dir "$(git rev-parse --show-toplevel)"
-```
+작업 트리를 세션에 로드하는 방법은 [고치는 동안의 확인](flow.md#고치는-동안의-확인)에 있어요.
 
 설치 기록에 user 범위 설치본이 있으면 `orch` 실행기는 `--plugin-dir` 로 로드한 작업 트리가 아니라 설치본으로 넘겨요.
 작업 트리의 orch 스크립트를 돌리려면 `ORCH_SCRIPTS_DIR` 을 줘요.
@@ -58,19 +53,9 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)"
 ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loop status
 ```
 
-로드가 맞는지 확인하는 방법은 [고치는 동안의 확인](flow.md#고치는-동안의-확인) 에 있어요.
-
 ## 저장소 구조
 
-| 경로 | 책임 |
-| --- | --- |
-| `skills/<이름>/` | 설치해서 쓰는 스킬. 절차·참조·양식·스크립트·테스트를 함께 둬요 |
-| `export-only-skills/<이름>/` | 팀 저장소로 내보내는 원본. 플러그인 스킬로도 등록해요 |
-| `extensions/work-board/` | 작업 현황 창과 보드 명령 |
-| `scripts/` | 저장소 검사·설치·내보내기·버전 관리 |
-| `githooks/` | 이 저장소를 개발할 때 쓰는 Git 훅 |
-| `docs/` | 개발 흐름·아키텍처·ADR |
-| `.claude-plugin/`, `.codex-plugin/` | 하네스별 배포 매니페스트 |
+폴더마다 어떤 파일을 두는지는 [코드 구조의 「디렉터리 배치」](code-architecture.md#디렉터리-배치)에 있어요.
 
 - 스킬 전용 훅과 스크립트는 그 스킬 안에 둬요. Git 훅과 Claude 실행 훅을 같은 폴더에 모으지 않아요.
 - 스킬 이름과 호출 명령은 유지돼요. 플러그인은 갱신하면 새 배치를 받고, 직접 걸었던 개인 심볼릭 링크는 새 경로로 바꿔요.
@@ -99,6 +84,7 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 | `scripts/export-to-team.ts` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 확인해요. 커밋을 고르는 `--source-ref` 는 파일 맨 위 설명에 있어요 |
 | `scripts/install-hooks.ts` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `pre-commit` 은 스테이징된 변경 조각 형식을, `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
 | `scripts/run-tests.ts` | node 테스트와 tsc 를 함께 돌고 결과 폴더에 요약을 남겨요. 사용법은 위 「테스트」 에 있어요 |
+| `scripts/sync-kit.ts` | `modules/kit/` 의 원본으로 스킬과 도구의 복사본을 맞춰요. `--check` 로 다른 복사본을 찾아요 |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용한 JS 진입을 `scripts/runtime-policy.json` 과 대조해 새 파일을 막아요. 새 스크립트는 TypeScript 로 써요([ADR-025](adr/025-script-runtime-typescript.md)) |
 | `scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-skill-docs.ts` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
