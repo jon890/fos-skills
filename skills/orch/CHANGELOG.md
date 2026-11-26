@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 8.2.0 (2026-11-26)
+
+- 보드 기본 위치를 `.orch/board.json`으로 바꾸고, `orch doctor migrate`에서 보드 파일과 공유 저장소의 `finish.board`를 함께 옮길 수 있게 했어요.
+
 ## 8.1.0 (2026-11-26)
 
 - 지금 HEAD의 CI 체크가 없으면 관문과 머지 큐가 첫 체크를 기다린다. CI가 없는 저장소는 플러그인을 갱신한 뒤 `queue.allow_no_checks`를 켜면 된다.

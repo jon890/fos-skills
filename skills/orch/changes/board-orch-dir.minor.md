@@ -1,1 +1,0 @@
-- 보드 기본 위치를 `.orch/board.json`으로 바꾸고, `orch doctor migrate`에서 보드 파일과 공유 저장소의 `finish.board`를 함께 옮길 수 있게 했어요.
