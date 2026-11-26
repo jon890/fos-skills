@@ -8,7 +8,8 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
-//   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.ts 가 한다.
+//   1. 수동 항목: 저장소의 board.json. 경로는 orch 와 같은 규칙(bin/board-file.ts, 명시 값 없이 finish.board 다음 기본 위치)으로 정한다.
+//      그 명령이 실패하면 주 checkout 에서 BOARD_PATHS 순서로 찾는다. 갱신은 플러그인의 bin/board.ts 가 한다.
 //      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[], stepAt? }] }
 //      stepAt 은 board.ts 가 그 항목의 status, details, next 를 마지막으로 바꾼 시각이다. worker 없이 남은 단계의 경과 시간을 이 값으로 잰다.
 //      업무 칩은 표시 다음, 제목 앞에 있다. task-ref 는 글, task 는 링크이며 번호만 있으면 흐리게 보인다. 제목 안 번호는 바꾸지 않는다.
@@ -1265,20 +1266,42 @@ async function boardRoot($) {
   return rootDir
 }
 
+// orch 가 쓰는 보드 파일을 읽도록 경로를 bin/board-file.ts 에서 받는다. 설정이 바뀔 수 있어 LIVE_MS 마다 다시 받는다.
+// path 가 null 이면 명령이 실패했거나 root 가 없어 옛 순서로 찾는다. error 는 finish.board 설정 오류다.
+let boardFile = { root: null, at: 0, path: null, error: '' }
+async function resolveBoardFile($, root) {
+  if (boardFile.root === root && now - boardFile.at < LIVE_MS) return boardFile
+  const next = { root, at: now, path: null, error: '' }
+  if (root) {
+    try {
+      const result = JSON.parse(await run($, ['node', '--disable-warning=ExperimentalWarning', $.plugin.root + '/extensions/work-board/bin/board-file.ts', '--repo', root]))
+      if (typeof result.path === 'string' && result.path) next.path = result.path
+      else if (typeof result.error === 'string' && result.error) next.error = result.error
+    } catch {}
+  }
+  boardFile = next
+  return next
+}
+
 async function loadFile($) {
   now = await $.clock.now()
   let found = ''
   let text = ''
   const root = await boardRoot($)
-  for (const relative of BOARD_PATHS) {
-    const candidate = root ? root + '/' + relative : relative
+  const resolved = await resolveBoardFile($, root)
+  const candidates = resolved.path ? [resolved.path] : resolved.error ? [] : BOARD_PATHS.map((relative) => root ? root + '/' + relative : relative)
+  for (const candidate of candidates) {
     if (await $.fs.exists(candidate)) {
       found = candidate
       text = await $.fs.read(candidate)
       break
     }
   }
-  if (!found) {
+  if (resolved.error) {
+    board = { items: [], error: resolved.error }
+    boardPath = ''
+    raw = ''
+  } else if (!found) {
     board = null
     boardPath = ''
     raw = ''
@@ -2444,7 +2467,7 @@ export function register(on) {
           ],
         }),
         ...(board && board.error ? [Text({ color: 'red', wrap: 'wrap', children: ['board.json 을 읽지 못했어요: ' + board.error] })] : []),
-        ...(nothing ? [dim('none', '보여 줄 작업이 없어요. orca run 이나 열린 PR, ' + BOARD_PATHS[0] + ' 중 하나가 있어야 해요.')] : []),
+        ...(nothing ? [dim('none', '보여 줄 작업이 없어요. orca run 이나 열린 PR, ' + (boardFile.path || BOARD_PATHS[0]) + ' 중 하나가 있어야 해요.')] : []),
         ...approvalView,
         ...decideView,
         ...inboxView,
