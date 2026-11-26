@@ -1,0 +1,44 @@
+{
+  "name": "panel-plugin",
+  "description": "Orca 공부·피드백 패널 구현",
+  "pr_scope": "요약 조회와 선택 전송, 화면, 설치 안내를 격리된 테스트 데이터로 검증한다.",
+  "deferred": [
+    {
+      "what": "fosbot 요약 발행 및 선택 처리",
+      "why": "봇의 상태와 자동화는 별도 구현에서 다룬다.",
+      "after": "같은 파일 계약을 적용한 봇 구현 이후 통합 검증"
+    }
+  ],
+  "status": "in_progress",
+  "created_at": "2026-11-26",
+  "spec": "docs/features/study-panel/spec.md",
+  "design": "docs/features/study-panel/technical-design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ7"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ4",
+        "REQ5",
+        "REQ6",
+        "REQ7"
+      ]
+    }
+  ]
+}
