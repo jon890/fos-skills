@@ -13,7 +13,7 @@
 //   entry_js       허용하는 JS 진입(.js·.mjs·.cjs 와 확장자 없는 node 진입)의 경로
 //   bare_imports   { path, name } 배열. 상대 경로도 node: 도 아닌 import(bare import)를 허용하는 짝이다. path 는 저장소 상대 경로나
 //                  `*` 를 쓴 glob(`*` 는 `/` 를 넘지 않는다), name 은 import 하는 이름 그대로다. name 이 루트 package.json 의
-//                  dependencies 에도 `claude-code/` 로 시작하는 플러그인 테스트 모듈에도 없으면 형식 오류다
+//                  dependencies 또는 플러그인 호스트가 제공하는 모듈에 없으면 형식 오류다
 //   migrated_docs  옮긴 영역의 경로 접두. 그 아래 문서의 옛 호출(DOC 줄)을 막는다
 //   min_node       진입들이 보는 최소 Node 버전 [major, minor]
 //   그 밖의 키는 다른 검사가 쓸 수 있어 막지 않는다.
@@ -39,7 +39,7 @@
 //   STALE <entry_js|legacy> <경로>  적은 경로가 추적 파일에 없거나 js-entry 가 아니다
 //   PACKAGE <경로> <이유>           루트 밖 package.json 에 type 말고 다른 키가 있거나, 루트 package.json 의 dependencies 가
 //                                   정확한 버전이 아니다. 의존은 루트 하나만 가진다(docs/adr/030-plugin-npm-dependencies.md)
-//   IMPORT <경로>:<줄> <이름>       bare import 가 bare_imports 의 짝에 없다. .ts·.mts·.cts·.js·.mjs·.cjs 와 entry_js 의 진입에서
+//   IMPORT <경로>:<줄> <이름>       bare import 가 bare_imports 의 짝에 없다. .ts·.tsx·.mts·.cts·.js·.mjs·.cjs 와 entry_js 의 진입에서
 //                                   줄 머리(앞 공백만 허용)의 import·export from·부수 효과 import 문을 본다. 여러 줄 문은 첫 줄이 import·export 여야 한다.
 //                                   import(·require( 호출은 줄 어디서든 문자열 인자 하나와 닫는 괄호가 오는 꼴만 본다. 문자열 아닌 인자는 보지 않는다.
 //                                   문자열·템플릿·정규식을 해석하지 않는다. 표본은 해당 줄에 // runtime-policy: sample 을 달아 뺀다.
@@ -223,7 +223,7 @@ export function checkPackages(files: FileText[]): string[] {
   return lines;
 }
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]);
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"]);
 // 정적 문은 줄 머리에서 시작하며 여러 줄에 걸칠 수 있다. 호출은 문자열 인자 하나인 꼴만 본다.
 const STATIC_IMPORTS = [
   /^[ \t]*(?:import\b|export\b\s*(?:type\s+)?(?=[{*]))(?:(?!^[ \t]*(?:import|export)\b)[^;'"`])*?\bfrom\s*(['"])([^'"\r\n]+)\1/gm,
@@ -305,8 +305,10 @@ export function parsePolicy(text: string, rootDependencies: string[] = []): Poli
     throw new Error("bare_imports 는 { path, name } 문자열 객체의 배열이어야 한다");
   }
   for (const entry of bare as BareImport[]) {
-    if (!rootDependencies.includes(entry.name) && !entry.name.startsWith("claude-code/")) {
-      throw new Error(`bare_imports 의 ${entry.name} 이 루트 package.json 의 dependencies 에도 claude-code/ 모듈에도 없다`);
+    const orcaSdk = /^extensions\/[^/*]+\/src\//.test(entry.path) &&
+      ["orca", "orca/testing", "orca/worker"].includes(entry.name);
+    if (!rootDependencies.includes(entry.name) && !entry.name.startsWith("claude-code/") && !orcaSdk) {
+      throw new Error(`bare_imports 의 ${entry.name} 은 루트 package.json 또는 해당 경로의 플러그인 호스트에서 제공해야 한다`);
     }
   }
   for (const key of ["legacy", "entry_js", "migrated_docs"]) {
