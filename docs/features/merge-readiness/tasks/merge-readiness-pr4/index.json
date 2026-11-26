@@ -1,0 +1,42 @@
+{
+  "name": "merge-readiness-pr4",
+  "description": "draft 로 CI 를 미루는 옵션 제거",
+  "pr_scope": "draft 로 CI 를 미루는 명령과 옵션을 제거하고 남은 옛 설정을 doctor 에서 알린다.",
+  "deferred": [
+    {
+      "what": "관문과 머지 큐의 draft 및 보류 판단을 바꾼다.",
+      "why": "먼저 draft 로 CI 를 미루는 옵션을 걷어내야 한다.",
+      "after": "PR4"
+    },
+    {
+      "what": "체크 없음 판단을 바꾼다.",
+      "why": "기존 CI 판단 변경을 한 PR 에 모은다.",
+      "after": "PR5"
+    },
+    {
+      "what": "리뷰 조건, 리뷰 등급, HEAD 변경 및 머지 직전 체크 재확인을 반영한다.",
+      "why": "리뷰 근거와 HEAD 확인을 다루는 후속 PR 의 책임이다.",
+      "after": "PR6"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-26",
+  "spec": "docs/features/merge-readiness/spec.md",
+  "design": "docs/features/merge-readiness/technical-design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ3"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ3"
+      ]
+    }
+  ]
+}
