@@ -23,7 +23,7 @@ export function claudeConfigDir(env: Env, home?: string): string {
 // 본체가 플러그인 설치 캐시 안에 있으면 그 플러그인의 데이터 폴더를 낸다. 아니면 null.
 //
 // <루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/skills/browser/browser-driver/driver/config.ts
-// (팀 사본은 .../<버전>/tools/browser-driver/driver/config.ts) 꼴일 때만 데이터 폴더를 돌려준다.
+// 위 경로에서만 데이터 폴더를 돌려준다.
 // 어느 도구의 설치본인지는 <루트>/config.toml 로 구분한다.
 //   - config.toml 이 파일이면 Codex 설치본이다. Codex 에는 데이터 폴더가 없어서
 //     두 도구를 함께 쓰는 사람의 설정이 하나가 되도록 Claude 설정 폴더의 것을 쓴다.
@@ -34,23 +34,12 @@ export function claudeConfigDir(env: Env, home?: string): string {
 // 저장소 체크아웃이나 ~/.claude/scripts/ 링크는 이 꼴이 아니므로 실체 경로를 본다.
 // 읽기만 한다.
 export function pluginDataDir(moduleFile: string, env: Env, home?: string): string | null {
-  const parts = ['/', ...pyResolve(moduleFile).split('/').filter((part) => part !== '')]
-  // ..., plugins, cache, <마켓플레이스>, <플러그인>, <버전>, <드라이버 자리>, driver, config.ts
-  // 드라이버 자리는 이 저장소에서 skills/browser/browser-driver, 팀 사본에서 tools/browser-driver 다.
-  let tail = 0
-  for (const place of [['skills', 'browser', 'browser-driver'], ['tools', 'browser-driver']]) {
-    const want = [...place, 'driver']
-    const size = place.length + 2
-    if (parts.length >= size + 6 && want.every((name, i) => parts[parts.length - size + i] === name)) {
-      tail = size
-      break
-    }
-  }
-  if (tail === 0) return null
-  const plugin = parts[parts.length - tail - 2]
-  const marketplace = parts[parts.length - tail - 3]
-  if (parts[parts.length - tail - 4] !== 'cache' || parts[parts.length - tail - 5] !== 'plugins') return null
-  let root = pyPath(`/${parts.slice(1, parts.length - tail - 5).join('/')}`)
+  const parts = pyResolve(moduleFile).split('/')
+  const tail = ['skills', 'browser', 'browser-driver', 'driver']
+  if (parts.length < 11 || !tail.every((name, i) => parts.at(i - 5) === name)) return null
+  const [plugins, cache, marketplace, plugin] = parts.slice(-10, -6)
+  if (plugins !== 'plugins' || cache !== 'cache') return null
+  let root = pyPath(parts.slice(0, -10).join('/') || '/')
   if (isFile(pyPath(`${root}/config.toml`))) root = claudeConfigDir(env, home)
   return `${root}/plugins/data/${plugin}-${marketplace}`
 }

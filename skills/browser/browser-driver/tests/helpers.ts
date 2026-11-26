@@ -1,5 +1,5 @@
 // browser-driver 명령 경계 테스트의 공용 helper. 임시 폴더, 가짜 백엔드 실행 파일, 명령 실행, 「명령 경계」 상수를 둔다.
-// 이 폴더는 팀 저장소에 tools/browser-driver 로 실려 거기서 테스트가 돈다. 그래서 Node 내장 모듈만 import 한다(modules/testkit 을 쓰지 않는다).
+// 이 폴더는 browser 스킬과 함께 내보내므로 거기서 테스트가 돈다. 그래서 Node 내장 모듈만 import 한다(modules/testkit 을 쓰지 않는다).
 //
 // 「명령 경계」 상수(COMMAND)가 구현을 가린다. 테스트 사례는 이 상수만 보고 드라이버를 부르고, 구현을 바꿀 때 이 상수만 바꾼다.
 //
