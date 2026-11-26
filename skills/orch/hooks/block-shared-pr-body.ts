@@ -1,4 +1,4 @@
-// PreToolUse(Bash): gh pr create/edit 에서 공유 임시 폴더 바로 아래의 본문 파일을 거부한다.
+// PreToolUse(Bash): gh pr create(new)/edit 에서 공유 임시 폴더 바로 아래의 본문 파일을 거부한다.
 import { realpathSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
@@ -7,7 +7,7 @@ import { hookInvocation, mask, pieces, stripHeredocs } from './shell-text.ts'
 const REPO_OPTION = /(?:(?:--repo(?:=|\s+)|-R(?:=|\s+)?)\S+\s+)*/
 const PR_COMMAND = new RegExp(
   /^\s*(?:(?:\w+=\S+|command|env)\s+)*(?:\S*\/)?gh\s+/.source
-  + REPO_OPTION.source + /pr\s+/.source + REPO_OPTION.source + /(?:create|edit)(?=\s|$)/.source,
+  + REPO_OPTION.source + /pr\s+/.source + REPO_OPTION.source + /(?:create|new|edit)(?=\s|$)/.source,
 )
 // gh pr create 는 값을 받지 않는 -d, -e, -f, -w 를 -F 앞에 묶을 수 있다.
 const BODY_FILE = /(?:^|\s)(?:--body-file(?:=|\s+)|-[defw]*F(?:=|\s+)?)(\S+)/g
