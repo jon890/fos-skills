@@ -1,1 +1,0 @@
-- `orch queue gate` 와 머지 큐가 머지 전 조건을 한 조건 표(`core/merge-readiness.ts`)로 판단한다. 출력, 종료 코드와 gh 호출 순서는 그대로다. 루프 자동 머지는 다음 PR 에서 같은 표를 쓴다.
