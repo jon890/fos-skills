@@ -1018,3 +1018,31 @@ test('/board 를 새로 열면 펼쳐 둔 요약이 모두 접혀 있다 (REQ3)'
   expect((await foldTexts(ui, 'b')).map((line) => line.split(':')[0])).toEqual(['steps', 'wd'])
   await ui.unmount()
 })
+
+// 공유 보드: bin/board-file.ts 가 finish.board 경로를 돌려주면 주 checkout 의 .omc/board.json 대신 그 파일을 읽는다
+test('창은 orch 가 정한 공유 보드 파일을 읽는다', async ($, on) => {
+  const reads: string[] = []
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => ({ value: e.argv[0] === 'git'
+    ? { exitCode: 0, stdout: '/repo/.git\n', stderr: '' }
+    : e.argv.some((arg) => arg.endsWith('/bin/board-file.ts'))
+      ? { exitCode: 0, stdout: JSON.stringify({ path: '/shared/board.json', error: null }), stderr: '' }
+      : { exitCode: 1, stdout: '', stderr: '없음' } }))
+  on('fs.exists', (_, e) => ({ value: e.path === '/shared/board.json' || e.path === '/repo/.omc/board.json' }))
+  on('fs.read', (_, e) => {
+    reads.push(e.path)
+    return { value: e.path === '/shared/board.json' ? BOARD : JSON.stringify({ items: [{ id: 'x', title: '주 checkout 항목', status: 'doing' }] }) }
+  })
+  on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /단계 항목/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /주 checkout 항목/ })).toBeUndefined()
+  expect(reads).not.toContain('/repo/.omc/board.json')
+  await ui.unmount()
+})
