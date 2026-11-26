@@ -69,7 +69,8 @@ function logicalCwd(): string {
 }
 
 // 스킬 번들 위치에서 위로 올라가며 browser_driver.ts 를 찾는다.
-// 이 저장소의 드라이버는 skills/browser/browser-driver/, 팀 사본은 tools/browser-driver/ 에 있다.
+// 드라이버는 이 저장소와 팀 사본 모두 skills/browser/browser-driver/ 에 있다.
+// tools/browser-driver/ 는 팀 저장소가 드라이버를 browser 스킬 안으로 옮기기 전의 자리다. 팀 main 이 아직 그 자리에만 두므로 대체 후보로 남긴다.
 // 스킬 번들도 이 저장소는 export-only-skills/content-preview/scripts, 팀 사본은 skills/content-preview/scripts 라
 // 거리가 한 단 다르다. 고정 상대경로로는 둘 다 맞출 수 없다 (실측).
 // 스킬 디렉터리가 심링크라 논리 경로로는 저장소 밖으로 나가므로 실체 경로를 잡는다.
