@@ -308,6 +308,7 @@ PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남�
 | `compat.checksAfterWait` | 체크 대기 뒤에는 실패만 본다 | 머지 큐 | PR6 |
 | `compat.featureOnly` | `review-config` 를 기능 PR 에만 건다 | 루프 | PR7 |
 | `compat.checkHeadStop` | 체크 조회 중의 HEAD 변경은 다시 시도하지 않는 보류다 | 머지 큐 | PR7 |
+| 머지 직전 체크 재확인 | `checkReadiness` 대신 지금 코드(`queueChecks` 세 번 읽기)로 둔다. 고정 입력 기록은 gh 캐시를 끈 채 세 번의 읽기를 모두 gh 호출로 남겨, 한 번 읽기로 바꾸면 기록이 바뀐다(코디네이터 2026-11-26) | 머지 큐 | PR7 |
 | 루프의 읽기 함수 | 스레드 명령을 기본 환경(gh 캐시 사용)으로 돌리고, PR 조회를 캐시로 읽으며 HEAD 를 붙이지 않는다 | 루프 | PR7 |
 
 `allowNoChecks` 는 PR6 전까지 관문과 머지 큐가 true, 루프가 false 를 넘긴다. 지금 동작이 그렇다. PR7 뒤에는 `compat` 타입 자체를 지운다.

@@ -1,26 +1,16 @@
-// 머지 전 조건 판정. 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 같은 함수를 쓴다.
-// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 설정한 리뷰 조건(봇 영수증이나 리뷰 체크. 리뷰 댓글 문구는 보지 않는다),
-// 통합 테스트 기록(queue.integration_tests 가 있을 때만), 마이그레이션 번호, 공개 저장소의 비공개 낱말(private-words.ts).
-// 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
+// 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 머지 전 조건을 묻는 자리.
+// 조건의 원본은 core/merge-readiness.ts 의 조건 표다(ADR-037). 여기는 lib/merge-readiness.ts 의 checkReadiness 를 부르고 범위만 고른다.
+// 걸린 이유는 첫 이유에서 멈추지 않고 모두 모은다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
 // PR 본문의 기능 완료 근거 블록은 판정에 쓰지 않는다. worker 가 적은 글이 아니라 이미 있는 사실만 본다(사용자 결정 2026-11-24).
 
-import { autoMergeConfig } from '../../lib/auto-merge.ts'
-import { judgePrReview } from '../../lib/review-judgement.ts'
-import { loadConfig } from '../../lib/config.ts'
-import { integrationNeeds, integrationProblems, integrationRules } from '../../core/integration-evidence.ts'
-import { acceptsVerifiedCommit } from '../../lib/feature-evidence.ts'
-import { ghJson } from '../../lib/gh.ts'
-import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
-import { migrationReasons } from './migrations.ts'
-import { privateReasons } from './private-words.ts'
-import { mask, readPrivateWords } from '../../lib/private-words.ts'
-import { queueChecks, requiredChecks } from './checks.ts'
+import { checkReadiness } from '../../lib/merge-readiness.ts'
+import type { ConditionKind, PrTarget, ReadinessAsk, ReadOptions } from '../../lib/merge-readiness.ts'
+import { requiredChecks } from './checks.ts'
 import type { Pr, StepContext } from './model.ts'
 import { Conflict, HeadChanged, Stop, WorkerFix } from './model.ts'
 import type { GateReason, StepState } from './model.ts'
-import { fetchPrRefs } from './overlap.ts'
-import { api, field, prEnv } from './pr.ts'
-import { chomp, log, nap, stop } from './runtime.ts'
+import { field } from './pr.ts'
+import { log, nap, out, stop } from './runtime.ts'
 
 // ci 는 체크, threads·evidence·migration·private 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
 export type { GateKind, GateReason } from './model.ts'
@@ -97,99 +87,65 @@ export async function loadPr(stepContext: StepContext, state: StepState, n: stri
   return 'open'
 }
 
-// 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
-// notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다.
-// 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
-export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; notes: string[] }> {
-  const o = state.o
+// 관문과 머지 큐의 판단 대상
+export function readinessTarget(state: StepState): PrTarget {
   const p = state.p
-  const n = p.n
-  const reasons: GateReason[] = []
-  const facts: string[] = []
-  const notes: string[] = []
-
-  if (checks !== 'none') {
-    const failed = (await queueChecks(stepContext, state))?.failed.length
-    facts.push(`fails=${failed ?? ''}`)
-    if (failed !== 0) reasons.push({ kind: 'ci', text: failed === undefined ? '체크 조회 실패' : `실패한 체크 ${failed} 개` })
-    if (checks === 'all') {
-      const pending = (await queueChecks(stepContext, state))?.pending
-      const missing = (await queueChecks(stepContext, state))?.missing.length
-      if (pending !== 0 || missing !== 0) {
-        const names = missing ? (await queueChecks(stepContext, state))?.missing.join(', ') : ''
-        reasons.push({ kind: 'ci', text: `체크가 아직 끝나지 않았다(진행 중 ${pending ?? '?'}, 나타나지 않은 필수 체크 ${names || missing?.toString() || '?'})` })
-      }
-    }
-  }
-
-  const threads = await runAsync(['bash', '-c', o.threadsCmd], { env: { ...prEnv(stepContext, state), GH_HOST: p.apiHost, ORCH_GH_CACHE: '0' }, timeoutMs: NO_LIMIT_MS })
-  // 옛 명령은 스레드 명령의 stderr 를 받지 않고 그대로 흘렸다
-  if (threads.stderr) process.stderr.write(threads.stderr)
-  if (threads.code !== 0) {
-    reasons.push({ kind: 'lookup', text: '스레드 조회 실패' })
-  } else {
-    const t = chomp(threads.stdout)
-    facts.push(`threads=${t}`)
-    if (t !== '0') reasons.push({ kind: 'threads', text: `미해결 리뷰 스레드 ${t} 개` })
-  }
-
-  let m = await field(stepContext, state, n, 'mergeable', '.mergeable')
-  for (let i = 0; i < 4; i++) {
-    if (m !== 'UNKNOWN') break
-    await nap(stepContext, 20)
-    m = await field(stepContext, state, n, 'mergeable', '.mergeable')
-  }
-  facts.push(`mergeable=${m}`)
-  if (m === 'CONFLICTING') reasons.push({ kind: 'conflict', text: `base(${p.base}) 와 충돌한다(mergeable=CONFLICTING)` })
-  else if (m !== 'MERGEABLE') reasons.push({ kind: 'mergeable', text: `mergeable=${m || '조회 실패'}` })
-
-  const review = autoMergeConfig(loadConfig(state.repoDir)).review
-  if (review) {
-    const got = ghJson<{ statusCheckRollup: unknown; headRefOid: string }>(['pr', 'view', n, '--json', 'statusCheckRollup,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
-    if (!got.ok || !got.data) {
-      reasons.push({ kind: 'lookup', text: '리뷰 판정 조회 실패' })
-    } else if (got.data.headRefOid !== p.ph) {
-      throw new HeadChanged(`${n} 리뷰 조회 중 HEAD 가 바뀌었다`)
-    } else {
-      const target = { host: p.apiHost, slug: `${p.owner}/${p.repo}`, number: n }
-      const judged = judgePrReview(state.repoDir, { head: p.ph, target }, got.data, review)
-      if (!judged.ok) reasons.push({ kind: 'review', text: judged.wait })
-    }
-  }
-
-  // 본문은 통합 테스트 기록과 비공개 낱말 검사에만 쓴다
-  const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
-  if (!evidence.ok) {
-    reasons.push({ kind: 'lookup', text: 'PR 본문 또는 HEAD 조회 실패' })
-  } else if (evidence.data.headRefOid !== p.ph) {
-    throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${String(evidence.data.headRefOid ?? '').slice(0, 8)}`)
-  } else {
-    // 통합 테스트 기록의 커밋은 그 뒤에 base 만 합친 merge 나 계획 폴더 삭제만 있으면 받는다.
-    const accept = (verified: string): boolean => fetchPrRefs(stepContext, state) &&
-      acceptsVerifiedCommit(state.repoDir, p.ph, verified, p.base)
-    const integration = integrationReasons(stepContext, state, evidence.data.body ?? '', accept)
-    reasons.push(...integration.reasons)
-    notes.push(...integration.notes)
-  }
-  reasons.push(...migrationReasons(state))
-  reasons.push(...privateReasons(stepContext, state, evidence.ok && typeof evidence.data.body === 'string' ? evidence.data.body : null))
-  // 이유와 알림 줄에는 PR 본문에서 옮긴 글(통합 테스트 생략 이유)이 섞인다. gate 출력과 큐 로그로 나가기 전에 비공개 낱말을 가린다
-  const words = readPrivateWords()
-  if (words.length === 0) return { reasons, summary: facts.join(' '), notes }
-  return { reasons: reasons.map((r) => ({ ...r, text: mask(r.text, words) })), summary: facts.join(' '), notes: notes.map((note) => mask(note, words)) }
+  return { repo: state.repoDir, number: Number(p.n), head: p.ph, base: p.base, branch: p.branch, host: p.apiHost, slug: `${p.owner}/${p.repo}`, draft: p.draft, cross: p.cross }
 }
 
-// 통합 테스트 기록(core/integration-evidence.ts). 규칙이 없으면 바뀐 파일을 읽지 않는다. 바뀐 파일은 REST 로 끝까지 읽는다(gh pr view 의 files 는 100개까지다).
-// 이름을 바꾼 파일은 옛 경로도 본다. REST 도 3000개까지라 그보다 큰 PR 은 모듈을 놓칠 수 있다
-function integrationReasons(stepContext: StepContext, state: StepState, body: string, accept: (commit: string) => boolean): { reasons: GateReason[]; notes: string[] } {
-  const rules = integrationRules(loadConfig(state.repoDir))
-  if (rules.length === 0) return { reasons: [], notes: [] }
-  const p = state.p
-  const files = api(stepContext, state, `repos/${p.owner}/${p.repo}/pulls/${p.n}/files?per_page=100`, '--paginate', '--jq', '.[] | .filename, (.previous_filename // empty)')
-  if (files.code !== 0) return { reasons: [{ kind: 'lookup', text: '통합 테스트 대상 파일 조회 실패' }], notes: [] }
-  const needs = integrationNeeds(files.stdout.split('\n').filter(Boolean), rules)
-  const judged = integrationProblems(body, p.ph, needs, accept)
-  return { reasons: judged.reasons.map((text) => ({ kind: 'evidence', text })), notes: judged.notes }
+// 머지 큐 옵션(스펙 DECISION10)과 재시도 값. 체크가 하나도 없어도 필수 체크 이름이 비었으면 통과로 본다(PR6 전까지의 지금 동작)
+export function readOptions(stepContext: StepContext, state: StepState): ReadOptions {
+  const o = state.o
+  return {
+    ghRepo: o.repo,
+    threadsCmd: o.threadsCmd,
+    required: state.requiredChecks,
+    allowFail: o.allowFail,
+    skippedIsMissing: o.skippedMissing,
+    allowNoChecks: true,
+    retries: state.ghRetries,
+    retrySeconds: state.ghRetrySeconds,
+    nap: (seconds) => nap(stepContext, seconds),
+  }
+}
+
+// 관문과 머지 큐가 지금 동작을 지키려고 남긴 compat 값(설계 「커밋과 PR 순서」)
+const COMPAT = { noDraft: true, oldHolds: true, checkHeadStop: true } as const
+
+// 머지 전 조건을 묻는다. head 이유는 머지 큐가 다시 시도하는 HeadChanged 로, 체크 조회 중의 HEAD 변경은 다시 시도하지 않는 보류로 던진다
+export async function askReadiness(stepContext: StepContext, state: StepState, ask: Omit<ReadinessAsk, 'scope'>) {
+  const n = state.p.n
+  const readiness = await checkReadiness(readinessTarget(state), { scope: 'full', ...ask, compat: { ...COMPAT, ...ask.compat } }, readOptions(stepContext, state))
+  const head = readiness.reasons.find((r) => r.kind === 'head')
+  if (head?.code === 'head-checks') stop(`${n} ${head.text}`)
+  if (head) throw new HeadChanged(`${n} ${head.text}`)
+  return readiness
+}
+
+// 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
+// notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다. 보류는 묻지 않는다(관문은 HOLD 줄로, 머지 큐는 refuseSpecHold 로 따로 본다).
+// 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
+export async function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks): Promise<{ reasons: GateReason[]; summary: string; notes: string[] }> {
+  const skip: ConditionKind[] = checks === 'none' ? ['ci', 'hold'] : ['hold']
+  const readiness = await askReadiness(stepContext, state, { skip, compat: { checksAfterWait: checks === 'failed' } })
+  return { reasons: readiness.reasons.map((r) => ({ kind: r.kind as GateReason['kind'], text: r.text })), summary: readiness.summary, notes: readiness.notes }
+}
+
+// 관문의 HOLD 줄. 지시서 보류가 먼저고, 없으면 PR 본문의 보류다. 본문을 읽지 못하면 보류 없음으로 둔다(PR5 가 알리게 바꾼다)
+export async function holdLine(stepContext: StepContext, state: StepState): Promise<string | null> {
+  const readiness = await askReadiness(stepContext, state, { only: ['hold'] })
+  return readiness.reasons.find((r) => r.kind === 'hold')?.text ?? null
+}
+
+// 머지 큐의 보류 확인. 본문을 읽지 못하면 멈추고, 보류가 있으면 GATE-HOLD 줄을 내고 멈춘다
+export async function refuseSpecHold(stepContext: StepContext, state: StepState): Promise<void> {
+  const readiness = await askReadiness(stepContext, state, { only: ['hold', 'draft'] })
+  const lookup = readiness.reasons.find((r) => r.kind === 'lookup')
+  if (lookup) stop(`${state.p.n} ${lookup.text}`)
+  const hold = readiness.reasons.find((r) => r.kind === 'hold')
+  if (!hold) return
+  out(`GATE-HOLD ${hold.text}`)
+  stop(`${state.p.n} 머지 보류: ${hold.text}`)
 }
 
 // 모은 이유로 그 PR 을 멈춘다. 이유가 여럿이어도 STOP 줄 하나와 worker 에게 보내는 보류 이유 하나에 모두 담는다.

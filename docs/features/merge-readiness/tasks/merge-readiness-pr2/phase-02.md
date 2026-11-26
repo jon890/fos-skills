@@ -20,7 +20,7 @@
 - HEAD 가 다른 값을 읽으면 뒤 값을 읽지 않는다. 지금 `HeadChanged` 를 던져 멈추던 자리와 같다. 머지 큐는 `head` 이유를 `HeadChanged` 로, compat `checkHeadStop` 의 체크 HEAD 변경은 일반 보류로 바꾼다.
 - lib 는 queue 를 import 하지 않는다. 읽기 함수는 `PrTarget` 과 `ReadOptions` 만 받는다. gh 와 git 의 인자, cwd, 캐시 옵션은 지금 호출과 글자 그대로 둔다. 테스트의 가짜 실행기가 인자로 응답을 고른다.
 - 관문은 머지 전 조건과 보류를 지금처럼 두 번 묻는다(`skip: hold` 뒤에 `only: hold`). 조건 검사 도중 멈춰도 보류 줄을 내던 지금 동작을 지키려는 것이고, 한 번으로 합치는 일은 PR5 가 보류 출력을 바꿀 때 한다.
-- 머지 직전 확인은 체크(`only: ci, fresh`)와 마이그레이션(`only: migration`)을 따로 묻는다. 그 사이의 원격 브랜치 HEAD 대조가 지금 자리에 남는다.
+- 머지 직전 확인에서 마이그레이션만 `only: migration` 으로 묻는다. 체크 재확인은 지금 코드(캐시 없이 한 번, 캐시로 두 번 읽기)로 둔다. 고정 입력 기록이 gh 캐시를 끈 채 세 번의 읽기를 모두 남기기 때문이다. 옮기는 일은 PR7 이 하고 설계의 임시로 남기는 것 표에 적었다(코디네이터 2026-11-26).
 - 지시서 찾기(`specTargets`)는 lib 가 읽으므로 `lib/spec-targets.ts` 로 옮기고 `queue/steps/spec-hold.ts` 는 다시 내보낸다. 비공개 낱말 댓글 읽기(`commentRows`)도 lib 로 옮긴다.
 
 ## 작업 항목
@@ -35,7 +35,7 @@
 
 ### 3. adapter 테스트
 
-`tests/lib-merge-readiness.spec.ts` 에서 값 읽기만 가짜 실행기로 본다. 읽지 않아도 되는 값을 건너뛰는지, HEAD 가 다른 값 뒤로는 읽지 않는지, 모르는 값 이름이 `ok: false` 가 되는지, `fresh` 가 체크 캐시를 건너뛰는지 확인한다. 조건의 뜻은 다시 보지 않는다. 호출부 연결은 지금의 `queue-gate.spec.ts`, `merge-queue.spec.ts`, 고정 입력 기록이 기대값을 바꾸지 않고 통과하는 것으로 본다.
+`tests/lib-merge-readiness.spec.ts` 에서 값 읽기만 가짜 실행기로 본다. 읽지 않아도 되는 값을 건너뛰는지, HEAD 가 다른 값 뒤로는 읽지 않는지, 본문 보류를 읽지 못하면 merge 단계 조회 실패가 되는지, `known` 함수가 필요할 때만 불리는지, `fresh` 가 체크 캐시를 건너뛰는지 확인한다. 조건의 뜻은 다시 보지 않는다. 호출부 연결은 지금의 `queue-gate.spec.ts`, `merge-queue.spec.ts`, 고정 입력 기록이 기대값을 바꾸지 않고 통과하는 것으로 본다.
 
 ### 4. ADR 과 문서
 
@@ -66,6 +66,7 @@ git diff --check
 | `skills/orch/tests/lib-private-words.spec.ts` | 수정(import 경로) |
 | `skills/orch/tests/lib-merge-readiness.spec.ts` | 신규 |
 | `docs/adr/037-orch-merge-readiness.md` | 신규 |
+| `docs/features/merge-readiness/technical-design.md` | 수정(임시로 남기는 것 한 줄) |
 | `docs/adr/INDEX.md` | 수정 |
 | `skills/orch/changes/merge-readiness-pr2.patch.md` | 신규 |
 

@@ -89,6 +89,21 @@ export function redactLine(value: string, words: PrivateWord[], source: string, 
   return `비공개 낱말이 있어 값을 생략한다(${source}${index >= 0 ? ` ${index + 1}번째 줄` : ''})`
 }
 
+// PR 댓글 조회 결과의 줄. 한 줄에 [id, body] 하나다(--jq 의 @json). 줄을 읽지 못하면 null 이다
+export function commentRows(stdout: string): Array<{ id: string; body: string }> | null {
+  const rows: Array<{ id: string; body: string }> = []
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const [id, body] = JSON.parse(line) as [unknown, unknown]
+      rows.push({ id: String(id), body: typeof body === 'string' ? body : '' })
+    } catch {
+      return null
+    }
+  }
+  return rows
+}
+
 export function findingsText(found: Finding[]): string {
   return found.map((f) => `${f.where}(목록 ${f.entry}번째 줄)`).join(', ')
 }

@@ -7,18 +7,16 @@ import { oneLine, short } from '../../lib/output.ts'
 import { NO_LIMIT_MS, runInherit, stopping } from '../../lib/proc.ts'
 import { TURN_PHASES } from '../../lib/queue-turn.ts'
 import { queueChecks, sortedCheckNames } from './checks.ts'
-import { gateReasons, holdWith, loadPr } from './gate.ts'
-import type { GhPr, StepContext } from './model.ts'
+import { askReadiness, gateReasons, holdWith, loadPr, refuseSpecHold } from './gate.ts'
+import type { GateReason, GhPr, StepContext } from './model.ts'
 import { CheckStop, HeadChanged, NotReady } from './model.ts'
 import type { StepState } from './model.ts'
 import { ownsQueueLock } from '../../lib/queue-lock.ts'
-import { migrationReasons } from './migrations.ts'
 import { docsOnly, overlapFiles, overlapsDeferred } from './overlap.ts'
 import { eventContext, field, prEnv, prInput, turn } from './pr.ts'
 import { chomp, failed, git, log, nap, out, refuseWhenStopping, stop } from './runtime.ts'
 import { bringUpToDate, remoteBase } from './update.ts'
 import { verifyMerged } from './verify.ts'
-import { refuseSpecHold } from './spec-hold.ts'
 
 export async function processPr(stepContext: StepContext, state: StepState, item: string): Promise<void> {
   const o = state.o
@@ -29,7 +27,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   const prCommand = colon >= 0 ? item.slice(colon + 1) : null
   if ((await loadPr(stepContext, state, n)) === 'merged') return
   const p = state.p
-  refuseSpecHold(state)
+  await refuseSpecHold(stepContext, state)
 
   p.beforeHead = null
   p.judgments = 0
@@ -43,7 +41,7 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   const kind = o.docsGlob && docsOnly(stepContext, state) ? 'docs' : 'code'
   refuseWhenStopping(n)
   if (state.queueLock && !ownsQueueLock(state.queueLock, state.queueLockToken)) stop(`${n} 머지 큐 잠금을 잃었다`)
-  refuseSpecHold(state)
+  await refuseSpecHold(stepContext, state)
   turn(stepContext, state, TURN_PHASES.merge)
   const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
   // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
@@ -125,6 +123,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     const ph2 = await field(stepContext, state, n, 'headRefOid', '.headRefOid')
     if (p.ph !== ph2) throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
     // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
+    // 조건 표(checkReadiness)로 옮기는 일은 체크 조회 중 HEAD 변경 처리를 정리하는 PR7 이 한다(설계 「커밋과 PR 순서」)
     const latestFailed = (await queueChecks(stepContext, state, true))?.failed.length
     const latestPending = (await queueChecks(stepContext, state))?.pending
     const latestMissing = (await queueChecks(stepContext, state))?.missing.length
@@ -136,8 +135,8 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       const rh = git('rev-parse', '-q', '--verify', `origin/${p.branch}`).stdout.trim()
       if (p.ph !== rh) stop(`${n} head 불일치 pr=${p.ph.slice(0, 8)} remote=${rh.slice(0, 8)}`)
     }
-    const migration = migrationReasons(state)
-    if (migration.length) holdWith(state, migration)
+    const migration = await askReadiness(stepContext, state, { only: ['migration'] })
+    if (migration.reasons.length) holdWith(state, migration.reasons.map((r) => ({ kind: r.kind as GateReason['kind'], text: r.text })))
     if (!p.judgedBase) return
     if (remoteBase(stepContext, state) === p.judgedBase) return
     log(`${n} 판정한 뒤 base(${p.base}) 가 움직였다. 새로 들어온 변경으로 다시 판정한다`)
