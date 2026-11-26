@@ -9,7 +9,8 @@ const PR_COMMAND = new RegExp(
   /^\s*(?:(?:\w+=\S+|command|env)\s+)*(?:\S*\/)?gh\s+/.source
   + REPO_OPTION.source + /pr\s+/.source + REPO_OPTION.source + /(?:create|edit)(?=\s|$)/.source,
 )
-const BODY_FILE = /(?:^|\s)(?:--body-file(?:=|\s+)|-F(?:=|\s+)?)(\S+)/g
+// gh pr create 는 값을 받지 않는 -d, -e, -f, -w 를 -F 앞에 묶을 수 있다.
+const BODY_FILE = /(?:^|\s)(?:--body-file(?:=|\s+)|-[defw]*F(?:=|\s+)?)(\S+)/g
 const CD = /^\s*cd\s+(?:--\s+)?(\S+)\s*$/
 
 function canonical(directory: string): string {
