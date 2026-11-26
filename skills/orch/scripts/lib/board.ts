@@ -29,6 +29,8 @@ import { ghJson } from './gh.ts'
 import { workerRows } from './workers.ts'
 import { isLive } from './worker-state.ts'
 import { workerEnds } from '../core/board-workers.ts'
+import { matchBoardItems } from '../core/merge-readiness.ts'
+import type { BoardMatch } from '../core/merge-readiness.ts'
 
 export { BOARD_BIN, staleBoardWrite } from './board-file.ts'
 export function readBoard(file: string): BoardItem[] {
@@ -333,8 +335,7 @@ export function specTitle(text: string, opts: { items: BoardItem[]; explicit?: s
   return title
 }
 
-// rows 는 브랜치로 찾은 항목 가운데 worker 줄로 찾은 것의 항목 id → 그 줄의 워크트리다. 줄로 찾은 항목이 없으면 이 칸이 없다
-export type BoardMatch = { by: 'pr' | 'branch'; ids: string[]; rows?: Record<string, string> }
+export type { BoardMatch } from '../core/merge-readiness.ts'
 
 // 머지한 PR 의 보드 항목. pr 칸에 그 PR 이 든 항목을 먼저 찾고, 없으면 아래 항목을 찾는다. 둘 다 done 항목과 merged-pr 에 이미 그 PR 이 든 항목은 뺀다.
 // 이미 처리한 머지 PR 을 다시 연결하지 않기 위해서다.
@@ -344,34 +345,11 @@ export type BoardMatch = { by: 'pr' | 'branch'; ids: string[]; rows?: Record<str
 export function findBoardItems(file: string, pr: string, branch: string, worktree: string | null): BoardMatch | null {
   let items: BoardItem[]
   try {
-    items = readBoard(file).filter((i) => typeof i === 'object' && i !== null && !Array.isArray(i) && Boolean(i.id))
+    items = readBoard(file)
   } catch {
     return null
   }
-  const id = (i: BoardItem) => (typeof i.id === 'string' ? i.id : JSON.stringify(i.id))
-  // pr 칸에 들었거나 구현·후속 줄의 pr 이 그 PR 인 항목(리뷰·검증 줄의 pr 은 대상 PR 이라 보지 않는다). 줄만 저장된 부분 실패 뒤 다시 돌려도 찾는다
-  const byPr = items.filter((i) => prNumbers(i.pr).has(pr) || boardWorkerRows(i).some((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).has(pr)))
-  if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
-  const open = (i: BoardItem) => i.status !== 'done' && !prNumbers(i['merged-pr']).has(pr)
-  const byBranch = items.filter(
-    (i) =>
-      prNumbers(i.pr).size === 0 &&
-      open(i) &&
-      ((branch && i.branch === branch) || (worktree && i.worktree === worktree)),
-  )
-  // 일치하는 구현·후속 줄(pr 이 빔)이 있으면 그 줄의 워크트리를 rows 에 담는다. 항목을 대표 칸으로 찾았어도 같다
-  const rows: Record<string, string> = {}
-  const rowOf = (i: BoardItem) => boardWorkerRows(i)
-    .filter((one) => (one.role === 'impl' || one.role === 'follow') && prNumbers(one.pr).size === 0 &&
-      ((branch && one.branch === branch) || (worktree && one.worktree === worktree)))
-    .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
-  const byRow = items.filter((i) => open(i) && !byBranch.includes(i) && rowOf(i) !== undefined)
-  for (const i of [...byBranch, ...byRow]) {
-    const row = rowOf(i)
-    if (row) rows[id(i)] = row.worktree
-  }
-  const ids = [...byBranch, ...byRow].map(id)
-  return ids.length > 0 ? { by: 'branch', ids, ...(Object.keys(rows).length > 0 ? { rows } : {}) } : null
+  return matchBoardItems(items, pr, branch, worktree)
 }
 
 // 보드 명령(board.ts steps)이 판정한 단계 목록. 읽지 못하면 null 이다

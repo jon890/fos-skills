@@ -10,6 +10,7 @@ import { after, before, describe, test } from 'node:test'
 import { privateWordsLines } from '../scripts/doctor/orch-doctor.ts'
 import type { Visibility } from '../scripts/lib/private-words.ts'
 import {
+  commentRows,
   diffFindings,
   FAILED_TTL_MS,
   findingsText,
@@ -23,7 +24,6 @@ import {
   textFindings,
   VISIBILITY_TTL_MS,
 } from '../scripts/lib/private-words.ts'
-import { commentRows } from '../scripts/queue/steps/private-words.ts'
 
 const WORD = 'example-secret'
 let tmp = ''

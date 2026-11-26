@@ -127,12 +127,8 @@ const LIST = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?/
 // 칸 양끝의 백틱을 벗긴다
 const cell = (text: string): string => text.trim().replace(/^`+|`+$/g, '').trim()
 
-export function integrationProblems(
-  body: string,
-  head: string,
-  needs: readonly IntegrationNeed[],
-  accept: (commit: string) => boolean = () => false,
-): { reasons: string[]; notes: string[] } {
+// 본문의 생략 줄과 검증 절의 통과 기록
+function evidenceLines(body: string): { skips: Map<string, string>; records: { module: string; command: string; commit: string; inside: boolean }[] } {
   const lines = plainLines(body)
   const skips = new Map<string, string>()
   for (const line of lines) {
@@ -144,6 +140,32 @@ export function integrationProblems(
     const m = new RegExp(`${LIST.source}통합 테스트 통과:\\s*(\\S+)\\s*\\|\\s*(.+?)\\s*\\|\\s*(\\S+)\\s*$`).exec(line)
     return m ? [{ module: cell(m[1]), command: cell(m[2]), commit: cell(m[3]).toLowerCase(), inside }] : []
   })
+  return { skips, records }
+}
+
+const FULL_COMMIT = /^[0-9a-f]{40}$/
+
+// integrationProblems 가 accept 로 물을 수 있는 커밋. head 가 아닌 40자리 커밋 가운데 생략하지 않은 모듈의 검증 절 기록이다.
+// 부르는 쪽은 이 커밋만 git 으로 확인해 accept 에 넘긴다(merge-readiness 의 acceptedCommits)
+export function integrationCandidates(body: string, head: string, needs: readonly IntegrationNeed[]): string[] {
+  const { skips, records } = evidenceLines(body)
+  const found = new Set<string>()
+  for (const need of needs) {
+    if (skips.has(need.module)) continue
+    for (const r of records) {
+      if (r.inside && r.module === need.module && r.command === need.command && FULL_COMMIT.test(r.commit) && r.commit !== head.toLowerCase()) found.add(r.commit)
+    }
+  }
+  return [...found]
+}
+
+export function integrationProblems(
+  body: string,
+  head: string,
+  needs: readonly IntegrationNeed[],
+  accept: (commit: string) => boolean = () => false,
+): { reasons: string[]; notes: string[] } {
+  const { skips, records } = evidenceLines(body)
   const reasons: string[] = []
   const notes: string[] = []
   const noted = new Set<string>()

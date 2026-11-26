@@ -1,12 +1,12 @@
 // 코디네이터의 큐도 자동 머지와 같은 번호 순서와 base 최고 번호 검사를 쓴다.
-import { autoMergeConfig, judgeMigrations, maxByModule, migrationOf, queueOrder, watchedDirs } from '../../lib/auto-merge.ts'
+import { autoMergeConfig, migrationOf, queueOrder, watchedDirs } from '../../lib/auto-merge.ts'
 import type { Migration, QueueItem } from '../../lib/auto-merge.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { addedPaths } from '../../lib/reservations.ts'
-import { HeadChanged, Usage } from './model.ts'
-import type { GateReason, StepState } from './model.ts'
-import { git, out } from './runtime.ts'
+import { Usage } from './model.ts'
+import type { StepState } from './model.ts'
+import { out } from './runtime.ts'
 
 function migrationDirs(repo: string): Record<string, string[]> {
   const config = loadConfig(repo)
@@ -65,22 +65,4 @@ export function orderQueueMigrations(state: StepState): void {
   if (ordered.some((item, i) => item !== state.o.items[i])) out(`QUEUE-ORDER ${result.order.join(' ')}: 마이그레이션 번호가 낮은 PR 부터, --chain 순서를 지켜 머지한다`)
   state.o.items = ordered
   state.o.chains = result.chains.map((chain) => chain.map(String))
-}
-
-// 조회 실패도 머지를 막는다. gate 와 실제 머지 직전에 모두 새 base 를 받아 확인한다.
-export function migrationReasons(state: StepState): GateReason[] {
-  const dirs = migrationDirs(state.repoDir)
-  if (!Object.keys(dirs).length) return []
-  const p = state.p
-  const read = ghJson<{ files: unknown; headRefOid: string }>(['pr', 'view', p.n, '--json', 'files,headRefOid', '--jq', '.'], { cwd: state.repoDir, cache: false })
-  if (!read.ok) return [{ kind: 'lookup', text: '마이그레이션 파일 조회 실패' }]
-  if (read.data.headRefOid !== p.ph) throw new HeadChanged(`${p.n} 마이그레이션 검사 중 HEAD 가 바뀌었다`)
-  const mine = migrations(read.data.files, dirs)
-  if (!mine.length) return []
-  if (git('fetch', '--quiet', 'origin', p.base).code !== 0) return [{ kind: 'lookup', text: `마이그레이션 검사: origin/${p.base} fetch 실패` }]
-  const listed = git('ls-tree', '-r', '--name-only', `origin/${p.base}`, '--', ...new Set(Object.values(dirs).flat()))
-  if (listed.code !== 0) return [{ kind: 'lookup', text: 'base 마이그레이션 파일 조회 실패' }]
-  return judgeMigrations(Number(p.n), mine, maxByModule(listed.stdout.trim().split('\n'), dirs), []).clashes.map((clash) => ({
-    kind: 'migration', text: `${clash.module} ${clash.label}: ${clash.reason}. 기존 예약 인자로 orch queue reserve ... --again 을 실행해 새 번호를 받고 파일을 고친다`,
-  }))
 }

@@ -1,7 +1,7 @@
 // 사용법: orch queue gate PR [--wait] [--repo DIR]
 //
 // 머지 큐가 머지 전에 보는 조건을 머지 없이 한 번 돌려 본다. worker 는 「준비됨」 을 보내기 전에 이 명령이 통과해야 한다.
-// 조건은 머지 큐와 같은 함수(steps/gate.ts 의 gateReasons)가 판정한다. 규칙을 두 곳에 두지 않는다.
+// 조건은 머지 큐와 같은 조건 표(core/merge-readiness.ts, ADR-037)가 판정한다. 규칙을 두 곳에 두지 않는다.
 //   1. 필수 체크가 모두 나타나 끝났고 실패가 없다. 기본은 현재 상태만 보고, --wait 를 주면 필수 체크가 나타나 끝날 때까지 기다린다.
 //   2. 미해결 리뷰 스레드가 없다
 //   3. base 와 충돌하지 않는다(mergeable 이 MERGEABLE)
@@ -41,12 +41,11 @@ import { withRun } from '../lib/proc.ts'
 import { queueDefaults } from '../lib/queue-defaults.ts'
 import { waitChecks } from './steps/checks.ts'
 import type { GateReason } from './steps/gate.ts'
-import { gateReasons, loadPr } from './steps/gate.ts'
+import { gateReasons, holdLine, loadPr } from './steps/gate.ts'
 import type { StepContext } from './steps/model.ts'
 import { CheckStop, Stop, StepState, Usage } from './steps/model.ts'
 import { parseArgs, usageText } from './steps/options.ts'
 import { readQueueEnv } from './steps/setup.ts'
-import { mergeHold } from './steps/spec-hold.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const stepContext: StepContext = { script: SCRIPT, here: dirname(SCRIPT), sleepScale: 1 }
@@ -129,7 +128,7 @@ async function mainImpl(argv: string[]): Promise<number> {
   }
   try {
     const { reasons, notes } = await gate(state, n)
-    print(gateLines(n, reasons, state.pr?.branch ? mergeHold(state) : null, notes))
+    print(gateLines(n, reasons, state.pr?.branch ? await holdLine(stepContext, state) : null, notes))
     return reasons.length === 0 ? 0 : 1
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
