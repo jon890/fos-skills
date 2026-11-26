@@ -201,3 +201,13 @@ test('리뷰한 커밋이 지금 PR 커밋 목록에 없으면 앞 리뷰를 인
   assert.equal(judgeTrustedBotReviews(HEAD, { reviews: [], comments: [receipt(OLD)], reviewThreads: [] }, trustedBots!).ok, false)
   assert.ok(judge({ comments: [receipt(HEAD)], commits: [HEAD] }).ok)
 })
+
+// PR 651 리뷰: 믿는 봇이 여럿이면 다른 봇이 지금 HEAD 를 리뷰하는 중일 때도 앞 리뷰를 인정하지 않는다
+test('다른 믿는 봇이 지금 HEAD 를 리뷰하는 중이면 앞 리뷰를 인정하지 않는다', () => {
+  const second = { ...BOT, login: 'another-review-app' }
+  const { trustedBots: bots } = autoMergeConfig({ queue: { auto_review: { ...CONFIG, trusted_bots: [BOT_SETTING, { ...BOT_SETTING, login: second.login }] } } }).review!
+  const running = { author: second, state: 'PENDING', submittedAt: null, body: '', commit: { oid: HEAD } }
+  const rows = { reviews: [running], comments: [receipt(OLD)], reviewThreads: [], commits: [OLD, HEAD] }
+  assert.deepEqual(judgeTrustedBotReviews(HEAD, rows, bots!), { ok: false, wait: `${second.login} 봇이 현재 HEAD 를 리뷰하는 중이다` })
+  assert.ok(judgeTrustedBotReviews(HEAD, { ...rows, reviews: [] }, bots!).ok)
+})
