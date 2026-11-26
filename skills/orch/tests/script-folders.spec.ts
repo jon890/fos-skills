@@ -15,7 +15,9 @@ import { COMMANDS, GROUPS } from '../scripts/lib/commands.ts'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url)).replace(/\/$/, '')
 const ROOT = resolve(SCRIPTS, '..', '..', '..')
-const FILES = [...new Set(COMMANDS.map((c) => c.script))].sort()
+// 폐기된 명령은 명령 표에 안내만 남기고 스크립트를 지울 수 있다.
+const SCRIPT_ROWS = COMMANDS.filter((c) => !c.retired || existsSync(join(SCRIPTS, c.script)))
+const FILES = [...new Set(SCRIPT_ROWS.map((c) => c.script))].sort()
 const SKIP = [/^docs\/adr\//, /^docs\/features\//, /(^|\/)CHANGELOG\.md$/, /(^|\/)changes\//, /(^|\/)tests\//]
 
 function marked(rows: string[], i: number): boolean {
@@ -65,7 +67,7 @@ function headerPointerErrors(source: string, text: string, scripts: Map<string, 
 
 describe('스크립트 폴더', () => {
   test('명령 표의 모든 스크립트가 그 행의 묶음 폴더에 있다', () => {
-    for (const c of COMMANDS) {
+    for (const c of SCRIPT_ROWS) {
       assert.equal(dirname(c.script), c.group, c.script)
       assert.ok(existsSync(join(SCRIPTS, c.script)), c.script)
     }
@@ -120,7 +122,7 @@ describe('스크립트 폴더', () => {
   })
 
   test('저장소의 코드와 문서가 옛 배치 경로(scripts/<파일>.ts)를 가리키지 않는다', () => {
-    const names = [...new Set(FILES.map((f) => basename(f, '.ts')))].sort((a, b) => b.length - a.length)
+    const names = [...new Set(COMMANDS.map((c) => basename(c.script, '.ts')))].sort((a, b) => b.length - a.length)
     // scripts/<이름>.ts 와 $ORCH_SCRIPTS/<이름>.ts, join(ORCH_SCRIPTS, '<이름>.ts') 꼴
     const old = new RegExp(`(?:(?<![\\w-])scripts/|ORCH_SCRIPTS\\}?/|ORCH_SCRIPTS\\s*,\\s*['"])(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\.ts\\b`)
     const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)

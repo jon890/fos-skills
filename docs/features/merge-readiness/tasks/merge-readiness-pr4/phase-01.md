@@ -93,6 +93,7 @@ git diff --check
 | `skills/orch/tests/orch-doctor.spec.ts` | 수정 |
 | `skills/orch/tests/retired.spec.ts` | 수정 |
 | `skills/orch/tests/queue-gate.spec.ts` | 수정 |
+| `skills/orch/tests/script-folders.spec.ts` | 수정 |
 | `skills/orch/tests/fixtures/config-samples.ts` | 수정 |
 | `skills/orch/scripts/queue/ci-ready.ts` | 삭제 |
 | `skills/orch/tests/ci-ready.spec.ts` | 삭제 |
