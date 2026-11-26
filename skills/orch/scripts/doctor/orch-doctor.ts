@@ -205,6 +205,8 @@
 
 import { shellSshAgentLines } from '../lib/ssh-agent.ts'
 import { mainDoctorLines } from '../lib/main-guard.ts'
+import { defaultBoardPath } from '../../../../modules/work-board/path.ts'
+import { legacyBoardRoot, resolveBoardSetting } from '../lib/board-file.ts'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { bundleRoot, installLayout, staleBundle, staleLoopBundles } from '../lib/loop-bundle.ts'
 import { homedir, tmpdir } from 'node:os'
@@ -492,6 +494,15 @@ function checkRepo(repo: string, schema: Schema | null, read: ReturnType<typeof 
     }
   }
   const config = (isObject(read.value) ? read.value : {}) as Config
+  if (!read.error) {
+    const setting = config.finish?.board
+    if (setting === undefined || typeof setting === 'string') {
+      const board = setting ? resolveBoardSetting(repo, setting) : defaultBoardPath(repo)
+      if (legacyBoardRoot(board)) {
+        lines.push(`OLD-BOARD ${board}: ${orchWord()} doctor migrate --repo ${shQuote(repo)} 로 미리 본 뒤 --apply 로 옮긴다`)
+      }
+    }
+  }
   lines.push(...legacyInboxFilter(repo, config))
   lines.push(...missingAdrReservation(repo, config))
   lines.push(...legacyReviewKeys(config))

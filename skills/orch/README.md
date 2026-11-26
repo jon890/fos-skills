@@ -87,7 +87,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
     "deploy_workflow": "cd-dev.yml",
     "deploy_branch": "develop",
     "task_pattern": "^#SHOP/([0-9]+)",
-    "board": ".omc/board.json",
+    "board": ".orch/board.json",
     "specs_dir": ".orch/specs"
   },
   "queue": {

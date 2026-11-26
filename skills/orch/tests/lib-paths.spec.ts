@@ -199,7 +199,7 @@ describe('ensure 와 makeParent', () => {
 
 describe('boardPath', () => {
   test('주지 않으면 work-board 의 기본 위치이고, 주면 주 checkout 기준이다', () => {
-    assert.equal(boardPath(repo), join(repo, '.omc/board.json'))
+    assert.equal(boardPath(repo), join(repo, '.orch/board.json'))
     assert.equal(boardPath(repo, 'b/board.json'), join(repo, 'b/board.json'))
     assert.equal(boardPath(repo, '/abs/board.json'), '/abs/board.json')
   })
@@ -207,6 +207,7 @@ describe('boardPath', () => {
   test('옛 보드 파일이 있으면 그것이다', () => {
     write('.omc/handoffs/board.json', '{}')
     assert.equal(boardPath(repo), join(repo, '.omc/handoffs/board.json'))
+    assert.deepEqual(legacyPaths(repo), [])
   })
 })
 

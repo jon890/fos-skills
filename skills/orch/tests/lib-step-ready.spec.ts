@@ -14,6 +14,7 @@ function setup(t: TestContext) {
   t.after(() => { for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved) })
   mkdirSync(join(repo, '.omc')); mkdirSync(join(repo, '.orch'))
   process.env.ORCH_DIR = join(repo, '.orch')
+  process.env.HOME = repo
   process.env.GIT_CEILING_DIRECTORIES = repo
   const calls = join(repo, 'calls.json'), wrapper = join(repo, 'board.ts')
   writeFileSync(calls, '[]')

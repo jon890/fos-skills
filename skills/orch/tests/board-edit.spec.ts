@@ -13,7 +13,8 @@ let repo: string
 let file: string
 beforeEach(() => {
   repo = realpathSync(mkdtempSync(join(tmpdir(), 'board-edit-')))
-  file = join(repo, '.omc/board.json')
+  file = join(repo, '.orch/board.json')
+  git('init', '-q', '-b', 'main')
 })
 afterEach(() => rmSync(repo, { recursive: true, force: true }))
 
@@ -116,14 +117,13 @@ test('step 은 번호 뒤 자동 진행 표시만 바꾸고 사건 단계와 끝
   refused(['step', 'x', '2', 'auto'], /사건 단계/)
 })
 test('워크트리에서 부른 표시 변경도 주 checkout 의 보드를 고친다', () => {
-  git('init', '-q')
   git('commit', '--allow-empty', '-qm', 'init')
   const wt = join(repo, 'wt')
   git('worktree', 'add', '-q', wt, '-b', 'wt-branch')
   save([item({ details: ['1. [auto] 구현 (계획: x)'] })])
   ok(['step', 'x', '1', 'ask'], 'BOARD-STEP x 1 ask', wt)
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details[0].text, '1. [ask] 구현 (계획: x)')
-  assert.equal(existsSync(join(wt, '.omc/board.json')), false)
+  assert.equal(existsSync(join(wt, '.orch/board.json')), false)
 })
 test('next 단계의 글과 추가를 같은 쪽에 반영하고 최대 번호 다음을 고른다', () => {
   save([item({ details: ['참고'], next: '1. 구현\n9. 머지' })])
@@ -175,15 +175,14 @@ test('보드 파일이 없거나 숫자 id 항목이어도 없는 문자열 id �
   refused(['show', '99'], /항목이 없다/)
 })
 test('워크트리 기본은 주 checkout, 명시 repo 는 그 작업 트리, 상대 board 는 주 checkout 이다', () => {
-  git('init', '-q', '-b', 'main')
   git('commit', '-q', '--allow-empty', '-m', 'init')
   const wt = join(repo, 'worktree')
   git('worktree', 'add', '-q', '-b', 'feat/test', wt)
   save([item()])
   ok(['set', 'x', 'wait'], 'BOARD-SET x wait', wt)
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, 'wait')
-  assert.equal(existsSync(join(wt, '.omc')), false)
-  save([item()], join(wt, '.omc/board.json'))
+  assert.equal(existsSync(join(wt, '.orch/board.json')), false)
+  save([item()], join(wt, '.orch/board.json'))
   ok(['set', 'x', 'done', '--repo', wt], 'BOARD-SET x done', wt)
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, 'wait')
   save([item()], join(repo, 'explicit.json'))

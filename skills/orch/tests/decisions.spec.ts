@@ -18,6 +18,7 @@ beforeEach(() => {
   mkdirSync(join(repo, '.orch', 'hooks'), { recursive: true })
   mkdirSync(join(repo, '.omc'), { recursive: true })
   process.env.GIT_CEILING_DIRECTORIES = tmpdir()
+  process.env.HOME = repo
   delete process.env.ORCH_DIR
   const orca = join(repo, 'orca')
   writeFileSync(orca, `#!${process.execPath}

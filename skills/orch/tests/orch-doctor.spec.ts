@@ -126,6 +126,21 @@ beforeEach(() => {
 })
 afterEach(() => cleanupDoctorTemp(tmp))
 
+test('doctor 는 지금 쓰는 옛 보드만 이전하라고 알린다', () => {
+  git('init', '-q', tmp)
+  const old = join(tmp, '.omc/board.json')
+  write(old, '{"items":[]}')
+  const args = ['--skip-version', '--skip-questions', '--repo', tmp]
+  const preview = doctor(args)
+  assert.ok(preview.stdout.includes(`OLD-BOARD ${old}:`), preview.stdout + preview.stderr)
+  assert.match(preview.stdout, /orch doctor migrate --repo .*--apply/)
+  const fresh = join(tmp, '.orch/board.json')
+  write(fresh, '{"items":[]}')
+  assert.doesNotMatch(doctor(args).stdout, /OLD-BOARD/)
+  write(join(tmp, '.orch/config.json'), JSON.stringify({ finish: { board: '.omc/board.json' } }))
+  assert.ok(doctor(args).stdout.includes(`OLD-BOARD ${old}:`))
+})
+
 describe('설치본 판정', () => {
   let origin: string
   let template: Repo

@@ -77,7 +77,7 @@ orch config unset contracts.merge_command contracts.paths
 | `finish` | `task_pattern` | 문자열이나 null. 비지 않으면 Python 정규식이고 캡처가 있어야 한다. PR 제목에서 업무 번호를 뽑는다. 첫 그룹이 번호다. 마지막 PR 판정([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」)이 쓴다 |
 | `finish` | `spec_task_pattern` | 문자열이나 null. 비지 않으면 Python 정규식이고 캡처가 있어야 한다. 지시서의 줄에서 업무 번호를 뽑는다. 첫 그룹이 번호다. 마지막 PR 판정이 같은 업무의 남은 지시서를 찾는다. `specs_dir` 를 두면 함께 둔다 |
 | `finish` | `complete`, `intermediate` | 참거짓. 둘을 함께 true 로 둘 수 없다. true 면 모든 PR 을 판정 없이 마지막(`--complete`)이나 중간(`--intermediate`)으로 본다. 보통은 두지 않는다 |
-| `finish` | `board`, `board_bin`, `board_id` | `board` 는 문자열, 나머지는 문자열이나 null. 보드 파일과 보드 명령, 지정할 보드 항목 id. 마무리가 `pr` 필드나 브랜치로 그 PR 의 항목을 찾아 마지막 PR 에서만 done 으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM` 이다 |
+| `finish` | `board`, `board_bin`, `board_id` | `board`는 보드 파일 경로다. 상대경로는 주 checkout 기준이고 생략하면 Git 루트 또는 홈의 `.orch/board.json`을 사용한다. `board_bin`은 보드 명령, `board_id`는 지정할 보드 항목 id로 문자열 또는 null이다. 마무리가 `pr` 필드나 브랜치로 항목을 찾아 마지막 PR에서 done으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM`이다 |
 | `finish` | `specs_dir` | 문자열. 지시서 폴더. 마지막 PR 이면 그 PR 브랜치의 지시서를 지운다. 마지막 PR 판정이 같은 업무의 남은 지시서를 여기서 찾는다 |
 | `finish` | `sweep_arg` | 문자열 목록(빈 목록과 빈 문자열 허용). 정리 명령에 넘길 인자 |
 | `finish` | `merge_timeout`, `deploy_timeout`, `poll_interval` | null, 또는 양수인 유한한 수나 그렇게 읽히는 문자열. `poll_interval` 은 타이머 상한 이하 |
@@ -249,7 +249,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 고치는 중인 체크아웃의 스크립트를 확인하려면 `ORCH_SCRIPTS_DIR` 에 그 체크아웃의 `skills/orch/scripts` 를 준다. 설치 기록보다 앞서고, 실행기와 진입점이 그 체크아웃의 진입점으로 넘긴다.
 저장소에 복사해 둘 것은 실행기 `bin/orch` 다. Node 내장 모듈만 쓰는 한 파일이라 복사해도 설치 기록을 따라간다. 진입점 `skills/orch/bin/orch.ts` 는 같은 번들의 lib 를 읽어 한 파일로 돌지 않는다.
 
-보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `extensions/work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
+보드 파일도 기본값은 `.orch/board.json`이다. 경로 선택은 [work-board README](../../../extensions/work-board/README.md#보드에-항목-적기)에 있다.
 
 스크립트가 `.orch/` 아래를 처음 만들 때 `.git/info/exclude` 에 `/.orch/` 를 더해 git 이 무시하게 한다. 저장소의 `.gitignore` 는 바꾸지 않는다.
 오버레이와 설정을 저장소에 커밋해 함께 쓰려면 `git add -f .orch/overlay.md` 로 추적한다.
@@ -273,6 +273,9 @@ orch doctor migrate --repo "$REPO" --apply
 - `TRACKED <명령>` 으로 나온 추적 파일은 보인 `git mv` 명령으로 옮겨 커밋한다
 - `OLD-REF-SCRIPT` 로 나온 스크립트는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 진입점이 다시 멈춘다
 - 폴더를 옮긴 뒤 `config.json` 에 지운 칸이 남았으면 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 를 따른다
+
+옛 위치의 보드는 평소대로 읽고 쓴다. `orch doctor`의 `OLD-BOARD` 안내가 보이면 보드를 쓰는 세션을 멈춘 뒤 위 명령으로 옮긴다. Git 밖에서 실행하면 홈 보드를 옮긴다.
+같은 보드를 가리키는 `finish.board`는 보드가 있는 저장소와 Orca 등록 저장소에서 찾아 함께 바꾼다. 미리보기의 `WOULD-BOARD-CONFIG` 줄에서 갱신할 설정을 확인한다. 새 경로에 별개 보드가 있으면 `CONFLICT`가 표시되고 두 파일이 남는다.
 
 ## 예시
 

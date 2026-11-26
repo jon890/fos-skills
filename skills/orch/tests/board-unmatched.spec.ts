@@ -102,6 +102,7 @@ test('기록 실패는 머지 반영 호출을 실패로 바꾸지 않는다', (
 
 test('루프 보드 단계는 다음 틱에 주 Run 으로 한 번 보내고 새 상태에서도 다시 보내지 않는다', async (t) => {
   const repo = fixture(t)
+  assert.equal(spawnSync('git', ['init', '-q', repo]).status, 0)
   mkdirSync(join(repo, '.omc'), { recursive: true })
   writeFileSync(join(repo, '.omc/board.json'), '{"items":[]}')
   const sync = join(repo, 'sync.ts')

@@ -433,28 +433,37 @@ describe('기본 보드 위치', () => {
     assert.equal(done.status, 0, done.stderr)
   }
 
-  test('git 작업 트리의 .omc/board.json 이고 옛 .omc/handoffs/board.json 이 있으면 그것이다', () => {
+  test('git 작업 트리에서 새 보드가 없을 때만 옛 보드를 고른다', () => {
     const repo = join(tmp, 'repo')
     mkdirSync(join(repo, 'sub'), { recursive: true })
     git(repo, 'init', '-q')
-    assert.equal(defaultBoardPath(join(repo, 'sub')), join(repo, '.omc/board.json'))
+    assert.equal(defaultBoardPath(join(repo, 'sub')), join(repo, '.orch/board.json'))
     mkdirSync(join(repo, '.omc/handoffs'), { recursive: true })
+    writeFileSync(join(repo, '.omc/board.json'), '{}')
+    assert.equal(defaultBoardPath(repo), join(repo, '.omc/board.json'))
     writeFileSync(join(repo, '.omc/handoffs/board.json'), '{}')
     assert.equal(defaultBoardPath(repo), join(repo, '.omc/handoffs/board.json'))
+    mkdirSync(join(repo, '.orch'))
+    writeFileSync(join(repo, '.orch/board.json'), '{}')
+    assert.equal(defaultBoardPath(repo), join(repo, '.orch/board.json'))
   })
 
-  test('git 밖의 폴더면 그 폴더의 .omc/board.json 이다', () => {
+  test('git 밖에서 기본 위치는 홈이고 옛 홈 보드를 그대로 쓴다', () => {
     const plain = join(tmp, 'plain')
+    const home = join(tmp, 'home')
     mkdirSync(plain)
-    // tmp 위로 git 저장소를 찾아 올라가지 않게 막는다
-    const prev = process.env.GIT_CEILING_DIRECTORIES
-    process.env.GIT_CEILING_DIRECTORIES = tmp
-    try {
-      assert.equal(defaultBoardPath(plain), join(plain, '.omc/board.json'))
-    } finally {
-      if (prev === undefined) delete process.env.GIT_CEILING_DIRECTORIES
-      else process.env.GIT_CEILING_DIRECTORIES = prev
-    }
+    const set = (id: string) => spawnSync(process.execPath, [BOARD, 'set', id, 'wait'], {
+      cwd: plain, encoding: 'utf8', env: { ...process.env, HOME: home, GIT_CEILING_DIRECTORIES: tmp },
+    })
+    assert.equal(set('new').status, 0)
+    assert.ok(existsSync(join(home, '.orch/board.json')))
+    rmSync(join(home, '.orch/board.json'))
+    mkdirSync(join(home, '.omc'))
+    writeFileSync(join(home, '.omc/board.json'), '{"items":[]}')
+    assert.equal(set('legacy').status, 0)
+    assert.equal(JSON.parse(readFileSync(join(home, '.omc/board.json'), 'utf8')).items[0].id, 'legacy')
+    assert.equal(existsSync(join(home, '.orch/board.json')), false)
+    assert.equal(existsSync(join(plain, '.orch')), false)
   })
 
   test('import 해도 명령이 돌지 않는다', () => {
@@ -468,7 +477,7 @@ describe('기본 보드 위치', () => {
     )
     assert.equal(done.status, 0, done.stderr)
     assert.equal(done.stdout, '')
-    assert.equal(existsSync(join(repo, '.omc')), false)
+    assert.equal(existsSync(join(repo, '.orch')), false)
   })
 
   test('--file 이 없으면 기본 위치에 쓴다', () => {
@@ -477,7 +486,7 @@ describe('기본 보드 위치', () => {
     git(repo, 'init', '-q')
     const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', BOARD, 'set', 'a', 'wait'], { cwd: repo, encoding: 'utf8' })
     assert.equal(done.status, 0, done.stderr)
-    const saved = JSON.parse(readFileSync(join(repo, '.omc/board.json'), 'utf8')) as { items: Json[]; updatedAt: string }
+    const saved = JSON.parse(readFileSync(join(repo, '.orch/board.json'), 'utf8')) as { items: Json[]; updatedAt: string }
     assert.deepEqual(saved.items, [{ id: 'a', title: 'a', status: 'wait', stepAt: saved.updatedAt }])
     assert.match(saved.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
   })

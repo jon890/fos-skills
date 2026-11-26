@@ -18,7 +18,7 @@
 //   feedback     feedback/          worker 가 쌓은 스킬 개선 후보(references/feedback-review.md)
 //   study        study/             일하다 생긴 공부 후보(references/study-candidates.md)
 //
-// 보드는 work-board 소유라 여기 없다. 보드 경로는 lib/board-file.ts 가 정한다.
+// 보드 기본 위치는 work-board 가 정한다. lib/board-file.ts 가 finish.board 와 함께 해석한다.
 //
 // 옛 구조: .claude/orch-overlay.md, .claude/orch-finish.json, .omc/orch/, .omc/handoffs/specs/ 가 남아 있으면
 // (폴더는 안에 파일이 있을 때만 센다) requireMigrated 가 옮기는 명령(migrate-orch-dir.ts)을 알린다.
@@ -67,7 +67,7 @@ export const DEFAULT_MOVES: ReadonlyArray<readonly [string, string]> = [
   ['.omc/state/notify-conflicts.json', 'state/notify-conflicts.json'],
 ]
 
-// 남아 있으면 옮기기 전이라고 보는 옛 위치. 설정과 지시서가 여기 있으면 명령이 그 값 없이 돌게 된다.
+// 남아 있으면 명령을 막는 옛 위치. 옛 보드는 읽기를 이어 가므로 doctor 에서 따로 알린다.
 export const LEGACY_MARKERS: readonly string[] = ['.claude/orch-overlay.md', '.claude/orch-finish.json', '.omc/orch', '.omc/handoffs/specs']
 
 const DEFAULT_BYPASS = '설정 파일을 --config 로 직접 준다'
@@ -96,8 +96,8 @@ const ignoredMemo = new Map<string, 'ignored' | 'no-git'>()
 //   무시됨(이미 무시했거나, 같은 줄이 있었거나, 방금 더했다): 주 checkout 이 아직 있다.
 //   저장소 아님(rev-parse --git-dir 실패): GIT_DIR 이 없고 주 checkout 과 조상에 .git 이 없다. git init 으로 .git 이 생기면 다시 묻는다.
 // 그 사이에 무시 규칙이 바뀌거나(.gitignore 의 pull, checkout) 누가 무시 줄을 지우면 이 프로세스는 다시 더하지 않는다. 다음 명령이 더한다.
-export function ensureIgnored(repo: string): string | null {
-  const root = orchDir(repo)
+export function ensureIgnored(repo: string, override?: string): string | null {
+  const root = orchDir(repo, override)
   const top = mainCheckout(repo)
   const rel = relative(top, root)
   // 루트가 저장소 밖이면 무시할 것이 없다. 루트가 주 checkout 자신이면 저장소 전체를 무시하게 되므로 더하지 않는다.

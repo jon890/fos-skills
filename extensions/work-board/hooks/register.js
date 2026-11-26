@@ -2,6 +2,7 @@ import { boardApprovalReader } from '../../../skills/orch/scripts/lib/board-quer
 import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
 import { hasStopReportId, isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
 import { muteKey, muteLabel, muteTarget } from '../../../skills/inbox/scripts/lib/mute.ts'
+import { BOARD_PATHS } from '../../../modules/work-board/locations.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
@@ -140,7 +141,6 @@ async function loadTaskTool($, force = false) {
     if (taskTool.root === root) taskTool.name = typeof result.name === 'string' ? result.name : null
   } catch {}
 }
-const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
 const LIVE_MS = 45000
 const COMMAND_TIMEOUT_MS = 20000
@@ -1294,7 +1294,7 @@ async function boardRoot($) {
 }
 
 // orch 가 쓰는 보드 파일을 읽도록 경로를 bin/board-file.ts 에서 받는다. 설정이 바뀔 수 있어 LIVE_MS 마다 다시 받는다.
-// path 가 null 이면 명령이 실패했거나 root 가 없어 옛 순서로 찾는다. error 는 finish.board 설정 오류다.
+// path 가 null 이면 명령이 실패해 기본 경로 목록에서 찾는다. error 는 finish.board 설정 오류다.
 let boardFile = { root: null, at: 0, path: null, error: '' }
 async function resolveBoardFile($, root) {
   if (boardFile.root === root && now - boardFile.at < LIVE_MS) return boardFile
@@ -1315,10 +1315,15 @@ async function loadFile($) {
   let found = ''
   let text = ''
   const root = await boardRoot($)
-  const resolved = await resolveBoardFile($, root)
-  // git 밖에서 띄운 세션은 시작 폴더 아래에서 찾는다. 상대 경로로 두면 cd 한 작업 폴더를 읽는다
-  const base = root || await startFolder($)
-  const candidates = resolved.path ? [resolved.path] : resolved.error ? [] : BOARD_PATHS.map((relative) => base ? base + '/' + relative : relative)
+  const resolved = await resolveBoardFile($, root || await startFolder($))
+  let candidates = resolved.path ? [resolved.path] : []
+  if (!resolved.path && !resolved.error) {
+    let base = root
+    if (!base) {
+      try { base = (await run($, ['node', '-p', 'require("node:os").homedir()'])).trim() } catch {}
+    }
+    if (base) candidates = BOARD_PATHS.map(relative => base + '/' + relative)
+  }
   for (const candidate of candidates) {
     if (await $.fs.exists(candidate)) {
       found = candidate
