@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 8.0.1 (2026-11-26)
+
+- `orch worker launch` 가 Orca 에 등록되지 않은 저장소면 워크트리를 만들기 전에 `orca repo add` 를 안내하고 멈춘다. 워크트리만 남는 일이 없어진다.
+- 정리가 `orch worker resume` 으로 이어 간 끝난 worker 의 터미널을 띄우기 기록으로 확인해 닫는다. 「터미널 소유 상태 조회 실패」 로 워크트리가 남던 일이 없어진다.
+
 ## 8.0.0 (2026-11-26)
 
 - 호환성: `orch queue ready`, `--skipped-is-missing`, `before-ready`, `pr-ready` 를 없앴어요. PR 은 처음부터 ready 상태로 열어요. <!-- orch-compat -->
