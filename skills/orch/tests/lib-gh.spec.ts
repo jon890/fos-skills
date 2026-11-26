@@ -223,6 +223,42 @@ describe('ciState', () => {
     assert.ok(read().ok)
     assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 5)
   })
+  for (const skippedMissing of [false, true]) {
+    test(`미등장 필수 체크의 캐시는 60초 뒤 만료한다 (skippedMissing=${skippedMissing})`, (t) => {
+      const originalNow = Date.now
+      const savedCache = process.env.ORCH_GH_CACHE
+      let now = originalNow()
+      Date.now = () => now
+      process.env.ORCH_GH_CACHE = '1'
+      t.after(() => {
+        Date.now = originalNow
+        if (savedCache === undefined) delete process.env.ORCH_GH_CACHE
+        else process.env.ORCH_GH_CACHE = savedCache
+        fake.setRules(RULES)
+      })
+      const repo = mkdtempSync(join(dir, 'snapshot-missing-'))
+      const set = (statusCheckRollup: unknown[]) => fake.setRules([{ stdout: JSON.stringify({ headRefOid: 'head', statusCheckRollup }) }])
+      const completed = run('test', 'SUCCESS')
+      const incomplete = [completed, ...(skippedMissing ? [run('review', 'SKIPPED')] : [])]
+      const complete = [completed, commitStatus('review', 'SUCCESS')]
+      set(incomplete)
+      const withoutRequirements = checkSnapshot(repo, '7', 'head')
+      assert.ok(withoutRequirements.ok)
+      assert.deepEqual(withoutRequirements.data.statusCheckRollup, incomplete)
+      const read = () => {
+        const result = checkSnapshot(repo, '7', 'head', false, ['test', 'review'], skippedMissing)
+        assert.ok(result.ok)
+        return result.data.statusCheckRollup
+      }
+      assert.deepEqual(read(), incomplete)
+      assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 2)
+      set(complete)
+      now += 59_000
+      assert.deepEqual(read(), incomplete)
+      now += 1000
+      assert.deepEqual(read(), complete)
+    })
+  }
   test('HEAD 키로 옛 캐시를 격리하고 같은 HEAD 재실행은 refresh 로 읽어 캐시도 갱신한다', (t) => {
     process.env.ORCH_GH_CACHE = '1'
     t.after(() => { process.env.ORCH_GH_CACHE = '0'; fake.setRules(RULES) })

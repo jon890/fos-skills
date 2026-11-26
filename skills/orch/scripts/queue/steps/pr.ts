@@ -16,7 +16,7 @@ export async function field(stepContext: StepContext, state: StepState, n: strin
   for (;;) {
     const rollup = jsonField === 'statusCheckRollup'
     if (rollup) {
-      const got = checkSnapshot(state.o.repo, n, state.p.ph, fresh)
+      const got = checkSnapshot(state.o.repo, n, state.p.ph, fresh, state.q.required, state.o.skippedMissing)
       if (!got.ok) {
         if (attempt >= state.ghRetries) return ''
         attempt++

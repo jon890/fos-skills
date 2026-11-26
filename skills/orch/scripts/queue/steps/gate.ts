@@ -96,6 +96,7 @@ export async function loadPr(stepContext: StepContext, state: StepState, n: stri
   const roll = o.skippedMissing ? ROLL_NAMES_NO_SKIPPED : ROLL_NAMES
   const allowed = `(.name // .context) as $nm | (${namesJson(o.allowFail)} | any(. == $nm))`
   state.q = {
+    required: req,
     missing: `((${namesJson(req)}) - ${roll})`,
     failed: `[.statusCheckRollup[] | ${FAIL_SEL} | select(${allowed} | not)] | length`,
     allowedFailed: `[.statusCheckRollup[] | ${FAIL_SEL} | select(${allowed}) | (.name // .context)] | unique | .[]`,

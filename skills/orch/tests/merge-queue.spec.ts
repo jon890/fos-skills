@@ -158,7 +158,7 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     c.writeState({ '1': pr({ statusCheckRollup: [check('verify', 'FAILURE')] }) })
     const module = join(SCRIPTS, 'lib/gh.ts')
     const repo = realpathSync(c.tmp)
-    const code = `import { checkSnapshot } from ${JSON.stringify(module)}; process.chdir(${JSON.stringify(repo)}); if (!checkSnapshot(${JSON.stringify(repo)}, '1', 'abc').ok) process.exitCode=1`
+    const code = `import { checkSnapshot } from ${JSON.stringify(module)}; process.chdir(${JSON.stringify(repo)}); if (!checkSnapshot(${JSON.stringify(repo)}, '1', 'abc', false, ['verify']).ok) process.exitCode=1`
     const seeded = await spawnDone([process.execPath, '--input-type=module', '-e', code], { env: c.env })
     assert.equal(seeded.code, 0, both(seeded))
     const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('verify')] }) }, ['--required', 'verify', '1'])
