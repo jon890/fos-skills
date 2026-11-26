@@ -392,6 +392,14 @@ describe('parsePolicy', () => {
     assert.throws(() => parsePolicy(JSON.stringify({ ...policy(), entry_js: ['bin/orch', 'bin/orch'] })), /entry_js/)
   })
 
+  test('Orca 호스트 모듈은 확장 소스에만 등록할 수 있다', () => {
+    const entry = { path: 'extensions/example/src/panel.tsx', name: 'orca' }
+    assert.equal(isSourceFile(entry.path, []), true)
+    assert.deepEqual(parsePolicy(JSON.stringify(policy({ bare_imports: [entry] }))).bare_imports, [entry])
+    const elsewhere = { ...entry, path: 'scripts/a.ts' }
+    assert.throws(() => parsePolicy(JSON.stringify(policy({ bare_imports: [elsewhere] }))), /orca.*플러그인 호스트/)
+  })
+
   test('pending 항목에 prefix 가 없으면 거부한다', () => {
     assert.throws(() => parsePolicy(JSON.stringify({ ...policy(), pending: [{ area: 'plan' }] })), /pending/)
   })

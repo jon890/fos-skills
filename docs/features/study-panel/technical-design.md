@@ -42,8 +42,8 @@ fosbot이 화면에 필요한 요약을 파일 하나로 내보낸다. Orca 패�
 | `study` | 오늘의 공부 카드 배열. 공통 필드와 `question`(핵심 질문), `outline`(개요 줄 배열), `sources`(각각 `label`, 선택 `url`), `repoIds`(합친 원본이 있는 저장소 ID 배열)를 갖는다. |
 | `feedback` | 오늘의 피드백 묶음 배열. 공통 필드와 `number`(화면에 보이는 양의 정수), `skill`(스킬 이름), `candidates`(각각 `id`, `title`, `repoId`)를 갖는다. |
 | `feedbackTotals` | 이번 일일 정리에서 fosbot이 이미 처리한 `rejected`, `held`의 수. 답·PR 사건으로 다시 발행할 때 같은 정리의 수를 유지한다. |
-| `inProgress` | `item`, `title`, `activity`(`writing` 또는 `applying`), `repoId`(작업 또는 PR의 저장소), `pr`을 갖는 배열. PR이 생기기 전에는 `pr: null`, 열린 뒤에는 `{ number, state: "open", draft }`를 쓴다. 번호는 양의 정수, `draft`는 불리언이다. |
-| `repositories` | `{ id, name, studyCount, feedbackCount }` 배열. 개수는 일일 정리에서 집계하는 저장소별 열린 후보 수를 최신 원본 상태로 갱신한 값이다. 같은 이름의 저장소도 `id`로 구분한다. 이 목록에는 진행 목록에서만 참조하는 저장소도 넣는다. |
+| `inProgress` | `item`(카드 ID 문자열), `title`, `activity`(`writing` 또는 `applying`), `repoId`(작업 또는 PR의 저장소), `pr`을 갖는 배열. PR이 생기기 전에는 `pr: null`, 열린 뒤에는 `{ number, state: "open", draft }`를 쓴다. 번호는 양의 정수, `draft`는 불리언이다. |
+| `repositories` | `{ id, name, studyCount, feedbackCount }` 배열. 개수는 일일 정리에서 집계하는 저장소별 열린 후보 수를 최신 원본 상태로 갱신한 값이다. 같은 이름의 저장소도 `id`로 구분한다. 공부와 피드백이 모두 0인 저장소는 목록에서 빠진다. 이때 진행 중인 일은 계속 표시하고, 요약에 저장소 이름이 없다고 안내한다. |
 
 공부 카드와 피드백 묶음의 공통 필드는 `id`, `title`, `round`, `revision`, `state`, `error`다.
 
@@ -83,7 +83,7 @@ fosbot이 화면에 필요한 요약을 파일 하나로 내보낸다. Orca 패�
 }
 ```
 
-필수 이유는 앞뒤 공백을 뗀 뒤 비어 있거나 개행을 포함하면 거절한다. 패널과 fosbot은 제목, 출처, 이유 같은 문자열을 데이터로 처리한다. 정해진 답만 해당 동작에 연결한다.
+필수 이유는 앞뒤 공백을 뗀 뒤 비어 있거나 개행을 포함하면 거절한다. 패널과 fosbot은 제목, 출처, 이유 같은 문자열을 데이터로 처리한다. 이유가 필요 없는 답에는 `reason`을 보내지 않는다. 그런 답에 `reason`이 있으면 fosbot이 거절한다.
 
 ### 패널과 worker
 
@@ -118,7 +118,7 @@ worker는 파일을 바꿔치기해도 이벤트를 받을 수 있도록 `state/
 | 환경 | 확인할 것 |
 | --- | --- |
 | CI Node 테스트 | `extensions/study-feedback-panel/tests/*.spec.ts`를 [저장소 테스트 실행기](../../../scripts/run-tests.ts)로 돌린다. 임시 디렉터리와 가짜 시계·CLI로 버전과 필수 필드, 마지막 정상 요약 복구, 금요일에서 월요일로 넘어가는 시각, 파일 교체 감시, 카드 변경과 잠금 해제, 같은 버튼의 중복 제거를 확인한다. 이유 검증과 JSON 직렬화, 쓰기 실패, 깨우기 실패, 이미 도는 소비자가 발행 전 파일을 읽지 못하는 경우를 검증한다. |
-| 로컬 `orca plugin test` | `*.test.ts(x)`에서 `orca/testing`으로 패널과 worker를 띄운다. 탭과 카드 데이터, 버튼과 이유 입력, 보냄·처리 대기·봇 오류, worker 요청과 이벤트를 검증한다. 실제 대기열이나 자동화 대신 격리된 폴더와 가짜 CLI를 쓴다. |
+| 로컬 `orca plugin test` | `*.test.mts`에서 `orca/testing`으로 패널과 worker를 띄운다. 탭과 카드 데이터, 버튼과 이유 입력, 보냄·처리 대기·봇 오류, worker 요청과 이벤트를 검증한다. 실제 대기열이나 자동화 대신 격리된 폴더와 가짜 CLI를 쓴다. |
 | 로컬 Orca와 fosbot | 테스트 후보로 패널·항목 버튼·채팅에서 답이 경합할 때 한 번만 처리되는지 확인한다. 패널 전송 후 같은 회차의 피드백 묶음에 후보를 추가하거나 빼면, 변경 번호가 지난 요청이 원본 후보를 바꾸지 않는지 확인한다. 답 처리 직후와 PR 열림·머지·닫힘 뒤 요약과 화면이 함께 바뀌는지 본다. 설치와 권한 확인 결과를 구현 PR에 적는다. |
 
 ### 설치와 재설치
