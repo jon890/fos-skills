@@ -209,15 +209,21 @@ export function cancelledOnly(failed: readonly CiCheck[]): boolean {
 export type CheckSnapshot = { headRefOid: string; statusCheckRollup: unknown }
 
 // HEAD 별 공유 스냅샷. 멈추거나 머지하기 직전에는 refresh 로 재실행도 확인한다.
-export function checkSnapshot(repo: string, number: string, head: string, refresh = false): ReturnType<typeof ghJson<CheckSnapshot>> {
+export function checkSnapshot(repo: string, number: string, head: string, refresh = false,
+  required: readonly string[] = [], skippedMissing = false,
+): ReturnType<typeof ghJson<CheckSnapshot>> {
   return ghJson<CheckSnapshot>(['pr', 'view', number, '--json', 'statusCheckRollup,headRefOid', '--jq', '.'], {
-    cwd: repo, cacheKey: `checks:${number}:${head}`, refresh,
+    cwd: repo, cacheKey: JSON.stringify(['checks', number, head, required, skippedMissing]), refresh,
     ttlSeconds: (result) => {
       try {
         const pr = JSON.parse(result.stdout) as CheckSnapshot
         const rows = currentChecks(pr.statusCheckRollup, head)
         if (pr.headRefOid !== head) return 0
         if (rows.length === 0 || rows.some(pendingRow)) return 60
+        const names = new Set(rows
+          .filter((row) => !skippedMissing || field(row, 'conclusion') !== 'SKIPPED')
+          .map(checkName))
+        if (required.some((name) => !names.has(name))) return 60
         return 300
       } catch { return 0 }
     },
