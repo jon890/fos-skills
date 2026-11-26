@@ -32,6 +32,7 @@ function continueContainer(line: string, container: Container): string | undefin
 function startContainer(line: string): { container: Container; width: number } | undefined {
   const quote = QUOTE.exec(line)
   if (quote) return { container: { kind: 'quote' }, width: quote[0].length }
+  if (HEADING_OR_BREAK.test(line)) return
   const item = LIST_ITEM.exec(line)
   if (item) {
     const width = item[0].length
@@ -42,6 +43,7 @@ function startContainer(line: string): { container: Container; width: number } |
 export function maskCode(md: string): string {
   const lines = md.split(/(?<=\n)/u)
   const containers: Container[] = []
+  const blockStarts = new Set<number>()
   let fence: Fence | undefined
   let paragraph = false
 
@@ -58,18 +60,22 @@ export function maskCode(md: string): string {
       containers.length = depth
       fence = undefined
       paragraph = false
+      blockStarts.add(index)
     }
 
     if (fence) {
+      blockStarts.add(index)
       const end = FENCE.exec(content)
       if (end && end[1][0] === fence.delimiter[0] && end[1].length >= fence.delimiter.length && !end[2].trim()) {
         for (let row = fence.line; row <= index; row++) lines[row] = blank(lines[row])
         fence = undefined
+        blockStarts.add(index + 1)
       }
       continue
     }
 
     let next = startContainer(content)
+    if (next) blockStarts.add(index)
     while (next) {
       containers.push(next.container)
       content = content.slice(next.width)
@@ -79,10 +85,12 @@ export function maskCode(md: string): string {
 
     if (!content.trim()) {
       paragraph = false
+      blockStarts.add(index + 1)
       continue
     }
     if (!paragraph && content.startsWith('    ')) {
       lines[index] = blank(line)
+      blockStarts.add(index + 1)
       continue
     }
 
@@ -90,12 +98,26 @@ export function maskCode(md: string): string {
     if (start && (start[1][0] !== '`' || !start[2].includes('`'))) {
       fence = { line: index, delimiter: start[1] }
       paragraph = false
+      blockStarts.add(index)
       // 닫는 줄이 없으면 본문을 검사한다. 여는 기호만 인라인 코드 검사에서 뺀다.
       const markerStart = line.indexOf(start[1])
       lines[index] = line.slice(0, markerStart) + blank(start[1]) + line.slice(markerStart + start[1].length)
       continue
     }
     paragraph = !HEADING_OR_BREAK.test(content)
+    if (!paragraph) {
+      blockStarts.add(index)
+      blockStarts.add(index + 1)
+    }
   }
-  return lines.join('').replace(INLINE_CODE, blank)
+
+  // 인라인 코드의 백틱은 같은 블록 안에서만 짝짓는다.
+  blockStarts.add(lines.length)
+  let start = 0
+  const blocks: string[] = []
+  for (const end of blockStarts) {
+    blocks.push(lines.slice(start, end).join('').replace(INLINE_CODE, blank))
+    start = end
+  }
+  return blocks.join('')
 }

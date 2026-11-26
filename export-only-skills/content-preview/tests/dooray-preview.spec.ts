@@ -401,6 +401,35 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
+  test('인라인 코드는 문단과 목록 항목, 인용의 경계를 넘어 짝짓지 않는다', () => {
+    const link = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['앞 문단의 백틱 `', '', link, '', '뒤 문단의 백틱 `'],
+      ['- 앞 항목의 백틱 `', `- ${link}`, '- 뒤 항목의 백틱 `'],
+      ['> 앞 문단의 백틱 `', '>', `> ${link}`, '>', '> 뒤 문단의 백틱 `'],
+      ['앞 문단의 백틱 `', `# ${link}`, '뒤 문단의 백틱 `'],
+    ]) {
+      const done = preview('comment', lines.join('\n'))
+      assert.equal(done.code, 1)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('같은 문단 안의 여러 줄 인라인 코드는 업무 링크 검사에서 뺀다', () => {
+    const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
+    const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['예제는 ``이렇게', inside + '`` 입니다.'],
+      ['- 예제는 ``이렇게', '  ' + inside + '`` 입니다.'],
+      ['> 예제는 ``이렇게', '> ' + inside + '`` 입니다.'],
+      ['> - 예제는 ``이렇게', '>   ' + inside + '`` 입니다.'],
+    ]) {
+      const done = preview('task', [...lines, '', outside].join('\n'))
+      assert.equal(done.code, 1)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
   test('본문의 </script> 는 거부한다 (메신저는 허용)', () => {
     for (const mode of ['task', 'comment']) {
       const done = generate(COMMAND, ['--mode', mode, '--title', 't', '--md-file', '-'], { input: 'a </script> b' })
