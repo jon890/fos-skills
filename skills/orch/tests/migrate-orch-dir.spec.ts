@@ -209,6 +209,28 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.equal(c.sh(process.execPath, ORCH_PATHS, '--repo', c.repo, 'board'), join(worktree, '.orch/board.json'))
   })
 
+  test('공유 보드의 원본을 git 이 추적하면 수동 이전 방법만 안내한다', async (t) => {
+    const c = setup(t)
+    const owner = join(c.tmp, 'owner with space')
+    c.sh('git', 'init', '-q', owner)
+    const original = '{"items":[]}'
+    const old = c.write('../owner with space/.omc/board.json', original)
+    c.sh('git', '-C', owner, 'add', '.omc/board.json')
+    c.sh('git', '-C', owner, 'commit', '-qm', 'track board')
+    const contents = JSON.stringify({ finish: { board: old } })
+    const config = c.write('.orch/config.json', contents)
+    for (const args of [[], ['--apply']]) {
+      const { stdout } = await c.migrate(args, { code: 1, env: { ORCH_OUTPUT: 'short' } })
+      assert.match(stdout, /^TRACKED mkdir -p .* && git -C '.*owner with space' mv \.omc\/board.json \.orch\/board.json$/m)
+      assert.match(stdout, /^MANUAL-BOARD-CONFIG \.orch\/config.json finish.board -> .*owner with space\/\.orch\/board.json$/m)
+      assert.doesNotMatch(stdout, /^(?:WOULD-MOVE|MOVED|BOARD-CONFIG) /m)
+      assert.equal(readFileSync(old, 'utf8'), original)
+      assert.equal(readFileSync(config, 'utf8'), contents)
+      assert.equal(existsSync(join(owner, '.orch/board.json')), false)
+      assert.equal(c.sh('git', '-C', owner, 'status', '--porcelain'), '')
+    }
+  })
+
   test('별개 보드가 이미 있으면 보드와 설정을 그대로 둔다', async (t) => {
     const c = setup(t)
     const old = c.write('.omc/board.json', '{"items":[{"id":"old"}]}')

@@ -276,6 +276,7 @@ orch doctor migrate --repo "$REPO" --apply
 
 옛 위치의 보드는 평소대로 읽고 쓴다. `orch doctor`의 `OLD-BOARD` 안내가 보이면 보드를 쓰는 세션을 멈춘 뒤 위 명령으로 옮긴다. Git 밖에서 실행하면 홈 보드를 옮긴다.
 같은 보드를 가리키는 `finish.board`는 보드가 있는 저장소와 Orca 등록 저장소에서 찾아 함께 바꾼다. 미리보기의 `WOULD-BOARD-CONFIG` 줄에서 갱신할 설정을 확인한다. 새 경로에 별개 보드가 있으면 `CONFLICT`가 표시되고 두 파일이 남는다.
+Git이 추적하는 보드는 `TRACKED` 줄의 명령으로 직접 옮기고, `MANUAL-BOARD-CONFIG` 줄에 나오는 설정 값을 함께 바꾼다.
 
 ## 예시
 

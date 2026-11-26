@@ -24,6 +24,7 @@
 //     앞의 쌍이 옮긴 것은 뒤의 쌍이 다시 옮기지 않는다(.omc/orch/scripts 가 .omc/orch 보다 먼저다).
 //     옛 기본 위치의 보드는 따로 옮긴다. git 밖에서는 홈 보드를 옮긴다. 보드를 쓰는 세션을 멈춘 뒤 적용한다.
 //     Orca 에 등록된 저장소와 보드가 있는 저장소에서 같은 파일을 가리키는 finish.board 도 함께 바꾼다.
+//     git 이 추적하는 보드는 파일과 설정 값을 남긴다. 파일을 옮길 명령과 각 설정에 넣을 새 값을 보인다.
 //     git 이 추적하는 파일은 옮기지 않고 대상 폴더만 만든 뒤 `git mv` 명령을 보인다. 주 checkout 에 스테이징을 남기지 않기 위해서다.
 //     상대경로 심볼릭 링크가 옮긴 폴더 밖을 가리키면 새 자리에서 같은 대상을 가리키게 다시 만든다.
 //
@@ -74,7 +75,8 @@
 //       - task_pattern 을 JS 정규식으로 바꾸지 못했거나 그룹이 없다. JS 정규식으로 고쳐 task_pattern 에 다시 적고 다시 돌린다
 //
 // 짧은 출력(진입점의 orch doctor migrate, migrate-hooks, lib/output.ts): MOVED, WOULD-MOVE, CONFLICT, NOT-MOVED, REWRITE, WOULD-REWRITE, REMOVED,
-// WOULD-REMOVE, KEPT <보드> board, BOARD-CONFIG, WOULD-BOARD-CONFIG, HANDLER, WOULD-HANDLER, CONFIG-REMOVED, WOULD-CONFIG-REMOVE, TRACKED <명령>, NOTHING 과 참조 위치
+// WOULD-REMOVE, KEPT <보드> board, BOARD-CONFIG, WOULD-BOARD-CONFIG, MANUAL-BOARD-CONFIG,
+// HANDLER, WOULD-HANDLER, CONFIG-REMOVED, WOULD-CONFIG-REMOVE, TRACKED <명령>, NOTHING 과 참조 위치
 // OLD-REF <파일>:<줄>, OLD-REF-SCRIPT <파일>:<줄>, WOULD-REWRITE <파일>:<줄>, OLD-REF-MORE <수> 줄만 낸다(SHORT_RULES).
 // 종료 코드: 0 옮겼거나 옮길 것이 없다, 1 겹침이 있거나 추적 파일이 남았거나 옮기다 실패했다(겹침이 있으면 아무것도 옮기지 않는다),
 //            --hooks 면 옮기지 못한 칸이 있다, 2 사용법 오류(--hooks 에서 옛 위치가 남았거나 설정 파일이 깨졌다), 3 막는 조건이 있다
@@ -111,7 +113,7 @@ import { inside, isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { DEFAULT_MOVES, ensureIgnored, hasFiles, LEGACY_MARKERS, legacyPaths, NAMES, orchDir, pathOf } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
-import { pyRegExp, pyStr, shSplit } from '../lib/py.ts'
+import { pyRegExp, pyStr, shQuote, shSplit } from '../lib/py.ts'
 import { LINE_BREAK, liveSpecPaths } from '../lib/spec.ts'
 import { emit } from '../lib/output.ts'
 import type { Rule as ShortRule } from '../lib/output.ts'
@@ -146,6 +148,7 @@ const SHORT_RULES: ShortRule[] = [
   [/^겹침 (.+?) -> (.+?) 이 이미 있다/, (m) => `CONFLICT ${m[1]} ${m[2]}`],
   [/^바꿀 보드 설정 (.+)$/, (m) => `WOULD-BOARD-CONFIG ${m[1]}`],
   [/^보드 설정을 바꿈 (.+)$/, (m) => `BOARD-CONFIG ${m[1]}`],
+  [/^수동으로 바꿀 보드 설정 (.+)$/, (m) => `MANUAL-BOARD-CONFIG ${m[1]}`],
   [/^겹침 (\S+) 이 이미 있다\. (.*) 를 옮기지 않았다/, (m) => `CONFLICT ${m[1]} ${m[2]}`],
   [/^옮기지 못함 (.*?): (.*)$/, (m) => `NOT-MOVED ${m[1]} ${m[2]}`],
   [/^옛 경로를 바꿈 (\S+) (\d+)곳$/, (m) => `REWRITE ${m[1]} ${m[2]}`],
@@ -687,7 +690,11 @@ function applyMoves(plan: Plan): boolean {
 }
 
 function gitMvCommand(src: string, dst: string, root: string): string {
-  return `mkdir -p ${dirname(dst)} && git -C ${root} mv ${rel(src, root)} ${rel(dst, root)}`
+  return `mkdir -p ${shQuote(dirname(dst))} && git -C ${shQuote(root)} mv ${shQuote(rel(src, root))} ${shQuote(rel(dst, root))}`
+}
+
+function reportTracked(src: string, dst: string, root: string): void {
+  out(`추적 파일 ${gitMvCommand(src, dst, root)}  (옮겨 커밋한다. .orch 는 무시되므로 새 파일은 git add -f 로 더한다)`)
 }
 
 function report(plan: Plan, refs: Ref[]): void {
@@ -696,7 +703,7 @@ function report(plan: Plan, refs: Ref[]): void {
     out(`겹침 ${rel(src, plan.root)} -> ${rel(dst, plan.root)} 이 이미 있다. 둘을 비교해 하나만 남긴 뒤 다시 돌린다`)
   }
   for (const [src, dst] of plan.tracked) {
-    out(`추적 파일 ${gitMvCommand(src, dst, plan.root)}  (옮겨 커밋한다. .orch 는 무시되므로 새 파일은 git add -f 로 더한다)`)
+    reportTracked(src, dst, plan.root)
   }
   for (const board of plan.boards) out(`남김 ${rel(board, plan.root)} (보드는 work-board 소유라 옮기지 않는다)`)
   for (const { path: target, no, line } of refs.slice(0, SHOWN_REFS)) {
@@ -780,10 +787,18 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
   report(plan, references(plan, rules))
   const plannedBoardSource = board && plannedSource(plan, board.to)
   const boardConflict = board && (board.conflict || (!!plannedBoardSource && lexists(plannedBoardSource)))
+  const boardTracked = board && git(board.owner, ['ls-files', '--error-unmatch', '--', rel(board.from, board.owner)]).code === 0
+  const boardMove = boardTracked ? null : board
   if (board) {
     const from = rel(board.from, root)
     const to = rel(board.to, root)
     if (boardConflict) out(`겹침 ${from} -> ${to} 이 이미 있다. 둘을 비교해 하나만 남긴 뒤 다시 돌린다`)
+    else if (boardTracked) {
+      reportTracked(board.from, board.to, board.owner)
+      for (const { file, value } of board.configs) {
+        out(`수동으로 바꿀 보드 설정 ${rel(afterMove(file, plan) ?? file, root)} finish.board -> ${value}`)
+      }
+    }
     else {
       out(`옮길 것 ${from} -> ${to}`)
       if (!apply) for (const { file, value } of board.configs) {
@@ -793,9 +808,10 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
   }
   const conflict = plan.conflicts.length > 0 || !!boardConflict
   const pending = !!board || plan.moves.length > 0 || conflict || plan.tracked.length > 0
-  const found = new Set(board?.blocked)
-  if (plan.moves.length > 0 || (apply && board && !conflict)) {
-    for (const target of board?.repos ?? [root]) {
+  const tracked = !!boardTracked || plan.tracked.length > 0
+  const found = new Set(boardMove?.blocked)
+  if (plan.moves.length > 0 || (apply && boardMove && !conflict)) {
+    for (const target of boardMove?.repos ?? [root]) {
       for (const reason of blockers(target, (target === root ? runId : null) ?? configuredRun(target))) found.add(reason)
     }
   }
@@ -804,7 +820,7 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
     const { did, skipped } = finish(plan, rules, false)
     if (skipped) err(SKIPPED_NOTICE)
     else if (!pending && !did) out('옮길 것이 없다')
-    return conflict || plan.tracked.length > 0 ? 1 : 0
+    return conflict || tracked ? 1 : 0
   }
   if (conflict) {
     err('겹침이 있어 아무것도 옮기지 않았다')
@@ -815,11 +831,11 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
     return 3
   }
   if (!applyMoves(plan)) return 1
-  if (board) {
+  if (boardMove) {
     try {
-      applyBoardMove(board, file => afterMove(file, plan) ?? file,
+      applyBoardMove(boardMove, file => afterMove(file, plan) ?? file,
         (file, value) => out(`보드 설정을 바꿈 ${rel(file, root)} finish.board -> ${value}`))
-      out(`옮김 ${rel(board.from, root)} -> ${rel(board.to, root)}`)
+      out(`옮김 ${rel(boardMove.from, root)} -> ${rel(boardMove.to, root)}`)
     } catch (error) {
       err(`보드를 옮기다 실패했다: ${(error as Error).message}. 원인을 고친 뒤 다시 돌린다`)
       return 1
@@ -828,7 +844,7 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
   const { did, skipped } = finish(plan, rules, true)
   if (skipped) err(SKIPPED_NOTICE)
   else if (!pending && !did) out('옮길 것이 없다')
-  return plan.tracked.length > 0 ? 1 : 0
+  return tracked ? 1 : 0
 }
 
 // ---- --hooks --------------------------------------------------------------------------------------------
