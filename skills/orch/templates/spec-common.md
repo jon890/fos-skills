@@ -21,7 +21,7 @@
 - {{DRAFT_PR_RULE}}
 - 믿는 봇을 설정한 저장소에서는 봇이 리뷰한다. 줄 댓글을 반영하고 push 한다. 리뷰 worker 를 부르지 않는다. <!-- orch-rule: trusted-review-bot -->
 - 믿는 봇을 설정하지 않은 저장소에서 자동 리뷰 workflow 를 바꾸면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. 결과는 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
-- PR 리뷰는 `review-fix` 로 반영한다. 반영 뒤 새 비차단 제안은 ask 없이 다음에 다룬다고 회신하고 resolve 하며, 차단 지적만 다시 반영한다. 첫 리뷰의 회신 기준은 `references/replying.md` 를 따른다. <!-- orch-rule: review-once -->
+- PR 리뷰는 `review-fix` 로 반영한다. 반영해 push 한 뒤에는 항상 새 커밋에서 다시 리뷰받는다. 앞 커밋의 리뷰는 인정하지 않는다. 믿는 봇은 3분 뒤 다시 요청하고, 리뷰 체크가 자동으로 다시 돌지 않으면 worker 가 해당 저장소의 재리뷰 방법(예: `/review` 댓글)을 부른다. 새 비차단 제안은 ask 없이 다음에 다룬다고 회신하고 resolve 한다. 첫 리뷰의 회신 기준은 `references/replying.md` 를 따른다. <!-- orch-rule: review-once -->
 - 머지는 하지 않는다. 코디네이터가 한다(워크트리 권한 설정이 `gh pr merge` 를 막는다). **그러나 PR 이 머지될 때까지 이 worker 가 맡는다.** 준비됨을 보낸 뒤에도 CI 실패, 충돌, 리뷰를 코디네이터의 지시를 기다리지 않고 직접 처리한다.
 - 하위 에이전트는 orca 명령을 쓰지 않는다. 스폰 프롬프트에 이 줄을 넣는다.
 - 기준 브랜치는 충돌이 났거나 코디네이터나 머지 큐가 요청했을 때만 합친다. <!-- orch-rule: no-early-base-merge -->
