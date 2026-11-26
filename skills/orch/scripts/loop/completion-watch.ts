@@ -32,7 +32,7 @@ import { fire } from '../lib/events.ts'
 import { notifyRun } from '../lib/run-notice.ts'
 import { continueWorker, openPrOf } from '../lib/continue-worker.ts'
 import { dispatchRepo } from '../lib/main-guard.ts'
-import { branchesOf } from '../lib/spec.ts'
+import { assignsMergeToHuman, branchesOf } from '../lib/spec.ts'
 
 type Json = Record<string, any>
 type Seen = { ids: string[]; last: string; suspects: string[]; events: string[]; returned?: string[]; returnNotes?: Record<string, string> }
@@ -173,9 +173,17 @@ export async function watchCompletions(repo: string, run: string, base: string, 
         await fire('worker-done', { worker: { task, dispatch, terminal: senderOf(message) || null, worktree: null, spec: null }, outcome: message.outcome ?? payload(message).outcome ?? null, evidence: verified.status, pr }, { repo, run, base })
         seen.events.push(id); save()
       }
-      // PR 이 열린 채 온 완료 보고는 알리기 전에 그 worker 에게 되돌려 이어 맡긴다. notice 는 알릴 글이고 없으면 알리지 않는다
       let notice = verified.status === 'suspicious' ? String(verified.reason) : ''
-      if ((verified.status === 'suspicious' || prState === 'OPEN') && !seen.suspects.includes(dispatch) && !seen.returned?.includes(dispatch)) {
+      // 사람이 머지할 PR 은 worker 에게 되돌리지 않는다. 필요한 준비 보고가 없으면 알림만 보낸다.
+      let shouldReturn = verified.status === 'suspicious' || prState === 'OPEN'
+      if (shouldReturn && launch?.spec) {
+        try {
+          shouldReturn = !assignsMergeToHuman(readFileSync(launch.spec, 'utf8'))
+        } catch {
+          // 지시서를 확인하지 못하면 기존 절차를 따른다.
+        }
+      }
+      if (shouldReturn && !seen.suspects.includes(dispatch) && !seen.returned?.includes(dispatch)) {
         const exclude = (seen.returned ?? []).flatMap(key => /^pr:(\d+)$/.exec(key)?.[1] ?? []).map(Number)
         const back = await continueWorker(repo, dispatch, { run, knownPr: typeof pr?.number === 'number' ? pr.number : null, exclude })
         if (back.kind === 'ok') {

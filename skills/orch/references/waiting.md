@@ -22,6 +22,7 @@ PR 없는 완료 보고는 허락 줄에 `PR 은 열지 않는다`가 명시됐�
 제외 기록이 없는 옛 리뷰 dispatch 는 지시서나 첫 status 의 `판정:` 줄로 알아보고, 앞서 보낸 결과 status 가 있어야 정상 완료로 본다. 지시서는 띄우기 기록이 지워진 뒤에도 영구 이력으로 찾는다.
 **PR 이 열린 채 온 `worker_done`(준비 근거가 없거나, 준비됨 뒤에도 PR 이 OPEN)은 DONE-SUSPECT 로 알리기 전에 루프가 그 worker 에게 되돌린다.** dispatch 는 이미 completed 로 닫혀 `send` 는 `ENDED`, `resume` 은 `RESUME-FAIL` 이 되므로, 루프가 `lib/continue-worker.ts` 로 지시서와 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 후속 지시(`send-to-worker --spec --note`)로 보낸다. Orca 가 끝난 dispatch 에 후속 Task 를 열어 같은 워크트리에서 새 dispatch 로 이어진다. 이어 맡으면 DONE-RETURNED 하나만 알리고 DONE-SUSPECT 는 보내지 않는다. 조건은 아래와 같다.
 - 지시서(띄우기 기록, 없으면 영구 이력)의 브랜치에 열린 PR 이 있다. 리뷰 worker, `completion: none` dispatch, `outcome failed` 보고는 대상이 아니다
+- 사람에게 머지를 맡겼으면 worker 에게 되돌리지 않는다. 완료 기준이 요구한 준비 보고가 없으면 DONE-SUSPECT 만 보낸다
 - dispatch 가 살아 있지 않다
 - 같은 PR 은 한 번만 되돌린다. 이어 맡은 worker 가 또 일찍 끝내면 그때는 DONE-SUSPECT 로 알린다
 - 이어 맡기지 못하면 이유와 `orch worker continue --dispatch <id>` 를 DONE-SUSPECT 에 적는다. 같은 명령을 코디네이터가 직접 불러도 된다

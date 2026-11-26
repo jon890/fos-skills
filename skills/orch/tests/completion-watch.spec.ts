@@ -157,11 +157,14 @@ for (const urlOnly of [false, true]) test(`준비 보고의 PR 제목 번호를 
 })
 
 // 머지 전 완료 보고: PR 이 열린 채 온 worker_done 은 알리기 전에 같은 워크트리의 worker 에게 되돌린다
-function bounceSetup(options: { sendCode?: number; open?: boolean; dispatch?: string; humanMerge?: boolean } = {}) {
+function bounceSetup(options: { sendCode?: number; open?: boolean; dispatch?: string; humanMerge?: boolean; requireReady?: boolean } = {}) {
   const dispatch = options.dispatch ?? 'd1'
   const spec = join(repo, 'spec-x.md')
-  writeFileSync(spec, '# 작업\n\n브랜치: `feat/x`\n허락: PR 생성까지 허락했다.' + (options.humanMerge ? ' 머지는 사람이 한다.\n' : '\n'))
-  const launch = { dispatch, terminal: 'worker', worktree: repo, run: 'R', spec, branch: 'feat/x', task: 'task', ...(skipsPrReady(readFileSync(spec, 'utf8')) ? { completion: 'none' as const } : {}) }
+  const permission = options.humanMerge ? ' 머지는 사람이 한다.' : ''
+  const completion = options.requireReady ? '\n## 완료 기준\n- 준비됨 을 보낸다.\n' : ''
+  const text = `# 작업\n\n브랜치: \`feat/x\`\n허락: PR 생성까지 허락했다.${permission}\n${completion}`
+  writeFileSync(spec, text)
+  const launch = { dispatch, terminal: 'worker', worktree: repo, run: 'R', spec, branch: 'feat/x', task: 'task', ...(skipsPrReady(text) ? { completion: 'none' as const } : {}) }
   recordLaunch(repo, launch)
   recordHistory(repo, { ...launch, at: '2026-11-10T00:00:10Z', title: null, row: null, retry_of: null })
   const gh = fakeBin(repo, 'gh', [{ args: ['list'], stdout: JSON.stringify(options.open === false ? [] : [{ number: 7, title: '제목', url: 'https://x/7', headRefName: 'feat/x' }]) }])
@@ -187,6 +190,22 @@ test('사람이 머지할 열린 PR 의 완료 보고는 알림도 후속 작업
   assert.deepEqual(kinds(), [])
   assert.deepEqual(sent(), [])
   assert.deepEqual(state().suspects, [])
+  assert.ok(state().ids.includes('d1'))
+})
+
+for (const reported of [true, false]) test(`사람이 머지할 열린 PR 에 준비 보고가 필요하면 보고 여부를 확인한다 (${reported})`, async () => {
+  const sent = bounceSetup({ humanMerge: true, requireReady: true })
+  const sha = 'c'.repeat(40)
+  const gh = fakeBin(repo, 'gh', [
+    { args: ['view'], stdout: JSON.stringify({ number: 7, headRefName: 'feat/x', headRefOid: sha, title: '제목', url: 'u', state: 'OPEN' }) },
+    { args: ['list'], stdout: JSON.stringify([{ number: 7, title: '제목', url: 'u', headRefName: 'feat/x' }]) },
+  ])
+  process.env.GH = gh.path
+  const ready = { id: 'r1', type: 'status', run_id: 'R', task_id: 'task', dispatch_id: 'd1', from_handle: 'worker', body: `준비됨 #7, head ${sha}`, created_at: '2026-11-10T00:00:30Z' }
+  bounceRules([done('d1')], reported ? [ready] : [])
+  await watchCompletions(repo, 'R', 'main')
+  assert.deepEqual(kinds(), reported ? [] : ['DONE-SUSPECT'])
+  assert.deepEqual(sent(), [])
   assert.ok(state().ids.includes('d1'))
 })
 
