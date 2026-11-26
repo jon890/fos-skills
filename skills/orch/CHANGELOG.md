@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 8.0.2 (2026-11-26)
+
+- 사람이 머지하기로 한 PR 은 열려 있는 상태에서 worker 가 완료를 보내도 DONE-SUSPECT 알림을 보내지 않는다.
+
 ## 8.0.1 (2026-11-26)
 
 - `orch worker launch` 가 Orca 에 등록되지 않은 저장소면 워크트리를 만들기 전에 `orca repo add` 를 안내하고 멈춘다. 워크트리만 남는 일이 없어진다.
