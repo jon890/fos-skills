@@ -125,13 +125,32 @@ test('keep 대소문자와 이유를 받아 보존하고 모르는 뒤꼬리는 
 })
 
 
-test('하위 표지의 부모와 표지 아래 저장소 하위 목록을 수동 확인으로 보존한다', () => {
-  for (const copy of ['- 저장소 부모\n  - 하위 <!-- orch-rule: a -->\n', rule('a', '옛것') + '  - 저장소 하위 규칙\n']) {
-    const result = syncCommon(copy, rule('a', '새것'), repo)
-    assert.equal(result.text, copy)
-    assert.equal(result.manual, true)
-    assert.match(result.output.join('\n'), /SYNC-MANUAL a/)
+test('하위 항목에만 붙은 표지는 표지 없는 부모를 수동 확인으로 보존한다', () => {
+  const copy = '- 저장소 부모\n  - 하위 <!-- orch-rule: a -->\n'
+  const result = syncCommon(copy, rule('a', '새것'), repo)
+  assert.equal(result.text, copy)
+  assert.equal(result.manual, true)
+  assert.match(result.output.join('\n'), /SYNC-MANUAL a/)
+})
+
+test('표지가 붙은 줄 아래의 하위 목록은 그 규칙의 일부로 비교하고 교체한다', () => {
+  const template = rule('a', '규칙') + '  - 이유\n  - 예외\n' + rule('b', '다음')
+  // 틀과 같으면 손대지 않는다
+  const same = syncCommon(template, template, repo)
+  assert.equal(same.text, template)
+  assert.deepEqual(same.output, [])
+  assert.equal(same.manual, false)
+  // 옛 한 줄 본문이나 낡은 하위 목록은 하위 목록까지 틀로 바꾼다
+  for (const old of [rule('a', '옛 규칙. 이유도 한 줄에'), rule('a', '규칙') + '  - 옛 이유\n']) {
+    const result = syncCommon(old + rule('b', '다음'), template, repo)
+    assert.equal(result.text, template)
+    assert.equal(result.manual, false)
+    assert.match(result.output.join('\n'), /SYNC-UPDATE a\n@@/)
+    assert.equal(syncCommon(result.text, template, repo).text, result.text)
   }
+  // 저장소가 바꾼 하위 목록은 keep 으로 지킨다
+  const kept = rule('a', '규칙', true) + '  - 저장소 예외\n' + rule('b', '다음')
+  assert.equal(syncCommon(kept, template, repo).text, kept)
 })
 
 

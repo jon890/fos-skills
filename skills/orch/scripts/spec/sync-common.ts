@@ -49,6 +49,8 @@ function legacyItem(lines: string[], head: number, name: string, templateRaw = '
     mine.unsafe ||= span.unsafe
   }
   mine.raw = lines.slice(mine.head, mine.end).join('\n')
+  // 표지 없는 옛 항목의 하위 목록은 틀의 일부인지 알 수 없어 저장소 규칙으로 지킨다.
+  mine.unsafe ||= lines.slice(mine.head + 1, mine.end).some((line) => /^\s+(?:[-*+]|\d+[.)])\s+/.test(line))
   return mine
 }
 
@@ -140,7 +142,7 @@ function syncUniqueCommon(copy: string, template: string, repo: string, blockedH
     }
     if (mine && !legacy && sameBody(want.body, mine.body)) continue
     if (mine?.unsafe || want.unsafe) {
-      output.push(`SYNC-MANUAL ${name}: 표지 없는 부모나 하위 목록이 교체 범위에 있다`)
+      output.push(`SYNC-MANUAL ${name}: 표지가 하위 항목에 있어 표지 없는 부모가 교체 범위에 있다`)
       manual = true
       continue
     }
