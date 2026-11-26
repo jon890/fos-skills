@@ -405,7 +405,7 @@ flowchart TD
 ### 상주 루프의 자동 머지
 
 `queue.auto_merge` 가 true 이면 틱이 CI 감시 뒤, 충돌 처리 앞에 한 번 돈다. 대상 조건, 순서, 알림 text 는 `loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」 가,
-판정 함수는 `skills/orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
+PR 하나가 준비됐는지의 조건과 대기 문구는 `skills/orch/scripts/core/merge-readiness.ts` 의 조건 표가 소유한다([ADR-037](adr/037-orch-merge-readiness.md)). 체크는 CI 감시의 기록이 아니라 그 틱의 롤업으로 판단한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
 
 ```mermaid
 flowchart TD
@@ -418,7 +418,7 @@ flowchart TD
     Q -->|없음| P{merge_queue 프로세스}
     P -->|있음| X
     P -->|없음| C[등록된 Run 의 지시서 브랜치에 든 내 열린 PR]
-    C --> R{draft 아님, CI passed, 보류 표시 없음, 미해결 스레드 0, 리뷰 판정 통과, 같은 HEAD 를 건 적 없음}
+    C --> R{"조건 표(checkReadiness light): draft 아님, 그 틱의 CI passed, 같은 HEAD 를 건 적 없음, 보류 표시 없음, 미해결 스레드 0, 리뷰 판정 통과"}
     R -->|아니오| W[AUTO-MERGE-WAIT 로그만. 리뷰 조건이 판정 없음으로 막히면 AUTO-MERGE-NO-REVIEW 를 HEAD 마다 한 번]
     R -->|예| M{마이그레이션}
     M -->|번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같음| CL[MIGRATION-CLASH 알림, 걸지 않음]
