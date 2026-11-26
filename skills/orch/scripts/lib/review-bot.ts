@@ -130,98 +130,103 @@ export function botReviewRunning(head: string, data: BotReviewData, bot: Trusted
 
 // 줄 댓글 첫 줄의 등급 배지(![P1 Badge]). 읽지 못하면 null 이다
 const BADGE = /!\[P(\d) Badge\]/
+const BADGES = /!\[P(\d) Badge\]/g
 
-// P0·P1·P2 이거나 배지를 읽지 못한 지적은 막는 지적이다(안전한 쪽. 코디네이터 2026-11-26)
+// 줄 댓글은 첫 배지로 등급을 읽는다. P0·P1·P2 이거나 배지를 읽지 못하면 막는 지적이다(안전한 쪽. 코디네이터 2026-11-26)
 function blockingThread(body: string | undefined): boolean {
   const level = BADGE.exec(body ?? '')?.[1]
   return level === undefined || Number(level) <= 2
 }
 
-// 봇마다 마지막으로 끝난 리뷰(영수증)를 인정할지 본다(스펙 docs/features/merge-readiness/spec.md 의 DECISION15).
-//   - 봇이 연 줄 댓글 스레드가 하나라도 미해결이면 기다린다.
-//   - 영수증은 봇의 댓글이나 리뷰에 든 receipt_marker 와 리뷰한 커밋이다. 커밋이 지금 HEAD 가 아니어도 된다.
-//   - 봇의 줄 댓글은 시각이 아니라 커밋으로 본다. 해결 여부와 관계없이, 댓글을 단 커밋(originalCommit)이 R 의 커밋과 같거나 PR 커밋 순서로 그 뒤인
-//     P1·P2 줄 댓글이 하나라도 있으면 R 을 인정하지 않는다. 커밋이나 순서를 모르는 줄 댓글도 인정하지 않는 쪽으로 본다(코디네이터 2026-11-26, PR 651 리뷰).
-//     봇이 줄 댓글을 리뷰 제출보다 먼저 만들거나 영수증을 다른 댓글로 따로 달아도 같은 커밋의 지적을 놓치지 않게 하려는 것이다.
-//   - 줄 댓글은 첫 줄 배지로 등급을 읽는다. P0·P1·P2 이거나 배지를 읽지 못하면 막는 지적이다.
-//     리뷰 본문의 지적(CHANGES_REQUESTED, 영수증이 맞지 않는 COMMENTED)은 등급을 몰라 막는 지적이고, R 과 같은 시각이거나 뒤면 막는다. 그 리뷰의 줄 댓글은 위처럼 커밋으로 본다. 시각을 읽지 못하면 막는다.
-//     막는 지적이 없으면 R 을 지금 HEAD 의 리뷰로 인정한다. 있으면 고친 커밋에서 다시 리뷰받을 때까지 기다린다.
-//   - R 이 지금 HEAD 가 아니면 R 의 커밋이 지금 PR 커밋 목록(마지막 100개)에 있어야 한다. 없으면(force-push 로 지웠거나 목록 밖) 기다린다.
-//   - 앞 커밋의 영수증을 인정하려는데 믿는 봇 가운데 하나라도 지금 HEAD 를 리뷰하는 중이면 그 결과를 기다린다.
+// 리뷰 본문과 이슈 댓글 본문에 P0·P1·P2 배지가 하나라도 있는가
+function blockingBadge(body: string): boolean {
+  return Array.from(body.matchAll(BADGES)).some((match) => Number(match[1]) <= 2)
+}
+
+// 봇마다 영수증(리뷰한 커밋)을 하나 골라 인정할지 본다(스펙 docs/features/merge-readiness/spec.md 의 DECISION15, PR 651 리뷰).
+// 시각은 판단에 쓰지 않는다. 막는 지적은 모두 그 지적이 본 커밋에 묶어 커밋 순서로만 본다.
+//
+// | 막는 지적이 오는 곳 | 막는 조건 | 묶는 커밋 |
+// | --- | --- | --- |
+// | 줄 댓글 스레드(봇이 연 것) | 첫 배지가 P0·P1·P2 이거나 배지를 읽지 못함. 미해결이면 곧바로 기다린다 | 댓글의 originalCommit |
+// | 리뷰 state | CHANGES_REQUESTED, 또는 영수증이 리뷰 커밋과 맞지 않는 COMMENTED(등급을 모른다) | 리뷰의 commit |
+// | 리뷰 본문 | P0·P1·P2 배지 | 리뷰의 commit |
+// | 이슈 댓글 본문 | P0·P1·P2 배지 | 그 댓글의 영수증 커밋. 없으면 모른다 |
+//
+//   - 영수증은 봇의 이슈 댓글이나 리뷰에 든 receipt_marker 와 리뷰한 커밋이다. 리뷰 영수증은 GitHub 가 기록한 리뷰 커밋과 맞아야 한다.
+//     고르는 영수증은 지금 HEAD 의 것이 먼저이고, 없으면 PR 커밋 순서로 가장 뒤 커밋의 것이다.
+//   - 고른 영수증의 커밋과 같거나 PR 커밋 순서로 그 뒤 커밋에 묶인 막는 지적이 하나라도 있으면 인정하지 않는다. 커밋이나 순서를 모르는 막는 지적도 막는다.
+//     같은 커밋을 다시 리뷰받아도 풀리지 않는다. 고친 뒤 커밋의 영수증이 있어야 한다.
+//   - 지금 HEAD 가 아닌 영수증은 그 커밋이 지금 PR 커밋 목록(마지막 100개)에 있어야 한다. 없으면(force-push 로 지웠거나 목록 밖) 기다린다.
+//   - 앞 커밋의 영수증을 인정하려는데 믿는 봇 가운데 하나라도 지금 HEAD 를 리뷰하는 중이면 기다린다.
+//   - 영수증이 없는데 막는 지적이 있으면 기다린다. 둘 다 없는 봇은 영수증을 내지 않는다.
 //   - 배지는 작성자가 Bot 이고 trusted_bots 의 login 인 글만 읽는다. 누구나 쓸 수 있는 글로 통과시키지 않는다(사용자 2026-11-24).
 export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: readonly TrustedReviewBot[]): TrustedReview {
   const receipts: ReviewNote[] = []
   const headOid = head.toLowerCase()
-  const time = (at: string | null | undefined) => {
-    const parsed = Date.parse(at ?? '')
-    return Number.isFinite(parsed) ? parsed : Infinity
-  }
-  type Candidate = ReviewNote & { time: number; reviewed: string }
+  const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a)
+  const order = (commit: string) => data.commits?.findIndex((one) => sameCommit(one, commit)) ?? -1
+  type Candidate = ReviewNote & { reviewed: string; onHead: boolean }
   for (const bot of bots) {
-    const findings: number[] = []
+    // 막는 지적이 본 커밋. 모르면 undefined 다
+    const blocking: (string | undefined)[] = []
     const candidate: Candidate[] = []
     // reviewed 는 GitHub 가 기록한 리뷰의 커밋이다. 리뷰 영수증은 그 커밋이 지금 HEAD 와 같을 때만 지금 HEAD 의 것이다
     const addReceipt = (commit: string | null, at: string | null, reviewed?: string) => {
       if (commit && at && Number.isFinite(Date.parse(at))) {
         const onHead = reviewed === undefined ? headOid.startsWith(commit) : reviewed === headOid
         candidate.push({
-          body: '', at, commit: onHead ? head : (reviewed ?? commit), receiptBot: bot.login, time: Date.parse(at), reviewed: reviewed ?? commit,
+          body: '', at, commit: onHead ? head : (reviewed ?? commit), receiptBot: bot.login, reviewed: (reviewed ?? commit).toLowerCase(), onHead,
           ...(onHead ? {} : { earlier: true }),
         })
       }
     }
-    const threads: ThreadComment[] = []
     for (const thread of data.reviewThreads) {
       const first = thread.comments.nodes[0]
       if (!first || !fromBot(first.author, bot)) continue
       if (!thread.isResolved) return { ok: false, wait: `${bot.login} 봇의 미해결 줄 댓글 스레드가 있다` }
-      threads.push(first)
+      if (blockingThread(first.body)) blocking.push(first.originalCommit?.oid.toLowerCase())
     }
     for (const review of data.reviews) {
       if (!fromBot(review.author, bot) || review.state === 'PENDING' || review.state === 'DISMISSED') continue
       const commit = receiptCommit(review.body, bot)
       const reviewOid = review.commit?.oid.toLowerCase()
       const matchesReview = commit && reviewOid?.startsWith(commit)
-      if (review.state === 'CHANGES_REQUESTED' || (review.state === 'COMMENTED' && !matchesReview)) {
-        findings.push(time(review.submittedAt))
-      } else if (matchesReview) {
-        addReceipt(commit, review.submittedAt, reviewOid)
-      }
+      if (review.state === 'CHANGES_REQUESTED' || (review.state === 'COMMENTED' && !matchesReview) || blockingBadge(review.body)) blocking.push(reviewOid)
+      if (review.state !== 'CHANGES_REQUESTED' && matchesReview) addReceipt(commit, review.submittedAt, reviewOid)
     }
     for (const comment of data.comments) {
-      if (fromBot(comment.author, bot)) addReceipt(receiptCommit(comment.body, bot), comment.createdAt)
+      if (!fromBot(comment.author, bot)) continue
+      const commit = receiptCommit(comment.body, bot)
+      if (blockingBadge(comment.body)) blocking.push(commit ?? undefined)
+      addReceipt(commit, comment.createdAt)
     }
-    // 같은 시각이면 지금 HEAD 의 영수증을 마지막으로 본다
-    candidate.sort((a, b) => a.time - b.time || Number(!a.earlier) - Number(!b.earlier))
+    // 지금 HEAD 의 영수증이 먼저, 그다음 PR 커밋 순서로 뒤 커밋의 영수증이다
+    candidate.sort((a, b) => Number(a.onHead) - Number(b.onHead) || order(a.reviewed) - order(b.reviewed))
     const last = candidate.at(-1)
     if (!last) {
-      if (findings.length > 0 || threads.length > 0) return { ok: false, wait: `${bot.login} 봇이 지적을 남겼다. 지적을 해결한 뒤 현재 HEAD 의 영수증을 다시 받아야 한다` }
+      if (blocking.length > 0) return { ok: false, wait: `${bot.login} 봇이 지적을 남겼다. 지적을 해결한 뒤 현재 HEAD 의 영수증을 다시 받아야 한다` }
       continue
     }
-    const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a)
-    const order = (commit: string) => data.commits?.findIndex((one) => sameCommit(one, commit)) ?? -1
-    // 줄 댓글을 단 커밋이 인정하려는 영수증의 커밋과 같거나 그 뒤인가. 커밋이나 순서를 모르면 그렇다고 본다(안전한 쪽)
-    const sameOrAfter = (first: ThreadComment): boolean => {
-      const commit = first.originalCommit?.oid.toLowerCase()
-      const reviewed = last.reviewed.toLowerCase()
+    // 막는 지적의 커밋이 고른 영수증의 커밋과 같거나 그 뒤인가. 커밋이나 순서를 모르면 그렇다고 본다(안전한 쪽)
+    const sameOrAfter = (commit: string | undefined): boolean => {
       if (!commit) return true
-      if (sameCommit(commit, reviewed)) return true
+      if (sameCommit(commit, last.reviewed)) return true
       const at = order(commit)
-      const base = order(reviewed)
+      const base = order(last.reviewed)
       return at < 0 || base < 0 || at >= base
     }
-    const blocked = threads.some((first) => blockingThread(first.body) && sameOrAfter(first)) || findings.some((at) => at >= last.time)
-    if (blocked) {
+    if (blocking.some(sameOrAfter)) {
       return { ok: false, wait: `${bot.login} 봇이 P1·P2 지적을 남겼다. 고친 커밋에서 현재 HEAD 의 영수증을 다시 받아야 한다` }
     }
-    // force-push 로 지워진 커밋의 리뷰를 인정하지 않는다. 리뷰한 커밋이 지금 PR 커밋 목록에 없으면 기다린다(PR 651 리뷰)
-    if (last.earlier && order(last.reviewed.toLowerCase()) < 0) {
+    // force-push 로 지워진 커밋의 리뷰를 인정하지 않는다. 리뷰한 커밋이 지금 PR 커밋 목록에 없으면 기다린다
+    if (last.earlier && order(last.reviewed) < 0) {
       return { ok: false, wait: `${bot.login} 봇이 리뷰한 커밋이 지금 PR 커밋 목록에 없다. 현재 HEAD 의 영수증을 다시 받아야 한다` }
     }
-    const { time: _time, reviewed: _reviewed, ...note } = last
+    const { reviewed: _reviewed, onHead: _onHead, ...note } = last
     receipts.push(note)
   }
-  // 앞 리뷰를 인정하려면 믿는 봇 가운데 누구도 지금 HEAD 를 리뷰하는 중이 아니어야 한다(PR 651 리뷰)
+  // 앞 리뷰를 인정하려면 믿는 봇 가운데 누구도 지금 HEAD 를 리뷰하는 중이 아니어야 한다
   const reviewing = receipts.some((note) => note.earlier) ? bots.find((bot) => botReviewRunning(head, data, bot)) : undefined
   if (reviewing) return { ok: false, wait: `${reviewing.login} 봇이 현재 HEAD 를 리뷰하는 중이다` }
   return { ok: true, receipts }

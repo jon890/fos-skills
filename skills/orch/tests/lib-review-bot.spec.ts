@@ -78,9 +78,11 @@ test('제출되지 않았거나 취소된 리뷰는 지적이나 영수증으로
   }
 })
 
-test('의견 리뷰가 다른 커밋의 영수증을 포함하면 지적으로 처리한다', () => {
+test('의견 리뷰가 다른 커밋의 영수증을 포함하면 그 리뷰의 커밋에 묶인 지적으로 처리한다', () => {
   const review = { author: BOT, state: 'COMMENTED', submittedAt: FOUND_AT, body: receipt(HEAD).body, commit: { oid: OLD } }
-  assert.equal(judge({ reviews: [review], comments: [receipt(HEAD)] }).ok, false)
+  assert.equal(judge({ reviews: [review], comments: [receipt(OLD)] }).ok, false)
+  // 지적은 OLD 에 묶여, 뒤 커밋 HEAD 의 영수증은 시각과 관계없이 인정한다
+  assert.ok(judge({ reviews: [review], comments: [receipt(HEAD)] }).ok)
 })
 
 test('지적 시각을 읽을 수 없으면 영수증이 있어도 재리뷰를 기다린다', () => {
@@ -97,10 +99,11 @@ test('등록한 봇 하나의 영수증을 pass 로 센다. 지적을 남긴 봇
   const pass = judgeTrustedBotReviews(HEAD, rows, bots!)
   assert.ok(pass.ok && pass.receipts.length === 1 && pass.receipts[0].receiptBot === BOT.login)
 
-  const reviews = [{ author: second, state: 'CHANGES_REQUESTED', submittedAt: FOUND_AT, body: '', commit: { oid: HEAD } }]
+  // 지적은 앞 커밋(OLD)에 남겼고 그 봇이 고친 커밋(HEAD)을 다시 확인해야 풀린다
+  const reviews = [{ author: second, state: 'CHANGES_REQUESTED', submittedAt: FOUND_AT, body: '', commit: { oid: OLD } }]
   assert.equal(judgeTrustedBotReviews(HEAD, { ...rows, reviews }, bots!).ok, false)
   const comments = [comment, { ...comment, author: second }]
-  assert.equal(judgeTrustedBotReviews(HEAD, { ...rows, reviews, comments }, bots!).ok, true)
+  assert.equal(judgeTrustedBotReviews(HEAD, { ...rows, reviews, comments, commits: [OLD, HEAD] }, bots!).ok, true)
 })
 
 test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 지적 이후의 영수증을 요구한다', () => {
@@ -118,12 +121,16 @@ test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 
   assert.equal(judge({ reviewThreads: [{ ...thread, isResolved: true }], comments: [receipt(OLD), fresh] }).ok, false)
 })
 
-test('의견 리뷰와 변경 요청보다 늦게 같은 봇이 현재 HEAD 를 확인해야 한다', () => {
+test('의견 리뷰와 변경 요청은 그 리뷰의 커밋보다 뒤 커밋의 영수증으로만 풀린다', () => {
   for (const state of ['COMMENTED', 'CHANGES_REQUESTED']) {
-    const reviews = [{ state, author: BOT, body: '', submittedAt: FOUND_AT, commit: { oid: HEAD } }]
-    assert.equal(judge({ reviews, comments: [receipt(HEAD)] }).ok, false)
-    assert.equal(judge({ reviews, comments: [receipt(HEAD, FOUND_AT)] }).ok, false)
-    assert.equal(judge({ reviews, comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, true)
+    // 시각은 보지 않는다. 앞 커밋(OLD)의 지적은 뒤 커밋(HEAD)의 영수증이면 풀린다
+    const reviews = [{ state, author: BOT, body: '', submittedAt: FOUND_AT, commit: { oid: OLD } }]
+    assert.equal(judge({ reviews, comments: [receipt(OLD, REREVIEWED_AT)] }).ok, false)
+    for (const at of [REVIEWED_AT, FOUND_AT, REREVIEWED_AT]) assert.equal(judge({ reviews, comments: [receipt(HEAD, at)] }).ok, true, at)
+    // PR 651 리뷰: 같은 커밋을 본 본문 지적은 뒤에 같은 커밋의 영수증이 와도 풀리지 않는다
+    const sameCommit = [{ ...reviews[0], commit: { oid: HEAD } }]
+    assert.equal(judge({ reviews: sameCommit, comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, false)
+    assert.equal(judge({ reviews: [{ ...reviews[0], commit: null }], comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, false)
   }
 })
 
@@ -170,13 +177,13 @@ test('리뷰보다 먼저 만든 줄 댓글도 커밋으로 묶어 P1·P2 를 �
 })
 
 // PR 651 리뷰: 영수증 없는 지적 리뷰 뒤에 같은 커밋의 영수증 댓글이 오면 그 지적은 그 영수증의 것이다
-test('영수증 없는 지적 리뷰의 줄 댓글은 같은 커밋의 뒤 영수증 댓글에 묶는다', () => {
+test('영수증 없는 지적 리뷰와 그 줄 댓글은 같은 커밋의 뒤 영수증 댓글로 풀리지 않는다', () => {
   const findingReview = { id: 'F1', author: BOT, state: 'COMMENTED', submittedAt: REVIEWED_AT, body: '지적', commit: { oid: OLD } }
   const thread = (n: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${n} Badge] 제목`, originalCommit: { oid: OLD } }] } })
   const lateReceipt = receipt(OLD, FOUND_AT)
   assert.equal(judge({ reviews: [findingReview], reviewThreads: [thread(1)], comments: [lateReceipt] }).ok, false)
-  // 줄 댓글이 P3 뿐이면 그 영수증을 인정한다. P1 이어도 고친 새 커밋의 영수증이면 통과한다
-  assert.ok(judge({ reviews: [findingReview], reviewThreads: [thread(3)], comments: [lateReceipt] }).ok)
+  // 같은 커밋을 본 영수증 없는 지적 리뷰는 줄 댓글이 P3 뿐이어도 본문 지적이라 막는다. 고친 새 커밋의 영수증이면 통과한다
+  assert.equal(judge({ reviews: [findingReview], reviewThreads: [thread(3)], comments: [lateReceipt] }).ok, false)
   assert.ok(judge({ reviews: [findingReview], reviewThreads: [thread(1)], comments: [lateReceipt, receipt(HEAD, REREVIEWED_AT)] }).ok)
 })
 
@@ -210,4 +217,31 @@ test('다른 믿는 봇이 지금 HEAD 를 리뷰하는 중이면 앞 리뷰를 
   const rows = { reviews: [running], comments: [receipt(OLD)], reviewThreads: [], commits: [OLD, HEAD] }
   assert.deepEqual(judgeTrustedBotReviews(HEAD, rows, bots!), { ok: false, wait: `${second.login} 봇이 현재 HEAD 를 리뷰하는 중이다` })
   assert.ok(judgeTrustedBotReviews(HEAD, { ...rows, reviews: [] }, bots!).ok)
+})
+
+// PR 651 리뷰: 막는 지적이 오는 곳마다 그 지적이 본 커밋에 묶는다. 시각은 보지 않는다(review-bot.ts 의 「막는 지적이 오는 곳」 표)
+test('막는 지적이 오는 곳마다 같은 커밋의 뒤 영수증으로는 풀리지 않고, 뒤 커밋의 영수증으로 풀린다', () => {
+  const later = receipt(OLD, REREVIEWED_AT)
+  const fixed = receipt(HEAD, REREVIEWED_AT)
+  const sources: Record<string, Partial<BotReviewData>> = {
+    '줄 댓글 스레드': { reviewThreads: [{ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: FOUND_AT, body: '![P2 Badge] 제목', originalCommit: { oid: OLD } }] } }] },
+    '리뷰 state CHANGES_REQUESTED(본문만)': { reviews: [{ author: BOT, state: 'CHANGES_REQUESTED', submittedAt: REVIEWED_AT, body: '고칠 것', commit: { oid: OLD } }] },
+    '리뷰 본문 배지': { reviews: [{ author: BOT, state: 'COMMENTED', submittedAt: REVIEWED_AT, body: `${receipt(OLD).body}\n![P1 Badge] 제목`, commit: { oid: OLD } }] },
+    '이슈 댓글 본문 배지': { comments: [{ author: BOT, createdAt: REVIEWED_AT, body: `${receipt(OLD).body}\n![P1 Badge] 제목` }] },
+  }
+  for (const [name, rows] of Object.entries(sources)) {
+    assert.equal(judge({ ...rows, comments: [...(rows.comments ?? []), later] }).ok, false, name)
+    assert.ok(judge({ ...rows, comments: [...(rows.comments ?? []), later, fixed] }).ok, name)
+  }
+  // 커밋을 모르는 막는 지적: 영수증 없는 이슈 댓글 배지, 커밋 없는 줄 댓글, 커밋 없는 변경 요청
+  const unknown: Record<string, Partial<BotReviewData>> = {
+    '이슈 댓글 배지': { comments: [{ author: BOT, createdAt: REVIEWED_AT, body: '![P2 Badge] 제목' }] },
+    '줄 댓글': { reviewThreads: [{ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: FOUND_AT, body: '![P1 Badge] 제목' }] } }] },
+    '변경 요청': { reviews: [{ author: BOT, state: 'CHANGES_REQUESTED', submittedAt: REVIEWED_AT, body: '', commit: null }] },
+  }
+  for (const [name, rows] of Object.entries(unknown)) {
+    assert.equal(judge({ ...rows, comments: [...(rows.comments ?? []), fixed] }).ok, false, name)
+  }
+  // P3 이하 배지는 막지 않는다
+  assert.ok(judge({ comments: [{ author: BOT, createdAt: REVIEWED_AT, body: `${receipt(OLD).body}\n![P3 Badge] 제목` }] }).ok)
 })
