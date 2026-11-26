@@ -195,6 +195,20 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.equal((await c.migrate(['--apply'], { env })).stdout.trim(), 'NOTHING')
   })
 
+  test('워크트리 안 보드를 옮겨도 상대경로는 주 checkout 기준으로 남긴다', async (t) => {
+    const c = setup(t)
+    const worktree = join(c.tmp, 'wt')
+    c.sh('git', '-C', c.repo, 'worktree', 'add', '-q', '-b', 'board-wt', worktree)
+    const old = c.write('../wt/.omc/board.json', '{"items":[]}')
+    const config = c.write('.orch/config.json', '{"finish":{"board":"../wt/.omc/board.json"}}')
+    const preview = await c.migrate([])
+    assert.match(preview.stdout, /바꿀 보드 설정 \.orch\/config.json finish.board -> \.\.\/wt\/\.orch\/board.json/)
+    await c.migrate(['--apply'])
+    assert.equal(existsSync(old), false)
+    assert.deepEqual(readJson(config), { finish: { board: '../wt/.orch/board.json' } })
+    assert.equal(c.sh(process.execPath, ORCH_PATHS, '--repo', c.repo, 'board'), join(worktree, '.orch/board.json'))
+  })
+
   test('별개 보드가 이미 있으면 보드와 설정을 그대로 둔다', async (t) => {
     const c = setup(t)
     const old = c.write('.omc/board.json', '{"items":[{"id":"old"}]}')

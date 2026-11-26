@@ -114,7 +114,7 @@ function nextValue(repo: string, old: string, to: string): string {
     const home = resolveBoardSetting(repo, '~')
     return inside(to, home) ? `~/${relative(home, to)}` : to
   }
-  return isAbsolute(old) ? to : relative(repo, to)
+  return isAbsolute(old) ? to : relative(mainCheckout(repo), to)
 }
 
 export function applyBoardMove(move: BoardMove, configPath: (file: string) => string, configured: (file: string, value: string) => void): void {
