@@ -13,7 +13,7 @@
   "verification_plan": "phase-02.md",
   "requirements": ["REQ1"],
   "total_phases": 2,
-  "current_phase": 1,
+  "current_phase": 2,
   "phases": [
     {
       "number": 1,
