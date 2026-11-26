@@ -8,6 +8,7 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 /** @typedef {import('../../../types/index.d.ts').BoardSchedule} BoardSchedule */
 
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
+// 기준 저장소는 Claude 를 띄운 폴더(시작 폴더, startFolder)의 저장소다. 세션이 다른 저장소로 cd 해도 바뀌지 않는다.
 // 두 곳에서 읽는다.
 //   1. 수동 항목: 저장소의 board.json. 경로는 orch 와 같은 규칙(bin/board-file.ts, 명시 값 없이 finish.board 다음 기본 위치)으로 정한다.
 //      그 명령이 실패하면 주 checkout 에서 BOARD_PATHS 순서로 찾는다. 갱신은 플러그인의 bin/board.ts 가 한다.
@@ -1224,8 +1225,10 @@ export function pressToast(reason) {
 
 // ---- 읽기 ----
 
+// 창의 명령은 모두 시작 폴더에서 돈다. 세션이 다른 저장소로 cd 해도 git, gh 조회가 그 저장소를 보지 않는다
 async function run($, argv, timeoutMs = COMMAND_TIMEOUT_MS) {
-  const { exitCode, stdout, stderr, isStdoutTruncated } = await $.process.run(argv, { timeoutMs })
+  const cwd = await startFolder($)
+  const { exitCode, stdout, stderr, isStdoutTruncated } = await $.process.run(argv, cwd ? { timeoutMs, cwd } : { timeoutMs })
   if (exitCode !== 0) throw new Error((stderr || stdout || '종료 코드 ' + exitCode).trim().split('\n')[0])
   if (isStdoutTruncated) throw new Error('명령 출력이 4 MiB 한도에서 잘렸어요')
   return stdout
@@ -1249,7 +1252,28 @@ function refreshStatus($) {
   $.ui.invalidate('ui.render')
 }
 
-// 세션 cwd 가 워크트리로 옮겨 가도 같은 board.json 을 읽도록, 주 checkout 의 root 를 찾는다
+// 창이 읽는 기준 폴더(시작 폴더). Claude 를 띄운 폴더로 한 번 정해 세션 상태에 둔다(docs/features/board-session-root/spec.md).
+// $.session.root() 는 띄운 폴더이고 명령의 cd 로는 옮겨 가지 않는다. 이 기능이 든 버전으로 세션 도중 처음 로드돼도 띄운 폴더를 준다.
+// 정한 값을 세션 상태에 두어, 창 코드를 다시 로드해도 /cd 나 워크트리 이동을 따라가지 않는다. root() 가 없는 host 는 작업 폴더를 쓴다.
+const START_REF = { plugin: 'fos-skills', key: 'board-start' }
+let startDir = ''
+export async function startFolder($) {
+  if (startDir) return startDir
+  let dir = ''
+  try {
+    const held = (await $.state.get(START_REF)).value
+    if (typeof held === 'string' && held) return (startDir = held)
+  } catch {}
+  try { dir = await $.session.root() } catch {}
+  if (typeof dir !== 'string' || !dir) {
+    try { dir = await $.session.cwd() } catch {}
+  }
+  if (typeof dir !== 'string' || !dir) return ''
+  try { await $.state.set(START_REF, dir) } catch {}
+  return (startDir = dir)
+}
+
+// 시작 폴더가 워크트리여도 같은 board.json 을 읽도록, 주 checkout 의 root 를 찾는다
 let rootCwd = null
 let rootDir = ''
 export function mainRoot(commonDir) {
@@ -1257,7 +1281,7 @@ export function mainRoot(commonDir) {
   return dir.endsWith('/.git') ? dir.slice(0, -5) : ''
 }
 async function boardRoot($) {
-  const cwd = await $.session.cwd()
+  const cwd = await startFolder($)
   if (cwd !== rootCwd) {
     rootCwd = cwd
     feedbackCount = 0
@@ -1293,7 +1317,9 @@ async function loadFile($) {
   let text = ''
   const root = await boardRoot($)
   const resolved = await resolveBoardFile($, root)
-  const candidates = resolved.path ? [resolved.path] : resolved.error ? [] : BOARD_PATHS.map((relative) => root ? root + '/' + relative : relative)
+  // git 밖에서 띄운 세션은 시작 폴더 아래에서 찾는다. 상대 경로로 두면 cd 한 작업 폴더를 읽는다
+  const base = root || await startFolder($)
+  const candidates = resolved.path ? [resolved.path] : resolved.error ? [] : BOARD_PATHS.map((relative) => base ? base + '/' + relative : relative)
   for (const candidate of candidates) {
     if (await $.fs.exists(candidate)) {
       found = candidate
@@ -1438,7 +1464,7 @@ async function loadFeedbackCount($) {
   if (feedbackBusy) return
   feedbackBusy = true
   try {
-    const root = (await boardRoot($)) || (await $.session.cwd())
+    const root = (await boardRoot($)) || (await startFolder($))
     const script = $.plugin.root + '/extensions/work-board/bin/feedback-count.ts'
     const count = Number((await run($, ['node', '--disable-warning=ExperimentalWarning', script, root], COMMAND_TIMEOUT_MS)).trim())
     if (Number.isSafeInteger(count) && count >= 0) feedbackCount = count
@@ -1457,7 +1483,7 @@ async function loadInbox($) {
   const generation = inboxGeneration
   let stale = false
   try {
-    const root = (await boardRoot($)) || (await $.session.cwd())
+    const root = (await boardRoot($)) || (await startFolder($))
     const script = $.plugin.root + '/skills/inbox/scripts/inbox.ts'
     const value = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json']))
     stale = generation !== inboxGeneration
@@ -1518,7 +1544,7 @@ async function confirmInboxMute($) {
   const { id, key, value } = muteSelection
   muteBusy = true
   try {
-    const root = (await boardRoot($)) || (await $.session.cwd())
+    const root = (await boardRoot($)) || (await startFolder($))
     const script = $.plugin.root + '/skills/inbox/scripts/inbox.ts'
     await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'mute', id, '--repo', root, '--yes'])
     inboxGeneration++
@@ -1752,7 +1778,7 @@ async function pressApproval($, entry, action, note, origin) {
   $.ui.toast(what + (action === 'approve' ? '을' : '를') + ' 보내는 중이에요: ' + entry.title)
   $.ui.invalidate('ui.render')
   try {
-    const root = (await boardRoot($)) || (await $.session.cwd())
+    const root = (await boardRoot($)) || (await startFolder($))
     await run($, approvalArgv($.plugin.root, root, entry, action, note, origin), PRESS_TIMEOUT_MS)
     approvals = { ...approvals, open: approvals.open.filter((e) => e !== entry) }
     $.ui.toast(what + (action === 'approve' ? '을' : '를') + ' 보냈어요: ' + entry.title)

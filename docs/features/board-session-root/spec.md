@@ -53,3 +53,23 @@
 ## 도메인 규칙 변경
 
 도메인 규칙 변경 없음: 창이 읽는 기준 폴더만 바꾸고, 보드 파일 위치 규칙(`skills/orch/scripts/lib/board-file.ts` 의 `boardPath`)은 그대로 쓴다.
+
+## 기술 설계
+
+- 시작 폴더는 `register.js` 의 `startFolder` 가 정한다. 처음 부를 때 세션 상태 `fos-skills/board-start` 를 읽고, 없으면 `$.session.root()` 로 정해 그 상태에 쓴다.
+  - `$.session.root()` 는 Claude 를 띄운 폴더다. 셸의 `cd` 로는 옮겨 가지 않아서, 이 기능이 든 버전으로 세션 도중 처음 로드돼도 띄운 폴더를 준다(DECISION6).
+  - 세션 상태는 창 코드를 다시 로드해도 남는다(REQ4). 그래서 `/cd` 나 워크트리 이동으로 root 가 옮겨 가도 처음 정한 값을 쓴다(DECISION5).
+  - `/clear` 나 압축으로 세션 상태가 비어도 다시 `root()` 를 읽으므로 띄운 폴더가 나온다(REQ5).
+  - `root()` 가 없는 host 는 `$.session.cwd()` 를 쓴다. 지금 동작과 같다.
+- `boardRoot` 는 작업 폴더 대신 시작 폴더를 기준으로 `git rev-parse --git-common-dir` 를 불러 주 checkout 을 찾는다(REQ2, DECISION7). git 밖이면 시작 폴더 아래에서 보드 파일을 찾는다(REQ3, DECISION8).
+- 창의 명령 실행 함수 `run` 은 모든 명령을 시작 폴더에서 돌린다. `github.ts` 의 열린 PR 과 저장소 주소 조회는 `--repo` 없이 작업 폴더를 쓰므로, 이것으로 PR 과 PR 링크가 보드와 같은 저장소가 된다(DECISION2). 알림, 알림 숨기기, 승인 대기와 승인 누르기, 머지 큐 줄, 피드백 수는 이미 `boardRoot` 를 `--repo` 로 넘기고, 그 값이 시작 폴더 기준이 된다.
+- 보드 파일 위치 규칙(`board-file.ts`)과 명령줄 도구는 바꾸지 않는다(DECISION9). 옮김 표시는 더하지 않는다(REQ6, DECISION3).
+- 함께 고친 것: 열린 PR 조회가 끝나기 전에 실제 상태 읽기가 `live` 를 새 객체로 바꾸면 PR 결과가 옛 객체에 들어가 버려졌다. 결과를 받은 뒤의 `live` 에 넣는다. 위 변경으로 명령 순서가 바뀌며 기존 PR 테스트에서 드러났다.
+
+## 이 PR의 구현·검증 계획
+
+1. `startFolder` 를 더하고 `boardRoot`, `run`, 보드 파일 찾기가 시작 폴더를 쓰게 한다. 상태 계약 `types/index.d.ts` 에 `board-start` 를 더한다.
+2. 테스트: `extensions/work-board/tests/session-root.test.ts` 가 창을 그려 REQ1, REQ2, REQ3, REQ6 을 본다(띄운 폴더 `/a`, cd 한 폴더 `/b`). `session-root.spec.ts` 가 모듈을 새로 읽어 REQ4, REQ5, DECISION6 과 `root()` 가 없는 host 를 본다.
+3. 동작 문서, README, 변경 이력 조각을 고친다.
+
+로컬은 `claude plugin test .`, `node scripts/run-tests.ts extensions/work-board/tests`, `--tsc-only`, `claude plugin validate .` 를 돌리고 전체는 CI 가 돌린다.
