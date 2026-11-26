@@ -1,1 +1,0 @@
-- `--browser` 가 드라이버를 찾는 순서를 문서에 맞게 적었다. `skills/browser/browser-driver` 가 먼저이고 `tools/browser-driver` 는 팀 저장소의 옛 자리다.

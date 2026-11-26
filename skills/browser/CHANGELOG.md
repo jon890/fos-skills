@@ -2,6 +2,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.5 (2026-11-26)
+
+- 드라이버를 찾는 순서에서 PATH 의 `browser-driver` 를 빼고 플러그인의 `bin/browser-driver` 를 스킬 폴더 기준 경로로 찾는다. Codex 처럼 플러그인 `bin/` 을 PATH 에 올리지 않는 도구에서도 같은 순서로 찾는다.
+- 본문과 `browser-driver/README.md` 의 예시가 드라이버를 `"$SKILL_DIR/browser-driver/browser_driver.ts"` 에서 부르고 `"$B"` 를 따옴표로 감싼다. 설치 경로에 공백이 있어도 명령이 둘로 갈라지지 않는다.
+- 하위 에이전트에게 넘기는 지시 문구가 드라이버의 절대 경로(`DRIVER_PATH`)를 채워 넘긴다. 맡는 쪽이 스킬 폴더를 몰라도 드라이버를 부른다.
+
 ## 3.0.4 (2026-11-24)
 
 - Orca 가 스크린숏 파일 경로를 돌려주면 요청한 위치에 그 파일을 복사한다.

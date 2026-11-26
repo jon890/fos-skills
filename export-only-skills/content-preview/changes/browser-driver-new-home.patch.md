@@ -1,1 +1,0 @@
-- 미리보기 드라이버를 팀 저장소에서도 `skills/browser/browser-driver/` 에서 먼저 찾는다고 문서와 테스트를 맞췄다. 옛 자리 `tools/browser-driver/` 는 팀 main 이 옮기기 전까지 대체 후보로 남는다.

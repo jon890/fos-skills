@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.7 (2026-11-26)
+
+- `--browser` 가 드라이버를 찾는 순서를 문서에 맞게 적었다. `skills/browser/browser-driver` 가 먼저이고 `tools/browser-driver` 는 팀 저장소의 옛 자리다.
+
 ## 2.0.6 (2026-11-12)
 
 - 덱 편집 문서와 슬라이드 규칙의 절 제목을 할 일을 말하는 이름으로 바꾸고 사고 기록을 지웠다.
