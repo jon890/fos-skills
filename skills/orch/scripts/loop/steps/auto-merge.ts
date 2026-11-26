@@ -32,15 +32,16 @@
 //          CI 감시의 기록(ci)은 보지 않는다. 그 PR 의 base 규칙을 읽지 못했으면 `CI 규칙을 읽지 못했다`, 이번 틱에 이름이 없으면 `CI 없음` 이다.
 //        - 지시서 보류: lib/spec-targets.ts 에서 읽는다. 조회가 실패한 틱에는 자동 머지를 걸지 않는다. 이유에 비공개 낱말이 있으면 위치로 바꾼다(redactLine).
 //        - 보드 항목: 위에서 한 번 읽은 목록.
-//        - 미해결 스레드: THREADS_CMD(없으면 defaultThreadsCmd)를 저장소 폴더에서 OWNER, REPO, PR, GH_HOST 로 돌린다. 숫자가 아니면 조회 실패다.
-//        - PR 본문 보류와 리뷰 체크: gh pr view --json statusCheckRollup,files,body,headRefOid 한 번을 나눠 쓴다. 본문 보류도 redactLine 을 거친다.
+//        - 미해결 스레드: THREADS_CMD(없으면 defaultThreadsCmd)를 저장소 폴더에서 OWNER, REPO, PR, GH_HOST 와 ORCH_GH_CACHE=0(gh 캐시를 쓰지 않는다)으로 돌린다. 숫자가 아니면 조회 실패다.
+//        - PR 본문 보류와 리뷰 체크: gh pr view --json statusCheckRollup,files,body,headRefOid 한 번(캐시 없음)을 나눠 쓴다. 본문 보류도 redactLine 을 거친다.
+//          읽은 headRefOid 를 두 값에 붙여, 틱이 읽은 HEAD 와 다르면 `HEAD 가 바뀌었다` 로 기다린다.
 //          그 조회의 files 는 4 의 마이그레이션 판정에 쓴다.
 //        리뷰 판정 규칙은 core/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다. 리뷰 댓글의 문구는 보지 않는다.
 //        영수증도 리뷰 체크 성공도 없어 멈추면(review-missing) unreviewed[<PR>@<HEAD>] 가 없을 때만 AUTO-MERGE-NO-REVIEW 를 그 PR 지시서의 Run 으로 쓰고 기록한다.
 //        text 는 `HEAD <앞 8자리> 에 <없는 것>이 없다. 봇 영수증이나 리뷰 체크가 이 HEAD 에 생기면 다음 틱이 건다` 다.
 //        리뷰가 결과 없이 실패한 PR 을 코디네이터가 알게 하려는 것이다.
-//        통과하면 리뷰 판정의 근거를 둔다. 리뷰 설정이 없으면 근거는 `queue.auto_review 없음` 이다.
-//        기능 PR(지시서의 「루프를 쓴다」)은 리뷰 설정이 없으면 걸지 않고 기다린다(조건 표의 review-config, compat featureOnly)
+//        통과하면 리뷰 판정의 근거를 둔다. 앞 커밋의 봇 리뷰를 인정했으면 근거에 그 커밋과 `앞 리뷰 인정(P1·P2 없음)` 이 붙는다.
+//        리뷰 설정이 없으면 기능 PR 인지와 관계없이 어떤 PR 도 걸지 않고 기다린다(조건 표의 review-config). 이 조건은 스레드 명령과 PR 조회 앞에서 본다
 //        스레드 명령이나 gh 조회가 실패하면(wait 가 없는 조회 실패) 그 읽기가 만든 문구를 오류 이유로 남기고 그 PR 은 넘어간다.
 //        마무리(finish-<PR>.pid)가 살아 있는지는 보지 않는다. 마무리는 머지를 180분까지 기다려 큐가 그 PR 을 보류한 뒤에도 살아 있다.
 //        merge-with-finish 는 도는 마무리를 그대로 쓰므로 다시 걸어도 마무리가 겹치지 않는다.
@@ -88,7 +89,6 @@ import { beforeCommand, prHold, judgeMigrations, maxByModule, migrationOf, queue
 import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
-import { featureLoopRequested } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
 import { checkReadiness, defaultThreadsCmd, readReadinessBoard } from '../../lib/merge-readiness.ts'
@@ -255,13 +255,17 @@ function addedMigrations(files: unknown, dirs: Record<string, string | string[]>
   return found
 }
 
+// PR 조회가 돌려준 HEAD. 없으면 빈 문자열이라 판단 대상 HEAD 와 다른 값이 된다
+function viewedHead(data: Record<string, unknown>): string {
+  return typeof data.headRefOid === 'string' ? data.headRefOid : ''
+}
+
 // 판정(머리 주석의 「자동 머지」 3). 조건과 순서는 core/merge-readiness.ts 의 조건 표가 소유하고, 여기서는 틱이 읽은 값과 루프의 읽기 함수를 넘긴다.
 // wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다. missing 은 봇 영수증도 리뷰 체크 성공도 없어 멈췄다는 뜻이다. AUTO-MERGE-NO-REVIEW 를 낸다
 async function judgeTarget(
   ctx: Context,
   pr: OwnPr,
   hold: string | null,
-  feature: boolean,
   names: string[] | undefined,
   stale: Set<number>,
   state: AutoMergeState,
@@ -282,18 +286,19 @@ async function judgeTarget(
   const threads = (): Fact<string> => {
     const [owner, name] = pr.slug.split('/')
     const command = process.env.THREADS_CMD || defaultThreadsCmd(LOOP_DIR)
-    const got = runSync(['bash', '-c', command], { cwd: ctx.repo, env: { OWNER: owner, REPO: name, PR: String(pr.number), GH_HOST: pr.host } })
+    // 방금 푼 스레드를 캐시의 옛 수로 읽지 않는다
+    const got = runSync(['bash', '-c', command], { cwd: ctx.repo, env: { OWNER: owner, REPO: name, PR: String(pr.number), GH_HOST: pr.host, ORCH_GH_CACHE: '0' } })
     const count = got.stdout.trim()
     if (got.code !== 0 || !/^\d+$/.test(count)) {
       return failed(`#${pr.number} 의 미해결 스레드를 읽지 못했다(종료 코드 ${got.code}): ${oneLine((got.stderr || got.stdout).trim())}`)
     }
     return { ok: true, value: String(Number(count)) }
   }
-  // 본문 보류, 리뷰 체크, 마이그레이션 파일을 한 번의 조회로 읽는다
+  // 본문 보류, 리뷰 체크, 마이그레이션 파일을 캐시 없이 한 번의 조회로 읽는다. 읽은 HEAD 를 값에 붙여 틱의 HEAD 와 다르면 기다린다(REQ6)
   let view: { ok: true; data: Record<string, unknown> } | { ok: false; error: string } | undefined
   const viewed = () => {
     if (view === undefined) {
-      const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'statusCheckRollup,files,body,headRefOid'], { cwd: ctx.repo })
+      const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'statusCheckRollup,files,body,headRefOid'], { cwd: ctx.repo, cache: false })
       view = got.ok ? { ok: true, data: isObject(got.data) ? got.data : {} } : { ok: false, error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
     }
     return view
@@ -303,16 +308,16 @@ async function judgeTarget(
     if (!got.ok) return failed(got.error)
     const body = got.data.body
     const found = typeof body === 'string' ? prHold(body) : null
-    return { ok: true, value: found === null ? null : redactLine(found, words, 'PR 본문', body as string) }
+    return { ok: true, value: found === null ? null : redactLine(found, words, 'PR 본문', body as string), head: viewedHead(got.data) }
   }
   const reviewRollup = (): Fact<unknown> => {
     const got = viewed()
-    return got.ok ? { ok: true, value: got.data.statusCheckRollup } : failed(got.error)
+    return got.ok ? { ok: true, value: got.data.statusCheckRollup, head: viewedHead(got.data) } : failed(got.error)
   }
   const target: PrTarget = { repo: ctx.repo, number: pr.number, head: pr.head, base: pr.base, branch: pr.branch, host: pr.host, slug: pr.slug, draft: pr.draft }
   const readiness = await checkReadiness(
     target,
-    { scope: 'light', auto: { attempted: Object.hasOwn(state.tried, `${pr.number}@${pr.head}`) }, stopAtFirst: true, skip: ['migration'], compat: { featureOnly: { feature } } },
+    { scope: 'light', auto: { attempted: Object.hasOwn(state.tried, `${pr.number}@${pr.head}`) }, stopAtFirst: true, skip: ['migration'] },
     {
       known: { checks, specHold: { ok: true, value: hold }, boardItems: { ok: true, value: items }, threads, holdBody, reviewRollup },
       required: names ?? [],
@@ -488,7 +493,7 @@ async function autoMergeStep(
     const target = targets.get(pr.branch)
     if (!target) continue
     const hold = target.hold === null ? null : redactLine(target.hold, words, '지시서', target.text)
-    const judged = await judgeTarget(ctx, pr, hold, featureLoopRequested(target.text), names?.get(pr.number), stale, state, board.value, words)
+    const judged = await judgeTarget(ctx, pr, hold, names?.get(pr.number), stale, state, board.value, words)
     if ('error' in judged) {
       errors.add(judged.error)
       continue

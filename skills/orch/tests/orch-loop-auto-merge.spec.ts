@@ -18,7 +18,7 @@ import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { loopRepo } from './fixtures/orch-loop-repo.ts'
 import { queuedNotices } from './fixtures/queued-notices.ts'
-import { BOT_SETTING, receipt } from './fixtures/codex-review.ts'
+import { BOT, BOT_SETTING, receipt } from './fixtures/codex-review.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
@@ -151,7 +151,8 @@ function config(extra: { queue?: Json; migrations?: Json; finish?: Json } = {}):
     orchFile('config.json'),
     JSON.stringify({
       finish: { run: RUN, specs_dir: 'specs', ...extra.finish },
-      queue: { auto_merge: true, ...extra.queue },
+      // 리뷰 설정이 없으면 루프는 어떤 PR 도 걸지 않는다(조건 표의 review-config). 기본은 CI 체크 test 를 리뷰 체크로 본다
+      queue: { auto_merge: true, auto_review: { review_checks: ['test'] }, ...extra.queue },
       ...(extra.migrations ? { migrations: extra.migrations } : {}),
     }),
   )
@@ -195,7 +196,12 @@ function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[
     { args: ['pr', 'list', 'number,headRefName,baseRefName,files'], stdout: `${JSON.stringify(opts.open ?? [])}\n` },
     { args: ['pr', 'list'], stdout: `${JSON.stringify(rows)}\n` },
     ...(opts.failView ? [{ args: ['pr', 'view', String(opts.failView)], code: 1, stderr: 'HTTP 502\n' }] : []),
-    ...Object.entries(opts.views ?? {}).map(([n, view]) => ({ args: ['pr', 'view', n], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [], ...view })}\n` })),
+    // pr view 는 그 PR 의 목록 행과 같은 HEAD 와 롤업을 기본으로 낸다. 루프가 읽은 HEAD 를 틱의 HEAD 와 대조한다
+    ...[...new Set([...rows.map((row) => String(row.number)), ...Object.keys(opts.views ?? {})])].map((n) => {
+      const row = rows.find((one) => String(one.number) === n)
+      const base = { reviews: [], comments: [], files: [], ...(row ? { headRefOid: row.headRefOid, statusCheckRollup: row.statusCheckRollup } : {}) }
+      return { args: ['pr', 'view', n], stdout: `${JSON.stringify({ ...base, ...opts.views?.[Number(n)] })}\n` }
+    }),
     { args: ['pr', 'view'], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [] })}\n` },
     { args: ['api', 'user'], stdout: 'me\n' },
     ...(opts.botReview ? [opts.botReview] : []),
@@ -275,7 +281,9 @@ describe('대상 고르기', () => {
     assert.match(once(), /AUTO-MERGE-WAIT #1 CI pending/)
     assert.deepEqual(queueCalls(), [])
 
-    config({ queue: { allow_no_checks: true } })
+    // 리뷰 체크는 CI 체크와 따로 둔다. 틱의 롤업(CI)은 비었고 PR 조회의 롤업에만 리뷰 체크가 있다
+    config({ queue: { allow_no_checks: true, auto_review: { review_checks: ['review'] } } })
+    github([pr(1, { statusCheckRollup: [] })], { rules: { stdout: '[]\n' }, views: { 1: { statusCheckRollup: [{ __typename: 'CheckRun', name: 'review', status: 'COMPLETED', conclusion: 'SUCCESS' }] } } })
     once()
     assert.deepEqual(await queued(), queueArgs('1'))
   })
@@ -391,28 +399,37 @@ describe('리뷰', () => {
     assert.deepEqual(await queued(), queueArgs('1'))
   })
 
-  test('이전 봇 영수증에는 재리뷰를 알리고 현재 HEAD 의 영수증을 받으면 큐에 건다', async () => {
+  // 스펙 DECISION15: 봇의 마지막 리뷰에 P1·P2 지적이 없으면 앞 커밋의 리뷰도 인정한다
+  test('앞 커밋의 봇 리뷰는 P1·P2 지적이 있으면 기다리고, 없으면 인정해 큐에 건다', async () => {
     config({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } })
-    const withReceipt = (commit: string) => {
+    const withReceipt = (commit: string, threads: Json[] = []) => {
       const page = (nodes: Json[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
-      const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page() }
+      const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page(threads) }
       github([pr(1)], { views: { 1: phrases }, botReview: { args: ['api', 'graphql', 'readThreads=true'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) } })
     }
-    withReceipt(HEAD_B)
-    assert.match(once(), /AUTO-MERGE-WAIT #1 .*봇 영수증이 없다/)
-    assert.match(String(events('AUTO-MERGE-NO-REVIEW')[0]?.text), /봇 영수증이 없다/)
+    const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: `**<sub><sub>![P${level} Badge](https://img.shields.io/badge/P${level}-yellow?style=flat)</sub></sub>  제목**` }] } })
+    withReceipt(HEAD_B, [finding(2)])
+    assert.match(once(), /AUTO-MERGE-WAIT #1 chatgpt-codex-connector 봇이 P1·P2 지적을 남겼다/)
     assert.deepEqual(queueCalls(), [])
 
-    withReceipt(HEAD_A)
-    assert.match(once(), /AUTO-MERGE-BASIS #1 .*봇 영수증 chatgpt-codex-connector/)
+    withReceipt(HEAD_B, [finding(3)])
+    assert.match(once(), /AUTO-MERGE-BASIS #1 .*봇 영수증 chatgpt-codex-connector\(커밋 bbbbbbbb, .*앞 리뷰 인정\(P1·P2 없음\)\)/)
     assert.deepEqual(await queued(), queueArgs('1'))
   })
 
-  test('옛 문구 판정 키만 있으면 리뷰 설정이 없는 것과 같아 리뷰 없이 건다', async () => {
+  test('옛 문구 판정 키만 있으면 리뷰 설정이 없는 것과 같아 걸지 않는다', () => {
     config({ queue: { auto_review: { pass: '^통과', block: '^보류', require: ['verdict-seen'] } } })
-    github([pr(1)], { views: { 1: { reviews: [{ body: '보류: 고칠 것', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_A } }] } } })
-    assert.match(once(), /AUTO-MERGE-BASIS #1 HEAD aaaaaaaa queue\.auto_review 없음/)
-    assert.deepEqual(await queued(), queueArgs('1'))
+    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_A } }] } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 자동 머지는 queue\.auto_review 의 trusted_bots 나 review_checks 가 필요하다/)
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  // REQ6: 루프의 PR 조회가 돌려준 HEAD 가 틱의 HEAD 와 다르면 그 판단을 통과로 보지 않는다
+  test('PR 조회가 다른 HEAD 를 돌려주면 리뷰 체크가 통과해도 걸지 않고 HEAD 가 바뀌었다로 기다린다', () => {
+    config({ queue: { auto_review: checks } })
+    github([pr(1)], { views: { 1: { headRefOid: HEAD_B, statusCheckRollup: reviewCheck('SUCCESS') } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 HEAD 가 바뀌었다/)
+    assert.deepEqual(queueCalls(), [])
   })
 
   test('미해결 스레드가 있으면 리뷰 체크가 통과해도 걸지 않는다', () => {
@@ -914,12 +931,16 @@ test('기능 지시서의 PR 은 본문에 완료 근거 블록이 없어도 지
   await queued(1)
 })
 
-test('기능 지시서의 PR 은 리뷰 설정(trusted_bots, review_checks)이 없으면 걸지 않는다', () => {
+// REQ5: 리뷰 설정이 없으면 기능 PR 인지와 관계없이 걸지 않는다. 이 조건은 스레드 명령과 PR 조회 앞에서 본다(설계 DECISION11)
+test('리뷰 설정(trusted_bots, review_checks)이 없으면 기능 PR 이 아니어도 걸지 않고 스레드와 PR 조회를 부르지 않는다', () => {
   config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
-  spec('specs', 'spec-a.md', ['feat-1'], ['## 할 일', '루프를 쓴다(스펙: 새로 쓴다)'])
-  github([pr(1)], { views: { 1: { reviews: [{ body: 'PASS', commit: { oid: HEAD_A }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
-  assert.match(once(), /AUTO-MERGE-WAIT #1 기능 자동 머지는 queue\.auto_review 의 trusted_bots 나 review_checks 가 필요하다/)
+  write(join(tmp, 'threads-1'), '2\n')
+  github([pr(1)])
+  const output = once()
+  assert.match(output, /AUTO-MERGE-WAIT #1 자동 머지는 queue\.auto_review 의 trusted_bots 나 review_checks 가 필요하다/)
+  assert.doesNotMatch(output, /AUTO-MERGE-WAIT #1 기능 /)
   assert.equal(queueCalls().length, 0)
+  assert.deepEqual(gh.calls().map((call) => call.argv).filter((args) => args[0] === 'pr' && args[1] === 'view' && args[2] === '1'), [])
 })
 
 test('지시서 없는 PR 은 본문에 근거 블록 표시가 있어도 기능 PR 로 보지 않는다', async () => {

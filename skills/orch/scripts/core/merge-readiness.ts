@@ -76,14 +76,6 @@ export type ReadinessPolicy = {
   privateWords: boolean
 }
 
-// 호출부마다 다른 지금 동작을 남기는 임시 값(설계 「커밋과 PR 순서」). 뒤 PR 이 하나씩 지운다
-export type ReadinessCompat = {
-  // 체크 조회 중의 HEAD 변경을 code head-checks 로 따로 낸다. 머지 큐가 다시 시도하지 않는 보류로 다룬다(PR7)
-  checkHeadStop?: boolean
-  // 리뷰 설정 없음(review-config)을 기능 PR 에만 건다. 기능 PR 인지는 루프가 지시서로 정해 넘긴다(PR7)
-  featureOnly?: { feature: boolean }
-}
-
 export type ReadinessAsk = {
   scope: 'light' | 'full'
   // 루프가 사람 지시 없이 머지를 걸 때만 준다. attempted 는 이 HEAD 로 이미 걸었는지다
@@ -93,7 +85,6 @@ export type ReadinessAsk = {
   stopAtFirst?: boolean
   // 체크를 HEAD 별 공유 캐시 없이 읽는다. 판단에는 쓰지 않고 lib 가 읽을 때 본다
   fresh?: boolean
-  compat?: ReadinessCompat
 }
 
 export type Judged = { reasons: Reason[]; need: FactName[]; notes: string[]; summary: string; basis: string | null }
@@ -211,7 +202,17 @@ export const CONDITIONS: readonly Condition[] = [
     },
   },
   {
-    id: 'threads', kind: 'threads', stage: 'ready', scope: 'light', evaluate: 6, output: 3,
+    // 리뷰 설정이 없으면 루프는 어떤 PR 도 스스로 걸지 않는다. 설정만 보므로 값을 읽는 조건(스레드, PR 조회)보다 먼저 본다(설계 DECISION11)
+    id: 'review-config', kind: 'review', stage: 'merge', scope: 'light', evaluate: 6, output: 13,
+    active: (ctx) => ctx.ask.auto !== undefined && ctx.policy.review === null,
+    needs: () => [],
+    judge() {
+      const text = '자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다'
+      return { reasons: [reason(this, 'review-config', text, 'review', text)] }
+    },
+  },
+  {
+    id: 'threads', kind: 'threads', stage: 'ready', scope: 'light', evaluate: 7, output: 3,
     needs: () => ['threads'],
     judge(ctx) {
       const count = value(ctx, 'threads') as string
@@ -220,21 +221,11 @@ export const CONDITIONS: readonly Condition[] = [
     },
   },
   {
-    id: 'hold-body', kind: 'hold', stage: 'merge', scope: 'light', evaluate: 7, output: 10,
+    id: 'hold-body', kind: 'hold', stage: 'merge', scope: 'light', evaluate: 8, output: 10,
     needs: () => ['holdBody'],
     judge(ctx) {
       const hold = value(ctx, 'holdBody')
       return hold ? { reasons: [reason(this, 'hold-body', hold, 'hold', `PR 본문 보류: ${hold}`)] } : {}
-    },
-  },
-  {
-    // 리뷰 설정이 없으면 루프가 스스로 걸지 않는다. PR7 전까지는 기능 PR 에만 건다(compat featureOnly)
-    id: 'review-config', kind: 'review', stage: 'merge', scope: 'light', evaluate: 8, output: 13,
-    active: (ctx) => ctx.ask.auto !== undefined && ctx.policy.review === null && (ctx.ask.compat?.featureOnly?.feature ?? true),
-    needs: () => [],
-    judge() {
-      const text = '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다'
-      return { reasons: [reason(this, 'review-config', text, 'review', text)] }
     },
   },
   {
@@ -324,21 +315,12 @@ export function acceptedCandidates(snapshot: ReadinessSnapshot, policy: Readines
   return evidenceCandidates({ pr: snapshot.pr, facts: snapshot.facts, policy, ask: { scope: 'full' } })
 }
 
-// 값마다 HEAD 가 바뀌었을 때의 문구. 지금 문구를 값마다 그대로 둔다. 하나로 모으는 일은 PR7 이 한다
-function headText(name: FactName, pr: ReadinessPr, now: string): string {
-  if (name === 'checks') return `체크 조회 중 HEAD 가 바뀌었다 checked=${pr.head} now=${now || '?'}`
-  if (name === 'reviewRollup') return '리뷰 조회 중 HEAD 가 바뀌었다'
-  if (name === 'files') return '마이그레이션 검사 중 HEAD 가 바뀌었다'
-  if (name === 'body') return `검사 뒤 HEAD 가 바뀌었다 checked=${short(pr.head)} now=${short(now)}`
-  return `검사 중 HEAD 가 바뀌었다 checked=${short(pr.head)} now=${short(now)}`
-}
-
-// 읽은 HEAD 가 판단 대상과 다른 값. 없으면 null
-export function changedHead(snapshot: ReadinessSnapshot, ask: ReadinessAsk = { scope: 'full' }): Reason | null {
-  for (const [name, fact] of Object.entries(snapshot.facts) as [FactName, Fact<unknown> | undefined][]) {
+// 읽은 HEAD 가 판단 대상과 다른 값. 없으면 null. 어느 값에서 걸려도 문구는 하나다
+export function changedHead(snapshot: ReadinessSnapshot): Reason | null {
+  for (const fact of Object.values(snapshot.facts) as (Fact<unknown> | undefined)[]) {
     if (!fact?.ok || fact.head === undefined || fact.head === snapshot.pr.head) continue
-    const code = name === 'checks' && ask.compat?.checkHeadStop ? 'head-checks' : 'head'
-    return { code, kind: 'head', stage: 'ready', text: headText(name, snapshot.pr, fact.head), wait: 'HEAD 가 바뀌었다' }
+    const text = `검사 중 HEAD 가 바뀌었다 checked=${short(snapshot.pr.head)} now=${short(fact.head) || '?'}`
+    return { code: 'head', kind: 'head', stage: 'ready', text, wait: 'HEAD 가 바뀌었다' }
   }
   return null
 }
@@ -354,7 +336,7 @@ function inAsk(cond: Condition, ctx: Ctx): boolean {
 // 조건 표를 돈다. need 가 비지 않으면 그 값을 읽어 다시 묻는다
 export function judgeReadiness(snapshot: ReadinessSnapshot, policy: ReadinessPolicy, ask: ReadinessAsk): Judged {
   const ctx: Ctx = { pr: snapshot.pr, facts: snapshot.facts, policy, ask }
-  const head = changedHead(snapshot, ask)
+  const head = changedHead(snapshot)
   if (head) return { reasons: [head], need: [], notes: [], summary: '', basis: null }
   const conditions = CONDITIONS.filter((cond) => inAsk(cond, ctx)).sort((a, b) => a.evaluate - b.evaluate)
   const need: FactName[] = []

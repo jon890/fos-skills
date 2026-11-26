@@ -9,7 +9,7 @@ import { TURN_PHASES } from '../../lib/queue-turn.ts'
 import { queueChecks, sortedCheckNames } from './checks.ts'
 import { askReadiness, gateReasons, holdWith, loadPr, refuseMergeHold } from './gate.ts'
 import type { GhPr, StepContext } from './model.ts'
-import { CheckStop, HeadChanged, NotReady } from './model.ts'
+import { CheckStop, NotReady } from './model.ts'
 import type { StepState } from './model.ts'
 import { ownsQueueLock } from '../../lib/queue-lock.ts'
 import { docsOnly, overlapFiles, overlapsDeferred } from './overlap.ts'
@@ -120,23 +120,15 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
       await beforeMerge(stepContext, state, prCommand)
     }
 
-    const ph2 = await field(stepContext, state, n, 'headRefOid', '.headRefOid')
-    if (p.ph !== ph2) throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
-    // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
-    // 조건 표(checkReadiness)로 옮기는 일은 체크 조회 중 HEAD 변경 처리를 정리하는 PR7 이 한다(설계 「커밋과 PR 순서」)
-    const latestFailed = (await queueChecks(stepContext, state, true))?.failed.length
-    const latestPending = (await queueChecks(stepContext, state))?.pending
-    const latestMissing = (await queueChecks(stepContext, state))?.missing.length
-    if (latestFailed !== 0 || latestPending !== 0 || latestMissing !== 0) {
-      stop(`${n} 머지 직전 체크가 바뀌었다 fails=${latestFailed ?? ''} pending=${latestPending ?? ''} missing=${latestMissing ?? ''}`)
-    }
+    // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 체크를 캐시 없이 다시 읽는다(fresh).
+    // 읽은 체크에 HEAD 가 붙어 있어, 검사한 뒤 HEAD 가 바뀌었으면 이 물음이 HeadChanged 를 던진다
+    const latest = await askReadiness(stepContext, state, { only: ['ci', 'migration'], fresh: true })
+    if (latest.reasons.length) holdWith(state, latest.reasons)
     if (!p.cross) {
       if (git('fetch', '-q', 'origin', p.branch).code !== 0) stop(`${n} 원격 브랜치 fetch 실패`)
       const rh = git('rev-parse', '-q', '--verify', `origin/${p.branch}`).stdout.trim()
       if (p.ph !== rh) stop(`${n} head 불일치 pr=${p.ph.slice(0, 8)} remote=${rh.slice(0, 8)}`)
     }
-    const migration = await askReadiness(stepContext, state, { only: ['migration'] })
-    if (migration.reasons.length) holdWith(state, migration.reasons)
     if (!p.judgedBase) return
     if (remoteBase(stepContext, state) === p.judgedBase) return
     log(`${n} 판정한 뒤 base(${p.base}) 가 움직였다. 새로 들어온 변경으로 다시 판정한다`)

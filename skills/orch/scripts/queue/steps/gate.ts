@@ -103,12 +103,11 @@ export function readOptions(stepContext: StepContext, state: StepState): ReadOpt
   }
 }
 
-// 머지 전 조건을 묻는다. head 이유는 머지 큐가 다시 시도하는 HeadChanged 로, 체크 조회 중의 HEAD 변경은 다시 시도하지 않는 보류로 던진다
+// 머지 전 조건을 묻는다. 어느 값을 읽다 HEAD 가 바뀌었든 head 이유는 머지 큐가 다시 시도하는 HeadChanged 로 던진다
 export async function askReadiness(stepContext: StepContext, state: StepState, ask: Omit<ReadinessAsk, 'scope'>) {
   const n = state.p.n
-  const readiness = await checkReadiness(readinessTarget(state), { scope: 'full', ...ask, compat: { checkHeadStop: true, ...ask.compat } }, readOptions(stepContext, state))
+  const readiness = await checkReadiness(readinessTarget(state), { scope: 'full', ...ask }, readOptions(stepContext, state))
   const head = readiness.reasons.find((r) => r.kind === 'head')
-  if (head?.code === 'head-checks') stop(`${n} ${head.text}`)
   if (head) throw new HeadChanged(`${n} ${head.text}`)
   return readiness
 }
