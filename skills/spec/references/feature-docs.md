@@ -2,10 +2,18 @@
 
 문서별 양식·책임·변경 순서는 [문서 소유권](document-ownership.md), 계획 보존·삭제는 [계획 수명 규칙](../../plan/references/plan-lifecycle.md)이 소유한다.
 
-## 문서 소유권
+## 기능 폴더 이름
 
 기본 기능 폴더는 `docs/features/<기능>/` 이다. 기존 배치는 [설정 탐색](../../plan/references/monorepo.md)을 따른다.
-전역 순번이나 수동 기능 색인을 만들지 않는다. 기존 기능은 그 스펙을 수정하고 새 사본을 만들지 않는다.
+전역 순번이나 수동 기능 색인을 만들지 않는다.
+
+- 담당자, 운영자, 개발자가 얻는 능력이나 다루는 대상을 명사구로 쓴다. `named-trial-runs`, `chat-evidence`, `llm-model-management` 가 예다.
+- 작업을 나타내는 동사(`remove`, `split`, `merge`, `unify`, `consolidate`, `align`, `fix`, `migrate`, `cleanup`)와 개선 작업의 이름 끝에 붙는 말(`ux`, `layout`, `always`)은 쓰지 않는다.
+  그 동작 자체가 기능이면 쓸 수 있다. 사용자가 노드를 합치는 `knowledge-graph-node-merge` 가 예다.
+- 기능을 만들거나 넓히지 않는 구조 분리, DB 정리, 개발 도구 작업은 ADR 과 PR 계획으로 다룬다. 기능 폴더를 만들지 않는다. [정리·삭제에 spec 을 쓰지 않는 기준](../SKILL.md#spec)을 따른다.
+- 기존 기능을 넓힐 때는 해당 기능 폴더의 스펙을 수정한다.
+
+## 문서 소유권
 
 | 위치 | 소유하는 것 |
 | --- | --- |
