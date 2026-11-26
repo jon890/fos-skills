@@ -2,6 +2,7 @@
 
 import { readdirSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { allowNoChecksOf } from '../../core/config.ts'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../../lib/config.ts'
 import { eventTimeoutSec, handlerFile } from '../../lib/events.ts'
 import { ownAuthors } from '../../lib/gh.ts'
@@ -86,6 +87,7 @@ export function preflight(stepContext: StepContext, state: StepState): void {
   const o = state.o
   const repo = state.repoDir
   const config = loadConfig(repo)
+  state.allowNoChecks = allowNoChecksOf(config)
   section(config, 'hooks', HOOKS_KEYS)
   const authors = section<{ authors?: unknown }>(config, 'pipeline', PIPELINE_KEYS).authors
   // 비지 않은 값이면 ownAuthors 는 gh 를 부르지 않고 타입만 본다. 틀리면 ConfigError 다

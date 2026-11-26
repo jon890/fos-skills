@@ -316,7 +316,7 @@ async function judgeTarget(
     {
       known: { checks, specHold: { ok: true, value: hold }, boardItems: { ok: true, value: items }, threads, holdBody, reviewRollup },
       required: names ?? [],
-      allowNoChecks: false,
+      allowNoChecks: ctx.allowNoChecks,
     },
   )
   const first = readiness.reasons[0]

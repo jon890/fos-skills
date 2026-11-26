@@ -19,6 +19,9 @@ export const QUEUE_LOOP_KEYS: readonly string[] = ['auto_merge', 'auto_review']
 // queue 절에서 머지 관문(queue/steps/gate.ts)만 읽는 키. 머지 큐 옵션으로 바꾸지 않는다. 꼴은 core/integration-evidence.ts 가 판정한다
 export const QUEUE_GATE_KEYS: readonly string[] = ['integration_tests']
 
+// 관문, 머지 큐, 상주 루프가 설정 파일에서 읽는 키. 머지 큐 옵션으로 바꾸지 않는다.
+export const QUEUE_READINESS_KEYS: readonly string[] = ['allow_no_checks']
+
 // queue 절의 아는 키 전부. skills/orch/references/overlay.md 「마무리 설정 파일」 표의 queue 행이다.
 // merge-with-finish 가 머지 큐 옵션으로 바꾸고, orch-loop 가 필수 체크 판정에 required 를, 자동 머지에 QUEUE_LOOP_KEYS 를 읽는다
 export const QUEUE_KEYS: readonly string[] = [
@@ -40,6 +43,7 @@ export const QUEUE_KEYS: readonly string[] = [
   'ci_expected_sec',
   ...QUEUE_LOOP_KEYS,
   ...QUEUE_GATE_KEYS,
+  ...QUEUE_READINESS_KEYS,
 ]
 
 // pipeline 절의 아는 키 전부. docs/data-schema.md 「config.json 에 더하는 절」 표의 pipeline 행이다.
@@ -148,6 +152,13 @@ export const REMOVED_CONFIG_KEYS: ReadonlyArray<{ section: Section; key: string;
   { section: 'queue', key: 'after_merged', event: 'after-queue' },
   { section: 'finish', key: 'complete_cmd', event: 'after-deploy' },
 ]
+
+export function allowNoChecksOf(config: Config): boolean {
+  const { allow_no_checks } = section<{ allow_no_checks?: unknown }>(config, 'queue', QUEUE_KEYS)
+  if (allow_no_checks === undefined) return false
+  if (typeof allow_no_checks !== 'boolean') throw new ConfigError('설정 파일의 queue.allow_no_checks 는 true 나 false 여야 한다')
+  return allow_no_checks
+}
 
 // 절 하나를 꺼낸다. 절이 없으면 빈 객체다. 값의 타입은 부르는 쪽이 검사한다.
 export function section<T>(config: Config, name: Section, known: readonly string[]): T {

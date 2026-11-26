@@ -163,6 +163,7 @@ export class StepState {
   ghRetrySeconds = 10
   pr: Pr | null = null
   requiredChecks: string[] = []
+  allowNoChecks = false
   // 차례 기록(lib/queue-turn.ts)의 prs. 차례 PR 부터 큐 끝까지다
   remaining: number[] = []
   turnWarned = false

@@ -86,7 +86,7 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
     for (const name of sortedCheckNames(checks?.allowedFailed ?? []).flatMap((name) => name.split('\n'))) {
       if (name) out(`경고: ${n} 실패를 허용한 체크 ${name}`)
     }
-    const gate = await gateReasons(stepContext, state, 'failed')
+    const gate = await gateReasons(stepContext, state, 'all')
     log(`${n} ${gate.summary}`)
     if (gate.reasons.length > 0) holdWith(state, gate.reasons)
     // 통합 테스트를 생략한 모듈은 머지 출력에 경고로 남긴다. base 가 움직여 다시 판정해도 같은 HEAD 면 한 번만 낸다

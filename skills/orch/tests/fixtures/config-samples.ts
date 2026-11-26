@@ -27,6 +27,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     shared_groups: { good: [{ migration: '^db/migration/' }, { contract: ['^docs/contract\\.md$', '^tests/contract/'], e2e: '^test/e2e/' }], bad: [{}, { 'a b': '^x/' }, { m: '(' }, { m: '' }, { m: [] }, ['^x/'], 5] },
     unit_prefix: { good: ['modules/'], bad: ['', 1] },
     skipped_is_missing: { good: [true, false, null], bad: [] },
+    allow_no_checks: { good: [true, false], bad: ['true', 1, null] },
     update_docs_on_overlap: flag,
     require_up_to_date: flag,
     auto_merge: flag,

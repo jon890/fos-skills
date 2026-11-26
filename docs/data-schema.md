@@ -80,6 +80,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 
 | 절 | 키 | 타입 | 기본값 | 담는 것 |
 | --- | --- | --- | --- | --- |
+| `queue` | `allow_no_checks` | bool | false | true 면 지금 HEAD 에 CI 체크가 없어도 관문, 머지 큐, 상주 루프가 체크를 통과로 본다. 필수 체크 이름이 설정되어 있으면 해당 체크가 나타나야 한다. CI 가 없는 저장소는 플러그인을 갱신한 뒤 켠다 |
 | `feedback` | `reviewer` | 영문이나 숫자로 시작하고 영문, 숫자, 밑줄, 점, 콜론, 하이픈만 쓰는 문자열 | 없음 | 스킬 개선 후보의 판정을 맡는 이름. [피드백 검토 주기](../skills/orch/references/feedback-review.md#주기)를 따른다 |
 | `routing` | `review_author` | 비지 않은 GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
 | `routing` | `review_pattern` | JS 정규식 문자열(`m`). P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |

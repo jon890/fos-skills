@@ -14,6 +14,7 @@
 
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
+import { allowNoChecksOf } from '../../core/config.ts'
 import { loadConfig } from '../../lib/config.ts'
 import { real } from '../../lib/fs.ts'
 import { ciState, requiredNames } from '../../lib/gh.ts'
@@ -63,7 +64,7 @@ function foreignMergeWaits(repo: string, localOrchDir: string, now: number): (wo
     if (!states.has(pr.number)) {
       try {
         const names = requiredNames(repo, pr.host, pr.slug, pr.base, config)
-        states.set(pr.number, names.ok ? ciState(pr.rollup, names.names, pr.head).state : null)
+        states.set(pr.number, names.ok ? ciState(pr.rollup, names.names, pr.head, allowNoChecksOf(config)).state : null)
       } catch {
         states.set(pr.number, null)
       }

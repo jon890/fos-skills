@@ -99,6 +99,7 @@ orch config unset contracts.merge_command contracts.paths
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 바깥 목록은 비지 않고 안쪽은 항목이 2개 이상이다. 항목은 쉼표 없는 비지 않은 문자열이며 중복 단위는 둘 수 없다. 안쪽 목록마다 `--unit-group a,b` 가 된다 |
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 비지 않은 문자열 목록(빈 목록 허용). 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
+| `queue` | `allow_no_checks` | CI 가 없는 저장소에서 사용한다. 키 뜻은 저장소 `docs/data-schema.md` 의 「config.json 에 더하는 절」 이 소유한다 |
 | `queue` | `auto_merge`, `auto_review` | 상주 루프의 자동 머지. 키 뜻은 저장소 `docs/data-schema.md` 의 「config.json 에 더하는 절」 이 소유한다 |
 | `queue` | `integration_tests` | 머지 관문(`orch queue gate`, 머지 큐)이 바뀐 모듈의 통합 테스트 기록을 확인하는 규칙 목록. 규칙의 `modules` 에 이름을 지정하면 경로가 맞아도 목록에 있는 모듈만 확인한다. 모듈 목록을 생략하면 경로가 맞는 모든 모듈을 확인한다. 플러그인을 먼저 갱신한 뒤 `modules` 를 추가한다. 설정 예시와 기록 형식은 `docs/features/gate-integration-evidence/design.md` 에 있다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초(양수, 타이머 상한 이하)로 가는 객체. 핸들러의 시간 제한을 바꾼다. 기본값과 모르는 이벤트 처리는 `scripts/lib/events.ts` 머리 주석이 소유한다 |

@@ -78,8 +78,6 @@ export type ReadinessPolicy = {
 
 // 호출부마다 다른 지금 동작을 남기는 임시 값(설계 「커밋과 PR 순서」). 뒤 PR 이 하나씩 지운다
 export type ReadinessCompat = {
-  // 체크 대기 뒤라 실패한 체크만 본다(PR6)
-  checksAfterWait?: boolean
   // 체크 조회 중의 HEAD 변경을 code head-checks 로 따로 낸다. 머지 큐가 다시 시도하지 않는 보류로 다룬다(PR7)
   checkHeadStop?: boolean
   // 리뷰 설정 없음(review-config)을 기능 PR 에만 건다. 기능 PR 인지는 루프가 지시서로 정해 넘긴다(PR7)
@@ -167,21 +165,18 @@ export const CONDITIONS: readonly Condition[] = [
     tolerates: ['checks'],
     judge(ctx) {
       const fact = ctx.facts.checks as Fact<Facts['checks']>
-      const afterWait = ctx.ask.compat?.checksAfterWait === true
       const checks = fact.ok ? judgeChecks(fact.value, ctx.policy) : null
       const reasons: Reason[] = []
       const failed = checks?.failed.length
       if (!fact.ok) reasons.push(reason(this, 'lookup', fact.error, 'lookup', fact.wait))
       else if (failed !== 0) reasons.push(reason(this, 'ci-failed', `실패한 체크 ${failed} 개`, 'ci', 'CI failed'))
-      if (!afterWait) {
-        const pending = checks?.pending
-        const missing = checks?.missing.length
-        if (pending !== 0 || missing !== 0) {
-          const names = missing ? checks?.missing.join(', ') : ''
-          reasons.push(reason(this, 'ci-pending', `체크가 아직 끝나지 않았다(진행 중 ${pending ?? '?'}, 나타나지 않은 필수 체크 ${names || missing?.toString() || '?'})`, 'ci', 'CI pending'))
-        } else if (failed === 0 && checks?.none && !ctx.policy.allowNoChecks) {
-          reasons.push(reason(this, 'ci-none', 'PR 에 CI 체크가 하나도 없다', 'ci', 'CI pending'))
-        }
+      const pending = checks?.pending
+      const missing = checks?.missing.length
+      if (pending !== 0 || missing !== 0) {
+        const names = missing ? checks?.missing.join(', ') : ''
+        reasons.push(reason(this, 'ci-pending', `체크가 아직 끝나지 않았다(진행 중 ${pending ?? '?'}, 나타나지 않은 필수 체크 ${names || missing?.toString() || '?'})`, 'ci', 'CI pending'))
+      } else if (checks?.state === 'pending') {
+        reasons.push(reason(this, 'ci-none', 'PR 에 CI 체크가 하나도 없다', 'ci', 'CI pending'))
       }
       return { reasons, summary: [`fails=${failed ?? ''}`] }
     },

@@ -92,6 +92,9 @@ describe('키별 표본', () => {
     assert.deepEqual(valueProblems('finish', 'run', null), [])
     assert.equal(valueProblems('finish', 'specs_dir', null).length, 1)
     assert.deepEqual(valueProblems('queue', 'required', 'A,,B'), [])
+    assert.deepEqual(valueProblems('queue', 'allow_no_checks', true), [])
+    assert.deepEqual(valueProblems('queue', 'allow_no_checks', false), [])
+    assert.equal(valueProblems('queue', 'allow_no_checks', 'true').length, 1)
     assert.equal(valueProblems('inbox', 'enabled', 'false').length, 1)
   })
 

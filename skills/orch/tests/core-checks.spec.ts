@@ -37,6 +37,10 @@ test('빈 롤업을 허용해도 필수 이름이 빠지면 기다린다', () =>
   assert.deepEqual(judgeChecks([], options).missing, ['Tests'])
   assert.equal(judgeChecks([], options).state, 'pending')
   assert.equal(ciState([], []).state, 'pending')
+  const oldHead = [{ ...success, headSha: 'previous' }]
+  assert.deepEqual(ciState(oldHead, [], 'current', true), { state: 'passed', checks: [] })
+  assert.equal(ciState(oldHead, options.required, 'current', true).state, 'pending')
+  assert.equal(requiredCiState(oldHead, [], 'current', true), 'passed')
 })
 
 test('같은 워크플로의 새 실행과 현재 HEAD 를 기준으로 판정한다', () => {

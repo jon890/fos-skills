@@ -16,6 +16,7 @@ import { autoAdvanceOf } from '../../core/auto-advance.ts'
 import { isObject } from '../../core/json.ts'
 import { autoMergeConfig } from '../../lib/auto-merge.ts'
 import type { AutoMergeConfig } from '../../lib/auto-merge.ts'
+import { allowNoChecksOf } from '../../core/config.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from '../../lib/config.ts'
 import type { Found } from '../../lib/conflicts.ts'
 import { FINISH_KEYS } from '../../lib/finish-options.ts'
@@ -54,6 +55,7 @@ export type Context = {
   autoAdvance: boolean
   movement: MovementSettings
   autoMerge: AutoMergeConfig
+  allowNoChecks: boolean
   // pipeline.refresh_slots 와 머지 큐의 최신화 기준(refresh.ts 머리 주석의 「최신화」, lib/refresh.ts 의 refreshSettings)
   refresh: RefreshSettings
   // config 의 queue.sweep_args 그대로. 자동 머지가 lib/auto-merge.ts 의 sweepArgs 로 큐의 Run 에 맞춘다
@@ -112,6 +114,7 @@ export function context(repo: string, run: string | undefined, specsDir: string 
     autoAdvance: autoAdvanceOf(config),
     movement: movementSettings(repo),
     autoMerge: autoMergeConfig(config),
+    allowNoChecks: allowNoChecksOf(config),
     refresh: refreshSettings(config),
     sweepArgs: queue.sweep_args,
   }

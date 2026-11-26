@@ -59,14 +59,16 @@ test('조건마다 걸린 이유를 지금 관문의 문구와 출력 순서로 
   assert.deepEqual(texts(snap({ mergeable: { ok: true, value: '' } })), ['mergeable=조회 실패'])
 })
 
-test('체크 대기 뒤(compat checksAfterWait)에는 실패만 본다', () => {
+test('진행 중인 체크와 나타나지 않은 필수 체크를 함께 알린다', () => {
+  const absent = 'Lint'
   const pending = { name: 'Tests', status: 'IN_PROGRESS', conclusion: null }
   const s = snap({ checks: { ok: true, value: [pending], head: HEAD } })
-  assert.equal(texts(s).length, 1)
-  assert.deepEqual(texts(s, { scope: 'full', compat: { checksAfterWait: true } }), [])
+  assert.deepEqual(texts(s, full, { ...policy, required: ['Tests', absent] }), [
+    '체크가 아직 끝나지 않았다(진행 중 1, 나타나지 않은 필수 체크 Lint)',
+  ])
 })
 
-test('체크 조회 실패는 조회 실패와 진행 중 두 줄이다. 대기 뒤에는 한 줄이다', () => {
+test('체크 조회 실패는 조회 실패와 진행 중 여부를 알 수 없다는 두 줄을 낸다', () => {
   const s = snap({ checks: { ok: false, error: '체크 조회 실패' } })
   const judged = judgeReadiness(s, policy, full)
   assert.deepEqual(judged.reasons.map((r) => [r.kind, r.text]), [
@@ -74,7 +76,6 @@ test('체크 조회 실패는 조회 실패와 진행 중 두 줄이다. 대기 
     ['ci', '체크가 아직 끝나지 않았다(진행 중 ?, 나타나지 않은 필수 체크 ?)'],
   ])
   assert.equal(judged.summary, 'fails= threads=0 mergeable=MERGEABLE')
-  assert.deepEqual(texts(s, { scope: 'full', compat: { checksAfterWait: true } }), ['체크 조회 실패'])
 })
 
 test('조회 실패는 값 하나에 lookup 하나이고 그 값을 쓰는 가장 앞 조건 자리에 나온다', () => {
@@ -235,6 +236,8 @@ test('체크가 하나도 없으면 allowNoChecks 가 거짓일 때만 ci-none �
   assert.deepEqual([judged.code, judged.text, judged.wait], ['ci-none', 'PR 에 CI 체크가 하나도 없다', 'CI pending'])
   assert.equal(firstWait(none, loop, { ...loopPolicy, allowNoChecks: true }), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
   assert.deepEqual(texts(none, full, { ...policy, required: [] }), [])
+  assert.equal(blocksReady(judgeReadiness(none, loopPolicy, full)), true)
+  assert.match(texts(none, full, policy)[0], /나타나지 않은 필수 체크 Tests/)
 })
 
 test('stopAtFirst 로 물으면 첫 이유가 루프의 지금 판단 순서를 따른다', () => {

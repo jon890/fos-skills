@@ -99,16 +99,16 @@ export function judgeChecks(rows: readonly Record<string, unknown>[], options: C
   return { state, failed, allowedFailed, pending, missing, none, checks }
 }
 
-export function ciState(rollup: unknown, required: readonly string[], head?: string): CiState {
+export function ciState(rollup: unknown, required: readonly string[], head?: string, allowNoChecks = false): CiState {
   const rows = currentChecks(rollup, head)
-  const { state, checks } = judgeChecks(rows, { required, allowNoChecks: false })
+  const { state, checks } = judgeChecks(rows, { required, allowNoChecks })
   return { state, checks }
 }
 
 // 루프의 최신화는 필수 체크만 본다. 필수 체크 이름이 비면 나타난 체크를 모두 본다.
-export function requiredCiState(rollup: unknown, required: readonly string[], head?: string): CiState['state'] {
+export function requiredCiState(rollup: unknown, required: readonly string[], head?: string, allowNoChecks = false): CiState['state'] {
   const rows = currentChecks(rollup, head)
   const wanted = new Set(required)
   const selected = wanted.size === 0 ? rows : rows.filter((row) => wanted.has(checkName(row) ?? ''))
-  return judgeChecks(selected, { required, allowNoChecks: false }).state
+  return judgeChecks(selected, { required, allowNoChecks }).state
 }
