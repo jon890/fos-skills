@@ -13,6 +13,7 @@
 //     결과의 ci 는 이번 틱에 본 내 열린 PR 의 값이라 닫힌 PR 의 항목은 빠진다. draft 와 규칙을 읽지 못한 base 의 PR 처럼 이번 틱에
 //     판정하지 않은 PR 은 이전 값을 그대로 옮긴다. 지우면 다음 틱에 같은 HEAD 의 실패를 다시 알린다.
 //     규칙을 읽지 못한 base 는 errors.ci 로 `WATCH-ERROR ci: …` 를 쓴다(errors.ts 머리 주석의 「오류 줄 억제」).
+//     이번 틱에 판정한 PR 의 필수 체크 이름은 ciNames 로 넘긴다. 자동 머지는 이 기록(ci)이 아니라 그 틱의 롤업과 이 이름으로 체크를 판단한다.
 //     worker 에게 보내기: 맡은 Run 에 Run id 가 있고, 그 PR 브랜치의 워크트리(lib/workers.ts 의 worktreePaths)에 살아 있는 dispatch
 //     (shared.ts 머리 주석의 「worker 찾기」, LIVE_DISPATCH)가 있을 때만 send-to-worker --dispatch <id> --body <본문> --run <그 worker 의 Run> 으로 보낸다. 끝난 dispatch 에 후속 지시서로
 //     이어 쓰지 않는다. 그때는 CI-FAILED 로 코디네이터가 판단한다. CI-FAILED 의 text 는 `<실패한 체크 이름>: <worker 결과>` 이고 worker 결과는
@@ -87,15 +88,16 @@ function runOfPr(ctx: Context, pr: OwnPr, lookup: Lookup): string | null {
 }
 
 // CI 감시(머리 주석의 「CI 감시」). ci 는 결과 줄에 담을 값, error 는 errors.ci 에 둘 이유다
-// stale 은 규칙을 읽지 못해 이전 판정을 옮긴 PR 이다. 자동 머지가 옛 passed 로 걸지 않게 한다
+// stale 은 규칙을 읽지 못해 이전 판정을 옮긴 PR 이다. 자동 머지가 걸지 않게 한다. names 는 판정한 PR 의 필수 체크 이름이다
 async function watchCi(
   ctx: Context,
   mine: OwnPr[],
   previous: Record<string, CiEntry>,
   lookup: Lookup,
-): Promise<{ ci: Record<string, CiEntry>; error: string | null; stale: Set<number> }> {
+): Promise<{ ci: Record<string, CiEntry>; error: string | null; stale: Set<number>; names: Map<number, string[]> }> {
   const ci: Record<string, CiEntry> = {}
   const stale = new Set<number>()
+  const judgedNames = new Map<number, string[]>()
   const rules = new Map<string, Names>()
   const errors: string[] = []
   for (const pr of mine) {
@@ -121,6 +123,7 @@ async function watchCi(
       stale.add(pr.number)
       continue
     }
+    judgedNames.set(pr.number, names.names)
     const judged = ciState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
     // 최신화는 필수 체크만 본다(refresh.ts 머리 주석의 「최신화」). 알림은 지금처럼 state 로 판정한다
     const required = requiredCiState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
@@ -163,7 +166,7 @@ async function watchCi(
       await fireCi('ci-failed', ctx, pr, judged.checks, names.names, run)
     }
   }
-  return { ci, error: errors.length > 0 ? errors.join('; ') : null, stale }
+  return { ci, error: errors.length > 0 ? errors.join('; ') : null, stale, names: judgedNames }
 }
 
 export async function checkCi(ctx: StepContext, state: StepState): Promise<StepResult> {
@@ -173,15 +176,17 @@ export async function checkCi(ctx: StepContext, state: StepState): Promise<StepR
   // 5. CI 감시. 열린 PR 을 읽지 못한 틱은 결과에 ci 를 넣지 않아 부모가 이전 값을 둔다
   let ci: Record<string, CiEntry> | undefined
   let ciStale = new Set<number>()
+  let ciNames: Map<number, string[]> | undefined
   if (prs.ok) {
     try {
       const watched = await watchCi(ctx, prs.mine, ciEntries(loaded?.ci), lookup)
       ci = watched.ci
       ciStale = watched.stale
+      ciNames = watched.names
       report('ci', watched.error)
     } catch (e) {
       report('ci', oneLine(e))
     }
   }
-  return { errors, ...(ci ? { ci } : {}), ciStale }
+  return { errors, ...(ci ? { ci } : {}), ...(ciNames ? { ciNames } : {}), ciStale }
 }

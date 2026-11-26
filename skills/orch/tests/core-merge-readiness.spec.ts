@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { blocksMerge, blocksReady, CONDITIONS, judgeReadiness, matchBoardItems } from '../scripts/core/merge-readiness.ts'
+import { waitText } from '../../../extensions/work-board/hooks/register.js'
 import type { FactValues, ReadinessAsk, ReadinessPolicy, ReadinessSnapshot } from '../scripts/core/merge-readiness.ts'
 
 const HEAD = 'a'.repeat(40)
@@ -199,4 +200,86 @@ test('보드 항목은 pr 칸을 먼저 보고 없으면 열린 항목의 브랜
   assert.deepEqual(matchBoardItems(items, '9', 'feat/x', null), { by: 'pr', ids: ['byPr'] })
   assert.deepEqual(matchBoardItems(items, '7', 'feat/x', null), { by: 'branch', ids: ['open'] })
   assert.equal(matchBoardItems(items, '7', 'other', null), null)
+})
+
+// 루프 자동 머지가 묻는 꼴(설계 「루프의 대기 문구」)
+const loop: ReadinessAsk = { scope: 'light', auto: { attempted: false }, stopAtFirst: true, skip: ['migration'] }
+const loopPolicy: ReadinessPolicy = { ...policy, required: [], allowNoChecks: false }
+const firstWait = (snapshot: ReadinessSnapshot, ask: ReadinessAsk = loop, p: ReadinessPolicy = loopPolicy) => judgeReadiness(snapshot, p, ask).reasons[0]?.wait ?? null
+
+test('이미 건 HEAD 와 리뷰 설정 없음은 auto 로 물을 때만 걸린다', () => {
+  assert.equal(firstWait(snap(), { ...loop, auto: { attempted: true } }), '이미 건 HEAD')
+  assert.equal(firstWait(snap()), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+  assert.deepEqual(texts(snap(), { scope: 'light' }, loopPolicy), [])
+  const attempted = judgeReadiness(snap(), loopPolicy, { ...loop, auto: { attempted: true } }).reasons[0]
+  assert.deepEqual([attempted.kind, attempted.code, attempted.stage], ['attempted', 'attempted', 'merge'])
+})
+
+test('리뷰 설정 없음은 리뷰 설정이 있거나 featureOnly 의 기능 PR 이 아니면 걸리지 않는다', () => {
+  const review = { trustedBots: null, checks: ['Review'] } as unknown as ReadinessPolicy['review']
+  const rollup = [{ name: 'Review', status: 'COMPLETED', conclusion: 'SUCCESS' }]
+  assert.equal(firstWait(snap({ reviewRollup: { ok: true, value: rollup } }), loop, { ...loopPolicy, review }), null)
+  assert.equal(firstWait(snap(), { ...loop, compat: { featureOnly: { feature: false } } }), null)
+  assert.equal(firstWait(snap(), { ...loop, compat: { featureOnly: { feature: true } } }), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+})
+
+test('체크가 하나도 없으면 allowNoChecks 가 거짓일 때만 ci-none 이다', () => {
+  const none = snap({ checks: { ok: true, value: [], head: HEAD } })
+  const judged = judgeReadiness(none, loopPolicy, loop).reasons[0]
+  assert.deepEqual([judged.code, judged.text, judged.wait], ['ci-none', 'PR 에 CI 체크가 하나도 없다', 'CI pending'])
+  assert.equal(firstWait(none, loop, { ...loopPolicy, allowNoChecks: true }), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+  assert.deepEqual(texts(none, full, { ...policy, required: [] }), [])
+})
+
+test('stopAtFirst 로 물으면 첫 이유가 루프의 지금 판단 순서를 따른다', () => {
+  const failed = [{ name: 'Lint', status: 'COMPLETED', conclusion: 'FAILURE' }]
+  const board = [{ id: 'x', branch: 'feat/x', status: 'doing', next: ['머지 보류 보드 이유'] }]
+  const all = snap({
+    checks: { ok: true, value: failed, head: HEAD },
+    specHold: { ok: true, value: '지시서 이유' },
+    boardItems: { ok: true, value: board },
+    threads: { ok: true, value: '3' },
+    holdBody: { ok: true, value: '본문 이유' },
+  }, { draft: true })
+  assert.equal(firstWait(all), 'draft')
+  assert.equal(firstWait(snap({ ...all.facts }, { draft: false })), 'CI failed')
+  const ok = { checks: clean.checks }
+  assert.equal(firstWait(snap({ ...all.facts, ...ok }), { ...loop, auto: { attempted: true } }), '이미 건 HEAD')
+  assert.equal(firstWait(snap({ ...all.facts, ...ok })), '지시서 보류: 지시서 이유')
+  assert.equal(firstWait(snap({ ...all.facts, ...ok, specHold: clean.specHold })), '보드 보류: 머지 보류 보드 이유')
+  assert.equal(firstWait(snap({ ...all.facts, ...ok, specHold: clean.specHold, boardItems: clean.boardItems })), '미해결 스레드 3')
+  assert.equal(firstWait(snap({ ...all.facts, ...ok, specHold: clean.specHold, boardItems: clean.boardItems, threads: clean.threads })), 'PR 본문 보류: 본문 이유')
+  // 체크 조회 실패는 값의 wait 가 첫 이유다
+  assert.equal(firstWait(snap({ checks: { ok: false, error: 'CI 없음', wait: 'CI 없음' } })), 'CI 없음')
+})
+
+// 조건 표의 wait 문구는 work-board 창(waitText)이 옮겨 보인다. 문구를 바꾸면 이 테스트가 먼저 실패한다
+test('조건 표의 대기 문구는 고정 목록과 같고 work-board 의 WAIT_TEXTS 로 옮겨진다', () => {
+  const review = { trustedBots: null, checks: ['Review'] } as unknown as ReadinessPolicy['review']
+  const failed = [{ name: 'Lint', status: 'COMPLETED', conclusion: 'FAILURE' }]
+  const pending = [{ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }]
+  const waits = (rows: [ReadinessSnapshot, ReadinessAsk?, ReadinessPolicy?][]) => rows.map(([s, a, p]) => firstWait(s, a, p))
+  const translated = waits([
+    [snap({}, { draft: true })],
+    [snap({ checks: { ok: true, value: failed, head: HEAD } })],
+    [snap({ checks: { ok: true, value: pending, head: HEAD } })],
+    [snap({ checks: { ok: true, value: [], head: HEAD } })],
+    [snap(), { ...loop, auto: { attempted: true } }],
+    [snap({ specHold: { ok: true, value: '이유' } })],
+    [snap({ boardItems: { ok: true, value: [{ id: 'x', branch: 'feat/x', status: 'doing', next: ['머지 보류 이유'] }] } })],
+    [snap({ threads: { ok: true, value: '2' } })],
+    [snap()],
+    [snap({ reviewRollup: { ok: true, value: [] } }), loop, { ...loopPolicy, review }],
+  ])
+  assert.deepEqual(translated, [
+    'draft', 'CI failed', 'CI pending', 'CI pending', '이미 건 HEAD', '지시서 보류: 이유', '보드 보류: 머지 보류 이유', '미해결 스레드 2',
+    '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다', `HEAD ${HEAD.slice(0, 8)} 에 리뷰 체크(Review) 성공이 없다`,
+  ])
+  for (const wait of translated) assert.notEqual(waitText(wait), wait, wait ?? '')
+  // 체크 조회 실패의 wait 는 루프가 값에 붙여 넘긴다(설계 「조건 표」)
+  for (const wait of ['CI 없음', 'CI 규칙을 읽지 못했다']) assert.notEqual(waitText(wait), wait)
+  // 정규식이 없어 창에 그대로 보이는 문구
+  const shown = waits([[snap({ holdBody: { ok: true, value: '이유' } })], [snap({ threads: { ok: true, value: '0', head: OTHER } })]])
+  assert.deepEqual(shown, ['PR 본문 보류: 이유', 'HEAD 가 바뀌었다'])
+  for (const wait of shown) assert.equal(waitText(wait), wait)
 })

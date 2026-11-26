@@ -188,12 +188,13 @@ function added(...paths: string[]): Json[] {
   return paths.map((path) => ({ path, changeType: 'ADDED', additions: 1, deletions: 0 }))
 }
 
-// 이번 실행의 gh 답. views 는 PR 마다의 pr view 답, open 은 마이그레이션을 보는 pr list 의 답, rules 는 저장소 규칙 API 의 답이다
-function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[]; rules?: FakeRule; botReview?: FakeRule } = {}): void {
+// 이번 실행의 gh 답. views 는 PR 마다의 pr view 답, open 은 마이그레이션을 보는 pr list 의 답, rules 는 저장소 규칙 API 의 답이다. failView 는 pr view 가 실패하는 PR 이다
+function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[]; rules?: FakeRule; botReview?: FakeRule; failView?: number } = {}): void {
   gh.setRules([
     { args: ['pr', 'list', '--base'], stdout: '[]\n' },
     { args: ['pr', 'list', 'number,headRefName,baseRefName,files'], stdout: `${JSON.stringify(opts.open ?? [])}\n` },
     { args: ['pr', 'list'], stdout: `${JSON.stringify(rows)}\n` },
+    ...(opts.failView ? [{ args: ['pr', 'view', String(opts.failView)], code: 1, stderr: 'HTTP 502\n' }] : []),
     ...Object.entries(opts.views ?? {}).map(([n, view]) => ({ args: ['pr', 'view', n], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [], ...view })}\n` })),
     { args: ['pr', 'view'], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [] })}\n` },
     { args: ['api', 'user'], stdout: 'me\n' },
@@ -297,6 +298,38 @@ describe('대상 고르기', () => {
     const output = once()
     assert.match(output, /AUTO-MERGE-WAIT #1 CI 규칙을 읽지 못했다/)
     assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('CI 실패 알림을 보내지 못해 CI 기록이 이전 passed 로 남은 틱에도 그 틱의 롤업으로 CI failed 를 쓰고 걸지 않는다', () => {
+    // 첫 틱은 지시서 보류로 걸지 않고 CI passed 만 loop.json 에 남긴다
+    spec('specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: 배포 뒤'])
+    github([pr(1)])
+    once()
+    spec('specs', 'spec-a.md', ['feat-1'])
+    writeFileSync(join(tmp, 'send-fail'), '')
+    github([pr(1, { statusCheckRollup: [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci.example.com/test' }] })])
+    const output = once()
+    assert.match(output, /AUTO-MERGE-WAIT #1 CI failed/)
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('스레드 명령이 실패하거나 숫자가 아닌 것을 내면 그 문구를 WATCH-ERROR auto-merge 로 알리고 걸지 않는다', () => {
+    const autoErrors = () => events('WATCH-ERROR').filter((row) => String(row.text).startsWith('auto-merge: ')).map((row) => String(row.text))
+    spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
+    writeFileSync(join(tmp, 'threads-1'), 'abc\n')
+    github([pr(1), pr(2)])
+    once({ THREADS_CMD: 'if [ "$PR" = 2 ]; then echo boom >&2; exit 3; fi; cat "$FAKE_DIR/threads-$PR"' })
+    assert.deepEqual(autoErrors(), ['auto-merge: #1 의 미해결 스레드를 읽지 못했다(종료 코드 0): abc; #2 의 미해결 스레드를 읽지 못했다(종료 코드 3): boom'])
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('PR 조회가 실패하면 그 문구를 WATCH-ERROR auto-merge 로 알리고 걸지 않는다', () => {
+    github([pr(1)], { failView: 1 })
+    once()
+    const texts = events('WATCH-ERROR').map((row) => String(row.text)).filter((text) => text.startsWith('auto-merge: '))
+    assert.equal(texts.length, 1, JSON.stringify(events()))
+    assert.match(texts[0], /^auto-merge: #1 의 리뷰와 파일을 읽지 못했다: /)
     assert.deepEqual(queueCalls(), [])
   })
 

@@ -102,21 +102,21 @@ export function judgeChecks(rows: readonly Record<string, unknown>[], options: C
 }
 
 export function ciState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState {
-  const rows = loopCheckRows(rollup, skippedIsMissing, head)
+  const rows = loopChecks(rollup, skippedIsMissing, head)
   const { state, checks } = judgeChecks(rows, { required, skippedIsMissing, allowNoChecks: false })
   return { state, checks }
 }
 
 // 루프의 최신화는 필수 체크만 본다. 필수 체크 이름이 비면 나타난 체크를 모두 본다.
 export function requiredCiState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState['state'] {
-  const rows = loopCheckRows(rollup, skippedIsMissing, head)
+  const rows = loopChecks(rollup, skippedIsMissing, head)
   const wanted = new Set(required)
   const selected = wanted.size === 0 ? rows : rows.filter((row) => wanted.has(checkName(row) ?? ''))
   return judgeChecks(selected, { required, skippedIsMissing, allowNoChecks: false }).state
 }
 
-// 루프는 SKIPPED 옵션이 켜지면 해당 행을 실패와 진행 중 여부에서도 뺀다.
-function loopCheckRows(rollup: unknown, skippedIsMissing: boolean, head?: string): Record<string, unknown>[] {
+// 루프는 SKIPPED 옵션이 켜지면 해당 행을 실패와 진행 중 여부에서도 뺀다. 루프 자동 머지도 이 행을 checkReadiness 에 넘긴다(PR4 가 옵션과 함께 지운다)
+export function loopChecks(rollup: unknown, skippedIsMissing: boolean, head?: string): Record<string, unknown>[] {
   const rows = currentChecks(rollup, head)
   // 루프의 공개 함수는 이름 없는 행을 빈 이름으로 다룬다.
   return rows.filter((row) => !skippedIsMissing || field(row, 'conclusion') !== 'SKIPPED')

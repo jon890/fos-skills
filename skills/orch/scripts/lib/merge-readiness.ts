@@ -27,6 +27,15 @@ import { specTargets } from './spec-targets.ts'
 export type { ConditionKind, Reason, ReasonKind, ReadinessAsk, ReadinessSnapshot } from '../core/merge-readiness.ts'
 export { blocksMerge, blocksReady } from '../core/merge-readiness.ts'
 
+// 스레드 수 명령의 기본값. dir 은 scripts 아래 진입 폴더(queue, loop)다. 옛 명령과 같은 글자를 내려고 정규화하지 않고 잇는다
+export function threadsScript(dir: string): string {
+  return `${dir}/../../../review-fix/scripts/review_threads.ts`
+}
+
+export function defaultThreadsCmd(dir: string): string {
+  return `node '${threadsScript(dir)}' list --count "$OWNER" "$REPO" "$PR"`
+}
+
 // 판단 대상. repo 는 저장소 폴더, head 는 부르는 쪽이 고정한 HEAD 다. cross 는 다른 저장소에서 온 PR 인지다(통합 테스트 기록의 커밋 받기)
 export type PrTarget = { repo: string; number: number; head: string; base: string; branch: string; host: string; slug: string; draft: boolean; cross?: boolean }
 

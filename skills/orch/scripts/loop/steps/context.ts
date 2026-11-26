@@ -163,6 +163,9 @@ export type StepState = {
   ci?: Record<string, CiEntry>
   // CI 감시가 규칙을 읽지 못해 이전 판정을 옮긴 PR
   ciStale: Set<number>
+  // CI 감시가 이번 틱에 판정한 PR 마다 읽은 필수 체크 이름. 자동 머지가 그 틱의 롤업을 같은 이름으로 판단한다.
+  // 열린 PR 을 읽지 못했거나 감시가 실패한 틱은 없다
+  ciNames?: Map<number, string[]>
   // 멈춤 확인이 읽은 기준 브랜치. tick 이벤트가 함께 쓴다
   base: string
   // 멈춤 확인이 낸다. 실패한 틱은 없다. 그때는 부모가 이전 값을 둔다

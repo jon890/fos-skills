@@ -6,6 +6,7 @@ import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../
 import { eventTimeoutSec, handlerFile } from '../../lib/events.ts'
 import { ownAuthors } from '../../lib/gh.ts'
 import { alive } from '../../lib/process.ts'
+import { defaultThreadsCmd, threadsScript } from '../../lib/merge-readiness.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { acquireQueueLock, releaseQueueLock } from '../../lib/queue-lock.ts'
 import { isQueueCommand, processes } from '../../lib/queue-process.ts'
@@ -55,8 +56,7 @@ function setupImpl(stepContext: StepContext, state: StepState): void {
 export function readQueueEnv(stepContext: StepContext, state: StepState): void {
   const o = state.o
   if (!o.threadsCmd) {
-    // 옛 명령과 같은 글자를 내려고 정규화하지 않고 잇는다
-    const rt = `${stepContext.here}/../../../review-fix/scripts/review_threads.ts`
+    const rt = threadsScript(stepContext.here)
     let found = false
     try {
       found = statSync(rt).isFile()
@@ -64,7 +64,7 @@ export function readQueueEnv(stepContext: StepContext, state: StepState): void {
       found = false
     }
     if (!found) throw new Usage(`review_threads.ts 를 찾지 못했다: ${rt}. --threads-cmd 로 준다`)
-    o.threadsCmd = `node '${rt}' list --count "$OWNER" "$REPO" "$PR"`
+    o.threadsCmd = defaultThreadsCmd(stepContext.here)
   }
   // 빈 값은 설정하지 않은 것으로 보고 기본값을 쓴다
   const retries = process.env.MERGE_QUEUE_GH_RETRIES || '3'
