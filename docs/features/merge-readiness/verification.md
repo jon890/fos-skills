@@ -1,6 +1,6 @@
 # 머지 판단 하나로 모으기 검증 기록
 
-- 상태: 스펙의 REQ1부터 REQ6까지와 DECISION1부터 DECISION15까지의 인수 조건이 모두 통과했다. 스펙과 어긋나 고쳐야 할 결함은 찾지 못했다. 판단이 필요한 관찰 1건과 문서가 지금 동작과 어긋난 곳 4건은 아래 「남은 것」 에 있다.
+- 상태: 스펙의 REQ1부터 REQ6까지와 DECISION1부터 DECISION15까지의 인수 조건이 모두 통과했다. 스펙과 어긋나 고쳐야 할 결함은 찾지 못했다. 판단이 필요했던 관찰 1건은 지금 동작을 유지하기로 정했고, 문서가 어긋난 4건은 이 PR 에서 고쳤다. 둘 다 아래 「남은 것」 에 있다.
 - 원본: [스펙](spec.md), [기술 설계](technical-design.md), [ADR-037](../../adr/037-orch-merge-readiness.md), 구현 PR 일곱 개(#632, #636, #640, #643, #646, #647, #651).
 - 검증 커밋: main `66dfa4d7`(플러그인 20.9.0). 구현 PR 일곱 개가 모두 들어간 상태다.
 - 환경: macOS, node 24.22.1. gh, git, orca 는 테스트 fixture 의 가짜 실행 파일이고 저장소는 임시 폴더다. 이 저장소의 열린 PR 과 실제 머지 큐는 건드리지 않았다. 설치본 orch 가 20.7.0 이라 `orch` 를 직접 돌린 사례는 `ORCH_SCRIPTS_DIR` 로 이 checkout 의 scripts 를 가리켰다.
@@ -83,17 +83,17 @@ PR 651 본문의 막는 지적 출처 표(줄 댓글, 리뷰 state, 리뷰 본�
 
 ### 호환 표
 
-`compat`, `compat.noDraft`, `compat.oldHolds`, `compat.checksAfterWait`, `checkHeadStop` 은 `skills/orch/scripts`, `skills/orch/tests` 어디에도 없다. 스레드 수 읽기의 호환(숫자가 아닌 출력도 수로 받기)도 `lib/merge-readiness.ts` 의 `threads` 읽기가 `^\d+$` 만 받는 것으로 지워졌다. 코드 쪽은 모두 지워졌다. 문서 쪽에는 아래 두 곳이 남았다(「남은 것」 의 문서 1, 2).
+`compat`, `compat.noDraft`, `compat.oldHolds`, `compat.checksAfterWait`, `checkHeadStop` 은 `skills/orch/scripts`, `skills/orch/tests` 어디에도 없다. 스레드 수 읽기의 호환(숫자가 아닌 출력도 수로 받기)도 `lib/merge-readiness.ts` 의 `threads` 읽기가 `^\d+$` 만 받는 것으로 지워졌다. 코드 쪽은 모두 지워졌다. 문서 쪽에 남았던 두 곳은 이 PR 에서 고쳤다.
 
 ### 설명 문서와 지금 동작
 
 | 문서 | 대조한 것 | 결과 |
 | --- | --- | --- |
-| `docs/flow.md` | 자동 머지 그림과 표, `ci-passed` 이벤트, 설정 설명 | 일부 어긋남(「남은 것」 문서 3) |
+| `docs/flow.md` | 자동 머지 그림과 표, `ci-passed` 이벤트, 설정 설명 | 어긋났던 것을 이 PR 에서 고침 |
 | `docs/data-schema.md` | `queue.allow_no_checks`, `queue.auto_review`, 폐기 키 | 맞음 |
 | `skills/orch/references/cleanup.md`, `replying.md`, `spec-writing.md` | `GATE-OK`, `GATE-FAIL`, `HOLD`, draft 실패 | 맞음 |
 | `skills/orch/references/feature-loop.md` | 기능 PR 과 일반 PR 을 나누지 않는 리뷰 요구, 앞 리뷰 인정 | 맞음 |
-| `skills/orch/references/overlay.md` | 리뷰 설정이 없을 때, 앞 리뷰 인정, 폐기 행 | 한 문장이 부정확(「남은 것」 문서 4) |
+| `skills/orch/references/overlay.md` | 리뷰 설정이 없을 때, 앞 리뷰 인정, 폐기 행 | 부정확했던 한 문장을 이 PR 에서 고침 |
 | `docs/adr/016-orch-auto-merge.md` | 「감당할 것」 보탬 | 맞음 |
 | `skills/orch/CHANGELOG.md` | 호환성 줄 | 맞음 |
 
@@ -106,14 +106,13 @@ PR 651 본문의 막는 지적 출처 표(줄 댓글, 리뷰 state, 리뷰 본�
 
 ## 남은 것
 
-### 판단이 필요한 관찰
+### 판단이 필요했던 관찰
 
-**1. force-push 와 믿는 봇 여럿이 겹칠 때의 대기.** 믿는 봇 A 의 마지막 영수증이 force-push 로 지워진 커밋에 있고 봇 B 가 지금 HEAD 영수증을 이미 남겼어도, 판단은 A 때문에 기다린다(`리뷰한 커밋이 지금 PR 커밋 목록에 없다`).
-- 재현: 봇 둘을 믿는 설정에서 `judgeTrustedBotReviews(HEAD, { comments: [A 의 GONE 영수증, B 의 HEAD 영수증], commits: [OLD, HEAD], … }, [A, B])` 를 부르면 `ok: false` 다. 임시 spec 에서 확인했다.
-- 막는 쪽으로 틀린 동작이라 머지가 잘못 나가지는 않는다. 다만 DECISION15 이전(커밋 `762fa648` 의 앞 코드)에는 지금 HEAD 가 아닌 영수증을 세지 않아 B 의 영수증만으로 통과했다. 지금은 A 가 새 HEAD 를 다시 리뷰하지 않으면 이 PR 은 계속 기다린다.
-- 스펙 DECISION15 는 이 경우를 정하지 않았다. 지금 동작(안전한 쪽)을 유지할지, 지금 HEAD 영수증이 있는 봇이 하나라도 있으면 지워진 커밋의 영수증은 무시할지 사용자가 정한다. 믿는 봇을 둘 이상 쓰는 저장소가 아직 없으면 보류해도 된다.
+**1. force-push 와 믿는 봇 여럿이 겹칠 때의 대기: 지금 동작을 유지한다(코디네이터 결정).** 믿는 봇 A 의 마지막 영수증이 force-push 로 지워진 커밋에 있으면, 봇 B 가 지금 HEAD 영수증을 남겨도 판단은 A 때문에 기다린다(`리뷰한 커밋이 지금 PR 커밋 목록에 없다`).
+- 재현: 봇 둘을 믿는 설정에서 `judgeTrustedBotReviews(HEAD, { comments: [A 의 GONE 영수증, B 의 HEAD 영수증], commits: [OLD, HEAD], … }, [A, B])` 를 부르면 `ok: false` 다.
+- 근거: 믿는 봇마다 지금 코드를 본 리뷰가 있어야 한다는 쪽이 안전하다. 지금 저장소들은 믿는 봇이 하나라 이 경우가 생기지 않는다. DECISION15 이전(커밋 `762fa648` 의 앞 코드)에는 B 의 영수증만으로 통과했지만, 막는 쪽으로 바뀐 것이라 머지가 잘못 나가지 않는다.
 
-### 문서가 지금 동작과 어긋난 곳
+### 문서가 지금 동작과 어긋났던 곳(이 PR 에서 고침)
 
 1. [ADR-037](../../adr/037-orch-merge-readiness.md) 의 「결정」 과 「결과」 가 `compat` 값을 「이행 중에 남기고 뒤 PR 이 하나씩 지운다」 고 쓴다. 지금 코드에는 `compat` 이 없다.
 2. [기술 설계](technical-design.md) 의 「PR2 와 PR3 이 동작을 그대로 두려면…」 아래 호환 표(`compat.noDraft` 등)는 모두 지워진 항목의 이력이다. 바로 아래 문장이 「PR7 이 `compat` 타입 자체를 지웠다」 고 밝히지만, 표의 「지우는 PR」 열은 현재형으로 읽힌다.
