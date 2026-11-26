@@ -5,8 +5,10 @@ import { ghJson } from './gh.ts'
 export type ReviewTarget = { host: string; slug: string; number: string | number }
 type Actor = { __typename: string; login: string } | null
 type Comment = { author: Actor; body: string; createdAt: string }
-type Review = { author: Actor; body: string; submittedAt: string | null; state: string; commit: { oid: string } | null }
-type Thread = { isResolved: boolean; comments: { nodes: (Pick<Comment, 'author' | 'createdAt'> & { body?: string })[] } }
+type Review = { id?: string; author: Actor; body: string; submittedAt: string | null; state: string; commit: { oid: string } | null }
+// pullRequestReview 는 그 줄 댓글을 단 리뷰, originalCommit 은 댓글을 단 커밋이다. 지적을 어느 리뷰의 것인지 묶는 데 쓴다
+type ThreadComment = Pick<Comment, 'author' | 'createdAt'> & { body?: string; pullRequestReview?: { id: string } | null; originalCommit?: { oid: string } | null }
+type Thread = { isResolved: boolean; comments: { nodes: ThreadComment[] } }
 export type BotReviewData = { comments: Comment[]; reviews: Review[]; reviewThreads: Thread[] }
 type Connection = keyof BotReviewData
 type TrustedReview = { ok: true; receipts: ReviewNote[] } | { ok: false; wait: string }
@@ -29,11 +31,11 @@ query($owner:String!, $repo:String!, $number:Int!,
       }
       reviews(first:50, after:$reviewsAfter) @include(if:$readReviews) {
         pageInfo { hasNextPage endCursor }
-        nodes { author { __typename login } body submittedAt state commit { oid } }
+        nodes { id author { __typename login } body submittedAt state commit { oid } }
       }
       reviewThreads(first:50, after:$threadsAfter) @include(if:$readThreads) {
         pageInfo { hasNextPage endCursor }
-        nodes { isResolved comments(first:1) { nodes { author { __typename login } createdAt body } } }
+        nodes { isResolved comments(first:1) { nodes { author { __typename login } createdAt body pullRequestReview { id } originalCommit { oid } } } }
       }
     }
   }
@@ -132,8 +134,11 @@ function blockingThread(body: string | undefined): boolean {
 // 봇마다 마지막으로 끝난 리뷰(영수증)를 인정할지 본다(스펙 docs/features/merge-readiness/spec.md 의 DECISION15).
 //   - 봇이 연 줄 댓글 스레드가 하나라도 미해결이면 기다린다.
 //   - 영수증은 봇의 댓글이나 리뷰에 든 receipt_marker 와 리뷰한 커밋이다. 커밋이 지금 HEAD 가 아니어도 된다.
-//   - 마지막 영수증 R 과 같은 시각이거나 그 뒤에 남은 봇의 지적을 본다(Codex 는 리뷰와 줄 댓글을 같은 시각에 단다). R 앞의 지적은 R 이 다시 본 것이다.
-//     줄 댓글은 첫 줄 배지로 등급을 읽고, 리뷰 본문의 지적(CHANGES_REQUESTED, 영수증이 맞지 않는 COMMENTED)과 시각을 읽지 못한 지적은 막는 지적으로 본다.
+//   - 봇의 줄 댓글은 시각이 아니라 소속으로 마지막 영수증 R 에 묶는다. 그 댓글을 단 리뷰가 R 이거나, 리뷰로 묶이지 않을 때 댓글을 단 커밋이 R 의 커밋이면 R 의 지적이다.
+//     다른 영수증이나 다른 봇 리뷰에 묶이면 그 리뷰의 지적이다(R 앞이면 R 이 다시 본 것이다). 어디에도 묶지 못한 줄 댓글은 P1·P2 로 본다(안전한 쪽).
+//     봇이 줄 댓글을 리뷰 제출보다 먼저 만들어도 같은 리뷰의 지적을 놓치지 않게 하려는 것이다(PR 651 리뷰).
+//   - R 의 줄 댓글은 첫 줄 배지로 등급을 읽는다. P0·P1·P2 이거나 배지를 읽지 못하면 막는 지적이다.
+//     리뷰 본문의 지적(CHANGES_REQUESTED, 영수증이 맞지 않는 COMMENTED)은 등급을 몰라 막는 지적이고, R 과 같은 시각이거나 뒤면 막는다. 시각을 읽지 못하면 막는다.
 //     막는 지적이 없으면 R 을 지금 HEAD 의 리뷰로 인정한다. 있으면 고친 커밋에서 다시 리뷰받을 때까지 기다린다.
 //   - R 이 지금 HEAD 가 아닌데 지금 HEAD 에서 봇 리뷰가 도는 중이면 그 결과를 기다린다.
 //   - 배지는 작성자가 Bot 이고 trusted_bots 의 login 인 글만 읽는다. 누구나 쓸 수 있는 글로 통과시키지 않는다(사용자 2026-11-24).
@@ -144,21 +149,27 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
     const parsed = Date.parse(at ?? '')
     return Number.isFinite(parsed) ? parsed : Infinity
   }
+  type Candidate = ReviewNote & { time: number; reviewId?: string; reviewed: string }
   for (const bot of bots) {
-    const findings: { at: number; blocking: boolean }[] = []
-    const candidate: (ReviewNote & { time: number })[] = []
+    const findings: number[] = []
+    const findingReviews = new Set<string>()
+    const candidate: Candidate[] = []
     // reviewed 는 GitHub 가 기록한 리뷰의 커밋이다. 리뷰 영수증은 그 커밋이 지금 HEAD 와 같을 때만 지금 HEAD 의 것이다
-    const addReceipt = (commit: string | null, at: string | null, reviewed?: string) => {
+    const addReceipt = (commit: string | null, at: string | null, reviewed?: string, reviewId?: string) => {
       if (commit && at && Number.isFinite(Date.parse(at))) {
         const onHead = reviewed === undefined ? headOid.startsWith(commit) : reviewed === headOid
-        candidate.push({ body: '', at, commit: onHead ? head : (reviewed ?? commit), receiptBot: bot.login, time: Date.parse(at), ...(onHead ? {} : { earlier: true }) })
+        candidate.push({
+          body: '', at, commit: onHead ? head : (reviewed ?? commit), receiptBot: bot.login, time: Date.parse(at), reviewed: reviewed ?? commit,
+          ...(reviewId ? { reviewId } : {}), ...(onHead ? {} : { earlier: true }),
+        })
       }
     }
+    const threads: ThreadComment[] = []
     for (const thread of data.reviewThreads) {
       const first = thread.comments.nodes[0]
       if (!first || !fromBot(first.author, bot)) continue
       if (!thread.isResolved) return { ok: false, wait: `${bot.login} 봇의 미해결 줄 댓글 스레드가 있다` }
-      findings.push({ at: time(first.createdAt), blocking: blockingThread(first.body) })
+      threads.push(first)
     }
     for (const review of data.reviews) {
       if (!fromBot(review.author, bot) || review.state === 'PENDING' || review.state === 'DISMISSED') continue
@@ -166,9 +177,10 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
       const reviewOid = review.commit?.oid.toLowerCase()
       const matchesReview = commit && reviewOid?.startsWith(commit)
       if (review.state === 'CHANGES_REQUESTED' || (review.state === 'COMMENTED' && !matchesReview)) {
-        findings.push({ at: time(review.submittedAt), blocking: true })
+        findings.push(time(review.submittedAt))
+        if (review.id) findingReviews.add(review.id)
       } else if (matchesReview) {
-        addReceipt(commit, review.submittedAt, reviewOid)
+        addReceipt(commit, review.submittedAt, reviewOid, review.id)
       }
     }
     for (const comment of data.comments) {
@@ -178,16 +190,35 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
     candidate.sort((a, b) => a.time - b.time || Number(!a.earlier) - Number(!b.earlier))
     const last = candidate.at(-1)
     if (!last) {
-      if (findings.length > 0) return { ok: false, wait: `${bot.login} 봇이 지적을 남겼다. 지적을 해결한 뒤 현재 HEAD 의 영수증을 다시 받아야 한다` }
+      if (findings.length > 0 || threads.length > 0) return { ok: false, wait: `${bot.login} 봇이 지적을 남겼다. 지적을 해결한 뒤 현재 HEAD 의 영수증을 다시 받아야 한다` }
       continue
     }
-    if (findings.some((one) => one.blocking && one.at >= last.time)) {
+    const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a)
+    // 줄 댓글을 단 리뷰나 커밋으로 그 줄 댓글이 마지막 영수증의 것인지 본다. 어디에도 묶지 못하면 null 이다
+    const ofLast = (first: ThreadComment): boolean | null => {
+      const reviewId = first.pullRequestReview?.id
+      if (reviewId) {
+        if (last.reviewId === reviewId) return true
+        if (candidate.some((one) => one.reviewId === reviewId) || findingReviews.has(reviewId)) return false
+      }
+      const commit = first.originalCommit?.oid.toLowerCase()
+      if (commit) {
+        if (sameCommit(commit, last.reviewed.toLowerCase())) return true
+        if (candidate.some((one) => sameCommit(commit, one.reviewed.toLowerCase()))) return false
+      }
+      return null
+    }
+    const blocked = threads.some((first) => {
+      const bound = ofLast(first)
+      return bound === null || (bound && blockingThread(first.body))
+    }) || findings.some((at) => at >= last.time)
+    if (blocked) {
       return { ok: false, wait: `${bot.login} 봇이 P1·P2 지적을 남겼다. 고친 커밋에서 현재 HEAD 의 영수증을 다시 받아야 한다` }
     }
     if (last.earlier && botReviewRunning(head, data, bot)) {
       return { ok: false, wait: `${bot.login} 봇이 현재 HEAD 를 리뷰하는 중이다` }
     }
-    const { time: _time, ...note } = last
+    const { time: _time, reviewId: _reviewId, reviewed: _reviewed, ...note } = last
     receipts.push(note)
   }
   return { ok: true, receipts }

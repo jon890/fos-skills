@@ -23,8 +23,9 @@ function readObservations(file: string): Record<string, Observation> {
   }
 }
 
-function acceptedEarlier(head: string, data: Parameters<typeof judgeTrustedBotReviews>[1], bot: Parameters<typeof hasCurrentBotReceipt>[2]): boolean {
-  const judged = judgeTrustedBotReviews(head, data, [bot])
+// 관문과 같은 전체 봇 판단이 앞 리뷰를 인정하는가. 한 봇이라도 막으면 인정하지 않는다(PR 651 리뷰)
+function acceptedEarlier(head: string, data: Parameters<typeof judgeTrustedBotReviews>[1], bots: Parameters<typeof judgeTrustedBotReviews>[2]): boolean {
+  const judged = judgeTrustedBotReviews(head, data, bots)
   return judged.ok && judged.receipts.length > 0
 }
 
@@ -60,7 +61,7 @@ export function requestMissingBotReviews(ctx: StepContext, state: StepState, now
         }
         // 앞 커밋의 리뷰를 인정하면(P1·P2 없음. 스펙 DECISION15) 다시 요청하지 않는다
         if (!snapshot.ready || bots.some((bot) => hasCurrentBotReceipt(pr.head, snapshot.data, bot) ||
-          botReviewRunning(pr.head, snapshot.data, bot) || acceptedEarlier(pr.head, snapshot.data, bot))) {
+          botReviewRunning(pr.head, snapshot.data, bot)) || acceptedEarlier(pr.head, snapshot.data, bots)) {
           previous.since = now
           continue
         }

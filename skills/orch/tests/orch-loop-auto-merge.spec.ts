@@ -407,7 +407,7 @@ describe('리뷰', () => {
       const pullRequest = { headRefOid: HEAD_A, comments: page([receipt(commit)]), reviews: page(), reviewThreads: page(threads) }
       github([pr(1)], { views: { 1: phrases }, botReview: { args: ['api', 'graphql', 'readThreads=true'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) } })
     }
-    const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: `**<sub><sub>![P${level} Badge](https://img.shields.io/badge/P${level}-yellow?style=flat)</sub></sub>  제목**` }] } })
+    const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: `**<sub><sub>![P${level} Badge](https://img.shields.io/badge/P${level}-yellow?style=flat)</sub></sub>  제목**`, originalCommit: { oid: HEAD_B } }] } })
     withReceipt(HEAD_B, [finding(2)])
     assert.match(once(), /AUTO-MERGE-WAIT #1 chatgpt-codex-connector 봇이 P1·P2 지적을 남겼다/)
     assert.deepEqual(queueCalls(), [])

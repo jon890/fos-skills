@@ -105,13 +105,13 @@ test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 
   assert.deepEqual(judge({ reviewThreads: [thread], comments: [fresh] }), {
     ok: false, wait: `${BOT.login} 봇의 미해결 줄 댓글 스레드가 있다`,
   })
-  const resolved = { ...thread, isResolved: true }
-  assert.equal(judge({ reviewThreads: [resolved], comments: [receipt(HEAD)] }).ok, false)
-  // 지적 뒤에 다시 받은 리뷰가 앞 커밋의 것이어도 지적이 없으면 인정한다(스펙 DECISION15)
-  const later = judge({ reviewThreads: [resolved], comments: [receipt(HEAD), receipt(OLD, REREVIEWED_AT)] })
-  assert.ok(later.ok && later.receipts[0].earlier === true)
-  const passed = judge({ reviewThreads: [resolved], comments: [receipt(HEAD), fresh] })
-  assert.ok(passed.ok && passed.receipts[0].at === REREVIEWED_AT)
+  // 해결한 지적은 그 줄 댓글을 단 커밋의 리뷰에 묶는다
+  const onOld = { isResolved: true, comments: { nodes: [{ author: BOT, createdAt: FOUND_AT, originalCommit: { oid: OLD } }] } }
+  assert.equal(judge({ reviewThreads: [onOld], comments: [receipt(OLD)] }).ok, false)
+  const passed = judge({ reviewThreads: [onOld], comments: [receipt(OLD), fresh] })
+  assert.ok(passed.ok && passed.receipts[0].at === REREVIEWED_AT && passed.receipts[0].earlier === undefined)
+  // 어느 리뷰에도 묶지 못한 지적은 P1·P2 로 본다
+  assert.equal(judge({ reviewThreads: [{ ...thread, isResolved: true }], comments: [receipt(OLD), fresh] }).ok, false)
 })
 
 test('의견 리뷰와 변경 요청보다 늦게 같은 봇이 현재 HEAD 를 확인해야 한다', () => {
@@ -125,7 +125,7 @@ test('의견 리뷰와 변경 요청보다 늦게 같은 봇이 현재 HEAD 를 
 
 // 스펙 DECISION15: 마지막 리뷰에 P1·P2 지적이 없으면 뒤 커밋에도 인정한다. 배지를 읽지 못한 줄 댓글은 막는 지적으로 본다
 test('마지막 봇 리뷰의 줄 댓글 배지로 P1·P2 를 보고 앞 커밋의 리뷰를 인정할지 정한다', () => {
-  const badge = (body: string) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body }] } })
+  const badge = (body: string) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body, originalCommit: { oid: OLD } }] } })
   const level = (n: number) => badge(`**<sub><sub>![P${n} Badge](https://img.shields.io/badge/P${n}-yellow?style=flat)</sub></sub>  제목**`)
   const old = receipt(OLD)
   for (const n of [0, 1, 2]) {
@@ -145,10 +145,22 @@ test('마지막 봇 리뷰의 줄 댓글 배지로 P1·P2 를 보고 앞 커밋�
   const fixed = judge({ comments: [old, receipt(HEAD, REREVIEWED_AT)], reviewThreads: [level(1)] })
   assert.ok(fixed.ok && fixed.receipts[0].earlier === undefined)
   // 지금 커밋의 리뷰에 P3 만 있으면 다시 리뷰받지 않아도 된다
-  assert.ok(judge({ comments: [receipt(HEAD)], reviewThreads: [level(3)] }).ok)
+  const p3OnHead = { isResolved: true, comments: { nodes: [{ ...level(3).comments.nodes[0], originalCommit: { oid: HEAD } }] } }
+  assert.ok(judge({ comments: [receipt(HEAD)], reviewThreads: [p3OnHead] }).ok)
 })
 
 test('지금 HEAD 에서 봇 리뷰가 도는 중이면 앞 커밋의 리뷰를 인정하지 않고 기다린다', () => {
   const running = { author: BOT, state: 'PENDING', submittedAt: null, body: '', commit: { oid: HEAD } }
   assert.deepEqual(judge({ comments: [receipt(OLD)], reviews: [running] }), { ok: false, wait: `${BOT.login} 봇이 현재 HEAD 를 리뷰하는 중이다` })
+})
+
+// PR 651 리뷰: 봇이 줄 댓글을 리뷰 제출보다 먼저 만들어도 그 리뷰의 지적으로 본다. 시각이 아니라 소속 리뷰로 묶는다
+test('리뷰보다 먼저 만든 줄 댓글도 소속 리뷰로 묶어 P1·P2 를 본다', () => {
+  const review = { id: 'R1', author: BOT, state: 'COMMENTED', submittedAt: REVIEWED_AT, body: receipt(OLD).body, commit: { oid: OLD } }
+  const early = (n: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:01:59Z', body: `![P${n} Badge] 제목`, pullRequestReview: { id: 'R1' } }] } })
+  assert.equal(judge({ reviews: [review], reviewThreads: [early(1)] }).ok, false)
+  const p3 = judge({ reviews: [review], reviewThreads: [early(3)] })
+  assert.ok(p3.ok && p3.receipts[0].earlier === true && p3.receipts[0].commit === OLD)
+  // 같은 리뷰에 묶인 P1 은 뒤의 다른 커밋 리뷰가 다시 봤으면 막지 않는다
+  assert.ok(judge({ reviews: [review], reviewThreads: [early(1)], comments: [receipt(HEAD, REREVIEWED_AT)] }).ok)
 })

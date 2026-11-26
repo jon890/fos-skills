@@ -382,7 +382,7 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
   test('머지 큐도 앞 커밋의 봇 리뷰에 P1·P2 가 있으면 막고, 없으면 그 리뷰로 머지한다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
-    const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${level} Badge] 제목` }] } })
+    const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${level} Badge] 제목`, originalCommit: { oid: 'b'.repeat(40) } }] } })
     const withReceipt = (head: string, level: number) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)], reviewThreads: [finding(level)] } }) })
     const blocked = await queue(c, withReceipt('b'.repeat(40), 2), 0)
     assert.equal(blocked.code, 1, both(blocked))
