@@ -17,11 +17,12 @@ Orca 가 check 명령을 지정한 깨움은 그 명령으로 읽는다. orch �
 루프는 등록된 Run 에 status 메시지를 보낸다. subject 첫 낱말은 알림 종류이고 payload 의 source 는 orch-loop 다. 알림 종류의 원본은 그 알림을 내는 `scripts/loop/steps/` 의 단계 파일과 `scripts/loop/lifecycle.ts` 다.
 CI 실패, 충돌, 멈춤과 조회 실패는 기존 중복 억제 규칙을 따른다. 보내지 못하면 NOTICE-FAIL 을 기록하고 다음 틱에서 다시 시도한다. Run 없는 옛 루프는 로그에만 남긴다.
 DONE-SUSPECT 는 준비 근거 없는 완료 보고, WORKER-LOST 는 끊긴 worker 를 뜻한다. 완료·끊김 이벤트와 보드 PR 연결도 루프가 맡는다. 첫 루프 틱은 지난 완료 보고를 알리지 않는다.
-`--no-pr`, `review` 행, 독립된 `머지하지 않는다` 지시로 띄운 dispatch 는 `completion: none` 을 기록해 준비 보고가 없어도 DONE-SUSPECT 에서 뺀다. 문장 앞 목록 기호와 번호는 허용하며, 배경 속 인용·코드 예시·「머지는 코디네이터가 한다」 는 제외 근거가 아니다. 완료 기준 절에 `준비됨` 보고를 요구하면 행과 지시의 자동 제외보다 그 요구를 우선한다. 정리 뒤에도 영구 이력의 같은 값을 쓴다.
+`--no-pr`, `review` 행, 독립된 `머지하지 않는다` 지시로 띄운 dispatch 는 `completion: none` 을 기록해 준비 보고가 없어도 DONE-SUSPECT 에서 뺀다. 「머지는 사람이 한다」 처럼 사람에게 머지를 맡기는 독립 문장이나 허락 줄의 문장도 같은 기록을 남긴다. 문장 앞 목록 기호와 번호는 허용하며, 배경 속 인용·코드 예시·「머지는 코디네이터가 한다」 는 제외 근거가 아니다. 완료 기준 절에 `준비됨` 보고를 요구하면 행과 지시의 자동 제외보다 그 요구를 우선한다. 정리 뒤에도 영구 이력의 같은 값을 쓴다.
 PR 없는 완료 보고는 허락 줄에 `PR 은 열지 않는다`가 명시됐거나 다른 저장소에서 작업을 띄운 경우에만 준비 상태 없이 인정하며, worker_done 첫 줄은 `완료:`여야 한다. 완료 기준에 `MERGED`가 없다는 사실만으로 PR 없는 일로 보지 않는다. PR 을 여는 일의 `완료:` 보고에는 기존처럼 준비됨 status 가 필요하다.
 제외 기록이 없는 옛 리뷰 dispatch 는 지시서나 첫 status 의 `판정:` 줄로 알아보고, 앞서 보낸 결과 status 가 있어야 정상 완료로 본다. 지시서는 띄우기 기록이 지워진 뒤에도 영구 이력으로 찾는다.
 **PR 이 열린 채 온 `worker_done`(준비 근거가 없거나, 준비됨 뒤에도 PR 이 OPEN)은 DONE-SUSPECT 로 알리기 전에 루프가 그 worker 에게 되돌린다.** dispatch 는 이미 completed 로 닫혀 `send` 는 `ENDED`, `resume` 은 `RESUME-FAIL` 이 되므로, 루프가 `lib/continue-worker.ts` 로 지시서와 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 후속 지시(`send-to-worker --spec --note`)로 보낸다. Orca 가 끝난 dispatch 에 후속 Task 를 열어 같은 워크트리에서 새 dispatch 로 이어진다. 이어 맡으면 DONE-RETURNED 하나만 알리고 DONE-SUSPECT 는 보내지 않는다. 조건은 아래와 같다.
 - 지시서(띄우기 기록, 없으면 영구 이력)의 브랜치에 열린 PR 이 있다. 리뷰 worker, `completion: none` dispatch, `outcome failed` 보고는 대상이 아니다
+- 사람에게 머지를 맡겼으면 worker 에게 되돌리지 않는다. 완료 기준이 요구한 준비 보고가 없으면 DONE-SUSPECT 만 보낸다
 - dispatch 가 살아 있지 않다
 - 같은 PR 은 한 번만 되돌린다. 이어 맡은 worker 가 또 일찍 끝내면 그때는 DONE-SUSPECT 로 알린다
 - 이어 맡기지 못하면 이유와 `orch worker continue --dispatch <id>` 를 DONE-SUSPECT 에 적는다. 같은 명령을 코디네이터가 직접 불러도 된다

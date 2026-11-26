@@ -38,7 +38,7 @@
   - `orch queue gate` 가 리뷰 대기를 내면 그 출력대로 재리뷰를 부른다.
   - 새 비차단 제안은 ask 없이 다음에 다룬다고 회신하고 resolve 한다.
   - 회신 기준은 `references/replying.md` 를 따른다.
-- 머지는 코디네이터가 하지만, PR 이 머지될 때까지는 이 worker 가 맡는다.
+- 지시서에서 사람에게 머지를 맡긴 경우를 빼고, 코디네이터가 PR 을 머지할 때까지 이 worker 가 맡는다.
   - 준비됨을 보낸 뒤에도 CI 실패, 충돌, 리뷰를 지시를 기다리지 않고 직접 처리한다.
   - 워크트리 권한 설정이 `gh pr merge` 를 막는다.
 - 하위 에이전트는 orca 명령을 쓰지 않는다.
@@ -47,7 +47,8 @@
 - worker 는 진행 보드(`board.json`)를 수정하거나 `orch board step`, `mark`, `set` 을 부르지 않는다. <!-- orch-rule: no-board-edit -->
 - 삭제처럼 되돌리기 어려운 쓰기는 하위 에이전트에 맡기지 않고 본체가 한다.
 - `worker_done` 은 본체가 한 번만 보낸다.
-  - PR 을 여는 일은 그 PR 이 MERGED 인 것을 `gh pr view` 로 확인한 뒤 PR 번호와 머지 커밋을 적어 보낸다.
+  - 지시서가 「머지는 사람이 한다」고 정한 PR 은 검증과 완료 기준을 채운 뒤 PR 번호를 적어 보낸다.
+  - 그 밖에 PR 을 여는 일은 그 PR 이 MERGED 인 것을 `gh pr view` 로 확인한 뒤 PR 번호와 머지 커밋을 적어 보낸다.
   - PR 이 없는 일(허락이 push 까지인 일)은 완료 기준을 채운 뒤 보낸다.
   - 중간 진행(PR 생성, 준비됨)은 status 메시지로 보낸다.
 - status 로는 PR 생성·push, 막힘, 범위·결정 변경만 알린다. <!-- orch-rule: status-only -->
@@ -105,15 +106,18 @@
    - `gh pr create` 나 리뷰 회신이 거부되거나, 지금 실행의 지시가 GitHub 게시를 막는다고 판단될 때다.
    - 회신이면 스레드 id 와 회신 파일 경로를 보낸다. 코디네이터가 그 파일로 연다.
 5. 리뷰 지적 처리를 마치고 `orch queue gate` 가 `GATE-OK` 로 통과하면 `준비됨 #<PR 번호>, head <40자리 SHA>` 를 status 로 보낸다. <!-- orch-rule: ready-status -->
+   - 지시서가 「머지는 사람이 한다」고 정했고 완료 기준에 `준비됨` 보고가 없으면 PR 을 연 뒤 7단계로 간다.
    - 보류나 실패는 `references/replying.md` 를 따른다.
-6. **머지될 때까지 맡는다.**
+6. **지시서에서 사람에게 머지를 맡긴 경우를 빼고, 머지될 때까지 맡는다.**
    - CI 실패, 충돌, 리뷰를 직접 처리한다.
    - 기준 브랜치가 앞서 나간 것만으로는 합치지 않는다.
    - 고쳐 push 하면 5 의 gate 를 다시 통과한 뒤 바뀐 head 로 「준비됨 status」를 다시 보낸다.
-7. `gh pr view` 로 MERGED 를 확인하고 완료 기준을 모두 채운 뒤 PR 번호와 머지 커밋을 넣어 `worker_done` 을 보낸다. <!-- orch-rule: done-after-merged -->
-   - 완료 기준은 지시서에서 다시 읽고, 다른 PR 머지와 머지 뒤 확인도 포함한다.
+7. 완료 기준을 모두 채운 뒤 PR 번호를 넣어 `worker_done` 을 보낸다. <!-- orch-rule: done-after-merged -->
+   - 지시서에서 사람에게 머지를 맡겼으면 검증을 마친 뒤 열린 PR 의 번호로 보고한다.
+   - 그 밖에는 `gh pr view` 로 MERGED 를 확인한 뒤 머지 커밋도 함께 보고한다.
+   - 완료 기준은 지시서에서 다시 읽고, 지시서가 요구한 다른 PR 머지와 머지 뒤 확인도 포함한다.
 - 계획을 나눈 뒤 다음 PR 이 남으면 `worker_done` 에 PR 별 이름과 계획 경로를 한 줄씩 적는다. <!-- orch-rule: remaining-prs -->
-- PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 CI 를 기다리고, 통과 뒤 「준비됨」을 한 번 보낸다. <!-- orch-rule: wait-in-turn -->
+- 5단계에서 준비 보고가 필요한 PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 CI 를 기다리고, 통과 뒤 「준비됨」을 한 번 보낸다. <!-- orch-rule: wait-in-turn -->
 
 ## 설계와 구현을 맡길 때
 
