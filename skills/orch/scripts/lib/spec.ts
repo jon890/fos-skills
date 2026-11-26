@@ -60,7 +60,9 @@ export function selectionsOf(text: string): Selection[] {
   return found
 }
 
-// 리뷰 행 또는 독립된 「머지하지 않는다」 지시는 PR 준비 보고 없이 끝나는 작업이다.
+const HUMAN_MERGE = /^(?:머지는\s+(?:사람이|사용자가|담당자가)\s+(?:직접\s+)?한다|(?:사람이|사용자가|담당자가)\s+(?:직접\s+)?머지한다)(?:[.!](?:\s|$)|\s*$)/
+
+// 리뷰 행, 독립된 「머지하지 않는다」 지시, 사람에게 머지를 맡긴 지시는 PR 준비 보고 없이 끝나는 작업이다.
 // 배경 설명 속 인용이나 공통 지시서의 「머지는 코디네이터가 한다」 는 면제 근거로 삼지 않는다.
 export function skipsPrReady(text: string): boolean {
   const visible = outsideFences(lines(text))
@@ -75,7 +77,13 @@ export function skipsPrReady(text: string): boolean {
     if (completionLevel && line.includes('준비됨')) return false
   }
   return selectionsOf(visible.join('\n'))[0]?.row === 'review'
-    || visible.some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?머지하지 않는다(?:[.\s]|$)/.test(line))
+    || visible.some(line => {
+      const instruction = line.replace(/^\s*(?:(?:[-*]|\d+[.)])\s+)?/, '')
+      const permission = PERMISSION.exec(line)?.[1]
+      return /^머지하지 않는다(?:[.\s]|$)/.test(instruction)
+        || HUMAN_MERGE.test(instruction)
+        || (permission !== undefined && permission.split(/\.\s+/).some(sentence => HUMAN_MERGE.test(sentence)))
+    })
 }
 
 export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
