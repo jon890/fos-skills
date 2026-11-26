@@ -63,7 +63,8 @@ function sourceFor(repo: string, value: string): string | undefined {
 }
 
 export function planBoardMove(repo: string): BoardMove | null {
-  const current = readSetting(repo)
+  const configRoot = mainCheckout(repo)
+  const current = readSetting(configRoot)
   // 깨진 설정은 기존 폴더 이전 명령이 보고한다. 그 상태에서는 어떤 보드를 쓰는지 알 수 없다.
   if (current.error) return null
   const from = sourceFor(repo, boardValue(current.value))
@@ -74,7 +75,8 @@ export function planBoardMove(repo: string): BoardMove | null {
   if (!owner) throw new Error(`옛 보드의 기준 폴더를 찾지 못했다: ${from}`)
   const to = join(owner, BOARD_PATHS[0])
   const target = probe(to)
-  const repos = new Set([repo, owner])
+  const ownerConfigRoot = mainCheckout(owner)
+  const repos = new Set([configRoot, ownerConfigRoot])
   const blocked: string[] = []
   const configs = new Map<string, ConfigRef>()
   const listed = orcaJson<{ repos?: unknown }>(['repo', 'list'], { cwd: repo, timeoutMs: 5_000 })
@@ -83,12 +85,12 @@ export function planBoardMove(repo: string): BoardMove | null {
   else for (const row of listed.data.repos) {
     if (isObject(row) && typeof row.path === 'string' && isAbsolute(row.path)) repos.add(mainCheckout(row.path))
   }
-  const affected = new Set([repo, owner])
+  const affected = new Set([configRoot, ownerConfigRoot])
   const otherRefs = new Set<string>()
   for (const candidate of repos) {
-    const read = candidate === repo ? current : readSetting(candidate)
+    const read = candidate === configRoot ? current : readSetting(candidate)
     if (read.error) {
-      if (candidate === owner) blocked.push(`보드가 있는 저장소의 설정을 읽지 못했다: ${read.file}: ${read.error}`)
+      if (candidate === ownerConfigRoot) blocked.push(`보드가 있는 저장소의 설정을 읽지 못했다: ${read.file}: ${read.error}`)
       continue
     }
     const value = boardValue(read.value)

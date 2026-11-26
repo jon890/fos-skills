@@ -176,7 +176,13 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     const mainConfig = c.write('.orch/config.json', JSON.stringify({ finish: { board: source } }))
     const peerConfig = c.write('../peer/.claude/orch-finish.json', '{"finish":{"board":"../owner with space/.omc/handoffs/board.json","run":"peer"}}')
     const otherConfig = c.write('../separate/.orch/config.json', '{"finish":{"board":".omc/board.json"}}')
-    const env = { ORCH_OUTPUT: 'short', FAKE_REPOS: JSON.stringify([{ path: peer }, { path: separate }]) }
+    const env = {
+      ORCH_OUTPUT: 'short',
+      FAKE_REPOS: JSON.stringify([{ path: peer }, { path: separate }]),
+      FAKE_WORKERS: JSON.stringify([{
+        dispatchStatus: 'completed', terminalState: 'active', resource: { ownershipState: 'owned', worktreeId: `repo::${separate}` },
+      }]),
+    }
     const before = [mainConfig, ownConfig, peerConfig, otherConfig, source].map(file => readFileSync(file, 'utf8'))
     const preview = await c.migrate([], { env })
     assert.match(preview.stdout, /WOULD-MOVE .*owner with space\/.omc\/handoffs\/board.json .*owner with space\/.orch\/board.json/)
@@ -207,6 +213,21 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.equal(existsSync(old), false)
     assert.deepEqual(readJson(config), { finish: { board: '../wt/.orch/board.json' } })
     assert.equal(c.sh(process.execPath, ORCH_PATHS, '--repo', c.repo, 'board'), join(worktree, '.orch/board.json'))
+  })
+
+  test('워크트리를 지정하면 그 워크트리의 기본 보드를 옮긴다', async (t) => {
+    const c = setup(t)
+    const worktree = join(c.tmp, 'wt')
+    c.sh('git', '-C', c.repo, 'worktree', 'add', '-q', '-b', 'board-wt', worktree)
+    const main = c.write('.omc/board.json', '{"items":[{"id":"main"}]}')
+    const old = c.write('../wt/.omc/board.json', '{"items":[{"id":"worktree"}]}')
+    const preview = await c.migrate([], { repo: worktree })
+    assert.match(preview.stdout, /옮길 것 \.\.\/wt\/\.omc\/board.json -> \.\.\/wt\/\.orch\/board.json/)
+    await c.migrate(['--apply'], { repo: worktree })
+    assert.equal(existsSync(old), false)
+    assert.deepEqual(readJson(join(worktree, '.orch/board.json')), { items: [{ id: 'worktree' }] })
+    assert.deepEqual(readJson(main), { items: [{ id: 'main' }] })
+    assert.equal(c.sh(process.execPath, ORCH_PATHS, '--repo', worktree, 'board'), join(worktree, '.orch/board.json'))
   })
 
   test('공유 보드의 원본을 git 이 추적하면 수동 이전 방법만 안내한다', async (t) => {

@@ -10,7 +10,7 @@
 //     migrate-orch-dir.ts [--repo DIR] [--run RUN] [--move 옛=새 ...] [--apply]
 //     migrate-orch-dir.ts --hooks [--repo DIR] [--run RUN] [--apply]
 //
-//     --repo   대상 저장소. 기본은 현재 디렉터리. 워크트리를 주어도 주 checkout 을 옮긴다
+//     --repo   대상 저장소. 기본은 현재 디렉터리. 작업 파일은 주 checkout, 기본 보드는 지정한 작업 트리 기준으로 옮긴다
 //     --run    살아 있는 dispatch 를 찾을 Orca Run. 없으면 설정(옛 위치나 새 위치)의 finish.run, 그것도 없으면 범위 없이 읽는다.
 //              범위 없이 읽은 worker-list 가 모든 Run 의 목록(scope.source all)이 아니면 orca 조회 실패로 막는다(lib/spec.ts 의 liveSpecPaths)
 //     --move   기본 쌍 밖의 옛 위치를 더한다. 두 경로 모두 주 checkout 기준 상대경로다. 여러 번 줄 수 있다.
@@ -777,7 +777,7 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
   }
   const plan = makePlan(root, orch, extra)
   let board
-  try { board = planBoardMove(root) }
+  try { board = planBoardMove(realPath(repo)) }
   catch (error) {
     err(`보드 이전을 준비하지 못했다: ${(error as Error).message}`)
     return 1
