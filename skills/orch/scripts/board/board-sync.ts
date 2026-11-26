@@ -71,6 +71,8 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //
 // done 이 아닌 항목의 pr 칸이 비었으면 worktree 브랜치(없으면 저장한 branch)로 PR 을 연결한다.
 // 후속 단계가 남아 비운 머지 PR 은 merged-pr 에 기록해 다시 연결하지 않는다.
+// 여러 저장소가 한 항목에 worker 줄을 두면 연결 키는 (줄의 저장소, PR 번호)다. 이 저장소의 PR 은 이 저장소가 띄운 줄(lib/board.ts 의 boardOwnership)에만
+// 잇고, 다른 저장소의 구현·후속 줄만 있으면 대표 브랜치로도 잇지 않는다. 다른 저장소 줄의 PR 번호는 이 저장소에서 조회하지 않고, pr 칸을 다시 쓸 때 남긴다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
@@ -146,6 +148,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+
+// pr 칸을 다시 쓰는 set 명령에 다른 저장소 줄의 PR 번호를 남긴다
+function keepPrs(cmd: string[], keep: Set<string>): string[] {
+  const at = cmd[0] === 'set' ? cmd.indexOf('--pr') : -1
+  if (at < 0 || keep.size === 0) return cmd
+  const list = [...new Set([...prNumbers(cmd[at + 1]), ...keep])].join(', ')
+  return [...cmd.slice(0, at + 1), list, ...cmd.slice(at + 2)]
+}
 
 function prNumber(pr: unknown): string {
   return pyStr(pr || '').split(',')[0].replace(/\D/g, '')
@@ -360,6 +370,8 @@ function main(argv: string[]): number {
     // 이번 틱에 머지 반영을 미룬 항목(기능 검증, 마무리 진행, 다시 판정)은 끝나지 않은 단계를 갱신 필요로 알리지 않는다
     let hold = false
     let reflected: { pr: string; steps: BoardStep[] } | null = null
+    // 다른 저장소 줄의 PR 번호. 이 틱이 pr 칸을 다시 쓸 때 지우지 않고 남긴다
+    let foreignPrs = new Set<string>()
     // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 항목도 본다
     const workerRows = boardWorkerRows(item)
     const missing = new Set<string>()
@@ -451,6 +463,14 @@ function main(argv: string[]): number {
       const stages = stagesOf(item)
       const repBranch = branches.get(String(item.worktree)) || String(item.branch || '')
       const rows = workerRows
+      // 여러 저장소의 worker 가 한 항목을 나눠 쓰면 PR 번호는 저장소마다 따로 매겨진다. 이 저장소의 PR 은 이 저장소가 띄운 줄에만 잇고,
+      // 다른 저장소 줄의 PR 번호는 이 저장소 기준으로 조회하지 않는다. 연결 키는 (줄의 저장소, PR 번호)다.
+      // 브랜치 이름만 보고 다른 저장소 줄에 붙였다(2026-11-23 OCR, 세 저장소가 같은 브랜치 이름)
+      const foreignRow = (row: WorkerRow): boolean => foreignWorktrees.has(row.worktree)
+      const localRows = rows.filter((row) => !foreignRow(row))
+      const localPrs = new Set(localRows.flatMap((row) => [...prNumbers(row.pr)]))
+      foreignPrs = new Set(rows.filter(foreignRow).flatMap((row) => [...prNumbers(row.pr)]).filter((one) => !localPrs.has(one)))
+      const ownPrs = (): string[] => [...prNumbers(item.pr)].filter((one) => !foreignPrs.has(one))
       // PR 잇기. 열린 PR 목록에서 그 브랜치의 PR 을 찾고, 없으면 그 브랜치의 가장 최근 머지 PR 을 찾는다.
       // 그 브랜치의 가장 최근 머지가 merged-pr 에 들었으면 이미 반영한 머지라 다시 연결하지 않는다. 더 옛 머지도 보지 않는다.
       // 찾으면 항목 pr 칸 목록에 더하고, row 가 있으면 그 줄의 pr 도 적는다. 이번 틱의 뒤 판정이 쓰도록 항목 값도 바꾼다
@@ -465,7 +485,7 @@ function main(argv: string[]): number {
           if (got.ok && Array.isArray(got.data)) found = got.data.find((pr) => pr.headRefName === target && pr.state === 'MERGED')
           if (found && prNumbers(item['merged-pr']).has(String(found.number))) found = undefined
         }
-        if (!found || prNumbers(item.pr).has(String(found.number))) return
+        if (!found || ownPrs().includes(String(found.number))) return
         const number = String(found.number)
         const list = [...prNumbers(item.pr), number].join(', ')
         item.pr = list
@@ -481,28 +501,31 @@ function main(argv: string[]): number {
       }
       // 단계 묶음이 있는 후속 줄은 줄의 브랜치로 자기 PR 을 잇는다
       if (stages) {
-        for (const row of rows.filter((one) => one.stages && (one.role === 'follow' || one.role === 'impl') && !prNumbers(one.pr).size)) {
+        for (const row of localRows.filter((one) => one.stages && (one.role === 'follow' || one.role === 'impl') && !prNumbers(one.pr).size)) {
           const target = branches.get(row.worktree) || row.branch || ''
           if (target) link(target, row, false)
         }
       }
-      // 항목 stages 묶음의 PR 은 pr 칸에 묶음 없는 PR 이 하나도 없을 때 잇는다. 브랜치는 stages 가 없는 가장 최근 구현·후속 줄의 것이고, 그런 줄이 없으면 대표 브랜치다
-      if (![...prNumbers(item.pr)].some((one) => !hasPrGroup(item, one))) {
-        const baseRow = rows.filter((one) => (one.role === 'follow' || one.role === 'impl') && !one.stages).sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
-        const target = baseRow ? branches.get(baseRow.worktree) || baseRow.branch || '' : rows.some((one) => one.stages) ? '' : repBranch
+      // 항목 stages 묶음의 PR 은 pr 칸에 묶음 없는 PR 이 하나도 없을 때 잇는다. 브랜치는 stages 가 없는 가장 최근 구현·후속 줄의 것이고, 그런 줄이 없으면 대표 브랜치다.
+      // 다른 저장소 줄의 PR 은 세지 않고 그 줄을 고르지 않는다. 다른 저장소의 구현·후속 줄만 있으면 대표 브랜치로도 잇지 않는다
+      if (!ownPrs().some((one) => !hasPrGroup(item, one))) {
+        const work = (one: WorkerRow): boolean => one.role === 'follow' || one.role === 'impl'
+        const baseRow = localRows.filter((one) => work(one) && !one.stages).sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+        const target = baseRow ? branches.get(baseRow.worktree) || baseRow.branch || '' : rows.some((one) => one.stages || (work(one) && foreignRow(one))) ? '' : repBranch
         if (target) link(target, baseRow, target === repBranch)
       }
       const branch = repBranch
       // 마일스톤 항목은 pr 칸의 PR 을 번호 순으로 모두 본다. 하나라도 상태를 읽지 못하면 이 항목은 이번 틱에 고치지 않는다
-      const numbers = stages ? [...prNumbers(item.pr)].sort((a, b) => Number(a) - Number(b)) : []
+      const ownNumbers = ownPrs()
+      const numbers = stages ? [...ownNumbers].sort((a, b) => Number(a) - Number(b)) : []
       const states = new Map(numbers.map((one) => [one, stateFor(one)] as const))
       const reflectedNow = prNumbers(item['merged-pr'])
       const pending = numbers.filter((one) => !reflectedNow.has(one) && states.get(one) === 'MERGED')
       // 반영할 PR: 머지됐고 아직 반영하지 않은 가장 작은 번호, 없으면 이미 반영한 마지막 PR(배포 대기), 없으면 첫 PR
       const num = numbers.length > 0
         ? pending[0] ?? numbers.find((one) => reflectedNow.has(one) && states.get(one) === 'MERGED') ?? numbers[0]
-        : prNumber(item.pr)
-      const state = numbers.length > 0 ? states.get(num) ?? null : stateFor(item.pr)
+        : prNumber(ownNumbers.join(', '))
+      const state = numbers.length > 0 ? states.get(num) ?? null : stateFor(num)
       const unreadable = numbers.some((one) => states.get(one) === null)
       const openNumbers = numbers.filter((one) => states.get(one) === 'OPEN')
       const merged = state === 'MERGED'
@@ -657,7 +680,7 @@ function main(argv: string[]): number {
     const rewrite = details.length !== old.length || details.some((d, i) => d !== old[i])
     const commands = guardedCommands([
       ...(rewrite ? [['set', id, ...detailArgs(details)]] : []), ...cmds, ...after,
-    ], linesRev(item))
+    ].map((cmd) => keepPrs(cmd, foreignPrs)), linesRev(item))
     cmds.splice(0, cmds.length, ...commands)
     if (cmds.length === 0) continue
     if (dryRun) {
