@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { threadsScript } from '../scripts/lib/merge-readiness.ts'
 
 const loop = fileURLToPath(new URL('../scripts/loop/', import.meta.url))
 const entry = readFileSync(join(loop, 'orch-loop.ts'), 'utf8')
@@ -55,11 +56,10 @@ test('lifecycle 은 공통 파일만, 단계 파일은 lifecycle 을 import 하�
 })
 
 test('자동 머지의 기본 스레드 명령이 가리키는 스크립트가 있다', () => {
-  // 명령 글자는 loop 폴더에서 시작하는 경로를 그대로 잇는다(steps/auto-merge.ts 의 LOOP_DIR)
+  // 루프는 loop 폴더(steps/auto-merge.ts 의 LOOP_DIR)로 lib/merge-readiness.ts 의 defaultThreadsCmd 를 부른다
   const text = readFileSync(join(loop, 'steps', 'auto-merge.ts'), 'utf8')
-  const found = /\$\{LOOP_DIR\}\/([^'`\s]+)/.exec(text)
-  assert.ok(found, 'LOOP_DIR 로 잇는 경로가 없다')
-  assert.ok(existsSync(resolve(loop, found[1])), found[1])
+  assert.match(text, /defaultThreadsCmd\(LOOP_DIR\)/)
+  assert.ok(existsSync(threadsScript(loop)), threadsScript(loop))
 })
 
 test('옮겨 간 절을 옛 이름으로 가리키는 주석이 남아 있지 않다', () => {
