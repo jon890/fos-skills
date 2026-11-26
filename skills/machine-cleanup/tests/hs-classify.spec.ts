@@ -16,7 +16,9 @@ describe('백업 등급(REQ6)', () => {
   test('보관 칸을 등급으로 옮긴다', () => {
     assert.equal(backupGrade('매일 정리가 최신 5개를 남긴다').grade, '유지')
     assert.equal(backupGrade('최신 7개').grade, '유지')
-    assert.equal(backupGrade('결과 검토 뒤 명시적 정리로 최신 5개').grade, '안전')
+    assert.deepEqual(backupGrade('결과 검토 뒤 명시적 정리로 최신 5개'), { grade: '안전', reason: '최신 5개만 남기고 오래된 것을 지운다(결과 검토 뒤 명시적 정리로 최신 5개)', keep: 5 })
+    assert.equal(backupGrade('결과 검토 뒤 명시적 정리').grade, '확인 필요')
+    assert.equal(backupGrade('명시적 정리로 서비스별 최신 1개').grade, '확인 필요')
     assert.equal(backupGrade('확인이 끝나면 사람이 지운다').grade, '확인 필요')
     assert.deepEqual(backupGrade(null), { grade: '확인 필요', reason: '보관 규칙 표에 없다' })
   })
@@ -108,9 +110,11 @@ function sampleSurvey(root: string) {
     docker: { summary: [], dangling_volumes: 0, unused_images: [{ id: 'sha256:0123456789abcdef0123', tags: ['recovery/app-x:1'], repos: ['recovery/app-x'], created: '2026-01-01T00:00:00Z', size: 10 }] },
     backups: { root: '/srv/backup', rules_found: true, rows: [
       { label: 'db', rule: '최신 7개', rule_key: 'db', entries: [], size: 10, complete: true },
+      { label: 'ops', rule: '결과 검토 뒤 명시적 정리로 최신 5개', rule_key: 'ops', entries: [], size: 3, complete: true },
       { label: 'oneoff-20261001', rule: null, rule_key: null, entries: [{ name: 'x', mtime: 1 }], size: 5, complete: true },
     ] },
     paths: [{ path: '/var/cache/apt', owner: null, size: 9, complete: true }, { path: '~/ci/logs', owner: 'CI 실행 스크립트', size: 3, complete: true }],
+    home_dirs: { complete: false, rows: [{ name: '.hermes.failed-20261118T042930Z', size: 11 * 1024 ** 3, copy: true }, { name: 'repos', size: 2 * 1024 ** 3, copy: false }] },
     cache_dirs: [], trash: [], journal: '1.2G', snaps: [{ name: 'core', revision: '17', size: 1 }],
     git: { cwd_check: '완료', repos: [
       { path: join(root, 'ops'), repo: join(root, 'ops'), ops: true, survey_only: false, build_worktrees: [], fetch: '완료', base: 'origin/main', gh_errors: [], worktrees: [], branches: [{ name: 'merged-one', class: '삭제 후보(-d)', tip: 'a' }] },
@@ -152,5 +156,14 @@ describe('hs_classify 명령', () => {
     const c = classify(sampleSurvey('/r'), sampleConfig('/r'))
     assert.equal(c.backups.find((b: any) => b.label === 'db').grade, '유지')
     assert.ok(report(sampleSurvey('/r'), sampleConfig('/r'), c).includes('| 유지 | db |'))
+  })
+
+  test('명시적 정리 백업은 남길 개수와 명령을 보이고, 홈 아래 큰 폴더와 사본을 확인 필요로 낸다(묶음 8)', () => {
+    const c = classify(sampleSurvey('/r'), sampleConfig('/r'))
+    const text = report(sampleSurvey('/r'), sampleConfig('/r'), c)
+    assert.ok(text.includes('| 안전 | ops | 0 | 3B | 결과 검토 뒤 명시적 정리로 최신 5개 | 최신 5개를 남긴다: hs_delete.ts backup --keep 5 |'))
+    assert.match(text, /## 정리 전 수치\n.*\n홈 아래 큰 폴더: ~\/\.hermes\.failed-20261118T042930Z 11\.0G, ~\/repos 2\.0G/)
+    assert.match(text, /## 홈 아래 큰 폴더 \(확인 필요\. sudo 없이 잰 크기다\)\n읽지 못한 곳이 있어 실제보다 작을 수 있다\n- \[확인 필요, 사본\] ~\/\.hermes\.failed-20261118T042930Z: 11\.0G\. 실패한 작업이나 백업이 남긴 사본으로 보인다/)
+    assert.match(text, /- \[확인 필요\] ~\/repos: 2\.0G\. 홈 아래 큰 폴더다/)
   })
 })

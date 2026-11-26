@@ -127,6 +127,9 @@ function homeserver(opts: { worktreeBusy?: boolean; unreadable?: boolean; linked
   write(join(box.home, '.local/share/Trash/info/f.trashinfo'), '[Trash Info]\nDeletionDate=2026-11-01T10:00:00\n')
   write(join(box.home, '.local/share/Trash/files/f'), 'zz')
   write(join(box.home, 'ci/logs/1.log'), 'log')
+  write(join(box.home, '.hermes.failed-20261118T042930Z/.env'), 'X=1')
+  write(join(box.home, 'notes.bak/a'), 'a')
+  for (let i = 0; i < 12; i++) write(join(box.home, `big-${String(i).padStart(2, '0')}/f`), 'x'.repeat(8192 * (i + 2)))
   const old = nowSec() - 40 * DAY
   hermesDb(join(cfg.hermes.data, 'state.db'), [['root-old', null, 'cron', old], ['child-old', 'root-old', 'cron', old], ['linked-1', null, 'api', old]])
   hermesDb(join(cfg.hermes.data, 'profiles/p1/state.db'), [['recent', null, 'discord', nowSec()]])
@@ -160,6 +163,16 @@ describe('hs_survey 명령', () => {
     assert.deepEqual(s.backups.rows.map((r: any) => [r.label, r.rule]).sort(), [['db', '최신 1개'], ['oneoff-20261001', null]])
     assert.ok(s.paths.some((p: any) => p.path === '~/ci/logs' && p.owner === 'CI 실행 스크립트'))
     assert.equal(s.trash[0].moved, '2026-11-01T10:00:00')
+  })
+
+  test('홈 아래 큰 폴더 상위와, 순위 밖이어도 사본 이름(.failed-, .bak)을 낸다(묶음 8)', () => {
+    const s = survey(homeserver(), ['--no-fetch'])
+    const rows = s.home_dirs.rows
+    assert.deepEqual(rows.slice(0, 3).map((r: any) => r.name), ['big-11', 'big-10', 'big-09'])
+    assert.ok(rows.slice(0, 10).every((r: any) => r.size > 0))
+    const copies = rows.filter((r: any) => r.copy).map((r: any) => r.name).sort()
+    assert.deepEqual(copies, ['.hermes.failed-20261118T042930Z', 'notes.bak'])
+    assert.equal(rows.length, 12)
   })
 
   test('docker ps 가 실패하면 실행 차단(3)이 되고 홈서버의 어떤 삭제도 돌지 않는다(REQ12, 리뷰 P2)', () => {

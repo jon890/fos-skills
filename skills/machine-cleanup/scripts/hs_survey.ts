@@ -11,6 +11,7 @@
 // 등급은 매기지 않는다. 등급과 원인 판정은 이 맥의 hs_classify.ts 가 한다.
 // 절 하나가 실패하면 그 절에 error 를 적고 나머지를 계속한다. orca 는 부르지 않는다(홈서버의 orca 는 화면 낭독기다).
 //
+// home_dirs 는 홈 바로 아래 폴더를 `du -sk -x` 로 재어 큰 것과 사본 이름(`.failed-`, `.bak`, `-backup`)을 낸다.
 // 워크트리 사용 확인은 이 사용자 uid 의 프로세스 가운데 `/proc/<pid>/cwd` 가 그 워크트리 아래인 것이 있는지로 본다.
 // 같은 uid 인데 cwd 를 읽지 못한 프로세스가 하나라도 있으면 모든 워크트리의 사용 여부를 「확인하지 못함」 으로 둔다.
 // 환경 변수 HS_ROOT 는 테스트용이다. `/proc` 와 시스템 경로(/tmp, /var/...) 앞에 붙는다.
@@ -117,7 +118,7 @@ const isFile = (path: string): boolean => {
   }
 }
 
-const readText = (path: string): string | null => {
+export const readText = (path: string): string | null => {
   try {
     return readFileSync(path, 'utf8')
   } catch {
@@ -323,6 +324,41 @@ function pathsSection(cfg: Json): Json[] {
     ...cfg.owned_paths.map((o: Json) => ({ path: o.path, real: expandHome(o.path), owner: o.owner })),
   ]
   return items.filter((i) => mtimeOf(i.real) !== null).map((i) => ({ path: i.path, owner: i.owner, ...treeSize(i.real) })).sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
+}
+
+// 실패한 작업이나 손으로 만든 사본으로 보이는 이름. 고정 경로 목록에 없어도 확인 필요로 낸다
+export const COPY_NAME = /\.failed-|\.bak(?:$|[.-])|-backup(?:$|[.-])/
+export const HOME_TOP = 10
+
+// `du -sk` 출력(`KB<탭>경로` 줄)을 [경로, 바이트] 로 읽는다
+export function parseDu(text: string): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const line of text.split('\n')) {
+    const m = /^(\d+)\t(.+)$/.exec(line)
+    if (m) out.set(m[2], Number(m[1]) * 1024)
+  }
+  return out
+}
+
+// 홈 바로 아래 폴더의 크기. 큰 순서로 HOME_TOP 개와, 순위와 관계없이 사본 이름에 맞는 것을 모두 낸다.
+// 읽지 못한 곳이 있으면 du 가 0 이 아닌 코드로 끝나고, 그때는 complete 가 false 다(sudo 없이 본 크기다)
+function homeDirs(): Json {
+  const home = expandHome('~')
+  const names = readdirSync(home).filter((n) => {
+    try {
+      const st = lstatSync(`${home}/${n}`)
+      return st.isDirectory() && !st.isSymbolicLink()
+    } catch {
+      return false
+    }
+  }).sort()
+  if (!names.length) return { complete: true, rows: [] }
+  const done = runText(['du', '-sk', '-x', ...names.map((n) => `${home}/${n}`)], { timeoutSec: 600, closeStdin: true })
+  if (done.failure) return { error: `du 가 돌지 않았다: ${done.message}` }
+  const sizes = parseDu(done.stdout)
+  const rows = names.map((name) => ({ name, size: sizes.get(`${home}/${name}`) ?? null, copy: COPY_NAME.test(name) }))
+    .sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
+  return { complete: done.code === 0, rows: rows.filter((r, i) => i < HOME_TOP || r.copy) }
 }
 
 function cacheDirs(): Json[] {
@@ -638,6 +674,7 @@ export function main(argv: string[]): number {
     backups: section(() => backupsSection(cfg)),
     paths: section(() => pathsSection(cfg)),
     cache_dirs: section(cacheDirs),
+    home_dirs: section(homeDirs),
     trash: section(trashSection),
     journal: section(() => parseJournal(run(['journalctl', '--disk-usage']) ?? '')),
     snaps: section(snapsSection),

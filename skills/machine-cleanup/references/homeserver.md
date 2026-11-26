@@ -57,7 +57,7 @@ node "$SKILL_DIR/scripts/hs_classify.ts" "$SURVEY" --config "$CFG" --git-out "$G
 **Docker 이미지, 백업, 운영 checkout 의 브랜치와 워크트리는 `--lock "$LOCK"` 으로 돌린다.** 배포가 복구본과 복구 이미지를 만드는 동안 지우면, 그 배포가 실패했을 때 되돌릴 복구본이 사라진다.
 
 목록은 배열에 담아 항목마다 인자 하나로 넘긴다. macOS 기본 zsh 는 따옴표 없는 `$VAR` 를 줄마다 나누지 않아 여러 줄이 인자 하나로 넘어간다.
-`REFS` 는 승인한 이미지 줄(`$IMAGES` 의 `태그=이미지ID`), `PICKS` 는 승인한 출처 묶음의 Hermes 루트(`$HERMES` 의 `profile:세션`)다. `$SOURCE` 는 승인한 출처, `$LABEL` 은 백업 용도 하나, `$WT` 는 워크트리 경로, `$NAME` 은 휴지통 항목, `$DAYS` 는 사용자가 정한 기준 일수다.
+`REFS` 는 승인한 이미지 줄(`$IMAGES` 의 `태그=이미지ID`), `PICKS` 는 승인한 출처 묶음의 Hermes 루트(`$HERMES` 의 `profile:세션`)다. `$SOURCE` 는 승인한 출처, `$LABEL` 은 백업 용도 하나, `$KEEP` 은 그 용도의 판정 칸이 보인 남길 개수(명시적 정리 백업은 꼭 넘긴다), `$WT` 는 워크트리 경로, `$NAME` 은 휴지통 항목, `$DAYS` 는 사용자가 정한 기준 일수다.
 태그로만 넘기지 않는다. 조사 뒤 태그가 다른 이미지로 옮겨 갔으면 `hs_delete.ts images --clearance "$CLEAR"` 가 건너뛴다.
 
 ```bash
@@ -71,6 +71,7 @@ PICKS=(); while IFS=$'\t' read -r source pick; do [ "$source" = "$SOURCE" ] && P
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$CLEAR" hs_delete.ts images --clearance "$CLEAR" "${REFS[@]}"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$CLEAR" hs_delete.ts images --clearance "$CLEAR" --apply "${REFS[@]}"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$CFG" --input "$CLEAR" hs_delete.ts backup --clearance "$CLEAR" --config "$CFG" "$LABEL"
+node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$CFG" --input "$CLEAR" hs_delete.ts backup --clearance "$CLEAR" --config "$CFG" --keep "$KEEP" "$LABEL"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$GIT" delete_branches.ts "$GIT" --only merged
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --lock "$LOCK" --input "$GIT" --input "$CLEAR" hs_delete.ts worktrees --clearance "$CLEAR" --survey "$GIT" "$WT"
 node "$SKILL_DIR/scripts/remote.ts" --host "$HOST" --input "$CLEAR" hs_delete.ts trash --clearance "$CLEAR" "$NAME"

@@ -3,7 +3,7 @@
 //
 // 사용법(이 맥에서, 잠금이 필요한 것은 --lock 으로 돌린다):
 //   remote.ts --host HOST --lock LOCK hs_delete.ts images [--apply] TAG=IMAGE_ID...
-//   remote.ts --host HOST --lock LOCK --input CONFIG hs_delete.ts backup --config CONFIG [--apply] LABEL...
+//   remote.ts --host HOST --lock LOCK --input CONFIG hs_delete.ts backup --config CONFIG [--keep N] [--apply] LABEL...
 //   remote.ts --host HOST --lock LOCK --input GIT hs_delete.ts worktrees --survey GIT [--apply] PATH...
 //   remote.ts --host HOST hs_delete.ts trash [--apply] NAME...
 //   remote.ts --host HOST --input CONFIG hs_delete.ts hermes --config CONFIG [--apply] PROFILE:SESSION...
@@ -12,6 +12,9 @@
 //          이미지 ID 를 그대로 가리키는지, 컨테이너가 쓰는지 다시 본다. 다르거나 컨테이너 조회가 실패하면 건너뛴다.
 //          다른 이름이 가리켜 docker 가 거절한 것은 남김으로 센다. `docker image prune -a`, `docker system prune -a` 는 쓰지 않는다.
 // backup   백업 루트 바로 아래 용도 폴더를 지운다. 이름은 [A-Za-z0-9][A-Za-z0-9._-]* 만 받고 심볼릭 링크는 지우지 않는다.
+//          --keep N 이면 폴더 안에서 수정 시각이 새로운 N 개를 남기고 나머지 항목만 지운다. 지우기 전에 보관 규칙 표를 다시 읽어
+//          자동 정리가 소유한 용도는 거부하고, 「명시적 정리」 용도는 --keep 이 없거나 규칙의 개수보다 적으면 거부한다.
+//          표를 읽지 못하면 --keep 없이 폴더째 지우지 않는다.
 // worktrees  hs_classify.ts --git-out 파일에서 제거 후보인 워크트리만 지운다. 항목마다 지우기 직전에 끝 커밋, 미커밋 변경,
 //          이 사용자 uid 의 프로세스 cwd 를 다시 본다. 읽지 못하거나 확인하지 못한 프로세스가 있으면 지우지 않는다. --force 는 쓰지 않는다.
 //          기록만 남은 워크트리는 그 저장소의 남은 기록이 모두 승인 목록에 있을 때만 `git worktree prune` 한다.
@@ -30,11 +33,11 @@
 //
 // 종료 코드: 0 실패 없음, 1 실패나 없음이 하나라도 있음, 2 사용법 오류, 4 잠금 없이 --apply 를 받음, 5 실행 차단(둘 다 아무것도 지우지 않음).
 
-import { lstatSync, readFileSync, rmSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { gitRun, isMain, runText, write } from './io.ts'
-import { HERMES_DAYS, hermesCandidates } from './hs_classify.ts'
-import { expandHome, hermesDbs, procCwds, readHermesDb, readLinked } from './hs_survey.ts'
+import { backupGrade, HERMES_DAYS, hermesCandidates, keptCount } from './hs_classify.ts'
+import { type BackupRule, backupRules, expandHome, hermesDbs, procCwds, readHermesDb, readLinked, readText, ruleFor } from './hs_survey.ts'
 import { parseWorktrees } from './lib/git_survey.ts'
 
 type Json = Record<string, any>
@@ -155,8 +158,32 @@ function images(items: string[], apply: boolean): number {
   return failed || missing ? 1 : 0
 }
 
-function backup(cfg: Json, labels: string[], apply: boolean): number {
+// 승인한 용도를 보관 규칙과 맞춰 본다. 지울 수 없으면 거부 이유, 지울 수 있으면 남길 개수(null 이면 폴더째)
+export function backupPlan(rule: BackupRule | null, rulesRead: boolean, keep: number | null): { keep: number | null } | { refuse: string } {
+  if (!rulesRead) {
+    // 표를 못 읽으면 조사도 모든 용도를 「표에 없음」 으로 냈다. 개수를 지키는 용도일 수 있어 폴더째 지우지 않는다
+    return keep === null ? { refuse: '보관 규칙 표를 읽지 못해 폴더째 지우지 않는다. 남길 개수를 --keep N 으로 넘긴다' } : { keep }
+  }
+  if (rule === null) return { keep }
+  const grade = backupGrade(rule.keep)
+  if (grade.grade === '유지') return { refuse: `자동 정리가 소유한다(${rule.keep})` }
+  const n = keptCount(rule.keep)
+  if (n !== null && /별 최신/.test(rule.keep) && !rule.key.includes('{')) {
+    return { refuse: `한 폴더에 여러 대상이 섞여 개수로 지우지 않는다(${rule.keep})` }
+  }
+  if (rule.keep.includes('명시적 정리')) {
+    if (keep === null) return { refuse: `보관 규칙이 남길 개수를 정한다(${rule.keep}). --keep ${n ?? 'N'} 으로 넘긴다` }
+    if (n !== null && keep < n) return { refuse: `--keep ${keep} 이 보관 규칙의 ${n}개보다 적다(${rule.keep})` }
+  }
+  return { keep }
+}
+
+function backup(cfg: Json, labels: string[], apply: boolean, keep: number | null): number {
   const root = expandHome(cfg.backup.root).replace(/\/+$/, '')
+  // 지우기 직전에 보관 규칙 표를 다시 읽는다. 승인 묶음의 문구와 달리 폴더째 지우는 일을 막는다
+  const doc = cfg.checkout && cfg.backup.rules ? readText(`${expandHome(cfg.checkout)}/${cfg.backup.rules}`) : null
+  const rules = doc === null ? [] : backupRules(doc, cfg.backup.section)
+  const rulesRead = rules.length > 0
   let bad = 0
   for (const label of labels) {
     if (!LABEL_RE.test(label)) {
@@ -178,19 +205,55 @@ function backup(cfg: Json, labels: string[], apply: boolean): number {
       bad += 1
       continue
     }
-    if (!apply) {
-      write(1, `지울 것 ${dir}\n`)
+    const plan = backupPlan(ruleFor(label, rules), rulesRead, keep)
+    if ('refuse' in plan) {
+      write(2, `거부 ${label}: ${plan.refuse}\n`)
+      bad += 1
       continue
     }
-    try {
-      rmSync(dir, { recursive: true })
-      write(1, `지움 ${dir}\n`)
-    } catch (error) {
-      write(2, `실패 ${dir}: ${(error as Error).message}\n`)
+    const targets = plan.keep === null ? [dir] : oldEntries(dir, plan.keep)
+    if (targets === null) {
+      write(2, `실패 ${label}: 항목을 읽지 못했다\n`)
       bad += 1
+      continue
+    }
+    if (plan.keep !== null) write(1, `남김 ${label}: 최신 ${plan.keep}개, 지울 것 ${targets.length}개\n`)
+    for (const target of targets) {
+      if (!apply) {
+        write(1, `지울 것 ${target}\n`)
+        continue
+      }
+      try {
+        rmSync(target, { recursive: true })
+        write(1, `지움 ${target}\n`)
+      } catch (error) {
+        write(2, `실패 ${target}: ${(error as Error).message}\n`)
+        bad += 1
+      }
     }
   }
   return bad ? 1 : 0
+}
+
+// 폴더 안 항목을 수정 시각이 새로운 순서로 세워 앞 keep 개를 뺀 나머지 경로를 오래된 것부터 낸다. 시각이 같으면 이름이 뒤인 것을 새것으로 본다
+export function oldEntries(dir: string, keep: number): string[] | null {
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return null
+  }
+  const dated: [string, number][] = []
+  for (const name of names) {
+    try {
+      dated.push([name, lstatSync(`${dir}/${name}`).mtimeMs])
+    } catch {
+      // 시각을 모르는 항목은 오래된 쪽으로 세지 않고 남긴다
+      return null
+    }
+  }
+  dated.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))
+  return dated.slice(keep).reverse().map(([name]) => `${dir}/${name}`)
 }
 
 // 저장소의 지금 「기록만 남음」 워크트리 경로. 목록을 읽지 못하면 null
@@ -403,15 +466,20 @@ export function main(argv: string[]): number {
   const [sub, ...rest] = argv
   let parsed
   try {
-    parsed = parseArgs({ args: rest, allowPositionals: true, options: { apply: { type: 'boolean' }, config: { type: 'string' }, survey: { type: 'string' }, clearance: { type: 'string' } } })
+    parsed = parseArgs({ args: rest, allowPositionals: true, options: { apply: { type: 'boolean' }, config: { type: 'string' }, survey: { type: 'string' }, clearance: { type: 'string' }, keep: { type: 'string' } } })
   } catch (error) {
     write(2, `${(error as Error).message}\n`)
     return 2
   }
   const { values, positionals } = parsed
   const apply = Boolean(values.apply)
+  const keep = values.keep === undefined ? null : Number(values.keep)
+  if (keep !== null && (sub !== 'backup' || !/^[1-9][0-9]*$/.test(values.keep!))) {
+    write(2, '--keep 은 backup 에만 쓰고 1 이상의 정수다\n')
+    return 2
+  }
   if (!['images', 'backup', 'worktrees', 'trash', 'hermes'].includes(sub ?? '') || positionals.length === 0) {
-    write(2, 'usage: hs_delete.ts {images|backup|worktrees|trash|hermes} [--config FILE] [--survey FILE] [--clearance FILE --apply] ITEM...\n')
+    write(2, 'usage: hs_delete.ts {images|backup|worktrees|trash|hermes} [--config FILE] [--survey FILE] [--keep N] [--clearance FILE --apply] ITEM...\n')
     return 2
   }
   if (apply) {
@@ -445,7 +513,7 @@ export function main(argv: string[]): number {
   }
   const cfg = readJson(values.config, 'config')
   if (!cfg) return 2
-  return sub === 'backup' ? backup(cfg, positionals, apply) : hermes(cfg, positionals, apply)
+  return sub === 'backup' ? backup(cfg, positionals, apply, keep) : hermes(cfg, positionals, apply)
 }
 
 if (isMain(import.meta.url, import.meta.main)) process.exitCode = main(process.argv.slice(2))

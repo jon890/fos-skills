@@ -9,6 +9,8 @@
 // 이 스크립트는 그 규칙대로 후보마다 등급(유지, 안전, 확인 필요)과 이유를 붙인다.
 // 유지 등급은 승인 후보에 넣지 않는다. 유지인데 규칙보다 많이 남은 것은 매일 정리 시각과 비교해
 // `정상(마지막 매일 정리 뒤에 생김)` 이나 `원인 확인 필요: <용도>` 를 붙인다.
+// 「명시적 정리」 백업은 보관 칸의 「최신 N개」 를 keep 으로 붙여 hs_delete.ts backup --keep N 으로 지우게 한다.
+// 홈 바로 아래 큰 폴더(조사의 home_dirs)는 확인 필요로 보이고, 정리 전 수치에 상위 몇 개를 남긴다.
 // 보관 규칙 표에 없는 백업 용도는 「표에 올릴 용도」 로 따로 낸다. sudo 가 필요한 정리는 사용자 터미널용 명령 문자열만 낸다.
 // 메모리 절은 제안만 낸다. 조사만 하는 저장소(survey_only)의 항목은 승인 후보에 넣지 않는다.
 // Hermes 세션은 부모·자식 트리 단위로 보고, 트리 안에 assistant 에 연결된 세션이나 30일 안에 활동한 세션이 있으면 트리 전체를 뺀다.
@@ -54,10 +56,21 @@ export const sudoCommand = (host: string, command: string): string => `ssh -t ${
 
 export type Grade = { grade: '유지' | '안전' | '확인 필요'; reason: string }
 
-// 「백업」 표의 보관 칸을 등급으로 옮긴다. 규칙이 없으면 null
-export function backupGrade(rule: string | null): Grade {
+// 보관 칸의 「최신 N개」 에서 N. 없으면 null
+export const keptCount = (rule: string | null): number | null => {
+  const m = /최신 (\d+)개/.exec(rule ?? '')
+  return m ? Number(m[1]) : null
+}
+
+// 「백업」 표의 보관 칸을 등급으로 옮긴다. 「명시적 정리」 는 남길 개수가 있어야 안전이다(hs_delete.ts backup --keep N)
+export function backupGrade(rule: string | null): Grade & { keep?: number } {
   if (rule === null) return { grade: '확인 필요', reason: '보관 규칙 표에 없다' }
-  if (rule.includes('명시적 정리')) return { grade: '안전', reason: `만드는 스크립트의 정리 명령이 보관 개수를 지킨다(${rule})` }
+  if (rule.includes('명시적 정리')) {
+    const keep = keptCount(rule)
+    if (keep === null) return { grade: '확인 필요', reason: `명시적 정리인데 남길 개수가 없다. 사람이 정한다(${rule})` }
+    if (/별 최신/.test(rule)) return { grade: '확인 필요', reason: `대상별로 남길 개수라 사람이 정한다(${rule})` }
+    return { grade: '안전', reason: `최신 ${keep}개만 남기고 오래된 것을 지운다(${rule})`, keep }
+  }
   if (rule.includes('사람이')) return { grade: '확인 필요', reason: `사람이 정한다(${rule})` }
   if (/매일 정리|최신 \d+개|timer|타이머|보존 기간/.test(rule)) return { grade: '유지', reason: `자동 정리가 소유한다(${rule})` }
   return { grade: '확인 필요', reason: `보관 칸을 읽지 못했다(${rule})` }
@@ -67,11 +80,10 @@ export function backupGrade(rule: string | null): Grade {
 export function backupOverRetention(row: Json, lastPrune: number): string | null {
   const rule: string | null = row.rule
   if (!rule) return null
-  const m = /최신 (\d+)개/.exec(rule)
-  if (!m) return null
+  const keep = keptCount(rule)
+  if (keep === null) return null
   // `{서비스}` 자리 없이 「서비스별」 규칙이 붙은 용도는 한 폴더에 여러 서비스가 섞여 개수로 판정하지 않는다
   if (/별 최신/.test(rule) && !String(row.rule_key ?? '').includes('{')) return null
-  const keep = Number(m[1])
   const entries: Json[] = row.entries ?? []
   if (entries.length <= keep) return null
   const beforePrune = entries.filter((e) => e.mtime !== null && e.mtime <= lastPrune).length
@@ -129,6 +141,12 @@ const PATH_GRADES: Record<string, Grade & { command?: string; sudo?: boolean }> 
 export function pathGrade(row: Json): Grade & { command?: string; sudo?: boolean } {
   if (row.owner) return { grade: '유지', reason: `${row.owner} 가 소유한다` }
   return PATH_GRADES[row.path] ?? { grade: '확인 필요', reason: '규칙이 없는 경로다' }
+}
+
+// 홈 바로 아래 큰 폴더. 고정 경로 규칙이 없어 모두 확인 필요다. 사본 이름이면 이유를 따로 붙인다
+export function homeDirGrade(row: Json): Grade {
+  if (row.copy) return { grade: '확인 필요', reason: '실패한 작업이나 백업이 남긴 사본으로 보인다. 비밀 파일 사본이 들었을 수 있어 내용을 본 뒤 지운다' }
+  return { grade: '확인 필요', reason: '홈 아래 큰 폴더다. 다른 절이 다루는 경로가 들었을 수 있다' }
 }
 
 // ---------- Hermes ----------
@@ -227,6 +245,7 @@ export function classify(survey: Json, cfg: Json): Json {
   const backups = (survey.backups?.rows ?? []).map((r: Json) => ({ ...r, ...backupGrade(r.rule), over: null as string | null }))
   for (const b of backups) if (b.grade === '유지') b.over = backupOverRetention(b, lastPrune)
   const paths = (Array.isArray(survey.paths) ? survey.paths : []).map((p: Json) => ({ ...p, ...pathGrade(p) }))
+  const homeDirs = (Array.isArray(survey.home_dirs?.rows) ? survey.home_dirs.rows : []).map((d: Json) => ({ ...d, ...homeDirGrade(d) }))
   const sudo: string[] = []
   for (const p of paths) if (p.sudo && p.command) sudo.push(sudoCommand(cfg.host, p.command))
   if (survey.journal && typeof survey.journal === 'string') sudo.push(sudoCommand(cfg.host, 'journalctl --vacuum-size=1G'))
@@ -244,6 +263,7 @@ export function classify(survey: Json, cfg: Json): Json {
     backups,
     to_table: backups.filter((b: Json) => b.rule === null).map((b: Json) => b.label),
     paths,
+    home_dirs: homeDirs,
     sudo,
     repos,
     hermes,
@@ -263,6 +283,8 @@ export function report(survey: Json, cfg: Json, c: Json): string {
   out.push('## 정리 전 수치')
   out.push(`디스크 여유 ${human(survey.host?.disk_free)} / ${human(survey.host?.disk_total)}, 메모리 available ${human(mem.mem_available)} / ${human(mem.mem_total)}, 스왑 사용 ${human(mem.swap_used)} / ${human(mem.swap_total)}`)
   for (const row of survey.docker?.summary ?? []) out.push(`Docker ${row.Type}: ${row.Size} (회수 가능 ${row.Reclaimable})`)
+  // 정리 뒤 여유가 예상과 다를 때 원인을 찾도록 홈 아래 큰 폴더를 남긴다
+  if (c.home_dirs.length) out.push(`홈 아래 큰 폴더: ${c.home_dirs.slice(0, 5).map((d: Json) => `~/${d.name} ${human(d.size)}`).join(', ')}`)
 
   out.push('\n## 메모리와 스왑 (진단만)')
   if (err(mem)) out.push(`읽지 못함: ${err(mem)}`)
@@ -296,7 +318,7 @@ export function report(survey: Json, cfg: Json, c: Json): string {
     if (!survey.backups.rules_found) out.push('보관 규칙 표를 읽지 못했다. 모든 용도가 「표에 없음」 으로 나온다. 오버레이의 backup.rules 와 section 을 확인한다')
     out.push('| 등급 | 용도 | 항목 | 크기 | 「백업」 표의 보관 | 판정 |')
     out.push('| --- | --- | --- | --- | --- | --- |')
-    for (const b of c.backups) out.push(`| ${b.grade} | ${b.label} | ${b.entries.length} | ${human(b.size)}${b.complete ? '' : ' (일부)'} | ${b.rule ?? '표에 없음'} | ${b.over ?? ''} |`)
+    for (const b of c.backups) out.push(`| ${b.grade} | ${b.label} | ${b.entries.length} | ${human(b.size)}${b.complete ? '' : ' (일부)'} | ${b.rule ?? '표에 없음'} | ${b.over ?? (b.keep ? `최신 ${b.keep}개를 남긴다: hs_delete.ts backup --keep ${b.keep}` : '')} |`)
   }
   out.push('표에 올릴 용도(지울지와 함께 표에 올릴지 묻는다):')
   for (const t of c.to_table) out.push(`- ${t}`)
@@ -305,6 +327,11 @@ export function report(survey: Json, cfg: Json, c: Json): string {
   out.push('\n## 경로')
   if (err(survey.paths)) out.push(`읽지 못함: ${err(survey.paths)}`)
   for (const p of c.paths) out.push(`- [${p.grade}${p.sudo ? ', sudo' : ''}] ${p.path}: ${human(p.size)}${p.complete ? '' : ' (권한 없는 곳 제외)'}. ${p.reason}${p.command && !p.sudo ? `. 명령: ${p.command}` : ''}`)
+  out.push('\n## 홈 아래 큰 폴더 (확인 필요. sudo 없이 잰 크기다)')
+  if (err(survey.home_dirs)) out.push(`읽지 못함: ${err(survey.home_dirs)}`)
+  else if (survey.home_dirs && !survey.home_dirs.complete) out.push('읽지 못한 곳이 있어 실제보다 작을 수 있다')
+  for (const d of c.home_dirs) out.push(`- [${d.grade}${d.copy ? ', 사본' : ''}] ~/${d.name}: ${human(d.size)}. ${d.reason}`)
+  if (!c.home_dirs.length && !err(survey.home_dirs)) out.push('- 없음')
   out.push('\n## ~/.cache 하위 (확인 필요)')
   for (const d of Array.isArray(survey.cache_dirs) ? survey.cache_dirs.slice(0, 15) : []) out.push(`- ${d.name}: ${human(d.size)}`)
   out.push('\n## 휴지통 (확인 필요, 오늘 옮긴 것은 권하지 않는다)')
