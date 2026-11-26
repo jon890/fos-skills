@@ -355,12 +355,15 @@ describe('dooray-preview task, comment', () => {
     assert.deepEqual(done.calls, [])
   })
 
-  test('목록 안의 코드 블록 뒤에서도 업무 링크를 검사한다', () => {
+  test('울타리 코드 블록 뒤에서도 업무 링크를 검사한다', () => {
     const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
     const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
     for (const block of [
+      ['```text', inside, '```'],
       ['- ```text', `  ${inside}`, '  ```'],
       ['10. 예제', '', '    - ~~~~text', `      ${inside}`, '      ~~~~'],
+      ['> ```text', `> ${inside}`, '> ```'],
+      ['- > ```text', `  > ${inside}`, '  > ```'],
     ]) {
       const done = preview('task', [...block, '', outside].join('\n'))
       assert.equal(done.code, 1)
@@ -374,6 +377,24 @@ describe('dooray-preview task, comment', () => {
     for (const opening of ['````text', '- ````text']) {
       const indent = opening.startsWith('-') ? '  ' : ''
       const done = preview('comment', [opening, indent + '예제', indent + '```', indent + link].join('\n'))
+      assert.equal(done.code, 1)
+      assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('들여쓴 코드 예제는 건너뛰고 들여쓴 문단의 링크는 검사한다', () => {
+    const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
+    const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['코드 예제', '', `    ${inside}`, '', outside],
+      ['코드 예제', '', `\t${inside}`, '', outside],
+      ['- 코드 예제', '', `      ${inside}`, '', `  ${outside}`],
+      ['> 코드 예제', '>', `>     ${inside}`, '>', `> ${outside}`],
+      ['> - 코드 예제', '>', `>       ${inside}`, '>', `>   ${outside}`],
+      ['문단을 이어서 씁니다.', `    ${outside}`],
+    ]) {
+      const done = preview('comment', lines.join('\n'))
       assert.equal(done.code, 1)
       assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
       assert.deepEqual(done.calls, ['--json post get --id post-example'])
