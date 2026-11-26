@@ -20,6 +20,7 @@ const MSG = {
   NEST: '괄호 2겹 중첩: 별도 문장으로 나눈다',
   SECT: '§ 대신 섹션이나 장, 또는 번호를 쓴다',
   TILDE: '한 단락에 물결표가 2개 이상이다: 범위는 「부터 … 까지」나 - 로 풀어 쓰거나 \\~ 로 이스케이프한다',
+  TILDE_RANGES: (ranges: string) => `. 숫자 범위는 이렇게 쓴다: ${ranges}`,
   DASH_HEAD: '제목의 엠대시: 부제를 떼고 한 문장으로 쓴다',
   DASH: '평문의 엠대시: 콜론이나 접속사로 바꾼다',
 }
@@ -79,7 +80,16 @@ describe('TILDE', () => {
   test('단락이 다르면 따로 센다', () => quiet(['범위는 3~5 다.\n\n다른 것은 7~9 다.'], 'TILDE'))
   test('이어진 줄은 한 단락이고 경고는 단락의 첫 줄 번호로 낸다', () => {
     const done = on('# 제목\n\n범위는 3~5 이고\n다른 것은 7~9 다.\n')
-    assert.equal(done.stdout, `${done.path}:3  실패 [TILDE] ${MSG.TILDE}\n`)
+    assert.equal(done.stdout, `${done.path}:3  실패 [TILDE] ${MSG.TILDE}${MSG.TILDE_RANGES('3\\~5, 7\\~9')}\n`)
+  })
+  test('숫자 범위도 취소선으로 짝지어지므로 세고, 이스케이프한 형태를 한 번씩 보여 준다', () => {
+    warned(['심박 50~100, 혈당 70~180 이다.', '수축기 100~139 와 이완기 60~89 다.'], 'TILDE')
+    const done = on('심박 50~100, 체온 36.5~37.5, 다시 50~100.\n')
+    assert.equal(done.stdout, `${done.path}:1  실패 [TILDE] ${MSG.TILDE}${MSG.TILDE_RANGES('50\\~100, 36.5\\~37.5')}\n`)
+  })
+  test('숫자 범위가 없으면 일반 안내만 낸다', () => {
+    const done = on('a~b 와 c~d 다.\n')
+    assert.equal(done.stdout, `${done.path}:1  실패 [TILDE] ${MSG.TILDE}\n`)
   })
   test('홈 경로의 물결표는 범위 표기가 아니다: 경로 글자는 한글과 숫자를 포함한다', () => {
     quiet(['설정은 ~/.claude/scripts 에 있고 범위는 3~5 다.', '홈은 ~/문서/설정 이고 범위는 3~5 다.', '홈은 ~/자료2/파일_a 이고 범위는 3~5 다.'], 'TILDE')
@@ -164,7 +174,7 @@ describe('문자열 모드', () => {
   test('문자열의 물결표 오류는 1 로 끝난다', () => {
     const done = read(['--text', '3~5 와 7~9'])
     assert.equal(done.code, 1)
-    assert.equal(done.stdout, `(문자열)  실패 [TILDE] ${MSG.TILDE}\n`)
+    assert.equal(done.stdout, `(문자열)  실패 [TILDE] ${MSG.TILDE}${MSG.TILDE_RANGES('3\\~5, 7\\~9')}\n`)
   })
 })
 
