@@ -441,7 +441,8 @@ flowchart TD
 | 다른 Run 의 낮은 번호 PR 이 이번 큐에서 빠진다 | 그 PR 을 기다리는 같은 모듈의 높은 번호 PR 도 이번 큐에서 뺀다. 남는 집합이 더 바뀌지 않을 때까지 다시 본다 |
 | 보드 파일을 읽지 못했다 | 보류 표시를 볼 수 없어 그 틱에는 걸지 않는다 |
 | 지시서 폴더나 파일을 읽지 못했다 | 지시서의 보류를 확인할 수 없어 그 틱에는 걸지 않는다 |
-| 리뷰 뒤에 커밋이 더해졌거나 리뷰가 결과 없이 실패했다 | 지금 HEAD 의 리뷰 체크(`queue.auto_review.review_checks`) success 나 믿는 봇의 영수증이 없으면 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 알린다. 리뷰 댓글의 문구로는 걸지 않는다. 설정 예시는 [orch 오버레이](../skills/orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
+| 리뷰 뒤에 커밋이 더해졌거나 리뷰가 결과 없이 실패했다 | 지금 HEAD 의 리뷰 체크(`queue.auto_review.review_checks`) success 나 믿는 봇의 영수증이 없으면 걸지 않고(믿는 봇의 마지막 리뷰에 P1·P2 지적이 없으면 앞 커밋의 영수증도 인정한다. 규칙은 오버레이 문서가 소유한다) `AUTO-MERGE-NO-REVIEW` 로 알린다. 리뷰 댓글의 문구로는 걸지 않는다. 설정 예시는 [orch 오버레이](../skills/orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
+| 리뷰 설정(`trusted_bots`, `review_checks`)이 없다 | 기능 PR 인지와 관계없이 어떤 PR 도 걸지 않고 `AUTO-MERGE-WAIT` 에 `자동 머지는 queue.auto_review … 가 필요하다` 를 남긴다. 코디네이터의 직접 머지는 막지 않는다 |
 | 루프가 건 큐가 도는 동안 루프가 멈췄다 | 큐는 분리 실행이라 이어 돈다. 다시 뜬 루프는 기록의 pid 로 끝을 보고 `AUTO-MERGE-END` 를 쓴다 |
 | 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
 | PR 의 리뷰, 스레드, 파일을 읽지 못했다 | 그 PR 만 넘어가고 다른 PR 은 건다. 열린 PR 의 마이그레이션 목록이나 마이그레이션 예약 파일을 읽지 못하면 마이그레이션이 든 PR 만 뺀다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |

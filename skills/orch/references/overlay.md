@@ -354,7 +354,7 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 리뷰 체크는 리뷰가 반영할 곳을 찾으면 체크를 실패시키는 워크플로여야 한다. 그 체크를 필수 체크로도 두면 머지 큐가 실패한 리뷰로 머지하지 않는다.
 리뷰 체크의 실패는 다른 체크처럼 CI 감시가 worker 에게 고치라고 보낸다. 리뷰 체크가 그 HEAD 에서 도는 동안 최신화(`pipeline.refresh_slots`)는 HEAD 를 옮기지 않는다.
 
-둘 다 없으면 루프는 기능 PR 인지와 관계없이 어떤 PR 도 자동 머지에 걸지 않고 기다린다. 코디네이터가 직접 거는 머지 큐와 `orch queue gate` 는 리뷰 조건 없이 CI 와 미해결 스레드만 본다.
+둘 다 없으면 루프는 기능 PR 인지와 관계없이 어떤 PR 도 자동 머지에 걸지 않고 기다린다. 코디네이터가 직접 거는 머지 큐와 `orch queue gate` 는 리뷰 조건은 보지 않고, 나머지 조건(CI, 미해결 스레드, draft, 충돌, 통합 테스트 기록, 비공개 낱말, 보류)은 그대로 본다.
 리뷰 체크는 지금 HEAD 의 success 만 인정한다. 롤업이 지금 HEAD 의 체크만 담고 지적 등급을 알 수 없어서다. 리뷰 체크는 push 마다 CI 로 다시 돈다.
 옛 문구 판정 키(`pass`, `block`, `require`, `feature_head`, `fixed_after_block`, `fallback`)는 읽지 않는다. `orch doctor --repo` 가 `LEGACY-REVIEW-KEY` 로 지우라고 알린다. 리뷰 봇 장애 때 대체 리뷰 worker 를 띄우던 기능도 그 판정 댓글로 통과시키던 것이라 함께 없앴다.
 
