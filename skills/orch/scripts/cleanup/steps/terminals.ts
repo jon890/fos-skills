@@ -170,6 +170,20 @@ export function launchedOwn(repo: string, mine: WorkerRow[], terminals: Terminal
   return own
 }
 
+// worker-start --terminal 로 이어 쓴 터미널(orch worker resume, launch-worker --terminal)의 handle.
+// Orca 는 직접 만들지 않은 터미널이라 ownershipState external, retainedReason external_terminal 로 적는다.
+// 그 dispatch 의 띄우기 기록이 바로 그 터미널을 적었을 때만 든다. 터미널이 비어 있는 옛 기록은 어느 터미널인지 몰라 뺀다
+export function externalLaunched(repo: string, mine: WorkerRow[]): Set<unknown> {
+  const handles = new Set<unknown>()
+  for (const w of mine) {
+    const resource = resourceOf(w)
+    if (resource.ownershipState !== 'external' || resource.retainedReason !== 'external_terminal') continue
+    const record = typeof w.dispatchId === 'string' ? readLaunch(repo, w.dispatchId) : null
+    if (record?.terminal && rowHandles(w).has(record.terminal)) handles.add(record.terminal)
+  }
+  return handles
+}
+
 export function closeForClosedPr(handles: string[], pr: Pr, apply: boolean, log: Log, indent: string): void {
   const tag = `(CLOSED #${pr.number})`
   for (const handle of handles) {

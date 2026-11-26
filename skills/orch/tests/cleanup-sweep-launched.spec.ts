@@ -201,6 +201,39 @@ console.log(JSON.stringify({ ok: true, result }))
   })
 })
 
+// orch worker resume 은 직접 연 터미널을 worker-start --terminal 로 잇는다. Orca 는 그 터미널을 external / external_terminal 로 적는다
+// (2026-11-20 AiSdtSkill grm-weekly-default 의 worker-show 실측). resume 은 새 dispatch 와 그 터미널을 launched-workers 에 기록한다
+function resumedTerminal(path: string, record: Row | false = {}): void {
+  ownTerminal(path, { record })
+  const worker = fx.workers[0]
+  worker.terminalState = 'retained'
+  worker.resource = { worktreeId: `x::${path}`, terminalHandle: 'term_o', ownershipState: 'external', retainedReason: 'external_terminal' }
+}
+
+describe('resume 으로 이은 끝난 worker 의 터미널', () => {
+  test('resume 기록이 있으면 닫고 워크트리를 치운다', () => {
+    const path = worktree('feat-resumed')
+    squashMerge('feat-resumed', path)
+    resumedTerminal(path)
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    gone(path, out)
+    lacks(out, '터미널 소유 상태 조회 실패')
+    has(calls(), 'orca terminal close --terminal term_o')
+  })
+
+  test('기록이 없거나 기록한 터미널이 다르면 남긴다', () => {
+    for (const [label, record] of Object.entries({ none: false as const, other: { terminal: 'term_other' }, unknown: { terminal: null } })) {
+      const path = worktree(`feat-resumed-${label}`)
+      squashMerge(`feat-resumed-${label}`, path)
+      resumedTerminal(path, record)
+      const out = runSweep(['--run', 'run_x', '--apply'])
+      exists(path, out)
+      has(out, '터미널 소유 상태 조회 실패')
+      lacks(calls(), 'terminal close')
+    }
+  })
+})
+
 describe('PR 없이 끝난 워크트리', () => {
   test('앞선 커밋과 변경이 없으면 워크트리, 로컬과 원격 브랜치를 치운다', () => {
     const path = worktree('meas-1', { commits: 0 })

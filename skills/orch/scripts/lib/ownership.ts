@@ -10,7 +10,8 @@
 //     user_owned / user_takeover            `남김: 사용자 보유 터미널` (예외: cleanup-sweep 이 launch-worker 의 기록으로 코디네이터가
 //                                           띄운 끝난 터미널로 가린 것, --close-own-taken-over 를 켠 때. 둘 다 호출자가 ignore 로 넘긴다)
 //     released                              `남김: 사용자 보유 터미널`
-//     external / external_terminal          소유 상태가 owned 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다
+//     external / external_terminal          소유 상태가 owned 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다(예외: worker-start --terminal 로
+//                                           이어 쓴 터미널을 cleanup-sweep 이 그 dispatch 의 띄우기 기록으로 확인한 것. 호출자가 ignore 로 넘긴다)
 //     owned / identity_unproven             owned 라 막지 않는다. Orca 의 release 는 닫지 않으므로 sweep 이 경로로 찾아 닫는다
 //
 // 범위 읽기: `run-list` 를 끝까지 따라 Run 마다 `worker-list --run` 을 읽는다. 먼저 Run 목록을 읽어야
