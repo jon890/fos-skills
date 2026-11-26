@@ -5,6 +5,10 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 19.51.0 (2026-11-26)
+
+- inbox 1.8.0, work-board 1.36.0 (#637)
+
 ## 19.50.1 (2026-11-26)
 
 - 바뀐 곳: docs (#635)
