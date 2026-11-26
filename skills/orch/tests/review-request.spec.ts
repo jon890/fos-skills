@@ -56,14 +56,26 @@ test('기본 3분이 지나면 현재 HEAD 에 한 번 요청하고 push 뒤 새
   assert.deepEqual(posts().map(({ argv }) => argv), [
     ['api', '--hostname', 'github.test', '-X', 'POST', 'repos/o/r/issues/12/comments', '-f', `body=${COMMAND}\n\n<!-- orch-bot-review-request:${HEAD} -->`],
   ])
+  // P1·P2 를 고친 push 에만 다시 요청한다(스펙 DECISION15). 앞 리뷰에 P1 이 있었으니 새 HEAD 에 요청한다
   const next = { ...PR, head: NEXT }
-  snapshot(NEXT, [receipt(HEAD)])
+  const p1 = { isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: '![P1 Badge] 제목' }] } }
+  snapshot(NEXT, [receipt(HEAD)], { reviewThreads: { nodes: [p1], pageInfo: { hasNextPage: false } } })
   tick(360_001, next)
   tick(540_000, next)
   assert.equal(posts().length, 1)
   tick(540_001, next)
   tick(720_000, PR)
   assert.equal(posts().length, 2)
+})
+
+test('앞 커밋의 봇 리뷰에 P1·P2 지적이 없으면 push 뒤에도 다시 요청하지 않는다', (t) => {
+  const { tick, snapshot, posts } = setup(t)
+  const next = { ...PR, head: NEXT }
+  const p3 = { isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: '![P3 Badge] 제목' }] } }
+  snapshot(NEXT, [receipt(HEAD)], { reviewThreads: { nodes: [p3], pageInfo: { hasNextPage: false } } })
+  tick(0, next)
+  tick(180_000, next)
+  assert.equal(posts().length, 0)
 })
 
 test('믿는 봇이 남긴 현재 HEAD 의 영수증이나 진행 중 표시가 있으면 요청하지 않는다', (t) => {

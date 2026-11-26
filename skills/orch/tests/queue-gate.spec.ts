@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { gateLines } from '../scripts/queue/gate.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
-import { BOT, BOT_SETTING, receipt } from './fixtures/codex-review.ts'
+import { BOT, BOT_SETTING, REVIEWED_AT, receipt } from './fixtures/codex-review.ts'
 
 import { copyRepo, git as templateGit } from '../../../modules/testkit/git.ts'
 
@@ -378,15 +378,17 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(gateReason(failed), /스레드를 읽지 못했다/)
   })
 
-  test('머지 큐도 이전 영수증을 막고 현재 HEAD 를 확인한 영수증으로 머지한다', async (t) => {
+  // 스펙 DECISION15: 앞 커밋의 봇 리뷰는 P1·P2 지적이 있으면 막고, 없으면 지금 HEAD 의 리뷰로 인정한다
+  test('머지 큐도 앞 커밋의 봇 리뷰에 P1·P2 가 있으면 막고, 없으면 그 리뷰로 머지한다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
-    const withReceipt = (head: string) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)] } }) })
-    const blocked = await queue(c, withReceipt('b'.repeat(40)), 0)
+    const finding = (level: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${level} Badge] 제목` }] } })
+    const withReceipt = (head: string, level: number) => ({ '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(head)], reviewThreads: [finding(level)] } }) })
+    const blocked = await queue(c, withReceipt('b'.repeat(40), 2), 0)
     assert.equal(blocked.code, 1, both(blocked))
-    assert.match(queueReason(blocked), /현재 HEAD 를 확인한 봇 영수증이 없다/)
+    assert.match(queueReason(blocked), /봇이 P1·P2 지적을 남겼다/)
     assert.doesNotMatch(readFileSync(c.env.FAKE_LOG!, 'utf8'), /pr merge/)
-    const merged = await queue(c, withReceipt(HEAD), 0)
+    const merged = await queue(c, withReceipt('b'.repeat(40), 3), 0)
     assert.equal(merged.code, 0, both(merged))
     assert.match(merged.stdout, /1 MERGED/)
   })

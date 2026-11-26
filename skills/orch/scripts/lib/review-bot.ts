@@ -6,7 +6,7 @@ export type ReviewTarget = { host: string; slug: string; number: string | number
 type Actor = { __typename: string; login: string } | null
 type Comment = { author: Actor; body: string; createdAt: string }
 type Review = { author: Actor; body: string; submittedAt: string | null; state: string; commit: { oid: string } | null }
-type Thread = { isResolved: boolean; comments: { nodes: Pick<Comment, 'author' | 'createdAt'>[] } }
+type Thread = { isResolved: boolean; comments: { nodes: (Pick<Comment, 'author' | 'createdAt'> & { body?: string })[] } }
 export type BotReviewData = { comments: Comment[]; reviews: Review[]; reviewThreads: Thread[] }
 type Connection = keyof BotReviewData
 type TrustedReview = { ok: true; receipts: ReviewNote[] } | { ok: false; wait: string }
@@ -33,7 +33,7 @@ query($owner:String!, $repo:String!, $number:Int!,
       }
       reviewThreads(first:50, after:$threadsAfter) @include(if:$readThreads) {
         pageInfo { hasNextPage endCursor }
-        nodes { isResolved comments(first:1) { nodes { author { __typename login } createdAt } } }
+        nodes { isResolved comments(first:1) { nodes { author { __typename login } createdAt body } } }
       }
     }
   }
@@ -120,26 +120,45 @@ export function botReviewRunning(head: string, data: BotReviewData, bot: Trusted
   })
 }
 
+// 줄 댓글 첫 줄의 등급 배지(![P1 Badge]). 읽지 못하면 null 이다
+const BADGE = /!\[P(\d) Badge\]/
+
+// P0·P1·P2 이거나 배지를 읽지 못한 지적은 막는 지적이다(안전한 쪽. 코디네이터 2026-11-26)
+function blockingThread(body: string | undefined): boolean {
+  const level = BADGE.exec(body ?? '')?.[1]
+  return level === undefined || Number(level) <= 2
+}
+
+// 봇마다 마지막으로 끝난 리뷰(영수증)를 인정할지 본다(스펙 docs/features/merge-readiness/spec.md 의 DECISION15).
+//   - 봇이 연 줄 댓글 스레드가 하나라도 미해결이면 기다린다.
+//   - 영수증은 봇의 댓글이나 리뷰에 든 receipt_marker 와 리뷰한 커밋이다. 커밋이 지금 HEAD 가 아니어도 된다.
+//   - 마지막 영수증 R 과 같은 시각이거나 그 뒤에 남은 봇의 지적을 본다(Codex 는 리뷰와 줄 댓글을 같은 시각에 단다). R 앞의 지적은 R 이 다시 본 것이다.
+//     줄 댓글은 첫 줄 배지로 등급을 읽고, 리뷰 본문의 지적(CHANGES_REQUESTED, 영수증이 맞지 않는 COMMENTED)과 시각을 읽지 못한 지적은 막는 지적으로 본다.
+//     막는 지적이 없으면 R 을 지금 HEAD 의 리뷰로 인정한다. 있으면 고친 커밋에서 다시 리뷰받을 때까지 기다린다.
+//   - R 이 지금 HEAD 가 아닌데 지금 HEAD 에서 봇 리뷰가 도는 중이면 그 결과를 기다린다.
+//   - 배지는 작성자가 Bot 이고 trusted_bots 의 login 인 글만 읽는다. 누구나 쓸 수 있는 글로 통과시키지 않는다(사용자 2026-11-24).
 export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: readonly TrustedReviewBot[]): TrustedReview {
   const receipts: ReviewNote[] = []
   const headOid = head.toLowerCase()
+  const time = (at: string | null | undefined) => {
+    const parsed = Date.parse(at ?? '')
+    return Number.isFinite(parsed) ? parsed : Infinity
+  }
   for (const bot of bots) {
-    let latestFinding = -Infinity
-    const foundAt = (at: string | null) => {
-      const time = Date.parse(at ?? '')
-      latestFinding = Math.max(latestFinding, Number.isFinite(time) ? time : Infinity)
-    }
-    const candidate: ReviewNote[] = []
-    const addReceipt = (commit: string | null, at: string | null) => {
-      if (commit && headOid.startsWith(commit) && at && Number.isFinite(Date.parse(at))) {
-        candidate.push({ body: '', at, commit: head, receiptBot: bot.login })
+    const findings: { at: number; blocking: boolean }[] = []
+    const candidate: (ReviewNote & { time: number })[] = []
+    // reviewed 는 GitHub 가 기록한 리뷰의 커밋이다. 리뷰 영수증은 그 커밋이 지금 HEAD 와 같을 때만 지금 HEAD 의 것이다
+    const addReceipt = (commit: string | null, at: string | null, reviewed?: string) => {
+      if (commit && at && Number.isFinite(Date.parse(at))) {
+        const onHead = reviewed === undefined ? headOid.startsWith(commit) : reviewed === headOid
+        candidate.push({ body: '', at, commit: onHead ? head : (reviewed ?? commit), receiptBot: bot.login, time: Date.parse(at), ...(onHead ? {} : { earlier: true }) })
       }
     }
     for (const thread of data.reviewThreads) {
       const first = thread.comments.nodes[0]
       if (!first || !fromBot(first.author, bot)) continue
       if (!thread.isResolved) return { ok: false, wait: `${bot.login} 봇의 미해결 줄 댓글 스레드가 있다` }
-      foundAt(first.createdAt)
+      findings.push({ at: time(first.createdAt), blocking: blockingThread(first.body) })
     }
     for (const review of data.reviews) {
       if (!fromBot(review.author, bot) || review.state === 'PENDING' || review.state === 'DISMISSED') continue
@@ -147,19 +166,29 @@ export function judgeTrustedBotReviews(head: string, data: BotReviewData, bots: 
       const reviewOid = review.commit?.oid.toLowerCase()
       const matchesReview = commit && reviewOid?.startsWith(commit)
       if (review.state === 'CHANGES_REQUESTED' || (review.state === 'COMMENTED' && !matchesReview)) {
-        foundAt(review.submittedAt)
-      } else if (matchesReview && reviewOid === headOid) {
-        addReceipt(commit, review.submittedAt)
+        findings.push({ at: time(review.submittedAt), blocking: true })
+      } else if (matchesReview) {
+        addReceipt(commit, review.submittedAt, reviewOid)
       }
     }
     for (const comment of data.comments) {
       if (fromBot(comment.author, bot)) addReceipt(receiptCommit(comment.body, bot), comment.createdAt)
     }
-    const current = candidate.filter((receipt) => Date.parse(receipt.at) > latestFinding)
-    if (latestFinding > -Infinity && current.length === 0) {
-      return { ok: false, wait: `${bot.login} 봇이 지적을 남겼다. 지적을 해결한 뒤 현재 HEAD 의 영수증을 다시 받아야 한다` }
+    // 같은 시각이면 지금 HEAD 의 영수증을 마지막으로 본다
+    candidate.sort((a, b) => a.time - b.time || Number(!a.earlier) - Number(!b.earlier))
+    const last = candidate.at(-1)
+    if (!last) {
+      if (findings.length > 0) return { ok: false, wait: `${bot.login} 봇이 지적을 남겼다. 지적을 해결한 뒤 현재 HEAD 의 영수증을 다시 받아야 한다` }
+      continue
     }
-    receipts.push(...current)
+    if (findings.some((one) => one.blocking && one.at >= last.time)) {
+      return { ok: false, wait: `${bot.login} 봇이 P1·P2 지적을 남겼다. 고친 커밋에서 현재 HEAD 의 영수증을 다시 받아야 한다` }
+    }
+    if (last.earlier && botReviewRunning(head, data, bot)) {
+      return { ok: false, wait: `${bot.login} 봇이 현재 HEAD 를 리뷰하는 중이다` }
+    }
+    const { time: _time, ...note } = last
+    receipts.push(note)
   }
   return { ok: true, receipts }
 }

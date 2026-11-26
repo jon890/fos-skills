@@ -193,7 +193,7 @@ PR 을 열거나 고쳐 push 한 턴에서 `orch queue gate --wait` 로 필수 �
 첫 리뷰는 `review-fix` 로 반영하며 회신과 resolve 를 할 수 있다. 하위 등급 지적의 반영 여부는 worker 가 정한다. 선택과 이유는 status 와 PR 본문 「결정」 절에 남긴다. 그 밖에 반영하지 않을 지적은 회신 전에 ask 로 묻는다.
 **재리뷰는 P1·P2(차단 지적)를 고쳐 push 했을 때만 받는다(사용자 2026-11-26).** P3~P5 만 반영한 push 는 재리뷰 없이 머지할 수 있다.
 P1·P2 를 고쳤으면 새 커밋에서 다시 리뷰받는다. 믿는 봇은 루프가 3분 뒤 다시 요청한다. 리뷰 체크가 자동으로 다시 돌지 않는 저장소에서는 worker 가 그 저장소의 재리뷰 방법(예: `/review` 댓글)을 부른다.
-관문이 이 규칙을 따르기 전까지는 `orch queue gate` 가 새 커밋의 리뷰를 기다릴 수 있다. 그때는 관문 출력대로 재리뷰를 부른다. 관문의 판단 기준은 `docs/features/merge-readiness/spec.md` 의 DECISION15 가 정한다.
+관문, 머지 큐, 루프는 믿는 봇의 마지막 리뷰에 P1·P2 지적이 없으면 그 뒤 커밋에도 그 리뷰를 인정한다(`docs/features/merge-readiness/spec.md` 의 DECISION15). 리뷰 체크(`review_checks`)는 지금 HEAD 의 success 만 인정한다. `orch queue gate` 가 리뷰 대기를 내면 그 출력대로 재리뷰를 부른다.
 새 비차단 제안은 다음에 다룬다고 회신하고 resolve 하며, 이 회신에는 ask 가 필요 없다. 차단 지적은 계속 반영한다.
 
 ## 다음 단계 이어 가기

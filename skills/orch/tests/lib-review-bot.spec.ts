@@ -31,16 +31,22 @@ test('봇 종류와 계정, 영수증 표지, 현재 HEAD 앞자리가 모두 �
   const humanCopy = { ...current, author: { __typename: 'User', login: BOT.login } }
   const otherBot = { ...current, author: { ...BOT, login: 'another-app' } }
   const ambiguous = { ...current, body: current.body + '\n' + stale.body }
-  for (const comment of [noMarker, stale, humanCopy, otherBot, ambiguous]) {
+  for (const comment of [noMarker, humanCopy, otherBot, ambiguous]) {
     assert.deepEqual(judge({ comments: [comment] }), { ok: true, receipts: [] })
   }
+  // 앞 커밋의 영수증은 지적이 없으면 인정하고 그 커밋을 근거에 남긴다(스펙 DECISION15)
+  assert.deepEqual(judge({ comments: [stale] }), {
+    ok: true, receipts: [{ body: '', at: REVIEWED_AT, commit: OLD.slice(0, 10), receiptBot: BOT.login, earlier: true }],
+  })
 })
 
 test('리뷰 영수증은 GitHub 가 기록한 커밋과도 맞아야 한다', () => {
   const returned = { author: BOT, state: 'APPROVED', submittedAt: REVIEWED_AT, body: receipt(HEAD).body }
-  for (const oid of [OLD, HEAD.slice(0, 10) + OLD.slice(10)]) {
-    assert.deepEqual(judge({ reviews: [{ ...returned, commit: { oid } }] }), { ok: true, receipts: [] })
-  }
+  assert.deepEqual(judge({ reviews: [{ ...returned, commit: { oid: OLD } }] }), { ok: true, receipts: [] })
+  // 영수증 앞자리가 맞는 다른 커밋의 리뷰는 지금 HEAD 의 것이 아니라 앞 커밋의 리뷰다
+  const other = HEAD.slice(0, 10) + OLD.slice(10)
+  const earlier = judge({ reviews: [{ ...returned, commit: { oid: other } }] })
+  assert.ok(earlier.ok && earlier.receipts[0].earlier === true && earlier.receipts[0].commit === other)
   const result = judge({ reviews: [{ ...returned, commit: { oid: HEAD } }] })
   assert.ok(result.ok && result.receipts.length === 1)
 })
@@ -48,12 +54,14 @@ test('리뷰 영수증은 GitHub 가 기록한 커밋과도 맞아야 한다', (
 test('커밋 앞자리는 7자리부터 허용하며 영수증에 적힌 자리를 모두 비교한다', () => {
   const { body, ...comment } = receipt(HEAD)
   const withCommit = (commit: string) => ({ ...comment, body: body.replace(HEAD.slice(0, 10), commit) })
-  for (const commit of [HEAD.slice(0, 6), HEAD.slice(0, 7) + 'bbb', HEAD.slice(0, 39) + 'b']) {
-    assert.deepEqual(judge({ comments: [withCommit(commit)] }), { ok: true, receipts: [] })
+  assert.deepEqual(judge({ comments: [withCommit(HEAD.slice(0, 6))] }), { ok: true, receipts: [] })
+  for (const commit of [HEAD.slice(0, 7) + 'bbb', HEAD.slice(0, 39) + 'b']) {
+    const result = judge({ comments: [withCommit(commit)] })
+    assert.ok(result.ok && result.receipts[0].earlier === true, commit)
   }
   for (const commit of [HEAD.slice(0, 7), HEAD]) {
     const result = judge({ comments: [withCommit(commit)] })
-    assert.ok(result.ok && result.receipts.length === 1)
+    assert.ok(result.ok && result.receipts.length === 1 && result.receipts[0].earlier === undefined)
   }
 })
 
@@ -98,7 +106,10 @@ test('미해결 봇 스레드는 영수증보다 우선하고, 해결 뒤에는 
     ok: false, wait: `${BOT.login} 봇의 미해결 줄 댓글 스레드가 있다`,
   })
   const resolved = { ...thread, isResolved: true }
-  assert.equal(judge({ reviewThreads: [resolved], comments: [receipt(HEAD), receipt(OLD, REREVIEWED_AT)] }).ok, false)
+  assert.equal(judge({ reviewThreads: [resolved], comments: [receipt(HEAD)] }).ok, false)
+  // 지적 뒤에 다시 받은 리뷰가 앞 커밋의 것이어도 지적이 없으면 인정한다(스펙 DECISION15)
+  const later = judge({ reviewThreads: [resolved], comments: [receipt(HEAD), receipt(OLD, REREVIEWED_AT)] })
+  assert.ok(later.ok && later.receipts[0].earlier === true)
   const passed = judge({ reviewThreads: [resolved], comments: [receipt(HEAD), fresh] })
   assert.ok(passed.ok && passed.receipts[0].at === REREVIEWED_AT)
 })
@@ -110,4 +121,34 @@ test('의견 리뷰와 변경 요청보다 늦게 같은 봇이 현재 HEAD 를 
     assert.equal(judge({ reviews, comments: [receipt(HEAD, FOUND_AT)] }).ok, false)
     assert.equal(judge({ reviews, comments: [receipt(HEAD, REREVIEWED_AT)] }).ok, true)
   }
+})
+
+// 스펙 DECISION15: 마지막 리뷰에 P1·P2 지적이 없으면 뒤 커밋에도 인정한다. 배지를 읽지 못한 줄 댓글은 막는 지적으로 본다
+test('마지막 봇 리뷰의 줄 댓글 배지로 P1·P2 를 보고 앞 커밋의 리뷰를 인정할지 정한다', () => {
+  const badge = (body: string) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body }] } })
+  const level = (n: number) => badge(`**<sub><sub>![P${n} Badge](https://img.shields.io/badge/P${n}-yellow?style=flat)</sub></sub>  제목**`)
+  const old = receipt(OLD)
+  for (const n of [0, 1, 2]) {
+    assert.deepEqual(judge({ comments: [old], reviewThreads: [level(n)] }), {
+      ok: false, wait: `${BOT.login} 봇이 P1·P2 지적을 남겼다. 고친 커밋에서 현재 HEAD 의 영수증을 다시 받아야 한다`,
+    })
+  }
+  for (const n of [3, 4, 5]) {
+    const got = judge({ comments: [old], reviewThreads: [level(n)] })
+    assert.ok(got.ok && got.receipts[0].earlier === true, String(n))
+  }
+  assert.equal(judge({ comments: [old], reviewThreads: [level(3), badge('배지 없는 지적')] }).ok, false)
+  // 사람이 단 배지 글은 읽지 않는다. 봇이 연 스레드만 본다
+  const human = { isResolved: true, comments: { nodes: [{ author: { __typename: 'User', login: 'me' }, createdAt: REVIEWED_AT, body: '![P1 Badge]' }] } }
+  assert.ok(judge({ comments: [old], reviewThreads: [human] }).ok)
+  // P1·P2 를 고친 새 커밋에서 다시 받은 리뷰는 앞 지적과 상관없이 인정한다
+  const fixed = judge({ comments: [old, receipt(HEAD, REREVIEWED_AT)], reviewThreads: [level(1)] })
+  assert.ok(fixed.ok && fixed.receipts[0].earlier === undefined)
+  // 지금 커밋의 리뷰에 P3 만 있으면 다시 리뷰받지 않아도 된다
+  assert.ok(judge({ comments: [receipt(HEAD)], reviewThreads: [level(3)] }).ok)
+})
+
+test('지금 HEAD 에서 봇 리뷰가 도는 중이면 앞 커밋의 리뷰를 인정하지 않고 기다린다', () => {
+  const running = { author: BOT, state: 'PENDING', submittedAt: null, body: '', commit: { oid: HEAD } }
+  assert.deepEqual(judge({ comments: [receipt(OLD)], reviews: [running] }), { ok: false, wait: `${BOT.login} 봇이 현재 HEAD 를 리뷰하는 중이다` })
 })

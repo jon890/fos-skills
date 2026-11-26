@@ -14,8 +14,10 @@
 //   - boardHold        보드 항목의 next 와 details 가운데 끝나지 않은 줄이 `머지 보류` 로 시작하면 그 줄. 옛 문자열 줄은 끝나지 않은 줄이다
 //   - judgeReview      지금 HEAD 의 독립 리뷰가 있는지 본다. 리뷰 댓글의 문구로는 정하지 않는다(사용자 결정 2026-11-24. 누가 쓴 댓글이든
 //                      문구만 있으면 통과하는 가짜 통과를 막으려는 것이다). 아래 가운데 하나가 있으면 통과다
-//                        봇 영수증   queue.auto_review.trusted_bots 의 봇이 지금 HEAD 를 확인한 영수증(lib/review-bot.ts)
-//                        리뷰 체크   queue.auto_review.review_checks 의 CI 체크가 지금 HEAD 에서 success 다(core/review-checks.ts)
+//                        봇 영수증   queue.auto_review.trusted_bots 의 봇이 지금 HEAD 를 확인한 영수증. 봇의 마지막 리뷰에 P1·P2 지적이 없으면
+//                                    앞 커밋의 영수증도 인정한다(스펙 DECISION15, lib/review-bot.ts 의 judgeTrustedBotReviews)
+//                        리뷰 체크   queue.auto_review.review_checks 의 CI 체크가 지금 HEAD 에서 success 다(core/review-checks.ts).
+//                                    롤업이 지금 HEAD 의 체크만 담고 등급을 알 수 없어 앞 커밋의 결과는 인정하지 않는다. push 마다 CI 로 다시 돈다
 //                      리뷰 체크를 먼저 보고, success 면 봇 영수증을 조회하지 않는다(봇 조회 실패로 막지 않는다. core/merge-readiness.ts 의 review 조건).
 //                      둘 다 없으면 `리뷰 대기` 이고 missing 이다. 통과하면 근거를 `봇 영수증 <봇>(커밋 <앞 8자리>, <시각>)` 이나
 //                      `리뷰 체크 <이름> success` 로 낸다
@@ -224,7 +226,8 @@ export function boardHold(item: BoardItem): string | null {
 }
 
 // 봇 영수증(lib/review-bot.ts). commit 은 영수증이 확인한 커밋, receiptBot 은 봇 계정이다
-export type ReviewNote = { body: string; at: string; commit?: string | null; id?: string; receiptBot?: string }
+// earlier 는 지금 HEAD 앞 커밋의 영수증을 인정한 것이다(P1·P2 없음. lib/review-bot.ts 의 judgeTrustedBotReviews)
+export type ReviewNote = { body: string; at: string; commit?: string | null; id?: string; receiptBot?: string; earlier?: boolean }
 
 // missing 은 영수증도 리뷰 체크 성공도 없어 멈췄다는 뜻이다. 루프가 AUTO-MERGE-NO-REVIEW 로 알린다
 export type ReviewJudgement =
@@ -236,7 +239,7 @@ export const REVIEW_WAIT = '리뷰 대기'
 // 머리 주석의 「judgeReview」. passedChecks 는 지금 HEAD 에서 success 인 review_checks 의 이름이다
 export function judgeReview(input: { receipts: ReviewNote[]; passedChecks: string[] }, config: ReviewConfig): ReviewJudgement {
   const basis = [
-    ...input.receipts.map((note) => `봇 영수증 ${note.receiptBot ?? '?'}(커밋 ${(note.commit ?? '').slice(0, 8)}, ${note.at || '시각 없음'})`),
+    ...input.receipts.map((note) => `봇 영수증 ${note.receiptBot ?? '?'}(커밋 ${(note.commit ?? '').slice(0, 8)}, ${note.at || '시각 없음'}${note.earlier ? ', 앞 리뷰 인정(P1·P2 없음)' : ''})`),
     ...config.checks.filter((name) => input.passedChecks.includes(name)).map((name) => `리뷰 체크 ${name} success`),
   ]
   return basis.length > 0 ? { ok: true, basis } : { ok: false, wait: REVIEW_WAIT, missing: true }
