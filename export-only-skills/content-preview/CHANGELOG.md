@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 4.4.2 (2026-11-26)
+
+- 미리보기에서 플러그인 래퍼를 먼저 쓰고, 옮기기 전 드라이버 경로는 찾지 않는다.
+
 ## 4.4.1 (2026-11-26)
 
 - 미리보기 드라이버를 팀 저장소에서도 `skills/browser/browser-driver/` 에서 먼저 찾는다고 문서와 테스트를 맞췄다. 옛 자리 `tools/browser-driver/` 는 팀 main 이 옮기기 전까지 대체 후보로 남는다.

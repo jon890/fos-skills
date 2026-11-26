@@ -7,12 +7,11 @@
 **지금 무엇이 잡혔고 왜 잡혔는지는 `doctor` 가 낸다.** 이 문서는 둘 다 다시 적지 않는다.
 
 ```bash
-B="$SKILL_DIR/browser-driver/browser_driver.ts"
 "$B" help
 "$B" doctor
 ```
 
-`$SKILL_DIR` 은 browser 스킬 폴더다. 정의는 `../SKILL.md` 에 있다. 아래 예시의 `"$B"` 는 이 드라이버 경로다.
+예시의 `B` 에는 [browser 스킬](../SKILL.md#2-준비)에서 찾은 드라이버의 절대 경로를 넣는다.
 
 이 문서는 그 둘이 내지 않는 것을 담는다. 백엔드 선택 규칙, 백엔드마다 갈리는 동작, 새 백엔드 추가다.
 
@@ -28,7 +27,7 @@ B="$SKILL_DIR/browser-driver/browser_driver.ts"
 | `driver/shell.ts` | 백엔드 프로세스 호출과 반환값 정규화 |
 | `driver/io.ts` | 출력과 직접 실행 판정 |
 | `driver/runtime.ts` | 명령 호출별 환경·출력·실행 함수. 생략하면 실제 CLI 동작을 쓴다 |
-| `driver/pylike.ts` | 옛 구현이 쓰던 표준 라이브러리 동작(JSON 읽기·쓰기, `float`, 경로, `which`)을 같은 결과로 내는 도구. 이 폴더는 팀 저장소에 `tools/browser-driver` 로 실려 폴더 밖을 import 하지 못해 따로 둔다 |
+| `driver/pylike.ts` | 옛 구현이 쓰던 표준 라이브러리 동작(JSON 읽기·쓰기, `float`, 경로, `which`)을 같은 결과로 내는 도구. 스킬과 함께 내보낼 수 있도록 폴더 안에 둔다 |
 | `driver/admin.ts` | `doctor`, `install` |
 | `driver/backends/index.ts` | 백엔드 목록과 선택 규칙 |
 | `driver/backends/base.ts` | 백엔드 공통 계약 |
@@ -37,12 +36,11 @@ B="$SKILL_DIR/browser-driver/browser_driver.ts"
 | `tests/` | `node:test` 함수 테스트와 대표 CLI 대조. 동기 가짜는 같은 본문을 함수로 평가하고 비동기 ego 스크립트는 실제 자식으로 실행한다. 가짜 백엔드와 임시 폴더만 쓰고 실제 브라우저를 열지 않는다. `fixtures/` 는 옛 구현이 낸 스크립트·도움말·진단 출력이다. 저장소 루트에서 `node scripts/run-tests.ts 'skills/browser/browser-driver/tests/*.spec.ts'` 로 돈다 |
 
 진입점만 실행 파일이다(`#!/usr/bin/env node`). 심링크로 불려도 Node 가 모듈 경로를 실체로 풀어 옆의 `driver` 폴더를 찾는다.
-이 폴더는 팀 저장소에 `tools/browser-driver` 로 들어간다. 폴더 밖을 import 하지 않는다.
+드라이버는 browser 스킬과 함께 내보낸다. 폴더 밖을 import 하지 않는다.
 
 ## 부르는 쪽
 
-스킬은 이 드라이버를 세 자리에서 찾는다. 환경변수 `BROWSER_DRIVER`, 스킬과 함께 받은 저장소 안,
-개인이 걸어 둔 `~/.claude/scripts/browser-driver` 순이다.
+드라이버 탐색 순서는 [browser 스킬](../SKILL.md#2-준비)을 따른다.
 
 전역에서 부르려면 심볼릭 링크를 만든다. `git pull` 만으로 최신이 반영된다.
 
@@ -51,10 +49,6 @@ node browser_driver.ts install
 ```
 
 같은 이름의 실제 파일이 있으면 `.bak.{pid}` 로 옮긴 뒤 링크를 건다.
-
-옛 링크(`~/.claude/scripts/browser-driver` 가 `tools/browser-driver/browser_driver.py` 를 가리키는 것)는 3.0.0 에서 옛 이름 진입을 지워 끊어진다.
-옛 링크가 있으면 원본 체크아웃에서는 `node skills/browser/browser-driver/browser_driver.ts install`, 팀 사본에서는 `node tools/browser-driver/browser_driver.ts install` 로 링크를 다시 건다.
-새로 거는 링크는 `install` 이 `browser_driver.ts` 로 건다.
 
 ## 설정 파일
 
@@ -67,7 +61,6 @@ node browser_driver.ts install
 4. 옛 위치 `~/.claude/browser.config.json`
 
 2번의 판정은 `driver/config.ts` 의 실체 경로가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/skills/browser/browser-driver/driver/config.ts` 꼴인지 본다.
-팀 사본은 `.../<버전>/tools/browser-driver/driver/config.ts` 꼴도 같게 본다.
 맞으면 데이터 폴더는 `<루트>/plugins/data/<플러그인>-<마켓플레이스>/` 다. 이 이름 규칙은 Claude Code 2.1.286 에서 실측했다.
 Codex 설치본(`<CODEX_HOME>/plugins/cache/…`)은 `<CODEX_HOME>/config.toml` 이 파일로 있고 데이터 폴더가 없다.
 이때는 Claude Code 와 같은 설정을 쓰도록 `<Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/` 를 본다.

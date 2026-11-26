@@ -566,33 +566,51 @@ test('넘기기에 실패하면 알림을 남기고 이유를 toast 로 보인�
   await ui.unmount()
 })
 
-test('m 다음 번호로 이름을 확인하고 y 를 눌러야 같은 출처의 알림이 모두 사라진다', async ($, on) => {
+test('알림 줄에서 숨길 이름을 확인하고 확정하면 같은 출처의 알림과 건수가 갱신된다', async ($, on) => {
   const task = { ...INBOX_ITEMS[0], scope: ['p1', '개발'], scopeName: '어드민 개발' }
   const sameProject = { ...task, id: 'dooray:task:comment:c2' }
   const channel = { ...INBOX_ITEMS[2], scope: ['c1', '예시 개발방'], state: 'new' }
   const calls = []
-  let items = [task, sameProject, channel]
+  const noTarget = INBOX_ITEMS[1]
+  let items = [task, sameProject, channel, noTarget]
   await start($, on, (argv) => {
     if (!String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')) return { exitCode: 1, stdout: '', stderr: '없음' }
     if (argv[3] === 'mute') {
       calls.push(argv.slice(3))
-      items = items.filter((item) => item.source === 'messenger')
+      items = items.filter((item) => !item.scope.includes('p1'))
       return { exitCode: 0, stdout: '', stderr: '' }
     }
     return { exitCode: 0, stderr: '', stdout: JSON.stringify({ enabled: true, newCount: items.length, items }) }
   })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Button', key: 'inbox-mute' })).props.hotkey).toBe('m')
-  await ui.press({ key: 'inbox-mute' })
-  await ui.press({ key: 'inbox-reply-' + channel.id })
-  expect(await ui.find({ type: 'Text', text: /대화방 「예시 개발방」/ })).toBeTruthy()
-  await ui.press({ key: 'inbox-mute' })
+  const taskButton = 'inbox-mute-' + task.id
+  const channelButton = 'inbox-mute-' + channel.id
+  const confirmation = async (id) => {
+    const row = await ui.find({ type: 'Box', key: 'inbox-' + id })
+    return (row.children as Drawn[]).filter((child) => child.type === 'Text').map(textOf)
+  }
+  expect(await ui.find({ type: 'Button', key: 'inbox-mute' })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-mute-' + noTarget.id })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: taskButton })).props.label).toBe('이 프로젝트 숨기기')
+  expect((await ui.find({ type: 'Button', key: channelButton })).props.label).toBe('이 대화방 숨기기')
+  expect((await ui.find({ type: 'Button', key: channelButton })).props.hotkey).toBeUndefined()
+
+  await ui.press({ key: channelButton })
+  expect(await confirmation(channel.id)).toContain('이 보드에서 대화방 「예시 개발방」 알림을 숨겨요.')
+  await ui.press({ key: channelButton })
   expect(await ui.find({ type: 'Button', key: 'inbox-mute-confirm' })).toBeFalsy()
   expect(calls).toEqual([])
 
-  await ui.press({ key: 'inbox-mute' })
-  await ui.press({ key: 'inbox-reply-' + task.id })
-  expect(await ui.find({ type: 'Text', text: /프로젝트 「어드민 개발」/ })).toBeTruthy()
+  await ui.press({ key: channelButton })
+  await ui.press({ key: 'inbox-dismiss' })
+  expect(await ui.find({ type: 'Button', key: channelButton })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-mute-confirm' })).toBeFalsy()
+  await ui.press({ key: 'inbox-dismiss' })
+
+  await ui.press({ key: channelButton })
+  await ui.press({ key: taskButton })
+  expect(await confirmation(channel.id)).toEqual([])
+  expect(await confirmation(task.id)).toContain('이 보드에서 프로젝트 「어드민 개발」 알림을 숨겨요.')
   expect((await ui.find({ type: 'Button', key: 'inbox-mute-confirm' })).props.hotkey).toBe('y')
   expect(calls).toEqual([])
   await ui.press({ key: 'inbox-mute-confirm' })
@@ -602,7 +620,7 @@ test('m 다음 번호로 이름을 확인하고 y 를 눌러야 같은 출처의
   expect(await ui.find({ type: 'Button', key: 'inbox-reply-' + task.id })).toBeFalsy()
   expect(await ui.find({ type: 'Button', key: 'inbox-reply-' + sameProject.id })).toBeFalsy()
   expect(await ui.find({ type: 'Button', key: 'inbox-reply-' + channel.id })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /^알림  1/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^알림  2/ })).toBeTruthy()
   expect(await ui.find({ type: 'Button', key: 'inbox-undo' })).toBeFalsy()
   await ui.unmount()
 })

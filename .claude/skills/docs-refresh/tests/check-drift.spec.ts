@@ -16,6 +16,7 @@ import {
   checkReadmeOutline,
   README_OUTLINE,
   checkSkillList,
+  schemaKeys,
   pathBases,
   targetDocs,
   eventSpecs,
@@ -104,6 +105,16 @@ describe('config 절', () => {
     const md = '## config.json 에 더하는 절\n\n| 절 | 키 |\n| --- | --- |\n| `board` | `steps`, `old` |\n'
     const out = checkConfig(md, new Map([['board', ['steps', 'task']]]))
     assert.deepEqual(out.map((d) => d.message), ['키 board.old 가 core/config.ts 에 없다', '표에 board.task 가 없다(core/config.ts 에 있다)'])
+  })
+
+  test('queue 는 루프, 관문, 준비 키를 모두 표 키로 읽고 finish, cleanup 은 뺀다', async () => {
+    const config = await import('../../../../skills/orch/scripts/core/config.ts')
+    const keys = schemaKeys(config)
+    assert.deepEqual(keys.get('queue'), [...config.QUEUE_LOOP_KEYS, ...config.QUEUE_GATE_KEYS, ...config.QUEUE_READINESS_KEYS])
+    assert.ok(keys.get('queue')?.includes('integration_tests') && keys.get('queue')?.includes('allow_no_checks'))
+    assert.equal(keys.has('finish') || keys.has('cleanup'), false)
+    const md = '## config.json 에 더하는 절\n\n| 절 | 키 |\n| --- | --- |\n| `queue` | `auto_merge`, `auto_review`, `integration_tests`, `allow_no_checks` |\n'
+    assert.deepEqual(checkConfig(md, new Map([['queue', keys.get('queue')!]])), [])
   })
 })
 

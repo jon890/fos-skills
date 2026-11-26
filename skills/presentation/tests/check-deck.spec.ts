@@ -46,8 +46,8 @@ function setup() {
     writeFileSync(path, body)
     return path
   }
-  const driver = (body: string) => {
-    const path = join(root, 'skills', 'browser', 'browser-driver', 'browser_driver.ts')
+  const driver = (body: string, relative = 'skills/browser/browser-driver/browser_driver.ts') => {
+    const path = join(root, relative)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, `#!${process.execPath}\n${body}`)
     chmodSync(path, 0o755)
@@ -208,6 +208,18 @@ if (argv[0] === 'open') {
     const done = s.run([s.write(DECK), '--browser'])
     assert.deepEqual([done.code, done.stdout], [0, '· 장 2개\n· 세로 넘침 없음\n통과\n'])
     assert.deepEqual(calls(), ['open file://' + join(s.root, 'deck.html'), 'js tab-1', 'close tab-1'])
+  })
+
+  test('실행 가능한 플러그인 래퍼를 스킬 안의 드라이버보다 먼저 쓴다', () => {
+    const s = setup()
+    const calls = withDriver(s)
+    const wrapper = s.driver("process.stderr.write('플러그인 래퍼'); process.exit(1)", 'bin/browser-driver')
+    const deck = s.write(DECK)
+    assert.match(s.run([deck, '--browser']).stdout, /탭을 열지 못했다 플러그인 래퍼/)
+    assert.deepEqual(calls(), [])
+    chmodSync(wrapper, 0o644)
+    assert.equal(s.run([deck, '--browser']).code, 0)
+    assert.deepEqual(calls(), ['open file://' + deck, 'js tab-1', 'close tab-1'])
   })
 
   test('넘친 장을 알린다', () => {

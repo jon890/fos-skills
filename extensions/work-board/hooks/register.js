@@ -203,7 +203,6 @@ let inboxSeen = false
 // x: 켜져 있으면 숫자 단축키가 답변 요청문 대신 그 알림을 넘긴다. 넘기거나 다시 x 를 누르면 꺼진다
 let dismissMode = false
 let dismissBusy = false
-let muteMode = false
 let muteSelection = null
 let muteBusy = false
 // z 로 되돌릴 알림 id. 이 세션에서 창이 넘긴 것만 쌓는다
@@ -1539,9 +1538,8 @@ export async function undoDismiss($) {
   await loadInbox($)
 }
 
-async function confirmInboxMute($) {
-  if (!muteSelection || muteBusy) return
-  const { id, key, value } = muteSelection
+async function confirmInboxMute($, id, { key, value }) {
+  if (muteSelection !== id || muteBusy) return
   muteBusy = true
   try {
     const root = (await boardRoot($)) || (await startFolder($))
@@ -1550,7 +1548,6 @@ async function confirmInboxMute($) {
     inboxGeneration++
     const ids = inbox?.items.filter((item) => muteKey(item) === key && item.scope.includes(value)).map((item) => item.id) ?? []
     inbox = withoutItems(inbox, ids)
-    muteMode = false
     muteSelection = null
     $.ui.toast('이 보드에서 ' + muteLabel(key) + ' 알림을 숨겼어요')
     refreshStatus($)
@@ -1912,7 +1909,6 @@ export function register(on) {
 
   on('command.run', { command: 'board' }, async ($) => {
     dismissMode = false
-    muteMode = false
     muteSelection = null
     folded.clear()
     await loadFile($)
@@ -2011,7 +2007,7 @@ export function register(on) {
         key: 'fold-' + item.id + '-' + kind,
         plain: true,
         onPress: () => {
-          if (dismissMode || muteMode) return
+          if (dismissMode) return
           const id = item.id + ':' + kind
           if (!folded.delete(id)) folded.add(id)
           $.ui.invalidate('ui.render')
@@ -2066,7 +2062,7 @@ export function register(on) {
         ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: [title] })
         : Button({ key: 'check-' + item.id, plain: true,
           onPress: () => {
-            if (dismissMode || muteMode) return
+            if (dismissMode) return
             fillPrompt($, itemPrompt(item, worker, live.prs))
             $.ui.invalidate('ui.render')
           },
@@ -2298,11 +2294,7 @@ export function register(on) {
                   onPress: () => {
                     if (muteBusy) return
                     if (dismissMode) void dismissInbox($, item.id)
-                    else if (!muteMode) fillPrompt($, replyPrompt(item))
-                    else if (target) {
-                      muteSelection = { id: item.id, ...target }
-                      $.ui.invalidate('ui.render')
-                    }
+                    else fillPrompt($, replyPrompt(item))
                   },
                   children: [
                     Text({ key: 'label', bold: !answered, dimColor: answered, color: dismissMode ? 'red' : undefined, children: [label] }),
@@ -2310,9 +2302,29 @@ export function register(on) {
                 : Text({ bold: !answered, dimColor: answered, children: ['   ' + label] }),
               tagged('tag', inboxTag(item), item.url || '', ''),
               Text({ dimColor: true, children: [meta] }),
+              ...(!dismissMode && target ? [Button({
+                key: 'inbox-mute-' + item.id,
+                label: '이 ' + muteLabel(target.key) + ' 숨기기',
+                plain: true,
+                onPress: () => {
+                  if (muteBusy || dismissMode) return
+                  muteSelection = muteSelection === item.id ? null : item.id
+                  $.ui.invalidate('ui.render')
+                },
+              })] : []),
             ],
           }),
           ...(!answered && item.excerpt ? [indent('excerpt', 5, Text({ dimColor: true, wrap: 'truncate', children: ['「' + item.excerpt + '」'] }))] : []),
+          ...(target && muteSelection === item.id ? [
+            Text({ key: 'mute-name', wrap: 'wrap', children: ['이 보드에서 ' + muteLabel(target.key) + ' 「' + target.name + '」 알림을 숨겨요.'] }),
+            Button({
+              key: 'inbox-mute-confirm',
+              label: '이 ' + muteLabel(target.key) + ' 알리지 않기',
+              hotkey: 'y',
+              plain: true,
+              onPress: () => { void confirmInboxMute($, item.id, target) },
+            }),
+          ] : []),
         ],
       })
     }
@@ -2324,17 +2336,6 @@ export function register(on) {
         ...(alerts.show && inbox.unclassified > 0 ? [dim('iu', '미분류 알림 ' + inbox.unclassified + ' · 기본 보드에서 봐요')] : []),
         ...(alerts.show && dismissMode ? [Text({ key: 'idm', color: 'red', wrap: 'wrap',
           children: ['넘길 알림의 번호를 누르세요. 넘긴 알림은 답하지 않음으로 남고 z 로 되돌려요. 그만두려면 x'] })] : []),
-        ...(alerts.show && muteMode && !muteSelection ? [dim('mute-help', '숨길 프로젝트나 대화방의 알림 번호를 누르세요. 그만두려면 m')] : []),
-        ...(alerts.show && muteSelection ? [
-          Text({ key: 'mute-name', wrap: 'wrap', children: ['이 보드에서 ' + muteLabel(muteSelection.key) + ' 「' + muteSelection.name + '」 알림을 숨겨요.'] }),
-          Button({
-            key: 'inbox-mute-confirm',
-            label: '이 ' + muteLabel(muteSelection.key) + ' 알리지 않기',
-            hotkey: 'y',
-            plain: true,
-            onPress: () => { void confirmInboxMute($) },
-          }),
-        ] : []),
         ...(alerts.show && inboxItems.length === 0 ? [dim('i0', answeredCount > 0 ? '이 보드의 새 알림이 없어요' : '이 보드의 알림이 없어요')] : []),
         ...inboxItems.map(inboxRow),
         ...(answeredCount > 0 ? [dim('ia', '답함 ' + answeredCount)] : []),
@@ -2514,22 +2515,8 @@ export function register(on) {
                 plain: true,
                 onPress: () => {
                   if (muteBusy) return
-                  muteMode = false
                   muteSelection = null
                   dismissMode = !dismissMode
-                  $.ui.invalidate('ui.render')
-                },
-              })] : []),
-              ...(alerts.show && (muteMode || inboxItems.slice(0, INBOX_ROWS).some(muteTarget)) ? [Button({
-                key: 'inbox-mute',
-                label: muteMode ? '숨기기 그만' : '프로젝트·대화방 알림 숨기기',
-                hotkey: 'm',
-                plain: true,
-                onPress: () => {
-                  if (muteBusy) return
-                  dismissMode = false
-                  muteMode = !muteMode
-                  muteSelection = null
                   $.ui.invalidate('ui.render')
                 },
               })] : []),

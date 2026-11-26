@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.8 (2026-11-26)
+
+- 덱의 세로 넘침을 확인할 때 플러그인 래퍼를 먼저 쓰고, 옮기기 전 드라이버 경로는 찾지 않는다.
+
 ## 2.0.7 (2026-11-26)
 
 - `--browser` 가 드라이버를 찾는 순서를 문서에 맞게 적었다. `skills/browser/browser-driver` 가 먼저이고 `tools/browser-driver` 는 팀 저장소의 옛 자리다.

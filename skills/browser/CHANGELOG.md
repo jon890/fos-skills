@@ -2,6 +2,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.6 (2026-11-26)
+
+- 플러그인 래퍼를 드라이버 본체보다 먼저 쓰고, 이전 배치의 설정 경로 탐색을 제거한다. 사내 시스템 전용 스킬이 있으면 먼저 쓴다.
+
 ## 3.0.5 (2026-11-26)
 
 - 드라이버를 찾는 순서에서 PATH 의 `browser-driver` 를 빼고 플러그인의 `bin/browser-driver` 를 스킬 폴더 기준 경로로 찾는다. Codex 처럼 플러그인 `bin/` 을 PATH 에 올리지 않는 도구에서도 같은 순서로 찾는다.

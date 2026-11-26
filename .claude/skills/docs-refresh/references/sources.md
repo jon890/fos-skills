@@ -39,7 +39,7 @@
 | `docs/flow.md` 「설치」, 「갱신」 | `scripts/test-plugin-install.ts`, `.claude-plugin/marketplace.json` | 의미 |
 | `docs/code-architecture.md` 「디렉터리 배치」, 「모듈 책임」 의 경로 | 저장소의 실제 폴더와 파일 | 자동(`checkPaths`) |
 | `docs/code-architecture.md` 「매니페스트」 의 JSON | `.claude-plugin/marketplace.json` | 의미 |
-| `docs/data-schema.md` 「config.json 에 더하는 절」 의 절과 키 | `skills/orch/scripts/core/config.ts` 의 `SECTIONS` 와 절별 `*_KEYS`(queue 는 `QUEUE_LOOP_KEYS`) | 자동(`checkConfig`) |
+| `docs/data-schema.md` 「config.json 에 더하는 절」 의 절과 키 | `skills/orch/scripts/core/config.ts` 의 `SECTIONS` 와 절별 `*_KEYS`(queue 는 `QUEUE_SCHEMA_KEYS`) | 자동(`checkConfig`) |
 | 같은 표의 타입과 기본값 | `skills/orch/scripts/core/config-schema.ts` 의 `KEYS` | 의미 |
 | `docs/data-schema.md` 「공통 필드와 이벤트별 필드」 | `skills/orch/scripts/lib/events.ts` 머리 주석 | 의미 |
 | `docs/data-schema.md` 「orch 루트에 더하는 파일」 | `skills/orch/scripts/lib/paths.ts` 의 `NAMES` 와 파일을 쓰는 코드 | 경로는 자동(`checkPaths`), 내용은 의미 |

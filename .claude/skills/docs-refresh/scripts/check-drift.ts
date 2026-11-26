@@ -188,6 +188,18 @@ export function checkConfig(schema: string, keys: Map<string, readonly string[]>
   return out
 }
 
+// data-schema 표가 갖는 절별 키. finish, cleanup 은 다른 문서가 갖는다.
+// queue 는 머지 큐 옵션으로 바꾸지 않는 키(QUEUE_SCHEMA_KEYS)만 표에 적는다
+export function schemaKeys(config: Record<string, unknown>): Map<string, readonly string[]> {
+  const keys = new Map<string, readonly string[]>()
+  for (const s of config.SECTIONS as string[]) {
+    if (s === 'finish' || s === 'cleanup') continue
+    const list = config[s === 'queue' ? 'QUEUE_SCHEMA_KEYS' : `${s.toUpperCase()}_KEYS`] as readonly string[] | undefined
+    if (list) keys.set(s, list)
+  }
+  return keys
+}
+
 // 6. 문서가 백틱으로 적은 이 저장소의 경로가 있는지
 // 스킬 README 의 상대 경로는 루트나 그 스킬 폴더 기준이다(pathBases).
 // 전역 문서(루트 README, docs/)는 어느 스킬인지 문맥으로 정하는 경로(`scripts/lib/x.ts`)를 쓰므로 루트와 모든 스킬 폴더 가운데 한 곳에 있으면 있는 것으로 본다.
@@ -272,13 +284,7 @@ export async function collect(root: string): Promise<Drift[]> {
   add('docs/flow.md', checkEvents(read('docs/flow.md'), eventSpecs(read('skills/orch/scripts/lib/events.ts'))))
 
   const config = await import(pathToFileURL(join(root, 'skills/orch/scripts/core/config.ts')).href)
-  const keys = new Map<string, readonly string[]>()
-  for (const s of config.SECTIONS as string[]) {
-    if (s === 'finish' || s === 'cleanup') continue
-    const list = s === 'queue' ? config.QUEUE_LOOP_KEYS : config[`${s.toUpperCase()}_KEYS`]
-    if (list) keys.set(s, list)
-  }
-  add('docs/data-schema.md', checkConfig(read('docs/data-schema.md'), keys))
+  add('docs/data-schema.md', checkConfig(read('docs/data-schema.md'), schemaKeys(config)))
 
   const commands = await import(pathToFileURL(join(root, 'skills/orch/scripts/lib/commands.ts')).href)
   const table: CommandTable = { groups: commands.GROUPS, resolve: commands.resolveNew }

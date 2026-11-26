@@ -9,8 +9,6 @@ import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { Box, commandIn, DRIVER_DIR, tempDir, write, type EnvChange, type T } from './helpers.ts'
 
-const PLACES = ['skills/browser/browser-driver', 'tools/browser-driver']
-
 function copyDriver(dest: string): string {
   mkdirSync(join(dest, '..'), { recursive: true })
   cpSync(DRIVER_DIR, dest, { recursive: true, filter: (src) => !/\/(tests|__pycache__|node_modules)(\/|$)/.test(src.slice(DRIVER_DIR.length)) })
@@ -25,10 +23,10 @@ class Layout {
   readonly claude: string
   readonly legacy: string
 
-  constructor(t: T, opts: { codex?: boolean; place?: string } = {}) {
+  constructor(t: T, opts: { codex?: boolean } = {}) {
     this.box = new Box(t)
     this.root = this.box.root
-    this.driver = copyDriver(join(this.root, 'plugins/cache/m/p/1.0.0', opts.place ?? PLACES[0]))
+    this.driver = copyDriver(join(this.root, 'plugins/cache/m/p/1.0.0', 'skills/browser/browser-driver'))
     this.claude = join(this.root, 'claude-home')
     this.data = join(this.root, 'plugins/data/p-m')
     this.legacy = join(this.box.home, '.claude/browser.config.json')
@@ -58,13 +56,11 @@ class Layout {
 }
 
 describe('설치 캐시의 설정 경로', () => {
-  for (const place of PLACES) {
-    test(`${place} 배치에서 데이터 폴더의 설정을 쓴다`, (t) => {
-      const lay = new Layout(t, { place })
-      const expected = lay.putData()
-      assert.equal(lay.configPath(), expected)
-    })
-  }
+  test('browser 스킬 배치에서 데이터 폴더의 설정을 쓴다', (t) => {
+    const lay = new Layout(t)
+    const expected = lay.putData()
+    assert.equal(lay.configPath(), expected)
+  })
 
   test('데이터 폴더에 설정이 없으면 옛 위치다', (t) => {
     const lay = new Layout(t)
@@ -80,7 +76,7 @@ describe('설치 캐시의 설정 경로', () => {
   test('설치 캐시 밖의 복사본은 캐시 판정을 받지 않는다', (t) => {
     const lay = new Layout(t)
     lay.putData()
-    const outside = copyDriver(join(lay.root, 'checkout/tools/browser-driver'))
+    const outside = copyDriver(join(lay.root, 'checkout/skills/browser/browser-driver'))
     // 캐시 밖이라 Claude 설정 폴더의 plugins/data/*/ 후보를 찾는데 이 사례는 데이터 폴더가 설정 폴더 밖에 있다
     assert.equal(lay.configPath({}, commandIn(outside)), lay.legacy)
   })
@@ -88,7 +84,7 @@ describe('설치 캐시의 설정 경로', () => {
   test('캐시 배치가 아닌 이름 조합은 캐시로 보지 않는다', (t) => {
     const lay = new Layout(t)
     lay.putData()
-    for (const dir of ['plugins/cache/m/p/1.0.0/skills/browser/other', 'plugins/cache/m/p/skills/browser/browser-driver', 'plugins/cache/m/p/1.0.0/x/skills/browser/browser-driver/..', 'cache/m/p/1.0.0/tools/browser-driver', 'plugins/cache/m/1.0.0/tools/browser-driver']) {
+    for (const dir of ['plugins/cache/m/p/1.0.0/skills/browser/other', 'plugins/cache/m/p/skills/browser/browser-driver', 'plugins/cache/m/p/1.0.0/x/skills/browser/browser-driver/..', 'cache/m/p/1.0.0/skills/browser/browser-driver', 'plugins/cache/m/1.0.0/skills/browser/browser-driver']) {
       const copy = copyDriver(join(lay.root, 'alt', dir.replace(/\/\.\.$/, '')))
       assert.equal(lay.configPath({}, commandIn(copy)), lay.legacy, dir)
     }

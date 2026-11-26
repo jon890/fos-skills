@@ -81,14 +81,14 @@ flowchart TD
 | [`inbox`](skills/inbox/README.md) | 업무 도구에서 나를 태그한 알림에 답할 때 |
 | [`docs-audit`](skills/docs-audit/README.md) | 저장소 문서가 코드와 맞는지 점검할 때 |
 | [`harness-cleanup`](skills/harness-cleanup/README.md) | CLAUDE.md 와 스킬 같은 에이전트 지침을 정리할 때 |
-| [`machine-cleanup`](skills/machine-cleanup/README.md) | 맥의 디스크와 메모리, 오래된 세션과 브랜치를 정리할 때 |
+| [`machine-cleanup`](skills/machine-cleanup/README.md) | 맥과 홈서버의 디스크와 메모리 상태를 확인하고 오래된 파일, 세션, 브랜치를 정리할 때 |
 | [`presentation`](skills/presentation/README.md) | 발표 자료를 HTML 슬라이드로 만들 때 |
 | [`report`](skills/report/README.md) | 있는 내용을 한눈에 보이는 HTML 보고서로 정리할 때 |
 | [`browser`](skills/browser/README.md) | CLI 나 API 로 안 되는 웹 작업을 브라우저로 끝낼 때 |
 | [`content-preview`](export-only-skills/content-preview/README.md) | 외부에 올릴 글을 등록 전에 미리 볼 때 |
 | [`korean-check`](export-only-skills/korean-check/README.md) | 한국어 문서와 응답이 자연스러운지 점검할 때 |
 
-`content-preview` 와 `korean-check` 는 팀 저장소로도 내보내요. 그 플러그인도 설치했으면 같은 스킬이 접두사만 다르게 두 번 보여요.
+팀 플러그인도 설치했으면 `content-preview`, `korean-check`, `browser` 는 접두사만 다르게 두 번 보여요.
 
 ## 설치와 갱신
 

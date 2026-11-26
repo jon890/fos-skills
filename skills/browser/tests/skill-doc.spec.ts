@@ -20,13 +20,15 @@ describe('browser SKILL.md', () => {
   })
 
   test('description 은 소유자를 가리키고 내용을 되풀이하지 않는다', () => {
-    for (const phrase of ['browser-driver help', 'browser-driver/README.md', '사람이 할 일']) {
+    for (const phrase of ['browser-driver help', 'browser-driver/README.md', '사람이 할 일', '사내 시스템 전용 스킬(APMS, GRM 등)이 있으면 그 스킬을 먼저 쓴다']) {
       assert.ok(DESCRIPTION.includes(phrase), phrase)
     }
   })
 
-  test('번들 드라이버 경로가 스킬 폴더에서 진입점을 가리킨다', () => {
-    assert.ok(TEXT.includes('"$SKILL_DIR/browser-driver/browser_driver.ts"'))
+  test('플러그인 래퍼를 스킬 안의 진입점보다 먼저 찾는다', () => {
+    const wrapper = TEXT.indexOf('"$SKILL_DIR/../../bin/browser-driver"')
+    const entry = TEXT.indexOf('"$SKILL_DIR/browser-driver/browser_driver.ts"')
+    assert.ok(wrapper >= 0 && entry > wrapper)
     assert.ok(existsSync(DRIVER_ENTRY))
   })
 

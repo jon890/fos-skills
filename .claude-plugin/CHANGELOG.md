@@ -5,6 +5,22 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 20.7.0 (2026-11-26)
+
+- docs-audit 6.0.2 (#652)
+
+## 20.6.1 (2026-11-26)
+
+- 바뀐 곳: .claude, skills (#650)
+
+## 20.6.0 (2026-11-26)
+
+- browser 3.0.6, presentation 2.0.8, content-preview 4.4.2 (#649)
+
+## 20.5.0 (2026-11-26)
+
+- work-board 1.38.0 (#648)
+
 ## 20.4.0 (2026-11-26)
 
 - orch 8.1.0 (#647)

@@ -55,7 +55,7 @@ PR1 후속 검증 한 행과 PR2 후속 검증 중 창 확인은 닫혔다. PR2 
 | --- | --- | --- |
 | 기능 design.md | 계획 폴더 링크를 이 기록과 개발 검증 문서 링크로 바꿨다. 「앞 PR 이 아직 이어지지 않은 후속」 의 verify 위임 문장을 실제 상태로 고쳤다. 나머지는 머지된 구현과 맞는다 | 문구 수정 |
 | 기능 spec.md | 인수 조건과 결정(DECISION20, DECISION23 의 PR 나눔 포함)이 머지된 두 PR 과 어긋나지 않는다 | 정합 |
-| ADR-033 | 결정·대안 기각·결과가 설계와 머지된 구현(`worker-add`·`worker-end`·`worker-link`, 줄 `stages`)과 맞는다 | 정합 |
+| [ADR-033](../../adr/033-board-item-worker-rows.md) | 결정·대안 기각·결과가 설계와 머지된 구현(`worker-add`·`worker-end`·`worker-link`, 줄 `stages`)과 맞는다 | 정합 |
 | implementation-result.md | 계획 폴더 링크를 이 기록 링크로 바꿨다 | 문구 수정 |
 
-공통화 후보 없음: 이 기능이 다룬 규칙(worker 줄과 대표 칸, PR 마다 묶음 단계, 창의 줄 그리기)은 ADR-033, 설계, `extensions/work-board/references/behavior.md`, `docs/data-schema.md` 가 각자의 원본을 소유하고 다른 기능 스펙에 복제돼 있지 않다.
+공통화 후보 없음: 이 기능이 다룬 규칙(worker 줄과 대표 칸, PR 마다 묶음 단계, 창의 줄 그리기)은 [ADR-033](../../adr/033-board-item-worker-rows.md), 설계, `extensions/work-board/references/behavior.md`, `docs/data-schema.md` 가 각자의 원본을 소유하고 다른 기능 스펙에 복제돼 있지 않다.

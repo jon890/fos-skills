@@ -12,8 +12,8 @@ PR2(메인이 아닌 세션의 쓰기 명령 거절과 우회 옵션)는 아래 
 | REQ3 | `--take-over` 는 `--confirmed "<사용자 답>"` 이 있어야 진행한다. 없으면 `TAKEOVER-CONFIRM` 과 6 이다. 진행하면 REQ2 와 같은 넘겨받기를 하고 앞 메인 Run 에 `MAIN-TAKEN` 을 보낸다 |
 | REQ4 | 새 명령 `orch request send --to <저장소>` 가 받는 저장소의 메인을 찾고, 그 저장소의 요청 번호(`R<n>`)를 잡아 기록을 쓴 뒤 메인 Run 에 Orca 메시지를 보낸다. 메인이 없으면 보내지 않고 `REQUEST-NO-MAIN` 과 직접 띄우는 명령을 낸다 |
 | REQ5 | 양쪽 보드에 `req-<받는 저장소 이름>-<n>` 항목을 만든다. 같은 파일을 쓰면 받는 쪽 항목 하나다. 새 항목의 id 가 이미 있으면 `BOARD-FAIL` 을 낸다 |
-| REQ6 | `orch request accept|hold|reject <번호>` 가 기록과 양쪽 보드 항목을 바꾸고 답을 보낸다. `hold`, `reject` 는 `--reason` 이 없으면 사용법 오류다 |
-| REQ7 | `finish-pr` 이 `FINISH-DONE` 직전에, 찾은 보드 항목이 요청 기록의 받는 쪽 항목이고 마지막 PR 이며 이번 마무리가 그 항목을 done 으로 닫았으면 그 요청을 완료로 보낸다. 같은 요청의 다른 PR 이나 끝나지 않은 단계가 남으면 `REQUEST-OPEN` 줄만 낸다. 보내지 못하면 기록에 `pending_done` 을 남기고 루프가 다음 틱에 다시 보낸다. 그 밖은 `orch request done|fail <번호>` 로 직접 보낸다(`fail` 은 `--reason` 필수) |
+| REQ6 | `orch request accept\|hold\|reject <번호>` 가 기록과 양쪽 보드 항목을 바꾸고 답을 보낸다. `hold`, `reject` 는 `--reason` 이 없으면 사용법 오류다 |
+| REQ7 | `finish-pr` 이 `FINISH-DONE` 직전에, 찾은 보드 항목이 요청 기록의 받는 쪽 항목이고 마지막 PR 이며 이번 마무리가 그 항목을 done 으로 닫았으면 그 요청을 완료로 보낸다. 같은 요청의 다른 PR 이나 끝나지 않은 단계가 남으면 `REQUEST-OPEN` 줄만 낸다. 보내지 못하면 기록에 `pending_done` 을 남기고 루프가 다음 틱에 다시 보낸다. 그 밖은 `orch request done\|fail <번호>` 로 직접 보낸다(`fail` 은 `--reason` 필수) |
 | REQ8 | 답의 대상은 보낸 Run 의 코디네이터 터미널에 에이전트가 있으면 그 Run, 없으면 보낸 저장소의 지금 메인, 그것도 없으면 보낸 Run 이다. 요청 기록이 받는 저장소에 있으므로 메인이 바뀌어도 지금 메인이 `orch request list` 와 넘겨받기 출력으로 이어 맡는다 |
 | REQ9 | 새 루프 단계 `steps/requests.ts` 가 틱마다 받은 지 `pipeline.request_ack_sec`(기본 1800초)가 지난 `sent` 요청을 찾아 REQ8 의 대상에 `REQUEST-NO-ACK` 를 한 번 보낸다 |
 | REQ10 | 코드 변경 없음. 요청으로 띄운 worker 는 받은 메인의 Run 에 묶이므로 질문도 받은 메인에게 간다. `references/requests.md` 에 적는다 |

@@ -11,7 +11,7 @@
 // 종료 코드: 0 통과, 1 위반, 2 검사기가 돌지 못함
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { isMain, write } from './io.ts'
@@ -195,11 +195,20 @@ export function main(argv: string[]): number {
   return 0
 }
 
-// 저장소의 skills/browser/browser-driver 를 먼저 찾는다. tools/browser-driver 는 팀 저장소가 드라이버를 browser 스킬 안으로 옮기기 전의 자리다.
-// 둘 다 없으면 개인이 걸어 둔 것으로 내려간다.
+// 플러그인 래퍼, 스킬 안의 드라이버, 개인 링크 순으로 찾는다.
 function findDriver(): string | null {
-  for (const candidate of [join(ROOT, 'skills', 'browser', 'browser-driver', 'browser_driver.ts'), join(ROOT, 'tools', 'browser-driver', 'browser_driver.ts'), expandUser('~/.claude/scripts/browser-driver')]) {
-    if (existsSync(candidate)) return candidate
+  for (const candidate of [
+    join(ROOT, 'bin', 'browser-driver'),
+    join(ROOT, 'skills', 'browser', 'browser-driver', 'browser_driver.ts'),
+    expandUser('~/.claude/scripts/browser-driver'),
+  ]) {
+    try {
+      if (!isFile(candidate)) continue
+      accessSync(candidate, constants.X_OK)
+      return candidate
+    } catch {
+      // 실행할 수 없는 후보는 건너뛴다.
+    }
   }
   return null
 }
