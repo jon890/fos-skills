@@ -78,6 +78,8 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 `.orch/config.json` 의 지금 절(`finish`, `cleanup`, `queue`)은 그대로 읽는다. 모르는 키에 사용법 오류로 멈추는 규칙도 그대로다. 모르는 최상위 절도 같은 사용법 오류다.
 아래 절을 더한다. 값은 `orch config set`, 삭제는 `orch config unset` 으로 바꾼다([설정 바꾸기](../skills/orch/references/overlay.md#설정-바꾸기)). `finish`·`cleanup` 과 나머지 `queue` 키의 타입은 [마무리 설정 파일](../skills/orch/references/overlay.md#마무리-설정-파일)이 소유한다. 설정 명령과 doctor 의 값 검사는 `skills/orch/scripts/core/config-schema.ts` 가 맡고, 기존 명령이 읽을 때의 검사는 그대로다.
 
+`orch config` 로 값을 바꾸거나 doctor 로 설정을 마이그레이션할 때는 `config.json.lock` 을 잡은 상태로 설정을 읽고 저장한다. [공용 파일 잠금 규칙](adr/029-board-write-lock.md)에 따라 저장을 마치면 잠금을 푼다.
+
 | 절 | 키 | 타입 | 기본값 | 담는 것 |
 | --- | --- | --- | --- | --- |
 | `queue` | `allow_no_checks` | bool | false | true 면 지금 HEAD 에 CI 체크가 없어도 관문, 머지 큐, 상주 루프가 체크를 통과로 본다. 필수 체크 이름이 설정되어 있으면 해당 체크가 나타나야 한다. CI 가 없는 저장소는 플러그인을 갱신한 뒤 켠다 |
