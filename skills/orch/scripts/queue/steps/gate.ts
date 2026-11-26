@@ -14,20 +14,20 @@ import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
 import { migrationReasons } from './migrations.ts'
 import { privateReasons } from './private-words.ts'
 import { mask, readPrivateWords } from '../../lib/private-words.ts'
-import { requiredChecks } from './checks.ts'
+import { queueChecks, requiredChecks } from './checks.ts'
 import type { Pr, StepContext } from './model.ts'
-import { Conflict, FAIL_SEL, HeadChanged, PENDING, ROLL_NAMES, ROLL_NAMES_NO_SKIPPED, Stop, WorkerFix } from './model.ts'
+import { Conflict, HeadChanged, Stop, WorkerFix } from './model.ts'
 import type { GateReason, StepState } from './model.ts'
 import { fetchPrRefs } from './overlap.ts'
 import { api, field, prEnv } from './pr.ts'
-import { chomp, log, namesJson, nap, stop } from './runtime.ts'
+import { chomp, log, nap, stop } from './runtime.ts'
 
 // ci 는 체크, threads·evidence·migration·private 은 worker 가 고칠 것, conflict 는 base 와의 충돌, review 는 설정한 리뷰 조건, lookup 은 조회 실패다
 export type { GateKind, GateReason } from './model.ts'
 
 export type GateChecks = 'none' | 'failed' | 'all'
 
-// PR 하나의 값을 읽어 state.pr, state.q 를 채운다. 이미 MERGED 면 merged, OPEN 이 아니면 멈춘다
+// PR 하나의 값을 읽어 state.pr 과 필수 체크 목록을 채운다. 이미 MERGED 면 merged, OPEN 이 아니면 멈춘다
 export async function loadPr(stepContext: StepContext, state: StepState, n: string): Promise<'open' | 'merged'> {
   const o = state.o
   const p: Pr = (state.pr = {
@@ -89,18 +89,11 @@ export async function loadPr(stepContext: StepContext, state: StepState, n: stri
   if (!p.base) stop(`${n} baseRefName 조회 실패`)
   state.sweepBase = p.base
 
-  const req = requiredChecks(stepContext, state)
+  const req = requiredChecks(state)
   for (const name of o.allowFail) {
     if (req.includes(name)) stop(`${n} --allow-fail 의 ${name} 는 필수 체크다. 필수 체크의 실패는 허용할 수 없다`)
   }
-  const roll = o.skippedMissing ? ROLL_NAMES_NO_SKIPPED : ROLL_NAMES
-  const allowed = `(.name // .context) as $nm | (${namesJson(o.allowFail)} | any(. == $nm))`
-  state.q = {
-    required: req,
-    missing: `((${namesJson(req)}) - ${roll})`,
-    failed: `[.statusCheckRollup[] | ${FAIL_SEL} | select(${allowed} | not)] | length`,
-    allowedFailed: `[.statusCheckRollup[] | ${FAIL_SEL} | select(${allowed}) | (.name // .context)] | unique | .[]`,
-  }
+  state.requiredChecks = req
   return 'open'
 }
 
@@ -116,15 +109,15 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
   const notes: string[] = []
 
   if (checks !== 'none') {
-    const f = await field(stepContext, state, n, 'statusCheckRollup', state.q.failed)
-    facts.push(`fails=${f}`)
-    if (f !== '0') reasons.push({ kind: 'ci', text: f ? `실패한 체크 ${f} 개` : '체크 조회 실패' })
+    const failed = (await queueChecks(stepContext, state))?.failed.length
+    facts.push(`fails=${failed ?? ''}`)
+    if (failed !== 0) reasons.push({ kind: 'ci', text: failed === undefined ? '체크 조회 실패' : `실패한 체크 ${failed} 개` })
     if (checks === 'all') {
-      const pending = await field(stepContext, state, n, 'statusCheckRollup', PENDING)
-      const missing = await field(stepContext, state, n, 'statusCheckRollup', `${state.q.missing} | length`)
-      if (pending !== '0' || missing !== '0') {
-        const names = missing && missing !== '0' ? await field(stepContext, state, n, 'statusCheckRollup', `${state.q.missing} | join(", ")`) : ''
-        reasons.push({ kind: 'ci', text: `체크가 아직 끝나지 않았다(진행 중 ${pending || '?'}, 나타나지 않은 필수 체크 ${names || missing || '?'})` })
+      const pending = (await queueChecks(stepContext, state))?.pending
+      const missing = (await queueChecks(stepContext, state))?.missing.length
+      if (pending !== 0 || missing !== 0) {
+        const names = missing ? (await queueChecks(stepContext, state))?.missing.join(', ') : ''
+        reasons.push({ kind: 'ci', text: `체크가 아직 끝나지 않았다(진행 중 ${pending ?? '?'}, 나타나지 않은 필수 체크 ${names || missing?.toString() || '?'})` })
       }
     }
   }

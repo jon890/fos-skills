@@ -6,7 +6,6 @@ import type { Rule } from '../../lib/output.ts'
 import { emit } from '../../lib/output.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import { NO_LIMIT_MS, run, stopping } from '../../lib/proc.ts'
-import { pyJson } from '../../lib/py.ts'
 import type { StepContext } from './model.ts'
 import { Stop } from './model.ts'
 
@@ -38,10 +37,6 @@ export function nap(stepContext: StepContext, seconds: number): Promise<void> {
 }
 export function stop(message: string): never {
   throw new Stop(message)
-}
-// 이름 목록을 jq 배열 리터럴로 바꾼다
-export function namesJson(names: readonly string[]): string {
-  return pyJson(names)
 }
 // `--required A,B` 처럼 쉼표로 이은 값을 이름으로 나눈다. 쉼표가 든 이름 하나는 나누지 않는 `--required-check` 로 받는다
 export function splitNames(value: string): string[] {

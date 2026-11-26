@@ -3,41 +3,33 @@
 import type { FireContext } from '../../lib/events.ts'
 import { checkSnapshot, currentChecks, gh } from '../../lib/gh.ts'
 import type { RunResult } from '../../lib/proc.ts'
-import { run } from '../../lib/proc.ts'
 import { TURN_PHASES, writeTurn, writeTurnAt } from '../../lib/queue-turn.ts'
 import type { StepContext } from './model.ts'
-import { Stop } from './model.ts'
 import type { StepState } from './model.ts'
 import { chomp, nap, stop } from './runtime.ts'
 
 // PR 하나의 필드. 호출이 실패하면 ghRetries 번까지 다시 부르고, 그래도 실패하면 빈 문자열이다
-export async function field(stepContext: StepContext, state: StepState, n: string, jsonField: string, jq: string, fresh = false): Promise<string> {
-  let attempt = 1
-  for (;;) {
-    const rollup = jsonField === 'statusCheckRollup'
-    if (rollup) {
-      const got = checkSnapshot(state.o.repo, n, state.p.ph, fresh, state.q.required, state.o.skippedMissing)
-      if (!got.ok) {
-        if (attempt >= state.ghRetries) return ''
-        attempt++
-        await nap(stepContext, state.ghRetrySeconds)
-        continue
-      }
-      try {
-        const pr = got.data
-        if (!pr.headRefOid || pr.headRefOid !== state.p.ph) stop(`${n} 체크 조회 중 HEAD 가 바뀌었다 checked=${state.p.ph} now=${pr.headRefOid || '?'}`)
-        pr.statusCheckRollup = currentChecks(pr.statusCheckRollup, pr.headRefOid)
-        const filtered = run(['jq', '-r', jq], { input: JSON.stringify(pr) })
-        if (filtered.code === 0) return chomp(filtered.stdout)
-      } catch (e) {
-        if (e instanceof Stop) throw e
-      }
-      return ''
-    }
+export async function field(stepContext: StepContext, state: StepState, n: string, jsonField: string, jq: string): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
     const done = gh(['pr', 'view', n, '--json', jsonField, '--jq', jq], { cache: false })
     if (done.code === 0) return chomp(done.stdout)
     if (attempt >= state.ghRetries) return ''
-    attempt += 1
+    await nap(stepContext, state.ghRetrySeconds)
+  }
+}
+
+// 지금 HEAD 의 체크 롤업. HEAD 가 바뀌면 체크를 해석하기 전에 큐를 멈춘다.
+export async function checkRows(stepContext: StepContext, state: StepState, fresh = false): Promise<Record<string, unknown>[] | null> {
+  const { n, ph } = state.p
+  for (let attempt = 1; ; attempt++) {
+    const got = checkSnapshot(state.o.repo, n, ph, fresh, state.requiredChecks, state.o.skippedMissing)
+    if (got.ok) {
+      const pr = got.data
+      if (pr === null) return null
+      if (!pr.headRefOid || pr.headRefOid !== ph) stop(`${n} 체크 조회 중 HEAD 가 바뀌었다 checked=${ph} now=${pr.headRefOid || '?'}`)
+      return currentChecks(pr.statusCheckRollup, pr.headRefOid)
+    }
+    if (attempt >= state.ghRetries) return null
     await nap(stepContext, state.ghRetrySeconds)
   }
 }

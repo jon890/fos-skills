@@ -1,0 +1,25 @@
+{
+  "name": "merge-readiness-pr1",
+  "description": "머지 큐와 루프가 CI 체크 판단을 공유한다",
+  "pr_scope": "체크 상태 계산과 필수 체크 규칙 조회를 공통화하고 기존 머지 판단을 유지한다.",
+  "deferred": [
+    {"what": "PR2와 PR3에서 관문, 큐, 루프의 머지 조건을 연결한다.", "why": "세 경로가 같은 조건을 쓰게 한다.", "after": "PR1"},
+    {"what": "PR4부터 PR7에서 draft, 보류, 체크 없음, 리뷰 설정과 HEAD 변경 규칙을 바꾼다.", "why": "머지 조건을 공통화한 뒤 동작을 바꾼다.", "after": "PR3"}
+  ],
+  "status": "pending",
+  "created_at": "2026-11-26",
+  "spec": "docs/features/merge-readiness/spec.md",
+  "design": "docs/features/merge-readiness/technical-design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": ["REQ1"],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": ["REQ1"]
+    }
+  ]
+}
