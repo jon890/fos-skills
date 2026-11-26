@@ -12,7 +12,8 @@
 //   경로는 계획 폴더 기준이다. --require-verification 은 새 계획의 누락도 막고, 기본값은 기존 계획을 그대로 읽는다.
 // - 새 REQ 형식의 계획은 design 경로가 필요하다. 기존 R 형식 계획은 기술 설계 연결을 강제하지 않는다.
 // - 요구사항·결정 표의 ID 칸이 REQ·R·DECISION·D 로 시작하는데 규칙 꼴이 아니면(REQ1A, REQ-1, REQ01) 건너뛰지 않고 오류로 막는다.
-// - 결정 절은 `| D1 | 결정 | 답 | 누가 | 근거 |` 표이거나 `없음: <이유>` 한 줄이다.
+// - 결정 절은 `| D1 | 결정 | 답 | 누가 | 근거 |` 표이거나 `없음: <이유>` 한 줄이다. 기술 설계 양식도 같은 표를 쓴다.
+//   ADR 결정 기록 표(`| 결정 | 종류 | ... |`)는 결정 표 옆에 더할 수 있지만 결정 표를 대신하지 않는다.
 //   「답」 이 비었거나 미정·TBD·? 면 닫히지 않은 결정이다.
 //   「누가」 는 `사용자 YYYY-MM-DD`, `작성자`, `작성자(위임)` 중 하나다. 사용자 날짜 뒤에는 괄호 설명을 붙일 수 있다.
 // - 제목과 첫 `##` 절 사이에 `확인: YYYY-MM-DD` 줄(사용자 확인 날짜)이 있다. `--draft` 면 이 줄을 요구하지 않는다.
@@ -114,7 +115,9 @@ function checkDecisions(body: string): string[] {
   const rows = [...tableRows(body)].filter((cells) => cells.length > 0 && DECISION_ID.test(cells[0]))
   if (rows.length === 0) {
     if (NO_DECISION.test(pyStrip(body))) return []
-    return [...shape, '결정 절에 DECISION1 같은 ID 의 결정 표나 「없음: <이유>」 한 줄이 필요하다']
+    const adrOnly = [...tableRows(body)].some((cells) => cells[0] === '결정' && cells[1] === '종류')
+    const hint = adrOnly ? '. ADR 결정 기록 표는 결정 표를 대신하지 않는다. 같은 결정을 DECISION 표의 행으로도 적는다' : ''
+    return [...shape, `결정 절에 DECISION1 같은 ID 의 결정 표나 「없음: <이유>」 한 줄이 필요하다${hint}`]
   }
   const problems: string[] = [...shape]
   const seen = new Set<string>()
