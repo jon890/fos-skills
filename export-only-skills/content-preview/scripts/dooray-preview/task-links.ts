@@ -30,17 +30,41 @@ function lookupPost(id: string): Lookup {
 
 function maskCode(md: string): string {
   const blank = (text: string) => text.replace(/[^\r\n]/g, ' ')
-  let fence = ''
-  const lines = md.split(/(?<=\n)/u).map((line) => {
-    const marker = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/u.exec(line)
+  const marker = /^( {0,3})(`{3,}|~{3,})([^\r\n]*)/u
+  const listItem = /^ {0,3}(?:[-+*]|\d{1,9}[.)]) {1,4}(?=\S)/u
+  const lines = md.split(/(?<=\n)/u)
+  const containers = [0]
+  let fence: { line: number; indent: number; marker: string } | undefined
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim()) continue
+    const indent = /^ */u.exec(line)![0].length
     if (fence) {
-      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = ''
-      return blank(line)
+      if (indent >= fence.indent) {
+        const end = marker.exec(line.slice(fence.indent))
+        if (end && end[2][0] === fence.marker[0] && end[2].length >= fence.marker.length && !end[3].trim()) {
+          for (let row = fence.line; row <= index; row++) lines[row] = blank(lines[row])
+          fence = undefined
+        }
+        continue
+      }
+      // 목록을 벗어나면 그 안에서 열린 fence 도 끝난다.
+      fence = undefined
     }
-    if (!marker) return line
-    fence = marker[1]
-    return blank(line)
-  })
+
+    while (containers.at(-1)! > indent) containers.pop()
+    let contentStart = containers.at(-1)!
+    let item: RegExpExecArray | null
+    while ((item = listItem.exec(line.slice(contentStart)))) {
+      contentStart += item[0].length
+      containers.push(contentStart)
+    }
+    const start = marker.exec(line.slice(contentStart))
+    if (!start || (start[2][0] === '`' && start[3].includes('`'))) continue
+    fence = { line: index, indent: contentStart, marker: start[2] }
+    // 닫는 줄이 없으면 본문을 검사한다. 여는 기호만 인라인 코드 검사에서 뺀다.
+    const markerStart = contentStart + start[1].length
+    lines[index] = line.slice(0, markerStart) + blank(start[2]) + line.slice(markerStart + start[2].length)
+  }
   return lines.join('').replace(/(?<![`\\])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/gu, blank)
 }
 
