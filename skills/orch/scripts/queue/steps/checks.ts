@@ -40,7 +40,7 @@ export async function queueChecks(stepContext: StepContext, state: StepState, fr
   return judgeChecks(rows, {
     required: state.requiredChecks,
     allowFail: state.o.allowFail,
-    allowNoChecks: true,
+    allowNoChecks: state.allowNoChecks,
   })
 }
 
@@ -82,8 +82,9 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
     // 앞지르기는 기다리지 않는다. 지금 모두 통과했고 끝난 지 SETTLED_SEC 가 지났을 때만 이어 간다
     const f = (await queueChecks(stepContext, state, true))?.failed.length
     const pending = (await queueChecks(stepContext, state))?.pending
-    const missing = (await queueChecks(stepContext, state))?.missing.length
-    if (f !== 0 || pending !== 0 || missing !== 0) throw new NotReady(`체크가 끝나지 않았거나 실패했다(fails=${f ?? '?'} pending=${pending ?? '?'} missing=${missing ?? '?'})`)
+    const checks = await queueChecks(stepContext, state)
+    const missing = checks?.missing.length
+    if (f !== 0 || pending !== 0 || checks?.state !== 'passed') throw new NotReady(`체크가 끝나지 않았거나 실패했다(fails=${f ?? '?'} pending=${pending ?? '?'} missing=${missing ?? '?'})`)
     if ((await settledSec(stepContext, state)) < SETTLED_SEC) throw new NotReady(`체크가 끝난 지 ${SETTLED_SEC}초가 지나지 않았다`)
     return
   }
@@ -91,7 +92,7 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
   const limit = Math.max(0, timeout * 60 - (state.rechecking ? state.recheckWaited : 0))
   const missingLimit = Number(state.o.missingTimeout) * 60
   let waited = 0
-  // 진행 중인 체크가 없는데 나타나지 않은 필수 체크가 남은 채로 지난 초
+  // 진행 중인 체크가 없는데 첫 체크나 필수 체크가 나타나기를 기다린 초
   let idle = 0
   let attempt = 0
   for (;;) {
@@ -99,10 +100,15 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
     if (f !== 0) f = (await queueChecks(stepContext, state, true))?.failed.length
     if ((f ?? 0) !== 0) throw new CheckStop(n, `실패한 체크 ${f} 개`)
     const pending = (await queueChecks(stepContext, state))?.pending
-    const missing = (await queueChecks(stepContext, state))?.missing.length
-    if (pending === undefined || missing === undefined) stop(`${n} 체크 조회 실패`)
-    if (pending === 0 && missing === 0) break
+    const checks = await queueChecks(stepContext, state)
+    if (pending === undefined || checks === null) stop(`${n} 체크 조회 실패`)
+    if (pending === 0 && checks.state === 'passed') break
+    const waitingForFirst = checks.none && checks.missing.length === 0
+    if (pending === 0 && missingLimit > 0 && idle >= missingLimit && waitingForFirst) {
+      throw new CheckStop(n, `진행 중인 체크가 없는데 CI 체크가 ${state.o.missingTimeout}분째 하나도 나타나지 않는다. CI 가 없는 저장소면 queue.allow_no_checks 를 켠다`)
+    }
     if (waited >= limit) {
+      if (waitingForFirst) throw new CheckStop(n, `체크 대기 ${timeout}분 초과(CI 체크가 하나도 없다)`)
       const names = (await queueChecks(stepContext, state))?.missing.join(',') ?? ''
       throw new CheckStop(n, `체크 대기 ${timeout}분 초과(진행 중 ${pending}, 나타나지 않은 필수 체크 ${names})`)
     }
@@ -138,7 +144,11 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
   await nap(stepContext, settle)
   if (state.rechecking) state.recheckWaited += settle
   const pending = (await queueChecks(stepContext, state, true))?.pending
-  const missing = (await queueChecks(stepContext, state))?.missing.length
+  const checks = await queueChecks(stepContext, state)
+  const missing = checks?.missing.length
+  if (checks?.none && missing === 0 && checks.state === 'pending') {
+    throw new CheckStop(n, 'PR 에 CI 체크가 하나도 없다')
+  }
   if (!(pending === 0 && missing === 0)) {
     throw new CheckStop(n, `새로 붙은 체크가 아직 돈다(진행 중 ${pending ?? '?'}, 미등장 ${missing ?? '?'}). 다시 돌린다`)
   }

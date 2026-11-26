@@ -228,6 +228,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     poll_min_sec: zodCheck(wholeSec),
     poll_max_sec: zodCheck(wholeSec),
     ci_expected_sec: zodCheck(wholeSec),
+    allow_no_checks: zodCheck(bool),
     auto_merge: zodCheck(bool),
     auto_review: REVIEW_ENTRY,
     integration_tests: viaConfig('queue', 'integration_tests', integrationRules),

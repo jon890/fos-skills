@@ -174,6 +174,35 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     has(r.stdout, '머지 직전 체크가 바뀌었다')
     lacks(c.log(), 'pr merge')
   })
+  test('체크가 없으면 대기 한도에서 멈추고 설정을 켜면 머지한다', async (t) => {
+    const c = setup(t)
+    const state = { '1': pr({ statusCheckRollup: [] }) }
+    const args = ['--no-sweep', '--stop-on-hold', '--missing-timeout', '1', '1']
+    const held = await c.runQueue(state, args)
+    assert.equal(held.code, 1, both(held))
+    has(held.stdout, '진행 중인 체크가 없는데 CI 체크가 1분째 하나도 나타나지 않는다. CI 가 없는 저장소면 queue.allow_no_checks 를 켠다')
+    lacks(c.log(), 'pr merge')
+
+    config(c, { queue: { allow_no_checks: true } })
+    const merged = await c.runQueue(state, args)
+    assert.equal(merged.code, 0, both(merged))
+    has(merged.stdout, 'QUEUE-DONE')
+  })
+  test('체크 대기를 끝낸 뒤 새 체크가 붙으면 머지 전 명령에 들어가지 않는다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '0'
+    const marker = join(c.tmp, 'before.txt')
+    const state = { '1': pr({
+      statusCheckRollup: [{ ...check('Tests'), completedAt: '2026-01-01T00:00:00Z' }],
+      // 체크 대기와 허용 실패 확인을 지난 뒤 관문에서 새 체크를 본다.
+      appear: { left: 13, checks: [{ name: 'Lint', status: 'IN_PROGRESS' }] },
+    }) }
+    const held = await c.runQueue(state, ['--no-sweep', '--stop-on-hold', `1:touch ${marker}`])
+    assert.equal(held.code, 1, `${both(held)}\n${c.log()}`)
+    has(held.stdout, '체크가 아직 끝나지 않았다(진행 중 1')
+    assert.equal(existsSync(marker), false)
+    lacks(c.log(), 'pr merge')
+  })
   test('취소 뒤 같은 HEAD 의 새 실행이 성공하면 머지하고 다른 HEAD 성공은 쓰지 않는다', async (t) => {
     const rollup = [
       { ...check('verify', 'CANCELLED'), startedAt: '2026-10-30T01:00:00Z', checkSuite: { workflowRun: { workflow: { name: 'CI' } } } },

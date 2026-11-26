@@ -12,9 +12,6 @@ import type { GateReason, StepState } from './model.ts'
 import { field } from './pr.ts'
 import { log, nap, out, stop } from './runtime.ts'
 
-// none 은 체크를 빼고, failed 는 실패한 체크만 보고, all 은 진행 중이거나 나타나지 않은 체크도 본다
-export type GateChecks = 'none' | 'failed' | 'all'
-
 // PR 하나의 값을 읽어 state.pr 과 필수 체크 목록을 채운다. 이미 MERGED 면 merged, OPEN 이 아니면 멈춘다
 export async function loadPr(stepContext: StepContext, state: StepState, n: string): Promise<'open' | 'merged'> {
   const o = state.o
@@ -91,7 +88,7 @@ export function readinessTarget(state: StepState): PrTarget {
   return { repo: state.repoDir, number: Number(p.n), head: p.ph, base: p.base, branch: p.branch, host: p.apiHost, slug: `${p.owner}/${p.repo}`, draft: p.draft, cross: p.cross }
 }
 
-// 머지 큐 옵션(스펙 DECISION10)과 재시도 값. 체크가 하나도 없어도 필수 체크 이름이 비었으면 통과로 본다(PR6 전까지의 지금 동작)
+// 머지 큐 옵션(스펙 DECISION10), 저장소의 CI 설정과 재시도 값
 export function readOptions(stepContext: StepContext, state: StepState): ReadOptions {
   const o = state.o
   return {
@@ -99,7 +96,7 @@ export function readOptions(stepContext: StepContext, state: StepState): ReadOpt
     threadsCmd: o.threadsCmd,
     required: state.requiredChecks,
     allowFail: o.allowFail,
-    allowNoChecks: true,
+    allowNoChecks: state.allowNoChecks,
     retries: state.ghRetries,
     retrySeconds: state.ghRetrySeconds,
     nap: (seconds) => nap(stepContext, seconds),
@@ -119,9 +116,9 @@ export async function askReadiness(stepContext: StepContext, state: StepState, a
 // 머지 전 조건에 걸린 이유를 모두 모은다. summary 는 로그에 남길 `fails=0 threads=0 mergeable=MERGEABLE` 꼴이다.
 // notes 는 막지 않고 보이기만 하는 `통합 테스트 생략 <모듈>: <이유>` 줄이다
 // 지금 HEAD 를 기준으로 본다. 조회 실패는 lookup 이유로 모으고, 검사하는 사이 HEAD 가 바뀌면 HeadChanged 를 던진다
-export function gateReasons(stepContext: StepContext, state: StepState, checks: GateChecks) {
+export function gateReasons(stepContext: StepContext, state: StepState, checks: 'none' | 'all') {
   const skip: ConditionKind[] = checks === 'none' ? ['ci'] : []
-  return askReadiness(stepContext, state, { skip, compat: { checksAfterWait: checks === 'failed' } })
+  return askReadiness(stepContext, state, { skip })
 }
 
 // 큐 차례 시작과 실제 머지 직전에 draft 와 보류를 확인한다

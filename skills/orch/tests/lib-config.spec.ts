@@ -6,6 +6,7 @@ import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, INBOX_KEYS, readConfigFile, updateConfig, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, QUEUE_GATE_KEYS, section } from '../scripts/lib/config.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_NAMED, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
+import { QUEUE_READINESS_KEYS } from '../scripts/core/config.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
 const OVERLAY = fileURLToPath(new URL('../references/overlay.md', import.meta.url))
@@ -179,11 +180,11 @@ describe('QUEUE_KEYS', () => {
     assert.deepEqual(QUEUE_KEYS.filter((key) => key !== 'skipped_is_missing').sort(), [...documented].sort())
   })
 
-  test('merge-with-finish 가 머지 큐 옵션으로 바꾸는 표들의 키를 합치면 QUEUE_KEYS 에서 루프와 관문 전용 키 및 옛 키를 뺀 집합과 같고 표끼리 겹치지 않는다', () => {
+  test('merge-with-finish 가 머지 큐 옵션으로 바꾸는 표들의 키를 합치면 QUEUE_KEYS 에서 루프와 관문 전용 키, 공통 CI 설정과 옛 키를 뺀 집합과 같고 표끼리 겹치지 않는다', () => {
     const tables = [QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS, QUEUE_NAMED].map((table) => Object.keys(table))
     const union = tables.flat()
     assert.equal(new Set(union).size, union.length, `두 표에 든 키가 있다: ${union.join(', ')}`)
-    assert.deepEqual([...union].sort(), QUEUE_KEYS.filter((key) => key !== 'skipped_is_missing' && !QUEUE_LOOP_KEYS.includes(key) && !QUEUE_GATE_KEYS.includes(key)).sort())
+    assert.deepEqual([...union].sort(), QUEUE_KEYS.filter((key) => key !== 'skipped_is_missing' && !QUEUE_LOOP_KEYS.includes(key) && !QUEUE_GATE_KEYS.includes(key) && !QUEUE_READINESS_KEYS.includes(key)).sort())
   })
 
   test('queue 절은 QUEUE_KEYS 로 required, method, docs_glob 이 함께 통과하고 모르는 키(requird)는 ConfigError 다', () => {

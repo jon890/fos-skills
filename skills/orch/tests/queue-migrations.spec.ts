@@ -48,7 +48,12 @@ function setup(t: TestContext, configured = true) {
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_STATE: stateFile, FAKE_LOG: log, FAKE_REMOTE_HEAD: 'abc', MERGE_QUEUE_FAKE_GIT: '1', MERGE_QUEUE_SLEEP_SCALE: '0', ORCH_GH_CACHE: '0' }
   delete env.ORCH_DIR
   delete env.GH
-  const pr = (version: number) => ({ state: 'OPEN', headRefOid: 'abc', headRefName: 'feat', baseRefName: 'main', url: 'https://git.example.com/owner/repo/pull/1', isCrossRepository: false, statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: `app/V${version}__x.sql`, changeType: 'ADDED' }] })
+  const pr = (version: number) => ({
+    state: 'OPEN', headRefOid: 'abc', headRefName: 'feat', baseRefName: 'main',
+    url: 'https://git.example.com/owner/repo/pull/1', isCrossRepository: false, mergeable: 'MERGEABLE',
+    statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+    files: [{ path: `app/V${version}__x.sql`, changeType: 'ADDED' }],
+  })
   const write = (state: object) => writeFileSync(stateFile, JSON.stringify(state))
   const args = ['--repo', dir, '--threads-cmd', 'echo 0', '--no-sweep', '--keep-branch']
   return { dir, env, pr, write, args, log: () => existsSync(log) ? readFileSync(log, 'utf8') : '', run: (...items: string[]) => spawnDone([process.execPath, runner, ...args, ...items], { env }) }

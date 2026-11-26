@@ -270,6 +270,16 @@ function autoMergeState(): Json {
 }
 
 describe('대상 고르기', () => {
+  test('체크 없는 PR 은 저장소 설정을 켰을 때 자동 머지 큐에 들어간다', async () => {
+    github([pr(1, { statusCheckRollup: [] })], { rules: { stdout: '[]\n' } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 CI pending/)
+    assert.deepEqual(queueCalls(), [])
+
+    config({ queue: { allow_no_checks: true } })
+    once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+  })
+
   test('지시서의 브랜치에 든 통과한 PR 만 걸고 AUTO-MERGE 를 쓴다. 지시서 밖, draft, CI pending, 스레드가 남은 PR 은 걸지 않는다', async () => {
     spec('specs', 'spec-a.md', ['feat-1', 'feat-3', 'feat-4', 'feat-5'])
     writeFileSync(join(tmp, 'threads-5'), '1\n')

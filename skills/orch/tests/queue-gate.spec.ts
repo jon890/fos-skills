@@ -459,6 +459,22 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(waited.stdout, /^GATE-OK 1$/m)
   })
 
+  test('필수 이름이 비어 있어도 --wait 는 첫 체크를 기다린다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '0'
+    const state = { '1': pr({
+      statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS', headSha: 'old' }],
+      appear: { left: 12, checks: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] },
+    }) }
+    const immediate = await gate(c, state, 0)
+    assert.equal(immediate.code, 1, both(immediate))
+    assert.equal(gateReason(immediate), 'PR 에 CI 체크가 하나도 없다')
+
+    const waited = await gate(c, state, 0, ['--wait'])
+    assert.equal(waited.code, 0, both(waited))
+    assert.match(waited.stdout, /^GATE-OK 1$/m)
+  })
+
   test('--wait 는 늦게 붙는 필수 체크의 대기 한도를 지키고 다른 이유도 알린다', async (t) => {
     const c = setup(t)
     const r = await gate(c, { '1': pr() }, 2, ['--wait', '--missing-timeout', '1', '--required-check', 'Tests'])

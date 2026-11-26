@@ -3,7 +3,8 @@
 // 머지 큐가 머지 전에 보는 조건을 머지 없이 한 번 돌려 본다. worker 는 「준비됨」 을 보내기 전에 이 명령이 통과해야 한다.
 // 조건은 머지 큐와 같은 조건 표(core/merge-readiness.ts, ADR-037)가 판정한다. 규칙을 두 곳에 두지 않는다.
 // draft PR 은 준비되지 않은 것으로 본다.
-//   1. 필수 체크가 모두 나타나 끝났고 실패가 없다. 기본은 현재 상태만 보고, --wait 를 주면 필수 체크가 나타나 끝날 때까지 기다린다.
+//   1. 체크가 나타났고, 필수 체크가 빠짐없이 끝났으며 실패가 없다. --wait 를 주면 체크가 나타나 끝날 때까지 기다린다.
+//      CI 가 없는 저장소는 queue.allow_no_checks 로 빈 체크 목록을 허용할 수 있다.
 //   2. 미해결 리뷰 스레드가 없다
 //   3. base 와 충돌하지 않는다(mergeable 이 MERGEABLE)
 //   4. queue.auto_review 에 trusted_bots 나 review_checks 가 있으면 지금 HEAD 의 봇 영수증이나 리뷰 체크 success 가 있다(core/auto-merge.ts 의 judgeReview)
@@ -34,6 +35,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { allowNoChecksOf } from '../core/config.ts'
 import { ConfigError, loadConfig } from '../lib/config.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { pathOf } from '../lib/paths.ts'
@@ -111,6 +113,7 @@ async function mainImpl(argv: string[]): Promise<number> {
     const repoProblem = repoArgProblem(opts.repo)
     if (repoProblem) throw new Usage(repoProblem)
     state = new StepState(opts)
+    state.allowNoChecks = allowNoChecksOf(config)
     try {
       process.chdir(opts.repo)
     } catch (e) {

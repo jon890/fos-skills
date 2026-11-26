@@ -308,6 +308,18 @@ describe('알림 한 번', () => {
     assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'passed' } })
   })
 
+  test('체크가 하나도 없는 PR 은 저장소 설정을 켰을 때 ci-passed 를 낸다', () => {
+    github([pr(1, [])], { stdout: '[]\n' })
+    once()
+    assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'pending' } })
+    assert.deepEqual(received('ci-passed'), [])
+
+    config({ queue: { allow_no_checks: true } })
+    once()
+    assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'passed' } })
+    assert.deepEqual(received('ci-passed').map(({ checks, required }) => [checks, required]), [[[], []]])
+  })
+
   test('필수가 아닌 체크가 실패하면 ci-failed 이고 CI-FAILED 에 그 체크 이름이 있다', () => {
     github([pr(1, [check('test', 'SUCCESS'), check('extra', 'FAILURE')])])
     once()
