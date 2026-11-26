@@ -55,6 +55,10 @@
 //        새 워크트리면 origin/<base>, --resume-remote 면 --spec-ref origin/<지시서 브랜치>, --worktree 면 --spec-root <그 워크트리> 다.
 //        첫 줄 검사(spec-lint 의 「루프」)에 걸려도 같은 5 다. 확인받은 스펙 없이 기능 worker 를 띄우지 않게 한다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
+//     1-1-1. 저장소(주 checkout)가 Orca 에 등록됐는지 `orca repo show` 로 본다(lib/orca.ts 의 repoRegistered). repo_not_found 면 번호 예약과
+//        워크트리를 만들기 전에 `orca repo add --path <저장소>` 를 안내하고 1 로 멈춘다. 등록되지 않은 저장소의 워크트리는 Orca 가 알아보지 못해
+//        worker-start 전에 실패하고, 다시 부르면 남은 경로 때문에 make-worktree 가 거부했다(2026-11-20 OCR.Metering).
+//        읽지 못하면 경고만 내고 진행한다. 원격 환경 옵션이 있으면 이 머신의 Orca 를 보지 않으므로 건너뛴다
 //     1-2. 지시서에 `번호 예약:` 줄(lib/spec-reserve.ts)이 있으면 줄마다 reserve-migration(`orch queue reserve`)을
 //        --branch <지시서의 첫 브랜치 줄> --kind --module --name 으로 부르고(--base 는 넘긴다), 받은 번호를 지시서의 예약 블록에 적는다.
 //        줄마다 `RESERVED-FOR-SPEC <종류> <모듈> <label> <경로>` 를 낸다. 같은 브랜치, 모듈, 이름이면 다시 띄워도 같은 번호다(reused).
@@ -157,7 +161,7 @@ import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFa
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Alternation, type CandidateOverride, type Effective } from '../lib/launched.ts'
-import { closeTerminal, orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
+import { closeTerminal, orca, orcaBin, repoRegistered, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { writeReviewLaunch } from '../lib/review-launch.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
@@ -957,6 +961,17 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     return 0
   }
 
+  // 머리 주석의 「1-1-1」. 번호 예약과 워크트리를 만들기 전에 본다
+  if (!remoteSelector) {
+    const orcaRepo = mainCheckout(retryRepo)
+    const registered = repoRegistered(orcaRepo)
+    if (registered === false) {
+      err(`거부: 저장소가 Orca 에 등록되지 않았다: ${orcaRepo}. 워크트리를 만들어도 Orca 가 알아보지 못해 worker 가 뜨지 않는다. 아무것도 만들지 않았다. 아래로 등록한 뒤 다시 띄운다`)
+      err(`orca repo add --path ${orcaRepo}`)
+      return 1
+    }
+    if (registered === null) err(`경고: 저장소가 Orca 에 등록됐는지 확인하지 못해 그대로 진행한다: ${orcaRepo}`)
+  }
   const reserved = await reserveNumbers(a, retryRepo, execute)
   if (reserved !== null) return reserved
 

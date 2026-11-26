@@ -65,6 +65,11 @@ if (is('worktree', 'list')) {
   const paths = lists && lists.length ? lists.shift() : (process.env.FAKE_WT_DEFAULT || '').split(':').filter(Boolean)
   out({ worktrees: paths.map((p) => ({ path: p })) })
 }
+// repo_missing 은 등록되지 않은 저장소에 실제 Orca 가 주는 봉투, repo_show_fails 는 Orca 를 읽지 못한 경우다
+if (is('repo', 'show') && (state.repo_missing || state.repo_show_fails)) {
+  fs.writeSync(1, JSON.stringify(state.repo_missing ? { ok: false, error: { code: 'repo_not_found', message: 'repo_not_found' } } : { ok: false, error: { code: 'runtime_unavailable' } }) + '\\n')
+  process.exit(1)
+}
 if (is('repo', 'show')) out({ repo: { externalWorktreeVisibility: state.visibility || 'hide' } })
 if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
 if (is('terminal', 'create')) out(state.create_fails ? { error: 'remote unreachable' } : { terminal: { handle: 'term_probe' } }, state.create_fails ? 1 : 0)
@@ -1366,6 +1371,30 @@ describe('띄우기', () => {
 })
 
 describe('Orca 의 워크트리 인식', () => {
+  test('Orca 에 등록되지 않은 저장소면 번호 예약과 워크트리를 만들기 전에 등록 명령을 안내하고 멈춘다', () => {
+    writeFileSync(spec, '# 일\n\n브랜치: `feat/x`\n허락: push 는 허락했다.\n번호 예약: sql analysis-api x\n')
+    const reserve = join(tmp, 'reserve.sh')
+    writeFileSync(reserve, 'echo "reserve $*" >> "$FAKE_LOG"\n')
+    env.RESERVE_MIGRATION = reserve
+    state({ next_ids: ['ctx_1'], repo_missing: true })
+    const r = launch(['--repo', worktree, '--name', 'x', '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /저장소가 Orca 에 등록되지 않았다/)
+    assert.ok(r.stderr.includes(`orca repo add --path ${worktree}`), r.stderr)
+    assert.deepEqual(lines('make '), [])
+    assert.deepEqual(lines('reserve '), [])
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+    assert.ok(!readFileSync(spec, 'utf8').includes('orch-reserved'))
+  })
+
+  test('등록 여부를 읽지 못하면 경고하고 띄운다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, repo_show_fails: true })
+    const r = launch(['--repo', worktree, '--name', 'x', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /등록됐는지 확인하지 못해 그대로 진행한다/)
+    assert.equal(lines('make ').length, 1)
+  })
+
   test('orca worktree list 에 보일 때까지 기다린다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, worktree_lists: [[], [], [worktree]] })
     const r = launch(['--worktree', worktree, '--', ...CLAUDE])
@@ -1475,7 +1504,8 @@ describe('before-launch 와 worker-launched', () => {
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(order(), [
       'orca account list', 'orca orchestration worker-list', 'orca orchestration task-list', 'orca account list',
-      'make --repo', 'orca worktree list', 'orca account list', 'orca orchestration worker-start', 'orca orchestration worker-show',
+      // 워크트리를 만들기 전에 저장소가 Orca 에 등록됐는지 본다
+      'orca repo show', 'make --repo', 'orca worktree list', 'orca account list', 'orca orchestration worker-start', 'orca orchestration worker-show',
     ])
     assert.doesNotMatch(r.stdout, /HOOK-/)
   })
