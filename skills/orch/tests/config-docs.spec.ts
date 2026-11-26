@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { FINISH_KEYS } from '../scripts/core/finish-options.ts'
 import { CLEANUP_KEYS } from '../scripts/core/config.ts'
+import { ruleBodies } from '../scripts/lib/common-rules.ts'
 
 const read = (relative: string) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8')
 
@@ -22,7 +23,8 @@ test('설정을 바꾸라는 안내는 config 명령으로 이어진다', () => 
 
 test('공통 지시서는 worker 의 설정 변경 명령 호출을 금지한다', () => {
   const template = read('../templates/spec-common.md')
-  const line = template.split('\n').find(line => line.includes('<!-- orch-rule: no-config-edit -->'))
+  // 표지 줄과 그 아래 하위 bullet 이 한 규칙이다
+  const line = ruleBodies(template).get('no-config-edit')?.body
   assert.ok(line)
   for (const text of ['worker', 'orch config set', 'orch config unset', '부르지 않는다', '코디네이터']) assert.ok(line.includes(text), text)
 })

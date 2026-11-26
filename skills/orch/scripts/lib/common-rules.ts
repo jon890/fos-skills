@@ -72,6 +72,7 @@ function configured(repoRoot: string, name: 'migrations' | 'adr', keys: string[]
 }
 
 // 표지마다 그 표지가 든 목록 항목의 본문과 머리 줄 번호. 머리 주석의 「공통」 이 범위를 정한다
+// 표지가 붙은 줄 아래의 하위 목록은 그 규칙의 이유와 예외라 본문에 넣는다. 표지가 하위 항목에만 있으면 부모가 저장소 문맥이라 unsafe 다
 export function ruleBodies(text: string): Map<string, RuleBody> {
   const lines = text.split(/\r\n|[\n\r\u2028\u2029]/)
   const visible = outsideFences(lines)
@@ -88,7 +89,7 @@ export function ruleBodies(text: string): Map<string, RuleBody> {
         .map((l, i) => (i === 0 ? l.replace(/^(?:[-*]|\d+\.)\s+/, '') : l).trimEnd())
         .filter((l) => l !== '')
         .join('\n').replace(RULE_MARK, (_all, name) => `<!-- orch-rule: ${name} -->`)
-      found.set(mark.name, { no: head + 1, body, head, end, raw: lines.slice(head, end).join('\n'), section: visible.slice(0, head).findLast((row) => /^#{1,6}\s+/.test(row))?.trim() ?? null, keep: mark.keep, unsafe: index !== head || visible.slice(head + 1, end).some((row) => /^\s+(?:[-*+]|\d+[.)])\s+/.test(row)) })
+      found.set(mark.name, { no: head + 1, body, head, end, raw: lines.slice(head, end).join('\n'), section: visible.slice(0, head).findLast((row) => /^#{1,6}\s+/.test(row))?.trim() ?? null, keep: mark.keep, unsafe: index !== head })
     }
   })
   return found

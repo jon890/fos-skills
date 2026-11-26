@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { GIT_ISOLATION } from '../../../modules/testkit/git.ts'
+import { ruleBodies } from '../scripts/lib/common-rules.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
 const TEMPLATE = fileURLToPath(new URL('../templates/spec-common.md', import.meta.url))
@@ -322,7 +323,8 @@ describe('지시서 검사', () => {
 
   test('틀의 wait-subagent 줄은 검토 하위 에이전트를 기다리는 방법을 턴 종료로 정한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
-    const line = template.split('\n').find((l) => l.includes('<!-- orch-rule: wait-subagent -->'))
+    // 표지 줄과 그 아래 하위 bullet 이 한 규칙이다
+    const line = ruleBodies(template).get('wait-subagent')?.body
     assert.ok(line, 'wait-subagent 줄이 있다')
     assert.match(line, /Claude worker 는 하위 에이전트가 실행 중이면 턴을 끝낸다/)
     assert.match(line, /Codex worker 는 결과를 받은 뒤 턴을 끝낸다/)
