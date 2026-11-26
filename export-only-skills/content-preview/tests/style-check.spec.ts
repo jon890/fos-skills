@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { copyScripts, run, tempDir, write } from './helpers.ts'
+import { copyScripts, lines, linkFake, run, tempDir, write } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const command = (scripts: string) => [process.execPath, join(scripts, 'style-check.ts')]
@@ -37,6 +37,30 @@ process.exitCode = Number(process.env.FAKE_RC ?? 0)
 }
 
 describe('style-check', () => {
+  test('업무와 댓글 모드에서 파일 사이 중복 조회를 줄이고 잘못된 링크를 막는다', (t) => {
+    const s = layout(t)
+    s.fake(s.sibling)
+    linkFake(join(s.root, 'dooray'), 'dooray')
+    const log = join(s.root, 'dooray.log')
+    const env = { PATH: s.root, FAKE_LOG: log, FAKE_DOORAY_JSON: '{"project":{"code":"example"},"number":"18"}' }
+    const first = write(join(s.root, 'first.md'), '[example/18 제목](dooray://example/tasks/post-example "registered")')
+    const second = write(join(s.root, 'second.md'), '[example/20 제목](dooray://example/tasks/post-example "registered")')
+    const done = s.exec(['--mode', 'comment', first, second], env)
+    assert.equal(done.code, 1)
+    assert.match(done.stderr, /실제 업무 example\/18 가 다릅니다/u)
+    assert.match(done.stderr, /고친 예 \[example\/18\]/u)
+    assert.deepEqual(lines(log), ['--json post get --id post-example'])
+
+    const good = s.exec([first, '--mode=task'], env)
+    assert.equal(good.code, 0)
+    assert.equal(good.stdout, s.said(s.sibling, first))
+    assert.deepEqual(lines(log), Array(2).fill('--json post get --id post-example'))
+
+    assert.equal(s.exec([second], env).code, 0)
+    assert.equal(s.exec(['--text', '--mode', 'task'], env).code, 0)
+    assert.equal(lines(log).length, 2)
+  })
+
   test('실제 검사기를 통해 본문과 제목의 물결표 오류를 막는다', (t) => {
     const s = layout(t)
     const checker = join(import.meta.dirname, '..', '..', 'korean-check')

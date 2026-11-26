@@ -8,6 +8,7 @@
 //
 // 사용법:
 //   node style-check.ts <파일.md> [<파일.md>...]
+//   node style-check.ts --mode task|comment <파일.md> [<파일.md>...]
 //   node style-check.ts --text "<제목>"
 //
 // 종료 코드는 korean-check 의 check.ts 와 같다.
@@ -25,7 +26,9 @@ import { spawnSync } from 'node:child_process'
 import { realpathSync, statSync } from 'node:fs'
 import { constants as osConstants } from 'node:os'
 import { dirname, join } from 'node:path'
+import { reportTaskLinks } from './dooray-preview/task-links.ts'
 import { isMain, write } from './io.ts'
+import { pyReadText } from './kit/py.ts'
 
 const isFile = (path: string) => {
   try {
@@ -38,6 +41,26 @@ export function main(argv: string[]): number {
   if (argv.length === 0) {
     write(2, '검사할 파일이나 --text 가 필요하다\n')
     return 2
+  }
+
+  const modeIndex = argv[0]?.startsWith('-') && !argv[0].startsWith('--mode') ? -1
+    : argv.findIndex((arg) => arg === '--mode' || arg.startsWith('--mode='))
+  if (modeIndex >= 0) {
+    const option = argv[modeIndex]
+    const mode = option === '--mode' ? argv[modeIndex + 1] : option.slice('--mode='.length)
+    argv = [...argv.slice(0, modeIndex), ...argv.slice(modeIndex + (option === '--mode' ? 2 : 1))]
+    if ((mode !== 'task' && mode !== 'comment') || !argv.length || argv.some((arg) => arg.startsWith('-') || !arg.endsWith('.md'))) {
+      write(2, '--mode task 또는 --mode comment 뒤에 검사할 Markdown 파일을 넣으세요.\n')
+      return 2
+    }
+    let bodies: string[]
+    try {
+      bodies = argv.map(pyReadText)
+    } catch (error) {
+      write(2, `검사할 본문 파일을 읽지 못했습니다. ${(error as Error).message}\n`)
+      return 2
+    }
+    if (reportTaskLinks(bodies).failed) return 1
   }
 
   // 스킬 디렉터리가 심링크라 논리 경로로는 저장소 밖으로 나가므로 실체 경로를 잡는다

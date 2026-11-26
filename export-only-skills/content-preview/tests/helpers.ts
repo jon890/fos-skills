@@ -40,6 +40,9 @@ export function write(path: string, text: string, mode = 0o644): string {
 // macOS 는 새로 만든 실행 파일을 처음 실행할 때 0.3초 안팎을 검사하는 데 쓴다. 파일을 테스트마다 만들면 그 비용이 쌓이고, 링크는 비용이 없다.
 // 동작은 파일 내용이 아니라 환경 변수로 정한다. FAKE_LOG 에 호출 기록을 남긴다.
 const FAKES: Record<string, string> = {
+  dooray: `printf '%s\\n' "$*" >> "$FAKE_LOG"
+printf '%s\\n' "$FAKE_DOORAY_JSON"
+exit "\${FAKE_DOORAY_RC:-0}"`,
   // 호출마다 `<이름> <인자들> BD=<BROWSER_DRIVER>` 를 남기고, FAKE_<서브명령> 에 든 셸 조각을 돈다. 조각이 끝내지 않으면 종료 코드 1 이다
   driver: `echo "$(basename "$0") $* BD=$BROWSER_DRIVER" >> "$FAKE_LOG"
 var="FAKE_$(echo "$1" | tr 'a-z-' 'A-Z_')"

@@ -84,6 +84,9 @@ head -3 "$PREVIEW_DIR/body.md"
 node "$SKILL_DIR/scripts/style-check.ts" "$PREVIEW_DIR/body.md"
 ```
 
+두레이 업무와 댓글의 표기 검사에는 각각 `--mode task`, `--mode comment` 를 붙인다. 표기 검사와 미리보기 생성에서 표시 글에 남은 대괄호, 업무 웹 주소, 실제 업무와 다른 프로젝트나 번호를 막는다.
+업무를 조회할 수 없으면 경고를 남기고 계속한다.
+
 | 코드 | 무엇을 한다 |
 | --- | --- |
 | 0 | 다음 단계로 간다 |
