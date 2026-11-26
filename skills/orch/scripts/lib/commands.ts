@@ -229,7 +229,7 @@ const ROWS: Row[] = [
   { group: 'doctor', verb: 'gh-usage', script: 'doctor/gh-usage.ts', legacy: { name: 'gh-usage', flags: [] }, usage: 'orch doctor gh-usage' },
   { group: 'doctor', verb: 'install-cli', script: 'doctor/install-cli.ts', legacy: null, usage: 'orch doctor install-cli' },
   // paths
-  { group: 'paths', verb: null, script: 'paths/orch_paths.ts', context: ['repo'], legacy: { name: 'orch_paths', flags: [] }, usage: 'orch paths <이름> | orch paths check' },
+  { group: 'paths', verb: null, script: 'paths/orch_paths.ts', context: ['repo'], legacy: { name: 'orch_paths', flags: [] }, usage: 'orch paths <이름> | orch paths check | orch paths tmp' },
   // status. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). 주지 않으면 루프에 등록된 Run 을 모두 본다
   { group: 'status', verb: null, script: 'status/orch-status.ts', context: ['repo'], legacy: null, usage: 'orch status [--run <Run>]' },
   // slot
