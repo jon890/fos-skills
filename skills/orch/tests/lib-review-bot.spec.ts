@@ -11,7 +11,8 @@ const FOUND_AT = '2026-01-01T00:03:00Z'
 const REREVIEWED_AT = '2026-01-01T00:04:00Z'
 const CONFIG = { pass: 'PASS', block: 'BLOCK', trusted_bots: [BOT_SETTING] }
 const { trustedBots } = autoMergeConfig({ queue: { auto_review: CONFIG } }).review!
-const judge = (rows: Partial<BotReviewData>) => judgeTrustedBotReviews(HEAD, { reviews: [], comments: [], reviewThreads: [], ...rows }, trustedBots!)
+// PR 커밋은 OLD 다음 HEAD 순서다
+const judge = (rows: Partial<BotReviewData>) => judgeTrustedBotReviews(HEAD, { reviews: [], comments: [], reviewThreads: [], commits: [OLD, HEAD], ...rows }, trustedBots!)
 
 test('믿는 봇 설정에서 잘못된 항목을 거절한다', () => {
   for (const trusted_bots of [[], [null], [{ ...BOT_SETTING, login: '' }], [{ ...BOT_SETTING, receipt_marker: '' }],
@@ -155,12 +156,36 @@ test('지금 HEAD 에서 봇 리뷰가 도는 중이면 앞 커밋의 리뷰를 
 })
 
 // PR 651 리뷰: 봇이 줄 댓글을 리뷰 제출보다 먼저 만들어도 그 리뷰의 지적으로 본다. 시각이 아니라 소속 리뷰로 묶는다
-test('리뷰보다 먼저 만든 줄 댓글도 소속 리뷰로 묶어 P1·P2 를 본다', () => {
+test('리뷰보다 먼저 만든 줄 댓글도 커밋으로 묶어 P1·P2 를 본다', () => {
   const review = { id: 'R1', author: BOT, state: 'COMMENTED', submittedAt: REVIEWED_AT, body: receipt(OLD).body, commit: { oid: OLD } }
-  const early = (n: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:01:59Z', body: `![P${n} Badge] 제목`, pullRequestReview: { id: 'R1' } }] } })
+  const early = (n: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:01:59Z', body: `![P${n} Badge] 제목`, originalCommit: { oid: OLD } }] } })
   assert.equal(judge({ reviews: [review], reviewThreads: [early(1)] }).ok, false)
   const p3 = judge({ reviews: [review], reviewThreads: [early(3)] })
   assert.ok(p3.ok && p3.receipts[0].earlier === true && p3.receipts[0].commit === OLD)
   // 같은 리뷰에 묶인 P1 은 뒤의 다른 커밋 리뷰가 다시 봤으면 막지 않는다
   assert.ok(judge({ reviews: [review], reviewThreads: [early(1)], comments: [receipt(HEAD, REREVIEWED_AT)] }).ok)
+})
+
+// PR 651 리뷰: 영수증 없는 지적 리뷰 뒤에 같은 커밋의 영수증 댓글이 오면 그 지적은 그 영수증의 것이다
+test('영수증 없는 지적 리뷰의 줄 댓글은 같은 커밋의 뒤 영수증 댓글에 묶는다', () => {
+  const findingReview = { id: 'F1', author: BOT, state: 'COMMENTED', submittedAt: REVIEWED_AT, body: '지적', commit: { oid: OLD } }
+  const thread = (n: number) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${n} Badge] 제목`, originalCommit: { oid: OLD } }] } })
+  const lateReceipt = receipt(OLD, FOUND_AT)
+  assert.equal(judge({ reviews: [findingReview], reviewThreads: [thread(1)], comments: [lateReceipt] }).ok, false)
+  // 줄 댓글이 P3 뿐이면 그 영수증을 인정한다. P1 이어도 고친 새 커밋의 영수증이면 통과한다
+  assert.ok(judge({ reviews: [findingReview], reviewThreads: [thread(3)], comments: [lateReceipt] }).ok)
+  assert.ok(judge({ reviews: [findingReview], reviewThreads: [thread(1)], comments: [lateReceipt, receipt(HEAD, REREVIEWED_AT)] }).ok)
+})
+
+// 코디네이터 2026-11-26: 인정하려는 영수증의 커밋과 같거나 뒤 커밋의 P1·P2 는 해결 여부와 관계없이 막는다. 커밋이나 순서를 모르면 막는다
+test('앞 영수증의 커밋과 같거나 뒤 커밋의 P1·P2 줄 댓글은 막고, 커밋이나 순서를 모르면 막는다', () => {
+  const MID = 'c'.repeat(40)
+  const at = (commit: string | null, n = 1) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${n} Badge] 제목`, ...(commit ? { originalCommit: { oid: commit } } : {}) }] } })
+  const commits = [OLD, MID, HEAD]
+  assert.equal(judge({ comments: [receipt(OLD)], reviewThreads: [at(MID)], commits }).ok, false)
+  assert.equal(judge({ comments: [receipt(MID)], reviewThreads: [at(MID)], commits }).ok, false)
+  assert.ok(judge({ comments: [receipt(MID)], reviewThreads: [at(OLD)], commits }).ok)
+  assert.ok(judge({ comments: [receipt(OLD)], reviewThreads: [at(MID, 3)], commits }).ok)
+  assert.equal(judge({ comments: [receipt(MID)], reviewThreads: [at(null)], commits }).ok, false)
+  assert.equal(judge({ comments: [receipt(MID)], reviewThreads: [at(OLD)], commits: [] }).ok, false)
 })
