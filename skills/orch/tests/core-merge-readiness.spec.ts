@@ -95,10 +95,13 @@ test('HEAD 가 다른 값이 있으면 다른 이유를 버리고 head 이유 �
     body: { ok: true, value: '', head: OTHER },
   })
   const judged = judgeReadiness(s, policy, full)
-  assert.deepEqual(judged.reasons, [{ code: 'head', kind: 'head', stage: 'ready', text: `검사 뒤 HEAD 가 바뀌었다 checked=${HEAD.slice(0, 8)} now=${OTHER.slice(0, 8)}`, wait: 'HEAD 가 바뀌었다' }])
-  const checks = snap({ checks: { ok: true, value: [pass], head: '' } })
-  assert.equal(judgeReadiness(checks, policy, { scope: 'full', compat: { checkHeadStop: true } }).reasons[0].code, 'head-checks')
-  assert.equal(judgeReadiness(checks, policy, full).reasons[0].text, `체크 조회 중 HEAD 가 바뀌었다 checked=${HEAD} now=?`)
+  assert.deepEqual(judged.reasons, [{ code: 'head', kind: 'head', stage: 'ready', text: `검사 중 HEAD 가 바뀌었다 checked=${HEAD.slice(0, 8)} now=${OTHER.slice(0, 8)}`, wait: 'HEAD 가 바뀌었다' }])
+  // 어느 값에서 걸려도 code 와 문구는 하나다. HEAD 를 읽지 못했으면 now 는 ? 다
+  for (const name of ['checks', 'reviewRollup', 'files', 'holdBody'] as const) {
+    const value = name === 'checks' ? [pass] : name === 'files' ? [] : name === 'holdBody' ? null : []
+    const other = judgeReadiness(snap({ [name]: { ok: true, value, head: '' } }), policy, full).reasons
+    assert.deepEqual(other.map((r) => [r.code, r.text]), [['head', `검사 중 HEAD 가 바뀌었다 checked=${HEAD.slice(0, 8)} now=?`]], name)
+  }
 })
 
 test('보류는 merge 단계다. blocksReady 는 false, blocksMerge 는 true 다', () => {
@@ -216,25 +219,27 @@ const firstWait = (snapshot: ReadinessSnapshot, ask: ReadinessAsk = loop, p: Rea
 
 test('이미 건 HEAD 와 리뷰 설정 없음은 auto 로 물을 때만 걸린다', () => {
   assert.equal(firstWait(snap(), { ...loop, auto: { attempted: true } }), '이미 건 HEAD')
-  assert.equal(firstWait(snap()), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+  assert.equal(firstWait(snap()), '자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
   assert.deepEqual(texts(snap(), { scope: 'light' }, loopPolicy), [])
   const attempted = judgeReadiness(snap(), loopPolicy, { ...loop, auto: { attempted: true } }).reasons[0]
   assert.deepEqual([attempted.kind, attempted.code, attempted.stage], ['attempted', 'attempted', 'merge'])
 })
 
-test('리뷰 설정 없음은 리뷰 설정이 있거나 featureOnly 의 기능 PR 이 아니면 걸리지 않는다', () => {
+test('리뷰 설정 없음은 리뷰 설정이 있으면 걸리지 않고, 없으면 스레드와 PR 조회 앞에서 걸린다', () => {
   const review = { trustedBots: null, checks: ['Review'] } as unknown as ReadinessPolicy['review']
   const rollup = [{ name: 'Review', status: 'COMPLETED', conclusion: 'SUCCESS' }]
   assert.equal(firstWait(snap({ reviewRollup: { ok: true, value: rollup } }), loop, { ...loopPolicy, review }), null)
-  assert.equal(firstWait(snap(), { ...loop, compat: { featureOnly: { feature: false } } }), null)
-  assert.equal(firstWait(snap(), { ...loop, compat: { featureOnly: { feature: true } } }), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+  // 설정 DECISION11: 값을 읽기 전에 걸려 스레드와 PR 조회를 달라고 하지 않는다
+  const bare: ReadinessSnapshot = { pr: snap().pr, facts: { checks: snap().facts.checks, specHold: { ok: true, value: null }, boardItems: { ok: true, value: [] } } }
+  const judged = judgeReadiness(bare, loopPolicy, loop)
+  assert.deepEqual([judged.reasons[0]?.code, judged.need], ['review-config', []])
 })
 
 test('체크가 하나도 없으면 allowNoChecks 가 거짓일 때만 ci-none 이다', () => {
   const none = snap({ checks: { ok: true, value: [], head: HEAD } })
   const judged = judgeReadiness(none, loopPolicy, loop).reasons[0]
   assert.deepEqual([judged.code, judged.text, judged.wait], ['ci-none', 'PR 에 CI 체크가 하나도 없다', 'CI pending'])
-  assert.equal(firstWait(none, loop, { ...loopPolicy, allowNoChecks: true }), '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+  assert.equal(firstWait(none, loop, { ...loopPolicy, allowNoChecks: true }), '자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
   assert.deepEqual(texts(none, full, { ...policy, required: [] }), [])
   assert.equal(blocksReady(judgeReadiness(none, loopPolicy, full)), true)
   assert.match(texts(none, full, policy)[0], /나타나지 않은 필수 체크 Tests/)
@@ -256,8 +261,12 @@ test('stopAtFirst 로 물으면 첫 이유가 루프의 지금 판단 순서를 
   assert.equal(firstWait(snap({ ...all.facts, ...ok }), { ...loop, auto: { attempted: true } }), '이미 건 HEAD')
   assert.equal(firstWait(snap({ ...all.facts, ...ok })), '지시서 보류: 지시서 이유')
   assert.equal(firstWait(snap({ ...all.facts, ...ok, specHold: clean.specHold })), '보드 보류: 머지 보류 보드 이유')
-  assert.equal(firstWait(snap({ ...all.facts, ...ok, specHold: clean.specHold, boardItems: clean.boardItems })), '미해결 스레드 3')
-  assert.equal(firstWait(snap({ ...all.facts, ...ok, specHold: clean.specHold, boardItems: clean.boardItems, threads: clean.threads })), 'PR 본문 보류: 본문 이유')
+  // 리뷰 설정이 없으면 보드 보류 바로 뒤에서 멈춘다(설계 DECISION11). 있으면 스레드, 본문 보류 순서다
+  const cleared = { ...all.facts, ...ok, specHold: clean.specHold, boardItems: clean.boardItems }
+  assert.equal(firstWait(snap(cleared)), '자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다')
+  const reviewed = { ...loopPolicy, review: { trustedBots: null, checks: ['Review'] } as unknown as ReadinessPolicy['review'] }
+  assert.equal(firstWait(snap(cleared), loop, reviewed), '미해결 스레드 3')
+  assert.equal(firstWait(snap({ ...cleared, threads: clean.threads }), loop, reviewed), 'PR 본문 보류: 본문 이유')
   // 체크 조회 실패는 값의 wait 가 첫 이유다
   assert.equal(firstWait(snap({ checks: { ok: false, error: 'CI 없음', wait: 'CI 없음' } })), 'CI 없음')
 })
@@ -276,19 +285,19 @@ test('조건 표의 대기 문구는 고정 목록과 같고 work-board 의 WAIT
     [snap(), { ...loop, auto: { attempted: true } }],
     [snap({ specHold: { ok: true, value: '이유' } })],
     [snap({ boardItems: { ok: true, value: [{ id: 'x', branch: 'feat/x', status: 'doing', next: ['머지 보류 이유'] }] } })],
-    [snap({ threads: { ok: true, value: '2' } })],
+    [snap({ threads: { ok: true, value: '2' } }), loop, { ...loopPolicy, review }],
     [snap()],
     [snap({ reviewRollup: { ok: true, value: [] } }), loop, { ...loopPolicy, review }],
   ])
   assert.deepEqual(translated, [
     'draft', 'CI failed', 'CI pending', 'CI pending', '이미 건 HEAD', '지시서 보류: 이유', '보드 보류: 머지 보류 이유', '미해결 스레드 2',
-    '기능 자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다', `HEAD ${HEAD.slice(0, 8)} 에 리뷰 체크(Review) 성공이 없다`,
+    '자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다', `HEAD ${HEAD.slice(0, 8)} 에 리뷰 체크(Review) 성공이 없다`,
   ])
   for (const wait of translated) assert.notEqual(waitText(wait), wait, wait ?? '')
   // 체크 조회 실패의 wait 는 루프가 값에 붙여 넘긴다(설계 「조건 표」)
   for (const wait of ['CI 없음', 'CI 규칙을 읽지 못했다']) assert.notEqual(waitText(wait), wait)
   // 정규식이 없어 창에 그대로 보이는 문구
-  const shown = waits([[snap({ holdBody: { ok: true, value: '이유' } })], [snap({ threads: { ok: true, value: '0', head: OTHER } })]])
+  const shown = waits([[snap({ holdBody: { ok: true, value: '이유' } }), loop, { ...loopPolicy, review }], [snap({ threads: { ok: true, value: '0', head: OTHER } })]])
   assert.deepEqual(shown, ['PR 본문 보류: 이유', 'HEAD 가 바뀌었다'])
   for (const wait of shown) assert.equal(waitText(wait), wait)
 })

@@ -5,8 +5,9 @@ import { checkSnapshot, currentChecks, gh } from '../../lib/gh.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import { TURN_PHASES, writeTurn, writeTurnAt } from '../../lib/queue-turn.ts'
 import type { StepContext } from './model.ts'
+import { HeadChanged } from './model.ts'
 import type { StepState } from './model.ts'
-import { chomp, nap, stop } from './runtime.ts'
+import { chomp, nap } from './runtime.ts'
 
 // PR 하나의 필드. 호출이 실패하면 ghRetries 번까지 다시 부르고, 그래도 실패하면 빈 문자열이다
 export async function field(stepContext: StepContext, state: StepState, n: string, jsonField: string, jq: string): Promise<string> {
@@ -18,7 +19,7 @@ export async function field(stepContext: StepContext, state: StepState, n: strin
   }
 }
 
-// 지금 HEAD 의 체크 롤업. HEAD 가 바뀌면 체크를 해석하기 전에 큐를 멈춘다.
+// 지금 HEAD 의 체크 롤업. HEAD 가 바뀌면 체크를 해석하기 전에 HeadChanged 를 던져 머지 큐가 다시 시도하게 한다.
 export async function checkRows(stepContext: StepContext, state: StepState, fresh = false): Promise<Record<string, unknown>[] | null> {
   const { n, ph } = state.p
   for (let attempt = 1; ; attempt++) {
@@ -26,7 +27,7 @@ export async function checkRows(stepContext: StepContext, state: StepState, fres
     if (got.ok) {
       const pr = got.data
       if (pr === null) return null
-      if (!pr.headRefOid || pr.headRefOid !== ph) stop(`${n} 체크 조회 중 HEAD 가 바뀌었다 checked=${ph} now=${pr.headRefOid || '?'}`)
+      if (!pr.headRefOid || pr.headRefOid !== ph) throw new HeadChanged(`${n} 검사 중 HEAD 가 바뀌었다 checked=${ph.slice(0, 8)} now=${pr.headRefOid?.slice(0, 8) || '?'}`)
       return currentChecks(pr.statusCheckRollup, pr.headRefOid)
     }
     if (attempt >= state.ghRetries) return null

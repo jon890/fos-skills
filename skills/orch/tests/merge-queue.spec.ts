@@ -171,7 +171,8 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     const code = `python3 -c "import json; p='${c.stateFile}'; d=json.load(open(p)); d['1']['statusCheckRollup']=[{'name':'verify','status':'IN_PROGRESS'}]; json.dump(d, open(p,'w'))"`
     const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('verify')] }) }, ['--required', 'verify', `1:${code}`])
     assert.equal(r.code, 1, both(r))
-    has(r.stdout, '머지 직전 체크가 바뀌었다')
+    // 머지 직전 확인도 조건 표(checkReadiness)로 묻는다. 캐시 없이 읽은 체크가 진행 중이라 멈춘다
+    has(r.stdout, 'STOP 1 체크가 아직 끝나지 않았다(진행 중 1')
     lacks(c.log(), 'pr merge')
   })
   test('체크가 없으면 대기 한도에서 멈추고 설정을 켜면 머지한다', async (t) => {
@@ -541,7 +542,9 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     const move = editStateCmd(c, { headRefOid: 'new' }, "['1']")
     const r = await c.runQueue({ '1': pr() }, [`1:${move}`])
     assert.equal(r.code, 1, both(r))
-    has(r.stdout, 'STOP 1 검사 뒤 HEAD 가 바뀌었다 checked=abc now=new')
+    has(r.stdout, 'STOP 1 검사 중 HEAD 가 바뀌었다 checked=abc now=new')
+    // 체크를 읽다 본 HEAD 변경도 다시 시도한다. 새 HEAD 로 다시 판정한 뒤 원격 브랜치 대조에서 멈춘다
+    has(r.stdout, 'STOP 1 head 불일치 pr=new remote=abc')
     lacks(c.log(), 'pr merge')
   })
 

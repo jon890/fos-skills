@@ -33,7 +33,7 @@ function setup(t: TestContext, config: Config = { queue: { auto_review: REVIEW }
   const ctx = stepContext({ ...context(repo, undefined, undefined), autoMerge: autoMergeConfig(config) }, 1)
   const snapshot = (head = HEAD, comments: unknown[] = [], overrides = {}, postRule: FakeRule = { code: 0 }) => {
     const page = (nodes: unknown[] = []) => ({ nodes, pageInfo: { hasNextPage: false } })
-    const pullRequest = { headRefOid: head, state: 'OPEN', isDraft: false, comments: page(comments), reviews: page(), reviewThreads: page(), ...overrides }
+    const pullRequest = { headRefOid: head, state: 'OPEN', isDraft: false, commits: { nodes: [HEAD, NEXT].map((oid) => ({ commit: { oid } })) }, comments: page(comments), reviews: page(), reviewThreads: page(), ...overrides }
     fake.setRules([
       { args: ['api', 'graphql'], stdout: JSON.stringify({ data: { repository: { pullRequest } } }) },
       { args: ['api', 'POST', 'repos/o/r/issues/12/comments'], ...postRule },
@@ -56,14 +56,26 @@ test('기본 3분이 지나면 현재 HEAD 에 한 번 요청하고 push 뒤 새
   assert.deepEqual(posts().map(({ argv }) => argv), [
     ['api', '--hostname', 'github.test', '-X', 'POST', 'repos/o/r/issues/12/comments', '-f', `body=${COMMAND}\n\n<!-- orch-bot-review-request:${HEAD} -->`],
   ])
+  // P1·P2 를 고친 push 에만 다시 요청한다(스펙 DECISION15). 앞 리뷰에 P1 이 있었으니 새 HEAD 에 요청한다
   const next = { ...PR, head: NEXT }
-  snapshot(NEXT, [receipt(HEAD)])
+  const p1 = { isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: '![P1 Badge] 제목', originalCommit: { oid: HEAD } }] } }
+  snapshot(NEXT, [receipt(HEAD)], { reviewThreads: { nodes: [p1], pageInfo: { hasNextPage: false } } })
   tick(360_001, next)
   tick(540_000, next)
   assert.equal(posts().length, 1)
   tick(540_001, next)
   tick(720_000, PR)
   assert.equal(posts().length, 2)
+})
+
+test('앞 커밋의 봇 리뷰에 P1·P2 지적이 없으면 push 뒤에도 다시 요청하지 않는다', (t) => {
+  const { tick, snapshot, posts } = setup(t)
+  const next = { ...PR, head: NEXT }
+  const p3 = { isResolved: true, comments: { nodes: [{ author: BOT, createdAt: '2026-01-01T00:02:00Z', body: '![P3 Badge] 제목', originalCommit: { oid: HEAD } }] } }
+  snapshot(NEXT, [receipt(HEAD)], { reviewThreads: { nodes: [p3], pageInfo: { hasNextPage: false } } })
+  tick(0, next)
+  tick(180_000, next)
+  assert.equal(posts().length, 0)
 })
 
 test('믿는 봇이 남긴 현재 HEAD 의 영수증이나 진행 중 표시가 있으면 요청하지 않는다', (t) => {
@@ -119,5 +131,28 @@ test('댓글 등록이 실패하면 다시 조회하고 GitHub 에 도착해 있
   snapshot(HEAD, [{ author: null, body: `${COMMAND}\n\n<!-- orch-bot-review-request:${HEAD} -->` }])
   tick(360_000)
   tick(540_000)
+  assert.equal(posts().length, 1)
+})
+
+// PR 651 리뷰: 믿는 봇이 여럿이면 관문처럼 모든 봇을 함께 본다. 한 봇의 앞 리뷰 인정만으로 재요청을 멈추지 않는다
+test('다른 믿는 봇이 막는 지적을 남겼으면 한 봇의 앞 리뷰를 인정해도 다시 요청한다', (t) => {
+  const second = { ...BOT, login: 'another-review-app' }
+  const bots = [{ ...BOT_SETTING, request_comment: COMMAND }, { ...BOT_SETTING, login: second.login }]
+  const { tick, snapshot, posts } = setup(t, { queue: { auto_review: { trusted_bots: bots } } })
+  const blocking = { author: second, state: 'CHANGES_REQUESTED', submittedAt: '2026-01-01T00:03:00Z', body: '', commit: { oid: HEAD } }
+  const next = { ...PR, head: NEXT }
+  snapshot(NEXT, [receipt(HEAD)], { reviews: { nodes: [blocking], pageInfo: { hasNextPage: false } } })
+  tick(0, next)
+  tick(180_000, next)
+  assert.equal(posts().length, 1)
+})
+
+// PR 651 리뷰: force-push 로 지워진 커밋의 리뷰는 인정하지 않으니 새 HEAD 에 다시 요청한다
+test('리뷰한 커밋이 지금 PR 커밋 목록에 없으면 다시 요청한다', (t) => {
+  const { tick, snapshot, posts } = setup(t)
+  const next = { ...PR, head: NEXT }
+  snapshot(NEXT, [receipt('c'.repeat(40))])
+  tick(0, next)
+  tick(180_000, next)
   assert.equal(posts().length, 1)
 })

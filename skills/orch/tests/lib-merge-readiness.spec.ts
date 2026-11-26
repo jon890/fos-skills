@@ -72,7 +72,7 @@ test('HEAD 가 다른 값을 읽으면 뒤 값은 읽지 않는다', async (t) =
   })
   const got = await withRun(fake.run, () => checkReadiness(target(repo), { scope: 'full', skip: ['hold'] }, { threadsCmd: 'echo 0', retries: 1, allowNoChecks: true }))
   assert.deepEqual(got.reasons.map((r) => r.kind), ['head'])
-  assert.equal(got.reasons[0].text, `검사 뒤 HEAD 가 바뀌었다 checked=${HEAD.slice(0, 8)} now=${other.slice(0, 8)}`)
+  assert.equal(got.reasons[0].text, `검사 중 HEAD 가 바뀌었다 checked=${HEAD.slice(0, 8)} now=${other.slice(0, 8)}`)
   // 체크, 스레드(bash), mergeable, 본문 순서로 읽고 본문 뒤에서 멈춘다
   assert.deepEqual(ghCalls(fake.calls()), [
     'pr view 7 --json statusCheckRollup,headRefOid --jq .',

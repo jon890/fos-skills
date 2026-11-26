@@ -167,9 +167,9 @@ type ReadinessSnapshot = { pr: { number: number; head: string; base: string; dra
 | 3 | 없음 | `attempted` | attempted | merge | light, auto 만 | 없음 | `이미 건 HEAD` |
 | 4 | 9 | `hold-spec` | hold | merge | light | `<이유>` | `지시서 보류: <이유>` |
 | 5 | 11 | `hold-board` | hold | merge | light | `보드 보류: <줄>` | `보드 보류: <줄>` |
-| 6 | 3 | `threads` | threads | ready | light | `미해결 리뷰 스레드 <n> 개` | `미해결 스레드 <n>` |
-| 7 | 10 | `hold-body` | hold | merge | light | `<이유>` | `PR 본문 보류: <이유>` |
-| 8 | 없음 | `review-config` | review | merge | light, auto 만 | 없음 | `자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다` |
+| 6 | 없음 | `review-config` | review | merge | light, auto 만 | 없음 | `자동 머지는 queue.auto_review 의 trusted_bots 나 review_checks 가 필요하다` |
+| 7 | 3 | `threads` | threads | ready | light | `미해결 리뷰 스레드 <n> 개` | `미해결 스레드 <n>` |
+| 8 | 10 | `hold-body` | hold | merge | light | `<이유>` | `PR 본문 보류: <이유>` |
 | 9 | 5 | `review-missing`, `review-wait` | review | ready | light | `HEAD <앞 8자리> 에 <없는 것>이 없다` 나 봇이 거절한 이유 | 같다 |
 | 10 | 7 | `migration` | migration | ready | light | 지금 문구 그대로 | 루프는 묻지 않는다(DECISION5) |
 | 11 | 4 | `conflict`, `mergeable` | conflict, mergeable | ready | full | 지금 문구 그대로 | 없음 |
@@ -178,7 +178,7 @@ type ReadinessSnapshot = { pr: { number: number; head: string; base: string; dra
 
 - `head` 는 표의 조건이 아니다. HEAD 가 붙은 값이 snapshot 에 들어올 때마다 core 가 먼저 보고, 다르면 조건을 더 보지 않는다. 문구는 `검사 중 HEAD 가 바뀌었다 checked=<8자리> now=<8자리>` 이고 `wait` 는 `HEAD 가 바뀌었다` 다.
 - 리뷰 설정이 없으면 9번은 보지 않는다. 8번은 그때만 걸린다.
-- 8번의 평가 순서는 PR7 이 5번 바로 뒤로 옮긴다(DECISION11).
+- `review-config` 는 PR7 부터 보드 보류 바로 뒤, 스레드 조회 앞에서 본다(DECISION11).
 - 체크의 조회 실패는 `wait` 를 따로 둔다. 필수 체크 규칙을 읽지 못했으면 `CI 규칙을 읽지 못했다`, 그 틱의 CI 감시가 값을 주지 않았으면 `CI 없음` 이다. 지금 문구와 같다.
 
 ### 체크 판단
@@ -306,12 +306,8 @@ PR2 와 PR3 이 동작을 그대로 두려면 호출부마다 다른 점을 남�
 | `compat.oldHolds` | `hold-board` 조건을 보지 않는다. 지시서 보류가 있으면 본문 보류를 내지 않는다. 관문은 본문 보류를 읽지 못해도 넘어간다 | 관문, 머지 큐 | PR5 |
 | 스레드 수 읽기 | 관문은 숫자가 아닌 출력도 수로 받아 이유 문구에 넣는다 | 관문, 머지 큐 | PR5 |
 | `compat.checksAfterWait` | 체크 대기 뒤에는 실패만 본다 | 머지 큐 | PR6 |
-| `compat.featureOnly` | `review-config` 를 기능 PR 에만 건다 | 루프 | PR7 |
-| `compat.checkHeadStop` | 체크 조회 중의 HEAD 변경은 다시 시도하지 않는 보류다 | 머지 큐 | PR7 |
-| 머지 직전 체크 재확인 | `checkReadiness` 대신 지금 코드(`queueChecks` 세 번 읽기)로 둔다. 고정 입력 기록은 gh 캐시를 끈 채 세 번의 읽기를 모두 gh 호출로 남겨, 한 번 읽기로 바꾸면 기록이 바뀐다(코디네이터 2026-11-26) | 머지 큐 | PR7 |
-| 루프의 읽기 함수 | 스레드 명령을 기본 환경(gh 캐시 사용)으로 돌리고, PR 조회를 캐시로 읽으며 HEAD 를 붙이지 않는다 | 루프 | PR7 |
 
-`allowNoChecks` 는 PR6 전까지 관문과 머지 큐가 true, 루프가 false 를 넘긴다. 지금 동작이 그렇다. PR7 뒤에는 `compat` 타입 자체를 지운다.
+`allowNoChecks` 는 PR6 전까지 관문과 머지 큐가 true, 루프가 false 를 넘겼다. PR7 이 `compat` 타입 자체를 지웠다.
 
 문서는 그 동작을 바꾸는 PR 이 함께 고친다.
 

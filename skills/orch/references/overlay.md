@@ -354,7 +354,8 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 리뷰 체크는 리뷰가 반영할 곳을 찾으면 체크를 실패시키는 워크플로여야 한다. 그 체크를 필수 체크로도 두면 머지 큐가 실패한 리뷰로 머지하지 않는다.
 리뷰 체크의 실패는 다른 체크처럼 CI 감시가 worker 에게 고치라고 보낸다. 리뷰 체크가 그 HEAD 에서 도는 동안 최신화(`pipeline.refresh_slots`)는 HEAD 를 옮기지 않는다.
 
-둘 다 없으면 리뷰 조건 없이 CI 와 미해결 스레드만 본다. 기능 PR(지시서의 「루프를 쓴다」)은 둘 다 없으면 자동 머지가 걸지 않고 기다린다.
+둘 다 없으면 루프는 기능 PR 인지와 관계없이 어떤 PR 도 자동 머지에 걸지 않고 기다린다. 코디네이터가 직접 거는 머지 큐와 `orch queue gate` 는 리뷰 조건 없이 CI 와 미해결 스레드만 본다.
+리뷰 체크는 지금 HEAD 의 success 만 인정한다. 롤업이 지금 HEAD 의 체크만 담고 지적 등급을 알 수 없어서다. 리뷰 체크는 push 마다 CI 로 다시 돈다.
 옛 문구 판정 키(`pass`, `block`, `require`, `feature_head`, `fixed_after_block`, `fallback`)는 읽지 않는다. `orch doctor --repo` 가 `LEGACY-REVIEW-KEY` 로 지우라고 알린다. 리뷰 봇 장애 때 대체 리뷰 worker 를 띄우던 기능도 그 판정 댓글로 통과시키던 것이라 함께 없앴다.
 
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.
@@ -377,6 +378,10 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 ```
 
 GitHub 에서 계정 종류가 봇이고 `login` 이 같은 댓글과 리뷰만 본다. 표지는 한 줄 전체가 `receipt_marker` 와 같아야 한다.
+
+봇의 마지막 리뷰에 P1·P2 지적이 없으면 그 뒤 커밋에도 그 리뷰를 인정한다(스펙 [merge-readiness](../../../docs/features/merge-readiness/spec.md) 의 DECISION15). 등급은 봇이 연 줄 댓글 첫 줄의 배지(`![P1 Badge]`)로 읽는다.
+막는 지적은 줄 댓글(첫 배지가 P1·P2 이거나 읽지 못함), 리뷰 state(`CHANGES_REQUESTED`, 영수증이 맞지 않는 의견 리뷰), 리뷰 본문의 P1·P2 배지, 이슈 댓글 본문의 P1·P2 배지에서 온다. 시각은 보지 않고 그 지적이 본 커밋으로 묶는다.
+해결했더라도 인정하려는 리뷰의 커밋과 같거나 그 뒤 커밋에 묶인 막는 지적이 있으면, 또는 커밋을 모르는 막는 지적이 있으면 인정하지 않는다. 같은 커밋을 다시 리뷰받아도 풀리지 않는다. 앞 리뷰의 커밋이 지금 PR 커밋 목록에 없으면(force-push 로 지웠다) 인정하지 않는다. 지금 HEAD 에서 봇 리뷰가 도는 중이면 그 결과를 기다린다. 앞 리뷰로 통과하면 `AUTO-MERGE-BASIS` 에 리뷰한 커밋과 `앞 리뷰 인정(P1·P2 없음)` 이 남는다.
 `reviewed_commit` 은 각 줄의 시작과 끝을 쓸 수 있는 JavaScript 정규식이다. 첫 번째 캡처 그룹에서 7~40자리 16진수를 읽고 영수증에 적힌 자리 전체를 현재 HEAD 와 비교한다. 리뷰에 달린 영수증은 GitHub 가 기록한 리뷰 커밋 전체도 현재 HEAD 와 같아야 한다.
 
 기준 브랜치를 합친 뒤에도 영수증은 갱신한 HEAD 를 가리켜야 한다.

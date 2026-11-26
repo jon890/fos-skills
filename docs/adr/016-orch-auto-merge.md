@@ -35,6 +35,9 @@
     「머지 가능」 판정 뒤 P3 이하 반영에 재리뷰를 받지 않는 저장소에서 반영 커밋 하나로 `AUTO-MERGE-NO-REVIEW` 에 멈추던 일 때문이다.
     그런 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 걸 수 있다. 판정이 한 번도 없는 PR(`verdict-seen`)과 `block` 뒤에 재리뷰가 없는 PR(`rereview-after-block`)은 조합으로 막는다.
     미해결 스레드 0 은 조합에서 빼지 못하게 늘 본다.
+  - 감당할 것(2026-11-26 보탬): 리뷰 설정(`trusted_bots`, `review_checks`)이 없는 저장소에서는 루프가 기능 PR 인지와 관계없이 어떤 PR 도 걸지 않는다. 리뷰 없이 자동 머지되는 길을 없애려는 것이다. 코디네이터가 직접 거는 머지는 막지 않는다.
+    믿는 봇의 마지막 리뷰에 P1·P2 지적이 없으면 그 뒤 커밋에도 그 리뷰를 인정한다. P3~P5 반영 push 마다 재리뷰를 기다리던 시간을 없애려는 것이다.
+    등급은 봇이 연 줄 댓글의 배지로만 읽고, 읽지 못하면 P1·P2 로 본다. 리뷰 체크는 등급을 알 수 없어 지금 HEAD 의 success 만 인정한다.
   - 감당할 것: 큐가 멈춘 PR 은 HEAD 가 바뀌기 전에는 다시 걸지 않는다. 코디네이터가 이유를 보고 직접 건다.
   - 감당할 것: 루프가 건 큐가 도는 동안 코디네이터가 큐를 따로 걸면 큐가 둘이 된다. 코디네이터는 `AUTO-MERGE` 를 받으면 그 PR 을 다시 걸지 않는다.
 - **적용 범위**: PR 하나의 판정은 `skills/orch/scripts/core/merge-readiness.ts` 의 조건 표([ADR-037](037-orch-merge-readiness.md)), 마이그레이션 순서와 큐 순서 판정은 `skills/orch/scripts/lib/auto-merge.ts`, 틱의 자리와 기록은 `skills/orch/scripts/loop/steps/auto-merge.ts` 머리 주석의 「자동 머지」, 설정 키는 [`../data-schema.md`](../data-schema.md) 의 「config.json 에 더하는 절」 이 소유한다.
