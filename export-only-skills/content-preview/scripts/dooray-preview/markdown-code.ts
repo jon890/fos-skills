@@ -21,6 +21,14 @@ function expandTabs(line: string): string {
   })
 }
 
+function maskContainerPrefix(line: string, width: number): string {
+  let index = 0
+  for (let column = 0; column < width; index++) {
+    column += line[index] === '\t' ? 4 - column % 4 : 1
+  }
+  return blank(line.slice(0, index)) + line.slice(index)
+}
+
 function continueContainer(line: string, container: Container): string | undefined {
   if (container.kind === 'quote') {
     const quote = QUOTE.exec(line)
@@ -40,15 +48,16 @@ function startContainer(line: string): { container: Container; width: number } |
   }
 }
 
-export function maskCode(md: string): string {
-  const lines = md.split(/(?<=\n)/u)
+export function* maskedBlocks(md: string): Generator<{ offset: number; text: string }> {
+  const lines = md.split(/(?<=\n)|(?<=\r)(?!\n)/u)
   const containers: Container[] = []
   const blockStarts = new Set<number>()
   let fence: Fence | undefined
   let paragraph = false
 
   for (const [index, line] of lines.entries()) {
-    let content = expandTabs(line)
+    const expanded = expandTabs(line)
+    let content = expanded
     let depth = 0
     for (const container of containers) {
       const rest = continueContainer(content, container)
@@ -105,19 +114,21 @@ export function maskCode(md: string): string {
       continue
     }
     paragraph = !HEADING_OR_BREAK.test(content)
+    lines[index] = maskContainerPrefix(line, expanded.length - content.length)
     if (!paragraph) {
       blockStarts.add(index)
       blockStarts.add(index + 1)
     }
   }
 
-  // 인라인 코드의 백틱은 같은 블록 안에서만 짝짓는다.
+  // 인라인 코드와 링크 표시 글은 같은 블록 안에서만 줄을 넘을 수 있다.
   blockStarts.add(lines.length)
   let start = 0
-  const blocks: string[] = []
+  let offset = 0
   for (const end of blockStarts) {
-    blocks.push(lines.slice(start, end).join('').replace(INLINE_CODE, blank))
+    const block = lines.slice(start, end).join('')
+    if (block.length > 0) yield { offset, text: block.replace(INLINE_CODE, blank) }
+    offset += block.length
     start = end
   }
-  return blocks.join('')
 }

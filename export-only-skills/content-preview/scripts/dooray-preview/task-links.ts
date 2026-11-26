@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { write } from '../io.ts'
-import { maskCode } from './markdown-code.ts'
+import { maskedBlocks } from './markdown-code.ts'
 
 const ID = '[a-z0-9][a-z0-9_-]*'
 const INTERNAL = new RegExp(`^dooray://(${ID})/tasks/(${ID})$`, 'i')
@@ -8,6 +8,8 @@ const WEB_PATH = new RegExp(`^/(?:project/tasks|task/${ID})/(${ID})/?$`, 'i')
 const POST_REF = /^([^\s/]+)\/(\d+)(?=\s|$)/u
 const BRACKET = /\\[^\r\n]|[\[\]]/gu
 const WORKFLOW = /^(registered|working|closed|backlog)$/
+// 정상 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 표시 글을 그대로 읽는다.
+const LINKS = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)|https:\/\/[^\s<>()\[\]"']+/giu
 
 type Post = { project: { code: string }; number: string | number; subject?: string; workflowClass?: string }
 type Lookup = Post | 'missing-cli' | 'unavailable'
@@ -52,7 +54,24 @@ function linkLabel(candidate: string): string {
       depth = Math.max(0, depth - 1)
     }
   }
-  return candidate.slice(start)
+  return candidate.slice(start).replace(/[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/gu, ' ')
+}
+
+function* findLinks(md: string): Generator<{ label?: string; target: string; title?: string }> {
+  for (const { offset, text } of maskedBlocks(md)) {
+    for (const match of text.matchAll(LINKS)) {
+      if (match[1] === undefined) {
+        yield { target: match[0].replace(/[.,!?;:]+$/u, '') }
+        continue
+      }
+      const start = offset + match.index + 1
+      yield {
+        label: linkLabel(md.slice(start, start + match[1].length)),
+        target: match[2].startsWith('<') ? match[2].slice(1, -1) : match[2],
+        title: match[3] ?? match[4] ?? match[5],
+      }
+    }
+  }
 }
 
 type Cache = { posts: Map<string, Lookup>; missingCli: boolean }
@@ -60,17 +79,14 @@ type Cache = { posts: Map<string, Lookup>; missingCli: boolean }
 function checkBody(md: string, cache: Cache): { errors: string[]; warnings: string[] } {
   const errors: string[] = []
   const warnings: string[] = []
-  // 올바른 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 원문의 표시 글을 읽는다.
-  const links = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\\r\n])*?)\]\([ \t]*<?([^\s<>()]+)>?(?:[ \t]+["']([^\r\n]*?)["'])?[ \t]*\)|https:\/\/[^\s<>()\[\]"']+/giu
-  for (const link of maskCode(md).matchAll(links)) {
-    const inline = link[1] !== undefined
-    const target = inline ? link[2] : link[0].replace(/[.,!?;:]+$/u, '')
+  for (const { label: shownLabel, target, title } of findLinks(md)) {
+    const inline = shownLabel !== undefined
     const internal = inline ? INTERNAL.exec(target) : null
     const webId = webPostId(target, inline)
     const id = internal?.[2] ?? webId
     if (!id) continue
 
-    const label = inline ? linkLabel(md.slice(link.index + 1, link.index + 1 + link[1].length)) : ''
+    const label = shownLabel ?? ''
     const fixedLabel = escapeBrackets(label)
     const post = cache.posts.get(id) ?? (cache.missingCli ? 'missing-cli' : lookupPost(id))
     if (!cache.posts.has(id)) {
@@ -92,7 +108,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
       : undefined
     const workflow = typeof post !== 'string' && WORKFLOW.test(post.workflowClass ?? '')
       ? post.workflowClass
-      : WORKFLOW.test(link[3] ?? '') ? link[3] : 'registered'
+      : WORKFLOW.test(title ?? '') ? title : 'registered'
     const replacement = shown && !mismatch ? fixedLabel : actualLabel ?? `PROJECT/NUMBER ${fixedLabel || '제목'}`
     const example = `[${replacement}](dooray://${internal?.[1] ?? 'ORG_ID'}/tasks/${id} "${workflow}")`
 

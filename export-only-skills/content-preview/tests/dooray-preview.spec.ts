@@ -327,6 +327,50 @@ describe('dooray-preview task, comment', () => {
     assert.deepEqual(done.calls, ['--json post get --id post-example'])
   })
 
+  test('표시 글, 주소, 상태값이 한 블록 안에서 줄을 넘어도 업무 링크를 검사한다', () => {
+    const address = 'dooray://example/tasks/post-example'
+    for (const body of [
+      `[example/20\n제목](${address} "working")`,
+      `[example/20\r\n제목](\r\n<${address}>\r\n"working"\r\n)`,
+      `- [example/20\n  제목](\n  ${address}\n  'working'\n  )`,
+      `> [example/20\n> 제목](\n> ${address}\n> "working"\n> )`,
+      `[example/20 제목](${address}\n"예시\n제목")`,
+    ]) {
+      const done = preview('task', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /「example\/20 제목」과 실제 업무 example\/18/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+
+    const good = `[example/18\n&#91;예제&#93; 제목](\n${address}\n"working"\n)`
+    const done = preview('task', good)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    assert.ok(done.html.includes(good))
+
+    const malformed = preview('comment', `[example/18\n[예제] 제목](\n${address}\n"working"\n)`, 'missing')
+    assert.equal(malformed.code, 1)
+    assert.ok(malformed.stderr.includes(`고친 예 [example/18 &#91;예제&#93; 제목](${address} "working")`))
+
+    const web = preview('comment', '[example/18 제목](\n/task/project-example/post-example\n"working"\n)')
+    assert.equal(web.code, 1, web.stderr)
+    assert.match(web.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+    assert.deepEqual(web.calls, ['--json post get --id post-example'])
+  })
+
+  test('표시 글과 주소를 문단이나 목록 항목 너머의 내용과 이어 붙이지 않는다', () => {
+    const address = 'dooray://example/tasks/post-example'
+    for (const body of [
+      `[example/20\n\n제목](${address} "working")`,
+      `- [example/20\n- 제목](${address} "working")`,
+      `[example/20 제목](\n\n${address} "working")`,
+    ]) {
+      const done = preview('comment', body)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, [])
+    }
+  })
+
   test('CLI 가 없거나 조회에 실패하면 --strict 에서도 경고와 함께 생성한다', () => {
     const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
     for (const state of ['missing', 'failed'] as const) {
