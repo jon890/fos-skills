@@ -420,7 +420,7 @@ flowchart TD
     Q -->|없음| P{merge_queue 프로세스}
     P -->|있음| X
     P -->|없음| C[등록된 Run 의 지시서 브랜치에 든 내 열린 PR]
-    C --> R{"조건 표(checkReadiness light): draft 아님, 그 틱의 CI passed, 같은 HEAD 를 건 적 없음, 보류 표시 없음, 미해결 스레드 0, 리뷰 판정 통과"}
+    C --> R{"조건 표(checkReadiness light): draft 아님, 그 틱의 CI passed, 같은 HEAD 를 건 적 없음, 보류 표시 없음, 리뷰 설정 있음, 미해결 스레드 0, 리뷰 판정 통과, 읽은 HEAD 가 틱의 HEAD 와 같음"}
     R -->|아니오| W[AUTO-MERGE-WAIT 로그만. 리뷰 조건이 판정 없음으로 막히면 AUTO-MERGE-NO-REVIEW 를 HEAD 마다 한 번]
     R -->|예| M{마이그레이션}
     M -->|번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같음| CL[MIGRATION-CLASH 알림, 걸지 않음]
