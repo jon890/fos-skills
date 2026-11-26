@@ -80,7 +80,7 @@
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령 | orch 명령의 `BOARD_BIN` 기본값, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
 | `skills/plan/scripts/{verify_task,check_feature,run_doc_checks,overlay_paths,plan_number}.ts` | 계획서 검사, 스펙·설계 형식 검사, 레포 설정의 문서 검사 명령 실행, 하위 프로젝트 판정과 오버레이 탐색 순서, plan 번호 계산. 옵션, 출력 줄, 종료 코드는 각 머리 주석이 소유한다 | plan·spec·technical-design·implementation·docs-audit·docs-consolidate·review-fix 의 단계, `skills/plan/tests/` |
-| `skills/browser/browser-driver/` | 브라우저 백엔드 중립 계층. 소유자는 `browser` 스킬이고 팀 저장소에는 `tools/browser-driver/` 로 실린다. 명령 목록은 `help` 가, 백엔드 규칙은 그 폴더의 `README.md` 가 소유한다 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts`, `skills/presentation/scripts/check-deck.ts` |
+| `skills/browser/browser-driver/` | 브라우저 백엔드 중립 계층. 팀 저장소에는 `browser` 스킬과 함께 실린다. 명령 목록은 `help` 가, 백엔드 규칙은 그 폴더의 `README.md` 가 소유한다 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts`, `skills/presentation/scripts/check-deck.ts` |
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |
 | `scripts/runtime-policy.json` | TypeScript 이행 상태의 원본(남은 영역, 허용 JS 진입, 최소 Node) | `scripts/runtime-policy.ts` |
@@ -101,7 +101,7 @@
 | `implementation`, `review-fix`, `spec`, `technical-design`, `docs-audit`, `docs-consolidate` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
 | `skills/orch/scripts/lib/commit-check.ts` 가 복사하는 `korean-check` | 자기 번들의 형제 폴더 `export-only-skills/korean-check` 의 `scripts/` 와 `references/` 다. import 하지 않고 worker 워크트리의 훅 폴더에 복사한다. 캐시에서도 같은 상대 경로다 |
 | `export-only-skills/content-preview/scripts/style-check.ts` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
-| `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`), `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `skills/browser/browser-driver/` 에서 찾는다 |
+| `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `skills/browser/browser-driver/` 또는 기존 팀 사본의 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `skills/browser/browser-driver/` 에서 찾는다 |
 | `skills/browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 드라이버가 스킬 폴더 안에 있어 캐시에서도 같은 상대 경로다 |
 | `skills/harness-cleanup/scripts/check_references.ts` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
 
@@ -146,7 +146,9 @@
 
 내보내기는 `skills/<이름>` 또는 `export-only-skills/<이름>` 원본을 팀의 `skills/<이름>`에 복사한다.
 `githooks/post-commit`은 두 원본 루트의 변경에서 스킬 이름을 읽는다. 옛 커밋의 루트 배치도 내보낼 수 있다. 상대 참조는 팀 배치에 맞춰 바꾼다.
-팀 저장소가 `skills/<이름>` 을 플러그인 안의 본체를 가리키는 상대 링크로 바꿔도, 내보내기는 링크 너머로 읽고 쓰므로 목적지를 바꾸지 않는다.
+팀 저장소의 `skills/<이름>` 이 상대 링크면 내보내기는 링크가 가리키는 본체를 읽고 쓴다.
+`browser` 는 `browser-driver` 를 포함한 스킬 폴더 전체를 팀의 `skills/browser` 로 내보낸다.
+팀 저장소에서 이 링크는 `plugins/nhn-dev/skills/browser/` 를 가리킨다. 링크가 아직 없으면 읽기 전용 검사는 빠진 파일을 「없음」 으로 표시한다.
 
 `.claude-plugin/` 은 내보내는 대상이 아니다. 스킬 디렉터리 밖에 있어 내보내기가 읽지 않는다.
 

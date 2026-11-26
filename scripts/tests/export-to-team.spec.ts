@@ -1,6 +1,6 @@
 // 팀 내보내기 명령(scripts/export-to-team)의 명령 경계 테스트.
 // 명령은 자기 위치의 상위 폴더를 원본 저장소로 쓴다. 그래서 임시 git 저장소에 명령을 복사하고,
-// 내보내는 스킬과 도구마다 파일 하나를 커밋해 원본을 만든다. 팀 저장소는 빈 임시 폴더로 대신한다.
+// 내보내는 스킬마다 파일 하나를 커밋해 원본을 만든다. 팀 저장소는 빈 임시 폴더로 대신한다.
 
 import assert from 'node:assert/strict'
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { describe, test } from 'node:test'
 import { runCommand } from '../../modules/testkit/command.ts'
 import { git, gitEnv } from '../../modules/testkit/git.ts'
 import { tempDir } from '../../modules/testkit/temp.ts'
-import { sharedLists } from '../export-lists.ts'
+import { sharedSkills } from '../export-lists.ts'
 import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
@@ -17,11 +17,9 @@ const INTERPRETER = ['node']
 const SCRIPT = 'scripts/export-to-team.ts'
 const FILES = ['scripts/export-to-team.ts', 'scripts/export-lists.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts']
 // 내보내는 목록을 명령 파일에서 읽는다. 목록을 테스트에 다시 적지 않는다
-function sharedNames(variable: 'SHARED_SKILLS' | 'SHARED_TOOLS'): string[] {
-  const lists = sharedLists(readFileSync(join(REPO_ROOT, SCRIPT), 'utf8'))
-  if (!lists) throw new Error(`${variable} 를 찾지 못했다`)
-  return variable === 'SHARED_SKILLS' ? lists.skills : lists.tools
-}
+const parsedNames = sharedSkills(readFileSync(join(REPO_ROOT, SCRIPT), 'utf8'))
+assert.ok(parsedNames, 'SHARED_SKILLS 를 찾지 못했다')
+const sharedNames = parsedNames
 // ──
 
 const EXPORT_ONLY = new Set(['content-preview', 'korean-check'])
@@ -39,13 +37,13 @@ function setup(t: { after(fn: () => void): void }): Env {
   const team = join(root, 'team')
   mkdirSync(join(team, 'skills'), { recursive: true })
   copyFromRepo(repo, FILES)
-  for (const dir of [...sharedNames('SHARED_SKILLS'), ...sharedNames('SHARED_TOOLS').map((name) => `tools/${name}`)]) {
+  for (const dir of sharedNames) {
     write(join(repo, dir, 'NOTE.md'), 'committed\n')
   }
   git(repo, ['init', '-q'])
   git(repo, ['add', '.'])
   git(repo, ['commit', '-q', '-m', 'init'])
-  return { repo, team, sha: git(repo, ['rev-parse', 'HEAD']), skill: sharedNames('SHARED_SKILLS')[0] }
+  return { repo, team, sha: git(repo, ['rev-parse', 'HEAD']), skill: sharedNames[0] }
 }
 
 function run(e: Env, ...args: string[]) {
@@ -54,7 +52,7 @@ function run(e: Env, ...args: string[]) {
 
 // 내보내는 스킬을 지금 배치(skills/, export-only-skills/)로 옮긴다
 function nestSources(e: Env): void {
-  for (const name of sharedNames('SHARED_SKILLS')) {
+  for (const name of sharedNames) {
     const prefix = EXPORT_ONLY.has(name) ? 'export-only-skills' : 'skills'
     mkdirSync(join(e.repo, prefix), { recursive: true })
     renameSync(join(e.repo, name), join(e.repo, prefix, name))
@@ -109,7 +107,7 @@ describe('export-to-team 원본과 어긋남', () => {
     const e = setup(t)
     const done = run(e, '--source-ref', 'HEAD')
     assert.equal(done.code, 1, done.stdout + done.stderr)
-    const missing = [...sharedNames('SHARED_SKILLS').map((name) => `skills/${name}`), ...sharedNames('SHARED_TOOLS').map((name) => `tools/${name}`)]
+    const missing = sharedNames.map((name) => `skills/${name}`)
       .map((dir) => `  없음   ${dir}/NOTE.md`)
     assert.equal(
       done.stdout,
@@ -238,37 +236,17 @@ describe('export-to-team 이 내보내지 않는 파일과 권한', () => {
   })
 })
 
-describe('export-to-team 의 도구 원본 자리', () => {
-  // 도구는 팀 저장소의 tools/<이름> 으로 실린다. 이 저장소의 원본은 소유 스킬 안(skills/browser/browser-driver)이고,
-  // 옛 커밋(team-export)은 tools/<이름> 에 있다. 어느 쪽에서도 같은 팀 경로로 낸다.
-  function moveToolIntoSkill(e: Env): void {
-    mkdirSync(join(e.repo, 'skills/browser'), { recursive: true })
-    renameSync(join(e.repo, 'tools/browser-driver'), join(e.repo, 'skills/browser/browser-driver'))
-    git(e.repo, ['add', '-A'])
-    git(e.repo, ['commit', '-q', '-m', 'move tool'])
-  }
-
-  test('소유 스킬 안의 도구를 팀의 tools 로 내보낸다', (t) => {
-    const e = setup(t)
-    moveToolIntoSkill(e)
-    const done = run(e, '--apply')
-    assert.equal(done.code, 0, done.stderr)
-    assert.equal(readFileSync(join(e.team, 'tools/browser-driver/NOTE.md'), 'utf8'), 'committed\n')
-    assert.ok(!existsSync(join(e.team, 'skills/browser')))
-    assert.equal(run(e).code, 0)
-  })
-
-  test('--source-ref 는 새 자리와 옛 자리를 모두 읽는다', (t) => {
-    const e = setup(t)
-    const before = e.sha
-    moveToolIntoSkill(e)
-    for (const ref of [before, 'HEAD']) {
-      rmSync(join(e.team, 'tools'), { recursive: true, force: true })
-      const done = run(e, '--apply', '--source-ref', ref)
-      assert.equal(done.code, 0, done.stderr)
-      assert.equal(readFileSync(join(e.team, 'tools/browser-driver/NOTE.md'), 'utf8'), 'committed\n', ref)
-    }
-  })
+test('팀에 browser 링크가 없으면 스킬과 드라이버가 없다고 알린다', (t) => {
+  const e = setup(t)
+  nestSources(e)
+  write(join(e.repo, 'skills/browser/SKILL.md'), '# Browser\n')
+  write(join(e.repo, 'skills/browser/browser-driver/browser_driver.ts'), 'export {}\n')
+  const done = run(e)
+  assert.equal(done.code, 1, done.stderr)
+  assert.match(done.stdout, /없음 +skills\/browser\/SKILL\.md/)
+  assert.match(done.stdout, /없음 +skills\/browser\/browser-driver\/browser_driver\.ts/)
+  assert.ok(!done.stdout.includes('tools/browser-driver'))
+  assert.ok(!existsSync(join(e.team, 'skills/browser')))
 })
 
 describe('export-to-team 의 변경 이력 조각', () => {

@@ -16,7 +16,7 @@ const HOOK = join(REPO_ROOT, 'githooks/post-commit')
 const SYNC = 'scripts/export-to-team.ts'
 // 내보내기 명령의 가짜. 공용 스킬 목록과 출력 줄, 종료 코드를 받는다
 function fakeSync(skills: string[], lines: string[], code: number): string {
-  return `export const SHARED_SKILLS = [${skills.map((s) => `'${s}'`).join(', ')}]\nexport const SHARED_TOOLS = []\nprocess.stdout.write(${JSON.stringify(lines.map((line) => `${line}\n`).join(''))})\nprocess.exitCode = ${code}\n`
+  return `export const SHARED_SKILLS = [${skills.map((s) => `'${s}'`).join(', ')}]\nprocess.stdout.write(${JSON.stringify(lines.map((line) => `${line}\n`).join(''))})\nprocess.exitCode = ${code}\n`
 }
 // 설치 명령과 훅 파일
 const INSTALL = ['node', 'scripts/install-hooks.ts']
@@ -29,7 +29,7 @@ const DRIFT = [
   '  다름   skills/alpha/SKILL.md',
   '  없음   skills/beta/scripts/x.py',
   '  다름   skills/beta/SKILL.md',
-  '  다름   tools/browser-driver/README.md',
+  '  다름   skills/browser/browser-driver/README.md',
   '',
   '팀 저장소: /nowhere',
 ]
@@ -38,7 +38,7 @@ let repo = ''
 
 function setSync(lines: string[], code = 1): void {
   const path = join(repo, SYNC)
-  writeFileSync(path, fakeSync(['alpha', 'beta'], lines, code))
+  writeFileSync(path, fakeSync(['alpha', 'beta', 'browser'], lines, code))
   chmodSync(path, 0o755)
 }
 
@@ -82,6 +82,11 @@ describe('post-commit 훅', () => {
         '',
       ].join('\n'),
     )
+  })
+
+  test('browser 스킬 안의 드라이버 변경을 알린다', () => {
+    commitTouching('skills/browser/browser-driver')
+    assert.ok(runHook().stdout.includes('skills/browser/browser-driver/README.md'))
   })
 
   test('두 원본 루트 아래 스킬을 알아본다', () => {

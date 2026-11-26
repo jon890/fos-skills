@@ -8,7 +8,7 @@
 // 그쪽이 dirty 하거나 다른 브랜치일 때 사고가 난다.
 //
 // 커밋한 체크아웃의 scripts/export-to-team.ts 를 쓴다. 없으면 조용히 지나간다(이 영역을 옮기기 전 브랜치 포함).
-// 공용 스킬 목록은 그 파일의 글에서 읽는다(sharedLists). 그 파일을 import 하지 않아 낡거나 깨져도 훅이 죽지 않는다.
+// 공용 스킬 목록은 그 파일의 글에서 읽는다(sharedSkills). 그 파일을 import 하지 않아 낡거나 깨져도 훅이 죽지 않는다.
 // 팀 저장소 위치는 TEAM_SKILLS_DIR 로 바꾼다 (export-to-team.ts 가 읽는다).
 //
 // 종료 코드: 늘 0. git 은 post-commit 의 종료 코드를 보지 않는다
@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isFile } from '../scripts/skill_paths.ts'
 import { pySplitLines } from '../modules/kit/py.ts'
-import { sharedLists } from '../scripts/export-lists.ts'
+import { sharedSkills } from '../scripts/export-lists.ts'
 
 const SYNC_NAME = 'scripts/export-to-team.ts'
 const DRIFT = /^ {2}(다름|없음|남음) /
@@ -47,7 +47,7 @@ export function main(): number {
   if (!root || !isFile(sync)) return 0
   const changed = touchedNames()
   if (changed.size === 0) return 0
-  const shared = sharedLists(readFileSync(sync, 'utf8'))?.skills ?? []
+  const shared = sharedSkills(readFileSync(sync, 'utf8')) ?? []
   const touched = shared.filter((name) => changed.has(name))
   if (touched.length === 0) return 0
 

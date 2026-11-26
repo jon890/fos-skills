@@ -11,7 +11,7 @@
 //
 // 원본은 기본으로 이 저장소(이 파일의 상위 폴더)의 작업 트리다. 체크아웃이 다른 브랜치로 바뀌면 내보내는 내용도 바뀌므로,
 // 다른 작업 중에 내보낼 때는 --source-ref origin/main 처럼 커밋을 준다. 옛 커밋(스킬을 저장소 루트에 두던 배치,
-// Python 으로 쓰던 때의 team-export 브랜치)도 --source-ref 로 그대로 내보낸다.
+// Python 으로 쓰던 때의 team-export 브랜치)도 목록의 스킬이 있으면 --source-ref 로 내보낸다.
 // 결과 첫 줄에 원본의 커밋 SHA 를 적는다. 팀 저장소의 커밋 메시지에 옮겨 적으면 어느 원본을 냈는지 남는다.
 //
 // 팀 저장소 위치는 TEAM_SKILLS_DIR 로 바꾼다(기본 ~/projects/AiSdtSkill). 없으면 검사를 건너뛰고 0 으로 끝난다.
@@ -26,7 +26,7 @@
 //   2  인자 오류, 커밋을 찾지 못했다, 원본에 내보낼 디렉터리가 없다
 //   3  팀 저장소의 스킬 버전이 더 높다. 아무것도 쓰지 않았다
 //
-// 내보내는 목록(SHARED_SKILLS, SHARED_TOOLS)은 한 줄 상수로 둔다. githooks/post-commit.ts 와
+// 내보내는 목록(SHARED_SKILLS)은 한 줄 상수로 둔다. githooks/post-commit.ts 와
 // scripts/tests/exported-imports.spec.ts 가 scripts/export-lists.ts 로 이 파일의 글에서 읽는다.
 
 import { spawnSync } from 'node:child_process'
@@ -34,14 +34,11 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
 import { PY_SPACE, pyDecode, pyPathCompare, pyReadText, pySplitLines } from '../modules/kit/py.ts'
-import { toolSources } from './export-lists.ts'
 import { isDir, isFile, SKILL_ROOTS, sourcePath } from './skill_paths.ts'
 import { isMainModule } from './is-main.ts'
 
 // 팀 저장소로 내보내는 스킬. 늘어나면 여기에 추가한다
-export const SHARED_SKILLS = ['content-preview', 'spec', 'technical-design', 'plan', 'implementation', 'verify', 'docs-consolidate', 'docs-audit', 'review-fix', 'korean-check', 'presentation']
-// 스킬이 아닌 공용 도구. 팀 저장소의 tools/<이름> 이 된다. 이 저장소의 원본 자리는 export-lists.ts 의 toolSources 가 갖는다
-export const SHARED_TOOLS = ['browser-driver']
+export const SHARED_SKILLS = ['content-preview', 'spec', 'technical-design', 'plan', 'implementation', 'verify', 'docs-consolidate', 'docs-audit', 'review-fix', 'korean-check', 'presentation', 'browser']
 // 개인 자산이라 내보내지 않는 경로 (스킬 디렉터리 기준 상대 경로)
 const EXCLUDE = new Set(['references/work-writing-persona.md'])
 
@@ -202,10 +199,10 @@ function pathlibForm(path: string): string {
 
 function exportFiles(repo: string, teamDir: string, apply: boolean): number {
   const team = pathlibForm(teamDir)
-  const pairs: Pair[] = [
-    ...SHARED_SKILLS.map((name): Pair => [sourcePath(repo, name).slice(repo.length + 1), `skills/${name}`]),
-    ...SHARED_TOOLS.map((name): Pair => [toolSources(name).find((rel) => isDir(join(repo, rel))) ?? toolSources(name)[0], `tools/${name}`]),
-  ]
+  const pairs = SHARED_SKILLS.map((name): Pair => [
+    sourcePath(repo, name).slice(repo.length + 1),
+    `skills/${name}`,
+  ])
 
   // 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 버전이 뒤처지지 않았을 때만 성립한다.
   // 팀 쪽에서 직접 고친 뒤 버전을 올리면 --apply 가 그것을 옛 내용으로 되돌린다 (실측).
@@ -301,16 +298,6 @@ function sharedPaths(sourceRef: string, sourceSha: string): string[] {
   return paths
 }
 
-// 그 원본에서 도구의 실제 경로를 고른다. 옛 커밋은 tools/<이름> 에 있고 지금은 소유 스킬 안에 있다
-function sharedToolPaths(sourceRef: string, sourceSha: string): string[] {
-  const files = sourceRef ? pySplitLines(gitOut(['ls-tree', '-r', '--name-only', sourceSha]).stdout) : []
-  return SHARED_TOOLS.map((name) => {
-    const candidates = toolSources(name)
-    const found = sourceRef ? candidates.find((rel) => files.some((file) => file.startsWith(`${rel}/`))) : candidates.find((rel) => isDir(join(REPO_DIR, rel)))
-    return found ?? candidates[0]
-  })
-}
-
 export function main(argv: string[]): number {
   let apply = false
   let sourceRef = ''
@@ -339,9 +326,8 @@ export function main(argv: string[]): number {
     return 0
   }
 
-  const paths = sharedPaths(sourceRef, sourceSha)
-  if (paths.length !== SHARED_SKILLS.length) fail(2, '그 원본에 내보낼 스킬 디렉터리가 없다')
-  const exported = [...paths, ...sharedToolPaths(sourceRef, sourceSha)]
+  const exported = sharedPaths(sourceRef, sourceSha)
+  if (exported.length !== SHARED_SKILLS.length) fail(2, '그 원본에 내보낼 스킬 디렉터리가 없다')
 
   let srcDir = REPO_DIR
   let description: string
