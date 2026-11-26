@@ -84,7 +84,8 @@ function readTaskStates(run: string, cache?: Map<string, TaskStates | null>): Ta
 }
 
 // run 이 없으면 run-current 의 Run 이다. { run, pending } 을 낸다.
-export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[]; tasks?: Map<string, TaskStates | null> }
+// 읽기 전용 훅은 refreshClosed: false 로 닫힌 질문 캐시의 조회 시각을 그대로 둔다.
+export type QuestionLookup = { rows?: ReturnType<typeof workerRows>; done?: Message[]; tasks?: Map<string, TaskStates | null>; refreshClosed?: boolean }
 
 export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { run: string; pending: Message[] } {
   if (!run) {
@@ -100,6 +101,7 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   // 같은 id 는 뒤의 것(읽지 않은 질문)으로 덮되 처음 나온 자리를 지킨다
   const candidates = new Map<unknown, Message>()
   const dismissed = readDismissed()
+  const refreshClosed = lookup.refreshClosed ?? true
   const ended = new Set((lookup.rows?.ok ? lookup.rows.rows : [])
     .filter((row) => SETTLED.has(String(row.dispatchStatus)) || row.dispatchStatus === 'released' || row.dispatchStatus === 'dispatch_inactive' ||
       row.terminalState === 'released' || objectOr(row.resource).ownershipState === 'released' || objectOr(row.resource).releaseState === 'released')
@@ -110,7 +112,7 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   for (const m of [...history, ...unread]) {
     // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
     if (m.id && !Object.hasOwn(dismissed, String(m.id)) && m.run_id === run && isQuestionCandidate(m) && recipientOf(m) === `run:${run}` &&
-      !ended.has(String(dispatchOf(m))) && !sharedClosedReason(run, String(m.id), true)) candidates.set(m.id, m)
+      !ended.has(String(dispatchOf(m))) && !sharedClosedReason(run, String(m.id), refreshClosed)) candidates.set(m.id, m)
   }
   // Task 종료가 dispatch 상태보다 먼저 반영될 수 있다. 남은 질문에 Task 가 있을 때만 Run 의 목록을 한 번 읽는다.
   if ([...candidates.values()].some((m) => context(m)[0])) {
@@ -137,7 +139,7 @@ export function snapshot(run?: string | null, lookup: QuestionLookup = {}): { ru
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
   const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run), dismissed)
-    .filter((m) => !sharedClosedReason(run, String(m.id), true))
+    .filter((m) => !sharedClosedReason(run, String(m.id), refreshClosed))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
     throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isUserDecision } from '../../lib/decisions.ts'
+import type { Message } from '../../core/questions.ts'
 import { runKey } from '../../lib/loop.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
 import { poll } from '../../lib/questions.ts'
@@ -13,10 +14,14 @@ import { reporter } from './errors.ts'
 import { REMIND_AFTER_SEC } from './questions.ts'
 import { oneLine } from './shared.ts'
 
+export function overdueTechnicalQuestions(pending: Message[], now = Date.now()): Message[] {
+  return pending.filter(m => !isUserDecision(m) && now - Date.parse(String(m.created_at ?? m.createdAt ?? '')) >= REMIND_AFTER_SEC * 1000)
+}
+
 // 머리 주석의 「미답변 질문 확인」. 묶음이 바뀌었을 때만 알리고 기록을 쓴다. pending 이 null 이면 그 Run 의 질문을 읽지 못한 틱이라 아무것도 하지 않는다
 async function watchUnanswered(repo: string, run: string, pending: ReturnType<typeof poll>['pending'] | null): Promise<void> {
   if (pending === null) return
-  const ids = pending.filter(m => !isUserDecision(m) && Date.now() - Date.parse(String(m.created_at ?? m.createdAt ?? '')) >= REMIND_AFTER_SEC * 1000).map(m => String(m.id)).sort()
+  const ids = overdueTechnicalQuestions(pending).map(m => String(m.id)).sort()
   const file = join(pathOf('state', repo), 'unanswered', `${runKey(run)}.json`)
   const hash = createHash('sha256').update(JSON.stringify(ids)).digest('hex')
   let previous = ''
