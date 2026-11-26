@@ -521,7 +521,7 @@ describe('orch 명령 판정', () => {
 
   test('문서의 새 꼴은 명령 표로 확인하고 산문은 보지 않는다', () => {
     const skill = join(tmp, 'skill')
-    write(join(skill, 'SKILL.md'), '`orch loop start` 로 띄운다. orch 루트는 `.orch` 다.\n```bash\norch wait --ack "$D"\norch nope x\n```\n`orch loop nope` 와 `orch` 스킬\n')
+    write(join(skill, 'SKILL.md'), '`orch loop start` 로 띄운다. orch 루트는 `.orch` 다.\n```bash\norch wait --ack "$D"\norch nope x\n```\n`orch loop nope` 와 `orch` 스킬\n- `orch queue ready` 는 폐기됐다. <!-- orch-compat -->\n')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 1, r.stdout + r.stderr)
     assert.equal(r.stdout, 'MISSING SKILL.md:4 orch nope x\nMISSING SKILL.md:6 orch loop nope\n')

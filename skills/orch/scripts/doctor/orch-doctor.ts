@@ -884,7 +884,7 @@ function codeParts(rows: string[]): { index: number; text: string }[] {
 function newFormMissing(doc: string, rows: string[], skillDir: string, seen: Set<string>): string[] {
   const lines: string[] = []
   for (const { index, text } of codeParts(rows)) {
-    if (text.includes('orch-compat') || (index > 0 && rows[index - 1].includes('orch-compat'))) continue
+    if (rows[index].includes('orch-compat') || (index > 0 && rows[index - 1].includes('orch-compat'))) continue
     for (const m of text.matchAll(NEW_FORM)) {
       const tokens = m[1].split(/\s+/)
       const shown = `orch ${tokens.slice(0, 2).join(' ')}`

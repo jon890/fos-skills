@@ -2,7 +2,7 @@
 
 ## 8.0.0 (2026-11-26)
 
-- 호환성: draft 로 CI 를 미루는 `orch queue ready` 명령, `--skipped-is-missing` 플래그와 `before-ready` 및 `pr-ready` 이벤트를 없앴어요. PR 은 처음부터 ready 상태로 열어요.
+- 호환성: `orch queue ready`, `--skipped-is-missing`, `before-ready`, `pr-ready` 를 없앴어요. PR 은 처음부터 ready 상태로 열어요. <!-- orch-compat -->
 - 호환성: 옛 draft CI 설정 키와 핸들러, 오버레이 문구는 `orch doctor` 의 `DRAFT-CI-RETIRED` 에서 위치를 확인해요.
 
 ## 7.x
