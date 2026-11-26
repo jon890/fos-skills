@@ -17,7 +17,7 @@ metadata:
 **목표: CLI 나 API 로 안 되는 웹 작업이 사람에게 넘어가지 않고 브라우저로 끝났고, 작업에 쓴 공간이 닫혔다.**
 
 **이 문서의 `references/` 는 이 스킬 번들 기준 상대경로다.**
-하네스가 알려 주는 스킬 base 디렉터리를 `$SKILL_DIR` 로 두고 붙여 쓴다.
+`$SKILL_DIR` 은 이 스킬 번들 경로다. 이 `SKILL.md` 가 있는 폴더의 절대 경로를 넣는다.
 
 - **CLI 와 공개 API 를 먼저 쓴다.** 브라우저 조작은 화면 구성이 바뀌면 깨지고 느리다. 같은 일을 하는 명령이 있으면 그것이 더 오래 맞는다.
 - **「사람이 할 일」 로 넘기기 전에 이 스킬로 할 수 있는지 본다.** 로그인과 확인 버튼만 사람이 하고 나머지는 에이전트가 한다.
@@ -61,7 +61,7 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && cat "$ROOT/.claude/browser-
 드라이버를 찾는다. Bash 호출마다 셸이 새로 뜨므로 출력된 절대 경로를 이후 호출에 그대로 쓴다.
 
 ```bash
-for cand in "${BROWSER_DRIVER_PATH:-}" "$SKILL_DIR/browser-driver/browser_driver.ts" "$HOME/.claude/scripts/browser-driver" "$(command -v browser-driver)"; do
+for cand in "${BROWSER_DRIVER_PATH:-}" "$SKILL_DIR/browser-driver/browser_driver.ts" "$SKILL_DIR/../../bin/browser-driver" "$HOME/.claude/scripts/browser-driver"; do
   if [ -n "$cand" ] && [ -x "$cand" ]; then echo "$cand"; break; fi
 done
 ```
@@ -69,7 +69,7 @@ done
 아무것도 나오지 않으면 fos-skills 저장소 `docs/contributing.md` 의 「링크로 설치」 대로 `~/.claude/scripts/browser-driver` 링크를 걸어 달라고 사용자에게 알린다.
 
 ```bash
-B="$HOME/.claude/scripts/browser-driver"
+B="$SKILL_DIR/browser-driver/browser_driver.ts"
 "$B" doctor
 "$B" help
 ```
@@ -85,7 +85,7 @@ B="$HOME/.claude/scripts/browser-driver"
 이름에는 저장소, 브랜치, 용도를 넣어 `spaces` 목록에서 내 것을 알아보게 한다.
 
 ```bash
-B="$HOME/.claude/scripts/browser-driver"
+B="$SKILL_DIR/browser-driver/browser_driver.ts"
 URL="https://example.com"
 export BROWSER_EGO_SPACE="my-repo feat-x 시나리오 생성"
 PAGE=$("$B" open "$URL")
@@ -121,7 +121,7 @@ echo "$PAGE"
 **작업이 실패해도 같은 공간 이름으로 `reset` 을 부른다.** 부르지 않으면 공간이 ego 에 남아 쌓인다.
 
 ```bash
-B="$HOME/.claude/scripts/browser-driver"
+B="$SKILL_DIR/browser-driver/browser_driver.ts"
 BROWSER_EGO_SPACE="my-repo feat-x 시나리오 생성" "$B" reset
 ```
 
