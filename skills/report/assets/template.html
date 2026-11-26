@@ -80,6 +80,13 @@ ol.steps > li::before{content:counter(step);position:absolute;left:16px;top:12px
 ol.steps > li > strong{display:block;font-size:16px}
 ol.steps > li > p{margin:2px 0 0;font-size:15px;color:#33403f}
 
+/* 흐름도 */
+figure.diagram{margin:14px 0;padding:14px 18px;overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:8px}
+.diagram > svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram > pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.diagram > pre code{background:none;padding:0}
+.diagram > figcaption{margin-top:8px;color:var(--muted);font-size:14px}
+
 /* 강조 상자와 용어 상자 */
 .callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--part);border-radius:6px;padding:10px 16px;margin:14px 0;font-size:15px}
 aside.gloss{background:#fff;border:1px dashed var(--accent);border-radius:8px;padding:12px 16px;margin:18px 0}
@@ -182,6 +189,22 @@ footer{margin-top:56px;color:var(--muted);font-size:13px}
   </div>
 </section>
 
+<!-- 컴포넌트: 흐름도. 조사 보고서나 개념 설명의 해당 절에 아래 틀을 꺼내 쓴다.
+<figure class="diagram">
+  <pre><code class="language-mermaid">---
+config:
+  look: handDrawn
+---
+flowchart LR
+  A[요청] --&gt; B[처리]
+  classDef request fill:#e6f1f2,stroke:#1f6f78
+  classDef service fill:#e1f3e8,stroke:#1d7a46
+  class A request
+  class B service
+  </code></pre>
+  <figcaption>서비스가 요청을 받아 처리한다.</figcaption>
+</figure>
+-->
 <!-- 컴포넌트: 단계 목록. 순서가 있는 일. li 마다 굵은 제목 한 줄과 설명 한 문장 -->
 <section id="steps">
   <h2><span class="no">3</span>바꾸는 순서</h2>
