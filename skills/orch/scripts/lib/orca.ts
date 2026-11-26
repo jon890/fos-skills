@@ -100,6 +100,15 @@ export function repoVisibility(repo: string): string {
   return typeof value === 'string' ? value : ''
 }
 
+// 저장소가 Orca 에 등록됐는지. `orca repo show` 가 repo_not_found 로 답하면 false, 읽지 못하면(Orca 가 꺼짐 같은 것) null 이다.
+// 등록되지 않은 저장소의 워크트리는 Orca 가 알아보지 못해 worker-start 가 실패한다(2026-11-20 OCR.Metering).
+export function repoRegistered(repo: string): boolean | null {
+  const { done, envelope } = readEnvelope(['repo', 'show', '--repo', `path:${repo}`])
+  const body = objectOr(envelope)
+  if (done.code === 0 && body.ok === true) return true
+  return objectOr(body.error).code === 'repo_not_found' ? false : null
+}
+
 // hide 일 때 사용자가 고를 조치. 설정은 사용자가 바꾼다. 명령이 스스로 바꾸면 사용자가 숨겨 둔 다른 워크트리까지 드러난다.
 export function repoVisibilityActions(repo: string): string {
   return [

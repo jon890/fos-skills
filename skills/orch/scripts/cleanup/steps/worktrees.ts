@@ -144,6 +144,13 @@
 //       - 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이다
 //     하나라도 아니면 예전처럼 「남김: 사용자 보유 터미널」 이다. 닫는 시점은 PR 이 MERGED 일 때뿐이다.
 //
+// 이어 쓴 터미널 (--run):
+//     orch worker resume 과 launch-worker --terminal 은 직접 연 터미널을 worker-start --terminal 로 잇는다. Orca 는 그 터미널을
+//     `ownershipState` external, `retainedReason` external_terminal 로 적어 소유 확인이 「터미널 소유 상태 조회 실패」 로 남겼다(2026-11-20 AiSdtSkill).
+//     끝난 dispatch 이고 그 dispatch 의 띄우기 기록(lib/launched.ts)이 이 경로와 바로 그 터미널을 적었으면 소유 확인에서 뺀다. 닫는 시점은 위와 같다.
+//     external 인지는 삭제 직전에 새로 읽은 worker 행으로 본다. 스냅샷 뒤에 사용자가 넘겨받았으면 그 상태로 막는다.
+//     기록이 없거나 다른 터미널을 적었거나 터미널이 비어 있으면 예전처럼 남긴다.
+//
 // 다른 Run (--run 을 줬을 때):
 //     터미널은 경로로 찾으므로, 같은 저장소에서 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널도 걸린다.
 //     모든 Run 의 worker 행(lib/ownership.ts 의 allWorkers)에서 terminalState 가 active 인 행을 골라
@@ -193,7 +200,7 @@ import type { Verdict } from '../../lib/worker-state.ts'
 import type { WorkerRow } from '../../lib/ownership.ts'
 import { allLiveSpecPaths } from '../../lib/spec.ts'
 import { basename } from 'node:path'
-import { closeForClosedPr, closeTerminals, emptyShells, foreignAt, foreignHandles, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
+import { closeForClosedPr, closeTerminals, emptyShells, externalLaunched, foreignAt, foreignHandles, idleAgentPath, launchedOwn, liveTerminals, releaseDispatches, takenOverOwn, terminalsAt, workersAt } from './terminals.ts'
 import { closeTerminal as closeOrcaTerminal } from '../../lib/orca.ts'
 import { deleteRemote, merged, ownPr, prCandidates, protectedReason, remotePlan, unpushed } from './prs.ts'
 import { deleteSpecFiles, specsKept, trashLaunchedSpecs } from './specs.ts'
@@ -449,8 +456,12 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     const held = forced ? null : heldDispatch(workersAt(fresh, path))
     if (held) return keep(heldReason(held), `남김 ${path}: ${heldReason(held)}`)
     if (args.run) args.foreign = await foreignHandles(args.run, async () => fresh)
-    // 원래 user_owned 였던 예외만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
-    const previouslyTaken = new Set(mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]))
+    // 원래 user_owned 였던 예외와 기록한 터미널로 이어 쓴 external 터미널만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
+    // external 은 삭제 직전에 새로 읽은 행으로 본다. 스냅샷 뒤에 사용자가 넘겨받아 user_owned 가 됐으면 빼지 않아 소유 확인이 막는다
+    const previouslyTaken = new Set([
+      ...mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]),
+      ...externalLaunched(repo, workersAt(fresh, path)),
+    ])
     const ignored = new Set([...taken].filter((handle) => previouslyTaken.has(handle)))
     const owner = await ownershipBlocker(path, ignored, async () => fresh)
     if (owner) return keep(owner, `남김: ${owner} (${path})`)
