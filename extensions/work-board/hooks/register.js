@@ -1,6 +1,7 @@
 import { boardApprovalReader } from '../../../skills/orch/scripts/lib/board-queries/board-approval-view.ts'
 import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries/board-worker-list.ts'
 import { hasStopReportId, isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
+import { muteKey, muteLabel, muteTarget } from '../../../skills/inbox/scripts/lib/mute.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
@@ -201,6 +202,9 @@ let inboxSeen = false
 // x: 켜져 있으면 숫자 단축키가 답변 요청문 대신 그 알림을 넘긴다. 넘기거나 다시 x 를 누르면 꺼진다
 let dismissMode = false
 let dismissBusy = false
+let muteMode = false
+let muteSelection = null
+let muteBusy = false
 // z 로 되돌릴 알림 id. 이 세션에서 창이 넘긴 것만 쌓는다
 const dismissUndo = []
 // 넘김과 되돌리기마다 올린다. 그 전에 시작한 알림 읽기의 결과는 넘긴 항목을 되살리므로 버린다
@@ -1507,6 +1511,30 @@ export async function undoDismiss($) {
   await loadInbox($)
 }
 
+async function confirmInboxMute($) {
+  if (!muteSelection || muteBusy) return
+  const { id, key, value } = muteSelection
+  muteBusy = true
+  try {
+    const root = (await boardRoot($)) || (await $.session.cwd())
+    const script = $.plugin.root + '/skills/inbox/scripts/inbox.ts'
+    await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'mute', id, '--repo', root, '--yes'])
+    inboxGeneration++
+    const ids = inbox?.items.filter((item) => muteKey(item) === key && item.scope.includes(value)).map((item) => item.id) ?? []
+    inbox = withoutItems(inbox, ids)
+    muteMode = false
+    muteSelection = null
+    $.ui.toast('이 보드에서 ' + muteLabel(key) + ' 알림을 숨겼어요')
+    refreshStatus($)
+    await loadInbox($)
+  } catch (failure) {
+    $.ui.toast('알림 숨기기 실패: ' + String(failure.message || failure))
+  } finally {
+    muteBusy = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
 // known_marketplaces.json 을 읽는다. 설정 폴더는 CLAUDE_CONFIG_DIR, 없으면 ~/.claude 다. 읽지 못하면 null
 async function readKnownMarketplaces($) {
   try {
@@ -1856,6 +1884,8 @@ export function register(on) {
 
   on('command.run', { command: 'board' }, async ($) => {
     dismissMode = false
+    muteMode = false
+    muteSelection = null
     folded.clear()
     await loadFile($)
     await loadApprovals($, true)
@@ -1953,7 +1983,7 @@ export function register(on) {
         key: 'fold-' + item.id + '-' + kind,
         plain: true,
         onPress: () => {
-          if (dismissMode) return
+          if (dismissMode || muteMode) return
           const id = item.id + ':' + kind
           if (!folded.delete(id)) folded.add(id)
           $.ui.invalidate('ui.render')
@@ -2008,7 +2038,7 @@ export function register(on) {
         ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: [title] })
         : Button({ key: 'check-' + item.id, plain: true,
           onPress: () => {
-            if (dismissMode) return
+            if (dismissMode || muteMode) return
             fillPrompt($, itemPrompt(item, worker, live.prs))
             $.ui.invalidate('ui.render')
           },
@@ -2222,6 +2252,7 @@ export function register(on) {
     const clock = clockOf
     const inboxRow = (item, index) => {
       const answered = item.state === 'answered'
+      const target = muteTarget(item)
       const meta = [item.from && (item.from.name || item.from.id), INBOX_KIND_LABELS[item.kind] || item.kind, answered ? '답함' : ago(item.at)]
         .filter(Boolean).join(' · ')
       const label = (answered ? '✓ ' : '● ') + (item.title || item.id)
@@ -2236,7 +2267,15 @@ export function register(on) {
             children: [
               index < INBOX_ROWS
                 ? Button({ key: 'inbox-reply-' + item.id, hotkey: String(index + 1), plain: true, dimColor: answered,
-                  onPress: () => { if (dismissMode) void dismissInbox($, item.id); else fillPrompt($, replyPrompt(item)) },
+                  onPress: () => {
+                    if (muteBusy) return
+                    if (dismissMode) void dismissInbox($, item.id)
+                    else if (!muteMode) fillPrompt($, replyPrompt(item))
+                    else if (target) {
+                      muteSelection = { id: item.id, ...target }
+                      $.ui.invalidate('ui.render')
+                    }
+                  },
                   children: [
                     Text({ key: 'label', bold: !answered, dimColor: answered, color: dismissMode ? 'red' : undefined, children: [label] }),
                   ] })
@@ -2257,6 +2296,17 @@ export function register(on) {
         ...(alerts.show && inbox.unclassified > 0 ? [dim('iu', '미분류 알림 ' + inbox.unclassified + ' · 기본 보드에서 봐요')] : []),
         ...(alerts.show && dismissMode ? [Text({ key: 'idm', color: 'red', wrap: 'wrap',
           children: ['넘길 알림의 번호를 누르세요. 넘긴 알림은 답하지 않음으로 남고 z 로 되돌려요. 그만두려면 x'] })] : []),
+        ...(alerts.show && muteMode && !muteSelection ? [dim('mute-help', '숨길 프로젝트나 대화방의 알림 번호를 누르세요. 그만두려면 m')] : []),
+        ...(alerts.show && muteSelection ? [
+          Text({ key: 'mute-name', wrap: 'wrap', children: ['이 보드에서 ' + muteLabel(muteSelection.key) + ' 「' + muteSelection.name + '」 알림을 숨겨요.'] }),
+          Button({
+            key: 'inbox-mute-confirm',
+            label: '이 ' + muteLabel(muteSelection.key) + ' 알리지 않기',
+            hotkey: 'y',
+            plain: true,
+            onPress: () => { void confirmInboxMute($) },
+          }),
+        ] : []),
         ...(alerts.show && inboxItems.length === 0 ? [dim('i0', answeredCount > 0 ? '이 보드의 새 알림이 없어요' : '이 보드의 알림이 없어요')] : []),
         ...inboxItems.map(inboxRow),
         ...(answeredCount > 0 ? [dim('ia', '답함 ' + answeredCount)] : []),
@@ -2435,7 +2485,23 @@ export function register(on) {
                 hotkey: 'x',
                 plain: true,
                 onPress: () => {
+                  if (muteBusy) return
+                  muteMode = false
+                  muteSelection = null
                   dismissMode = !dismissMode
+                  $.ui.invalidate('ui.render')
+                },
+              })] : []),
+              ...(alerts.show && (muteMode || inboxItems.slice(0, INBOX_ROWS).some(muteTarget)) ? [Button({
+                key: 'inbox-mute',
+                label: muteMode ? '숨기기 그만' : '프로젝트·대화방 알림 숨기기',
+                hotkey: 'm',
+                plain: true,
+                onPress: () => {
+                  if (muteBusy) return
+                  dismissMode = false
+                  muteMode = !muteMode
+                  muteSelection = null
                   $.ui.invalidate('ui.render')
                 },
               })] : []),

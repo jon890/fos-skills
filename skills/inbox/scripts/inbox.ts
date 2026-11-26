@@ -9,7 +9,10 @@
 //   inbox.ts reply <id> --body-file <파일> [--yes]  받는 사람 멘션과 signature 를 붙여 등록한다. --yes 가 없으면 합성한 본문만 낸다
 //   inbox.ts react <id> [--emoji <이름>] [--yes]     업무 댓글이나 메신저 멘션에 리액션을 단다. --yes 가 없으면 대상과 이모지만 보여 준다
 //   inbox.ts dismiss <id> [--undo]                  넘긴 것으로 적는다. 모든 저장소의 보드에서 사라진다
-// 종료 코드: 0 성공, 1 거절·실패(이유는 stderr), 2 사용법 오류, 3 확인 필요(reply, react 에 --yes 없음)
+//   inbox.ts mute <id> --repo <저장소> [--yes]       알림의 프로젝트나 대화방을 이 보드에서 숨긴다. --yes 가 없으면 이름을 보여 준다
+//   inbox.ts mute-list --repo <저장소> [--json]      이 보드에서 숨긴 프로젝트와 대화방 목록
+//   inbox.ts unmute <project|channel> <값> --repo <저장소>   이 보드에서 숨긴 프로젝트나 대화방을 다시 보인다
+// 종료 코드: 0 성공, 1 거절·실패(이유는 stderr), 2 사용법 오류, 3 확인 필요(reply, react, mute 에 --yes 없음)
 // 설정 파일이 없으면 board --json 은 {"enabled": false} 를 내고 0, 다른 명령은 1 이다(R6).
 // 명령 실행은 import.meta.main 안에만 둔다. 테스트는 main 에 가짜 adapter 와 Runner 를 넣는다.
 
@@ -19,13 +22,16 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { isObject } from '../../orch/scripts/core/json.ts'
+import { updateConfig } from '../../orch/scripts/lib/config.ts'
 import { orchDir } from '../../orch/scripts/lib/paths.ts'
 import { OwnerLockBusy } from '../../orch/scripts/lib/owner-lock.ts'
 import { ADAPTERS } from './adapters/index.ts'
 import { taskCursorTime } from './adapters/dooray.ts'
 import type { Adapter, AdapterConfig, AdapterFactory, FetchResult, InboxItem, Runner } from './lib/model.ts'
+import { filterValues, MUTE_KEYS, muteLabel, muteTarget, type MuteKey } from './lib/mute.ts'
 import { type CacheFile, type Config, DEFAULT_INTERVAL_MINUTES, readConfig, type SourceState, Store } from './lib/store.ts'
-import { boardView, isOff, type RepoFilter, visibleItems } from './lib/view.ts'
+import { boardView, hasRoutingFilter, isOff, type RepoFilter, visibleItems } from './lib/view.ts'
 
 // 받기 한 번에 「답함」 을 확인하는 새 항목 수. 항목마다 두레이 호출이 하나씩 든다
 export const MAX_ANSWER_CHECKS = 15
@@ -35,7 +41,8 @@ export const CONFIG_FILE = 'config.json'
 // 두레이 명령 하나를 기다리는 한도. 넘으면 그 호출만 실패로 친다
 const COMMAND_TIMEOUT_MS = 60000
 
-const USAGE = '사용법: inbox.ts {board,fetch,list,context,reply,react,dismiss} [id] [--repo R] [--json] [--force] [--body-file F] [--emoji 이름] [--yes] [--undo]'
+const USAGE = '사용법: inbox.ts {board,fetch,list,context,reply,react,dismiss} [id] [--repo R] [--json] [--force] [--body-file F] [--emoji 이름] [--yes] [--undo]\n'
+  + '        inbox.ts mute <id> --repo R [--yes] | mute-list --repo R [--json] | unmute <project|channel> <값> --repo R'
 
 export type Deps = {
   run: Runner
@@ -127,7 +134,7 @@ function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; k
     error = (failure as Error).message
   }
   let paths = store.repos().map(configPathOf)
-  if (filter && !isOff(filter) && !paths.some((known) => samePath(known, path))) {
+  if (filter && hasRoutingFilter(filter) && !isOff(filter) && !paths.some((known) => samePath(known, path))) {
     paths = [...paths, path]
     store.write('repos', paths)
   }
@@ -275,7 +282,7 @@ function line(item: InboxItem): string {
   return `${mark} ${item.id}  ${item.title}  ${item.from.name || item.from.id} · ${item.kind} · ${item.at}${item.excerpt ? `\n    ${item.excerpt}` : ''}`
 }
 
-type Parsed = { cmd: string; id?: string; repo?: string; json: boolean; force: boolean; source?: string; scheduledAt?: string; bodyFile?: string; emoji?: string; yes: boolean; undo: boolean }
+type Parsed = { cmd: string; id?: string; muteValue?: string; repo?: string; json: boolean; force: boolean; source?: string; scheduledAt?: string; bodyFile?: string; emoji?: string; yes: boolean; undo: boolean }
 
 function parse(argv: string[]): Parsed | 'help' {
   if (argv.includes('--help') || argv.includes('-h')) return 'help'
@@ -295,11 +302,12 @@ function parse(argv: string[]): Parsed | 'help' {
     allowPositionals: true,
     strict: true,
   })
-  const [cmd, id, ...rest] = positionals
-  if (!cmd || !['board', 'fetch', 'list', 'context', 'reply', 'react', 'dismiss'].includes(cmd)) throw new Error(`명령이 필요하다: ${cmd ?? ''}`)
-  if (rest.length > 0) throw new Error(`모르는 인자: ${rest.join(' ')}`)
-  if (['context', 'reply', 'react', 'dismiss'].includes(cmd) && !id) throw new Error(`${cmd} 에는 항목 id 가 필요하다`)
-  if (cmd === 'board' && !values.repo) throw new Error('board 에는 --repo 가 필요하다')
+  const [cmd, id, muteValue, ...rest] = positionals
+  if (!cmd || !['board', 'fetch', 'list', 'context', 'reply', 'react', 'dismiss', 'mute', 'mute-list', 'unmute'].includes(cmd)) throw new Error(`명령이 필요하다: ${cmd ?? ''}`)
+  if (rest.length > 0 || (cmd !== 'unmute' && muteValue !== undefined) || (cmd === 'mute-list' && id !== undefined)) throw new Error('명령에 맞는 인자를 준다')
+  if (['context', 'reply', 'react', 'dismiss', 'mute'].includes(cmd) && !id) throw new Error(`${cmd} 에는 항목 id 가 필요하다`)
+  if (['board', 'mute', 'mute-list', 'unmute'].includes(cmd) && !values.repo) throw new Error(`${cmd} 에는 --repo 가 필요하다`)
+  if (cmd === 'unmute' && (!(id === 'project' || id === 'channel') || !muteValue?.trim())) throw new Error('unmute 에는 project 또는 channel 과 목록에 나온 값을 준다')
   if (cmd === 'reply' && !values['body-file']) throw new Error('reply 에는 --body-file 이 필요하다')
   if (values.emoji !== undefined && cmd !== 'react') throw new Error('--emoji 는 react 에서만 쓴다')
   if (values.source !== undefined && cmd !== 'fetch') throw new Error('--source 는 fetch 에서만 쓴다')
@@ -308,9 +316,65 @@ function parse(argv: string[]): Parsed | 'help' {
   }
   return {
     source: values.source, scheduledAt: values['scheduled-at'],
-    cmd, id, repo: values.repo, json: values.json ?? false, force: values.force ?? false,
+    cmd, id, muteValue, repo: values.repo, json: values.json ?? false, force: values.force ?? false,
     bodyFile: values['body-file'], emoji: values.emoji, yes: values.yes ?? false, undo: values.undo ?? false,
   }
+}
+
+function changeMute(repo: string, key: MuteKey, value: string, remove: boolean, deps: Deps): boolean {
+  const path = filterPath(repo)
+  let changed = false
+  updateConfig(repo, (raw) => {
+    if (!isObject(raw)) throw new Refused(`${path} 의 최상위는 객체여야 한다`)
+    const { filter, notes } = readFilterFile(path)
+    for (const note of notes) deps.err(`${note}\n`)
+    if (filter?.dooray !== undefined && !isObject(filter.dooray)) throw new Refused(`${path} 의 inbox.dooray 는 객체여야 한다`)
+    const dooray = filter?.dooray ?? {}
+    const list = dooray[key]
+    if (list !== undefined && (!Array.isArray(list) || list.some((entry) => typeof entry !== 'string' && !Number.isFinite(entry)))) {
+      throw new Refused(`inbox.dooray.${key} 에 문자열과 숫자 목록을 준다`)
+    }
+    const values = Array.isArray(list) ? list : []
+    const alreadyMuted = filterValues(values).includes(value)
+    if (remove ? !alreadyMuted : alreadyMuted) return
+    const next = remove ? values.filter((entry) => String(entry).trim() !== value) : [...values, value]
+    const inbox = { ...filter, dooray: { ...dooray, [key]: next } }
+    // 이전 필터가 빈 객체여도 기존 목록의 분류 방식을 유지한다
+    if (hasRoutingFilter(filter) && !hasRoutingFilter(inbox)) inbox.dooray.projects = []
+    changed = true
+    return { ...raw, inbox }
+  })
+  return changed
+}
+
+function muteCommand(a: Parsed, { store, deps }: Session): number {
+  const target = muteTarget(findItem(store, a.id as string))
+  if (!target) throw new Refused('이 알림의 프로젝트나 대화방 이름을 확인할 수 없다')
+  const label = `${muteLabel(target.key)} 「${target.name}」`
+  if (!a.yes) {
+    deps.out(`이 저장소의 보드에서 ${label} 알림을 숨긴다\n`)
+    deps.err('확인한 뒤 같은 명령에 --yes 를 붙인다\n')
+    return 3
+  }
+  changeMute(a.repo as string, target.key, target.value, false, deps)
+  deps.out(`이 저장소의 보드에서 ${label} 알림을 숨겼다\n`)
+  return 0
+}
+
+function listMutes(a: Parsed, deps: Deps): number {
+  const { filter, notes } = readFilterFile(filterPath(a.repo as string))
+  for (const note of notes) deps.err(`${note}\n`)
+  const dooray = isObject(filter?.dooray) ? filter.dooray : {}
+  const targets = new Store().cache().items.map(muteTarget)
+  const entries = MUTE_KEYS.flatMap((key) => filterValues(dooray[key]).map((value) => ({
+    kind: key === 'excludeProjects' ? 'project' : 'channel',
+    value,
+    name: targets.find((target) => target?.key === key && target.value === value)?.name ?? '',
+  })))
+  if (a.json) deps.out(`${JSON.stringify(entries)}\n`)
+  else if (entries.length === 0) deps.out('숨긴 프로젝트와 대화방이 없다\n')
+  else for (const { kind, value, name } of entries) deps.out(`${kind} ${JSON.stringify(value)}${name ? `  「${name}」` : ''}\n`)
+  return 0
 }
 
 function reactCommand(a: Parsed, { config, store, deps, adapters }: Session): number {
@@ -381,7 +445,7 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
     enabled: true,
     fetchedAt: cache.fetchedAt,
     errors: { ...fetchErrors(session, cache, setupErrors), ...errors },
-    filtered: filter !== null,
+    filtered: hasRoutingFilter(filter),
     isDefault: isDefault === true,
     newCount: view.newCount,
     unclassified: view.unclassified,
@@ -396,6 +460,13 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
 }
 
 function run(a: Parsed, deps: Deps): number {
+  if (a.cmd === 'mute-list') return listMutes(a, deps)
+  if (a.cmd === 'unmute') {
+    const key = a.id === 'project' ? 'excludeProjects' : 'excludeChannels'
+    const changed = changeMute(a.repo as string, key, (a.muteValue as string).trim(), true, deps)
+    deps.out(changed ? '이 저장소의 보드에서 알림을 다시 보인다\n' : '이 저장소의 보드에서 숨긴 항목이 없다\n')
+    return 0
+  }
   const config = readConfig()
   if (!config) {
     if (a.cmd === 'board' && a.json) {
@@ -460,6 +531,8 @@ function run(a: Parsed, deps: Deps): number {
     }
     case 'react':
       return reactCommand(a, session)
+    case 'mute':
+      return muteCommand(a, session)
     case 'dismiss': {
       const dismissed = store.dismissed()
       if (a.undo) dismissed.delete(a.id as string)

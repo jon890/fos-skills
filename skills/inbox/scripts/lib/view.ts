@@ -13,6 +13,8 @@
 // 넘긴 항목과 days 보다 오래된 항목은 어디에도 보이지 않는다.
 
 import type { InboxItem } from './model.ts'
+import { filterValues, MUTE_KEYS, muteKey } from './mute.ts'
+import { isObject } from '../../../orch/scripts/core/json.ts'
 
 // adapter 이름 아래 값 목록을 두고, 「enabled: false」 로 이 저장소의 보드가 알림을 보지 않게 끈다
 export type RepoFilter = Record<string, unknown>
@@ -44,13 +46,30 @@ export type View = {
 
 function values(filter: RepoFilter, adapter: string): Set<string> {
   const section = filter[adapter]
-  if (!section || typeof section !== 'object') return new Set()
+  if (!isObject(section)) return new Set()
   return new Set(
-    Object.values(section)
-      .flatMap((list) => (Array.isArray(list) ? list : []))
-      .map((value) => String(value).trim())
-      .filter(Boolean),
+    Object.entries(section)
+      .filter(([key]) => adapter !== 'dooray' || !isMuteKey(key))
+      .flatMap(([, list]) => filterValues(list)),
   )
+}
+
+function isMuteKey(key: string): boolean {
+  return MUTE_KEYS.some((mute) => key === mute)
+}
+
+export function hasRoutingFilter(filter: RepoFilter | null): boolean {
+  if (!filter) return false
+  const dooray = filter.dooray
+  const muteOnly = isObject(dooray) && Object.keys(dooray).length > 0 && Object.keys(dooray).every(isMuteKey)
+  return !muteOnly || Object.keys(filter).some((key) => key !== 'dooray')
+}
+
+function isMuted(item: InboxItem, filter: RepoFilter | null): boolean {
+  const key = muteKey(item)
+  if (!key || !isObject(filter?.dooray)) return false
+  const excluded = filterValues(filter.dooray[key])
+  return item.scope.some((value) => excluded.includes(value))
 }
 
 export function matches(item: InboxItem, filter: RepoFilter): boolean {
@@ -74,9 +93,10 @@ export function visibleItems(items: InboxItem[], dismissed: Set<string>, now: Da
 export function boardView(input: ViewInput): View {
   if (isOff(input.filter)) return { items: [], newCount: 0, unclassified: 0 }
   const visible = visibleItems(input.items, input.dismissed, input.now, input.days)
+    .filter((item) => !isMuted(item, input.filter))
   let shown: InboxItem[]
   let unclassified = 0
-  if (!input.filter) {
+  if (!input.filter || !hasRoutingFilter(input.filter)) {
     shown = visible
   } else {
     const own = input.filter

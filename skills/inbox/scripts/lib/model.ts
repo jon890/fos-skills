@@ -18,6 +18,8 @@ export type InboxItem = {
   url: string
   // 저장소 필터와 맞출 값. 두레이 업무는 프로젝트 id 와 코드, 메신저는 대화방 id 와 이름이다
   scope: string[]
+  // 화면에 보일 이름. 이전 캐시는 scope 의 코드나 제목을 쓴다
+  scopeName?: string
   from: Person
   // ISO 8601
   at: string

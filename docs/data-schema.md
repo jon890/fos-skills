@@ -85,7 +85,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `routing` | `review_pattern` | JS 정규식 문자열(`m`). P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
 | `routing` | `size_pattern` | JS 정규식 문자열(`m`). 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
 | `routing` | `usage_boost` | 값이 남아 있으면 시작할 때 삭제를 안내한다 | 없음 | [모델 사용 한도 회피](features/exhausted-model-avoid/spec.md)가 시작 전에 고른 모델의 한도를 확인한다. 옛 설정은 제거할 때까지 읽을 수 있다 |
-| `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 이름이 자유로운 객체. 값은 문자열이나 유한한 수의 목록(빈 목록 허용) | 절이 없으면 필터 없이 모두 보인다 | inbox 스킬의 저장소별 알림 필터. `enabled: false` 면 그 저장소의 보드가 알림을 보지 않는다. 옛 자리 `config/notification.json` 은 inbox 스킬이 한 major 동안 함께 읽고, `inbox` 절이 있으면 무시한다 |
+| `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 이름이 자유로운 객체. 값은 문자열이나 유한한 수의 목록(빈 목록 허용) | 절이 없으면 필터 없이 모두 보인다 | [저장소별 알림 필터](../skills/inbox/references/config.md#저장소-필터). `dooray.excludeProjects` 와 `dooray.excludeChannels` 는 이 보드에서 숨길 범위다. `enabled: false` 면 이 보드의 알림을 끈다. 옛 자리 `config/notification.json` 은 `inbox` 절이 없을 때 한 major 동안 읽는다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 양수이며 타이머 상한 이하의 초로 가는 객체. 모르는 이벤트 이름은 받지 않는다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | 양수, 타이머 상한 이하 | 300 | 틱 간격 |
