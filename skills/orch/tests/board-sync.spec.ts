@@ -271,6 +271,32 @@ test('여러 저장소가 같은 브랜치 이름으로 연 PR 은 그 저장소
   assert.equal(String(load().a.pr), '48')
 })
 
+test('다른 저장소 줄의 PR 이 pr 칸에 남아 있으면 이 저장소 PR 이 머지돼도 항목을 닫지 않고 그 PR 번호를 남긴다', () => {
+  const mine = repoWith(join(tmp, 'mine'), ['d-mine'])
+  const done = { status: 'done', endedAt: '2026-01-01T01:00:00Z' }
+  const item = (extra = {}) => ({ id: 'a', status: 'doing', pr: '7, 9', details: [step('1. PR', false), step('2. 머지', false)], workers: [
+    worker('impl', 'mine', 'd-mine', { pr: 7, ...done }), worker('impl', 'theirs', 'd-theirs', { pr: 9, ...done }),
+  ], ...extra })
+  const tick = (items: Json[], extra: Json = {}) => {
+    // 이 저장소의 #9 는 없는 PR 이라 조회하면 실패한다
+    writeFileSync(join(mine.repo, 'state.json'), JSON.stringify({ '7': 'MERGED', ...extra }))
+    writeFileSync(board, JSON.stringify({ items }))
+    const r = run(['--board', board, '--repo', mine.repo, '--open-prs', '[]'], { env: mine.env })
+    assert.equal(r.code, 0, r.stderr)
+    return load().a
+  }
+  for (const stages of [{ stages: 'pr=1,merge=2' }, {}]) {
+    const got = tick([item(stages)])
+    assert.equal(got.status, 'doing', JSON.stringify(stages))
+    assert.equal(String(got.pr), '9', JSON.stringify(stages))
+    assert.ok(prNumbersOf(got['merged-pr']).includes('7'), JSON.stringify(stages))
+  }
+  // 그 저장소가 #9 의 머지를 반영해 pr 칸에서 빠졌으면 막지 않는다
+  assert.equal(tick([item({ pr: '', 'merged-pr': '7, 9', details: [step('1. PR', true), step('2. 머지', true)] })]).status, 'done')
+})
+
+const prNumbersOf = (field: unknown): string[] => [...String(field ?? '').matchAll(/\d+/g)].map((m) => m[0])
+
 test('다른 저장소의 구현 줄만 있는 항목은 대표 브랜치로도 이 저장소 PR 을 잇지 않는다', () => {
   const mine = repoWith(join(tmp, 'mine'), ['d-mine'])
   writeFileSync(join(mine.repo, 'state.json'), JSON.stringify({ '9': 'OPEN' }))

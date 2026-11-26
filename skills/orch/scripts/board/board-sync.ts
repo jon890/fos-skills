@@ -73,6 +73,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // 후속 단계가 남아 비운 머지 PR 은 merged-pr 에 기록해 다시 연결하지 않는다.
 // 여러 저장소가 한 항목에 worker 줄을 두면 연결 키는 (줄의 저장소, PR 번호)다. 이 저장소의 PR 은 이 저장소가 띄운 줄(lib/board.ts 의 boardOwnership)에만
 // 잇고, 다른 저장소의 구현·후속 줄만 있으면 대표 브랜치로도 잇지 않는다. 다른 저장소 줄의 PR 번호는 이 저장소에서 조회하지 않고, pr 칸을 다시 쓸 때 남긴다.
+// 그 PR 이 pr 칸에 남아 있는 동안(그 저장소가 머지를 반영해 merged-pr 로 옮기기 전)은 이 저장소 PR 이 머지돼도 항목을 done 으로 바꾸지 않는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
 // 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
@@ -471,6 +472,8 @@ function main(argv: string[]): number {
       const localPrs = new Set(localRows.flatMap((row) => [...prNumbers(row.pr)]))
       foreignPrs = new Set(rows.filter(foreignRow).flatMap((row) => [...prNumbers(row.pr)]).filter((one) => !localPrs.has(one)))
       const ownPrs = (): string[] => [...prNumbers(item.pr)].filter((one) => !foreignPrs.has(one))
+      // 다른 저장소 줄의 PR 이 pr 칸에 남아 있으면(그 저장소가 아직 머지를 반영하지 않았으면) 조회하지 않고 항목 완료를 막는 PR 로 본다
+      const foreignPending = [...prNumbers(item.pr)].filter((one) => foreignPrs.has(one) && !prNumbers(item['merged-pr']).has(one))
       // PR 잇기. 열린 PR 목록에서 그 브랜치의 PR 을 찾고, 없으면 그 브랜치의 가장 최근 머지 PR 을 찾는다.
       // 그 브랜치의 가장 최근 머지가 merged-pr 에 들었으면 이미 반영한 머지라 다시 연결하지 않는다. 더 옛 머지도 보지 않는다.
       // 찾으면 항목 pr 칸 목록에 더하고, row 가 있으면 그 줄의 pr 도 적는다. 이번 틱의 뒤 판정이 쓰도록 항목 값도 바꾼다
@@ -562,14 +565,14 @@ function main(argv: string[]): number {
         } else if (settings !== null && reflectedNow.has(num)) {
           // 이미 반영한 마지막 PR 이다. 배포만 기다린다
           if (deployPending() && deploymentFor(num, deploy as { workflow: string; branch: string }) === 'success') {
-            const got = advanceCommands(id, steps, own, 'deploy', { last: true, doneAfter, kinds })
+            const got = advanceCommands(id, steps, own, 'deploy', { last: foreignPending.length === 0, doneAfter, kinds })
             after.push(...got.cmds)
             finish = got.done
           }
         } else if (settings !== null) {
           // 같은 칸에 다른 열린(또는 머지됐지만 아직 반영하지 않은) PR 이 남았으면 마지막 PR 이 아니다. 판정 함수와 배포를 보지 않고 자기 묶음만 끝낸다.
           // 한 틱에 머지 하나만 반영한다. 반영 명령이 이 틱의 줄 지문을 쓰므로 둘을 한 번에 쓰면 뒤 명령이 거절된다
-          const remaining = numbers.filter((one) => one !== num && !reflectedNow.has(one) && ['OPEN', 'MERGED'].includes(states.get(one) ?? ''))
+          const remaining = [...numbers.filter((one) => one !== num && !reflectedNow.has(one) && ['OPEN', 'MERGED'].includes(states.get(one) ?? '')), ...foreignPending]
           if (remaining.length > 0) {
             const got = mergedCommands({ ...item, details }, steps, own, num, 'merge', { last: false, doneAfter, note: null, remaining, kinds })
             after.push(...got.cmds)
@@ -626,7 +629,7 @@ function main(argv: string[]): number {
         if (!verdict?.retry) {
           const last = verdict?.last !== false
           const matched = prSteps(steps, num)
-          finish = last && steps.every((step) => step.done || matched.includes(step.number))
+          finish = last && foreignPending.length === 0 && steps.every((step) => step.done || matched.includes(step.number))
           const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
           details = withNote(details, note)
           after.push(...matched.map((n) => ['step', id, String(n)]))
@@ -637,7 +640,7 @@ function main(argv: string[]): number {
           }
           reflected = { pr: num, steps }
         }
-      } else if (item.status === 'doing' && !stages && state !== 'OPEN' && (!num || state === 'CLOSED')) {
+      } else if (item.status === 'doing' && !stages && state !== 'OPEN' && (!num || state === 'CLOSED') && foreignPending.length === 0) {
         // 머리 주석의 「단계를 모두 끝낸 doing 항목」
         const worktree = typeof item.worktree === 'string' ? item.worktree : ''
         const working = (worktree !== '' && !gone(worktree)) || (branch !== '' && liveBranches.has(branch))
