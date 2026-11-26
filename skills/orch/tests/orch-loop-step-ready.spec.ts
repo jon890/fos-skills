@@ -1,7 +1,7 @@
 // 실제 틱과 보드 도구를 돌린다. 외부 CLI 와 시간만 격리한다.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
@@ -37,9 +37,9 @@ else reply({messages:[]});`)
   const fake = (value: Json) => writeFileSync(state, JSON.stringify(value))
   fake({})
   let tickNumber = 0
-  const tick = (now = NOW, expected = 0) => {
-    const done = spawnSync(process.execPath, [script, '--repo', repo, '--run', 'R', '--tick', '--tick-number', String(++tickNumber)], {
-      cwd: repo, encoding: 'utf8', env: { ...process.env, ORCH_DIR: join(repo, '.orch'), ORCH_MACHINE_DIR: join(root, 'machine'),
+  const tick = (now = NOW, expected = 0, target = repo) => {
+    const done = spawnSync(process.execPath, [script, '--repo', target, '--run', 'R', '--tick', '--tick-number', String(++tickNumber)], {
+      cwd: target, encoding: 'utf8', env: { ...process.env, ORCH_DIR: join(target, '.orch'), ORCH_MACHINE_DIR: join(root, 'machine'),
         ORCH_SCRIPTS_DIR: fileURLToPath(new URL('../scripts', import.meta.url)), ORCA: join(bin, 'orca'), GH: join(bin, 'gh'),
         ORCH_GH_CACHE: '0', BOARD_BIN: '', BOARD_SYNC: '', CLEANUP_SWEEP: join(bin, 'sweep.ts'), ORCH_OUTPUT: '',
         NODE_OPTIONS: `--import=${pathToFileURL(clock).href}`, TEST_NOW: String(now) }, timeout: 30_000,
@@ -49,11 +49,12 @@ else reply({messages:[]});`)
     const line = done.stdout.split('\n').find(line => line.startsWith('{"tick_at":'))
     assert.ok(line, done.stdout)
     const result = JSON.parse(line)
-    writeFileSync(join(repo, '.orch/state/loop.json'), JSON.stringify(result))
+    writeFileSync(join(target, '.orch/state/loop.json'), JSON.stringify(result))
     return { ...done, result }
   }
   const sent = () => existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]).filter(args => args[1] === 'send' && args[args.indexOf('--subject') + 1].startsWith('STEP-READY')) : []
-  const records = () => JSON.parse(readFileSync(join(repo, '.orch/state/step-ready.json'), 'utf8')).notices
+  // 알림 기록은 머신 폴더에 보드마다 하나다
+  const records = () => JSON.parse(readFileSync(join(root, 'machine/step-ready.json'), 'utf8')).boards[realpathSync(join(repo, '.omc/board.json'))].notices
   const item = (text = '2. [auto] 다음', extra: Json = {}) => ({ id: 'a', status: 'doing', details: [{ text: '1. 앞 단계', done: true }, { text, done: false }], ...extra })
   const launch = (text = '2. [auto] 다음', extra: Json = {}) => writeFileSync(join(repo, '.orch/state/step-launches.jsonl'), JSON.stringify({ item: 'a', step: text, dispatch: 'd', branch: 'feat/a', ...extra }) + '\n')
   return { root, repo, calls, config: configure, put, fake, tick, sent, records, item, launch }
@@ -80,6 +81,23 @@ test('idle_min=0 에서 알림을 바로 보내고 재시작·꼬리표 변경·
   assert.equal(c.sent().length, 2)
   c.put([c.item(undefined, { status: 'done' })]); c.tick()
   assert.deepEqual(c.records(), {})
+})
+
+test('여러 저장소의 루프가 같은 보드를 보면 같은 단계는 한 번만 알리고, 보드의 기록이 없으면 저장소의 옛 기록을 이어받는다', t => {
+  const c = setup(t)
+  const other = join(c.root, 'other')
+  loopRepo(other)
+  mkdirSync(join(other, '.orch/state'), { recursive: true })
+  writeFileSync(join(other, '.orch/config.json'), JSON.stringify({ pipeline: { idle_min: 0, idle_exited: false, authors: ['me'] }, finish: { board: join(c.repo, '.omc/board.json') } }))
+  // 옛 기록: 이 저장소는 이미 알렸다. 보드 기록으로 이어받아 다시 알리지 않는다
+  writeFileSync(join(c.repo, '.orch/state/step-ready.json'), JSON.stringify({ notices: { a: { step: '2. [ask] 결정', mark: 'ask', at: NOW - MIN, again: null } } }))
+  c.put([c.item('2. [ask] 결정'), c.item('2. [ask] 결정', { id: 'b' })])
+  c.tick()
+  c.tick(NOW, 0, other)
+  c.tick(NOW + MIN)
+  c.tick(NOW + MIN, 0, other)
+  assert.deepEqual(c.sent().map((args) => args[args.indexOf('--subject') + 1]), ['STEP-READY b ask 2. [ask] 결정'])
+  assert.deepEqual(Object.keys(c.records()).sort(), ['a', 'b'])
 })
 
 test('auto 는 worker·PR·조회 실패 때 보류하고 ask 는 바로 알린다', t => {

@@ -236,6 +236,76 @@ test('이 저장소가 띄운 worker 의 워크트리가 사라졌으면 띄우�
   assert.deepEqual((load().a.workers as Json[]).map((row) => row.status), ['lost', 'working'])
 })
 
+test('여러 저장소가 같은 브랜치 이름으로 연 PR 은 그 저장소가 띄운 줄에만 잇고, 다른 저장소 줄의 PR 번호는 지우거나 조회하지 않는다', () => {
+  // 2026-11-23 OCR: 세 저장소의 worker 가 같은 브랜치로 PR 을 열었고 한 저장소의 PR 이 다른 저장소 줄에 붙었다
+  const admin = repoWith(join(tmp, 'admin'), ['d-admin'])
+  const metering = repoWith(join(tmp, 'metering'), ['d-metering'])
+  // 두 저장소 모두 워크트리의 실제 브랜치가 tc/548 이다
+  for (const [who, name] of [[admin, 'wt-admin'], [metering, 'wt-metering']] as const) {
+    const r = spawnSync('git', ['-C', who.repo, 'worktree', 'add', '-q', '-b', 'tc/548', join(who.repo, 'wt', name)], { encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+  }
+  const branch = { branch: 'tc/548' }
+  writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', details: ['1. 구현', '2. 머지'], workers: [
+    worker('impl', 'wt-admin', 'd-admin', { ...branch, at: '2026-01-01T00:00:00Z' }),
+    worker('impl', 'wt-metering', 'd-metering', { ...branch, at: '2026-01-01T00:05:00Z' }),
+  ] }] }))
+  const tick = (who: { repo: string; env: Record<string, string> }, open: unknown[], state: Record<string, unknown>) => {
+    // 가짜 gh 는 --repo 폴더의 state.json 을 읽는다. 저장소마다 PR 번호가 따로다
+    writeFileSync(join(who.repo, 'state.json'), JSON.stringify(state))
+    const r = run(['--board', board, '--repo', who.repo, '--open-prs', JSON.stringify(open)], { env: who.env })
+    assert.equal(r.code, 0, r.stderr)
+  }
+  const rows = () => Object.fromEntries((load().a.workers as Json[]).map((row) => [row.worktree, row.pr]))
+  // Admin 의 루프: 가장 최근 줄은 Metering 의 것이지만 Admin 줄에 잇는다
+  tick(admin, [{ number: 48, headRefName: 'tc/548' }], { '48': 'OPEN' })
+  assert.deepEqual(rows(), { 'wt-admin': 48, 'wt-metering': null })
+  // Metering 의 루프: Admin 의 #48 이 pr 칸에 있어도 자기 줄에 자기 PR 을 잇는다. Metering 저장소의 #48 은 없는 PR 이라 조회하면 실패한다
+  tick(metering, [{ number: 12, headRefName: 'tc/548' }], { '12': 'OPEN' })
+  assert.deepEqual(rows(), { 'wt-admin': 48, 'wt-metering': 12 })
+  assert.deepEqual([...String(load().a.pr).matchAll(/\d+/g)].map((m) => m[0]).sort(), ['12', '48'])
+  // Metering 의 PR 이 머지돼 그 단계를 끝내고 pr 칸을 비워도 Admin 의 #48 은 남는다
+  writeFileSync(board, JSON.stringify({ items: [{ ...load().a, details: ['1. 구현 #12', '2. 머지'] }] }))
+  tick(metering, [], { '12': 'MERGED' })
+  assert.equal(load().a.status, 'doing')
+  assert.equal(String(load().a.pr), '48')
+})
+
+test('다른 저장소 줄의 PR 이 pr 칸에 남아 있으면 이 저장소 PR 이 머지돼도 항목을 닫지 않고 그 PR 번호를 남긴다', () => {
+  const mine = repoWith(join(tmp, 'mine'), ['d-mine'])
+  const done = { status: 'done', endedAt: '2026-01-01T01:00:00Z' }
+  const item = (extra = {}) => ({ id: 'a', status: 'doing', pr: '7, 9', details: [step('1. PR', false), step('2. 머지', false)], workers: [
+    worker('impl', 'mine', 'd-mine', { pr: 7, ...done }), worker('impl', 'theirs', 'd-theirs', { pr: 9, ...done }),
+  ], ...extra })
+  const tick = (items: Json[], extra: Json = {}) => {
+    // 이 저장소의 #9 는 없는 PR 이라 조회하면 실패한다
+    writeFileSync(join(mine.repo, 'state.json'), JSON.stringify({ '7': 'MERGED', ...extra }))
+    writeFileSync(board, JSON.stringify({ items }))
+    const r = run(['--board', board, '--repo', mine.repo, '--open-prs', '[]'], { env: mine.env })
+    assert.equal(r.code, 0, r.stderr)
+    return load().a
+  }
+  for (const stages of [{ stages: 'pr=1,merge=2' }, {}]) {
+    const got = tick([item(stages)])
+    assert.equal(got.status, 'doing', JSON.stringify(stages))
+    assert.equal(String(got.pr), '9', JSON.stringify(stages))
+    assert.ok(prNumbersOf(got['merged-pr']).includes('7'), JSON.stringify(stages))
+  }
+  // 그 저장소가 #9 의 머지를 반영해 pr 칸에서 빠졌으면 막지 않는다
+  assert.equal(tick([item({ pr: '', 'merged-pr': '7, 9', details: [step('1. PR', true), step('2. 머지', true)] })]).status, 'done')
+})
+
+const prNumbersOf = (field: unknown): string[] => [...String(field ?? '').matchAll(/\d+/g)].map((m) => m[0])
+
+test('다른 저장소의 구현 줄만 있는 항목은 대표 브랜치로도 이 저장소 PR 을 잇지 않는다', () => {
+  const mine = repoWith(join(tmp, 'mine'), ['d-mine'])
+  writeFileSync(join(mine.repo, 'state.json'), JSON.stringify({ '9': 'OPEN' }))
+  writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', branch: 'tc/548', details: ['1. 구현'], workers: [worker('impl', 'theirs', 'd-theirs', { branch: 'tc/548' })] }] }))
+  const r = run(['--board', board, '--repo', mine.repo, '--open-prs', JSON.stringify([{ number: 9, headRefName: 'tc/548' }])], { env: mine.env })
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(load().a.pr, undefined)
+})
+
 test('--worker-revivals 는 dispatch 와 working|done 객체만 받는다', () => {
   writeFileSync(board, JSON.stringify({ items: [] }))
   for (const value of ['[]', 'null', '{"d":"lost"}', '{broken']) assert.equal(run(['--board', board, '--repo', tmp, '--worker-revivals', value]).code, 2)
