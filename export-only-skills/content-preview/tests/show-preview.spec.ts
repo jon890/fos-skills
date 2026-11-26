@@ -335,6 +335,27 @@ describe('show-preview 백엔드 설정', () => {
     })
   }
 
+  test('previewDriver 가 system 이면 드라이버로 열지 않고 기본 브라우저로 연다', (t) => {
+    const { s, config, calls, exec } = configured(t, '/nowhere')
+    const file = config('mine.json', '{"previewDriver": "system"}')
+    // 이전 실행이 남긴 탭 id 가 있어도 다시 쓰지 않는다
+    write(`${s.html}.tabid`, 'P1\n')
+    const done = exec({ BROWSER_CONFIG: file })
+    assert.equal(done.code, 0)
+    assert.equal(done.stdout, `새로 열었다: ${s.html}\n`)
+    assert.equal(done.stderr, '')
+    assert.deepEqual(calls(), [])
+    assert.deepEqual(lines(s.log).map((line) => line.split(' ')[0]), ['uname', 'osascript', 'osascript', 'osascript', 'osascript', 'open'])
+  })
+
+  test('PREVIEW_BROWSER_DRIVER=system 이면 설정 파일 경로도 묻지 않고 기본 브라우저의 기존 탭을 갱신한다', (t) => {
+    const { s, calls, exec } = configured(t, '/nowhere')
+    const done = exec({ PREVIEW_BROWSER_DRIVER: 'system', CHROME: 'reloaded' })
+    assert.equal(done.code, 0)
+    assert.equal(done.stdout, '갱신: Google Chrome 의 기존 탭\n')
+    assert.deepEqual(calls(), [])
+  })
+
   test('정해진 값이 없으면 셸의 BROWSER_DRIVER 를 그대로 물려준다', (t) => {
     const { s, calls, exec } = configured(t, null)
     exec({ BROWSER_DRIVER: 'zzz' })
