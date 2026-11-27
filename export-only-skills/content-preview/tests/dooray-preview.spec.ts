@@ -237,11 +237,11 @@ describe('dooray-preview task, comment', () => {
     project: { code: 'example' }, number: 18, subject: '[Example] 제목', workflowClass: 'working',
   })
 
-  function preview(mode: string, input: string, state: 'ok' | 'missing' | 'failed' = 'ok', strict = false) {
+  function preview(mode: string, input: string, state: 'ok' | 'missing' | 'failed' | Record<string, unknown> = 'ok', strict = false) {
     const dir = tempDir('content-preview-task-link-')
     const log = join(dir, 'dooray.log')
     if (state !== 'missing') linkFake(join(dir, 'dooray'), 'dooray')
-    const env = { ...process.env, PATH: dir, FAKE_LOG: log, FAKE_DOORAY_JSON: lookupJson, FAKE_DOORAY_RC: state === 'failed' ? '1' : '0' }
+    const env = { ...process.env, PATH: dir, FAKE_LOG: log, FAKE_DOORAY_JSON: typeof state === 'string' ? lookupJson : JSON.stringify(state), FAKE_DOORAY_RC: state === 'failed' ? '1' : '0' }
     const args = ['--mode', mode, '--title', 't', '--md-file', '-']
     if (strict) args.push('--strict')
     const done = generate(COMMAND, args, { dir, input, env, stale: 'STALE' })
@@ -354,6 +354,22 @@ describe('dooray-preview task, comment', () => {
     assert.equal((done.stderr.match(/실제 업무 example\/18 가 다릅니다/g) ?? []).length, 2)
     assert.ok(done.stderr.includes('[example/18 &#91;Example&#93; 제목](dooray://example/tasks/post-example "working")'))
     assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('CLI가 프로젝트와 업무 번호를 한 필드로 보내도 대조한다', () => {
+    const compact = { taskNumber: 'example/18', subject: '[예제] 제목', workflowClass: 'working' }
+    const link = (ref: string) => `[${ref} 제목](dooray://example/tasks/post-example "working")`
+    const good = preview('comment', link('example/18'), compact)
+    assert.equal(good.code, 0)
+    assert.equal(good.stderr, '')
+    assert.deepEqual(good.calls, ['--json post get --id post-example'])
+
+    const mismatch = preview('task', [link('example/20'), link('other-example/18')].join('\n'), compact)
+    assert.equal(mismatch.code, 1)
+    assert.match(mismatch.stderr, /실제 업무 example\/18 가 다릅니다/u)
+    assert.ok(mismatch.stderr.includes('[example/18 &#91;예제&#93; 제목]'))
+    assert.doesNotMatch(mismatch.stderr, /조회하지 못해/u)
+    assert.deepEqual(mismatch.calls, ['--json post get --id post-example'])
   })
 
   test('표시 글, 주소, 상태값이 한 블록 안에서 줄을 넘어도 업무 링크를 검사한다', () => {

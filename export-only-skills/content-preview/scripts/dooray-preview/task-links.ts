@@ -20,7 +20,8 @@ const MARKDOWN_ADDRESS = new RegExp(String.raw`\\([\x21-\x2f\x3a-\x40\x5b-\x60\x
 const HTML_ADDRESS = new RegExp(CHARACTER_REFERENCE, 'gu')
 const namedCharacters: Readonly<Record<string, string>> = namedReferences
 
-type Post = { project: { code: string }; number: string | number; subject?: string; workflowClass?: string }
+type Post = { ref: string; subject?: string; workflowClass?: string }
+type CliPost = { project?: { code?: unknown }; number?: unknown; taskNumber?: unknown; subject?: unknown; workflowClass?: unknown }
 type Lookup = Post | 'missing-cli' | 'unavailable'
 
 function lookupPost(id: string): Lookup {
@@ -32,8 +33,20 @@ function lookupPost(id: string): Lookup {
   if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') return 'missing-cli'
   if (result.status !== 0) return 'unavailable'
   try {
-    const post = JSON.parse(result.stdout) as Post | null
-    if (typeof post?.project?.code === 'string' && post.project.code && /^\d+$/.test(String(post.number))) return post
+    const post = JSON.parse(result.stdout) as CliPost | null
+    const code = post?.project?.code
+    const number = post?.number
+    const fromFields = typeof code === 'string' && (typeof number === 'string' || typeof number === 'number')
+      ? `${code}/${number}`
+      : undefined
+    for (const ref of [fromFields, post?.taskNumber]) {
+      if (typeof ref !== 'string' || POST_REF.exec(ref)?.[0] !== ref) continue
+      return {
+        ref,
+        subject: typeof post?.subject === 'string' ? post.subject : undefined,
+        workflowClass: typeof post?.workflowClass === 'string' ? post.workflowClass : undefined,
+      }
+    }
   } catch {
     // 설치된 CLI 가 JSON 응답을 내지 못하면 형식 검사만 진행한다.
   }
@@ -165,7 +178,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
       }
     }
 
-    const ref = typeof post === 'string' ? undefined : `${post.project.code}/${post.number}`
+    const ref = typeof post === 'string' ? undefined : post.ref
     const shown = POST_REF.exec(decodeMarkdown(label))
     const mismatch = shownLabel !== undefined && ref !== undefined && (!shown || `${shown[1]}/${shown[2]}` !== ref)
     const actualLabel = ref && typeof post !== 'string'
