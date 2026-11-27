@@ -1,5 +1,5 @@
 // 보드 상태와 단계 명령. 검사와 저장은 board.ts 에 맡기고 결과 JSON 을 짧게 보인다.
-// 사용법: orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
+// 사용법: orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] [--priority N|none] | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
 //         orch board add-step <항목> "<글>" | show <항목>
 //         orch board clear-done <항목> | clear-done --all (끝난 단계를 지우고 남은 단계를 1번부터 다시 매긴다. 번호를 쓰는 기록은 아래 clearDone 이 맞춘다)
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
@@ -22,7 +22,7 @@ import { appendStepLaunch, stepLaunches } from '../lib/step-launches.ts'
 import { hideEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 
 const USAGE = `사용법:
-  orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>]
+  orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] [--priority N|none]
   orch board step <항목> <번호> done|undo
   orch board step <항목> <번호> text "<글>" [--on "<PR> <pr|merge|deploy|release>"]
   orch board step <항목> <번호> auto|ask|plain
@@ -39,7 +39,7 @@ const USAGE = `사용법:
   공통: [--repo <폴더>] [--board <파일>] [--full]
   - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
 const OPTIONS = { ...MAIN_GUARD_OPTIONS,
-  task: { type: 'string' }, 'task-ref': { type: 'string' },
+  task: { type: 'string' }, 'task-ref': { type: 'string' }, priority: { type: 'string' },
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
   json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' }, all: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -48,13 +48,18 @@ const OPTIONS = { ...MAIN_GUARD_OPTIONS,
 type View = {
   id: string; status: string | null; was: string | null; number?: number
   progress: [number, number] | null
+  priority?: number
   lines: { number: number | null; done: boolean; text: string }[]
+}
+
+function priorityText(priority: number | undefined): string {
+  return priority === undefined ? '' : ` 우선순위 ${priority}`
 }
 
 function main(argv: string[]): number {
   let parsed
   try {
-    parsed = parseArgs({ args: expandArgs(argv, OPTIONS), options: OPTIONS, allowPositionals: true })
+    parsed = parseArgs({ args: expandArgs(argv, OPTIONS, ['priority']), options: OPTIONS, allowPositionals: true })
   } catch (e) {
     process.stderr.write(`${USAGE}\n${(e as Error).message}\n`)
     return 2
@@ -65,7 +70,8 @@ function main(argv: string[]): number {
   let command: string[]
   let trailing: string[] = []
   const usage = () => { process.stderr.write(`${USAGE}\n`); return 2 }
-  if ((values.task !== undefined || values['task-ref'] !== undefined) && verb !== 'set') return usage()
+  const hasFieldEdit = [values.task, values['task-ref'], values.priority].some((value) => value !== undefined)
+  if (hasFieldEdit && verb !== 'set') return usage()
   if ((values.done || values.force) && verb !== 'del') return usage()
   if (values.all && verb !== 'clear-done') return usage()
   if (verb === 'clear-done' && (values.json || values.status !== undefined || values.on !== undefined)) return usage()
@@ -75,9 +81,10 @@ function main(argv: string[]): number {
   else if (verb === 'del' && args.length === 1 && values.done && !values.force) command = ['del-done', '--all']
   else if (verb === 'get' && GET_FIELDS.includes(third as typeof GET_FIELDS[number]) && ((third === 'step' && args.length === 4 && /^\d+$/.test(action)) || (third !== 'step' && args.length === 3))) command = ['get', id, third, ...(third === 'step' ? [action] : [])]
   else if (verb === 'list' && args.length === 1) { command = ['items']; if (values.status !== undefined) trailing = ['--', values.status] }
-  else if (verb === 'set' && [2, 3].includes(args.length) && values.on === undefined && (third !== undefined || values.task !== undefined || values['task-ref'] !== undefined)) {
+  else if (verb === 'set' && [2, 3].includes(args.length) && values.on === undefined && (third !== undefined || hasFieldEdit)) {
     command = ['set', id, ...(third === undefined ? [] : [third]), '--exact']
     if (values.task !== undefined) command.push('--task', values.task)
+    if (values.priority !== undefined) command.push('--priority', values.priority)
     if (values['task-ref'] !== undefined) {
       try { command.push('--task-ref', values['task-ref'] ? normalizeRef(taskAdapter(values.repo ?? process.cwd()), values['task-ref']) : '') }
       catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 2 }
@@ -137,7 +144,7 @@ function main(argv: string[]): number {
     const records = fullAsked() ? unmatchedRecords(values.repo ?? process.cwd()) : {}
     for (const row of rows) {
       const title = itemTitle(row)
-      console.log(`BOARD ${row.id} ${typeof row.status === 'string' ? row.status : null} ${row.progress ? row.progress.join('/') : '진행률 없음'}${title === null ? '' : ` ${title}`}`)
+      console.log(`BOARD ${row.id} ${typeof row.status === 'string' ? row.status : null} ${row.progress ? row.progress.join('/') : '진행률 없음'}${title === null ? '' : ` ${title}`}${priorityText(row.priority)}`)
       if (fullAsked()) for (const line of [...pending(row, records).map((pr) => unmatchedLine(String(row.id), pr)), ...row.lines.map((line) => `${line.done ? '✓ ' : ''}${line.text}`)]) console.log(line)
     }
     return 0
@@ -150,7 +157,7 @@ function main(argv: string[]): number {
     return 0
   }
   let heading: string
-  if (verb === 'show') heading = `BOARD ${view.id} ${view.status} ${view.progress ? view.progress.join('/') : '진행률 없음'}`
+  if (verb === 'show') heading = `BOARD ${view.id} ${view.status} ${view.progress ? view.progress.join('/') : '진행률 없음'}${priorityText(view.priority)}`
   else if (verb === 'set') heading = `BOARD-SET ${view.id} ${view.status}`
   else if (verb === 'add-step') heading = `BOARD-STEP-ADD ${view.id} ${view.number}`
   else heading = `BOARD-STEP ${view.id} ${view.number} ${action}${view.was !== view.status ? ` status=${view.status}` : ''}`

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 
 export const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 export const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'task', 'task-ref', 'progress', 'stages'] as const
-export const GET_FIELDS = ['status', ...FIELDS, 'step'] as const
+export const GET_FIELDS = ['status', ...FIELDS, 'priority', 'step'] as const
 
 const DONE_MARKS = ['✓', '[x]', '[X]']
 export type Line = { text: string; done: boolean }

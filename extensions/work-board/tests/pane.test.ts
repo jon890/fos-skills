@@ -92,6 +92,33 @@ const lines = async (ui, id) => ((await ui.find({ type: 'Box', key: 'item-' + id
 // 그린 트리의 한 요소가 보이는 글. find 는 Text 의 key 를 남기지 않아 단계 줄은 그 줄의 Box 로 찾는다
 type Drawn = { type: string; props: Record<string, unknown>; children: (Drawn | string)[] }
 const textOf = (node: Drawn | string): string => typeof node === 'string' ? node : node.children.map(textOf).join('')
+
+test('다시 읽은 보드의 우선순위로 같은 상태의 항목 순서를 바꾼다', async ($, on) => {
+  const items = [
+    { id: 'a', status: 'doing', priority: undefined },
+    { id: 'b', status: 'doing', priority: 3 },
+    { id: 'c', status: 'doing', priority: 1 },
+    { id: 'd', status: 'doing' },
+    { id: 'e', status: 'wait', priority: 1 },
+  ]
+  await start($, on, undefined, () => JSON.stringify({ items }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ids = async (status: string) => ((await ui.find({ type: 'Box', key: 'section-' + status })).children as Drawn[])
+    .filter((child) => child.type === 'Box' && String(child.props.key).startsWith('item-'))
+    .map((child) => child.props.key)
+
+  expect(await ids('doing')).toEqual(['item-c', 'item-b', 'item-a', 'item-d'])
+  expect(await ids('wait')).toEqual(['item-e'])
+  items[0].priority = 1
+  delete items[2].priority
+  await $.command.run({ command: 'board' })
+  expect(await ids('doing')).toEqual(['item-a', 'item-b', 'item-c', 'item-d'])
+  items[1].priority = 1
+  await $.command.run({ command: 'board' })
+  expect(await ids('doing')).toEqual(['item-a', 'item-b', 'item-c', 'item-d'])
+  await ui.unmount()
+})
+
 // 단계 줄 Box 를 표시 칸, 본문의 첫 Text 로 나눈다
 const stepParts = (row) => {
   const [mark, body] = row.children as Drawn[]

@@ -2,7 +2,33 @@ import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { GET_FIELDS } from '../../../modules/work-board/item.ts'
-import { run, tempBoard, write } from './board-run.ts'
+import { item, run, tempBoard, write } from './board-run.ts'
+
+test('set 은 우선순위를 숫자로 저장하고 잘못된 값을 거절한다', (t) => {
+  const board = tempBoard()
+  t.after(board.cleanup)
+  write(board.file, { id: 'a', title: '기존 항목', status: 'wait', stepAt: '2026-11-27T09:00:00+09:00' })
+  const cmd = (...args: string[]) => run(board.file, args)
+  const set = (priority: string) => cmd('set', 'a', '--priority', priority)
+  assert.equal(set('2').code, 0)
+  assert.deepEqual(item(board.file, 'a'), {
+    id: 'a', title: '기존 항목', status: 'wait', stepAt: '2026-11-27T09:00:00+09:00', priority: 2,
+  })
+  assert.match(cmd('list').stdout, /우선순위 2/)
+  assert.equal(JSON.parse(cmd('view', 'a').stdout).priority, 2)
+  assert.equal(JSON.parse(cmd('get', 'a', 'priority').stdout).value, '2')
+  const before = readFileSync(board.file, 'utf8')
+  for (const value of ['', '0', '-1', '2.1', '1e2', '0x10', ' 2', 'text', '9007199254740992']) {
+    const refused = set(value)
+    assert.equal(refused.code, 1, refused.stderr)
+    assert.match(refused.stderr, /--priority.*정수/)
+    assert.equal(readFileSync(board.file, 'utf8'), before)
+  }
+  assert.equal(cmd('list', '--priority', '1').code, 2)
+  assert.equal(set('none').code, 0)
+  assert.ok(!('priority' in item(board.file, 'a')))
+  assert.doesNotMatch(cmd('list').stdout, /우선순위/)
+})
 
 test('옛 goal 은 doing 으로 읽되 조회는 파일을 보존하고 새 goal 쓰기는 거절한다', () => {
   const t = tempBoard()
