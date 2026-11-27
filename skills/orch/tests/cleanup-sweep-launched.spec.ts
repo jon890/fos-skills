@@ -420,6 +420,9 @@ describe('상태 파일 보존 기한', () => {
       ['state/finish-started/41', file('state/finish-started/41', '2026-10-01T10:00:00Z\n')],
       ['state/auto-merge/20261001T100000Z.log', file('state/auto-merge/20261001T100000Z.log', 'MERGED 41\nQUEUE-DONE\n')],
       ['state/launched-workers/ctx_done.json', launch('ctx_done', 'finished')],
+      // Orca 가 잊은 dispatch 와 브랜치 칸이 없는 옛 기록도 워크트리가 없고 기한이 지났으면 옮긴다
+      ['state/launched-workers/ctx_unknown.json', launch('ctx_unknown', 'missing')],
+      ['state/launched-workers/ctx_legacy.json', file('state/launched-workers/ctx_legacy.json', JSON.stringify({ dispatch: 'ctx_legacy', worktree: fx.wts }))],
       ['state/gh/logs/2026-10-01.jsonl', file('state/gh/logs/2026-10-01.jsonl', '{}\n', 2)],
     ]
     const retained = worktree('retained-worker', { commits: 0, push: false })
@@ -431,9 +434,10 @@ describe('상태 파일 보존 기한', () => {
       file('state/finish-started/42', '2026-10-01T10:00:00Z\n'),
       file('state/finish-started/41.tmp', 'x'),
       launch('ctx_busy', 'busy'),
-      launch('ctx_unknown', 'missing'),
+      launch('ctx_busy_legacy', '', 4),
       launch('ctx_open', 'open-branch'),
       launch('ctx_retained', 'retained-worker', 4, retained),
+      file('state/launched-workers/ctx_retained_legacy.json', JSON.stringify({ dispatch: 'ctx_retained_legacy', worktree: retained })),
       launch('ctx_recent', 'recent', 2),
       file(`state/gh/logs/${new Date().toISOString().slice(0, 10)}.jsonl`, '{}\n'),
       file('state/gh/logs/2026-10-02.jsonl', '{}\n', 0.5),
@@ -451,6 +455,7 @@ describe('상태 파일 보존 기한', () => {
     fx.allWorkers = [
       ...['ctx_done', 'ctx_open', 'ctx_recent', 'ctx_retained'].map((dispatchId) => ({ dispatchId, dispatchStatus: 'completed' })),
       { dispatchId: 'ctx_busy', dispatchStatus: 'dispatched', workerState: 'ready' },
+      { dispatchId: 'ctx_busy_legacy', dispatchStatus: 'dispatched', workerState: 'ready' },
     ]
     fx.env.ORCH_OUTPUT = 'short'
     const preview = runSweepFull(['--trash', trash])
