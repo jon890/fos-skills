@@ -76,7 +76,24 @@ export async function settledSec(stepContext: StepContext, state: StepState): Pr
   return latest && Number.isFinite(at) ? (Date.now() - at) / 1000 : -1
 }
 
-export async function waitChecks(stepContext: StepContext, state: StepState): Promise<void> {
+// 기다리는 동안 몇 분째 무엇을 기다리는지 알리는 `CHECK-WAIT` 줄의 간격(초). 짧은 출력에도 남는다(runtime.ts 의 SHORT_RULES)
+export const WAIT_NOTE_SEC = 60
+
+// 체크가 하나도 없을 때 머지 큐가 기다리지 않고 멈추는 이유. 관문(--wait 없이)의 `PR 에 CI 체크가 하나도 없다` 와 같은 판정이다
+export const NO_CHECKS_STOP = 'PR 에 CI 체크가 하나도 없다. CI 가 없는 저장소면 queue.allow_no_checks 를 켠다. 방금 push 해 CI 가 아직 붙지 않았으면 체크가 나타난 뒤 다시 건다'
+
+function waitNote(n: string, waited: number, pending: number, missing: readonly string[], none: boolean): string {
+  const minutes = Math.floor(waited / 60)
+  const what = pending > 0 ? `진행 중인 체크 ${pending}개가 끝나기를`
+    : missing.length > 0 ? `필수 체크(${missing.join(', ')})가 나타나기를`
+      : none ? '첫 CI 체크가 나타나기를' : '체크 결과를'
+  return `CHECK-WAIT ${n} ${minutes}분째 ${what} 기다린다`
+}
+
+// noChecksStop: 체크가 하나도 없고 필수 체크 이름도 없으며 queue.allow_no_checks 가 꺼져 있으면 첫 조회에서 바로 멈춘다(NO_CHECKS_STOP).
+// 머지 큐가 차례 PR 을 처음 볼 때만 켠다. 마지막 재판정(HEAD 가 바뀐 PR 을 다시 본다)과 관문 --wait 는 막 push 한 HEAD 일 수 있어 CI 가 붙기를 기다린다.
+// update-branch 뒤는 필수 체크 이름이 있어야 하는 옵션(--require-up-to-date, --update-docs-on-overlap)에서만 생겨 이 판정에 들지 않는다
+export async function waitChecks(stepContext: StepContext, state: StepState, opts: { noChecksStop?: boolean } = {}): Promise<void> {
   const n = state.p.n
   if (state.mode === 'quick') {
     // 앞지르기는 기다리지 않는다. 지금 모두 통과했고 끝난 지 SETTLED_SEC 가 지났을 때만 이어 간다
@@ -95,6 +112,7 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
   // 진행 중인 체크가 없는데 첫 체크나 필수 체크가 나타나기를 기다린 초
   let idle = 0
   let attempt = 0
+  let notes = 0
   for (;;) {
     let f = (await queueChecks(stepContext, state, waited >= limit || (missingLimit > 0 && idle >= missingLimit)))?.failed.length
     if (f !== 0) f = (await queueChecks(stepContext, state, true))?.failed.length
@@ -104,6 +122,7 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
     if (pending === undefined || checks === null) stop(`${n} 체크 조회 실패`)
     if (pending === 0 && checks.state === 'passed') break
     const waitingForFirst = checks.none && checks.missing.length === 0
+    if (opts.noChecksStop && attempt === 0 && pending === 0 && waitingForFirst && !state.allowNoChecks) throw new CheckStop(n, NO_CHECKS_STOP)
     if (pending === 0 && missingLimit > 0 && idle >= missingLimit && waitingForFirst) {
       throw new CheckStop(n, `진행 중인 체크가 없는데 CI 체크가 ${state.o.missingTimeout}분째 하나도 나타나지 않는다. CI 가 없는 저장소면 queue.allow_no_checks 를 켠다`)
     }
@@ -122,6 +141,10 @@ export async function waitChecks(stepContext: StepContext, state: StepState): Pr
         `진행 중인 체크가 없는데 필수 체크가 ${state.o.missingTimeout}분째 나타나지 않는다(나타나지 않은 필수 체크 ${names}). ` +
           `PR 에 붙은 체크: ${seen}. 필수 체크 이름이 틀렸을 수 있다(쉼표가 든 이름은 --required-check 로 준다)`,
       )
+    }
+    if (Math.floor(waited / WAIT_NOTE_SEC) > notes) {
+      notes = Math.floor(waited / WAIT_NOTE_SEC)
+      log(waitNote(n, waited, pending, checks.missing, checks.none))
     }
     const expectedLeft = pending !== 0 ? await expectedCiLeft(stepContext, state) : null
     const seconds = Math.min(queuePollSeconds(attempt++, Number(state.o.pollMinSec), Number(state.o.pollMaxSec), expectedLeft), Math.max(0, limit - waited),

@@ -13,6 +13,8 @@ import { Stop } from './model.ts'
 // 상주 루프는 이 스크립트를 경로로 불러 로그 끝 줄을 읽으므로 지금 출력 그대로다(lib/output.ts 머리 주석)
 const SHORT_RULES: Rule[] = [
   [/^\d\d:\d\d (QUEUE-WAIT.*)/, (m) => m[1]],
+  // 체크와 봇 리뷰를 기다리는 동안의 진행 줄(steps/checks.ts 의 WAIT_NOTE_SEC). 출력 없이 오래 멈춘 것처럼 보이지 않게 남긴다
+  [/^\d\d:\d\d ((?:CHECK|REVIEW)-WAIT .*)/, (m) => m[1]],
   [/^\d\d:\d\d (\d+) (?:이미 )?MERGED$/, (m) => `MERGED ${m[1]}`],
   [/^\d\d:\d\d /, () => null],
   [/^경고: (.*)/, (m) => `WARN ${m[1]}`],
