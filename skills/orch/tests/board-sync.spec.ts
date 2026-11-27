@@ -100,6 +100,65 @@ const step = (text: string, done: boolean): Json => ({ text, done })
 
 const worker = (role: string, worktree: string, dispatch: string, extra = {}) => ({ role, worktree, dispatch, branch: 'feat/a', pr: null, at: '2026-01-01', status: 'working', endedAt: null, ...extra })
 
+test('PR 없는 보고 단계는 담당 worker 의 완료를 받으면 끝난다', () => {
+  mkdirSync(join(tmp, 'report'))
+  const report = { id: 'measure', status: 'doing', worktree: 'report', branch: 'feat/a', details: [step('1. 보고 받기(worker_done)', false)],
+    workers: [worker('impl', 'report', 'd1'), worker('review', 'review', 'd2')] }
+  const waiting = sync([report], ['--worker-ends', '{"d2":"done"}'])
+  assert.equal(waiting.code, 0, waiting.result.stderr)
+  assert.deepEqual(waiting.board.measure.details, report.details)
+  const completed = sync([report], ['--worker-ends', '{"d1":"done"}'])
+  assert.equal(completed.code, 0, completed.result.stderr)
+  assert.deepEqual(completed.board.measure.details, [step('1. 보고 받기(worker_done)', true)])
+  assert.equal(completed.board.measure.status, 'done')
+})
+
+test('워크트리 칸이 비워진 뒤에도 담당 worker 의 완료가 보고 단계를 끝낸다', () => {
+  repoWith(tmp, [])
+  const report = { id: 'measure', status: 'doing', worktree: 'report', details: [step('1. 보고 받기(worker_done)', false)],
+    workers: [
+      worker('impl', 'old', 'd0', { status: 'done' }),
+      worker('follow', 'report', 'd1', { at: '2026-01-02' }),
+    ] }
+  const lost = sync([report])
+  assert.equal(lost.code, 0, lost.result.stderr)
+  assert.ok(!lost.board.measure.worktree)
+  assert.equal((lost.board.measure.workers as Json[])[1].status, 'lost')
+
+  const waiting = sync([lost.board.measure])
+  assert.equal(waiting.code, 0, waiting.result.stderr)
+  assert.equal(waiting.board.measure.status, 'doing')
+  assert.deepEqual(waiting.board.measure.details, report.details)
+
+  const completed = sync([waiting.board.measure], ['--worker-revivals', '{"d1":"done"}'])
+  assert.equal(completed.code, 0, completed.result.stderr)
+  assert.equal((completed.board.measure.workers as Json[])[1].status, 'done')
+  assert.equal(completed.board.measure.status, 'done')
+  assert.deepEqual(completed.board.measure.details, [step('1. 보고 받기(worker_done)', true)])
+})
+
+test('이전 worker 가 먼저 복구돼도 마지막 담당자의 완료를 기다린다', () => {
+  const report = { id: 'measure', status: 'doing', details: [step('1. 보고 받기(worker_done)', false)],
+    workers: [
+      worker('impl', 'old', 'd0', { status: 'lost' }),
+      worker('follow', 'report', 'd1', { status: 'lost', at: '2026-01-02' }),
+    ] }
+  const earlier = sync([report], ['--worker-revivals', '{"d0":"done"}'])
+  assert.equal(earlier.code, 0, earlier.result.stderr)
+  assert.equal(earlier.board.measure.status, 'doing')
+
+  const waiting = sync([earlier.board.measure])
+  assert.equal(waiting.code, 0, waiting.result.stderr)
+  assert.equal(waiting.board.measure.status, 'doing')
+  assert.deepEqual(waiting.board.measure.details, report.details)
+  assert.equal((waiting.board.measure.workers as Json[])[0].at, report.workers[0].at)
+
+  const completed = sync([waiting.board.measure], ['--worker-revivals', '{"d1":"done"}'])
+  assert.equal(completed.code, 0, completed.result.stderr)
+  assert.equal(completed.board.measure.status, 'done')
+  assert.deepEqual(completed.board.measure.details, [step('1. 보고 받기(worker_done)', true)])
+})
+
 test('대표가 빈 구현 항목의 리뷰가 끝나도 열린 구현 PR 의 항목을 닫지 않는다', () => {
   states = { '7': 'OPEN' }
   const orch = join(tmp, 'orch')

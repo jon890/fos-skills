@@ -250,6 +250,7 @@ export async function prepareSession(argv: string[]): Promise<Session | { code: 
       snapshot.seedRun(run, workers)
     } catch (e) {
       if (!(e instanceof LookupError)) throw e
+      err(`cleanup-sweep: ${run} 의 dispatch 상태를 읽지 못해 워크트리를 남긴다: ${e.message}`)
     }
     // 전체 Run 조회는 삭제 후보의 소유 확인까지 미룬다. 그 전에는 자기 worker 의 handle 만 닫을 수 있다.
   }

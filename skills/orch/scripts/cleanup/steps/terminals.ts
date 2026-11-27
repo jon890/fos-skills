@@ -1,12 +1,12 @@
 import type { Args, Log, Pr, Terminal } from './shared.ts'
-import { LookupError, rowHandles } from '../../lib/ownership.ts'
+import { LookupError, rowHandles, workerWorktree } from '../../lib/ownership.ts'
 import { REAL_HOST, holderPids, holdersOf, onlyIdleShells } from './processes.ts'
 import { RUN_TIMEOUT_SEC, resourceOf, run, truthy } from './shared.ts'
 import type { WorkerRow } from '../../lib/ownership.ts'
 import { basename } from 'node:path'
 import { closeTerminal as closeOrcaTerminal, orcaBin, withFull } from '../../lib/orca.ts'
 import { idleShellVerdict } from '../../lib/idle-shells.ts'
-import { isFinished } from '../../lib/worker-state.ts'
+import { isFinished, isLive } from '../../lib/worker-state.ts'
 import { isObject } from '../../core/json.ts'
 import { readLaunch } from '../../lib/launched.ts'
 import { realPath } from '../../lib/fs.ts'
@@ -49,8 +49,10 @@ export function foreignAt(args: Args, mine: WorkerRow[], terminals: Terminal[], 
   return here.filter((h) => foreign.has(h))
 }
 
-export function workersAt(workers: WorkerRow[], path: string): WorkerRow[] {
-  return workers.filter((w) => String(resourceOf(w).worktreeId ?? '').endsWith(`::${path}`))
+export function workersAt(workers: WorkerRow[], path: string, terminals: Terminal[] = []): WorkerRow[] {
+  const target = realPath(path)
+  const handles = new Set<unknown>(terminalsAt(terminals, path))
+  return workers.filter((row) => workerWorktree(row) === target || (isLive(row) && [...rowHandles(row)].some((handle) => handles.has(handle))))
 }
 
 // 살아 있는 터미널 목록. 조회에 실패하면 null 이다.

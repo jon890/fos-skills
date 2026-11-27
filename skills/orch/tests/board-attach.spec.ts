@@ -39,6 +39,23 @@ function launch(text: string, wt = 'new', branch = 'feat/new', dispatch = 'd1') 
   return registerBoard(repo, spec, join(repo, wt), wt, branch, dispatch)
 }
 
+test('PR 없는 지시서는 보드에 보고 단계만 만든다', () => {
+  for (const permission of ['허락: 없음. PR 은 열지 않는다.', '허락: 커밋·PR 없음', '- 커밋·PR 없음']) {
+    board()
+    launch(`${permission}\n## 보드 단계\n1. [pr] PR\n2. [merge] 머지`)
+    assert.equal(items()[0].stages, undefined)
+    assert.deepEqual(items()[0].details, [{ text: '1. 보고 받기(worker_done)', done: false }])
+  }
+  board()
+  launch('허락: PR 생성까지 허락한다.\n## 배경\n> 커밋·PR 없음')
+  assert.equal(items()[0].stages, 'pr=1,merge=2')
+
+  board(base({ status: 'done', pr: null, stages: 'merge=1', details: [{ text: '1. 머지', done: true }] }))
+  launch('보드 항목 id: a\n허락: PR 은 열지 않는다.')
+  assert.ok(!items()[0].stages)
+  assert.deepEqual(items()[0].details, [{ text: '1. 머지', done: true }, { text: '2. 보고 받기(worker_done)', done: false }])
+})
+
 test('리뷰는 열린 항목과 완료 항목의 상태·단계·대표를 보존한다', () => {
   for (const status of ['doing', 'done']) {
     const original = base({ status, ...(status === 'done' ? { pr: null, 'merged-pr': 7 } : {}) })

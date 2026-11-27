@@ -67,3 +67,28 @@ test('틱 시작 뒤 같은 경로에 새 dispatch 가 생기면 머지 워크�
   assert.match(out, /살아 있는 dispatch 가 경로를 쓴다/)
   assert.doesNotMatch(calls(), /terminal close|worker-release/)
 })
+
+test('머지된 워크트리에 살아 있는 dispatch 가 있거나 상태를 못 읽으면 남긴다', () => {
+  const ready = worktree('report-ready')
+  const running = worktree('report-running')
+  const asking = worktree('report-asking')
+  for (const [name, directory] of [['report-ready', ready], ['report-running', running], ['report-asking', asking]]) {
+    squashMerge(name, directory)
+  }
+  fx.runs = { report: [
+    { dispatchId: 'ready', dispatchStatus: 'dispatched', workerState: 'ready', projection: { workspace: { id: `repo::${ready}` } } },
+    { dispatchId: 'running', dispatchStatus: 'running', resource: { worktreeId: `repo::${running}` } },
+    { dispatchId: 'asking', dispatchStatus: 'running', workerState: 'waiting', resource: { worktreeId: `repo::${asking}` } },
+  ] }
+  const out = runSweep(['--apply'])
+  for (const [state, directory] of [['ready', ready], ['running', running], ['asking', asking]]) {
+    exists(directory, out)
+    assert.ok(out.includes(`살아 있는 dispatch 가 경로를 쓴다 (${state})`), out)
+  }
+  fx.runs = null
+  fx.scope = 'terminal'
+  const failed = runSweep(['--apply'])
+  assert.match(failed, /dispatch 상태.*조회 실패/)
+  exists(ready, failed)
+  assert.doesNotMatch(calls(), /terminal close|worker-release/)
+})

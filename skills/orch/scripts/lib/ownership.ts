@@ -47,6 +47,18 @@ export class LookupError extends Error {}
 
 export type WorkerRow = Record<string, unknown>
 
+export function workerWorktree(row: WorkerRow): string | null {
+  const id = resourceOf(row).worktreeId
+  const projection = isObject(row.projection) ? row.projection : {}
+  const workspace = isObject(projection.workspace) ? projection.workspace.id : row.workspace
+  for (const value of [id, workspace]) {
+    if (typeof value !== 'string') continue
+    const at = value.indexOf('::')
+    if (at >= 0 && value.slice(at + 2)) return realPath(value.slice(at + 2))
+  }
+  return null
+}
+
 // 값이 없거나 빈 문자열, 0, false 면 없는 것으로 본다. 옛 Python 의 `x or {}` 와 `if not x` 판정과 같다
 function given(value: unknown): boolean {
   return value !== undefined && value !== null && value !== '' && value !== 0 && value !== false
@@ -233,10 +245,8 @@ export function workerSnapshot(file?: string): {
         inside(realPath(t.worktreePath), target)).map((t) => t.handle))
       const relevant = new Set(rows.filter((row) => {
         if ([...rowHandles(row)].some((handle) => handles.has(handle))) return true
-        const projection = isObject(row.projection) ? row.projection : {}
-        const workspace = isObject(projection.workspace) ? projection.workspace : {}
-        const id = resourceOf(row).worktreeId ?? workspace.id
-        return typeof id === 'string' && id.includes('::') && inside(realPath(id.slice(id.indexOf('::') + 2)), target)
+        const worktree = workerWorktree(row)
+        return worktree !== null && inside(worktree, target)
       }).map((row) => row.runId))
       const previous = new Map(runs.map((run) => [run.id, run.updated_at]))
       let current: RunInfo[]

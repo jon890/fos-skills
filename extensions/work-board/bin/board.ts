@@ -205,6 +205,12 @@ function parseStep(line: unknown): [number, boolean] | null {
   return m ? [Number(m[2]), row.done] : null
 }
 
+function refuseStepNumber(number: number | undefined, max: number): void {
+  if (number !== undefined && number - max > 10) {
+    throw new Refused(`${number} 번으로 시작하는 글은 현재 최대 단계 번호 ${max} 보다 10 넘게 크다. 업무 번호라면 「업무 ${number} …」처럼 쓴다. 단계 글을 바꿀 때는 기존 단계 번호 뒤에 붙인다`)
+  }
+}
+
 // 하위 항목에 단계가 있으면 그것을, 없으면 next 의 줄을 쓴다.
 function stepSource(item: Item): [string | null, Line[]] {
   for (const key of ['details', 'next']) {
@@ -682,11 +688,13 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
         row = { role: a.status!, dispatch: null, worktree: a.fields.worktree!, branch: null, pr: null, status: 'working', at: stamp, endedAt: null }
         rows.push(row)
       }
+      const sameLostDispatch = row.status === 'lost' && a.dispatch === row.dispatch
       if (a.dispatch !== undefined) row.dispatch = a.dispatch
       if (a.fields.branch !== undefined) row.branch = a.fields.branch
       if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
       if (a.fields.stages !== undefined) row.stages = a.fields.stages.replace(/\s+/g, '')
-      row.at = stamp
+      // 같은 dispatch 를 복구할 때는 새로 맡긴 시각으로 덮지 않는다.
+      if (!sameLostDispatch) row.at = stamp
       row.status = 'working'
       row.endedAt = null
       item.workers = rows
@@ -783,13 +791,18 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     }
     let number: number
     let text: string
+    const [stepKey, stepLines] = stepSource(item)
+    const numbers = stepLines.flatMap((line) => { const step = parseStep(line); return step ? [step[0]] : [] })
+    const max = Math.max(0, ...numbers)
     if (a.cmd === 'step-edit') {
       if (!/^\d+$/.test(a.status ?? '')) throw new Refused('step-edit 에는 단계 번호가 필요하다: board.ts step-edit <id> <번호> <글>')
       if (!a.text?.trim()) throw new Refused('step-edit 에는 새 글이 필요하다: board.ts step-edit <id> <번호> <글>')
       number = Number(a.status)
       const { source, lines, index } = findStep(item, id, number)
       const fresh = normalizeLine(a.text)
-      if (parseStep(fresh)?.[0] !== number) throw new Refused(`새 글은 ${number} 번으로 시작해야 한다: ${fresh.text}`)
+      const explicit = parseStep(fresh)?.[0]
+      refuseStepNumber(explicit, max)
+      if (explicit !== number) throw new Refused(`새 글은 ${number} 번으로 시작해야 한다: ${fresh.text}`)
       refuseLine(a.text)
       if (event) fresh.text = withEventTag(fresh.text, event[1], event[2])
       const old = lines[index]
@@ -804,13 +817,12 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     } else {
       if (!a.status?.trim()) throw new Refused('step-add 에는 더할 글이 필요하다: board.ts step-add <id> <글>')
       if (item.status === 'done') throw new Refused(`done 항목에는 단계를 더하지 않는다: ${id}. 다시 열려면 먼저 set ${id} doing 을 부른다`)
-      const [source, lines] = stepSource(item)
-      const key = source ?? 'details'
-      const numbers = lines.flatMap((line) => { const step = parseStep(line); return step ? [step[0]] : [] })
+      const key = stepKey ?? 'details'
       const fresh = normalizeLine(a.status)
       refuseLine(a.status)
       const explicit = parseStep(fresh)?.[0]
-      number = explicit ?? Math.max(0, ...numbers) + 1
+      refuseStepNumber(explicit, max)
+      number = explicit ?? max + 1
       if (numbers.includes(number)) throw new Refused(`${number} 번 단계가 이미 있다. 있는 번호: ${numbers.join(' ')}`)
       text = explicit === undefined ? `${number}. ${fresh.text}` : fresh.text
       if (event) text = withEventTag(text, event[1], event[2])
