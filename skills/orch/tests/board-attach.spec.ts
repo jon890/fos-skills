@@ -165,6 +165,25 @@ test('worker-add 실패면 기존 대표 칸 쓰기로 돌아간다', () => {
   assert.equal(items()[0].worktree, 'new')
 })
 
+test('이미 있는 항목에 띄우면 제목을 지시서 머리줄로 덮지 않는다', () => {
+  for (const status of ['doing', 'done', 'wait']) {
+    board(base({ title: '사용자가 정한 제목', status, stages: 'merge=1', details: [{ text: '1. PR 머지', done: status === 'done' }] }))
+    launch('보드 항목 id: a\n허락: 커밋·PR 없음\n## 할 일\n1. 원인을 확인한다')
+    assert.equal(items()[0].title, '사용자가 정한 제목', status)
+  }
+})
+
+test('새 항목을 만드는 사이 같은 id 가 생기면 덮지 않고 기존 항목으로 붙인다', () => {
+  board()
+  const real = new URL('../../../extensions/work-board/bin/board.ts', import.meta.url).pathname
+  // 첫 create-only 직전에 같은 id 의 항목을 만들어 둔다(다른 쓰기와 경쟁한 상황)
+  writeNodeBin(repo, 'board-race.ts', `import { spawnSync } from 'node:child_process'; import { existsSync, writeFileSync } from 'node:fs'; const flag=${JSON.stringify(join(repo, 'raced'))}; const file=process.argv[process.argv.indexOf('--file')+1]; if(process.argv.includes('--create-only') && !existsSync(flag)){writeFileSync(flag,'1'); spawnSync(process.execPath,[${JSON.stringify(real)},'set','a','wait','--title','먼저 생긴 제목','--file',file])}; const r=spawnSync(process.execPath,[${JSON.stringify(real)},...process.argv.slice(2)],{stdio:'inherit'});process.exit(r.status)`)
+  process.env.BOARD_BIN = join(repo, 'board-race.ts')
+  launch('보드 항목 id: a')
+  assert.equal(items().length, 1)
+  assert.equal(items()[0].title, '먼저 생긴 제목')
+})
+
 const milestone = (extra = {}) => base({
   stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }], workers: [row()], ...extra,
 })

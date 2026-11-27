@@ -263,7 +263,8 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   }
   const fresh = milestoneLines(milestones())
   const stages = stagesText(fresh.stages)
-  const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
+  // 새 항목만 만든다. 읽은 뒤 같은 id 가 생겼으면 덮지 않고 다시 읽어 기존 항목 규칙으로 붙인다(제목을 지시서 머리줄로 바꾸지 않는다)
+  const args = ['set', id, 'doing', '--create-only', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
   for (const step of fresh.details) args.push('--detail', step)
   write([...args, ...taskArgs])
   add(undefined, id, r.role)
@@ -291,7 +292,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   }
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
-    if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)
+    if (staleBoardWrite(args, done) || (args.includes('--create-only') && /이미 있는 항목이다/.test(done.stderr))) throw new StaleBoardWrite(done.stderr)
     if (done.code !== 0) throw new Error(done.stderr || `보드 명령 종료 코드 ${done.code}`)
   }
 }
