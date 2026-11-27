@@ -57,6 +57,7 @@ worker 를 띄울 때 리뷰·검증은 대상 PR 의 항목(done 포함)에, �
 
 ```text
 orch board set <항목> <decide|doing|wait|done>
+orch board set <항목> --priority <양의 정수|none>
 orch board step <항목> <번호> done|undo
 orch board step <항목> <번호> text "<번호를 포함한 줄 전체>" [--on "<PR> <사건>"]
 orch board step <항목> <번호> auto|ask|plain
@@ -95,7 +96,7 @@ orch board clear-done --all
 
 `add-step` 은 단계를 세는 쪽(details, 없으면 next)에 더한다. 번호가 없으면 가장 큰 번호 다음을 붙이고, 직접 쓴 번호가 겹치거나 항목이 `done` 이면 거절한다. `progress` 값(N/M)이 있고 단계가 M 개를 넘으면 `board.ts` 가 `progress` 를 지워 단계 수로 세고 stderr 로 알린다. 넘지 않으면 새 단계가 진행률에 안 보일 수 있어 알린다.
 `-` 로 시작하는 글은 옵션으로 읽혀 사용법 오류가 난다. `orch board add-step <항목> "10. - 하위 항목"` 처럼 쓰려는 단계 번호를 앞에 붙인다.
-명시한 진행률을 지워 단계 수로 세려면 칸 수정 도구인 `board.ts set` 에 `--progress auto` 를 준다. `orch board set` 은 상태와 업무 칸만 고치므로 이 옵션을 받지 않는다.
+명시한 진행률을 지워 단계 수로 세려면 `board.ts set` 에 `--progress auto` 를 준다.
 
 `--on "1455 merge"` 는 줄 끝에 `(#1455 merge)` 를 붙이고 기존 꼬리표는 바꾼다. 사건은 `pr`, `merge`, `deploy`, `release` 다. `stages` 가 있는 항목에 붙이면 기존 사건 단계의 자동 완료가 멈출 수 있어 경고한다. 자동 진행 표시만 바꿀 때는 줄 전체를 다시 쓰지 않고 위 `auto`, `ask`, `wait`, `plain` 동작을 쓴다.
 
