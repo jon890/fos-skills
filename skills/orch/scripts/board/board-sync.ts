@@ -507,14 +507,17 @@ function main(argv: string[]): number {
       // 사건 단계(stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 그 사건이 끝낸다
       const eventStep = (step: BoardStep): boolean => events.has(step.number) || stageTag(step.text) !== null || Boolean(parseEventTag(step.text))
       // steps= 는 지시서 「할 일」 번호다. 그 줄 글(texts)과 같은 끝나지 않은 단계가 있으면 그 단계로 옮긴다(다시 연 항목은 번호가 뒤로 밀린다).
-      // 같은 글이 없으면 보드 단계 번호로 본다
+      // 같은 글의 단계가 하나도 없을 때만 보드 단계 번호로 본다
       const bodyOf = (text: string): string => text.replace(/^\s*\d+[.)]?\s+/, '').replace(/^\[[^\]]*\]\s*/, '').trim()
       const explicit = new Set<number>()
       const unknown: number[] = []
       for (const one of given) {
         for (const [index, number] of (one.steps ?? []).entries()) {
           const text = one.texts?.[index] ?? null
-          const byText = text === null ? undefined : steps.filter((step) => !step.done && bodyOf(step.text) === text.trim()).at(-1)
+          // 같은 글의 단계가 있으면 끝나지 않은 가장 뒤 단계, 모두 끝났으면 가장 뒤 단계다. 끝난 단계를 고르면 아무것도 하지 않는다.
+          // 루프가 같은 보고를 다음 틱에 다시 넘겨도 번호로 다른 단계를 끝내지 않게 한다
+          const same = text === null ? [] : steps.filter((step) => bodyOf(step.text) === text.trim())
+          const byText = same.filter((step) => !step.done).at(-1) ?? same.at(-1)
           const target = byText ?? steps.find((step) => step.number === number)
           if (target) explicit.add(target.number)
           else unknown.push(number)

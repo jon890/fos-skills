@@ -166,6 +166,14 @@ test('다시 연 항목은 worker_done 의 할 일 번호를 같은 글의 단�
   const one = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1], noPr: true, texts: ['조사한다'] } })])
   assert.equal(one.code, 0, one.result.stderr)
   assert.deepEqual((one.board.again.details as Json[]).map((d) => d.done), [true, true, false])
+  // 다음 틱에 같은 보고가 다시 와도 끝난 단계를 가리켜 다른 단계를 끝내지 않는다
+  const reopened = { ...item, details: [step('1. 옛 일', true), step('2. A 한다', false), step('3. B 한다', false)] }
+  const first = sync([reopened], ['--worker-steps', JSON.stringify({ d1: { steps: [2], noPr: true, texts: ['B 한다'] } })])
+  assert.deepEqual((first.board.again.details as Json[]).map((d) => d.done), [true, false, true])
+  const repeat = sync([first.board.again], ['--worker-steps', JSON.stringify({ d1: { steps: [2], noPr: true, texts: ['B 한다'] } })])
+  assert.equal(repeat.code, 0, repeat.result.stderr)
+  assert.deepEqual((repeat.board.again.details as Json[]).map((d) => d.done), [true, false, true])
+  assert.equal(repeat.board.again.status, 'doing')
   const both = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2], noPr: true, texts: ['조사한다', '정리한다'] } })])
   assert.equal(both.code, 0, both.result.stderr)
   assert.deepEqual((both.board.again.details as Json[]).map((d) => d.done), [true, true, true])
