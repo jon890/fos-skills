@@ -3,7 +3,7 @@ import { loopCaller } from '../lib/main-guard-context.ts'
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // --worker-steps 도 루프 내부용이다. 성공한 worker_done 의 dispatch 와 { steps: 끝낸 단계 번호 목록|null, noPr: PR 없는 지시서인지 } 객체를 받는다.
-//     그 dispatch 의 구현·후속 줄이 있는 항목에서 적힌 번호의 단계를 끝낸다. 사건 단계(stages 와 줄 stages 의 번호)는 사건이 끝내므로 건드리지 않는다.
+//     그 dispatch 의 구현·후속 줄이 있는 항목에서 적힌 번호의 단계를 끝낸다. 사건 단계(stages 와 줄 stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 사건이 끝내므로 건드리지 않는다.
 //     PR 없는 일의 번호 없는 보고는 남은 단계를 모두 끝낸다. PR 없는 일의 단계가 이렇게 모두 끝나면 done 으로 바꾼다.
 //     리뷰·검증 항목과 기능 항목(기능 단계 줄은 feature-advance 가 맡는다)과 done 항목은 보지 않는다
 // --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
@@ -496,7 +496,9 @@ function main(argv: string[]): number {
       if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }
       const events = eventNumbers(item)
       const scheduled = new Set(after.filter((cmd) => cmd[0] === 'step' && cmd[1] === id).map((cmd) => Number(cmd[2])))
-      const closing = steps.filter((step) => !step.done && !events.has(step.number) && !scheduled.has(step.number) && (all || explicit.has(step.number)))
+      // 사건 단계(stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 그 사건이 끝낸다
+      const eventStep = (step: BoardStep): boolean => events.has(step.number) || stageTag(step.text) !== null || Boolean(parseEventTag(step.text))
+      const closing = steps.filter((step) => !step.done && !eventStep(step) && !scheduled.has(step.number) && (all || explicit.has(step.number)))
       after.push(...closing.map((step) => ['step', id, String(step.number)]))
       const unknown = [...explicit].filter((n) => !steps.some((step) => step.number === n))
       if (unknown.length > 0) out(`board-sync: ${id} 에 worker_done 이 적은 단계 ${unknown.join(',')} 가 없어 건너뛴다`)

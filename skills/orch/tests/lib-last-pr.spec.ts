@@ -70,6 +70,13 @@ test('제목에 업무 번호가 없어도 브랜치 이름으로 마지막 PR �
     assert.equal(verdict.last, true)
     assert.equal(verdict.number, '587')
     assert.match(verdict.reason, /업무 587\(브랜치 이름에서 찾음\)/)
+    // 제목에 번호가 없는 같은 업무의 열린 PR 도 브랜치 이름으로 찾아 마지막으로 보지 않는다
+    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' '[{"number":2199,"title":"(SHIP) 두 번째","headRefName":"feature/AI-프로젝트/587-second"},{"number":2200,"title":"(SHIP) 다른 일","headRefName":"feature/AI-프로젝트/600-x"}]'\n`)
+    const sibling = judgeLastPr(repo, { number: '2198', title: '(SHIP) 첫 번째', branch: 'feature/AI-프로젝트/587-first' }, {
+      taskPattern: /^#AI-프로젝트\/([0-9]+)/, specTaskPattern: null, specsDir: null,
+    })
+    assert.equal(sibling.last, false)
+    assert.deepEqual(sibling.prs, ['#2199'])
   } finally {
     if (oldGh === undefined) delete process.env.GH; else process.env.GH = oldGh
     if (oldCache === undefined) delete process.env.ORCH_GH_CACHE; else process.env.ORCH_GH_CACHE = oldCache

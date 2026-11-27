@@ -36,7 +36,7 @@ else if (args[1] === 'view' && args.includes('mergeCommit')) {
   say(state['info:' + args[2]])
 } else if (args[1] === 'view' && args.includes('files')) say(state['files:' + args[2]] || {})
 else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
-else if (args[1] === 'list' && args.includes('number,title')) say(state.open || [])
+else if (args[1] === 'list' && args.includes('number,title,headRefName')) say(state.open || [])
 else if (args[1] === 'list' && head !== null) say((state.list || []).filter((pr) => pr.headRefName === head))
 else if (args[1] === 'list') say(state.list || [])
 else process.exit(1)
@@ -148,6 +148,16 @@ test('PR 이 있는 일의 steps= 는 수동 단계만 끝내고 「PR 머지」
   const none = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: false } })])
   assert.equal(none.code, 0, none.result.stderr)
   assert.deepEqual(none.board.feat.details, item.details)
+})
+
+test('worker_done 의 steps= 는 줄 끝 사건 꼬리표와 줄 앞 사건 표시가 있는 단계를 끝내지 않는다', () => {
+  states = { '7': 'OPEN' }
+  const item = { id: 'tagged', status: 'doing', details: [step('1. PR 기다림 (#7 merge)', false), step('2. [merge] 머지', false), step('3. 조사', false)],
+    workers: [worker('impl', 'tagged', 'd1')] }
+  const got = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: true } })])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.deepEqual((got.board.tagged.details as Json[]).map((d) => d.done), [false, false, true])
+  assert.equal(got.board.tagged.status, 'doing')
 })
 
 test('잘못된 --worker-steps 는 사용법 오류다', () => {

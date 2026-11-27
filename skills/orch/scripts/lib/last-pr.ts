@@ -3,7 +3,7 @@
 // 아래를 모두 만족하면 마지막이다.
 //   - PR 제목에서 taskPattern 으로 업무 번호를 뽑았다. 제목에 없으면(`(SHIP) …`) 브랜치 이름의 `<말머리>/<번호>`(`feature/AI-프로젝트/587-…`)와
 //     보드 항목의 task-ref 에서 찾는다(taskNumberOf). 두 값은 제목 꼴(`#<번호>`, `[<번호>]` 따위)로 감싸 taskPattern 에 맞춰 본다
-//   - 열린 PR 가운데 제목에서 같은 업무 번호를 뽑은 다른 PR 이 없다
+//   - 열린 PR 가운데 제목(없으면 브랜치 이름)에서 같은 업무 번호를 뽑은 다른 PR 이 없다
 //   - specsDir 의 spec-*.md 가운데 같은 업무를 가리키는 다른 지시서가 없다. 지시서가 업무를 가리키는지는 specTaskPattern 을
 //     지시서의 줄마다 맞춰 본다. 첫 그룹이 업무 번호다. `브랜치:` 줄이 이 PR 의 브랜치인 지시서와, `브랜치:` 줄의 브랜치가
 //     모두 MERGED PR 을 가진 지시서는 세지 않는다. 먼저 머지된 중간 PR 의 지시서가 남아 마지막 PR 을 막지 않게 하기 위해서다.
@@ -151,10 +151,13 @@ export function judgeLastPr(repo: string, pr: MergedPr, rules: LastPrRules): Las
   if (found === null) return unknown(`PR 제목, 브랜치 이름, 보드 업무 번호에서 업무 번호를 찾지 못했다: ${pr.title}`)
   const number = found.number
   if (rules.specsDir && !rules.specTaskPattern) return unknown('specs_dir 는 있는데 spec_task_pattern 이 없다', number)
-  const open = list(repo, ['pr', 'list', '--state', 'open', '--json', 'number,title', '--limit', '1000'])
+  const open = list(repo, ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName', '--limit', '1000'])
   if (open === null) return unknown('열린 PR 을 읽지 못했다', number, true)
+  // 열린 PR 도 머지한 PR 과 같은 규칙(제목, 그다음 브랜치 이름)으로 업무 번호를 찾는다. 제목에 번호가 없는 같은 업무의 PR 을 놓치지 않게 한다
   const prs = open
-    .filter((row) => pyStr(row.number) !== pr.number && extractTaskNumber(typeof row.title === 'string' ? row.title : '', pattern) === number)
+    .filter((row) => pyStr(row.number) !== pr.number && taskNumberOf({
+      number: pyStr(row.number), title: typeof row.title === 'string' ? row.title : '', branch: typeof row.headRefName === 'string' ? row.headRefName : '',
+    }, pattern)?.number === number)
     .map((row) => `#${pyStr(row.number)}`)
   const specs: string[] = []
   if (rules.specsDir) {
