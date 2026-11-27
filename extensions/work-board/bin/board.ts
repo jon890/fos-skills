@@ -308,7 +308,7 @@ function pyJson(value: unknown): string {
 // 고유 접두로 줄인 긴 옵션을 온 이름으로 펼친다. `--` 뒤는 건드리지 않는다.
 // skills/orch/scripts/lib/args.ts 의 expandArgs 에 문자열 옵션을 모두 join 으로 준 것과 같다. 복사한 까닭은 pyJson 과 같다.
 // 바꾸면 함께 고친다. flags 는 값을 받지 않는 옵션이다
-function expand(argv: string[], names: string[], flags: string[]): string[] {
+function expand(argv: string[], names: string[], flags: string[], exactOnly: string[]): string[] {
   const out: string[] = []
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
@@ -322,7 +322,7 @@ function expand(argv: string[], names: string[], flags: string[]): string[] {
     }
     const eq = token.indexOf('=')
     const given = eq >= 0 ? token.slice(2, eq) : token.slice(2)
-    const matches = names.includes(given) ? [given] : names.filter((name) => name.startsWith(given))
+    const matches = names.includes(given) ? [given] : names.filter((name) => !exactOnly.includes(name) && name.startsWith(given))
     if (matches.length > 1) throw new Error(`--${given} 이 여러 옵션의 접두다: ${matches.map((name) => `--${name}`).join(', ')}`)
     const name = matches[0] ?? given
     // 값을 받는 옵션은 바로 뒤 인자를 값으로 붙인다. `--next '-x'` 처럼 - 로 시작하는 값도 받는다
@@ -402,7 +402,8 @@ function parse(argv: string[]): Args | 'help' {
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help', 'clear', 'create-only'])
+  // feature-advance 옵션은 온 이름으로 받아 기존 줄임말(예: --s 는 --stages)을 지킨다.
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help', 'clear', 'create-only'], ['done', 'add', 'status'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
