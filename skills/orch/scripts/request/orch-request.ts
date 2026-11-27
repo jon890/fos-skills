@@ -33,7 +33,7 @@ import { mainCheckout } from '../lib/git.ts'
 import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
 import {
-  allocateNumber, answerRequest, boardLines, listRequests, newRecord, openRequest, parseRequestId, repoName, requestNotice,
+  allocateNumber, answerRequest, boardLines, listRequests, newRecord, openRequest, parseRequestId, repoName, requestLabel, requestNotice,
 } from '../lib/requests.ts'
 import type { RequestRecord } from '../lib/requests.ts'
 
@@ -63,12 +63,12 @@ function requestText(record: RequestRecord): string {
   const word = orchWord()
   const repo = shQuote(record.repo)
   return [
-    `${repoName(record.from.repo)} 의 Run ${record.from.run} 이 ${repoName(record.repo)} 에 요청 ${record.id} 를 보냈다: ${record.title}`,
+    `${repoName(record.from.repo)} 의 Run ${record.from.run} 이 ${repoName(record.repo)} 에 새 요청을 보냈다(${requestLabel(record)}): 「${record.title}」`,
     '',
     record.body,
     '',
-    `답(받음·보류·거절 가운데 하나): ${word} request accept ${record.id} --repo ${repo} | ${word} request hold ${record.id} --reason "<이유>" --repo ${repo} | ${word} request reject ${record.id} --reason "<이유>" --repo ${repo}`,
-    `끝낼 때: 이 요청의 보드 항목을 확인한 뒤 worker 지시서에 \`보드 항목 id: ${record.board.to}\` 를 두면 마지막 PR 마무리가 완료를 보낸다. 그 밖은 ${word} request done ${record.id} --repo ${repo} 나 ${word} request fail ${record.id} --reason "<이유>" --repo ${repo}`,
+    `답(받음·보류·거절 가운데 하나): ${word} request accept ${record.number} --repo ${repo} | ${word} request hold ${record.number} --reason "<이유>" --repo ${repo} | ${word} request reject ${record.number} --reason "<이유>" --repo ${repo}`,
+    `끝낼 때: 이 요청의 보드 항목을 확인한 뒤 worker 지시서에 \`보드 항목 id: ${record.board.to}\` 를 두면 마지막 PR 마무리가 완료를 보낸다. 그 밖은 ${word} request done ${record.number} --repo ${repo} 나 ${word} request fail ${record.number} --reason "<이유>" --repo ${repo}`,
   ].join('\n')
 }
 
@@ -114,7 +114,7 @@ function send(values: Record<string, unknown>): number {
 function answer(action: RequestAction, values: Record<string, unknown>): number {
   const raw = values.id as string | undefined
   const number = raw === undefined ? null : parseRequestId(raw)
-  if (number === null) throw new Usage(`${action} 에는 요청 번호(R12 꼴)를 준다`)
+  if (number === null) throw new Usage(`${action} 에는 요청 번호(12 나 R12)를 준다`)
   const reason = typeof values.reason === 'string' && oneLine(values.reason) ? oneLine(values.reason) : null
   if (needsReason(action) && !reason) throw new Usage(`${action} 에는 --reason 이 필요하다`)
   const repo = mainCheckout(resolve((values.repo as string | undefined) ?? process.cwd()))

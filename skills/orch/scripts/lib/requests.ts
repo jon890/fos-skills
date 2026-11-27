@@ -174,7 +174,7 @@ function failure(repo: string, item: string, done: { code: number; stdout: strin
 // lib/board.ts 의 기존 항목 분기가 doing 으로 바꾸고, finish-pr 이 마일스톤 항목으로 머지와 배포를 반영한다.
 // 있는 항목은 이력 한 줄만 detail-add 로 더한다. 단계 줄을 지우지 않으려는 것이다. 끝 상태면 done 으로 바꾸되
 // worker 가 붙은 받는 쪽 항목(workers 칸이 있다)은 상태를 마무리(finish-pr)에 맡긴다
-function writeItem(repo: string, file: string, item: string, title: string, head: string, line: string, closed: boolean, created: boolean): BoardOutcome {
+function writeItem(repo: string, file: string, item: string, title: string, tag: string[], head: string, line: string, closed: boolean, created: boolean): BoardOutcome {
   if (!existsSync(file)) return { repo, item, result: 'skipped' }
   let workersOf: unknown = null
   // send 때 보드가 없어 건너뛴 항목은 지금 만든다
@@ -190,7 +190,7 @@ function writeItem(repo: string, file: string, item: string, title: string, head
     try { steps = boardSettings(repo).steps ?? steps } catch { /* 설정을 읽지 못하면 기본 단계 */ }
     const fresh = milestoneLines(steps)
     const stages = stagesText(fresh.stages)
-    const done = boardRun(file, ['set', item, closed ? 'done' : 'wait', '--create-only', '--title', title, ...(stages ? ['--stages', stages] : []),
+    const done = boardRun(file, ['set', item, closed ? 'done' : 'wait', '--create-only', '--title', title, ...tag, ...(stages ? ['--stages', stages] : []),
       ...fresh.details.flatMap((d) => ['--detail', d]), '--detail', head, '--detail', line])
     return done.code === 0 ? { repo, item, result: 'written' } : failure(repo, item, done)
   }
@@ -215,10 +215,11 @@ function syncBoards(record: RequestRecord): BoardOutcome[] {
   const toFile = realPath(boardPath(record.repo))
   const fromFile = record.board.from ? realPath(boardPath(record.from.repo)) : null
   const pending = record.board.pending ?? []
-  const to = writeItem(record.repo, toFile, record.board.to, `요청 ${record.id}: ${record.title}${record.repo !== record.from.repo ? ` (${fromName})` : ''}`,
+  // 제목은 요청 제목 그대로다. 보낸 곳과 번호는 칸과 항목 id 로 남기고 보드 창(work-board 의 hooks/request-tag.js)이 「[보낸 곳 요청] 제목 · 요청 46」 으로 그린다
+  const to = writeItem(record.repo, toFile, record.board.to, record.title, record.repo !== record.from.repo ? ['--request-from', fromName] : [],
     `보낸 곳: ${fromName} Run ${record.from.run}`, line, closed, pending.includes('to'))
   const from = record.board.from && fromFile && fromFile !== toFile
-    ? writeItem(record.from.repo, fromFile, record.board.from, `${toName} 요청 ${record.id} 기다림: ${record.title}`, `받는 곳: ${record.repo}`, line, closed, pending.includes('from'))
+    ? writeItem(record.from.repo, fromFile, record.board.from, record.title, ['--request-to', toName], `받는 곳: ${record.repo}`, line, closed, pending.includes('from'))
     : null
   const left = pending.filter(side => (side === 'to' ? to : from)?.result !== 'written')
   if (left.length !== pending.length) writeRequest({ ...record, board: { ...record.board, pending: left } })
@@ -233,9 +234,37 @@ export function replyRunOf(record: RequestRecord): string {
   return replyTarget(record.from.run, false, main.kind === 'main' ? main.run : null)
 }
 
+// 사람이 읽는 번호 「요청 46」 이다. 명령 인자와 기록 파일 이름은 R46 을 그대로 쓴다
+export function requestLabel(record: Pick<RequestRecord, 'number'>): string {
+  return `요청 ${record.number}`
+}
+
+const NOTICE_WORDS: Record<string, [string, string]> = {
+  REQUEST: ['새 요청', '보냄'],
+  'REQUEST-ACCEPTED': ['요청 받음', '받음'],
+  'REQUEST-HELD': ['요청 보류', '보류함'],
+  'REQUEST-REJECTED': ['요청 거절', '거절함'],
+  'REQUEST-DONE': ['요청 완료', '완료함'],
+  'REQUEST-FAILED': ['요청 실패', '실패로 닫음'],
+  'REQUEST-NO-ACK': ['요청 답 없음', '아직 답하지 않음'],
+}
+const SUBJECT_MAX = 120
+
+// 알림 제목. 「새 요청 · ai-analysis 가 보냄 · 「보드 단계 정리」 (요청 46)」 꼴이다.
+// 새 요청은 보낸 저장소, 답과 답 없음 알림은 받은 저장소가 주어다. 길면 제목만 줄인다
+export function noticeSubject(kind: string, record: Pick<RequestRecord, 'number' | 'title' | 'repo' | 'from'>): string {
+  const [head, verb] = NOTICE_WORDS[kind] ?? [kind, '보냄']
+  const who = repoName(kind === 'REQUEST' ? record.from.repo : record.repo)
+  const build = (title: string) => `${head} · ${who} 가 ${verb} · 「${title}」 (${requestLabel(record)})`
+  const full = build(record.title)
+  if ([...full].length <= SUBJECT_MAX) return full
+  const room = Math.max(1, SUBJECT_MAX - [...build('')].length - 1)
+  return build(`${[...record.title].slice(0, room).join('').trimEnd()}…`)
+}
+
 export function requestNotice(target: string, kind: string, record: RequestRecord, text: string): { ok: true } | { ok: false; error: string } {
   const sent = notifyRun(target, kind, text, null, {
-    subject: `${kind} ${repoName(record.repo)} ${record.id} ${record.title}`.slice(0, 120),
+    subject: noticeSubject(kind, record),
     repo: record.repo,
     source: SOURCE,
     extra: { request: record.id, from_repo: record.from.repo },
@@ -262,7 +291,7 @@ function answerLocked(repo: string, number: number, action: RequestAction, reaso
   const target = replyRunOf(record)
   const kind = replyKind(next)
   const text = [
-    `${repoName(record.repo)} 요청 ${record.id}(${record.title}) 이 ${stateWord(next)} 상태가 됐다.${reason ? ` 이유: ${reason}` : ''}`,
+    `${repoName(record.repo)} 에 보낸 ${requestLabel(record)}(「${record.title}」)이 ${stateWord(next)} 상태가 됐다.${reason ? ` 이유: ${reason}` : ''}`,
     `받은 저장소: ${record.repo}`,
   ].join('\n')
   const sent = requestNotice(target, kind, record, text)

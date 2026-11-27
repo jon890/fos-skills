@@ -6,6 +6,7 @@ import { BOARD_PATHS } from '../../../modules/work-board/locations.ts'
 import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 import { compareFosPluginVersions } from '../../../modules/kit/fos-plugin-version.ts'
 import { STEP, hideEventTag } from './event-tags.js'
+import { requestNumberText, requestView } from './request-tag.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, sortSchedules, scheduleLine, scheduleDetail, scheduleSoon } from './schedules.js'
 /** @typedef {import('../../../types/index.d.ts').BoardSchedule} BoardSchedule */
@@ -2062,17 +2063,22 @@ export function register(on) {
     // 제목만 버튼으로 그려 상태 확인 요청문을 채운다.
     const itemHead = (item, section, done, worker) => {
       const chip = chipOf(item, done)
-      const title = item.title || item.id
+      // 요청 항목은 「[보낸 저장소 요청] 제목 · 요청 46」 이다(hooks/request-tag.js)
+      const request = requestView(item)
+      const title = request
+        ? [...(request.tag ? [Text({ key: 'request-tag', color: 'cyan', bold: false, children: [request.tag] }), ' '] : []), request.title,
+          ...(request.number !== null ? [Text({ key: 'request-number', dimColor: true, bold: false, children: ['  · ' + requestNumberText(request.number)] })] : [])]
+        : [item.title || item.id]
       const mark = Text({ key: 'mark', color: section.color, children: [section.mark] })
       const titleView = done || !checkable(item)
-        ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: [title] })
+        ? Text({ key: 'title', dimColor: done, strikethrough: done, bold: !done, wrap: 'wrap', children: title })
         : Button({ key: 'check-' + item.id, plain: true,
           onPress: () => {
             if (dismissMode) return
             fillPrompt($, itemPrompt(item, worker, live.prs))
             $.ui.invalidate('ui.render')
           },
-          children: [Text({ key: 'title', bold: true, wrap: 'wrap', children: [title] })] })
+          children: [Text({ key: 'title', bold: true, wrap: 'wrap', children: title })] })
       if (!chip) return Box({ key: 'head', flexDirection: 'row', columnGap: 1, children: [mark, titleView] })
       return Box({
         key: 'head',
