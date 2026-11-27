@@ -15,8 +15,6 @@ const WORKFLOW = /^(registered|working|closed|backlog)$/
 const INLINE_LINK = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)/gu
 const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>`]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:(?:dooray|https?):)?\/\/[^\s<>]+)>|(?<address>(?:(?:dooray|https?):|(?<![\w:/]))\/\/[^\s<>()\[\]"`']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"`']+)/gimu
 const HTML_ATTRIBUTE = /\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/gu
-// 정상 링크와 같은 꼴의 인라인 코드 예제도 막는다. 백틱이 링크 검사에서 문장을 가리지는 않는다.
-const CODE_EXAMPLE = /(?<![`\\])(`+)(?!`)[^|]*?(?<!`)\1(?!`)/gu
 const CHARACTER_REFERENCE = String.raw`&(#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6})|[A-Za-z][A-Za-z0-9]*);`
 const MARKDOWN_ADDRESS = new RegExp(String.raw`\\([\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])|` + CHARACTER_REFERENCE, 'gu')
 const HTML_ADDRESS = new RegExp(CHARACTER_REFERENCE, 'gu')
@@ -87,7 +85,7 @@ function decodeMarkdown(text: string): string {
 }
 
 type Link = {
-  kind: 'inline' | '참조식 정의' | 'HTML 링크' | '자동 링크' | '주소만 적은 링크' | '인라인 코드 예제'
+  kind: 'inline' | '참조식 정의' | 'HTML 링크' | '자동 링크' | '주소만 적은 링크'
   target: string
   label?: string
   workflow?: string
@@ -116,8 +114,6 @@ function* otherLinks(text: string): Generator<Link> {
 function* findLinks(md: string): Generator<Link> {
   for (const { offset, text } of maskedBlocks(md)) {
     let cursor = 0
-    const codeExamples = text.matchAll(CODE_EXAMPLE)
-    let code = codeExamples.next().value
     for (const match of text.matchAll(INLINE_LINK)) {
       const start = match.index + 1
       const candidate = md.slice(offset + start, offset + start + match[1].length)
@@ -125,10 +121,8 @@ function* findLinks(md: string): Generator<Link> {
       const labelIndex = match.index + labelAt
       yield* otherLinks(text.slice(cursor, labelIndex))
       cursor = match.index + match[0].length
-      while (code && code.index + code[0].length <= labelIndex) code = codeExamples.next().value
-      const codeExample = code && code.index < labelIndex && code.index + code[0].length > cursor
       yield {
-        kind: codeExample ? '인라인 코드 예제' : 'inline',
+        kind: 'inline',
         label: candidate.slice(labelAt).replace(/[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/gu, ' '),
         target: unwrapAddress(match[2]),
         workflow: match[2].startsWith('<') ? undefined : match[3],
@@ -186,7 +180,6 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}\n  예시는 펜스 코드 블록으로 쓰세요.`
     if (fixedLabel !== label) errors.push(`오류: 업무 링크 표시 글 「${label}」의 대괄호를 &#91; 과 &#93; 으로 바꾸세요.${fix}`)
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)
-    else if (kind === '인라인 코드 예제') errors.push(`오류: 인라인 코드에 두레이 업무 링크가 있습니다.${fix}`)
     else if (!inline) errors.push(`오류: 두레이 업무를 가리키는 ${kind}를 표시 글과 상태값을 갖춘 인라인 링크로 바꾸세요.${fix}`)
     else if (!INTERNAL.test(target) || !WORKFLOW.test(shownWorkflow ?? '')) {
       errors.push(`오류: 두레이 업무 주소는 dooray://조직ID/tasks/업무ID 꼴로 쓰고 등록·진행·완료 등의 상태값을 큰따옴표로 감싸세요.${fix}`)

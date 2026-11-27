@@ -626,13 +626,24 @@ describe('dooray-preview task, comment', () => {
     assert.deepEqual(done.calls, ['--json post get --id post-example'])
   })
 
-  test('인라인 코드의 업무 주소나 링크는 막고 코드 블록을 안내한다', () => {
-    const link = '[example/18 제목](' + internalAddress + ' "working")'
-    for (const example of [internalAddress, webAddress, '<' + internalAddress + '>', link, '예시 ' + link]) {
+  test('인라인 코드의 잘못된 업무 주소나 링크는 막고 펜스 코드 블록을 안내한다', () => {
+    const mismatch = '[example/20 제목](' + internalAddress + ' "working")'
+    for (const example of [internalAddress, webAddress, '<' + internalAddress + '>', mismatch, '예시 ' + mismatch]) {
       const done = preview('comment', '`' + example + '`')
       assert.equal(done.code, 1, done.stderr)
       assert.match(done.stderr, /예시는 펜스 코드 블록으로 쓰세요/u)
       assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('올바른 업무 링크는 백틱 안팎에서 같은 검사 결과를 낸다', () => {
+    for (const title of ['제목', '예제 A | B']) {
+      const link = `[example/18 ${title}](${internalAddress} "working")`
+      for (const body of [link, '`' + link + '`', '`예시 ' + link + '`']) {
+        const done = preview('comment', body)
+        assert.equal(done.code, 0, done.stderr)
+        assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      }
     }
   })
 
