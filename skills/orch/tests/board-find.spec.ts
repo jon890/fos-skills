@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { findBoardItem, startStageProblem, type BoardQuery } from '../scripts/core/board-find.ts'
+import { findBoardItem, similarItems, startStageProblem, type BoardQuery } from '../scripts/core/board-find.ts'
 import type { BoardItem } from '../scripts/core/board-details.ts'
 import { adoptsAskStage as adopts, stepSource } from '../../../modules/work-board/item.ts'
 
@@ -96,4 +96,19 @@ test('기능 단계 줄이 없는 항목은 새 스펙이면 spec, 확인된 스
   assert.match(startStageProblem(steps(plain), { name: 'implementation', part: 1, total: 2 }, { id: 'p', newSpec: false, hasDesign: false, adopts })!, /다음 단계는 technical-design 인데/)
   assert.equal(startStageProblem(steps(plain), { name: 'implementation', part: 1, total: 2 }, { id: 'p', newSpec: false, hasDesign: true, adopts }), null)
   assert.match(startStageProblem(steps(plain), { name: 'implementation', part: 2, total: 2 }, { id: 'p', newSpec: false, hasDesign: true, adopts })!, /technical-design, implementation 1\/n/)
+})
+
+test('비슷한 열린 항목은 제목, 브랜치의 낱말 겹침이 많은 순으로 최대 세 개다', () => {
+  const items: BoardItem[] = [
+    { id: 'done', status: 'done', title: '보드 항목 찾기 lint-ack 고침' },
+    { id: 'one', status: 'doing', title: 'lint 정리' },
+    { id: 'two', status: 'todo', title: '다른 일', branch: 'fix/lint-ack-board' },
+    { id: 'old', status: 'todo', title: 'lint 문구', stepAt: '2026-01-01' },
+    { id: 'new', status: 'todo', title: 'lint 출력', stepAt: '2026-02-01' },
+    { id: 'none', status: 'todo', title: '상관없는 일', branch: 'fix/other' },
+  ]
+  const ids = similarItems(items, { title: 'lint-ack 이 보드 발견을 넘기지 못한다', branch: 'fix/lint-ack-board' }).map((item) => item.id)
+  // two 는 lint, ack, board 셋이 겹친다. 나머지는 lint 하나라 최근 stepAt 순이다. fix 같은 브랜치 머리는 세지 않는다
+  assert.deepEqual(ids, ['two', 'new', 'old'])
+  assert.deepEqual(similarItems(items, { title: '', branch: 'fix/x' }), [])
 })

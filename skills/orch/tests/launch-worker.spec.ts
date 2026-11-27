@@ -13,6 +13,7 @@ import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
 import { claudeProjectName } from '../scripts/lib/session-tokens.ts'
 import { selectionsOf } from '../scripts/lib/spec.ts'
+import { boardFindings } from '../scripts/worker/launch-worker.ts'
 import { claudeProfile, codexUsage, CREATOR } from './fixtures/usage-limits.ts'
 import { prReadyCases } from './fixtures/pr-ready-cases.ts'
 import { workerPathWithOrch } from './fixtures/worker-orch.ts'
@@ -2606,6 +2607,26 @@ describe('spec-lint 관문', () => {
     assert.match(r.stdout, /LAUNCHED ctx_1/)
     const record = JSON.parse(readFileSync(join(proj, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
     assert.equal(record.lint_ack, '두 PR 이 plugin.json 버전 줄을 함께 고친다')
+  })
+
+  test('「보드」 발견은 --lint-ack 으로도 넘기지 못하고 워크트리를 만들기 전에 5 로 멈춘다', () => {
+    const file = join(tmp, 'spec-lint-board.sh')
+    writeFileSync(file, `#!/bin/sh\necho "spec.md:1: 보드: 붙일 보드 항목을 찾지 못했다(브랜치 없음)"\necho "spec.md:3: 겹침: 담당 경로가 겹친다"\necho "spec-lint: 막을 발견 2건, 경로 경고 0건" >&2\nexit 1\n`)
+    chmodSync(file, 0o755)
+    env.SPEC_LINT = file
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', tmp, '--name', 'x', '--lint-ack', '겹침은 의도했다', '--', ...CLAUDE])
+    assert.equal(r.code, 5, both(r))
+    assert.match(r.stderr, /--lint-ack 으로도 넘기지 못한다/)
+    assert.match(r.stderr, /`보드 항목: 새로`/)
+    assert.doesNotMatch(r.stdout, /^lint-ack:/m)
+    assert.deepEqual(lines('make '), [])
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('막을 발견 뒤의 「보드」 경고는 --lint-ack 을 막지 않는다', () => {
+    assert.deepEqual(boardFindings('a.md:3: 겹침: x\na.md:2: 보드: id 뒤 설명\n', 'spec-lint: 막을 발견 1건, 경로 경고 0건, 보드 경고 1건\n'), [])
+    assert.deepEqual(boardFindings('a.md:1: 보드: 못 찾음\na.md:2: 보드: 경고\n', 'spec-lint: 막을 발견 1건\n'), ['a.md:1: 보드: 못 찾음'])
   })
 
   test('이유가 빈 --lint-ack 은 사용법 오류다', () => {
