@@ -37,8 +37,8 @@
 // 발견 줄에 고칠 말이 있어 권장 표현 줄이 없다. 발견이 없으면 아무것도 내지 않는다. 훅이 그대로 내보내도 조용하다.
 //
 // 종료 코드:
-//     0  이번 변경에 금지어와 TILDE 가 없다. 경고와 기존 줄의 발견이 있어도 0 이다
-//     1  이번 변경의 줄에 매핑 표 금지어나 TILDE 가 있다
+//     0  이번 변경에 금지어, TILDE, DASH 가 없다. 경고와 기존 줄의 발견이 있어도 0 이다
+//     1  이번 변경의 줄에 매핑 표 금지어, TILDE 또는 DASH 가 있다
 //     2  돌지 못함. git 저장소가 아니거나 기준을 찾지 못했거나, 검사기가 돌지 못했다
 //        (2 로 끝났거나, 띄우지 못했거나, 신호로 끝났거나, 잡지 않은 예외로 1 을 내며 죽었다. 판정은 checkerCode 다)
 // --staged 도 같다. 다만 금지어 발견은 줄의 `: 금지어 "` 꼴로 알아본다. 경로에 그 낱말이 든 파일의 경고가 커밋 거절로 바뀌지 않게 한다.
@@ -60,7 +60,7 @@ const READABILITY = join(import.meta.dirname, 'check-readability.ts')
 const HUNK = /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/
 // 두 검사기의 발견 줄은 「경로:줄번호:」 또는 「경로:줄번호  경고/실패」 로 시작한다.
 const FINDING = /^(.+?):(\d+)[: ]/
-const isFailure = (row: string) => BANNED_ROW.test(row) || /  실패 \[TILDE\]/.test(row)
+const isFailure = (row: string) => BANNED_ROW.test(row) || /  실패 \[(?:TILDE|DASH)\]/.test(row)
 // --staged 가 금지어 발견 줄을 알아보는 꼴. 낱말은 권장 표현 줄을 고르는 데 쓴다
 const BANNED_ROW = /: 금지어 "([^"]+)"/
 const ALLOW_FILE = join('.claude', 'korean-check-allow.txt')
@@ -119,7 +119,7 @@ function changedMarkdown(root: string, mergeBase: string): string[] {
   return [...new Set(names.map((name) => relative(process.cwd(), join(root, name))))].sort(pyStrCompare)
 }
 
-// 검사기 자식의 결과를 0(통과), 1(금지어나 TILDE), 2(돌지 못함)로 맞춘다.
+// 검사기 자식의 결과를 0(통과), 1(금지어, TILDE 또는 DASH), 2(돌지 못함)로 맞춘다.
 // 띄우지 못했거나 신호로 끝났거나 0, 1 이 아닌 코드는 돌지 못한 것이다. node 는 잡지 않은 예외에도 1 을 내므로,
 // 1 인데 실패 발견 줄이 없으면 그것도 돌지 못한 것으로 본다. 죽은 검사기를 「발견 없음」 으로 읽으면 금지어가 조용히 지나간다.
 // 앞 파일의 금지어를 낸 뒤 뒤 파일에서 죽은 경우도 있다. node 가 잡지 않은 예외 끝에 남기는 버전 줄(CRASHED)이 stderr 에 있으면 죽은 것이다.

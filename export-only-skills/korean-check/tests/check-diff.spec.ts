@@ -39,6 +39,29 @@ describe('이번 변경과 기존 줄', () => {
     assert.ok(sections(done.stdout).every((part) => part.includes('실패 [TILDE]')))
   })
 
+  test('새 엠대시만 작업 트리와 스테이징 검사에서 실패한다', () => {
+    const root = initRepo(tempDir())
+    const doc = join(root, 'doc.md')
+    const oldText = '# 기존 제목 — 부제\n'
+    write(doc, oldText)
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', 'init')
+
+    write(doc, oldText + '\n새 문장이다.\n')
+    assert.equal(diff(root).code, 0)
+    git(root, 'add', '.')
+    assert.equal(diff(root, '--staged').code, 0)
+
+    write(doc, oldText + '\n새 문장이다 — 엠대시가 있다.\n')
+    const done = diff(root)
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.ok(sections(done.stdout).every((part) => part.includes('실패 [DASH]')))
+    git(root, 'add', '.')
+    const staged = diff(root, '--staged')
+    assert.equal(staged.code, 1, staged.stdout + staged.stderr)
+    assert.match(staged.stdout, /doc.md:3  실패 \[DASH\]/)
+  })
+
   test('기존 줄의 발견은 실패로 올리지 않고 기존 줄 묶음에 둔다', () => {
     const root = makeRepo()
     write(join(root, 'doc.md'), OLD + '\n새로 더한 문장이다.\n')

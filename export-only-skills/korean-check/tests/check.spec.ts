@@ -31,10 +31,10 @@ describe('파일 모드', () => {
     assert.ok(done.stdout.startsWith(`${path}:1: 금지어 "트리아지"`) && !done.stdout.includes('표기 검사 통과'), done.stdout)
   })
   test('경고만 있으면 0 이고 경고 뒤에 통과 줄이 온다', () => {
-    const path = file('고쳤다 — 빠졌다.\n')
+    const path = file('자세한 내용은 §3 에 있다.\n')
     const done = check([path])
     assert.equal(done.code, 0)
-    assert.equal(done.stdout, `${path}:1  경고 [DASH] 평문의 엠대시: 콜론이나 접속사로 바꾼다\n` + PASS('1개 파일'))
+    assert.equal(done.stdout, `${path}:1  경고 [SECT] § 대신 섹션이나 장, 또는 번호를 쓴다\n` + PASS('1개 파일'))
   })
   test('금지어 검사기의 줄이 모두 앞이고 가독성 검사기의 줄이 뒤다', () => {
     const dir = tempDir()
@@ -66,7 +66,7 @@ describe('파일 모드', () => {
     const done = check([])
     assert.deepEqual([done.code, done.stdout, done.stderr], [2, '', '검사할 파일이나 --text 나 --diff 가 필요하다\n'])
   })
-  test('종료 코드는 둘 중 큰 값이다: 금지어 검사기가 2 로 끝나면 가독성 경고가 있어도 2 다', () => {
+  test('종료 코드는 둘 중 큰 값이다: 금지어 검사기가 2 로 끝나면 가독성 검사도 실패하면 2 다', () => {
     const path = file('고쳤다 — 빠졌다.\n')
     const done = check([path], { env: cleanEnv({ KOREAN_STYLE_RULES: join(tempDir(), '없다.md') }) })
     assert.equal(done.code, 2)
@@ -89,14 +89,14 @@ describe('--text', () => {
   test('줄바꿈이 든 문자열은 줄 번호가 붙는다', () => {
     assert.ok(check(['--text', '문제 없다.\n장애를 트리아지한다']).stdout.startsWith('(문자열):2: 금지어'))
   })
-  test('가독성 경고는 줄 번호 없이 (문자열) 로 나오고 통과 줄이 따른다', () => {
+  test('가독성 실패는 줄 번호 없이 (문자열) 로 나오고 통과 줄이 없다', () => {
     const done = check(['--text', '검사기를 고쳤다 — 제목이 빠져 있었다'])
-    assert.deepEqual([done.code, done.stdout], [0, '(문자열)  경고 [DASH] 평문의 엠대시: 콜론이나 접속사로 바꾼다\n' + PASS('문자열')])
+    assert.deepEqual([done.code, done.stdout], [1, '(문자열)  실패 [DASH] 평문의 엠대시: 콜론이나 접속사로 바꾼다\n'])
   })
   test('금지어 줄이 가독성 줄보다 앞이다', () => {
     const rows = check(['--text', '트리아지 — 설명']).stdout.split('\n').filter(Boolean)
     assert.equal(rows.length, 2)
-    assert.ok(rows[0].startsWith('(문자열):1: 금지어') && rows[1].startsWith('(문자열)  경고 [DASH]'), rows.join('\n'))
+    assert.ok(rows[0].startsWith('(문자열):1: 금지어') && rows[1].startsWith('(문자열)  실패 [DASH]'), rows.join('\n'))
   })
   test('빈 문자열은 통과이고 문자열이 없으면 2 다', () => {
     assert.equal(check(['--text', '']).stdout, PASS('문자열'))

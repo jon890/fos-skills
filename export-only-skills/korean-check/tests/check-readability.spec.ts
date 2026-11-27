@@ -1,5 +1,5 @@
 // check-readability 명령 경계 테스트. 옵션, stdout, 종료 코드, 훅 모드 JSON 의 바이트를 본다.
-// 검사마다 경고가 나는 표본과 나지 않는 표본을 함께 둔다. TILDE 는 실패로 막고 나머지 경고는 종료 코드 0 이다.
+// 검사마다 경고가 나는 표본과 나지 않는 표본을 함께 둔다. TILDE 와 DASH 는 실패로 막고 나머지 경고는 종료 코드 0 이다.
 // 허용 예외(목록과 표의 이름-설명 엠대시, 이스케이프한 물결표)가 중심이다. 예외를 넓히는 변경은 조용히 통과하므로 표본으로 고정한다.
 // 명령 경로는 helpers.ts 의 READABILITY 상수 하나다.
 
@@ -25,13 +25,15 @@ const MSG = {
   DASH: '평문의 엠대시: 콜론이나 접속사로 바꾼다',
 }
 
+const isFailure = (code: string) => code === 'TILDE' || code === 'DASH'
+
 // 표본마다 한 단락씩 담아 한 번에 검사한다. 표본 i 의 경고는 lineOf(i) 줄에 있다
 function batch(samples: string[], code: string, expectWarning: boolean) {
   const result = read([sampleFile(tempDir(), samples)])
-  assert.equal(result.code, code === 'TILDE' && expectWarning ? 1 : 0, `경고가 실패로 올라갔다: ${result.stdout}`)
+  assert.equal(result.code, isFailure(code) && expectWarning ? 1 : 0, `경고가 실패로 올라갔다: ${result.stdout}`)
   const found = findingsByLine(result.stdout)
   samples.forEach((sample, i) => {
-    const has = (found.get(lineOf(i)) ?? []).some((row) => row.includes(`${code === 'TILDE' ? '실패' : '경고'} [${code}]`))
+    const has = (found.get(lineOf(i)) ?? []).some((row) => row.includes(`${isFailure(code) ? '실패' : '경고'} [${code}]`))
     assert.equal(has, expectWarning, expectWarning ? `경고가 나야 하는 표본이 조용했다: ${JSON.stringify(sample)}` : `경고가 나면 안 되는 표본에서 경고가 났다: ${JSON.stringify(sample)}`)
   })
 }
@@ -40,8 +42,8 @@ const quiet = (samples: string[], code: string) => batch(samples, code, false)
 
 function assertCaught(text: string, code: string) {
   const done = on(text)
-  assert.equal(done.code, code === 'TILDE' ? 1 : 0, done.stdout)
-  assert.ok(done.stdout.includes(`${code === 'TILDE' ? '실패' : '경고'} [${code}]`), `경고가 나야 하는 표본이 조용했다: ${JSON.stringify(text)}`)
+  assert.equal(done.code, isFailure(code) ? 1 : 0, done.stdout)
+  assert.ok(done.stdout.includes(`${isFailure(code) ? '실패' : '경고'} [${code}]`), `경고가 나야 하는 표본이 조용했다: ${JSON.stringify(text)}`)
 }
 function assertPassed(text: string) {
   const done = on(text)
@@ -110,9 +112,9 @@ describe('TILDE', () => {
 
 describe('DASH', () => {
   test('평문과 제목의 엠대시를 잡는다', () => {
-    warned(['검사기를 고쳤다 — 제목이 빠져 있었다.'], 'DASH')
-    assert.equal(on('## 검사 범위 — 제목까지\n').stdout.includes(MSG.DASH_HEAD), true)
-    assert.equal(on('검사기를 고쳤다 — 제목이 빠져 있었다.\n').stdout.includes(MSG.DASH), true)
+    const done = on('## 검사 범위 — 제목까지\n\n검사기를 고쳤다 — 제목이 빠져 있었다.\n')
+    assert.equal(done.code, 1)
+    assert.equal(done.stdout, `${done.path}:1  실패 [DASH] ${MSG.DASH_HEAD}\n${done.path}:3  실패 [DASH] ${MSG.DASH}\n`)
   })
   test('목록 항목의 이름과 설명을 나누는 엠대시는 허용한다', () => {
     quiet(['- `check.sh` — 검사기 둘을 함께 돌린다', '* 항목 — 설명', '+ 항목 — 설명', '1. 항목 — 설명', '> - 인용 안의 목록 — 설명'], 'DASH')
@@ -155,9 +157,9 @@ describe('줄 나누기', () => {
 })
 
 describe('문자열 모드', () => {
-  test('경고를 알리고 0 으로 끝난다', () => {
+  test('엠대시를 실패로 알리고 1 로 끝난다', () => {
     const done = read(['--text', '검사기를 고쳤다 — 제목이 빠져 있었다'])
-    assert.deepEqual([done.code, done.stdout], [0, `(문자열)  경고 [DASH] ${MSG.DASH}\n`])
+    assert.deepEqual([done.code, done.stdout], [1, `(문자열)  실패 [DASH] ${MSG.DASH}\n`])
   })
   test('깨끗한 문자열은 출력이 없다', () => {
     assert.deepEqual(Object.values(read(['--text', 'fix(korean-check): 제목을 검사 대상에 넣는다'])).slice(0, 2), [0, ''])
@@ -209,7 +211,7 @@ describe('여러 파일과 종료 코드', () => {
     const done = read([b, a])
     assert.deepEqual(done.stdout.split('\n').filter(Boolean), [`${b}:1  경고 [SECT] ${MSG.SECT}`, `${a}:1  경고 [NEST] ${MSG.NEST}`])
   })
-  test('한 줄의 경고는 NEST, SECT, DASH 순서다', () => {
+  test('한 줄의 발견은 NEST, SECT, DASH 순서다', () => {
     const done = on('값 (a (b)) §1 — c.\n')
     assert.deepEqual(done.stdout.split('\n').filter(Boolean).map((row) => /\[(\w+)\]/.exec(row)?.[1]), ['NEST', 'SECT', 'DASH'])
   })
@@ -218,13 +220,13 @@ describe('여러 파일과 종료 코드', () => {
 
 describe('훅 모드', () => {
   const hook = (payload: unknown) => read(['--hook'], { input: typeof payload === 'string' ? payload : JSON.stringify(payload) })
-  const intro = '마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. TILDE 는 고치고, 나머지는 문맥을 보고 고칠지 판단한다.\n'
+  const intro = '방금 편집한 파일에서 가독성 문제를 발견했다. 실패 항목은 고치고, 경고는 문맥을 보고 판단한다.\n'
 
-  test('경고가 있어도 0 이고 JSON 한 줄을 낸다', () => {
+  test('실패 항목이 있어도 0 이고 JSON 한 줄을 낸다', () => {
     const path = write(join(tempDir(), 'a.md'), '고쳤다 — 빠져 있었다.\n')
     const done = hook({ tool_input: { file_path: path } })
     assert.equal(done.code, 0)
-    const ctx = `${intro}${path}:1  경고 [DASH] ${MSG.DASH}`
+    const ctx = `${intro}${path}:1  실패 [DASH] ${MSG.DASH}`
     assert.equal(done.stdout, `{"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": ${JSON.stringify(ctx)}}}\n`)
   })
   test('편집 후 훅은 TILDE 를 실패로 알리고 종료 코드는 0 이다', () => {
@@ -289,7 +291,7 @@ describe('링크로 부르기', () => {
     const call = (file_path: string) => spawnSync(link(), ['--hook'], { env: cleanEnv(), input: JSON.stringify({ tool_input: { file_path } }), encoding: 'utf8' })
     const hit = call(bad)
     assert.equal(hit.status, 0)
-    assert.ok(JSON.parse(hit.stdout).hookSpecificOutput.additionalContext.includes(`${bad}:1  경고 [DASH]`))
+    assert.ok(JSON.parse(hit.stdout).hookSpecificOutput.additionalContext.includes(`${bad}:1  실패 [DASH]`))
     assert.deepEqual([call(good).status, call(good).stdout], [0, ''])
   })
 })
