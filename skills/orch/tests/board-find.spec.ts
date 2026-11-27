@@ -78,6 +78,9 @@ test('끝나지 않은 기능 줄은 같은 단계의 재시도만 받고, 모�
   assert.equal(startStageProblem(running, { name: 'implementation', part: 1, total: 1 }, opts), null)
   const finished: BoardItem = { id: 'f', details: [{ text: '1. 기능 technical-design', done: true }] }
   assert.match(startStageProblem(finished, { name: 'implementation', part: 1, total: 1 }, opts)!, /모두 끝났고 다음 단계 줄이 없다/)
+  const inNext: BoardItem = { id: 'f', next: [{ text: '1. 기능 technical-design', done: true }, '2. 기능 implementation 1/1'] }
+  assert.match(startStageProblem(inNext, { name: 'technical-design' }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 technical-design 부터/)
+  assert.match(startStageProblem({ id: 'f', next: ['✓ 1. 기능 technical-design'] }, { name: 'technical-design' }, opts)!, /모두 끝났고/)
 })
 
 test('기능 단계 줄이 없는 항목은 새 스펙이면 spec, 확인된 스펙이면 설계부터, 설계가 있으면 구현 1차도 받는다', () => {

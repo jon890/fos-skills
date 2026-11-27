@@ -77,14 +77,15 @@ type StageLine = { stage: FeatureStage; text: string; ask: boolean; done: boolea
 
 function stageLines(item: Record<string, unknown>): StageLine[] {
   const found: StageLine[] = []
-  for (const [key, value] of [['details', item.details], ['next', item.next]] as const) {
+  // 보드 명령(stepSource)처럼 details 와 next 어느 쪽의 단계 줄이든 완료 표시를 본다
+  for (const value of [item.details, item.next]) {
     const rows = Array.isArray(value) ? value : value ? String(value).split('\n') : []
     for (const row of rows) {
       const raw = detailText(row)
       const text = raw.replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, '')
       const stage = featureStageOfLine(text)
       if (!stage) continue
-      const done = key === 'details' && (typeof row === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(row) : row?.done === true)
+      const done = (typeof row === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(row) : row?.done === true)
       found.push({ stage, text, ask: /^\s*\d+[.)]?\s+\[ask\]\s/.test(text), done })
     }
   }
