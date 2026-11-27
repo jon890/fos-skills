@@ -341,3 +341,21 @@ test('PR 없는 기능 지시서는 성공 보고로 완료할 담당 단계를 
   assert.equal(item.workers[0]['feature-report'], 'pending')
   assert.equal(item.workers[0].pr, null)
 })
+
+test('`보드 항목 없음:` 지시서는 항목을 만들지도 붙이지도 않는다', () => {
+  board(base())
+  assert.equal(launch('보드 항목 없음: 일회성 조사다\n브랜치: `feat/a`', 'new', 'feat/a'), null)
+  assert.deepEqual(items(), [base()])
+})
+
+test('id 없는 기능 지시서는 같은 기능 폴더의 항목에 붙고, 다른 기능 항목은 같은 업무여도 고르지 않는다', () => {
+  const ask = { text: '1. [ask] 기능 technical-design', done: false }
+  board({ id: 'feature-b', status: 'doing', 'task-ref': 'P/1', feature: 'docs/features/b', 'feature-repo': repo, details: [ask] },
+    { id: 'feature-a', status: 'doing', feature: 'docs/features/a', 'feature-repo': repo, details: [ask] })
+  const r = launch('두레이 업무: P/1\n기능 단계: technical-design\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)', 'design-a', 'docs/a-design')
+  assert.equal(r?.item, 'feature-a')
+  const [b, a] = items()
+  assert.equal(b.workers, undefined)
+  assert.equal(a.workers[0].worktree, 'design-a')
+  assert.deepEqual(a.details[0], { text: '1. 기능 technical-design', done: false })
+})

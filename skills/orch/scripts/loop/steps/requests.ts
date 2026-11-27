@@ -5,7 +5,7 @@
 // 자동 완료 다시 보내기: finish-pr 이 보내지 못해 pending_done 을 남긴 요청은 같은 단계가 lib/requests.ts 의 answerRequest 로 done 을 다시 보낸다.
 
 import { ackOverdue, isClosed } from '../../core/main-coordinator.ts'
-import { answerRequest, listRequests, replyRunOf, repoName, requestNotice, markAckNoticed } from '../../lib/requests.ts'
+import { answerRequest, listRequests, replyRunOf, repoName, requestLabel, requestNotice, markAckNoticed } from '../../lib/requests.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { log, oneLine } from './shared.ts'
 
@@ -22,7 +22,7 @@ export async function notifyUnacked(ctx: StepContext, _state: StepState): Promis
       if (!ackOverdue(record.state, record.created_at, record.ack_notice_at, now, ctx.requestAckSec)) continue
       const target = replyRunOf(record)
       const minutes = Math.floor((now - Date.parse(record.created_at)) / 60_000)
-      const text = `${repoName(record.repo)} 요청 ${record.id}(${record.title}) 이 ${minutes}분째 받음·보류·거절 답이 없다. 받은 당시 메인 Run: ${record.to_run}. 다시 보낼지 정한다`
+      const text = `${repoName(record.repo)} 에 보낸 ${requestLabel(record)}(「${record.title}」)이 ${minutes}분째 받음·보류·거절 답이 없다. 받은 당시 메인 Run: ${record.to_run}. 다시 보낼지 정한다`
       const sent = requestNotice(target, 'REQUEST-NO-ACK', record, text)
       if (!sent.ok) {
         log(`NOTICE-FAIL REQUEST-NO-ACK ${record.id} ${oneLine(sent.error)}`)

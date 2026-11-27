@@ -48,6 +48,7 @@ worker 를 띄울 때 리뷰·검증은 대상 PR 의 항목(done 포함)에, �
 리뷰·검증 줄은 상태·단계·대표 칸을 바꾸지 않고, 항목 닫기와 자동 진행을 붙잡지 않는다. 작업 중 줄이 살아 있으면 역할과 상관없이 멈춘 단계 알림을 내지 않는다. 줄은 worker_done, 끝난 dispatch, 사라진 워크트리로 끝난다. 구현 이력·줄·PR 이 있는 항목은 리뷰 완료로 닫지 않는다. 첫 띄우기 이력으로 리뷰·검증 전용임을 확인한 항목만 마지막 줄이 끝날 때 닫는다. 다시 연 항목은 지난 완료 보고로 닫지 않는다.
 
 별도 항목으로 만들려면 지시서 머리에 `보드 항목: 새로`를 적는다. `보드 항목 id:`와 함께 쓰면 오류다. PR 전 검증은 `worker 역할: 검증`과 `보드 항목 id:`로 붙인다.
+id 없는 지시서가 붙을 항목을 찾지 못하면 띄우기 전에 막는다. 항목 없이 띄울 일은 `보드 항목 없음: <이유>` 를 적는다([붙일 보드 항목](spec-writing.md#붙일-보드-항목)).
 
 창은 항목 아래에 작업 중 worker 를 역할·워크트리·PR·CI·상태로 한 줄씩 그리고, 끝난 worker 는 「✓ 끝난 worker N」 한 줄로 묶는다. 끊긴 worker 는 빨간 줄로 보이고, 펼친 보기(d)는 모든 줄을 그린다. 완료 항목은 작업 중 줄만 그리고, 작업 중 줄이 있으면 「worker 없음」 을 그리지 않는다. 줄이 없는 옛 항목은 worktree 칸의 worker 하나를 붙인다. 그리는 규칙은 [창 동작](../../../extensions/work-board/references/behavior.md)이 소유하고, worker 줄 필드는 [데이터 스키마](../../../docs/data-schema.md#보드-항목의-worker-줄)가 소유한다.
 
@@ -216,7 +217,7 @@ orch board release --release "$RELEASE_PR"
 
 | 시점 | 담당 | 갱신하는 것 |
 | --- | --- | --- |
-| worker 를 띄운 뒤 | `launch-worker.ts` | 지시서의 보드 항목 id 로 항목을 찾거나 만들어 doing 으로 두고 위 「마일스톤 단계」 로 `stages` 필드를 둔다. 항목 찾기 순서, 제목 정하기, 같은 업무의 다음 PR 을 이어 쓰는 규칙, `중간 과정: PR #N` 줄, done 항목 다시 열기는 `launch-worker.ts` 와 `scripts/lib/board.ts` 의 `registerBoard`·`specTitle` 주석이 소유한다. 항목이 이미 있으면 제목과 단계는 사용자가 정한 마일스톤이라 그대로 둔다. 업무 연결 줄의 꼴은 `board.task_line` 이 정한다. 번호는 `task-ref`, 같은 줄의 어댑터 호스트 주소는 `task` 에 빈 칸일 때만 넣는다. 새 제목에는 번호를 붙이지 않고 같은 업무는 번호 칸으로 먼저 찾는다 |
+| worker 를 띄운 뒤 | `launch-worker.ts` | 지시서의 보드 항목 id 로 항목을 찾거나 만들어 doing 으로 두고 위 「마일스톤 단계」 로 `stages` 필드를 둔다. 항목 찾기 순서(`core/board-find.ts`), 제목 정하기, 같은 업무의 다음 PR 을 이어 쓰는 규칙, `중간 과정: PR #N` 줄, done 항목 다시 열기는 `launch-worker.ts` 와 `scripts/lib/board.ts` 의 `registerBoard`·`specTitle` 주석이 소유한다. 항목이 이미 있으면 제목과 단계는 사용자가 정한 마일스톤이라 그대로 둔다. 업무 연결 줄의 꼴은 `board.task_line` 이 정한다. 번호는 `task-ref`, 같은 줄의 어댑터 호스트 주소는 `task` 에 빈 칸일 때만 넣는다. 새 제목에는 번호를 붙이지 않고 같은 업무는 번호 칸으로 먼저 찾는다 |
 | 성공한 `worker_done` | `orch-loop.ts`, `board-sync.ts` | 위 「worker 보고로 단계 끝내기」 대로 `steps=` 의 단계나 PR 없는 일의 남은 단계를 끝낸다 |
 | 준비됨 `worker_done` | `orch-loop.ts` | 그 PR 의 브랜치로 `pr` 필드가 빈 항목을 찾아 `pr` 필드를 채우고 PR 제목의 번호(`finish.task_pattern`)를 업무 칸(`task`, `task-ref`)이 둘 다 빌 때만 넣는다 |
 | 틱마다 | `orch-loop.ts` → `lib/task-links.ts` | 번호만 있는 열린 항목의 업무 주소를 어댑터로 만들어 채운다. 실패는 항목·번호마다 한 번 `TASK-LINK-FAIL` 로 남기고 30분마다 다시 해 본다 |

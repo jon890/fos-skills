@@ -11,12 +11,13 @@
 //   board.ts worker-link <id> --worktree W --pr N   (그 줄의 pr 을 N 으로 하고 항목 pr 칸에 N 을 더한다. 한 잠금, 한 번 저장이라 둘 중 하나만 저장되지 않는다. 맞는 줄이 없으면 거절한다)
 //   --stages 는 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄의 머지 단계 번호(merge=M, 옛 항목은 pr=N,merge=M)다. 같은 줄을 다시 쓸 때 주지 않으면 그대로 둔다.
 //   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
-//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D ...]
+//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--request-from R] [--request-to R] [--detail D ...]
 //   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
 //   --stages 는 orch 가 사건과 단계 번호의 짝(「pr=1,merge=2,deploy=3,release=4」)을 기억하는 칸이다. 사건은 pr, merge, deploy, release 다
 //   --pr 과 --merged-pr 은 「#555」 와 「555」 를 같게 숫자 555 로 저장한다. 여럿(「#492, #495」)은 「492, 495」 문자열이다
 //   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
 //   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목 앞 업무 칩의 링크로 쓴다)
+//   (--request-from, --request-to 는 orch request 가 쓰는 요청 항목의 보낸 저장소, 받는 저장소 이름이다. 창이 제목 앞 「[저장소 요청]」 표시로 쓴다)
 //   (--task-ref 는 업무 번호이며 칩의 글이다. --fill 은 업무 칸이 모두 빌 때만 채운다. --if-task-ref 는 번호가 같을 때만 쓰고 --fill 과 함께 쓰면 빈 주소만 채운다)
 //   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
 //   (--detail 로 바꿀 때 앞 표시가 없고 글이 옛 줄과 같은 줄은 옛 줄의 끝냄 표시를 이어받는다. 줄 하나만 고치려면 detail-edit 를 쓴다)
@@ -79,7 +80,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSyn
 import { dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { LockTimeout, withFileLock, type Lock } from '../../../modules/file-lock.ts'
-import { FIELDS, GET_FIELDS, LEAD_MARK, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
+import { FIELDS, GET_FIELDS, LEAD_MARK, adoptsAskStage, stepSource, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
 import { defaultBoardPath } from '../../../modules/work-board/path.ts'
 import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 
@@ -103,7 +104,7 @@ const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
   '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,clear-done,worker-add,worker-end,worker-set,worker-link,feature-advance} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--create-only] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D] [--next N] [--file F]'
+  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--create-only] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--request-from R] [--request-to R] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
@@ -133,11 +134,12 @@ const HELP = `${USAGE}
   board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, priority?, lines)
   set, step --exact 는 엄격 검사 뒤 결과 JSON 을 낸다. step 결과에는 number 도 있다.
   set --if-rev REV 는 읽은 뒤 줄이 바뀌면 저장을 거절한다.
-  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D ...]
+  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--request-from R] [--request-to R] [--detail D ...]
   --priority 는 양의 정수다. none 을 주면 지운다.
   (--stages 는 사건과 단계 번호의 짝이다. 「pr=1,merge=2,deploy=3,release=4」. orch 가 쓴다)
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목 앞 업무 칩의 링크로 쓴다)
+  (--request-from, --request-to 는 orch request 가 쓰는 요청 항목의 보낸 저장소, 받는 저장소 이름이다. 창이 제목 앞 「[저장소 요청]」 표시로 쓴다)
   (--task-ref 는 업무 번호이며 칩의 글이다. --fill 은 업무 칸이 모두 빌 때만 채운다. --if-task-ref 는 번호가 같을 때만 쓰고 --fill 과 함께 쓰면 빈 주소만 채운다)
   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
   (--detail 로 바꿀 때 앞 표시가 없고 글이 옛 줄과 같은 줄은 옛 줄의 끝냄 표시를 이어받는다)
@@ -214,14 +216,6 @@ function refuseStepNumber(number: number | undefined, max: number): void {
 }
 
 // 하위 항목에 단계가 있으면 그것을, 없으면 next 의 줄을 쓴다.
-function stepSource(item: Item): [string | null, Line[]] {
-  for (const key of ['details', 'next']) {
-    const lines = normalizeLines(item[key] || [])
-    if (lines.some((line) => parseStep(line))) return [key, lines]
-  }
-  return [null, []]
-}
-
 // [끝낸 단계, 전체 단계]. progress 가 N/M 이면 그 값을, 아니면 단계 줄을 센다. 없으면 null
 function progressOf(item: Item): [number, number] | null {
   const m = PROGRESS.exec(String(item.progress || ''))
@@ -395,6 +389,8 @@ function parse(argv: string[]): Args | 'help' {
     stages: { type: 'string' },
     feature: { type: 'string' },
     'feature-repo': { type: 'string' },
+    'request-from': { type: 'string' },
+    'request-to': { type: 'string' },
     'feature-steps': { type: 'string' },
     'feature-stage': { type: 'string', multiple: true },
     done: { type: 'string' },
@@ -482,7 +478,7 @@ function linesOf(item: Item) {
 }
 function itemObject(item: Item) {
   const result: Record<string, unknown> = {}
-  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'task-ref', 'stages', 'feature', 'feature-repo', 'feature-final-pr', 'feature-final-report', 'stepAt', 'workers']) {
+  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'task-ref', 'stages', 'feature', 'feature-repo', 'request-from', 'request-to', 'feature-final-pr', 'feature-final-report', 'stepAt', 'workers']) {
     if (key in item) result[key] = item[key]
   }
   if (isBoardPriority(item.priority)) result.priority = item.priority
@@ -803,9 +799,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
           let max = Math.max(0, ...steps.map((line) => parseStep(line)?.[0] ?? 0))
           row['feature-steps'] = a.featureStages.map((stage, index) => {
             refuseLine(stage)
-            const asked = index === 0 ? steps.find((line) => !line.done &&
-              (line.text.replace(/^\s*\d+[.)]?\s+/, '') === `[ask] ${stage}` ||
-               (/^기능 implementation 1\/\d+$/.test(stage) && /^\s*\d+[.)]?\s+\[ask\] 기능 implementation 1\/1$/.test(line.text)))) : undefined
+            const asked = index === 0 ? steps.find((line) => !line.done && adoptsAskStage(stage, line.text)) : undefined
             if (asked) {
               asked.text = asked.text.replace(/^(\s*\d+[.)]?\s+).*$/, (_, number) => number + stage)
               return parseStep(asked)![0]

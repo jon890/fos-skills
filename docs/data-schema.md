@@ -151,6 +151,8 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `feature-repo` | 기능 폴더가 속한 저장소의 주 checkout 실경로. `feature` 와 함께 쓴다 |
 | `feature-final-pr` | 기능의 마지막 단계를 머지한 PR 번호. 끝난 단계 줄을 정리한 뒤에도 남은 단계가 끝나면 항목을 닫는 데 쓴다 |
 | `feature-final-report` | PR 없이 기능의 마지막 단계를 끝낸 worker 의 dispatch id |
+| `request-from` | `orch request` 로 받은 요청 항목의 보낸 저장소 이름. 같은 저장소 안의 요청이면 생략한다. 창이 제목 앞 `[<이름> 요청]` 으로 그린다 |
+| `request-to` | 보낸 쪽 요청 항목의 받는 저장소 이름. 창이 제목 앞 `[<이름> 에 보낸 요청]` 으로 그린다 |
 
 ## 보드 항목의 worker 줄
 
