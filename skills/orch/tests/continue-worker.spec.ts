@@ -10,6 +10,7 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
 import { continueNote, STOP_LIMIT, stoppedNote } from '../scripts/lib/continue-worker.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
+import { recordHistory } from '../scripts/lib/launch-history.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/continue-worker.ts', import.meta.url))
 let repo: string, orca: FakeBin, gh: FakeBin, env: NodeJS.ProcessEnv
@@ -18,8 +19,12 @@ const result = (value: unknown) => JSON.stringify({ ok: true, result: value })
 const PR = [{ number: 7, title: '제목', url: 'https://x/7', headRefName: 'feat/x' }]
 
 type Stage = { activity?: string; backgroundWait?: unknown }
-function setup(options: { status?: string; stage?: Stage; prs?: unknown[]; merged?: unknown[]; spec?: string; completion?: 'none'; sendCode?: number; sendOut?: string; branch?: false } = {}) {
+function setup(options: { status?: string; stage?: Stage; prs?: unknown[]; merged?: unknown[]; spec?: string; completion?: 'none'; sendCode?: number; sendOut?: string; branch?: false; at?: string } = {}) {
   const spec = join(repo, 'spec-x.md')
+  if (options.at) {
+    process.env.ORCH_DIR = join(repo, '.orch')
+    recordHistory(repo, { dispatch: 'd1', terminal: 'worker', worktree: repo, run: 'R', spec, branch: 'feat/x', at: options.at, title: null, row: null, retry_of: null })
+  }
   writeFileSync(spec, options.spec ?? '# 작업\n\n브랜치: `feat/x`\n허락: PR 생성까지 허락했다.\n')
   recordLaunch(repo, { dispatch: 'd1', terminal: 'worker', worktree: repo, run: 'R', spec, ...(options.branch === false ? {} : { branch: 'feat/x' }), ...(options.completion ? { completion: options.completion } : {}) })
   const projection = options.stage ? { projection: { stage: options.stage } } : {}
@@ -56,7 +61,8 @@ test('--run 을 주면 그 Run 으로 보낸다', () => {
   assert.deepEqual(sent()[0].slice(-2), ['--run', 'R2'])
 })
 for (const [name, options, reason] of [
-  ['열린 PR 이 없고 머지된 PR 이 있으면', { prs: [], merged: [{ number: 6, headRefName: 'feat/x' }] }, /이미 머지됐다/],
+  ['열린 PR 이 없고 띄운 시각을 모르는데 머지된 PR 이 있으면', { prs: [], merged: [{ number: 6, headRefName: 'feat/x', mergedAt: '2026-11-01T00:00:00Z' }] }, /이미 머지됐다/],
+  ['열린 PR 이 없고 띄운 뒤 머지된 PR 이 있으면', { prs: [], at: '2026-11-27T00:00:00Z', merged: [{ number: 6, headRefName: 'feat/x', mergedAt: '2026-11-27T01:00:00Z' }] }, /이미 머지됐다/],
   ['dispatch 가 아직 살아 있으면', { status: 'running' }, /아직 살아 있다/],
   ['살아 있는 dispatch 가 작업 중이면', { status: 'dispatched', stage: { activity: 'working' } }, /아직 살아 있다/],
   ['턴을 끝냈어도 백그라운드 작업을 기다리면', { status: 'dispatched', stage: { activity: 'done', backgroundWait: { since: 1 } } }, /아직 살아 있다/],
@@ -121,4 +127,10 @@ test('보내기가 실패하면 횟수를 올리지 않는다', () => {
   assert.equal(run('--dispatch', 'd1').code, 1)
   setup({ prs: [] })
   assert.match(run('--dispatch', 'd1').stdout, /tries=1\//)
+})
+test('같은 브랜치 이름의 PR 이 이 worker 를 띄우기 전에 머지됐으면 PR 없는 대상으로 이어 보낸다', () => {
+  setup({ prs: [], at: '2026-11-27T00:00:00Z', merged: [{ number: 6, headRefName: 'feat/x', mergedAt: '2026-11-20T00:00:00Z' }] })
+  const r = run('--dispatch', 'd1')
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.equal(r.stdout, `CONTINUED d1 d2 task2 pr=- tries=1/${STOP_LIMIT}`)
 })

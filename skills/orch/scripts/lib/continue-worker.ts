@@ -18,7 +18,10 @@
 //     PR 을 열기 전에 보고 없이 턴을 끝낸 worker 도 이어 가게 한다. 후속 지시 끝의 세 줄(send-to-worker 의 FOLLOW_UP_TURN)이 닿고,
 //     첫머리에 「확인만 하고 끝내지 않는다」 를 둔 지시도 Codex 는 파일을 몇 개 읽고 「진행하겠습니다」 로 턴을 끝냈다
 //     (2026-11-27 ai-analysis ctx_1138929eaecc 의 rollout 기록). 문구로는 막히지 않아 멈춘 뒤 다시 보내는 길을 둔다.
-//     열린 PR 이 없으면 같은 브랜치의 MERGED PR 을 본다. 있으면 끝난 일이라 대상이 아니고, 없으면 PR 없는 대상(pr null)이다. 조회가 실패하면 판단하지 않는다.
+//     열린 PR 이 없으면 같은 브랜치의 MERGED PR 을 본다. 이 worker 를 띄운 뒤에 머지된 것이 있으면 끝난 일이라 대상이 아니고, 없으면 PR 없는 대상(pr null)이다.
+//     띄운 시각은 영구 이력에서 같은 지시서와 브랜치로 띄운 가장 이른 행의 at 이다(후속 Task 로 이어 맡은 dispatch 도 처음 띄운 시각을 쓴다).
+//     같은 브랜치 이름을 다시 쓴 새 worker 가 예전 머지 때문에 건너뛰지 않게 하려는 것이다(loop/completion-watch.ts 의 branchMerged 와 같은 기준).
+//     띄운 시각을 모르면 머지된 PR 이 하나라도 있을 때 끝난 일로 본다. 조회가 실패하면 판단하지 않는다.
 //     dispatch 가 살아 있어도 Orca 가 턴이 끝났다고 보면(worker-show 의 projection.stage.activity 가 done 이고 backgroundWait 가 없다) 대상이다.
 //     그 dispatch 에 본문만 보낸다(send-to-worker --no-reply --body). 작업 중(working)이거나 백그라운드 작업을 기다리면 지금처럼 건너뛴다.
 //     끝난 dispatch 는 PR 이 없어도 --spec --note 로 후속 Task 를 연다.
@@ -108,12 +111,21 @@ export function stoppedNote(pr: number | null): string {
   return `${head}${tail} 막혔으면 ask 를, 의도한 대기면 status 에 대기라고 적는다.`
 }
 
-// 브랜치에 MERGED PR 이 있는지. 조회가 실패하면 error
-function mergedPrOf(repo: string, branch: string): { ok: true; merged: boolean } | { ok: false; error: string } {
-  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'merged', '--json', 'number,headRefName', '--limit', '5'], { cwd: repo })
+// 같은 지시서와 브랜치로 처음 띄운 시각(ms). 이력에 없으면 null
+function launchedSince(repo: string, spec: string, branch: string): number | null {
+  const times = launchHistory(repo)
+    .filter(row => row.spec === spec && (row.branch || branch) === branch)
+    .map(row => Date.parse(row.at)).filter(Number.isFinite)
+  return times.length > 0 ? Math.min(...times) : null
+}
+
+// 브랜치에 since 뒤 MERGED PR 이 있는지. since 가 null 이면 머지된 PR 이 하나라도 있는지다. 조회가 실패하면 error
+function mergedPrOf(repo: string, branch: string, since: number | null): { ok: true; merged: boolean } | { ok: false; error: string } {
+  const got = ghJson<Json[]>(['pr', 'list', '--head', branch, '--state', 'merged', '--json', 'number,headRefName,mergedAt', '--limit', '5'], { cwd: repo })
   if (!got.ok) return got
   if (!Array.isArray(got.data)) return { ok: false, error: 'gh pr list 의 출력이 목록이 아니다' }
-  return { ok: true, merged: got.data.some(item => item && typeof item.number === 'number' && item.headRefName === branch) }
+  return { ok: true, merged: got.data.some(item => item && typeof item.number === 'number' && item.headRefName === branch &&
+    (since === null || Date.parse(String(item.mergedAt ?? '')) >= since)) }
 }
 
 // 이어 맡길 대상인지 본다. 대상이 아니면 이유를 낸다. noPr 이면 아직 PR 을 열지 않은 브랜치도 대상이다(pr null)
@@ -123,9 +135,9 @@ export function continueTarget(repo: string, dispatch: string, knownPr: number |
   const open = openPrOf(repo, spec.branch)
   if (!open.ok) return { error: open.error }
   if (!open.pr && noPr) {
-    const merged = mergedPrOf(repo, spec.branch)
+    const merged = mergedPrOf(repo, spec.branch, launchedSince(repo, spec.spec, spec.branch))
     if (!merged.ok) return { error: merged.error }
-    if (merged.merged) return { skip: `${spec.branch} 의 PR 이 이미 머지됐다` }
+    if (merged.merged) return { skip: `${spec.branch} 의 PR 이 이 worker 를 띄운 뒤 이미 머지됐다` }
     return { target: { dispatch, run: spec.run, spec: spec.spec, branch: spec.branch, pr: null } }
   }
   if (!open.pr) return { skip: `${spec.branch} 의 열린 PR 이 없다(머지됐거나 아직 열지 않았다)` }
