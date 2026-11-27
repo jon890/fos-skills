@@ -44,7 +44,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 **worker 는 `launch-worker` 로 띄운다.** 첫 지시 줄 만들기(`spec-line --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
 `worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. 기존 Task 도 `launch-worker --spec <지시서> --repo <저장소> --task <Task>` 로 다시 띄운다. failed·blocked Task 는 `--retry-of <dispatch>` 를 함께 주고 ready Task 는 생략한다.
 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
-**`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서와 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md)), codex 의 `--model`, `--effort` 를 검사하고, 어긋나면 종료 코드 1, 4, 5 로 멈춘다.** 거부 조건과 종료 코드는 `launch-worker.ts` 머리 주석이 소유한다. 지시서를 고치는 것이 기본이다. 「할 일」 첫 줄의 `루프` 발견([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」)도 같은 5 로 멈춘다.
+**`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서와 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md)), codex 의 `--model`, `--effort` 를 검사하고, 어긋나면 종료 코드 1, 4, 5 로 멈춘다.** 거부 조건과 종료 코드는 `launch-worker.ts` 머리 주석이 소유한다. 지시서를 고치는 것이 기본이다. 「할 일」 첫 줄의 `루프` 발견([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」)도 같은 5 로 멈춘다. 붙일 보드 항목을 찾지 못한 `보드` 발견([`spec-writing.md`](spec-writing.md) 의 「붙일 보드 항목」)도 같다.
 먼저 띄운 지시서와 담당 경로가 겹치는 것처럼 의도한 겹침만 `--lint-ack "<이유>"` 로 넘긴다. 이유 없이 끄는 옵션은 없다. effort 가 `기본` 이면 `--effort` 를 주지 않는다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
