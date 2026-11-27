@@ -83,6 +83,7 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     done_after: { good: ['merge', 'deploy', 'release'], bad: ['pr', '', 1] },
     task_line: { good: ['(?<number>\\d+)'], bad: ['', 'abc', '(?<number>(', 1] },
     auto_advance: flag,
+    wait_events: { good: [{}, { 'dev-eval': { command: 'node x.ts' } }, { a1: { command: 'true', timeout_sec: 600 } }], bad: ['x', [], { Bad: { command: 'x' } }, { a: { command: '' } }, { a: { command: 'x', timeout_sec: 0 } }, { a: { command: 'x', timeout_sec: 601 } }, { a: { command: 'x', other: 1 } }] },
   },
   review: { prepare: { good: ['', 'make prepare'], bad: [1, null, ['x']] } },
   feedback: { reviewer: { good: ['bot:feedback-bot', 'team.feedback-reviewer_1'], bad: ['', ' ', 'bot name', 'bot\n', 'bot\u001b', ':bot', 1, null] } },
