@@ -13,6 +13,8 @@ import type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
+import { mainCheckout } from './git.ts'
+import { featureStageText } from '../core/feature-stages.ts'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesOf, stagesText } from './milestones.ts'
 import { section } from '../core/config.ts'
 import { FINISH_KEYS } from '../core/finish-options.ts'
@@ -20,7 +22,7 @@ import { rulesFrom } from './last-pr.ts'
 import { loadConfig } from './config.ts'
 import { BOARD_BIN, boardPath, staleBoardWrite } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
-import { boardIdOf, boardNewOf, workerRoleOf, interimOf } from './spec.ts'
+import { boardIdOf, boardNewOf, featureFolderOf, featureSpecTarget, featureStagesOf, taskFirstLine, workerRoleOf, interimOf } from './spec.ts'
 import { noPrInstruction } from '../core/completion.ts'
 import { boardWorkerRows } from '../core/board-workers.ts'
 import type { WorkerRole } from '../core/board-workers.ts'
@@ -207,6 +209,17 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const item = items.find((row) => row.id === id)
   const r = result(item, id, reviewRole ?? (item ? 'follow' : 'impl'))
   const reportOnly = noPrInstruction(text)
+  const featureStages = !reviewRole && featureSpecTarget(taskFirstLine(text)?.text ?? '') !== null ? featureStagesOf(text) : null
+  if (featureStages) {
+    const root = mainCheckout(repo)
+    const feature = featureFolderOf(text, root)
+    write(['worker-add', id, r.role, '--worktree', wt, '--title', title, ...branchArgs,
+      ...(dispatch ? ['--dispatch', dispatch] : []), ...(reportOnly ? ['--feature-report'] : []), ...(item ? keepArgs(item) : []),
+      ...(feature ? ['--feature', feature, '--feature-repo', root] : []),
+      ...taskArgs.filter((arg, index) => index !== 0 || arg !== '--fill'),
+      ...featureStages.flatMap((stage) => ['--feature-stage', `기능 ${featureStageText(stage)}`])])
+    return r
+  }
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
   const milestones = () => {
     if (reportOnly) return [{ kind: null, text: WORKER_REPORT_STEP }]
@@ -346,12 +359,16 @@ export type { BoardMatch } from '../core/merge-readiness.ts'
 //   - pr 칸이 비고 branch 가 PR 브랜치이거나 worktree 가 그 워크트리 이름인 항목
 //   - worker 줄(구현·후속)의 브랜치나 워크트리가 같고 그 줄의 pr 이 빈 항목. 대표가 후속 줄로 바뀌어도 앞 줄의 PR 을 찾는다(PR 묶음, core/milestones.ts)
 // 어느 쪽도 없거나 보드를 읽지 못하면 null 이다. 둘 이상이면 ids 에 모두 담는다
-export function findBoardItems(file: string, pr: string, branch: string, worktree: string | null): BoardMatch | null {
+export function findBoardItems(file: string, pr: string, branch: string, worktree: string | null, repo?: string): BoardMatch | null {
   let items: BoardItem[]
   try {
     items = readBoard(file)
   } catch {
     return null
+  }
+  if (repo) {
+    const root = mainCheckout(repo)
+    items = items.filter((item) => !item['feature-repo'] || item['feature-repo'] === root)
   }
   return matchBoardItems(items, pr, branch, worktree)
 }

@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { defaultBoardPath } from '../../../modules/work-board/path.ts'
+import { linesRev } from '../../../modules/work-board/item.ts'
+
 
 const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
 
@@ -606,4 +608,31 @@ describe('set --detail 의 끝냄 표시 보존과 detail-edit, detail-add', () 
     board('detail-add', 'e', '1. c')
     assert.deepEqual(item('e').details, rows(['1. c', false]))
   })
+})
+
+test('feature-advance 는 지문이 맞을 때만 PR 과 단계 줄을 함께 바꾼다', () => {
+  const original = { id: 'a', status: 'doing', pr: '77, 78', details: rows(['1. 기능 technical-design', false]) }
+  write(original)
+  const args = ['feature-advance', 'a', '--pr', '77', '--done', '1', '--add', '[ask] 기능 implementation 1/1', '--status', 'doing', '--if-rev']
+  const before = readFileSync(file, 'utf8')
+  assert.equal(board(...args, 'old').code, 1)
+  assert.equal(readFileSync(file, 'utf8'), before)
+  const result = board(...args, linesRev(original))
+  assert.equal(result.code, 0, result.stderr)
+  assert.equal(item('a').pr, 78)
+  assert.equal(item('a')['merged-pr'], 77)
+  assert.equal(item('a').status, 'doing')
+  assert.deepEqual(item('a').details, rows(['1. 기능 technical-design', true], ['2. [ask] 기능 implementation 1/1', false]))
+  const after = readFileSync(file, 'utf8')
+  assert.equal(board(...args, 'old').code, 0)
+  assert.equal(readFileSync(file, 'utf8'), after)
+})
+
+test('clear-done 은 worker 의 남은 기능 단계 번호를 맞춘다', () => {
+  write({ id: 'a', status: 'doing', details: rows(['1. 기능 spec', true], ['2. 기능 technical-design', false]),
+    workers: [{ worktree: 'wt', 'feature-steps': '1,2' }] })
+  const result = board('clear-done', 'a')
+  assert.equal(result.code, 0, result.stderr)
+  assert.deepEqual(item('a').workers, [{ worktree: 'wt', 'feature-steps': '1' }])
+  assert.deepEqual(item('a').details, rows(['1. 기능 technical-design', false]))
 })

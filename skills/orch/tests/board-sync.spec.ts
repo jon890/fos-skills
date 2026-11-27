@@ -11,6 +11,7 @@ import { basename, delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
+import { run as editBoard } from '../../../extensions/work-board/tests/board-run.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/board/board-sync.ts', import.meta.url))
 
@@ -33,7 +34,8 @@ else if (args[1] === 'view' && args.includes('mergeCommit')) {
 } else if (args[1] === 'view' && args.some((arg) => arg.startsWith('title,headRefName'))) {
   if (!state['info:' + args[2]]) process.exit(1)
   say(state['info:' + args[2]])
-} else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
+} else if (args[1] === 'view' && args.includes('files')) say(state['files:' + args[2]] || {})
+else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
 else if (args[1] === 'list' && args.includes('number,title')) say(state.open || [])
 else if (args[1] === 'list' && head !== null) say((state.list || []).filter((pr) => pr.headRefName === head))
 else if (args[1] === 'list') say(state.list || [])
@@ -1337,4 +1339,117 @@ test('지운 목표 집계 옵션은 사용법 오류로 거절한다', () => {
     const result = run([flag, 'x'])
     assert.equal(result.code, 2)
   }
+})
+
+test('설계 PR 머지를 반영하고 같은 틱을 다시 돌려도 다음 단계는 하나다', () => {
+  states['77'] = 'MERGED'
+  const item = { id: 'a', status: 'doing', feature: 'docs/features/a', 'feature-repo': tmp, pr: 77,
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 technical-design', false)] }
+  const got = sync([item])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.equal(got.board.a['merged-pr'], 77)
+  assert.equal(got.board.a.pr, undefined)
+  const expected = [step('1. 기능 technical-design', true), step('2. [ask] 기능 implementation 1/1', false)]
+  assert.deepEqual(got.board.a.details, expected)
+  const again = run(['--board', board, '--repo', tmp])
+  assert.equal(again.code, 0, again.stderr)
+  assert.deepEqual(load().a.details, expected)
+})
+
+test('중간 구현 PR 은 검증까지 끝내고 다음 구현 차수를 준비한다', () => {
+  states['77'] = 'MERGED'
+  const wait = step('1. [wait: 보류] 수동 확인', false)
+  const manual = step('2. 사용자가 확인', false)
+  const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', pr: 77,
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '3,4', status: 'done' }],
+    details: [wait, manual, step('3. 기능 implementation 1/2', false), step('4. 기능 verify', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.deepEqual(got.board.a.details, [wait, manual, step('3. 기능 implementation 1/2', true),
+    step('4. 기능 verify', true), step('5. [ask] 기능 implementation 2/2', false)])
+})
+
+test('기능의 마지막 PR 머지만 항목을 완료한다', () => {
+  states['77'] = 'MERGED'
+  const got = sync([{ id: 'a', status: 'doing', pr: 77, worktree: 'old',
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 docs-consolidate', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'done')
+  assert.equal(got.board.a.worktree, undefined)
+  assert.deepEqual(got.board.a.details, [step('1. 기능 docs-consolidate', true)])
+})
+
+test('스펙 PR 을 브랜치로 찾아 연결하고 머지 파일에서 기능 폴더를 읽는다', () => {
+  states['77'] = 'MERGED'
+  states['files:77'] = { files: [{ path: 'docs/features/a/spec.md', additions: 15 }] }
+  states.list = [{ number: 77, headRefName: 'feat/spec-a', state: 'MERGED' }]
+  const got = sync([{ id: 'a', status: 'doing',
+    workers: [{ worktree: 'old', branch: 'feat/spec-a', role: 'impl', 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 spec', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a['merged-pr'], 77)
+  assert.equal(got.board.a.feature, 'docs/features/a')
+  assert.equal(got.board.a['feature-repo'], tmp)
+  assert.deepEqual(got.board.a.details, [step('1. 기능 spec', true), step('2. [ask] 기능 technical-design', false)])
+})
+
+test('마지막 기능 PR 머지 뒤 완료 줄을 정리해도 수동 단계가 끝나면 항목을 닫는다', () => {
+  states['77'] = 'MERGED'
+  const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', pr: 77,
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 docs-consolidate', false), step('2. 수동 확인', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.equal(got.board.a['merged-pr'], 77)
+  assert.equal(got.board.a['feature-final-pr'], 77)
+  assert.deepEqual(got.board.a.details, [step('1. 기능 docs-consolidate', true), step('2. 수동 확인', false)])
+  const closed = sync([{ ...got.board.a, details: [step('1. 기능 docs-consolidate', true), step('2. 수동 확인', true)] }])
+  assert.equal(closed.code, 0, closed.result.stderr)
+  assert.equal(closed.board.a.status, 'done')
+  writeFileSync(board, JSON.stringify({ items: [got.board.a] }))
+  const cleared = editBoard(board, ['clear-done', 'a'])
+  assert.equal(cleared.code, 0, cleared.stderr)
+  assert.deepEqual(load().a.details, [step('1. 수동 확인', false)])
+  assert.equal(load().a['feature-final-pr'], 77)
+  assert.equal((load().a.workers as Json[])[0]['feature-steps'], undefined)
+  const marked = editBoard(board, ['step', 'a', '1'])
+  assert.equal(marked.code, 0, marked.stderr)
+  const result = run(['--board', board, '--repo', tmp])
+  assert.equal(result.code, 0, result.stderr)
+  assert.equal(load().a.status, 'done')
+})
+
+test('사용자가 기능 단계 줄을 끝내도 마지막 PR 의 머지 기록이 없으면 닫지 않는다', () => {
+  const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', 'merged-pr': 76,
+    workers: [{ worktree: 'old', role: 'impl', pr: 76, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 verify', true), step('2. 기능 docs-consolidate', true)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+})
+
+test('PR 없는 기능 단계는 담당자의 성공 보고로만 다음 차례를 준비한다', () => {
+  mkdirSync(join(tmp, 'report'))
+  const initial = { id: 'a', status: 'doing', details: [step('1. 기능 spec', false)],
+    workers: [worker('impl', 'report', 'd1', { 'feature-steps': '1', 'feature-report': 'pending' })] }
+  states['77'] = 'MERGED'
+  states.list = [{ number: 77, headRefName: 'feat/a', state: 'MERGED' }]
+  for (const ends of ['{"other":"done"}', '{"d1":"lost"}']) {
+    const got = sync([initial], ['--worker-ends', ends])
+    assert.equal(got.code, 0, got.result.stderr)
+    assert.deepEqual(got.board.a.details, initial.details)
+    assert.equal(got.board.a.pr, undefined)
+  }
+  const got = sync([initial], ['--worker-ends', '{"d1":"done"}'])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.equal(got.board.a['merged-pr'], undefined)
+  assert.equal((got.board.a.workers as Json[])[0]['feature-report'], 'done')
+  const expected = [step('1. 기능 spec', true), step('2. [ask] 기능 technical-design', false)]
+  assert.deepEqual(got.board.a.details, expected)
+  const replay = run(['--board', board, '--repo', tmp, '--worker-ends', '{"d1":"done"}'])
+  assert.equal(replay.code, 0, replay.stderr)
+  assert.deepEqual(load().a.details, expected)
 })

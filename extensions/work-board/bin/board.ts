@@ -98,11 +98,11 @@ const ROW_STAGES = /^\s*pr=\d+\s*,\s*merge=\d+\s*$/
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'clear-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'step-edit', 'step-add', 'step-mark', 'view', 'get', 'item', 'items', 'del-done', 'clear-done', 'worker-add', 'worker-end', 'worker-set', 'worker-link', 'feature-advance']
 const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,clear-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,clear-done,worker-add,worker-end,worker-set,worker-link,feature-advance} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--create-only] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -118,6 +118,8 @@ const HELP = `${USAGE}
   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
   board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로다)
   board.ts worker-link <id> --worktree W --pr N   (줄의 pr 과 항목 pr 칸을 한 번에 쓴다. 맞는 줄이 없으면 거절한다)
+  board.ts feature-advance <id> (--pr N | --report dispatch) --done 1,2 [--add 글] [--final] --status doing|done --if-rev 지문
+    (기능 PR 의 머지와 다음 단계를 한 번에 저장한다)
   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
   board.ts step-edit <id> <번호> <글> [--event "PR 사건"]
   board.ts step-add <id> <글> [--event "PR 사건"]
@@ -306,7 +308,7 @@ function pyJson(value: unknown): string {
 // 고유 접두로 줄인 긴 옵션을 온 이름으로 펼친다. `--` 뒤는 건드리지 않는다.
 // skills/orch/scripts/lib/args.ts 의 expandArgs 에 문자열 옵션을 모두 join 으로 준 것과 같다. 복사한 까닭은 pyJson 과 같다.
 // 바꾸면 함께 고친다. flags 는 값을 받지 않는 옵션이다
-function expand(argv: string[], names: string[], flags: string[]): string[] {
+function expand(argv: string[], names: string[], flags: string[], exactOnly: string[]): string[] {
   const out: string[] = []
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
@@ -320,7 +322,7 @@ function expand(argv: string[], names: string[], flags: string[]): string[] {
     }
     const eq = token.indexOf('=')
     const given = eq >= 0 ? token.slice(2, eq) : token.slice(2)
-    const matches = names.includes(given) ? [given] : names.filter((name) => name.startsWith(given))
+    const matches = names.includes(given) ? [given] : names.filter((name) => !exactOnly.includes(name) && name.startsWith(given))
     if (matches.length > 1) throw new Error(`--${given} 이 여러 옵션의 접두다: ${matches.map((name) => `--${name}`).join(', ')}`)
     const name = matches[0] ?? given
     // 값을 받는 옵션은 바로 뒤 인자를 값으로 붙인다. `--next '-x'` 처럼 - 로 시작하는 값도 받는다
@@ -344,6 +346,13 @@ type Args = {
   except?: string[]
   fill?: boolean
   ifTaskRef?: string
+  featureSteps?: string
+  featureStages?: string[]
+  advanceDone?: string
+  advanceAdd?: string
+  advanceFinal?: boolean
+  report?: string
+  featureReport?: boolean
   ifRev?: string
   createOnly?: boolean
   event?: string
@@ -384,12 +393,23 @@ function parse(argv: string[]): Args | 'help' {
     'if-task-ref': { type: 'string' },
     progress: { type: 'string' },
     stages: { type: 'string' },
+    feature: { type: 'string' },
+    'feature-repo': { type: 'string' },
+    'feature-steps': { type: 'string' },
+    'feature-stage': { type: 'string', multiple: true },
+    done: { type: 'string' },
+    add: { type: 'string' },
+    final: { type: 'boolean' },
+    report: { type: 'string' },
+    'feature-report': { type: 'boolean' },
+    status: { type: 'string' },
     priority: { type: 'string' },
     detail: { type: 'string', multiple: true },
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help', 'clear', 'create-only'])
+  // feature-advance 옵션은 온 이름으로 받아 기존 줄임말(예: --s 는 --stages)을 지킨다.
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'all', 'fill', 'help', 'clear', 'create-only', 'final', 'feature-report'], ['done', 'add', 'status', 'final', 'report', 'feature-report'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
@@ -416,7 +436,17 @@ function parse(argv: string[]): Args | 'help' {
   if (values.except !== undefined && (cmd !== 'clear-done' || !values.all)) throw new Error('--except 는 clear-done --all 에만 쓴다')
   if (values.exact !== undefined && !['set', 'step', 'del'].includes(cmd)) throw new Error('--exact 는 set, step, del 에만 쓴다')
   if (values['create-only'] && (cmd !== 'set' || values.exact || values['if-rev'] !== undefined)) throw new Error('--create-only 는 --exact, --if-rev 없이 set 에만 쓴다')
-  if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
+  const numbered = /^[1-9]\d*(?:,[1-9]\d*)*$/
+  if (values['feature-steps'] !== undefined && (cmd !== 'worker-add' || !numbered.test(values['feature-steps']))) throw new Error('--feature-steps 는 worker-add 에 단계 번호 목록을 받는다')
+  if (values['feature-stage'] && (cmd !== 'worker-add' || !['impl', 'follow'].includes(status) || values['feature-steps'] !== undefined || values['feature-stage'].some((line) => !line.startsWith('기능 ')))) throw new Error('--feature-stage 는 worker-add 에 기능 단계 글을 받는다')
+  if (values['feature-report'] && !values['feature-stage']) throw new Error('--feature-report 는 worker-add --feature-stage 와 함께 쓴다')
+  if (cmd === 'feature-advance' && (!id || status !== undefined ||
+      (values.report === undefined ? !/^[1-9]\d*$/.test(values.pr ?? '') : !values.report.trim() || values.pr !== undefined || values.feature !== undefined) ||
+      !['doing', 'done'].includes(values.status ?? '') || !values['if-rev'] || values.done === undefined ||
+      (values.done !== '' && !numbered.test(values.done)) || (values.add !== undefined && (values.status !== 'doing' || !values.add.startsWith('[ask] 기능 '))) ||
+      Boolean(values.feature) !== Boolean(values['feature-repo']) || (values.final && values.add !== undefined))) throw new Error('feature-advance 에는 id, --pr, --done, --status, --if-rev 가 필요하다')
+  if (cmd !== 'feature-advance' && [values.done, values.add, values.status, values.final, values.report].some((value) => value !== undefined)) throw new Error('--done, --add, --status, --final, --report 는 feature-advance 에만 쓴다')
+  if (values['if-rev'] !== undefined && !['set', 'feature-advance'].includes(cmd)) throw new Error('--if-rev 는 set, feature-advance 에만 쓴다')
   if (values.event !== undefined && !['step-edit', 'step-add'].includes(cmd)) throw new Error('--event 는 step-edit, step-add 에만 쓴다')
   if (cmd === 'get') {
     if (!GET_FIELDS.includes(status as typeof GET_FIELDS[number])) throw new Error(`get 의 칸은 ${GET_FIELDS.join(', ')} 중 하나다: ${status ?? ''}`)
@@ -429,7 +459,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], createOnly: values['create-only'], event: values.event, condition, fields, priority: values.priority, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status: values.status ?? status, text, featureSteps: values['feature-steps'], featureStages: values['feature-stage'], advanceDone: values.done, advanceAdd: values.add, advanceFinal: values.final, report: values.report, featureReport: values['feature-report'], dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], createOnly: values['create-only'], event: values.event, condition, fields, priority: values.priority, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -452,7 +482,7 @@ function linesOf(item: Item) {
 }
 function itemObject(item: Item) {
   const result: Record<string, unknown> = {}
-  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'task-ref', 'stages', 'stepAt', 'workers']) {
+  for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'task-ref', 'stages', 'feature', 'feature-repo', 'feature-final-pr', 'feature-final-report', 'stepAt', 'workers']) {
     if (key in item) result[key] = item[key]
   }
   if (isBoardPriority(item.priority)) result.priority = item.priority
@@ -581,7 +611,13 @@ function clearDone(item: Item): ClearResult | string {
       else item.stages = stages
     }
     for (const row of Array.isArray(item.workers) ? item.workers as Record<string, unknown>[] : []) {
-      if (row === null || typeof row !== 'object' || !('stages' in row)) continue
+      if (row === null || typeof row !== 'object') continue
+      if (typeof row['feature-steps'] === 'string') {
+        const kept = row['feature-steps'].split(',').flatMap((number) => numbers.get(Number(number)) ?? [])
+        if (kept.length > 0) row['feature-steps'] = kept.join(',')
+        else delete row['feature-steps']
+      }
+      if (!('stages' in row)) continue
       const stages = remapStages(row.stages, numbers)
       // 후속 줄의 stages 는 merge 단계가 있어야 자기 PR 의 머지를 끝낸다. merge 가 빠지면 줄 stages 를 지운다
       if (stages === null || !/merge=/.test(stages)) delete row.stages
@@ -645,6 +681,49 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
+  if (a.cmd === 'feature-advance') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    const pr = a.fields.pr
+    const reporters = (Array.isArray(item.workers) ? item.workers : []) as Record<string, unknown>[]
+    const reporter = a.report ? reporters.find((row) => row.dispatch === a.report && row['feature-report']) : undefined
+    if (a.report && (!reporter || reporter.status !== 'done')) throw new Refused(`완료 보고를 받은 worker 줄이 없다: ${id}`)
+    const merged = new Set(String(item['merged-pr'] ?? '').match(/\d+/g) ?? [])
+    if ((pr && merged.has(pr)) || reporter?.['feature-report'] === 'done') return false
+    if (linesRev(item) !== a.ifRev) throw new Refused(`읽은 뒤 ${id} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`)
+    const [source, lines] = stepSource(item)
+    if (!source) throw new Refused(`기능 단계가 없다: ${id}`)
+    const done = new Set(a.advanceDone!.split(',').filter(Boolean).map(Number))
+    for (const line of lines) {
+      const number = parseStep(line)?.[0]
+      if (number !== undefined && done.delete(number)) line.done = true
+    }
+    if (done.size) throw new Refused(`끝낼 단계가 없다: ${id}`)
+    if (a.advanceAdd) {
+      refuseLine(a.advanceAdd)
+      const number = Math.max(0, ...lines.map((line) => parseStep(line)?.[0] ?? 0)) + 1
+      lines.push({ text: `${number}. ${a.advanceAdd}`, done: false })
+    }
+    item[source] = lines
+    delete item.progress
+    item.status = a.status
+    if (a.status === 'done') delete item.worktree
+    if (pr) {
+      const remaining = (String(item.pr ?? '').match(/\d+/g) ?? []).filter((number) => number !== pr)
+      if (remaining.length) item.pr = prValue(remaining.join(', '))
+      else delete item.pr
+      item['merged-pr'] = prValue([...merged, pr].join(', '))
+      if (a.advanceFinal) item['feature-final-pr'] = prValue(pr)
+    } else if (reporter) {
+      reporter['feature-report'] = 'done'
+      if (a.advanceFinal) item['feature-final-report'] = a.report
+    }
+    if (!item.feature && a.fields.feature && a.fields['feature-repo']) {
+      item.feature = a.fields.feature
+      item['feature-repo'] = a.fields['feature-repo']
+    }
+    return true
+  }
   if (a.cmd === 'worker-link') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)
@@ -672,10 +751,14 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     return true
   }
   if (a.cmd === 'worker-add' || a.cmd === 'worker-end') {
-    const item = find(board, id)
+    let item = find(board, id)
+    if (!item && a.featureStages && a.fields.title) {
+      item = { id, title: a.fields.title }
+      board.items.push(item)
+    }
     if (!item) throw new Refused(`항목이 없다: ${id}`)
     const stamp = localIso(new Date())
-    type Worker = { role: string; dispatch: string | null; worktree: string; branch: string | null; pr: unknown; stages?: string; status: string; at: string; endedAt: string | null }
+    type Worker = { role: string; dispatch: string | null; worktree: string; branch: string | null; pr: unknown; stages?: string; 'feature-steps'?: string; 'feature-report'?: 'pending' | 'done'; status: string; at: string; endedAt: string | null }
     const rows = (Array.isArray(item.workers) ? item.workers : []) as Worker[]
     const work = (row: Worker) => ['impl', 'follow'].includes(row.role)
     if (a.cmd === 'worker-add') {
@@ -689,10 +772,57 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
         rows.push(row)
       }
       const sameLostDispatch = row.status === 'lost' && a.dispatch === row.dispatch
+      const changedBranch = Boolean(row.branch && a.fields.branch && row.branch !== a.fields.branch)
       if (a.dispatch !== undefined) row.dispatch = a.dispatch
       if (a.fields.branch !== undefined) row.branch = a.fields.branch
-      if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
       if (a.fields.stages !== undefined) row.stages = a.fields.stages.replace(/\s+/g, '')
+      if (a.featureStages) {
+        if (item.feature && a.fields.feature && (item.feature !== a.fields.feature || item['feature-repo'] !== a.fields['feature-repo'])) {
+          throw new Refused(`보드 항목에 다른 기능이 연결돼 있다: ${id}`)
+        }
+        if (!item.feature && a.fields.feature && a.fields['feature-repo']) {
+          item.feature = a.fields.feature
+          item['feature-repo'] = a.fields['feature-repo']
+        }
+        for (const key of ['task', 'task-ref'] as const) {
+          if (!item[key] && a.fields[key]) item[key] = a.fields[key]
+        }
+        const [source, lines] = stepSource(item)
+        const owned = new Set(row['feature-steps']?.split(',').map(Number))
+        const previous = lines.filter((line) => owned.has(parseStep(line)?.[0] ?? 0))
+          .map((line) => line.text.replace(STEP, '').trim())
+        const mergedPrs: string[] = String(item['merged-pr'] ?? '').match(/\d+/g) ?? []
+        const reflected = mergedPrs.includes(String(row.pr))
+        const changedStages = previous.length !== a.featureStages.length || previous.some((stage, i) => stage !== a.featureStages![i])
+        if (!row['feature-steps'] || changedBranch || ((reflected || row['feature-report'] === 'done') && changedStages)) {
+          row.pr = null
+          if (a.featureReport) row['feature-report'] = 'pending'
+          else delete row['feature-report']
+          const target = source ?? 'details'
+          const steps = source ? lines : normalizeLines(item[target] ?? [])
+          let max = Math.max(0, ...steps.map((line) => parseStep(line)?.[0] ?? 0))
+          row['feature-steps'] = a.featureStages.map((stage, index) => {
+            refuseLine(stage)
+            const asked = index === 0 ? steps.find((line) => !line.done &&
+              (line.text.replace(/^\s*\d+[.)]?\s+/, '') === `[ask] ${stage}` ||
+               (/^기능 implementation 1\/\d+$/.test(stage) && /^\s*\d+[.)]?\s+\[ask\] 기능 implementation 1\/1$/.test(line.text)))) : undefined
+            if (asked) {
+              asked.text = asked.text.replace(/^(\s*\d+[.)]?\s+).*$/, (_, number) => number + stage)
+              return parseStep(asked)![0]
+            }
+            steps.push({ text: `${++max}. ${stage}`, done: false })
+            return max
+          }).join(',')
+          item[target] = steps
+          item.status = 'doing'
+          delete item['feature-final-pr']
+          delete item['feature-final-report']
+          delete item.progress
+          delete item.stages
+        }
+      }
+      if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
+      if (!row['feature-steps'] && a.featureSteps) row['feature-steps'] = a.featureSteps
       // 같은 dispatch 를 복구할 때는 새로 맡긴 시각으로 덮지 않는다.
       if (!sameLostDispatch) row.at = stamp
       row.status = 'working'
