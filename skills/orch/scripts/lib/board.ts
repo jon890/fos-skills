@@ -315,21 +315,27 @@ const LEGACY_STEP_TEXT = { pr: 'PR', merge: '머지' } as const
 // 지시서 「할 일」 절의 맨 앞 번호 줄 글. 들여 쓴 하위 줄과 예시 블록은 읽지 않는다. 굵게 표시와 코드 표시를 떼고
 // 첫 문장만 80자 안으로 줄인다(보드 줄 규칙). 절이 없거나 번호 줄이 없으면 빈 목록이다
 export function todoSteps(text: string): string[] {
+  return [...todoNumbered(text).values()]
+}
+
+// 「할 일」 번호 → 보드 단계 글. todoSteps 와 같은 줄을 읽고, worker_done 의 steps= 번호를 단계 글로 옮길 때 쓴다
+export function todoNumbered(text: string): Map<number, string> {
   let fence = false
   const lines = text.split('\n').filter((line) => {
     if (/^\s*(?:`{3,}|~{3,})/.test(line)) { fence = !fence; return false }
     return !fence
   })
   const at = lines.findIndex((line) => /^##\s+할 일(?:\s.*)?$/.test(line))
-  if (at < 0) return []
-  const steps: string[] = []
+  const steps = new Map<number, string>()
+  if (at < 0) return steps
   for (const line of lines.slice(at + 1)) {
     if (/^#{1,2}\s/.test(line)) break
-    const body = /^(\d+)[.)]\s+(.+)$/.exec(line)?.[2]
-    if (!body) continue
+    const match = /^(\d+)[.)]\s+(.+)$/.exec(line)
+    if (!match) continue
+    const body = match[2]
     const plain = body.replaceAll('**', '').replace(/`([^`]*)`/g, '$1').trim()
     const sentence = plain.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? plain
-    steps.push(sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence)
+    if (!steps.has(Number(match[1]))) steps.set(Number(match[1]), sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence)
   }
   return steps
 }

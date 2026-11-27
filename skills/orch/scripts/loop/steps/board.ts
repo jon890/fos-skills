@@ -10,6 +10,7 @@ import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import { context, doneSteps, noPrInstruction, payload } from '../../lib/completion.ts'
 import { readFileSync } from 'node:fs'
+import { todoNumbered } from '../../lib/board.ts'
 import { boardItemOfDispatch, reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } from '../../lib/review.ts'
 import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
@@ -88,8 +89,9 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
 
 // dispatch → { steps, noPr }. steps 는 worker_done 이 적은 끝낸 단계 번호(없으면 null), noPr 은 그 dispatch 의 지시서가 PR 없는 일인지다.
 // 둘 다 없는 dispatch 는 넣지 않는다. 지시서를 읽지 못하면 PR 없는 일로 보지 않는다(번호 없는 보고로 모든 단계를 끝내지 않는다)
-export function workerSteps(repo: string, messages: Record<string, unknown>[]): Record<string, { steps: number[] | null; noPr: boolean }> {
-  const found: Record<string, { steps: number[] | null; noPr: boolean }> = {}
+// texts 는 steps 의 번호마다 지시서 「할 일」 그 번호 줄의 글(보드 단계와 같은 꼴, 없으면 null)이다. 다시 연 항목은 단계 번호가 뒤로 밀려 글로 맞춘다
+export function workerSteps(repo: string, messages: Record<string, unknown>[]): Record<string, { steps: number[] | null; noPr: boolean; texts?: (string | null)[] }> {
+  const found: Record<string, { steps: number[] | null; noPr: boolean; texts?: (string | null)[] }> = {}
   let history: Map<string, { spec?: string | null }> | null = null
   for (const message of messages) {
     const dispatch = context(message)[1]
@@ -97,10 +99,12 @@ export function workerSteps(repo: string, messages: Record<string, unknown>[]): 
     const id = String(dispatch)
     history ??= new Map(launchHistory(repo).map((row) => [row.dispatch, row]))
     const spec = history?.get(id)?.spec
-    let noPr = false
-    try { noPr = Boolean(spec) && noPrInstruction(readFileSync(spec as string, 'utf8')) } catch { noPr = false }
-    const steps = doneSteps(message)
-    if (steps || noPr) found[id] = { steps: steps ?? found[id]?.steps ?? null, noPr }
+    let text = ''
+    try { text = spec ? readFileSync(spec, 'utf8') : '' } catch { text = '' }
+    const noPr = Boolean(text) && noPrInstruction(text)
+    const steps = doneSteps(message) ?? found[id]?.steps ?? null
+    const todo = text ? todoNumbered(text) : new Map<number, string>()
+    if (steps || noPr) found[id] = { steps, noPr, ...(steps && todo.size > 0 ? { texts: steps.map((n) => todo.get(n) ?? null) } : {}) }
   }
   return found
 }

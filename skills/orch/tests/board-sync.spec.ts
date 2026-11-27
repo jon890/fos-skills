@@ -160,8 +160,20 @@ test('worker_done 의 steps= 는 줄 끝 사건 꼬리표와 줄 앞 사건 표�
   assert.equal(got.board.tagged.status, 'doing')
 })
 
+test('다시 연 항목은 worker_done 의 할 일 번호를 같은 글의 단계로 옮긴다', () => {
+  const item = { id: 'again', status: 'doing', details: [step('1. 조사한다', true), step('2. 조사한다', false), step('3. 정리한다', false)],
+    workers: [worker('impl', 'again', 'd1')] }
+  const one = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1], noPr: true, texts: ['조사한다'] } })])
+  assert.equal(one.code, 0, one.result.stderr)
+  assert.deepEqual((one.board.again.details as Json[]).map((d) => d.done), [true, true, false])
+  const both = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2], noPr: true, texts: ['조사한다', '정리한다'] } })])
+  assert.equal(both.code, 0, both.result.stderr)
+  assert.deepEqual((both.board.again.details as Json[]).map((d) => d.done), [true, true, true])
+  assert.equal(both.board.again.status, 'done')
+})
+
 test('잘못된 --worker-steps 는 사용법 오류다', () => {
-  for (const value of ['[]', '{"d1":{"steps":[0],"noPr":true}}', '{"d1":{"steps":null}}', 'x']) {
+  for (const value of ['[]', '{"d1":{"steps":[0],"noPr":true}}', '{"d1":{"steps":null}}', 'x', '{"d1":{"steps":[1],"noPr":true,"texts":[]}}']) {
     assert.equal(sync([], ['--worker-steps', value]).code, 2, value)
   }
 })
@@ -174,6 +186,11 @@ test('「PR 머지」 한 줄 항목은 열린 PR 의 번호를 줄에 적고 �
   assert.equal(got.code, 0, got.result.stderr)
   assert.deepEqual(got.board.one.details, [step('1. PR #7 머지', false)])
   assert.deepEqual(got.board.two.details, [step('1. PR', true), step('2. 머지', false)])
+  // 번호를 적으면 줄 규칙(본문 80자)을 넘는 줄은 그대로 두고 동기화를 멈추지 않는다
+  const long = { id: 'long', status: 'doing', pr: 7, stages: 'merge=1', details: [step(`1. PR ${'가'.repeat(77)}`, false)] }
+  const kept = sync([long, two])
+  assert.equal(kept.code, 0, kept.result.stderr)
+  assert.deepEqual(kept.board.long.details, long.details)
   // 이미 번호가 적혀 있으면 다시 고치지 않는다
   const again = sync([got.board.one])
   assert.equal(again.code, 0, again.result.stderr)
