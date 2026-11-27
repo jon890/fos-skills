@@ -174,3 +174,9 @@ export function loopStatus(repo: string, now: number): LoopStatus {
 
 export { DEFAULT_TICK_SEC, MIN_DEAD_SEC, runKey } from '../core/loop.ts'
 export type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
+
+// 느린 틱의 시간 상한(loop/lifecycle.ts 머리 주석의 「틱 자식」). 3 × slow_sec, 적어도 30분. ORCH_SLOW_TICK_LIMIT_SEC 로 바꾼다
+export function slowTickLimitMs(slowSec: number): number {
+  const given = Number(process.env.ORCH_SLOW_TICK_LIMIT_SEC)
+  return (Number.isFinite(given) && given > 0 ? given : Math.max(3 * slowSec, 1800)) * 1000
+}

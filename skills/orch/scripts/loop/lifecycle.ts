@@ -40,7 +40,7 @@
 //     따로 띄운다. 느린 틱은 앞 느린 틱이 끝났고 그 시작에서 slow_sec 이 지난 뒤, 빠른 틱을 띄우기 직전에 띄우고 기다리지 않는다.
 //     느린 틱끼리는 겹치지 않는다. 끝나면 결과 줄의 errors 만 합쳐 loop.json 에 쓰고, 0 이 아니거나 결과 줄이 없으면 errors 의 slow-tick 에
 //     이유를 두고 바뀐 이유일 때만 WATCH-ERROR slow-tick 을 보낸다. 루프가 끝나거나 넘겨줄 때는 도는 느린 틱이 끝나기를 기다린다.
-//     느린 틱은 slowTickLimitMs(3 × slow_sec, 적어도 30분. ORCH_SLOW_TICK_LIMIT_SEC 로 바꾼다)를 넘기면 그룹째 끊는다. 걸린 정리 명령 때문에
+//     느린 틱은 lib/loop.ts 의 slowTickLimitMs(3 × slow_sec, 적어도 30분. ORCH_SLOW_TICK_LIMIT_SEC 로 바꾼다)를 넘기면 그룹째 끊는다. 걸린 정리 명령 때문에
 //     정리와 보드 동기화가 알림 없이 영영 돌지 않거나, 넘겨주기가 그 끝을 끝없이 기다리지 않게 한다. 끊긴 것도 위와 같이 WATCH-ERROR slow-tick 이다.
 //     틱을 자식 프로세스로 떼어 낸 것은 lib 의 조회(질문 조회, gh)가 동기라, 같은 프로세스에서 돌면 그동안 생존 타이머가 돌지 못해서다.
 //     틱 자식은 자기 프로세스 그룹으로 띄운다(lib/proc.ts runAsync 의 group). 부모가 신호를 받으면 그 그룹 전체에 TERM 을 보내고,
@@ -83,7 +83,7 @@ import { isObject } from '../core/json.ts'
 import { bundleVersion, currentBundle, ownBundle } from '../lib/bundle.ts'
 import { envMs } from '../lib/env.ts'
 import { reclaim } from '../lib/events.ts'
-import { DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from '../lib/loop.ts'
+import { DEFAULT_ALIVE_SEC, slowTickLimitMs, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from '../lib/loop.ts'
 import type { LoopState } from '../lib/loop.ts'
 import { markStreakSent, watchStreak } from '../lib/notice-digest.ts'
 import { orcaJson } from '../lib/orca.ts'
@@ -706,11 +706,6 @@ function tickResult(done: RunResult, staleLogged = false): { result: TickResult 
   return { result, reason: null }
 }
 
-// 느린 틱의 시간 상한(머리 주석의 「틱 자식」)
-export function slowTickLimitMs(slowSec: number): number {
-  const given = Number(process.env.ORCH_SLOW_TICK_LIMIT_SEC)
-  return (Number.isFinite(given) && given > 0 ? given : Math.max(3 * slowSec, 1800)) * 1000
-}
 
 export async function foreground(ctx: Context, once: boolean, interval: number, entrypoint: string): Promise<number> {
   let handover: { from: number; had_runs: boolean } | null = null
