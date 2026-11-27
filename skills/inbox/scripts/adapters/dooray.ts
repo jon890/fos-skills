@@ -14,6 +14,11 @@
 // 메신저 호출 줄이기(D14): 봇 방과 나와의 대화는 건너뛰고, 바뀐 방을 오래된 순으로 MAX_CHANNELS 개까지만 읽는다.
 //   남은 방이 있으면 마지막으로 읽은 방의 updatedAt 을 cursor 로 내어 다음 받기가 거기서 잇는다. 놓치는 방이 없게 하려는 것이다.
 //   한 방의 logs LOG_COUNT 개가 모두 지난 받기 뒤의 것이면 MORE_LOG_COUNT 개로 다시 읽는다.
+// 스레드 답글: 부모 메시지의 logs 원소에 thread.channelId(스레드 대화방 id)와 thread.lastUpdatedAt(epoch ms)이 있다(0.36.0 실측).
+//   lastUpdatedAt 이 지난 받기 뒤인 스레드만 `messenger logs <스레드 id>` 로 읽고, 한 번에 MAX_THREADS 개까지다.
+//   남은 스레드와 읽지 못한 스레드는 dooray-retry-threads 캐시로 다음 받기에 넘긴다.
+//   항목의 target.channelId 는 스레드 id 라 답장(channel-send --channel)과 리액션이 스레드에 붙는다(실측).
+//   제목과 scope 는 부모 방의 것을 써서 보드 제목, 숨김, 저장소 고르기가 부모 방 기준으로 맞는다.
 //
 // 설정(inbox.json 의 adapters 항목): { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com" }
 //   messenger  false 면 메신저를 읽지 않는다. 기본 true
@@ -33,6 +38,7 @@ import { join } from 'node:path'
 import type { Adapter, AdapterConfig, AdapterDeps, Context, FetchRequest, FetchResult, InboxItem, Message, Person } from '../lib/model.ts'
 
 export const MAX_CHANNELS = 20
+export const MAX_THREADS = 20
 export const LOG_COUNT = 50
 export const MORE_LOG_COUNT = 300
 export const TASK_FEED_SINCE = 'prev-15d'
@@ -46,6 +52,8 @@ const MIN_MESSENGER_REACTION_MINOR = 36
 
 type Json = Record<string, any>
 type Me = { id: string; orgId: string }
+// 스레드 대화방 id 와, 그 스레드가 달린 부모 방의 id·제목
+type ThreadRef = { id: string; parentId: string; title: string }
 type PostInfo = { projectId: string; projectCode: string; projectName?: string; taskNumber: string; subject: string }
 
 // 두레이 본문의 링크 표기를 읽을 글로 바꾼다. 「[@이름](dooray://…)」 은 「@이름」 이 된다
@@ -298,6 +306,39 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     for (const item of items) if (!item.from.name) item.from.name = names.get(item.from.id) ?? ''
   }
 
+  // 지난 받기(from) 뒤의 메시지를 빠짐없이 읽을 만큼 logs 를 받는다
+  function recentLogs(channelId: string, from: string): Json[] {
+    const logs = channelLogs(channelId, LOG_COUNT)
+    const oldest = logs.reduce((min, log) => Math.min(min, Date.parse(log?.sentAt ?? '') || 0), Infinity)
+    return logs.length >= LOG_COUNT && oldest > Date.parse(from) ? channelLogs(channelId, MORE_LOG_COUNT) : logs
+  }
+
+  // logs 에서 나를 멘션한 메시지를 항목으로 바꾼다. targetId 는 답장과 리액션이 갈 방(스레드면 스레드 id)이다
+  function mentionItems(logs: Json[], targetId: string, parentId: string, title: string, request: FetchRequest, self: Me): InboxItem[] {
+    const items: InboxItem[] = []
+    for (const log of logs) {
+      const senderId = String(log?.sender?.member?.organizationMemberId ?? '')
+      const text = messageText(log?.text)
+      const at = iso(log?.sentAt)
+      if (!senderId || senderId === self.id || !at || at < request.since || !mentions(text, self.id)) continue
+      items.push({
+        id: `dooray:messenger:${targetId}:${log.id}`,
+        adapter: 'dooray',
+        source: 'messenger',
+        kind: 'mention',
+        title,
+        url: '',
+        scope: [parentId, title].filter(Boolean),
+        from: { id: senderId, name: '' },
+        at,
+        excerpt: excerptOf(text),
+        target: { kind: 'messenger', channelId: targetId, logId: String(log.id) },
+        state: 'new',
+      })
+    }
+    return items
+  }
+
   function fetchMessenger(request: FetchRequest, self: Me): { items: InboxItem[]; failures: string[]; cursor: string } {
     const from = request.cursors.messenger ?? request.since
     const now = deps.now().toISOString()
@@ -319,39 +360,41 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     const items: InboxItem[] = []
     const failures: string[] = []
     const failed: string[] = []
+    // 스레드는 별도 대화방 id 를 쓰고 channels 목록에 나오지 않는다. 부모 메시지의 thread 칸에서 찾는다
+    const threads = new Map<string, ThreadRef>()
+    for (const thread of cache.read<ThreadRef[]>('dooray-retry-threads', [])) if (thread?.id) threads.set(thread.id, thread)
     for (const channel of picked) {
+      const title = String(channel.title || '')
       let logs: Json[]
       try {
-        logs = channelLogs(String(channel.id), LOG_COUNT)
-        const oldest = logs.reduce((min, log) => Math.min(min, Date.parse(log?.sentAt ?? '') || 0), Infinity)
-        if (logs.length >= LOG_COUNT && oldest > Date.parse(from)) logs = channelLogs(String(channel.id), MORE_LOG_COUNT)
+        logs = recentLogs(String(channel.id), from)
       } catch (error) {
         failures.push(`${channel.title || channel.id}: ${(error as Error).message}`)
         failed.push(String(channel.id))
         continue
       }
-      for (const log of Array.isArray(logs) ? logs : []) {
-        const senderId = String(log?.sender?.member?.organizationMemberId ?? '')
-        const text = messageText(log?.text)
-        const at = iso(log?.sentAt)
-        if (!senderId || senderId === self.id || !at || at < request.since || !mentions(text, self.id)) continue
-        const title = String(channel.title || '')
-        items.push({
-          id: `dooray:messenger:${channel.id}:${log.id}`,
-          adapter: 'dooray',
-          source: 'messenger',
-          kind: 'mention',
-          title,
-          url: '',
-          scope: [String(channel.id), title].filter(Boolean),
-          from: { id: senderId, name: '' },
-          at,
-          excerpt: excerptOf(text),
-          target: { kind: 'messenger', channelId: String(channel.id), logId: String(log.id) },
-          state: 'new',
-        })
+      items.push(...mentionItems(logs, String(channel.id), String(channel.id), title, request, self))
+      for (const log of logs) {
+        const thread = log?.thread
+        const id = String(thread?.channelId ?? '')
+        // 지난 받기 뒤에 답글이 달린 스레드만 읽는다. 오래된 스레드를 매번 다시 읽지 않으려는 것이다
+        if (!id || threads.has(id) || !(Number(thread?.lastUpdatedAt) > Date.parse(from))) continue
+        threads.set(id, { id, parentId: String(channel.id), title })
       }
     }
+    // 스레드도 한 번에 MAX_THREADS 개까지만 읽는다. 지난번에 남긴 스레드가 앞에 있다
+    const queued = [...threads.values()]
+    const failedThreads: ThreadRef[] = []
+    for (const thread of queued.slice(0, MAX_THREADS)) {
+      try {
+        items.push(...mentionItems(recentLogs(thread.id, from), thread.id, thread.parentId, thread.title, request, self))
+      } catch (error) {
+        failures.push(`${thread.title || thread.parentId} 스레드: ${(error as Error).message}`)
+        failedThreads.push(thread)
+      }
+    }
+    // 읽지 못한 스레드와 차례가 오지 않은 스레드는 다음 받기에 다시 읽는다
+    cache.write('dooray-retry-threads', [...failedThreads, ...queued.slice(MAX_THREADS)])
     // 읽지 못한 방과, 이번에 차례가 오지 않은 재시도 방을 다음 받기에 넘긴다
     const unread = [...retry].filter((id) => !picked.some((channel) => String(channel.id) === id))
     cache.write('dooray-retry-channels', [...new Set([...failed, ...unread])])
