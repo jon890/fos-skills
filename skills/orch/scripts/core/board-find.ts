@@ -11,7 +11,6 @@
 // explicit(지시서의 `보드 항목 id:`)가 있으면 순서를 보지 않는다. 그 항목이 다른 기능 폴더를 따라가면 conflict, 보드에 없으면 none 이다(새로 만든다).
 
 import type { BoardItem } from './board-details.ts'
-import { detailText } from './board-details.ts'
 import { boardWorkerRows } from './board-workers.ts'
 import { featureStageOfLine, featureStageText, type FeatureStage } from './feature-stages.ts'
 
@@ -75,25 +74,17 @@ export function findBoardItem(items: BoardItem[], q: BoardQuery): BoardFind {
 
 type StageLine = { stage: FeatureStage; text: string; ask: boolean; done: boolean }
 
-function stageLines(item: Record<string, unknown>): StageLine[] {
+function stageLines(steps: { text: string; done: boolean }[]): StageLine[] {
   const found: StageLine[] = []
-  // 보드 명령(stepSource)처럼 details 와 next 어느 쪽의 단계 줄이든 완료 표시를 본다
-  for (const value of [item.details, item.next]) {
-    const rows = Array.isArray(value) ? value : value ? String(value).split('\n') : []
-    for (const row of rows) {
-      const raw = detailText(row)
-      const text = raw.replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, '')
-      const stage = featureStageOfLine(text)
-      if (!stage) continue
-      const done = (typeof row === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(row) : row?.done === true)
-      found.push({ stage, text, ask: /^\s*\d+[.)]?\s+\[ask\]\s/.test(text), done })
-    }
+  for (const { text, done } of steps) {
+    const stage = featureStageOfLine(text)
+    if (stage) found.push({ stage, text, ask: /^\s*\d+[.)]?\s+\[ask\]\s/.test(text), done })
   }
   return found
 }
 
 // 지시서의 첫 기능 단계가 보드 항목과 맞는지. 맞으면 null, 아니면 spec-lint 의 `보드` 발견 문구(지시서 이름과 줄 번호 뒤)다.
-// item 이 없으면(지시서 id 의 항목이 아직 없다) 단계 줄이 없는 항목과 같이 본다.
+// steps 는 보드 명령이 단계로 읽는 칸의 줄이다(modules/work-board/item.ts 의 stepSource). 항목이 아직 없으면 빈 목록을 준다.
 //   - 끝나지 않은 `[ask] 기능 <X>` 줄이 있으면 X 하나만 받는다. implementation 은 차수까지 같아야 한다.
 //     단 `[ask] 기능 implementation 1/1` 은 구현 PR 수를 모를 때의 자리 줄이라 implementation 1/n 을 받는다
 //   - `[ask]` 없이 끝나지 않은 기능 단계 줄이 있으면 그 단계를 다시 띄우는 것으로 보고 그 단계만 받는다
@@ -101,9 +92,9 @@ function stageLines(item: Record<string, unknown>): StageLine[] {
 //   - 기능 단계 줄이 없으면 새 스펙(`스펙: 새로 쓴다`)은 spec, 확인된 스펙은 technical-design, 설계가 있으면 implementation 1/n 도 받는다
 // adopts 는 보드 명령의 worker-add 가 [ask] 줄을 이어받는 판정이다(modules/work-board/item.ts 의 adoptsAskStage). core 는 core 밖을 읽지 않아 부르는 쪽이 넘긴다
 export type AdoptsAskStage = (stage: string, lineText: string) => boolean
-export function startStageProblem(item: BoardItem | undefined, first: FeatureStage, opts: { id: string; newSpec: boolean; hasDesign: boolean; adopts: AdoptsAskStage }): string | null {
+export function startStageProblem(steps: { text: string; done: boolean }[], first: FeatureStage, opts: { id: string; newSpec: boolean; hasDesign: boolean; adopts: AdoptsAskStage }): string | null {
   const want = featureStageText(first)
-  const lines = item ? stageLines(item) : []
+  const lines = stageLines(steps)
   const open = lines.filter((line) => !line.done)
   const asked = open.filter((line) => line.ask)
   const allowed = asked.length > 0 ? asked : open

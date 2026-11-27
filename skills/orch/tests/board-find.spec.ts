@@ -4,7 +4,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { findBoardItem, startStageProblem, type BoardQuery } from '../scripts/core/board-find.ts'
 import type { BoardItem } from '../scripts/core/board-details.ts'
-import { adoptsAskStage as adopts } from '../../../modules/work-board/item.ts'
+import { adoptsAskStage as adopts, stepSource } from '../../../modules/work-board/item.ts'
+
+const steps = (item: BoardItem | undefined) => (item ? stepSource(item)[1] : [])
 
 const A = { path: 'docs/features/a', repo: '/repo' }
 const B = { path: 'docs/features/b', repo: '/repo' }
@@ -63,32 +65,35 @@ test('지시서 id 는 순서를 보지 않고, 다른 기능 폴더면 conflict
 test('시작 단계는 끝나지 않은 [ask] 기능 줄과 차수까지 같아야 한다', () => {
   const item: BoardItem = { id: 'f', details: [{ text: '1. 기능 technical-design', done: true }, { text: '2. [ask] 기능 implementation 2/3', done: false }] }
   const opts = { id: 'f', newSpec: false, hasDesign: true, adopts }
-  assert.equal(startStageProblem(item, { name: 'implementation', part: 2, total: 3 }, opts), null)
-  assert.equal(startStageProblem(item, { name: 'implementation', part: 1, total: 3 }, opts), '항목 f 의 다음 단계는 implementation 2/3 인데 지시서는 implementation 1/3 부터 시작한다')
+  assert.equal(startStageProblem(steps(item), { name: 'implementation', part: 2, total: 3 }, opts), null)
+  assert.equal(startStageProblem(steps(item), { name: 'implementation', part: 1, total: 3 }, opts), '항목 f 의 다음 단계는 implementation 2/3 인데 지시서는 implementation 1/3 부터 시작한다')
   const placeholder: BoardItem = { id: 'f', details: [{ text: '2. [ask] 기능 implementation 1/1', done: false }] }
-  assert.equal(startStageProblem(placeholder, { name: 'implementation', part: 1, total: 3 }, opts), null)
-  assert.match(startStageProblem(placeholder, { name: 'implementation', part: 2, total: 3 }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 implementation 2\/3 부터/)
+  assert.equal(startStageProblem(steps(placeholder), { name: 'implementation', part: 1, total: 3 }, opts), null)
+  assert.match(startStageProblem(steps(placeholder), { name: 'implementation', part: 2, total: 3 }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 implementation 2\/3 부터/)
   const design: BoardItem = { id: 'f', details: [{ text: '1. [ask] 기능 technical-design', done: false }] }
-  assert.match(startStageProblem(design, { name: 'implementation', part: 1, total: 1 }, opts)!, /다음 단계는 technical-design 인데 지시서는 implementation 1\/1 부터/)
+  assert.match(startStageProblem(steps(design), { name: 'implementation', part: 1, total: 1 }, opts)!, /다음 단계는 technical-design 인데 지시서는 implementation 1\/1 부터/)
 })
 
 test('끝나지 않은 기능 줄은 같은 단계의 재시도만 받고, 모두 끝났으면 막는다', () => {
   const running: BoardItem = { id: 'f', details: ['✓ 1. 기능 technical-design', '2. 기능 implementation 1/1'] }
   const opts = { id: 'f', newSpec: false, hasDesign: true, adopts }
-  assert.equal(startStageProblem(running, { name: 'implementation', part: 1, total: 1 }, opts), null)
+  assert.equal(startStageProblem(steps(running), { name: 'implementation', part: 1, total: 1 }, opts), null)
   const finished: BoardItem = { id: 'f', details: [{ text: '1. 기능 technical-design', done: true }] }
-  assert.match(startStageProblem(finished, { name: 'implementation', part: 1, total: 1 }, opts)!, /모두 끝났고 다음 단계 줄이 없다/)
+  assert.match(startStageProblem(steps(finished), { name: 'implementation', part: 1, total: 1 }, opts)!, /모두 끝났고 다음 단계 줄이 없다/)
   const inNext: BoardItem = { id: 'f', next: [{ text: '1. 기능 technical-design', done: true }, '2. 기능 implementation 1/1'] }
-  assert.match(startStageProblem(inNext, { name: 'technical-design' }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 technical-design 부터/)
-  assert.match(startStageProblem({ id: 'f', next: ['✓ 1. 기능 technical-design'] }, { name: 'technical-design' }, opts)!, /모두 끝났고/)
+  assert.match(startStageProblem(steps(inNext), { name: 'technical-design' }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 technical-design 부터/)
+  assert.match(startStageProblem(steps({ id: 'f', next: ['✓ 1. 기능 technical-design'] }), { name: 'technical-design' }, opts)!, /모두 끝났고/)
+  // details 에 단계 줄이 있으면 next 에 남은 [ask] 줄은 보지 않는다(보드 명령의 stepSource 와 같다)
+  const leftover: BoardItem = { id: 'f', details: [{ text: '1. 기능 technical-design', done: true }, { text: '2. 기능 implementation 1/1', done: false }], next: ['3. [ask] 기능 technical-design'] }
+  assert.match(startStageProblem(steps(leftover), { name: 'technical-design' }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 technical-design 부터/)
 })
 
 test('기능 단계 줄이 없는 항목은 새 스펙이면 spec, 확인된 스펙이면 설계부터, 설계가 있으면 구현 1차도 받는다', () => {
   const plain: BoardItem = { id: 'p', details: [{ text: '1. PR', done: false }] }
-  assert.equal(startStageProblem(plain, { name: 'spec' }, { id: 'p', newSpec: true, hasDesign: false, adopts }), null)
-  assert.match(startStageProblem(undefined, { name: 'technical-design' }, { id: 'p', newSpec: true, hasDesign: false, adopts })!, /다음 단계는 spec /)
-  assert.equal(startStageProblem(plain, { name: 'technical-design' }, { id: 'p', newSpec: false, hasDesign: false, adopts }), null)
-  assert.match(startStageProblem(plain, { name: 'implementation', part: 1, total: 2 }, { id: 'p', newSpec: false, hasDesign: false, adopts })!, /다음 단계는 technical-design 인데/)
-  assert.equal(startStageProblem(plain, { name: 'implementation', part: 1, total: 2 }, { id: 'p', newSpec: false, hasDesign: true, adopts }), null)
-  assert.match(startStageProblem(plain, { name: 'implementation', part: 2, total: 2 }, { id: 'p', newSpec: false, hasDesign: true, adopts })!, /technical-design, implementation 1\/n/)
+  assert.equal(startStageProblem(steps(plain), { name: 'spec' }, { id: 'p', newSpec: true, hasDesign: false, adopts }), null)
+  assert.match(startStageProblem(steps(undefined), { name: 'technical-design' }, { id: 'p', newSpec: true, hasDesign: false, adopts })!, /다음 단계는 spec /)
+  assert.equal(startStageProblem(steps(plain), { name: 'technical-design' }, { id: 'p', newSpec: false, hasDesign: false, adopts }), null)
+  assert.match(startStageProblem(steps(plain), { name: 'implementation', part: 1, total: 2 }, { id: 'p', newSpec: false, hasDesign: false, adopts })!, /다음 단계는 technical-design 인데/)
+  assert.equal(startStageProblem(steps(plain), { name: 'implementation', part: 1, total: 2 }, { id: 'p', newSpec: false, hasDesign: true, adopts }), null)
+  assert.match(startStageProblem(steps(plain), { name: 'implementation', part: 2, total: 2 }, { id: 'p', newSpec: false, hasDesign: true, adopts })!, /technical-design, implementation 1\/n/)
 })

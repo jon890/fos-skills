@@ -51,3 +51,13 @@ export function adoptsAskStage(stage: string, lineText: string): boolean {
   const asked = lineText.replace(/^\s*\d+[.)]?\s+/, '')
   return asked === `[ask] ${stage}` || (/^기능 implementation 1\/\d+$/.test(stage) && asked === '[ask] 기능 implementation 1/1')
 }
+
+// 단계 줄을 읽을 칸과 그 줄. details 에 번호 단계 줄이 있으면 details, 없으면 next, 둘 다 없으면 빈 목록이다.
+// 보드 명령과 띄우기 전 검사(spec-lint 의 보드 시작 단계 대조)가 같은 칸을 보게 한다
+export function stepSource(item: Record<string, unknown>): [string | null, Line[]] {
+  for (const key of ['details', 'next']) {
+    const lines = normalizeLines(item[key] || [])
+    if (lines.some((line) => /^\s*\d+[.)]?\s/.test(line.text))) return [key, lines]
+  }
+  return [null, []]
+}

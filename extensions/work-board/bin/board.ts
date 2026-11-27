@@ -79,7 +79,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSyn
 import { dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { LockTimeout, withFileLock, type Lock } from '../../../modules/file-lock.ts'
-import { FIELDS, GET_FIELDS, LEAD_MARK, adoptsAskStage, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
+import { FIELDS, GET_FIELDS, LEAD_MARK, adoptsAskStage, stepSource, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
 import { defaultBoardPath } from '../../../modules/work-board/path.ts'
 import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 
@@ -214,14 +214,6 @@ function refuseStepNumber(number: number | undefined, max: number): void {
 }
 
 // 하위 항목에 단계가 있으면 그것을, 없으면 next 의 줄을 쓴다.
-function stepSource(item: Item): [string | null, Line[]] {
-  for (const key of ['details', 'next']) {
-    const lines = normalizeLines(item[key] || [])
-    if (lines.some((line) => parseStep(line))) return [key, lines]
-  }
-  return [null, []]
-}
-
 // [끝낸 단계, 전체 단계]. progress 가 N/M 이면 그 값을, 아니면 단계 줄을 센다. 없으면 null
 function progressOf(item: Item): [number, number] | null {
   const m = PROGRESS.exec(String(item.progress || ''))
