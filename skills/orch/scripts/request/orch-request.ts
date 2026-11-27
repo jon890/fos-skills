@@ -6,7 +6,8 @@
 //     orch-request.ts (accept | hold | reject | done | fail) --id <번호> [--reason <이유>] --repo <받는 저장소> [--run <답한 Run>]
 //     orch-request.ts list [--open] --repo <받는 저장소>
 //
-//     send    받는 저장소의 메인(lib/main-coordinator.ts 의 findMain)을 찾는다. 메인이 없으면 보내지 않고 REQUEST-NO-MAIN <저장소> 와
+//     send    --run 이 없으면 Run 을 만들고 루프에 묶는 다음 명령(lib/run-guidance.ts)을 붙여 2.
+//             받는 저장소의 메인(lib/main-coordinator.ts 의 findMain)을 찾는다. 메인이 없으면 보내지 않고 REQUEST-NO-MAIN <저장소> 와
 //             직접 띄우는 명령 줄, 3. 메인을 판정하지 못하면 REQUEST-MAIN-UNKNOWN <이유> 와 1. 메인이 부른 Run 자신이면 REQUEST-SELF 와 3.
 //             번호를 잡고 기록을 sent 로 쓴 뒤 메인 Run 에 REQUEST 메시지를 보낸다. 보내기가 실패하면 기록을 지우고 REQUEST-SEND-FAIL 과 1.
 //             성공하면 양쪽 보드 항목을 쓰고 REQUEST-SENT <번호> repo=<받는 저장소> main=<메인 Run> 과 0.
@@ -32,6 +33,7 @@ import { orchWord } from '../lib/commands.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
+import { missingRun } from '../lib/run-guidance.ts'
 import {
   allocateNumber, answerRequest, boardLines, listRequests, newRecord, openRequest, parseRequestId, repoName, requestLabel, requestNotice,
 } from '../lib/requests.ts'
@@ -77,7 +79,12 @@ function send(values: Record<string, unknown>): number {
   const title = values.title as string | undefined
   const fromRun = values.run as string | undefined
   if (!to || !title || !oneLine(title)) throw new Usage('send 는 --to 와 --title 을 준다')
-  if (!fromRun) throw new Usage('send 는 보낸 Run(--run)이 필요하다. Run 에 묶인 코디네이터 터미널에서 부른다')
+  if (!fromRun) {
+    // 답은 보낸 Run 으로 온다. Run 이 없는 세션에 그 Run 을 만들고 루프에 묶는 명령을 알린다(lib/run-guidance.ts)
+    const repo = mainCheckout(resolve((values.repo as string | undefined) ?? process.cwd()))
+    const next = missingRun(repo, `${orchWord()} request send <같은 인자>`).map((line) => `  ${line}`)
+    throw new Usage(['send 는 보낸 Run(--run)이 필요하다. Run 에 묶인 코디네이터 터미널에서 부른다', ...next].join('\n'))
+  }
   if ((values.body === undefined) === (values['body-file'] === undefined)) throw new Usage('--body 와 --body-file 가운데 하나만 준다')
   const body = values.body !== undefined ? String(values.body) : readFileSync(resolve(String(values['body-file'])), 'utf8')
   if (!body.trim()) throw new Usage('요청 본문이 비었다')

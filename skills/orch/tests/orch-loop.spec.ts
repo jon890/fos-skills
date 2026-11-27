@@ -1010,9 +1010,12 @@ describe('--start, --status, --stop', () => {
     const started = loop(['--start'])
     assert.equal(started.code, 0, started.stdout + started.stderr)
     assert.equal(loopState()?.bound_run, null)
+    // Run 없이 뜬 루프는 성공처럼 보이므로 답을 받을 Run 을 만들고 묶는 다음 명령을 판정 줄로 알린다
+    assert.match(started.stdout, /^LOOP-STARTED \d+ run=-\nLOOP-NO-RUN .*run-create --objective .* loop start --run <만든 Run> --repo /m)
     const joined = loop(['--run', 'r2', '--start'])
     assert.equal(joined.code, 0, joined.stdout + joined.stderr)
     assert.match(joined.stdout, /^LOOP-JOINED \d+ run=r2$/m)
+    assert.doesNotMatch(joined.stdout, /LOOP-NO-RUN/)
     assert.equal(loop(['--stop', '--all']).code, 0)
   })
 

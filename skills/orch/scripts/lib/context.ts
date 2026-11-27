@@ -4,6 +4,7 @@
 // 출처:
 //     repo       작업 폴더가 git 저장소 안이면 그 주 checkout(mainCheckout). 밖이면 채우지 않는다
 //     run        `orca orchestration run-current` 의 run.id(5초 제한), 못 읽으면 기준 저장소 설정의 finish.run.
+//                required 인 run 을 끝내 못 채우면 오류에 lib/run-guidance.ts 의 다음 명령(Run 을 만들고 루프에 묶기)을 붙인다.
 //                runFrom 이 run-current 인 명령(worker send)은 설정으로 대신하지 않는다.
 //                `--ack` 가 있는 wait 은 설정으로 대신하지 않고, 15초로 한 번 더 읽는다. 다른 Run 의 delivery 를 ack 하지 않게 한다
 //     specs-dir  기준 저장소 설정의 finish.specs_dir(주 checkout 기준 상대경로), 없으면 pathOf('specs', 기준 저장소)
@@ -14,7 +15,7 @@
 // 문맥 칸 인자를 줄여 쓴 옵션(`--re`, `--ru`)은 사용법 오류다. 진입점이 모르면 같은 인자가 둘 들어간다.
 
 import { resolve } from 'node:path'
-import { beforeDashes, hasFlag, type Command, type ContextName } from './commands.ts'
+import { beforeDashes, hasFlag, orchWord, type Command, type ContextName } from './commands.ts'
 import { loadConfig, section } from './config.ts'
 import { FINISH_KEYS } from './finish-options.ts'
 import { mainCheckout } from './git.ts'
@@ -22,6 +23,7 @@ import { isRegistered } from './loop.ts'
 import { orcaJson } from './orca.ts'
 import { pathOf } from './paths.ts'
 import { run } from './proc.ts'
+import { missingRun } from './run-guidance.ts'
 
 // sources 는 채운 인자마다 출처(cwd, run-current, config, default, registered)다
 export type Filled = { args: string[]; note: string | null; sources: Partial<Record<ContextName, string>> }
@@ -127,7 +129,10 @@ export function fillContext(
 
   for (const need of command.required) {
     if (filled[need] === undefined && !explicit(command, args, need)) {
-      return { error: `--${need} <${need === 'run' ? 'Run' : '값'}> 이 필요하다. 코디네이터 터미널에서 부르거나 --${need} 를 준다` }
+      const head = `--${need} <${need === 'run' ? 'Run' : '값'}> 이 필요하다. 코디네이터 터미널에서 부르거나 --${need} 를 준다`
+      // Run 이 없는 세션은 다음 명령을 모른다. 만들고 루프에 묶는 명령을 지금 저장소 값으로 알린다(lib/run-guidance.ts)
+      if (need !== 'run') return { error: head }
+      return { error: [head, ...missingRun(repo, `${[orchWord(), command.group, ...(command.verb ? [command.verb] : [])].join(' ')} <같은 인자>`).map((line) => `  ${line}`)].join('\n') }
     }
   }
 
