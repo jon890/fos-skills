@@ -76,7 +76,18 @@ if (args[0] === 'api' && args[1] === 'graphql' && args.some((a) => a.startsWith(
   const param = (name) => args.find((a) => a.startsWith(name + '='))?.slice(name.length + 1)
   const pr = state[param('number')]
   if (!pr?.bot_review) process.exit(1)
-  const result = { headRefOid: pr.bot_review.headRefOid ?? pr.headRefOid, ...(pr.bot_review.commits ? { commits: { nodes: pr.bot_review.commits.map((oid) => ({ commit: { oid } })) } } : {}) }
+  // bot_review.appear 는 봇 리뷰가 시간이 지나 끝나는 것을 흉내 낸다. left 번째 조회부터 set 의 칸으로 bot_review 를 덮는다
+  if (pr.bot_review.appear) {
+    pr.bot_review.appear.left -= 1
+    if (pr.bot_review.appear.left <= 0) {
+      const set = pr.bot_review.appear.set
+      delete pr.bot_review.appear
+      Object.assign(pr.bot_review, set)
+    }
+    save()
+  }
+  const result = { headRefOid: pr.bot_review.headRefOid ?? pr.headRefOid, ...(pr.bot_review.commits ? { commits: { nodes: pr.bot_review.commits.map((oid) => ({ commit: { oid } })) } } : {}),
+    ...(pr.bot_review.reactionGroups ? { reactionGroups: pr.bot_review.reactionGroups } : {}) }
   for (const [key, flag, after] of [['comments', 'readComments', 'commentsAfter'], ['reviews', 'readReviews', 'reviewsAfter'], ['reviewThreads', 'readThreads', 'threadsAfter']]) {
     const nodes = pr.bot_review[key] ?? []
     const split = pr.bot_review.split === key

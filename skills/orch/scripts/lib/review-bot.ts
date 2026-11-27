@@ -10,7 +10,8 @@ type Review = { id?: string; author: Actor; body: string; submittedAt: string | 
 type ThreadComment = Pick<Comment, 'author' | 'createdAt'> & { body?: string; originalCommit?: { oid: string } | null }
 type Thread = { isResolved: boolean; comments: { nodes: ThreadComment[] } }
 // commits 는 PR 커밋의 oid 를 오래된 순으로 둔 것이다(마지막 100개). 없으면 커밋 순서를 모르는 것이다
-export type BotReviewData = { comments: Comment[]; reviews: Review[]; reviewThreads: Thread[]; commits?: string[] }
+// reactions 는 PR 본문에 단 리액션의 종류(EYES 같은 것)와 단 계정이다. 없으면 읽지 않은 것이다
+export type BotReviewData = { comments: Comment[]; reviews: Review[]; reviewThreads: Thread[]; commits?: string[]; reactions?: { content: string; reactor: Actor }[] }
 type Connection = 'comments' | 'reviews' | 'reviewThreads'
 type TrustedReview = { ok: true; receipts: ReviewNote[] } | { ok: false; wait: string }
 type BotReviewSnapshot = { ok: true; data: BotReviewData; ready: boolean } | { ok: false; wait: string }
@@ -25,6 +26,7 @@ query($owner:String!, $repo:String!, $number:Int!,
     pullRequest(number:$number) {
       headRefOid
       commits(last:100) { nodes { commit { oid } } }
+      reactionGroups { content reactors(first:20) { nodes { __typename ... on Bot { login } ... on User { login } } } }
       state
       isDraft
       comments(first:50, after:$commentsAfter) @include(if:$readComments) {
@@ -58,6 +60,7 @@ export function loadBotReviewSnapshot(repo: string, target: ReviewTarget, head: 
   const cursors = new Map<Connection, string | null>(CONNECTIONS.map((key) => [key, null]))
   let ready = true
   let commits: string[] | undefined
+  let reactions: BotReviewData['reactions']
   while (cursors.size > 0) {
     const pageArgs = [...args,
       '-F', `readComments=${cursors.has('comments')}`, '-F', `readReviews=${cursors.has('reviews')}`,
@@ -73,6 +76,14 @@ export function loadBotReviewSnapshot(repo: string, target: ReviewTarget, head: 
     if (commits === undefined && isObject(pr.commits) && Array.isArray(pr.commits.nodes)) {
       commits = pr.commits.nodes.flatMap((node) => (isObject(node) && isObject(node.commit) && typeof node.commit.oid === 'string' ? [node.commit.oid.toLowerCase()] : []))
     }
+    if (reactions === undefined && Array.isArray(pr.reactionGroups)) {
+      reactions = pr.reactionGroups.flatMap((group) => {
+        if (!isObject(group) || typeof group.content !== 'string' || !isObject(group.reactors) || !Array.isArray(group.reactors.nodes)) return []
+        const content = group.content
+        return group.reactors.nodes.flatMap((node) => isObject(node) && typeof node.__typename === 'string' && typeof node.login === 'string'
+          ? [{ content, reactor: { __typename: node.__typename, login: node.login } }] : [])
+      })
+    }
     ready &&= pr.state === 'OPEN' && pr.isDraft === false
     for (const [key, previous] of cursors) {
       const page = pr[key]
@@ -86,7 +97,7 @@ export function loadBotReviewSnapshot(repo: string, target: ReviewTarget, head: 
       rows[key].push(...page.nodes)
     }
   }
-  return { ok: true, data: { ...(rows as Omit<BotReviewData, 'commits'>), ...(commits ? { commits } : {}) }, ready }
+  return { ok: true, data: { ...(rows as Omit<BotReviewData, 'commits' | 'reactions'>), ...(commits ? { commits } : {}), ...(reactions ? { reactions } : {}) }, ready }
 }
 
 function fromBot(author: Actor, bot: TrustedReviewBot): boolean {
@@ -111,21 +122,42 @@ export function hasCurrentBotReceipt(head: string, data: BotReviewData, bot: Tru
       review.commit?.oid.toLowerCase() === head && matches(review.body))
 }
 
+const CODEX_LOGIN = 'chatgpt-codex-connector'
+const RUNNING_STATUSES = ['in_progress', 'running', 'pending', 'queued']
+
+// Codex 요약 댓글의 codex-review-state 가 지금 HEAD 를 어디까지 리뷰했는가. 그 HEAD 의 상태가 없으면 null 이다
+function codexReviewState(head: string, data: BotReviewData, bot: TrustedReviewBot): 'running' | 'finished' | null {
+  if (bot.login !== CODEX_LOGIN) return null
+  let found: 'running' | 'finished' | null = null
+  for (const comment of data.comments) {
+    if (!fromBot(comment.author, bot)) continue
+    const state = /^<!-- codex-review-state:v1 (.+) -->$/m.exec(comment.body)?.[1]
+    if (!state) continue
+    try {
+      const review = JSON.parse(state)?.code_review
+      if (review?.commit_sha !== head) continue
+      if (RUNNING_STATUSES.includes(review.status)) return 'running'
+      found = 'finished'
+    } catch {
+      continue
+    }
+  }
+  return found
+}
+
 // Codex 는 한 PR 의 요약 댓글을 갱신한다. 같은 head 의 코드 리뷰 상태만 읽는다.
 export function botReviewRunning(head: string, data: BotReviewData, bot: TrustedReviewBot): boolean {
   if (data.reviews.some((review) => fromBot(review.author, bot) && review.state === 'PENDING' && review.commit?.oid === head)) return true
-  if (bot.login !== 'chatgpt-codex-connector') return false
-  return data.comments.some((comment) => {
-    if (!fromBot(comment.author, bot)) return false
-    const state = /^<!-- codex-review-state:v1 (.+) -->$/m.exec(comment.body)?.[1]
-    if (!state) return false
-    try {
-      const review = JSON.parse(state)?.code_review
-      return review?.commit_sha === head && ['in_progress', 'running', 'pending', 'queued'].includes(review.status)
-    } catch {
-      return false
-    }
-  })
+  return codexReviewState(head, data, bot) === 'running'
+}
+
+// 관문 --wait 가 봇 리뷰를 더 기다릴지 보는 진행 표시. botReviewRunning 에 더해, 봇이 PR 본문에 👀(EYES) 리액션을 달았고
+// 지금 HEAD 의 영수증도 끝난 리뷰 상태도 없으면 리뷰 중으로 본다.
+// 👀 는 커밋에 묶이지 않아 리뷰가 끝난 뒤에도 남을 수 있다. 그래서 시간 상한이 있는 관문 대기만 쓰고, 루프의 리뷰 요청과 앞 리뷰 인정은 쓰지 않는다
+export function botReviewInProgress(head: string, data: BotReviewData, bot: TrustedReviewBot): boolean {
+  if (botReviewRunning(head, data, bot)) return true
+  const eyes = (data.reactions ?? []).some((reaction) => reaction.content === 'EYES' && fromBot(reaction.reactor, bot))
+  return eyes && codexReviewState(head, data, bot) === null && !hasCurrentBotReceipt(head, data, bot)
 }
 
 // 줄 댓글 첫 줄의 등급 배지(![P1 Badge]). 읽지 못하면 null 이다

@@ -378,6 +378,74 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(gateReason(failed), /스레드를 읽지 못했다/)
   })
 
+  // dooray-cli PR 278: --wait 가 Codex 리뷰 진행 중에 바로 「봇 영수증이 없다」 로 실패해 worker 가 폴링 스크립트를 따로 짰다
+  describe('--wait 의 봇 리뷰 대기', () => {
+    const trusted = (c: Ctx) => writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { trusted_bots: [BOT_SETTING] } } }))
+    const codexState = (status: string, head = HEAD) => ({ author: BOT, createdAt: REVIEWED_AT,
+      body: `요약\n<!-- codex-review-state:v1 ${JSON.stringify({ code_review: { commit_sha: head, status } })} -->` })
+    const eyes = [{ content: 'EYES', reactors: { nodes: [{ __typename: 'Bot', login: BOT.login }] } }]
+    const finding = (level: number, commit: string) => ({ isResolved: true, comments: { nodes: [{ author: BOT, createdAt: REVIEWED_AT, body: `![P${level} Badge] 제목`, originalCommit: { oid: commit } }] } })
+
+    test('지금 HEAD 의 영수증이 생길 때까지 기다리고 진행 줄을 낸다', async (t) => {
+      const c = setup(t)
+      trusted(c)
+      c.env.ORCH_OUTPUT = 'short'
+      const r = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [], reactionGroups: eyes, appear: { left: 6, set: { comments: [receipt(HEAD)] } } } }) }, 0, ['--wait'])
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /^REVIEW-WAIT 1 1분째 봇 리뷰를 기다린다\(HEAD aaaaaaaa 에 현재 HEAD 를 확인한 봇 영수증이 없다\)$/m)
+      assert.match(r.stdout, /^GATE-OK 1$/m)
+    })
+
+    test('한도 안에 끝나지 않으면 실패와 다른 GATE-PENDING 과 종료 코드 3 을 낸다', async (t) => {
+      const c = setup(t)
+      trusted(c)
+      const r = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [codexState('running')] } }) }, 0, ['--wait', '--review-timeout', '2'])
+      assert.equal(r.code, 3, both(r))
+      assert.match(r.stdout, /^GATE-PENDING 1\n {2}봇 리뷰를 2분 기다렸지만 끝나지 않았다\n {2}HEAD aaaaaaaa 에 현재 HEAD 를 확인한 봇 영수증이 없다$/m)
+      assert.doesNotMatch(r.stdout, /GATE-FAIL/)
+    })
+
+    test('앞 리뷰를 인정할 수 있어도 지금 HEAD 를 리뷰하는 중이면 끝날 때까지 기다린다', async (t) => {
+      const c = setup(t)
+      trusted(c)
+      const before = 'b'.repeat(40)
+      const running = { comments: [receipt(before), codexState('running')], commits: [before, HEAD] }
+      const immediate = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: running }) }, 0)
+      assert.equal(immediate.code, 1, both(immediate))
+      assert.match(gateReason(immediate), /봇이 현재 HEAD 를 리뷰하는 중이다/)
+      const r = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { ...running,
+        appear: { left: 6, set: { comments: [receipt(before), codexState('completed')] } } } }) }, 0, ['--wait'])
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /봇 리뷰를 기다린다\(.*리뷰하는 중이다\)/)
+      assert.match(r.stdout, /^GATE-OK 1$/m)
+    })
+
+    test('리뷰가 끝나 P1·P2 가 남았거나 다른 이유가 함께 있으면 기다리지 않고 GATE-FAIL 이다', async (t) => {
+      const c = setup(t)
+      trusted(c)
+      const p1 = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [receipt(HEAD), codexState('completed')], reviewThreads: [finding(1, HEAD)], commits: [HEAD] } }) }, 0, ['--wait'])
+      assert.equal(p1.code, 1, both(p1))
+      assert.match(gateReason(p1), /P1·P2 지적을 남겼다/)
+      assert.doesNotMatch(p1.stdout, /REVIEW-WAIT/)
+      const threads = await gate(c, { '1': pr({ reviews: [], comments: [], bot_review: { comments: [codexState('running')] } }) }, 2, ['--wait'])
+      assert.equal(threads.code, 1, both(threads))
+      assert.match(gateReason(threads), /미해결 리뷰 스레드 2 개/)
+      assert.doesNotMatch(threads.stdout, /REVIEW-WAIT|GATE-PENDING/)
+    })
+
+    test('--wait 없이와 --review-timeout 0 은 지금처럼 바로 GATE-FAIL 이다', async (t) => {
+      const c = setup(t)
+      trusted(c)
+      const state = { '1': pr({ reviews: [], comments: [], bot_review: { comments: [codexState('running')] } }) }
+      for (const extra of [[], ['--wait', '--review-timeout', '0']]) {
+        const r = await gate(c, state, 0, extra)
+        assert.equal(r.code, 1, both(r))
+        assert.match(r.stdout, /^GATE-FAIL 1$/m)
+        assert.doesNotMatch(r.stdout, /REVIEW-WAIT/)
+      }
+    })
+  })
+
   // 스펙 DECISION15: 앞 커밋의 봇 리뷰는 P1·P2 지적이 있으면 막고, 없으면 지금 HEAD 의 리뷰로 인정한다
   test('머지 큐도 앞 커밋의 봇 리뷰에 P1·P2 가 있으면 막고, 없으면 그 리뷰로 머지한다', async (t) => {
     const c = setup(t)
