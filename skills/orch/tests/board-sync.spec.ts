@@ -172,6 +172,18 @@ test('다시 연 항목은 worker_done 의 할 일 번호를 같은 글의 단�
   assert.equal(both.board.again.status, 'done')
 })
 
+test('다시 연 항목에서 앞 담당자의 옛 보고는 새 담당자의 단계를 끝내지 않는다', () => {
+  const item = { id: 'reopen', status: 'doing', details: [step('1. 옛 조사', true), step('2. 새 조사', false)],
+    workers: [worker('impl', 'old', 'd0', { status: 'done', at: '2026-01-01' }), worker('follow', 'reopen', 'd1', { at: '2026-01-02' })] }
+  const old = sync([item], ['--worker-steps', JSON.stringify({ d0: { steps: null, noPr: true } })])
+  assert.equal(old.code, 0, old.result.stderr)
+  assert.deepEqual(old.board.reopen.details, item.details)
+  assert.equal(old.board.reopen.status, 'doing')
+  const fresh = sync([item], ['--worker-steps', JSON.stringify({ d0: { steps: null, noPr: true }, d1: { steps: null, noPr: true } })])
+  assert.equal(fresh.code, 0, fresh.result.stderr)
+  assert.equal(fresh.board.reopen.status, 'done')
+})
+
 test('잘못된 --worker-steps 는 사용법 오류다', () => {
   for (const value of ['[]', '{"d1":{"steps":[0],"noPr":true}}', '{"d1":{"steps":null}}', 'x', '{"d1":{"steps":[1],"noPr":true,"texts":[]}}']) {
     assert.equal(sync([], ['--worker-steps', value]).code, 2, value)

@@ -6,6 +6,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     그 dispatch 의 구현·후속 줄이 있는 항목에서 적힌 번호의 단계를 끝낸다. 사건 단계(stages 와 줄 stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 사건이 끝내므로 건드리지 않는다.
 //     번호는 지시서 「할 일」 번호이고, texts(그 번호 줄의 글)와 같은 글의 끝나지 않은 단계가 있으면 그 단계를, 없으면 같은 번호의 단계를 끝낸다.
 //     PR 없는 일의 번호 없는 보고는 남은 단계를 모두 끝낸다. PR 없는 일의 단계가 이렇게 모두 끝나면 done 으로 바꾼다.
+//     보고는 그 항목의 가장 최근 구현·후속 줄(지금 담당자)의 것만 받는다. 다시 연 항목에서 앞 담당자의 옛 보고가 새 단계를 끝내지 않게 한다.
 //     리뷰·검증 항목과 기능 항목(기능 단계 줄은 feature-advance 가 맡는다)과 done 항목은 보지 않는다
 // --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
 // 리뷰 항목은 최초 띄우기 이력으로 정한다. 구현 이력·줄·PR 이 있는 항목은 리뷰 종료로 닫지 않는다.
@@ -490,7 +491,11 @@ function main(argv: string[]): number {
       }
     }
     // 머리 주석의 --worker-steps. 이미 이 틱이 끝내기로 한 단계는 다시 넣지 않는다
-    const reports = workerRows.filter((row) => row.dispatch && Object.hasOwn(workerSteps, row.dispatch) && (row.role === 'impl' || row.role === 'follow'))
+    // 보고는 지금 단계를 맡은 가장 최근(at) 구현·후속 줄의 것만 받는다. 루프는 지난 틱의 완료 보고도 다시 넘기므로,
+    // 다시 연 항목에서 앞 담당자의 옛 보고가 새로 더한 단계를 끝내지 않게 한다
+    const assignee = workerRows.filter((row) => row.role === 'impl' || row.role === 'follow')
+      .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+    const reports = assignee?.dispatch && Object.hasOwn(workerSteps, assignee.dispatch) ? [assignee] : []
     if (!reviewDone && !review && !featureReporter && !feature && !SKIP_STATUS.has(String(item.status)) && reports.length > 0) {
       const given = reports.map((row) => workerSteps[row.dispatch!])
       const all = given.some((one) => one.noPr && one.steps === null)
