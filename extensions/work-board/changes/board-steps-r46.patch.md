@@ -1,1 +1,0 @@
-- `set --exact` 에 `--title` 을 주면 없는 항목을 만들고, `worker-add --stages` 가 머지 단계 하나(`merge=M`)도 받는다.
