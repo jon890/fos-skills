@@ -789,6 +789,34 @@ test('칩이 있으면 첫 줄에 표시와 칩, 다음 줄에 들여 쓴 제목
   await ui.unmount()
 })
 
+test('요청 항목은 제목 앞에 보낸 저장소를 색 있게, 뒤에 「· 요청 n」 을 흐리게 그리고 옛 제목도 같은 모양이다', async ($, on) => {
+  await start($, on, undefined, JSON.stringify({ items: [
+    { id: 'req-fos-skills-46', title: '보드 단계 정리', status: 'doing', 'request-from': 'ai-analysis', next: '1. PR 머지 (#670)' },
+    { id: 'req-fos-skills-43', title: '요청 R43: 등록 승인 방식 정정 (AiSdtSkill)', status: 'doing', next: '1. 구현' },
+    { id: 'req-other-7', title: '보낸 일', status: 'wait', 'request-to': 'other' },
+    { id: 'req-fos-skills-8', title: '같은 저장소 일', status: 'wait' },
+    { id: 'plain', title: '기능 단위 보드 항목', status: 'doing', next: '1. 구현' },
+  ] }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const titles = await Promise.all(['req-fos-skills-46', 'req-fos-skills-43', 'plain', 'req-other-7', 'req-fos-skills-8']
+    .map(async (id) => textOf(await ui.find({ type: 'Button', key: 'check-' + id }) as Drawn)))
+  expect(titles).toEqual([
+    '[ai-analysis 요청] 보드 단계 정리  · 요청 46',
+    '[AiSdtSkill 요청] 등록 승인 방식 정정  · 요청 43',
+    '기능 단위 보드 항목',
+    '[other 에 보낸 요청] 보낸 일  · 요청 7',
+    '같은 저장소 일  · 요청 8',
+  ])
+  // 제목 버튼 안 Text 의 첫 조각이 표시, 끝 조각이 번호다
+  const parts = ((await ui.find({ type: 'Button', key: 'check-req-fos-skills-46' }) as Drawn).children[0] as Drawn).children as Drawn[]
+  const [tag, number] = [parts[0], parts.at(-1)!]
+  expect(textOf(tag)).toBe('[ai-analysis 요청]')
+  expect(tag.props.color).toBe('cyan')
+  expect(textOf(number)).toBe('  · 요청 46')
+  expect(number.props.dimColor).toBe(true)
+  await ui.unmount()
+})
+
 test('번호만 있는 흐린 칩, 주소만 있는 링크와 결정·완료 줄도 설정 이름을 쓴다', async ($, on) => {
   const board = JSON.stringify({ items: [
     { id: 'ref', title: '번호만', status: 'wait', 'task-ref': 'PROJ-1' },
