@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 마크다운 가독성 규칙 중 물결표 오류는 실패로 막고, 나머지는 경고로 알린다.
+// 마크다운 가독성 규칙 중 물결표 오류와 제목·평문의 엠대시는 실패로 막고, 나머지는 경고로 알린다.
 //
 // **이 파일이 검사 축의 단일 소스다.** references 파일을 읽지 않고 축을 코드에 담는다.
 // 사람이 보는 몫은 `references/` 가 소유한다.
@@ -10,11 +10,11 @@
 //     node check-readability.ts --text "<제목이나 커밋 메시지>"   파일이 아닌 문자열
 //     node check-readability.ts --hook                           PostToolUse 훅 모드 (stdin 으로 JSON)
 //
-// 발견 줄을 stdout 으로 출력한다. TILDE 는 종료 코드 1, 나머지 경고는 0 이다.
+// 발견 줄을 stdout 으로 출력한다. TILDE 와 DASH 는 실패 줄을 출력하고 종료 코드 1 로 끝난다. 경고만 있으면 0 이다.
 // 사용법 오류이거나 넘긴 경로에 파일이 없으면 2 로 끝난다.
 // --hook 은 편집 후 알림이므로 종료 코드 0 으로 발견과 고칠 방법을 전달한다.
 //
-// TILDE 는 취소선 오작동을 막는다. 나머지 축은 문맥을 보고 고칠지 판단한다.
+// TILDE 는 취소선 오작동을 막는다. 경고 항목은 문맥을 보고 고칠지 판단한다.
 //
 // 검사하는 축은 넷이다.
 //
@@ -70,8 +70,9 @@ const USAGE = `사용법:
     node check-readability.ts --hook          PostToolUse 훅 모드 (stdin 으로 JSON)
 `
 
-const level = (f: Finding) => (f.code === 'TILDE' ? '실패' : '경고')
-const status = (found: Finding[]) => (found.some((f) => f.code === 'TILDE') ? 1 : 0)
+const isFailure = (f: Finding) => f.code === 'TILDE' || f.code === 'DASH'
+const level = (f: Finding) => (isFailure(f) ? '실패' : '경고')
+const status = (found: Finding[]) => (found.some(isFailure) ? 1 : 0)
 
 export type Finding = { path: string; line: number; code: string; message: string }
 
@@ -181,7 +182,7 @@ export function runHook(input: string): object | null {
   if (!found.length) return null
 
   const lines = found.map((f) => `${f.path}:${f.line}  ${level(f)} [${f.code}] ${f.message}`).join('\n')
-  const context = '마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. TILDE 는 고치고, 나머지는 문맥을 보고 고칠지 판단한다.\n' + lines
+  const context = '방금 편집한 파일에서 가독성 문제를 발견했다. 실패 항목은 고치고, 경고는 문맥을 보고 판단한다.\n' + lines
   return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: context } }
 }
 

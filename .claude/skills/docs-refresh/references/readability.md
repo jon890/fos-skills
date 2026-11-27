@@ -40,5 +40,5 @@ node export-only-skills/korean-check/scripts/check-readability.ts "$DOC"
 node export-only-skills/korean-check/scripts/check.ts "$DOC"
 ```
 
-- `check-readability.ts` 는 TILDE 에서만 1 로 끝난다. 나머지 경고(NEST, SECT, DASH)도 고친다.
+- `check-readability.ts` 는 TILDE 와 DASH 에서 1 로 끝난다. 경고(NEST, SECT)도 고친다.
 - 스크립트가 못 보는 분량과 나누는 방식은 korean-check 의 `references/writing-structure.md` 「분량 구간」, 「긴 문서에서 나누는 방식」, 「내용 점검」 으로 판정한다. 이 저장소의 설명 문서는 훑어 찾는 글이라 「긴 문서」 다.
