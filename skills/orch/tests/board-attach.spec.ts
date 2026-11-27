@@ -295,3 +295,13 @@ test('설계 PR 머지 뒤 같은 워크트리에서 구현 PR 이 새 단계를
     assert.deepEqual(items()[0].details, item.details)
   }
 })
+
+test('PR 없는 기능 지시서는 성공 보고로 완료할 담당 단계를 기록한다', () => {
+  board()
+  launch('허락: PR 은 열지 않는다.\n기능 단계: spec\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)')
+  const [item] = items()
+  assert.deepEqual(item.details, [{ text: '1. 기능 spec', done: false }])
+  assert.equal(item.workers[0]['feature-steps'], '1')
+  assert.equal(item.workers[0]['feature-report'], 'pending')
+  assert.equal(item.workers[0].pr, null)
+})

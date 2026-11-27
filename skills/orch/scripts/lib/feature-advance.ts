@@ -5,16 +5,17 @@ import { boardWorkerRows } from '../core/board-workers.ts'
 import { ghJson } from './gh.ts'
 import { mainCheckout } from './git.ts'
 
-export function featureAdvance(repo: string, item: BoardItem, steps: BoardStep[], pr: string) {
-  if (!isFeatureItem(item) || prNumbers(item['merged-pr']).has(pr)) return null
-  const plan = featureMergePlan(item, steps, pr, [])
+export function featureAdvance(repo: string, item: BoardItem, steps: BoardStep[], source: string | { report: string }) {
+  const pr = typeof source === 'string' ? source : null
+  if (!isFeatureItem(item) || (pr && prNumbers(item['merged-pr']).has(pr))) return null
+  const plan = featureMergePlan(item, steps, source, [])
   if (!plan) return null
-  const files = plan.featureUnknown ? ghJson<{ files?: { path: string; additions?: number }[] }>(
+  const files = pr && plan.featureUnknown ? ghJson<{ files?: { path: string; additions?: number }[] }>(
     ['pr', 'view', pr, '--json', 'files'], { cwd: repo },
   ) : null
   const resolved = files?.ok && Array.isArray(files.data.files)
-    ? featureMergePlan(item, steps, pr, files.data.files.filter((file) => file.additions !== 0).map((file) => file.path))! : plan
-  const args = ['feature-advance', item.id, '--pr', pr, '--done', resolved.done.join(','), '--status', resolved.status,
+    ? featureMergePlan(item, steps, source, files.data.files.filter((file) => file.additions !== 0).map((file) => file.path))! : plan
+  const args = ['feature-advance', item.id, ...(typeof source === 'string' ? ['--pr', source] : ['--report', source.report]), '--done', resolved.done.join(','), '--status', resolved.status,
     ...(resolved.add ? ['--add', resolved.add] : []), ...(resolved.lastStage ? ['--final'] : []),
     ...(resolved.feature ? ['--feature', resolved.feature, '--feature-repo', mainCheckout(repo)] : []),
     '--if-rev', linesRev(item)]
@@ -22,5 +23,5 @@ export function featureAdvance(repo: string, item: BoardItem, steps: BoardStep[]
 }
 
 export function hasFeaturePr(item: Record<string, unknown>, pr: string): boolean {
-  return isFeatureItem(item) && boardWorkerRows(item).some((row) => String(row.pr) === pr && row['feature-steps'])
+  return isFeatureItem(item) && boardWorkerRows(item).some((row) => String(row.pr) === pr && row['feature-steps'] && !row['feature-report'])
 }

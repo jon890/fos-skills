@@ -830,7 +830,7 @@ async function finish(args: Args, repo: string): Promise<number> {
     } catch { return undefined }
   })()
   if (candidate && isFeatureItem(candidate)) {
-    const unlinked = item && boardWorkerRows(candidate).find((row) => row['feature-steps'] && !row.pr &&
+    const unlinked = item && boardWorkerRows(candidate).find((row) => row['feature-steps'] && !row['feature-report'] && !row.pr &&
       (('row' in item && row.worktree === item.row) || row.branch === branch))
     if (unlinked && !hasFeaturePr(candidate, args.pr) && !linkRowPr(args, repo, candidate.id, unlinked.worktree)) {
       return fail(`보드 ${candidate.id} 에 PR ${args.pr} 를 잇지 못했다`)

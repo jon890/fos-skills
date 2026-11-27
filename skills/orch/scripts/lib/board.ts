@@ -208,18 +208,18 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const title = specTitle(text, { items, explicit, task, id })
   const item = items.find((row) => row.id === id)
   const r = result(item, id, reviewRole ?? (item ? 'follow' : 'impl'))
+  const reportOnly = noPrInstruction(text)
   const featureStages = !reviewRole && featureSpecTarget(taskFirstLine(text)?.text ?? '') !== null ? featureStagesOf(text) : null
   if (featureStages) {
     const root = mainCheckout(repo)
     const feature = featureFolderOf(text, root)
     write(['worker-add', id, r.role, '--worktree', wt, '--title', title, ...branchArgs,
-      ...(dispatch ? ['--dispatch', dispatch] : []), ...(item ? keepArgs(item) : []),
+      ...(dispatch ? ['--dispatch', dispatch] : []), ...(reportOnly ? ['--feature-report'] : []), ...(item ? keepArgs(item) : []),
       ...(feature ? ['--feature', feature, '--feature-repo', root] : []),
       ...taskArgs.filter((arg, index) => index !== 0 || arg !== '--fill'),
       ...featureStages.flatMap((stage) => ['--feature-stage', `기능 ${featureStageText(stage)}`])])
     return r
   }
-  const reportOnly = noPrInstruction(text)
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
   const milestones = () => {
     if (reportOnly) return [{ kind: null, text: WORKER_REPORT_STEP }]

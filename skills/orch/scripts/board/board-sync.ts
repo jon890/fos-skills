@@ -106,7 +106,7 @@ import type { LastPrRules, LastPrVerdict } from '../lib/last-pr.ts'
 import { worktreePaths } from '../lib/workers.ts'
 import type { WorkerRow } from '../core/board-workers.ts'
 import { featureAdvance, hasFeaturePr } from '../lib/feature-advance.ts'
-import { finalFeaturePrMerged, isFeatureItem } from '../core/feature-stages.ts'
+import { finalFeatureStageFinished, isFeatureItem } from '../core/feature-stages.ts'
 import { gh, ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { pathOf } from '../lib/paths.ts'
@@ -440,6 +440,8 @@ function main(argv: string[]): number {
       !workerRows.some((row) => row.status === 'working' && !(row.dispatch && Object.hasOwn(workerEnds, row.dispatch)) && !gone(row.worktree))
     const reviewDone = !SKIP_STATUS.has(String(item.status)) && (rowsDone || (review &&
       ((!Array.isArray(item.workers) && (completedItems.includes(id) || (/^review-pr-\d+$/.test(id) && completedReviews.includes(target!)))) || stateFor(review[1]) === 'MERGED')))
+    const featureReporter = workerRows.find((row) => row.dispatch && row['feature-report'] === 'pending' &&
+      (row.status === 'done' || workerEnds[row.dispatch] === 'done'))
     if (reviewDone) {
       const steps = boardSteps(boardBin, id, board)
       if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }
@@ -447,6 +449,13 @@ function main(argv: string[]): number {
       finish = true
     } else if (review) {
       // 리뷰 브랜치에는 구현 PR 을 연결하지 않는다. 리뷰 완료 보고나 대상 PR 머지로만 끝낸다.
+    } else if (featureReporter && !SKIP_STATUS.has(String(item.status))) {
+      const steps = boardSteps(boardBin, id, board)
+      const plan = steps && featureAdvance(repo, { ...item, id }, steps, { report: featureReporter.dispatch! })
+      if (!plan) { err(`board-sync: ${id} 의 보고 대상 기능 단계를 확인하지 못했다`); return 1 }
+      cmds.push(plan.args)
+      finish = plan.status === 'done'
+      hold = true
     } else if (reportStep) {
       // 대표 칸이 비거나 옛 작업으로 바뀌어도 배정 시각으로 마지막 담당자를 찾는다.
       const reporter = workerRows.filter((row) => row.role === 'impl' || row.role === 'follow')
@@ -460,7 +469,7 @@ function main(argv: string[]): number {
         }
       }
     }
-    if (!reviewDone && !review && !reportStep && tagged.length > 0) {
+    if (!reviewDone && !review && !reportStep && !featureReporter && tagged.length > 0) {
       // 꼬리표가 있는 수동 항목은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
       for (const step of tagged.filter((step) => !step.done)) {
         const tag = parseEventTag(step.text)!
@@ -487,7 +496,7 @@ function main(argv: string[]): number {
       const remainingEvents = tagged.filter((step) => !step.done && parseEventTag(step.text)?.event !== 'release')
       if (remainingEvents.length > 0) brief(`BOARD ${id} remaining-events ${remainingEvents.map((step) => `${step.number}: ${step.text}`).join(' | ')}`)
     }
-    if (!reviewDone && !review && !reportStep && (feature || tagged.length === 0) && !SKIP_STATUS.has(String(item.status))) {
+    if (!reviewDone && !review && !reportStep && !featureReporter && (feature || tagged.length === 0) && !SKIP_STATUS.has(String(item.status))) {
       const stages = stagesOf(item)
       const repBranch = branches.get(String(item.worktree)) || String(item.branch || '')
       const rows = workerRows
@@ -531,7 +540,7 @@ function main(argv: string[]): number {
       }
       // 단계 묶음이 있는 후속 줄은 줄의 브랜치로 자기 PR 을 잇는다
       if (stages || feature) {
-        for (const row of localRows.filter((one) => (one.stages || one['feature-steps']) && (one.role === 'follow' || one.role === 'impl') && !prNumbers(one.pr).size)) {
+        for (const row of localRows.filter((one) => (one.stages || one['feature-steps']) && !one['feature-report'] && (one.role === 'follow' || one.role === 'impl') && !prNumbers(one.pr).size)) {
           const target = branches.get(row.worktree) || row.branch || ''
           if (target) link(target, row, false)
         }
@@ -540,8 +549,8 @@ function main(argv: string[]): number {
       // 다른 저장소 줄의 PR 은 세지 않고 그 줄을 고르지 않는다. 다른 저장소의 구현·후속 줄만 있으면 대표 브랜치로도 잇지 않는다
       if (!ownPrs().some((one) => !hasPrGroup(item, one) && !hasFeaturePr(item, one))) {
         const work = (one: WorkerRow): boolean => one.role === 'follow' || one.role === 'impl'
-        const baseRow = localRows.filter((one) => work(one) && !one.stages && !one['feature-steps']).sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
-        const target = baseRow ? branches.get(baseRow.worktree) || baseRow.branch || '' : rows.some((one) => one.stages || one['feature-steps'] || (work(one) && foreignRow(one))) ? '' : repBranch
+        const baseRow = localRows.filter((one) => work(one) && !one.stages && !one['feature-steps'] && !one['feature-report']).sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+        const target = baseRow ? branches.get(baseRow.worktree) || baseRow.branch || '' : rows.some((one) => one.stages || one['feature-steps'] || one['feature-report'] || (work(one) && foreignRow(one))) ? '' : repBranch
         if (target) link(target, baseRow, target === repBranch)
       }
       const branch = repBranch
@@ -694,7 +703,7 @@ function main(argv: string[]): number {
             err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
             return 1
           }
-          if (steps.length > 0 && steps.every((one) => one.done) && (!feature || finalFeaturePrMerged(item, steps))) {
+          if (steps.length > 0 && steps.every((one) => one.done) && (!feature || finalFeatureStageFinished(item, steps))) {
             finish = true
             out(`board-sync: ${id} 는 단계를 모두 끝냈고 열린 PR, 워크트리, 남은 일 줄이 없어 done 으로 바꾼다`)
             after.push(['set', id, 'done', '--worktree', '', ...(feature ? ['--if-rev', linesRev(item)] : [])])

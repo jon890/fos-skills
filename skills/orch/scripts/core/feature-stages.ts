@@ -47,21 +47,23 @@ function stageOf(text: string): FeatureStage | undefined {
 }
 
 export function isFeatureItem(item: Record<string, unknown>): boolean {
-  return Boolean(item.feature || item['feature-final-pr']) || [item.details, item.next].some((lines) =>
+  return Boolean(item.feature || item['feature-final-pr'] || item['feature-final-report']) || [item.details, item.next].some((lines) =>
     (Array.isArray(lines) ? lines : String(lines ?? '').split('\n')).some((line) =>
       stageOf(String(typeof line === 'string' ? line : line?.text ?? '').replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''))))
 }
 
-export function finalFeaturePrMerged(item: Record<string, unknown>, steps: BoardStep[]): boolean {
+export function finalFeatureStageFinished(item: Record<string, unknown>, steps: BoardStep[]): boolean {
   const merged = prNumbers(item['merged-pr'])
-  if (merged.has(String(item['feature-final-pr']))) return true
+  if (item['feature-final-report'] || merged.has(String(item['feature-final-pr']))) return true
   return steps.some((step) => step.done && stageOf(step.text)?.name === 'docs-consolidate' &&
     boardWorkerRows(item).some((row) => merged.has(String(row.pr)) &&
       row['feature-steps']?.split(',').includes(String(step.number))))
 }
 
-export function featureMergePlan(item: BoardItem, steps: BoardStep[], pr: string, files: string[]) {
-  const row = boardWorkerRows(item).find((worker) => String(worker.pr) === pr && worker['feature-steps'])
+export function featureMergePlan(item: BoardItem, steps: BoardStep[], source: string | { report: string }, files: string[]) {
+  const row = boardWorkerRows(item).find((worker) => worker['feature-steps'] &&
+    (typeof source === 'string' ? !worker['feature-report'] && String(worker.pr) === source :
+      worker.dispatch === source.report && worker['feature-report'] === 'pending'))
   if (!row) return null
   const owned = new Set(row['feature-steps']!.split(',').map(Number))
   const covered = steps.filter((step) => owned.has(step.number)).sort((a, b) => a.number - b.number)
@@ -74,7 +76,7 @@ export function featureMergePlan(item: BoardItem, steps: BoardStep[], pr: string
   const add = next ? `[ask] 기능 ${featureStageText(next)}` : null
   const done = covered.filter((step) => !step.done).map((step) => step.number)
   const status = next || steps.some((step) => !step.done && !owned.has(step.number)) ? 'doing' : 'done'
-  const discover = !item.feature && stages.some((stage) => stage.name === 'spec')
+  const discover = typeof source === 'string' && !item.feature && stages.some((stage) => stage.name === 'spec')
   const specs = [...new Set(files.filter((file) => /^docs\/features\/[^/]+\/spec\.md$/.test(file)))]
   return {
     done, status, lastStage: !next,
