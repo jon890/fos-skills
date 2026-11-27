@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 0.5.1 (2026-11-27)
+
+- 저장소 루트의 orch 공통 지시서(.orch/specs/spec-common.md)를 감사 대상에 넣는다. git 이 무시하는 .orch 폴더에 있어도 고르고, 개별 지시서는 고르지 않는다.
+
 ## 0.5.0 (2026-11-27)
 
 - 외부 공개 전 버전 체계에 맞춰 번호를 0.x로 바꿨어요.
