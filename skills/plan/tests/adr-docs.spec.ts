@@ -108,6 +108,77 @@ describe("BROKEN_LINK", () => {
   });
 });
 
+describe("docs-audit 문서 구조 검사", () => {
+  const overlayPath = ".claude/docs-audit-overlay.md";
+  const enabled = "| 고아 문서 검사 | `켜기` |\n| README 누락 검사 | `켜기` |\n";
+
+  test("기본값과 기존 호출의 출력과 종료 코드를 유지한다", () => {
+    const root = repo({ "README.md": "# 문서\n", "orphan.md": "# 고아 문서\n" });
+    const baseline = run(root, "check");
+    assert.equal(baseline.code, 0);
+    assert.deepEqual(run(root, "check", "--docs-audit"), baseline);
+    write(root, { [overlayPath]: enabled });
+    assert.deepEqual(run(root, "check", "--scope", "orphan.md").out, []);
+  });
+
+  test("파일명과 코드 예시는 링크가 아니며 자기 링크만 있는 문서도 고아다", () => {
+    const root = repo({
+      [overlayPath]: enabled,
+      "README.md": "# 문서\n\n[연결](linked.md)\n\norphan.md를 설명한다.\n\n`[예](orphan.md)`\n\n```md\n[예](orphan.md)\n```\n",
+      "linked.md": "# 연결 문서\n",
+      "orphan.md": "# 고아 문서\n\n[자기](orphan.md)\n",
+    });
+    const result = run(root, "check", "--docs-audit");
+    assert.equal(result.code, 1);
+    assert.deepEqual(result.out, [
+      "README.md:1: README_MISSING orphan.md",
+      "orphan.md:1: ORPHAN_DOC 다른 문서에서 이 문서로 오는 링크가 없다",
+    ]);
+    assert.deepEqual(run(root, "check", "--scope", "README.md", "--docs-audit").out, result.out.slice(0, 1));
+
+    write(root, { "README.md": "# 문서\n\n[연결](linked.md) [연결](orphan.md)\n" });
+    const clean = run(root, "check", "--docs-audit");
+    assert.equal(clean.code, 0, clean.err);
+    assert.deepEqual(clean.out, []);
+  });
+
+  test("Git 무시 경로와 제외 폴더의 문서는 발견과 링크 출처에서 모두 뺀다", () => {
+    const root = repo({
+      "README.md": "# 문서\n",
+      "docs/INDEX.md": "# 색인\n",
+      "docs/CLAUDE.md": "# 지침\n",
+      "docs/AGENTS.md": "# 지침\n",
+      [overlayPath]: `${enabled}| 문서 검사 제외 폴더 | \`k8s-in-action\`, \`vendor\` |\n[초안](/draft.md)\n`,
+      "docs/.claude/note.md": "[초안](/draft.md)\n",
+      "docs/.codex/note.md": "[초안](/draft.md)\n",
+      "docs/.agents/note.md": "[초안](/draft.md)\n",
+      "docs/node_modules/note.md": "[초안](/draft.md)\n",
+      "docs/k8s-in-action/note.md": "[초안](/draft.md)\n",
+      "vendor/note.md": "[초안](/draft.md)\n",
+      ".gitignore": ".orch/\n",
+    });
+    write(root, { ".orch/state.md": "[초안](/draft.md)\n", "draft.md": "# 커밋 전 초안\n" });
+    assert.deepEqual(run(root, "check", "--docs-audit").out, [
+      "README.md:1: README_MISSING draft.md",
+      "draft.md:1: ORPHAN_DOC 다른 문서에서 이 문서로 오는 링크가 없다",
+    ]);
+  });
+
+  test("감사 범위 밖의 링크도 읽고 하위 프로젝트에서 검사별로 설정을 덮는다", () => {
+    const root = repo({
+      [overlayPath]: enabled,
+      "frontend/.claude/docs-audit-overlay.md": "| README 누락 검사 | `끄기` |\n",
+      "frontend/docs/README.md": "# 문서\n",
+      "frontend/docs/a file.md": "# 연결 문서\n",
+      "outside/INDEX.md": "[연결](/frontend/docs/a%20file.md#연결-문서)\n",
+    });
+    const result = run(root, "check", "--scope", "frontend/docs", "--docs-audit");
+    assert.equal(result.code, 0, result.err);
+    assert.deepEqual(result.out, []);
+    assert.deepEqual(run(root, "check", "--docs-audit").out, ["frontend/docs/README.md:1: README_MISSING a file.md"]);
+  });
+});
+
 describe("Markdown 꼴", () => {
   test("각주, 들여 쓴 펜스, setext 제목, HTML 앵커, 단축 참조 링크", () => {
     const root = repo({

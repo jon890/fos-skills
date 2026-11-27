@@ -7,7 +7,7 @@
 //   (docs/features/docs-check-ownership/spec.md DECISION1, DECISION5).
 //
 // 사용법 (cwd: 대상 저장소 안. 루트는 git rev-parse --show-toplevel 로 찾는다)
-//   node adr-docs.ts check [--adr-dir GLOB]... [--flat] [--index generated|ids] [--changed-since REF] [--scope PATH]
+//   node adr-docs.ts check [--adr-dir GLOB]... [--flat] [--index generated|ids] [--changed-since REF] [--scope PATH] [--docs-audit]
 //   node adr-docs.ts write-index [--adr-dir GLOB]...
 //
 // 옵션
@@ -23,6 +23,7 @@
 //                       색인·중복 위반은 그 ADR 폴더 안 파일이 하나라도 바뀌었으면, 깨진 링크·앵커는 링크 대상이
 //                       지워졌거나 옮겨졌거나 바뀌었으면 바뀐 쪽으로 센다
 //   --scope PATH        결과를 그 경로 아래 문서로 좁힌다. 링크 대상은 범위 밖이어도 찾는다
+//   --docs-audit       docs-audit 오버레이에서 고아 문서와 README 누락 검사를 켰는지 읽는다
 //   write-index 는 --flat, --index 를 받기만 하고 쓰지 않는다. 부르는 쪽이 같은 인자 묶음을 넘길 수 있게 한다.
 //
 // 검사 대상: git 이 추적하거나, 추적하지 않았어도 무시하지 않는 .md 파일. 코드 블록(들여 쓴 펜스 포함)과 코드 스팬 안은 보지 않는다.
@@ -44,6 +45,8 @@
 //   <폴더>/INDEX.md:1: INDEX_DESYNC ...           ids 모드에서 식별자 집합이 다르다
 //   <경로>:1: ADR_DUPLICATE ...                   한 ADR 폴더 안에서 같은 식별자가 두 파일에 있다
 //   <경로>:<줄>: ADR_PLACEMENT ...                superseded 인 ADR 이 superseded/ 밖에 있거나 그 반대다
+//   <경로>:1: ORPHAN_DOC                        다른 Markdown 문서가 이 문서를 링크하지 않는다
+//   <폴더>/README.md:1: README_MISSING <파일>     README 가 같은 폴더의 이 문서를 링크하지 않는다
 //   stderr `경고: <경로>:<줄>: AMBIGUOUS_ANCHOR <대상> ...`   같은 이름 제목이 둘 이상인 문서의 `#제목`, `#제목-1` 링크. 종료 코드에 세지 않는다
 //   stderr 마지막 줄: `검사한 Markdown: N개, ADR 폴더: M개`
 //
@@ -66,6 +69,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { searchOrder } from "./overlay_paths.ts";
+import { cell as overlayCell, codes, targets } from "./overlay_values.ts";
 
 export type IndexMode = "generated" | "ids";
 export type Options = {
@@ -75,6 +80,7 @@ export type Options = {
   index: IndexMode;
   changedSince?: string;
   scope?: string;
+  docsAudit?: boolean;
 };
 export type AdrKind = "number" | "date" | "area";
 export type AdrName = { kind: AdrKind; id: string; date?: string };
@@ -110,6 +116,7 @@ export function parseArgs(argv: string[]): Options {
       opts.index = mode;
     } else if (arg === "--changed-since" && command === "check") opts.changedSince = value(++i, arg);
     else if (arg === "--scope" && command === "check") opts.scope = value(++i, arg);
+    else if (arg === "--docs-audit" && command === "check") opts.docsAudit = true;
     else throw new UsageError(`모르는 옵션: ${arg}`);
   }
   if (opts.adrDirs.length === 0) opts.adrDirs.push("docs/adr");
@@ -770,6 +777,62 @@ function inScope(path: string, scope: string | undefined) {
   return !scope || scope === "." || path === scope || path.startsWith(`${scope}/`);
 }
 
+const DOCS_AUDIT_OVERLAY = "docs-audit-overlay.md";
+const EXCLUDED_DOC_DIRS = [".git", ".claude", ".codex", ".agents", "node_modules"];
+const DOC_ENTRYPOINTS = new Set(["README.md", "INDEX.md", "CLAUDE.md", "AGENTS.md"]);
+
+function checkDocumentStructure(repo: Repo, scope: string | undefined): Violation[] {
+  const [sub] = targets(repo.root, scope ? [scope] : []);
+  const overlays = searchOrder(repo.root, "docs-audit", sub)
+    .filter((path) => !path.startsWith("(없음)") && posix.basename(path) === DOCS_AUDIT_OVERLAY)
+    .map((path) => read(repo, path));
+  const setting = (name: string) => {
+    for (const overlay of overlays) {
+      const value = overlayCell(overlay, name);
+      if (value) return codes(value);
+    }
+    return [];
+  };
+  const orphans = setting("고아 문서 검사")[0] === "켜기";
+  const readmes = setting("README 누락 검사")[0] === "켜기";
+  if (!orphans && !readmes) return [];
+
+  const excluded = new Set([...EXCLUDED_DOC_DIRS, ...setting("문서 검사 제외 폴더")]);
+  const files = new Set(repo.markdown.filter((path) => !path.split("/").slice(0, -1).some((part) => excluded.has(part))));
+  const incoming = new Set<string>();
+  const readmeTargets = new Map<string, Set<string>>();
+  // 발견 범위가 좁아도 들어오는 링크는 저장소 전체에서 찾는다.
+  for (const source of files) {
+    const readme = readmes && posix.basename(source) === "README.md" ? new Set<string>() : undefined;
+    if (readme) readmeTargets.set(source, readme);
+    if (!orphans && !readme) continue;
+    for (const { target } of linksOf(prose(read(repo, source)))) {
+      const rootRelative = target.startsWith("/") && !target.startsWith("//");
+      const local = splitLocal(rootRelative ? target.slice(1) : target);
+      if (!local?.[0]) continue;
+      const path = posix.join(rootRelative ? "." : posix.dirname(source), local[0]);
+      if (path === source || !files.has(path)) continue;
+      if (orphans) incoming.add(path);
+      readme?.add(path);
+    }
+  }
+
+  const violations: Violation[] = [];
+  for (const path of files) {
+    const name = posix.basename(path);
+    const scoped = inScope(path, scope);
+    if (orphans && scoped && !DOC_ENTRYPOINTS.has(name) && !incoming.has(path)) {
+      violations.push({ path, line: 1, code: "ORPHAN_DOC", message: "다른 문서에서 이 문서로 오는 링크가 없다" });
+    }
+    const readme = posix.join(posix.dirname(path), "README.md");
+    const linked = readmeTargets.get(readme);
+    if (name !== "README.md" && linked && (scoped || inScope(readme, scope)) && !linked.has(path)) {
+      violations.push({ path: readme, line: 1, code: "README_MISSING", message: name, target: path });
+    }
+  }
+  return violations;
+}
+
 export type CheckResult = { lines: string[]; failed: boolean; checked: number; adrDirs: number; notice: string[]; warnings: string[] };
 
 export function runCheck(root: string, opts: Options): CheckResult {
@@ -799,6 +862,7 @@ export function runCheck(root: string, opts: Options): CheckResult {
     if (pattern) violations.push(...checkUnlinked(repo, path, lines, pattern));
   }
   violations.push(...checkAdrDirs(repo, opts).filter((v) => inScope(v.path, scope)));
+  if (opts.docsAudit) violations.push(...checkDocumentStructure(repo, scope));
   violations.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
 
   if (!changes) return { lines: violations.map(format), failed: violations.length > 0, checked, adrDirs: repo.adrDirs.length, notice, warnings };
