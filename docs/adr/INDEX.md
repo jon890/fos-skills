@@ -40,6 +40,7 @@
 | [ADR-036](036-worker-commit-korean-check.md) | worker 의 한국어 표기 검사는 워크트리에 건 git 커밋 훅으로 한다 | accepted | - |
 | [ADR-037](037-orch-merge-readiness.md) | 머지 전 조건은 조건 표 하나가 소유하고 호출부는 범위만 고른다 | accepted | - |
 | [ADR-038](038-pre-release-versions.md) | 외부 공개 전 플러그인과 스킬의 버전을 0.x로 관리한다 | accepted | - |
+| [ADR-039](039-board-item-per-feature.md) | 보드 항목은 기능 하나의 진행이고, 단계 PR 머지는 다음 단계 줄을 만든다 | accepted | - |
 
 ## 대체됨
 
