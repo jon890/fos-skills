@@ -168,7 +168,7 @@ const ROWS: Row[] = [
   { group: 'cleanup', verb: 'handoff', script: 'cleanup/handoff-cleanup.ts', context: ['repo', 'run'], legacy: { name: 'handoff-cleanup', flags: [] }, usage: 'orch cleanup handoff [--apply]' },
   // board
   ...[
-    ['set', '<항목> <상태>'], ['step', '<항목> <번호> done|undo|text [글] [--on 사건]|auto|ask|plain|wait [조건]'],
+    ['set', '<항목> [<상태>] [--priority N|none]'], ['step', '<항목> <번호> done|undo|text [글] [--on 사건]|auto|ask|plain|wait [조건]'],
     ['add-step', '<항목> <글> [--on 사건]'], ['show', '<항목> [--json]'],
     ['del', '<항목> [--force] | --done'], ['clear-done', '<항목> | --all'], ['get', '<항목> <칸>|step <번호> [--json]'], ['list', '[--status <상태,...>] [--json]'],
   ].map(([verb, args]): Row => ({

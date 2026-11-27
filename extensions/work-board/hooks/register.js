@@ -3,6 +3,7 @@ import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries
 import { hasStopReportId, isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
 import { muteKey, muteLabel, muteTarget } from '../../../skills/inbox/scripts/lib/mute.ts'
 import { BOARD_PATHS } from '../../../modules/work-board/locations.ts'
+import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 import { compareFosPluginVersions } from '../../../modules/kit/fos-plugin-version.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
@@ -14,7 +15,7 @@ import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
 // 두 곳에서 읽는다.
 //   1. 수동 항목: 저장소의 board.json. 경로는 orch 와 같은 규칙(bin/board-file.ts, 명시 값 없이 finish.board 다음 기본 위치)으로 정한다.
 //      그 명령이 실패하면 주 checkout 에서 BOARD_PATHS 순서로 찾는다. 갱신은 플러그인의 bin/board.ts 가 한다.
-//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[], stepAt? }] }
+//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, priority?, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[], stepAt? }] }
 //      stepAt 은 board.ts 가 그 항목의 status, details, next 를 마지막으로 바꾼 시각이다. worker 없이 남은 단계의 경과 시간을 이 값으로 잰다.
 //      업무 칩은 표시 다음, 제목 앞에 있다. task-ref 는 글, task 는 링크이며 번호만 있으면 흐리게 보인다. 제목 안 번호는 바꾸지 않는다.
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
@@ -1951,6 +1952,9 @@ export function register(on) {
       return chip ? tagged('task', chip.tag, chip.href, chip.label, done) : null
     }
     const items = board && Array.isArray(board.items) ? board.items : []
+    const rank = (item) => isBoardPriority(item.priority) ? item.priority : Number.MAX_SAFE_INTEGER + 1
+    const sectionItems = (status) => items.filter((item) => item.status === status)
+      .sort((a, b) => rank(a) - rank(b))
     // 맡은 worker 가 없는 줄. 단계가 idle_min 넘게 worker 없이 남았으면 경과 시간을 붙이고 노란색으로 그린다
     // 판정 명령을 읽지 못했으면 orch 기본값(30분)으로 잰다
     const idleView = (item, rows) => {
@@ -2143,7 +2147,7 @@ export function register(on) {
     }
 
     // 결정 필요: worker 질문 수와 수동 decide 항목의 남은 줄
-    const decideRows = items.filter((item) => item.status === 'decide')
+    const decideRows = sectionItems('decide')
     const asked = Array.isArray(live.questions) ? live.questions : []
     const questionView = (q) => {
       const worker = Array.isArray(live.workers) ? live.workers.find((w) => w.id === q.dispatch) : null
@@ -2417,7 +2421,7 @@ export function register(on) {
       children: [Text({ dimColor: true, children: [text] })],
     })
     const manualView = (section) => {
-      const rows = items.filter((item) => item.status === section.status)
+      const rows = sectionItems(section.status)
       if (rows.length === 0) return []
       const views = section.status !== 'done' ? rows.map((item) => itemView(item, section))
         : doneOpen

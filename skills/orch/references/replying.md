@@ -198,6 +198,8 @@ P1·P2 를 고쳤으면 새 커밋에서 다시 리뷰받는다. 믿는 봇은 �
 
 ## 다음 단계 이어 가기
 
+사용자가 어떤 항목을 「최우선」으로 정하면 `orch board set <항목> --priority 1`로 올린다.
+
 `STEP-READY auto`·`STEP-READY ask` 또는 `worker_done`·머지·배포 알림을 받았거나 보드를 확인한 턴에, 상태가 doing 이나 wait 인 항목의 첫 미완료 단계를 본다. `[auto]` 면 같은 턴에 이어 가고, `[ask]` 면 `orch board approval add step-<항목>-<번호> --kind step` 으로 승인 대기를 올린다. 미리보기·항목·단계와 승인 확인은 위 [보드 승인](#보드-승인)을 따른다. `[wait]` 면 아무것도 하지 않는다.
 
 띄우기 직전에 확인 명령을 부른다. `$ITEM` 은 보드 항목 id 다.

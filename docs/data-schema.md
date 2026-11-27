@@ -143,6 +143,10 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 
 보드의 기본 위치는 Git 작업 트리의 `.orch/board.json`이다. Git 밖에서 시작한 세션은 `~/.orch/board.json`을 사용한다. 새 파일이 없으면 기존 `.omc` 경로를 찾는다. `finish.board`로 명시한 위치가 기본값보다 앞선다. 경로 선택과 이전 방법은 [work-board README](../extensions/work-board/README.md#보드에-항목-적기)와 [orch 설정 문서](../skills/orch/references/overlay.md#옛-구조에서-옮기기)에 있다.
 
+| 보드 항목의 칸 | 값 |
+| --- | --- |
+| `priority` | 선택 값. 1부터 `Number.MAX_SAFE_INTEGER`까지의 정수로, 숫자가 작을수록 같은 상태 묶음에서 먼저 보인다. 같은 값이거나 값이 없는 항목끼리는 파일 순서를 따른다. 값을 지우면 이 칸을 생략한다 |
+
 ## 보드 항목의 worker 줄
 
 항목의 `workers`는 worker 줄 목록이다. 필드가 없는 옛 항목은 대표 칸(`worktree`, `branch`)으로 읽는다. 선택 이유는 [ADR-033](adr/033-board-item-worker-rows.md)에 있다.

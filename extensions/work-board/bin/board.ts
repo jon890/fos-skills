@@ -11,7 +11,7 @@
 //   board.ts worker-link <id> --worktree W --pr N   (그 줄의 pr 을 N 으로 하고 항목 pr 칸에 N 을 더한다. 한 잠금, 한 번 저장이라 둘 중 하나만 저장되지 않는다. 맞는 줄이 없으면 거절한다)
 //   --stages 는 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄의 PR·머지 단계 번호다. 같은 줄을 다시 쓸 때 주지 않으면 그대로 둔다.
 //   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
-//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D ...]
+//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D ...]
 //   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
 //   --stages 는 orch 가 사건과 단계 번호의 짝(「pr=1,merge=2,deploy=3,release=4」)을 기억하는 칸이다. 사건은 pr, merge, deploy, release 다
 //   --pr 과 --merged-pr 은 「#555」 와 「555」 를 같게 숫자 555 로 저장한다. 여럿(「#492, #495」)은 「492, 495」 문자열이다
@@ -69,7 +69,7 @@
 // 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다. 제목만 바꾸거나 같은 줄을 다시 쓰면 그대로다.
 //
 // 파일은 json.dump(indent=1, ensure_ascii=False) 의 꼴로 쓴다. 한 칸 들여쓰기, 한글 그대로, 끝 줄바꿈 없음이다.
-// 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다. 이 명령이 쓰는 칸은 PR 번호 말고는 문자열이다.
+// 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다.
 //
 // 쓰기는 <보드 파일>.lock 을 읽기부터 저장까지 잡는다. 기본 5초 대기, 30초 넘은 잠금은 넘겨받는다.
 // list, steps, view, get, item, items 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
@@ -81,6 +81,7 @@ import { parseArgs } from 'node:util'
 import { LockTimeout, withFileLock, type Lock } from '../../../modules/file-lock.ts'
 import { FIELDS, GET_FIELDS, LEAD_MARK, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
 import { defaultBoardPath } from '../../../modules/work-board/path.ts'
+import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 
 export { parseEventTag } from '../hooks/event-tags.js'
 import { STEP, parseEventTag, stageTag, withEventTag } from '../hooks/event-tags.js'
@@ -102,7 +103,7 @@ const ROLES = ['impl', 'follow', 'review', 'verify']
 const MARKS = ['auto', 'ask', 'wait', 'plain']
 const USAGE =
   '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,step-edit,step-add,step-mark,view,get,item,items,del-done,clear-done,worker-add,worker-end,worker-set,worker-link} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--create-only] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '[--dispatch D] [--keep-current ROLE] [--keep-dispatch D] [--clear] [--exact] [--all] [--except ID,ID] [--if-rev REV] [--create-only] [--event "PR 사건"] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps, view, get, item, items 는 잠그지 않는다.
@@ -127,10 +128,11 @@ const HELP = `${USAGE}
   --event 는 줄 끝 꼬리표를 붙이거나 바꾼다. 사건은 pr, merge, deploy, release 다.
   board.ts get <id> <칸> | get <id> step <번호> (JSON, 빈 값은 null 과 종료 코드 4)
   board.ts item <id> | items [<상태>[,<상태>…]] (항목 객체 또는 배열)
-  board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, lines)
+  board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, priority?, lines)
   set, step --exact 는 엄격 검사 뒤 결과 JSON 을 낸다. step 결과에는 number 도 있다.
   set --if-rev REV 는 읽은 뒤 줄이 바뀌면 저장을 거절한다.
-  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--detail D ...]
+  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D ...]
+  --priority 는 양의 정수다. none 을 주면 지운다.
   (--stages 는 사건과 단계 번호의 짝이다. 「pr=1,merge=2,deploy=3,release=4」. orch 가 쓴다)
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목 앞 업무 칩의 링크로 쓴다)
@@ -345,6 +347,7 @@ type Args = {
   keepDispatch?: string
   clear?: boolean
   fields: Partial<Record<(typeof FIELDS)[number], string>>
+  priority?: string
   detail?: string[]
   next?: string[]
   file?: string
@@ -375,6 +378,7 @@ function parse(argv: string[]): Args | 'help' {
     'if-task-ref': { type: 'string' },
     progress: { type: 'string' },
     stages: { type: 'string' },
+    priority: { type: 'string' },
     detail: { type: 'string', multiple: true },
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
@@ -390,6 +394,7 @@ function parse(argv: string[]): Args | 'help' {
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text, condition] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
+  if (values.priority !== undefined && cmd !== 'set') throw new Error('--priority 는 set 에만 쓴다')
   if ((values.fill !== undefined || values['if-task-ref'] !== undefined) && cmd !== 'set') throw new Error('--fill, --if-task-ref 는 set 에만 쓴다')
   if (values.fill && (values.task === '' || values['task-ref'] === '')) throw new Error('--fill 과 빈 업무 값은 함께 쓰지 않는다')
   if (cmd === 'worker-add' && values.stages !== undefined && !ROW_STAGES.test(values.stages)) throw new Error(`worker-add 의 --stages 는 pr=N,merge=M 꼴이다: ${values.stages}`)
@@ -418,7 +423,7 @@ function parse(argv: string[]): Args | 'help' {
   }
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], createOnly: values['create-only'], event: values.event, condition, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, dispatch: values.dispatch, keepCurrent: values['keep-current'], keepDispatch: values['keep-dispatch'], clear: values.clear, fill: values.fill, ifTaskRef: values['if-task-ref'], undo: values.undo ?? false, exact: values.exact ?? false, all: values.all ?? false, except: values.except?.split(',').map((one) => one.trim()).filter(Boolean), ifRev: values['if-rev'], createOnly: values['create-only'], event: values.event, condition, fields, priority: values.priority, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -444,12 +449,14 @@ function itemObject(item: Item) {
   for (const key of ['id', 'title', 'status', 'owner', 'pr', 'merged-pr', 'branch', 'worktree', 'task', 'task-ref', 'stages', 'stepAt', 'workers']) {
     if (key in item) result[key] = item[key]
   }
+  if (isBoardPriority(item.priority)) result.priority = item.priority
   return { ...result, progress: progressOf(item), lines: linesOf(item) }
 }
 function itemView(item: Item, was: unknown, number?: number) {
   return {
     id: item.id, status: typeof item.status === 'string' ? item.status : null,
     was: typeof was === 'string' ? was : null, progress: progressOf(item), rev: linesRev(item),
+    ...(isBoardPriority(item.priority) ? { priority: item.priority } : {}),
     ...(number === undefined ? {} : { number }), lines: linesOf(item),
   }
 }
@@ -598,7 +605,8 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   if (a.cmd === 'list') {
     for (const item of board.items) {
       const status = typeof item.status === 'string' ? item.status : String(item.status ?? '?')
-      process.stdout.write(`${ljust(status, 7)} ${ljust(String(item.id), 16)} ${String(item.title ?? '')}   ${progressText(item)}\n`)
+      const priority = isBoardPriority(item.priority) ? `   우선순위 ${item.priority}` : ''
+      process.stdout.write(`${ljust(status, 7)} ${ljust(String(item.id), 16)} ${String(item.title ?? '')}   ${progressText(item)}${priority}\n`)
       allLines(item).forEach((line, index) => process.stdout.write(lineText(index + 1, line)))
     }
     return false
@@ -713,7 +721,8 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
     const progress = progressOf(item)
     const number = Number(a.text)
     const step = field === 'step' ? findStep(item, id, number) : null
-    const value = step ? step.lines[step.index].text : field === 'title' ? itemTitle(item) : field === 'progress' ? progress?.join('/') ?? null : fieldText(item[field])
+    const fieldValue = field === 'priority' && !isBoardPriority(item.priority) ? null : item[field]
+    const value = step ? step.lines[step.index].text : field === 'title' ? itemTitle(item) : field === 'progress' ? progress?.join('/') ?? null : fieldText(fieldValue)
     process.stdout.write(`${JSON.stringify({ id: item.id, field, ...(step ? { number } : {}), value })}\n`)
     return value === null ? 'empty' : false
   }
@@ -905,6 +914,13 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   if (/\s/.test(a.fields['task-ref'] ?? '')) throw new Refused(`--task-ref 에는 공백을 쓰지 않는다: ${a.fields['task-ref']}`)
   const task = a.fields.task
   if (task && !/^https?:\/\//.test(task)) throw new Refused(`--task 는 http 나 https 로 시작하는 주소다: ${task}`)
+  const rawPriority = a.priority
+  if (rawPriority === 'none') delete item.priority
+  else if (rawPriority !== undefined) {
+    const priority = Number(rawPriority)
+    if (!/^\d+$/.test(rawPriority) || !isBoardPriority(priority)) throw new Refused(`--priority 는 1 이상의 정수(최대 ${Number.MAX_SAFE_INTEGER}) 또는 none 이다: ${rawPriority}`)
+    item.priority = priority
+  }
   const skipTask = a.fill && (a.ifTaskRef === undefined ? Boolean(item.task || item['task-ref']) : Boolean(item.task))
   for (const key of FIELDS) {
     if (a.fill && (key === 'task' || key === 'task-ref') && (skipTask || (a.ifTaskRef !== undefined && key === 'task-ref'))) continue
