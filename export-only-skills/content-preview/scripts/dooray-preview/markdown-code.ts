@@ -1,10 +1,10 @@
 // 링크 검사에서 펜스 코드 블록을 가린다. 원문의 표시 글을 읽을 수 있도록 길이와 줄바꿈을 보존한다.
 const FENCE = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/u
 const QUOTE = /^ {0,3}> ?/u
-const LIST_ITEM = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| |$)/u
+const LIST_ITEM = /^ {0,3}([-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| |$)/u
 const HEADING_OR_BREAK = /^ {0,3}(?:#{1,6}(?: |$)|(?:\* *){3,}$|(?:- *){3,}$|(?:_ *){3,}$)/u
 
-type Container = { kind: 'quote' } | { kind: 'list'; indent: number }
+type Container = { kind: 'quote' } | { kind: 'list'; indent: number; marker: string }
 type Fence = { line: number; delimiter: string }
 
 function blank(text: string): string {
@@ -36,14 +36,19 @@ function continueContainer(line: string, container: Container): string | undefin
   if (!line.trim() || line.startsWith(' '.repeat(container.indent))) return line.slice(container.indent)
 }
 
-function startContainer(line: string): { container: Container; width: number } | undefined {
+function startContainer(line: string, paragraph: boolean, previous?: Container): { container: Container; width: number } | undefined {
   const quote = QUOTE.exec(line)
   if (quote) return { container: { kind: 'quote' }, width: quote[0].length }
   if (HEADING_OR_BREAK.test(line)) return
   const item = LIST_ITEM.exec(line)
   if (item) {
+    const marker = item[1].slice(-1)
+    const sibling = previous?.kind === 'list' && previous.marker === marker
+    const ordered = marker === '.' || marker === ')'
+    // 파싱하던 목록의 다음 항목을 제외하면, 문단을 끊는 번호 목록은 1로 시작해야 한다.
+    if (paragraph && !sibling && (!line.slice(item[0].length).trim() || (ordered && Number.parseInt(item[1], 10) !== 1))) return
     const width = item[0].length
-    return { container: { kind: 'list', indent: item[0].endsWith(' ') ? width : width + 1 }, width }
+    return { container: { kind: 'list', indent: item[0].endsWith(' ') ? width : width + 1, marker }, width }
   }
 }
 
@@ -52,6 +57,7 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
   const containers: Container[] = []
   const blockStarts = new Set<number>()
   let fence: Fence | undefined
+  let paragraph = false
 
   for (const [index, line] of lines.entries()) {
     const expanded = expandTabs(line).replace(/\r?\n$|\r$/u, '')
@@ -63,7 +69,8 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
       content = rest
       depth++
     }
-    if (depth !== containers.length) {
+    const previous = containers[depth]
+    if (previous) {
       containers.length = depth
       fence = undefined
       blockStarts.add(index)
@@ -80,15 +87,16 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
       continue
     }
 
-    let next = startContainer(content)
+    let next = startContainer(content, paragraph, previous)
     if (next) blockStarts.add(index)
     while (next) {
       containers.push(next.container)
       content = content.slice(next.width)
-      next = startContainer(content)
+      next = startContainer(content, false)
     }
 
     if (!content.trim()) {
+      paragraph = false
       blockStarts.add(index + 1)
       continue
     }
@@ -96,12 +104,14 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
     const start = FENCE.exec(content)
     if (start && (start[1][0] !== '`' || !start[2].includes('`'))) {
       fence = { line: index, delimiter: start[1] }
+      paragraph = false
       blockStarts.add(index)
       // 닫는 줄이 확인될 때까지 여는 줄과 본문을 그대로 둔다.
       continue
     }
     lines[index] = maskContainerPrefix(line, expanded.length - content.length)
-    if (HEADING_OR_BREAK.test(content)) {
+    paragraph = !HEADING_OR_BREAK.test(content)
+    if (!paragraph) {
       blockStarts.add(index)
       blockStarts.add(index + 1)
     }

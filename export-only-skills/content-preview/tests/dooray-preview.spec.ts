@@ -541,12 +541,26 @@ describe('dooray-preview task, comment', () => {
       ['```text', inside, '```'],
       ['- ```text', `  ${inside}`, '  ```'],
       ['10. 예제', '', '    - ~~~~text', `      ${inside}`, '      ~~~~'],
+      ['앞 문단', '1. ~~~', `   ${inside}`, '   ~~~'],
+      ['2. 같은 목록의 첫 항목', '3. ~~~', `   ${inside}`, '   ~~~'],
       ['> ```text', `> ${inside}`, '> ```'],
       ['- > ```text', `  > ${inside}`, '  > ```'],
     ]) {
       const done = preview('task', [...block, '', outside].join('\n'))
       assert.equal(done.code, 1)
       assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('문단을 끊을 수 없는 번호 뒤의 링크는 펜스 코드로 건너뛰지 않는다', () => {
+    const link = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['앞 문단', '2. ~~~', '   ' + link, '   ~~~'],
+      ['> 앞 문단', '> 2. ~~~', '>    ' + link, '>    ~~~'],
+    ]) {
+      const done = preview('comment', lines.join('\n'))
+      assert.equal(done.code, 1, done.stderr)
       assert.deepEqual(done.calls, ['--json post get --id post-example'])
     }
   })
