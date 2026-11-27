@@ -1394,3 +1394,25 @@ test('스펙 PR 을 브랜치로 찾아 연결하고 머지 파일에서 기능 
   assert.equal(got.board.a['feature-repo'], tmp)
   assert.deepEqual(got.board.a.details, [step('1. 기능 spec', true), step('2. [ask] 기능 technical-design', false)])
 })
+
+test('마지막 기능 PR 머지 뒤 남은 수동 단계까지 끝나면 항목을 닫는다', () => {
+  states['77'] = 'MERGED'
+  const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', pr: 77,
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 docs-consolidate', false), step('2. 수동 확인', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.equal(got.board.a['merged-pr'], 77)
+  assert.deepEqual(got.board.a.details, [step('1. 기능 docs-consolidate', true), step('2. 수동 확인', false)])
+  const closed = sync([{ ...got.board.a, details: [step('1. 기능 docs-consolidate', true), step('2. 수동 확인', true)] }])
+  assert.equal(closed.code, 0, closed.result.stderr)
+  assert.equal(closed.board.a.status, 'done')
+})
+
+test('사용자가 기능 단계 줄을 끝내도 마지막 PR 의 머지 기록이 없으면 닫지 않는다', () => {
+  const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', 'merged-pr': 76,
+    workers: [{ worktree: 'old', role: 'impl', pr: 76, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 verify', true), step('2. 기능 docs-consolidate', true)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+})

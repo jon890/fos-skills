@@ -106,7 +106,7 @@ import type { LastPrRules, LastPrVerdict } from '../lib/last-pr.ts'
 import { worktreePaths } from '../lib/workers.ts'
 import type { WorkerRow } from '../core/board-workers.ts'
 import { featureAdvance, hasFeaturePr } from '../lib/feature-advance.ts'
-import { isFeatureItem } from '../core/feature-stages.ts'
+import { finalFeaturePrMerged, isFeatureItem } from '../core/feature-stages.ts'
 import { gh, ghJson } from '../lib/gh.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { pathOf } from '../lib/paths.ts'
@@ -683,20 +683,21 @@ function main(argv: string[]): number {
           }
           reflected = { pr: num, steps }
         }
-      } else if (item.status === 'doing' && !feature && !stages && state !== 'OPEN' && (!num || state === 'CLOSED') && foreignPending.length === 0) {
+      } else if (item.status === 'doing' && !stages && state !== 'OPEN' && (!num || state === 'CLOSED') && foreignPending.length === 0) {
         // 머리 주석의 「단계를 모두 끝낸 doing 항목」
         const worktree = typeof item.worktree === 'string' ? item.worktree : ''
-        const working = (worktree !== '' && !gone(worktree)) || (branch !== '' && liveBranches.has(branch))
+        const working = (worktree !== '' && !gone(worktree)) || (branch !== '' && liveBranches.has(branch)) ||
+          (feature && rows.some((row) => row.status === 'working' && !gone(row.worktree)))
         if (!working && !details.some((d) => textOf(d).startsWith(NOTE))) {
           const steps = boardSteps(boardBin, id, board)
           if (steps === null) {
             err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
             return 1
           }
-          if (steps.length > 0 && steps.every((one) => one.done)) {
+          if (steps.length > 0 && steps.every((one) => one.done) && (!feature || finalFeaturePrMerged(item, steps))) {
             finish = true
             out(`board-sync: ${id} 는 단계를 모두 끝냈고 열린 PR, 워크트리, 남은 일 줄이 없어 done 으로 바꾼다`)
-            after.push(['set', id, 'done', '--worktree', ''])
+            after.push(['set', id, 'done', '--worktree', '', ...(feature ? ['--if-rev', linesRev(item)] : [])])
           }
         }
       }

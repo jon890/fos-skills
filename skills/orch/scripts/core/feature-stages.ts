@@ -52,6 +52,13 @@ export function isFeatureItem(item: Record<string, unknown>): boolean {
       stageOf(String(typeof line === 'string' ? line : line?.text ?? '').replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''))))
 }
 
+export function finalFeaturePrMerged(item: Record<string, unknown>, steps: BoardStep[]): boolean {
+  const merged = prNumbers(item['merged-pr'])
+  return steps.some((step) => step.done && stageOf(step.text)?.name === 'docs-consolidate' &&
+    boardWorkerRows(item).some((row) => merged.has(String(row.pr)) &&
+      row['feature-steps']?.split(',').includes(String(step.number))))
+}
+
 export function featureMergePlan(item: BoardItem, steps: BoardStep[], pr: string, files: string[]) {
   const row = boardWorkerRows(item).find((worker) => String(worker.pr) === pr && worker['feature-steps'])
   if (!row) return null
