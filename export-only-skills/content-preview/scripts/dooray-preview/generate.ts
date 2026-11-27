@@ -25,7 +25,7 @@
 //
 // 옵션: --title(필수), --mode {task,comment,messenger}(기본 task), --author(기본 작성자), --strict, --project,
 //     --tag(반복), --meta 라벨:값(반복), --md-file(필수, '-' 는 stdin), --out(필수)
-// 종료 코드: 0 성공, 1 본문에 '</script>' 가 있거나 읽지 못함 또는 --strict 의 경고, 2 사용법 오류
+// 종료 코드: 0 성공, 1 본문이나 업무 링크 오류 또는 --strict 의 경고, 2 사용법 오류
 //
 // 주의:
 // - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/plain 블록이 깨짐).
@@ -40,6 +40,7 @@ import { parseCli, type Spec } from '../cli.ts'
 import { isMain, readStdin, write } from '../io.ts'
 import { PY_SPACE, pyHead, pyReadText } from '../kit/py.ts'
 import { clearOutput, escapeHtml, writeOutput } from '../preview_output.ts'
+import { reportTaskLinks } from './task-links.ts'
 
 const TEMPLATE = join(import.meta.dirname, 'template.html')
 
@@ -187,13 +188,17 @@ export function main(argv: string[]): number {
     return 1
   }
 
-  const warnings: string[] = []
+  let warnings: string[] = []
   if (mode === 'messenger') {
     if (UNSUPPORTED_LINK.test(md)) warnings.push(LINK_WARNING)
     const names = unrenderedFormats(md)
     if (names.length) warnings.push(unrenderedWarning(names))
+    for (const message of warnings) write(2, `${message}\n`)
+  } else {
+    const result = reportTaskLinks([md])
+    if (result.failed) return 1
+    warnings = result.warnings
   }
-  for (const message of warnings) write(2, `${message}\n`)
   const warningHtml = warnings.map((message) => `<div class="dooray-warning" role="alert">${escapeHtml(message)}</div>`).join('')
 
   let headHtml: string
@@ -240,7 +245,7 @@ export function main(argv: string[]): number {
   })
   writeOutput(args.out, out)
   write(1, `생성 완료: ${args.out}\n`)
-  return warnings.length && strict ? 1 : 0
+  return mode === 'messenger' && warnings.length && strict ? 1 : 0
 }
 
 if (isMain(import.meta.url, import.meta.main)) process.exitCode = main(process.argv.slice(2))

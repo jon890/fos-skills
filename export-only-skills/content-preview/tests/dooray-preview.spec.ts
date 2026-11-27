@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { generate, parsePreview } from './generator.ts'
-import { SCRIPTS_DIR, tempDir } from './helpers.ts'
+import { lines, linkFake, SCRIPTS_DIR, tempDir } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const COMMAND = [process.execPath, join(SCRIPTS_DIR, 'dooray-preview', 'generate.ts')]
@@ -233,6 +233,21 @@ describe('dooray-preview 정규식 경계', () => {
 })
 
 describe('dooray-preview task, comment', () => {
+  const lookupJson = JSON.stringify({
+    project: { code: 'example' }, number: 18, subject: '[Example] 제목', workflowClass: 'working',
+  })
+
+  function preview(mode: string, input: string, state: 'ok' | 'missing' | 'failed' | Record<string, unknown> = 'ok', strict = false) {
+    const dir = tempDir('content-preview-task-link-')
+    const log = join(dir, 'dooray.log')
+    if (state !== 'missing') linkFake(join(dir, 'dooray'), 'dooray')
+    const env = { ...process.env, PATH: dir, FAKE_LOG: log, FAKE_DOORAY_JSON: typeof state === 'string' ? lookupJson : JSON.stringify(state), FAKE_DOORAY_RC: state === 'failed' ? '1' : '0' }
+    const args = ['--mode', mode, '--title', 't', '--md-file', '-']
+    if (strict) args.push('--strict')
+    const done = generate(COMMAND, args, { dir, input, env, stale: 'STALE' })
+    return { ...done, calls: lines(log) }
+  }
+
   test('업무 모드의 머리', () => {
     const done = generate(COMMAND, ['--title', '제목 <1>', '--project', '프로젝트', '--tag', 'a', '--tag', 'b&c', '--meta', '담당자:이름', '--meta', '참조', '--meta', 'a:b:c', '--md-file', '-'], { input: '**x**' })
     assert.equal(done.code, 0)
@@ -266,14 +281,473 @@ describe('dooray-preview task, comment', () => {
   })
 
   test('업무와 댓글은 viewer 본문을 그대로 둔다', () => {
-    const body = '[example](dooray://example/tasks/example "working")\n**bold**'
+    const body = '[example/18 &#91;Example&#93; 제목](dooray://example/tasks/post-example "working")\n**bold**'
     for (const mode of ['task', 'comment']) {
-      const done = generate(COMMAND, ['--mode', mode, '--title', 't', '--md-file', '-', '--strict'], { input: body })
+      const done = preview(mode, body, 'ok', true)
       assert.equal(done.code, 0)
       assert.equal(done.stderr, '')
       assert.ok(done.html.includes(body))
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
       assert.equal(parsePreview(done.html).alerts, 0)
       assert.ok(done.html.includes(`data-mode="${mode}"`))
+    }
+  })
+
+  test('링크 앞의 독립된 대괄호 문구를 링크 표시 글에 넣지 않는다', () => {
+    const body = '[참고 [보충]] 다음 업무를 확인하세요. [example/18 제목](dooray://example/tasks/post-example "working")'
+    const done = preview('comment', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('링크 앞의 백슬래시가 짝수면 표시 글을 읽고 홀수면 주소만 검사한다', () => {
+    const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
+    for (const count of [2, 4]) {
+      const done = preview('comment', '\\'.repeat(count) + link)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+    for (const count of [1, 3]) {
+      const done = preview('comment', '\\'.repeat(count) + link)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /주소만 적은 링크를 .*인라인 링크로 바꾸세요/u)
+    }
+  })
+
+  test('표시 글의 대괄호와 두레이 웹 주소를 각각 고치도록 안내한다', () => {
+    const badLabel = '[참고] [example/18 [Example] 제목](dooray://example/tasks/post-example "working")'
+    const webLinks = [
+      '[example/18 제목](https://example.dooray.com/project/tasks/post-example?x=y)',
+      '[example/18 제목](//example.dooray.com/project/tasks/post-example)',
+      '[example/18 제목]( </task/project-example/post-example> )',
+      'https://example.dooray.com/task/project-example/post-example.',
+    ]
+    const body = [badLabel, ...webLinks].join('\n')
+    const done = preview('task', body)
+    assert.equal(done.code, 1)
+    assert.equal(done.html, '')
+    assert.match(done.stderr, /대괄호를.*\n  고친 예 \[example\/18 &#91;Example&#93; 제목\]/u)
+    assert.equal((done.stderr.match(/웹 주소를/g) ?? []).length, webLinks.length)
+    assert.equal((done.stderr.match(/고친 예 /g) ?? []).length, webLinks.length + 1)
+    assert.match(done.stderr, /dooray:\/\/ORG_ID\/tasks\/post-example "working"/u)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('업무 경로를 가리키는 절대·프로토콜 상대·루트 상대·상대 주소를 막는다', () => {
+    const paths = [
+      'HTTPS://example.DOORAY.com/project/tasks/post-example',
+      'https://dooray.com/project/tasks/post-example',
+      '//example.dooray.com/project/tasks/post-example',
+      '/project/tasks/post-example',
+      '/task/project-example/post-example',
+      'project/tasks/post-example',
+      '../task/project-example/post-example',
+      './other/../project/tasks/post-example',
+      'https://example.dooray.com/project/%74asks/post-example',
+    ]
+    for (const target of paths) {
+      const done = preview('task', `[example/18 제목](  ${target}  )`)
+      assert.equal(done.code, 1, target)
+      assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('인라인 주소 앞뒤의 공백과 스킴 대소문자는 허용한다', () => {
+    const body = '[example/18 제목]( \tDOORAY://example/tasks/post-example "working" \t )'
+    const done = preview('comment', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('같은 주소라도 표시 글마다 프로젝트와 업무 번호를 대조한다', () => {
+    const link = (ref: string) => `[${ref} 제목](dooray://example/tasks/post-example "working")`
+    const done = preview('comment', [link('example/18'), link('example/20'), link('other/18')].join(' · '))
+    assert.equal(done.code, 1)
+    assert.equal(done.html, '')
+    assert.equal((done.stderr.match(/실제 업무 example\/18 가 다릅니다/g) ?? []).length, 2)
+    assert.ok(done.stderr.includes('[example/18 &#91;Example&#93; 제목](dooray://example/tasks/post-example "working")'))
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('CLI가 프로젝트와 업무 번호를 한 필드로 보내도 대조한다', () => {
+    const compact = { taskNumber: 'example/18', subject: '[예제] 제목', workflowClass: 'working' }
+    const link = (ref: string) => `[${ref} 제목](dooray://example/tasks/post-example "working")`
+    const good = preview('comment', link('example/18'), compact)
+    assert.equal(good.code, 0)
+    assert.equal(good.stderr, '')
+    assert.deepEqual(good.calls, ['--json post get --id post-example'])
+
+    const mismatch = preview('task', [link('example/20'), link('other-example/18')].join('\n'), compact)
+    assert.equal(mismatch.code, 1)
+    assert.match(mismatch.stderr, /실제 업무 example\/18 가 다릅니다/u)
+    assert.ok(mismatch.stderr.includes('[example/18 &#91;예제&#93; 제목]'))
+    assert.doesNotMatch(mismatch.stderr, /조회하지 못해/u)
+    assert.deepEqual(mismatch.calls, ['--json post get --id post-example'])
+  })
+
+  test('표시 글, 주소, 상태값이 한 블록 안에서 줄을 넘어도 업무 링크를 검사한다', () => {
+    const address = 'dooray://example/tasks/post-example'
+    for (const body of [
+      `[example/20\n제목](${address} "working")`,
+      `[example/20\r\n제목](\r\n<${address}>\r\n"working"\r\n)`,
+      `- [example/20\n  제목](\n  ${address}\n  'working'\n  )`,
+      `> [example/20\n> 제목](\n> ${address}\n> "working"\n> )`,
+      `[example/20 제목](${address}\n"예시\n제목")`,
+    ]) {
+      const done = preview('task', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /「example\/20 제목」과 실제 업무 example\/18/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+
+    const good = `[example/18\n&#91;예제&#93; 제목](\n${address}\n"working"\n)`
+    const done = preview('task', good)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    assert.ok(done.html.includes(good))
+
+    const malformed = preview('comment', `[example/18\n[예제] 제목](\n${address}\n"working"\n)`, 'missing')
+    assert.equal(malformed.code, 1)
+    assert.ok(malformed.stderr.includes(`고친 예 [example/18 &#91;예제&#93; 제목](${address} "working")`))
+
+    const web = preview('comment', '[example/18 제목](\n/task/project-example/post-example\n"working"\n)')
+    assert.equal(web.code, 1, web.stderr)
+    assert.match(web.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+    assert.deepEqual(web.calls, ['--json post get --id post-example'])
+  })
+
+  test('표시 글과 주소를 문단이나 목록 항목 너머의 내용과 이어 붙이지 않는다', () => {
+    const address = 'dooray://example/tasks/post-example'
+    for (const body of [
+      `[example/20\n\n제목](${address} "working")`,
+      `- [example/20\n- 제목](${address} "working")`,
+      `[example/20 제목](\n\n${address} "working")`,
+    ]) {
+      const done = preview('comment', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /주소만 적은 링크를 .*인라인 링크로 바꾸세요/u)
+      assert.doesNotMatch(done.stderr, /표시 글.*실제 업무/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('인용 기호나 목록 들여쓰기를 생략한 문단에서도 여러 줄 업무 링크를 검사한다', () => {
+    const address = 'dooray://example/tasks/post-example'
+    for (const prefix of ['> ', '- ', '1. ', '> - ']) {
+      const body = `${prefix}[example/18\n제목](${address} "working")`
+      const done = preview('comment', body)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      const mismatch = preview('comment', body.replace('example/18', 'example/20'))
+      assert.equal(mismatch.code, 1, mismatch.stderr)
+      assert.match(mismatch.stderr, /「example\/20 제목」과 실제 업무 example\/18/u)
+    }
+  })
+
+  const internalAddress = 'dooray://example/tasks/post-example'
+  const webAddress = 'https://example.dooray.com/project/tasks/post-example'
+  const unsupportedLinks = [
+    ['참조식 정의', (address: string) => `[example/18 제목][task]\n\n[task]: ${address} "working"`],
+    ['참조식 정의', (address: string) => `[unused]:\n  <${address}>`],
+    ['자동 링크', (address: string) => `<${address}>`],
+    ['HTML 링크', (address: string) => `<A data-example="href='https://example.com/'" HREF='${address}'>제목</A>`],
+    ['주소만 적은 링크', (address: string) => `업무 주소 ${address}.`],
+  ] as const
+
+  test('참조식 정의, 자동 링크, HTML 링크, 주소만 적은 링크를 인라인 형식으로 안내한다', () => {
+    for (const [kind, makeBody] of unsupportedLinks) {
+      for (const [address, org] of [[internalAddress, 'example'], [webAddress, 'ORG_ID'], [webAddress.slice('https:'.length), 'ORG_ID']]) {
+        const done = preview('comment', makeBody(address))
+        assert.equal(done.code, 1, makeBody(address))
+        assert.ok(done.stderr.includes(address === internalAddress ? kind : '웹 주소를 dooray:// 링크로'), done.stderr)
+        assert.ok(done.stderr.includes(`고친 예 [example/18 &#91;Example&#93; 제목](dooray://${org}/tasks/post-example "working")`), done.stderr)
+        assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      }
+    }
+    const done = preview('task', `<${internalAddress}>`, 'missing')
+    assert.equal(done.code, 1, done.stderr)
+    assert.match(done.stderr, /인라인 링크로 바꾸세요/u)
+  })
+
+  test('코드 예제 안의 다른 링크 형식은 검사하지 않는다', () => {
+    const examples = unsupportedLinks.map(([, makeBody]) => makeBody(internalAddress))
+    const body = ['```text', ...examples, '```'].join('\n')
+    const done = preview('task', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, [])
+  })
+
+  test('업무 인라인 링크는 주소와 큰따옴표로 감싼 상태값을 요구한다', () => {
+    for (const target of [
+      internalAddress,
+      `${internalAddress} 'working'`,
+      `${internalAddress} (working)`,
+      `<${internalAddress}> "working"`,
+      `${internalAddress} "example"`,
+      `${internalAddress}?example=value "working"`,
+    ]) {
+      const done = preview('task', `[example/18 제목](${target})`)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /상태값을 큰따옴표로 감싸세요/u)
+      assert.ok(done.stderr.includes(`고친 예 [example/18 제목](${internalAddress} "working")`))
+    }
+  })
+
+  test('업무 ID가 없거나 잘못된 업무 주소는 조회 없이 막는다', () => {
+    for (const target of [
+      'dooray://example/tasks/',
+      'dooray://example/tasks',
+      'dooray://example/tasks/잘못된-ID',
+      'https://example.dooray.com/project/tasks/',
+      '/task/project-example/',
+    ]) {
+      const body = `[example/18 제목](${target} "working")`
+      const done = preview('comment', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /업무 링크 주소에서 조직 ID와 업무 ID를 확인하세요/u)
+      assert.match(done.stderr, /\/tasks\/POST_ID "working"/u)
+      assert.deepEqual(done.calls, [])
+      assert.equal(done.html, '')
+    }
+  })
+
+  test('주소의 문자 참조와 Markdown 이스케이프를 풀어 실제 업무를 확인한다', () => {
+    for (const address of [
+      'dooray&#58;//example/tasks/post-example',
+      'dooray&#x3a;&#47;/example/task&#115;/post-example',
+      'dooray&colon;&sol;&sol;example/tasks/post-example',
+      'dooray\\://example/tasks/post\\-example',
+    ]) {
+      const done = preview('comment', `[example/20 제목](${address} "working")`)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /실제 업무 example\/18/u)
+      assert.ok(done.stderr.includes(`고친 예 [example/18 &#91;Example&#93; 제목](${internalAddress} "working")`))
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+
+    const canonicalLabel = preview('task', '[example/18 제목](dooray&#58;//example/tasks/post-example "working")')
+    assert.equal(canonicalLabel.code, 1)
+    assert.ok(canonicalLabel.stderr.includes(`고친 예 [example/18 제목](${internalAddress} "working")`))
+    assert.doesNotMatch(canonicalLabel.stderr, /실제 업무/u)
+
+    for (const body of [
+      `[task]: dooray&colon;//example/tasks/post-example`,
+      '<a href="dooray&#58;//example/tasks/post-example">제목</a>',
+      '[example/18 제목](https://example&period;dooray.com/project/tasks/post-example)',
+      '업무 주소 dooray://example/tasks/post-exampl&#101;',
+    ]) {
+      const done = preview('comment', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.ok(done.stderr.includes(`고친 예 [example/18`))
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+
+    const escapedEntity = preview('task', '[example/18 제목](dooray\\&colon;//example/tasks/post-example "working")')
+    assert.equal(escapedEntity.code, 0, escapedEntity.stderr)
+    assert.deepEqual(escapedEntity.calls, [])
+  })
+
+  test('표시 글의 문자 참조와 이스케이프를 풀어 프로젝트와 업무 번호를 대조한다', () => {
+    for (const label of [
+      'exampl&#101;&sol;18 제목',
+      'example&#x2f;&#x31;&#56; 제목',
+      'example\\/18 \\[예제\\] 제목',
+      'example/18 &lbrack;예제&rbrack; 제목',
+    ]) {
+      const body = `[${label}](${internalAddress} "working")`
+      const done = preview('task', body)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      assert.ok(done.html.includes(body))
+    }
+  })
+
+  test('CLI 가 없거나 조회에 실패하면 --strict 에서도 경고와 함께 생성한다', () => {
+    const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
+    for (const state of ['missing', 'failed'] as const) {
+      const done = preview('comment', `${link}\n${link}`, state, true)
+      assert.equal(done.code, 0)
+      assert.equal(parsePreview(done.html).alerts, 1)
+      assert.match(done.stderr, /프로젝트와 번호를 확인하지 못했습니다/u)
+      assert.deepEqual(done.calls, state === 'missing' ? [] : ['--json post get --id post-example'])
+    }
+    const invalid = preview('comment', '[example/18 [제목](dooray://example/tasks/post-example "working")', 'missing')
+    assert.equal(invalid.code, 1)
+    assert.match(invalid.stderr, /고친 예 \[example\/18 &#91;제목\]/u)
+  })
+
+  test('CLI 없이도 업무 링크 표시 글의 프로젝트와 번호 형식을 검사한다', () => {
+    for (const state of ['missing', 'failed'] as const) {
+      for (const label of ['제목만 표시', 'example/18x 제목', '']) {
+        const done = preview('comment', `[${label}](dooray://example/tasks/post-example "working")`, state)
+        assert.equal(done.code, 1, done.stderr)
+        assert.match(done.stderr, /표시 글은 프로젝트\/업무번호로 시작해야 합니다/u)
+        assert.match(done.stderr, /프로젝트와 번호를 확인하지 못했습니다/u)
+        assert.ok(done.stderr.includes('고친 예 [PROJECT/NUMBER '))
+        assert.equal(done.html, '')
+      }
+    }
+  })
+
+  test('코드 예제와 업무 이외 링크는 검사하지 않는다', () => {
+    const link = '[example/18 [제목]](dooray://example/tasks/post-example "working")'
+    const body = [
+      '````markdown', '```', link, '````',
+      '[example](dooray://example/pages/page-example "publish")',
+      '[example](https://example.com/project/tasks/post-example)',
+      '[example](https://example.dooray.com.example.com/project/tasks/post-example)',
+      '[example](//example.dooray.com.example.com/project/tasks/post-example)',
+      '//example.com/task/project-example/post-example',
+      '<a href="https://example.com/task/project-example/post-example">예제</a>',
+      '[example][reference]\n\n[reference]: https://example.com/project/tasks/post-example',
+    ].join('\n')
+    const done = preview('task', body)
+    assert.equal(done.code, 0)
+    assert.equal(done.stderr, '')
+    assert.deepEqual(done.calls, [])
+  })
+
+  test('울타리 코드 블록 뒤에서도 업무 링크를 검사한다', () => {
+    const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
+    const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const block of [
+      ['```text', inside, '```'],
+      ['- ```text', `  ${inside}`, '  ```'],
+      ['10. 예제', '', '    - ~~~~text', `      ${inside}`, '      ~~~~'],
+      ['앞 문단', '1. ~~~', `   ${inside}`, '   ~~~'],
+      ['2. 같은 목록의 첫 항목', '3. ~~~', `   ${inside}`, '   ~~~'],
+      ['> ```text', `> ${inside}`, '> ```'],
+      ['- > ```text', `  > ${inside}`, '  > ```'],
+    ]) {
+      const done = preview('task', [...block, '', outside].join('\n'))
+      assert.equal(done.code, 1)
+      assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('문단을 끊을 수 없는 번호 뒤의 링크는 펜스 코드로 건너뛰지 않는다', () => {
+    const link = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['앞 문단', '2. ~~~', '   ' + link, '   ~~~'],
+      ['> 앞 문단', '> 2. ~~~', '>    ' + link, '>    ~~~'],
+    ]) {
+      const done = preview('comment', lines.join('\n'))
+      assert.equal(done.code, 1, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('닫는 줄이 없는 코드 블록 뒤의 업무 링크도 검사한다', () => {
+    const link = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const opening of ['````text', '- ````text']) {
+      const indent = opening.startsWith('-') ? '  ' : ''
+      const done = preview('comment', [opening, indent + '예제', indent + '```', indent + link].join('\n'))
+      assert.equal(done.code, 1)
+      assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('들여쓴 코드 예제와 문단의 업무 링크를 검사하고 펜스 코드 블록을 안내한다', () => {
+    const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
+    const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['코드 예제', '', `    ${inside}`, '', outside],
+      ['코드 예제', '', `\t${inside}`, '', outside],
+      ['- 코드 예제', '', `      ${inside}`, '', `  ${outside}`],
+      ['> 코드 예제', '>', `>     ${inside}`, '>', `> ${outside}`],
+      ['> - 코드 예제', '>', `>       ${inside}`, '>', `>   ${outside}`],
+    ]) {
+      const done = preview('comment', lines.join('\n'))
+      assert.equal(done.code, 1)
+      assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.match(done.stderr, /예시는 펜스 코드 블록으로 쓰세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example-code', '--json post get --id post-example'])
+    }
+    const paragraph = preview('comment', ['문단을 이어서 씁니다.', '    ' + outside].join('\n'))
+    assert.equal(paragraph.code, 1)
+    assert.deepEqual(paragraph.calls, ['--json post get --id post-example'])
+  })
+
+  test('밑줄 제목 바로 아래의 들여쓴 코드 예제도 검사한다', () => {
+    const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
+    const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['제목', '======', '    ' + inside, '', outside],
+      ['제목', '-', '    ' + inside, '', outside],
+      ['- 목록 제목', '  ======', '      ' + inside, '', outside],
+      ['> 인용 제목', '> ------', '>     ' + inside, '', outside],
+      ['#', '    ' + inside, '', outside],
+    ]) {
+      const done = preview('comment', lines.join('\r\n'))
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /예시는 펜스 코드 블록으로 쓰세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example-code', '--json post get --id post-example'])
+    }
+    const paragraph = preview('comment', ['문단', '    ===', '    ' + outside].join('\n'))
+    assert.equal(paragraph.code, 1)
+    assert.deepEqual(paragraph.calls, ['--json post get --id post-example'])
+  })
+
+  test('문단, 목록 항목, 인용, 표의 칸에 백틱이 있어도 업무 링크를 검사한다', () => {
+    const link = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['앞 문단의 백틱 `', '', link, '', '뒤 문단의 백틱 `'],
+      ['- 앞 항목의 백틱 `', `- ${link}`, '- 뒤 항목의 백틱 `'],
+      ['> 앞 문단의 백틱 `', '>', `> ${link}`, '>', '> 뒤 문단의 백틱 `'],
+      ['앞 문단의 백틱 `', `# ${link}`, '뒤 문단의 백틱 `'],
+      ['| 앞 | 업무 | 뒤 |', '| --- | --- | --- |', '| 백틱 ` | ' + link + ' | 백틱 ` |'],
+    ]) {
+      const done = preview('comment', lines.join('\n'))
+      assert.equal(done.code, 1)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('정상 업무 링크는 표의 다른 칸에 백틱이 있어도 통과한다', () => {
+    const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
+    const body = ['| 앞 | 업무 | 뒤 |', '| --- | --- | --- |', '| 백틱 ` | ' + link + ' | 백틱 ` |'].join('\n')
+    const done = preview('comment', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('인라인 코드의 잘못된 업무 주소나 링크는 막고 펜스 코드 블록을 안내한다', () => {
+    const mismatch = '[example/20 제목](' + internalAddress + ' "working")'
+    for (const example of [internalAddress, webAddress, '<' + internalAddress + '>', mismatch, '예시 ' + mismatch]) {
+      const done = preview('comment', '`' + example + '`')
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /예시는 펜스 코드 블록으로 쓰세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('올바른 업무 링크는 백틱 안팎에서 같은 검사 결과를 낸다', () => {
+    for (const title of ['제목', '예제 A | B']) {
+      const link = `[example/18 ${title}](${internalAddress} "working")`
+      for (const body of [link, '`' + link + '`', '`예시 ' + link + '`']) {
+        const done = preview('comment', body)
+        assert.equal(done.code, 0, done.stderr)
+        assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      }
+    }
+  })
+
+  test('같은 문단 안의 여러 줄 인라인 코드도 업무 링크를 검사한다', () => {
+    const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
+    const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
+    for (const lines of [
+      ['예제는 ``이렇게', inside + '`` 입니다.'],
+      ['- 예제는 ``이렇게', '  ' + inside + '`` 입니다.'],
+      ['> 예제는 ``이렇게', '> ' + inside + '`` 입니다.'],
+      ['> - 예제는 ``이렇게', '>   ' + inside + '`` 입니다.'],
+    ]) {
+      const done = preview('task', [...lines, '', outside].join('\n'))
+      assert.equal(done.code, 1)
+      assert.match(done.stderr, /예시는 펜스 코드 블록으로 쓰세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example-code', '--json post get --id post-example'])
     }
   })
 

@@ -7,12 +7,12 @@ import { run, tempDir, type Result } from './helpers.ts'
 export type Generated = Result & { html: string; out: string; dir: string }
 
 // args 에 --out 이 없으면 임시 폴더의 preview.html 로 낸다. 생성기를 실행하기 전 out 에 stale 이 있으면 지워지는지 볼 수 있게 dir 을 돌려준다
-export function generate(command: string[], args: string[], opts: { input?: string; dir?: string; stale?: string } = {}): Generated {
+export function generate(command: string[], args: string[], opts: { input?: string; dir?: string; stale?: string; env?: NodeJS.ProcessEnv } = {}): Generated {
   const dir = opts.dir ?? tempDir('content-preview-')
   const out = join(dir, 'preview.html')
   if (opts.stale !== undefined) writeFileSync(out, opts.stale)
   const full = args.includes('--out') ? args : [...args, '--out', out]
-  const done = run([...command, ...full], { input: opts.input })
+  const done = run([...command, ...full], { input: opts.input, env: opts.env })
   return { ...done, out, dir, html: existsSync(out) ? readFileSync(out, 'utf8') : '' }
 }
 
