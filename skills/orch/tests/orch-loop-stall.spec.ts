@@ -353,7 +353,7 @@ describe('error 멈춤', () => {
     for (let i = 0; i < 6; i++) tick()
     assert.equal(sends().length, 3)
     assert.deepEqual(stalledEvents('A'), [])
-    for (const argv of sends()) { assert.equal(argv[argv.indexOf('--to') + 1], 'dispatch:d1'); assert.equal(argv[argv.indexOf('--body') + 1], '계속 진행해') }
+    for (const argv of sends()) { assert.equal(argv[argv.indexOf('--to') + 1], 'dispatch:d1'); assert.match(argv[argv.indexOf('--body') + 1], /^계속 진행해\n\n할 일: /) }
     tick()
     const result = tick()
     assert.equal(stallOf(result, 'd1')?.fired, true)
