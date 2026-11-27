@@ -7,7 +7,7 @@
 //              event(type comment) 본문에 내 멤버 링크가 있으면 mention, post 의 담당(to)·참조(cc)에 내가 있으면 assigned·cc
 //   messenger  `dooray --json messenger channels --since <지난 받기>` 로 바뀐 방만 고르고, 방마다 `messenger logs <id> -n 300`(THREAD_SCAN_COUNT).
 //              logs 는 공식 문서에 없는 endpoint 라 실패해도 task 항목은 그대로 낸다(D1, R7).
-//              읽지 못한 방은 dooray-retry-channels 캐시에 적어 다음 받기에 다시 읽고, 커서는 앞으로 옮긴다
+//              읽지 못한 방은 대기 방으로 남겨 다음 받기에 다시 읽고, 커서는 앞으로 옮긴다(아래 「대기열」 표)
 // 출처마다 커서(FetchResult.cursors)를 따로 내므로 한 출처의 실패가 다른 출처의 받기를 멈추지 않는다.
 // 토큰 오류처럼 나를 읽지 못하면 auth 오류 한 줄만 낸다.
 // 멘션 판정: 본문의 `dooray://{orgId}/members/{내 id}` 링크. 메신저 본문도 같은 링크 표기다(화면 실측은 content-preview 의 messenger-rendering.md).
@@ -17,10 +17,13 @@
 // 스레드 답글: 부모 메시지의 logs 원소에 thread.channelId(스레드 대화방 id)와 thread.lastUpdatedAt(epoch ms)이 있다(0.36.0 실측).
 //   lastUpdatedAt 이 지난 받기 뒤인 스레드만 `messenger logs <스레드 id>` 로 읽고, 한 번에 MAX_THREADS 개까지다.
 //   부모 메시지가 그 방의 최근 THREAD_SCAN_COUNT 개 밖에 있으면 스레드를 찾지 못한다(알려진 한계).
-//   부모 방 읽기가 실패하면 그 받기의 기준 시각을 dooray-retry-channel-from 에 남겨, 다시 읽을 때 그 시각 뒤의 스레드를 고른다.
-//   남은 스레드와 읽지 못한 스레드는 dooray-retry-threads 캐시로 다음 받기에 넘긴다.
 //   항목의 target.channelId 는 스레드 id 라 답장(channel-send --channel)과 리액션이 스레드에 붙는다(실측).
 //   제목과 scope 는 부모 방의 것을 써서 보드 제목, 숨김, 저장소 고르기가 부모 방 기준으로 맞는다.
+//
+// 대기열: 이번 받기에서 읽지 못한 방과 스레드를 다음 받기에 넘긴다. 기준 시각은 그 스레드를 고르는 「지난 받기」 시각이다.
+//   | 대기열      | 캐시                                  | 넣는 경우                                   | 기준 시각                                       | 순서                                         | 빼는 경우 |
+//   | 대기 방     | dooray-pending-channels {방 id: 시각} | logs 읽기 실패, MAX_CHANNELS 밖으로 미룸    | 처음 대기열에 넣은 받기의 from(더 이른 값 유지) | 바뀐 방과 함께 updatedAt 오래된 순           | logs 를 읽으면 |
+//   | 대기 스레드 | dooray-pending-threads [ThreadRef]    | MAX_THREADS 밖으로 미룸, logs 읽기 실패     | 그 스레드를 찾은 부모 방의 기준 시각            | 시도하지 않은 것 먼저, 실패한 것은 뒤        | logs 를 읽으면, MAX_THREAD_FAILURES 번 실패하면(오류 한 줄) |
 //
 // 설정(inbox.json 의 adapters 항목): { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com" }
 //   messenger  false 면 메신저를 읽지 않는다. 기본 true
@@ -41,6 +44,8 @@ import type { Adapter, AdapterConfig, AdapterDeps, Context, FetchRequest, FetchR
 
 export const MAX_CHANNELS = 20
 export const MAX_THREADS = 20
+// 같은 스레드를 이만큼 읽지 못하면 오류를 한 번 알리고 대기열에서 뺀다
+export const MAX_THREAD_FAILURES = 3
 // 바뀐 방에서 한 번에 읽는 메시지 수. 스레드 부모를 찾으려고 지난 받기와 관계없이 이만큼 읽는다
 export const THREAD_SCAN_COUNT = 300
 export const LOG_COUNT = 50
@@ -56,8 +61,8 @@ const MIN_MESSENGER_REACTION_MINOR = 36
 
 type Json = Record<string, any>
 type Me = { id: string; orgId: string }
-// 스레드 대화방 id, 그 스레드가 달린 부모 방의 id와 제목, 그 스레드를 찾은 받기의 기준 시각
-type ThreadRef = { id: string; parentId: string; title: string; from: string }
+// 스레드 대화방 id, 그 스레드가 달린 부모 방의 id와 제목, 그 스레드를 찾은 기준 시각, 읽기에 실패한 횟수
+type ThreadRef = { id: string; parentId: string; title: string; from: string; failures?: number }
 type PostInfo = { projectId: string; projectCode: string; projectName?: string; taskNumber: string; subject: string }
 
 // 두레이 본문의 링크 표기를 읽을 글로 바꾼다. 「[@이름](dooray://…)」 은 「@이름」 이 된다
@@ -343,73 +348,84 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     return items
   }
 
+  // 대기 방과 그 기준 시각을 읽는다. 예전 캐시(dooray-retry-channels, 방 id 목록)는 지금 받기의 기준 시각으로 옮긴다
+  function pendingChannels(from: string): Record<string, string> {
+    const pending = cache.read<Record<string, string>>('dooray-pending-channels', {})
+    const legacy = cache.read<string[]>('dooray-retry-channels', [])
+    if (legacy.length > 0) {
+      for (const id of legacy) pending[id] ??= from
+      cache.write('dooray-retry-channels', [])
+    }
+    return pending
+  }
+
   function fetchMessenger(request: FetchRequest, self: Me): { items: InboxItem[]; failures: string[]; cursor: string } {
     const from = request.cursors.messenger ?? request.since
     const now = deps.now().toISOString()
     const channels = json(['messenger', 'channels', '--since', from])
     if (!Array.isArray(channels)) throw new Error('dooray messenger channels 출력이 목록이 아니다')
-    // 지난번에 읽지 못한 방은 바뀌지 않았어도 다시 읽는다
-    const retry = new Set(cache.read<string[]>('dooray-retry-channels', []))
-    // 읽지 못한 방의, 실패한 받기의 기준 시각. 다시 읽을 때 그 사이 답글이 달린 스레드를 놓치지 않으려는 것이다
-    const retryFrom = cache.read<Record<string, string>>('dooray-retry-channel-from', {})
+    // 대기 방은 바뀌지 않았어도 다시 읽는다. 머리 주석의 「대기열」 표를 따른다
+    const pending = pendingChannels(from)
     const titles = cache.read<Record<string, string>>('dooray-channel-titles', {})
     const known = new Map((channels as Json[]).filter((channel) => channel?.id).map((channel) => [String(channel.id), channel]))
     for (const channel of known.values()) titles[String(channel.id)] = String(channel.title || '')
     cache.write('dooray-channel-titles', titles)
-    for (const id of retry) if (!known.has(id)) known.set(id, { id, title: titles[id] ?? '', type: 'private', updatedAt: from })
+    for (const id of Object.keys(pending)) if (!known.has(id)) known.set(id, { id, title: titles[id] ?? '', type: 'private', updatedAt: from })
     const changed = [...known.values()]
       .filter((channel) => !SKIP_CHANNEL_TYPES.has(String(channel.type)))
       .sort((a, b) => (Date.parse(a.updatedAt ?? '') || 0) - (Date.parse(b.updatedAt ?? '') || 0))
     const picked = changed.slice(0, MAX_CHANNELS)
     // 남은 방이 있으면 마지막으로 읽은 방의 시각부터 다음에 잇는다. 없으면 이번 받기 시각이다
     const cursor = changed.length > MAX_CHANNELS ? iso(picked[picked.length - 1].updatedAt) || from : now
+    const sinceOf = (id: string) => (pending[id] && pending[id] < from ? pending[id] : from)
+    // 미룬 방은 다음 받기의 커서가 앞으로 가도 이번 기준 시각으로 스레드를 고르게 대기 방으로 남긴다
+    const nextPending: Record<string, string> = {}
+    for (const channel of changed.slice(MAX_CHANNELS)) nextPending[String(channel.id)] = sinceOf(String(channel.id))
     const items: InboxItem[] = []
     const failures: string[] = []
-    const failed: string[] = []
     // 스레드는 별도 대화방 id 를 쓰고 channels 목록에 나오지 않는다. 부모 메시지의 thread 칸에서 찾는다
     const threads = new Map<string, ThreadRef>()
-    for (const thread of cache.read<ThreadRef[]>('dooray-retry-threads', [])) if (thread?.id) threads.set(thread.id, thread)
+    for (const thread of cache.read<ThreadRef[]>('dooray-pending-threads', [])) if (thread?.id) threads.set(thread.id, thread)
     for (const channel of picked) {
       const channelId = String(channel.id)
       const title = String(channel.title || '')
-      const since = retryFrom[channelId] && retryFrom[channelId] < from ? retryFrom[channelId] : from
+      const since = sinceOf(channelId)
       let logs: Json[]
       try {
         logs = channelLogs(channelId, THREAD_SCAN_COUNT)
       } catch (error) {
         failures.push(`${channel.title || channel.id}: ${(error as Error).message}`)
-        failed.push(channelId)
-        retryFrom[channelId] = since
+        nextPending[channelId] = since
         continue
       }
-      delete retryFrom[channelId]
-      items.push(...mentionItems(logs, String(channel.id), String(channel.id), title, request, self))
+      items.push(...mentionItems(logs, channelId, channelId, title, request, self))
       for (const log of logs) {
         const thread = log?.thread
         const id = String(thread?.channelId ?? '')
-        // 지난 받기 뒤에 답글이 달린 스레드만 읽는다. 오래된 스레드를 매번 다시 읽지 않으려는 것이다
+        // 기준 시각 뒤에 답글이 달린 스레드만 읽는다. 오래된 스레드를 매번 다시 읽지 않으려는 것이다
         if (!id || threads.has(id) || !(Number(thread?.lastUpdatedAt) > Date.parse(since))) continue
-        threads.set(id, { id, parentId: channelId, title, from: since })
+        threads.set(id, { id, parentId: channelId, title, from: since, failures: 0 })
       }
     }
-    // 스레드도 한 번에 MAX_THREADS 개까지만 읽는다. 지난번에 남긴 스레드가 앞에 있다
-    const queued = [...threads.values()]
+    // 아직 시도하지 않은 스레드를 먼저, 실패한 스레드는 뒤에 두고 MAX_THREADS 개까지 읽는다
+    const queued = [...threads.values()].sort((a, b) => Number((a.failures ?? 0) > 0) - Number((b.failures ?? 0) > 0))
     const failedThreads: ThreadRef[] = []
     for (const thread of queued.slice(0, MAX_THREADS)) {
       try {
         items.push(...mentionItems(recentLogs(thread.id, thread.from || from), thread.id, thread.parentId, thread.title, request, self))
       } catch (error) {
-        failures.push(`${thread.title || thread.parentId} 스레드: ${(error as Error).message}`)
-        failedThreads.push(thread)
+        const count = (thread.failures ?? 0) + 1
+        const name = `${thread.title || thread.parentId} 스레드`
+        if (count >= MAX_THREAD_FAILURES) {
+          failures.push(`${name}: ${count}번 읽지 못해 더 읽지 않는다. ${(error as Error).message}`)
+          continue
+        }
+        failures.push(`${name}: ${(error as Error).message}`)
+        failedThreads.push({ ...thread, failures: count })
       }
     }
-    // 읽지 못한 스레드와 차례가 오지 않은 스레드는 다음 받기에 다시 읽는다
-    cache.write('dooray-retry-threads', [...failedThreads, ...queued.slice(MAX_THREADS)])
-    // 읽지 못한 방과, 이번에 차례가 오지 않은 재시도 방을 다음 받기에 넘긴다
-    const unread = [...retry].filter((id) => !picked.some((channel) => String(channel.id) === id))
-    const nextRetry = [...new Set([...failed, ...unread])]
-    cache.write('dooray-retry-channels', nextRetry)
-    cache.write('dooray-retry-channel-from', Object.fromEntries(nextRetry.filter((id) => retryFrom[id]).map((id) => [id, retryFrom[id]])))
+    cache.write('dooray-pending-threads', [...queued.slice(MAX_THREADS), ...failedThreads])
+    cache.write('dooray-pending-channels', nextPending)
     // 메신저 로그에는 보낸 사람 이름이 없어 풀어 둔다. 1:1 방은 제목이 없어 보낸 사람 이름을 제목으로 쓴다
     fillNames(items)
     for (const item of items) if (!item.title) item.title = item.from.name ? `${item.from.name} 대화` : '대화'
