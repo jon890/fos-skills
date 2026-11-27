@@ -43,3 +43,11 @@ export function fieldText(value: unknown): string | null {
 export function itemTitle(item: Record<string, unknown>): string | null {
   return 'title' in item ? fieldText(item.title) : String(item.id)
 }
+
+// 시작 단계 글(`기능 implementation 1/3`)이 끝나지 않은 `[ask]` 단계 줄(`3. [ask] 기능 implementation 1/1`)을 이어받는가.
+// 글이 같으면 받는다. 설계 PR 머지 뒤의 `[ask] 기능 implementation 1/1` 은 구현 PR 수를 모를 때의 자리 줄이라 implementation 1/n 도 받는다.
+// 보드 명령의 worker-add 와 띄우기 전 검사(skills/orch/scripts/core/board-find.ts)가 같이 쓴다
+export function adoptsAskStage(stage: string, lineText: string): boolean {
+  const asked = lineText.replace(/^\s*\d+[.)]?\s+/, '')
+  return asked === `[ask] ${stage}` || (/^기능 implementation 1\/\d+$/.test(stage) && asked === '[ask] 기능 implementation 1/1')
+}

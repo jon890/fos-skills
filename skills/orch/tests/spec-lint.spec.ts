@@ -939,6 +939,19 @@ describe('붙일 보드 항목', () => {
     assert.deepEqual(findings(r.stdout), ['ahead.md:5: 보드: 항목 feature-a 의 다음 단계는 technical-design 인데 지시서는 implementation 1/1 부터 시작한다'])
   })
 
+  test('설계 머지 뒤의 구현 자리 줄 1/1 은 구현 PR 이 여럿인 1/n 지시서를 받는다', () => {
+    const a = feature('a', true)
+    board([{ id: 'feature-a', status: 'doing', feature: 'docs/features/a', 'feature-repo': repo,
+      details: [{ text: '1. 기능 technical-design', done: true }, { text: '2. [ask] 기능 implementation 1/1', done: false }] }])
+    const loop = `루프를 쓴다(스펙: ${a})`
+    const first = lint([boardSpec('impl-first', '보드 항목 id: feature-a\n기능 단계: implementation 1/3', loop)])
+    assert.deepEqual(findings(first.stdout), [])
+    assert.equal(first.code, 0, first.stdout)
+    const later = lint([boardSpec('impl-later', '보드 항목 id: feature-a\n기능 단계: implementation 2/3', loop)])
+    assert.equal(later.code, 1, later.stdout)
+    assert.match(findings(later.stdout).join('\n'), /다음 단계는 implementation 1\/1 인데 지시서는 implementation 2\/3 부터/)
+  })
+
   test('새 항목은 설계가 시작 브랜치에 있을 때만 구현 1차부터 받는다', () => {
     board([])
     const head = '보드 항목 id: fresh-item\n기능 단계: implementation 1/2'

@@ -140,6 +140,7 @@ import { reviewPrOfSpec } from '../lib/review.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { boardQuery, readBoard } from '../lib/board.ts'
 import { findBoardItem, startStageProblem } from '../core/board-find.ts'
+import { adoptsAskStage } from '../../../../modules/work-board/item.ts'
 import { autoStepNumberOf, boardIdOf, boardNewOf, boardNoneOf, boardIdOfLine, featureStagesOf, interimOf, remoteWithCodex, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
@@ -623,7 +624,7 @@ function boardErrors(spec: Spec, repoRoot: string, source: LoopSource, worktree:
   const id = item?.id ?? given!.id
   const designAt = target && target !== LOOP_NEW ? `${dirname(target)}/design.md` : null
   const hasDesign = !!designAt && !('why' in readLoopSpec(repoRoot, source, designAt))
-  const problem = startStageProblem(item, stages[0], { id, newSpec: target === LOOP_NEW, hasDesign })
+  const problem = startStageProblem(item, stages[0], { id, newSpec: target === LOOP_NEW, hasDesign, adopts: adoptsAskStage })
   return problem ? [`${at(featureStageLine(text)?.line ?? 1)}${problem}`] : []
 }
 

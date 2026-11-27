@@ -73,7 +73,7 @@ export function findBoardItem(items: BoardItem[], q: BoardQuery): BoardFind {
   return { none: true }
 }
 
-type StageLine = { stage: FeatureStage; ask: boolean; done: boolean }
+type StageLine = { stage: FeatureStage; text: string; ask: boolean; done: boolean }
 
 function stageLines(item: Record<string, unknown>): StageLine[] {
   const found: StageLine[] = []
@@ -85,7 +85,7 @@ function stageLines(item: Record<string, unknown>): StageLine[] {
       const stage = featureStageOfLine(text)
       if (!stage) continue
       const done = key === 'details' && (typeof row === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(row) : row?.done === true)
-      found.push({ stage, ask: /^\s*\d+[.)]?\s+\[ask\]\s/.test(text), done })
+      found.push({ stage, text, ask: /^\s*\d+[.)]?\s+\[ask\]\s/.test(text), done })
     }
   }
   return found
@@ -98,7 +98,9 @@ function stageLines(item: Record<string, unknown>): StageLine[] {
 //   - `[ask]` 없이 끝나지 않은 기능 단계 줄이 있으면 그 단계를 다시 띄우는 것으로 보고 그 단계만 받는다
 //   - 기능 단계 줄이 모두 끝났으면 막는다
 //   - 기능 단계 줄이 없으면 새 스펙(`스펙: 새로 쓴다`)은 spec, 확인된 스펙은 technical-design, 설계가 있으면 implementation 1/n 도 받는다
-export function startStageProblem(item: BoardItem | undefined, first: FeatureStage, opts: { id: string; newSpec: boolean; hasDesign: boolean }): string | null {
+// adopts 는 보드 명령의 worker-add 가 [ask] 줄을 이어받는 판정이다(modules/work-board/item.ts 의 adoptsAskStage). core 는 core 밖을 읽지 않아 부르는 쪽이 넘긴다
+export type AdoptsAskStage = (stage: string, lineText: string) => boolean
+export function startStageProblem(item: BoardItem | undefined, first: FeatureStage, opts: { id: string; newSpec: boolean; hasDesign: boolean; adopts: AdoptsAskStage }): string | null {
   const want = featureStageText(first)
   const lines = item ? stageLines(item) : []
   const open = lines.filter((line) => !line.done)
@@ -106,10 +108,9 @@ export function startStageProblem(item: BoardItem | undefined, first: FeatureSta
   const allowed = asked.length > 0 ? asked : open
   if (allowed.length > 0) {
     const texts = [...new Set(allowed.map((line) => featureStageText(line.stage)))]
-    // 설계 PR 머지 뒤의 `[ask] 기능 implementation 1/1` 은 구현 PR 수를 모를 때의 자리 줄이라 1/n 지시서도 받는다(work-board 의 worker-add 와 같다)
-    const placeholder = first.name === 'implementation' && first.part === 1 &&
-      asked.some((line) => line.stage.name === 'implementation' && line.stage.part === 1 && line.stage.total === 1)
-    return texts.includes(want) || placeholder ? null : `항목 ${opts.id} 의 다음 단계는 ${texts.join(', ')} 인데 지시서는 ${want} 부터 시작한다`
+    // [ask] 줄은 보드 명령의 worker-add 가 이어받는 규칙(adoptsAskStage)과 같게 본다
+    const ok = asked.length > 0 ? asked.some((line) => opts.adopts(`기능 ${want}`, line.text)) : texts.includes(want)
+    return ok ? null : `항목 ${opts.id} 의 다음 단계는 ${texts.join(', ')} 인데 지시서는 ${want} 부터 시작한다`
   }
   if (lines.length > 0) return `항목 ${opts.id} 의 기능 단계 줄이 모두 끝났고 다음 단계 줄이 없다. 단계 줄을 정리하거나 \`보드 항목 id:\` 로 다른 항목을 고른다`
   if (opts.newSpec) return first.name === 'spec' ? null : `항목 ${opts.id} 의 다음 단계는 spec 인데 지시서는 ${want} 부터 시작한다`

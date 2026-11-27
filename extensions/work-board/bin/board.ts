@@ -79,7 +79,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSyn
 import { dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { LockTimeout, withFileLock, type Lock } from '../../../modules/file-lock.ts'
-import { FIELDS, GET_FIELDS, LEAD_MARK, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
+import { FIELDS, GET_FIELDS, LEAD_MARK, adoptsAskStage, fieldText, itemTitle, linesRev, normalizeLine, normalizeLines, type Line } from '../../../modules/work-board/item.ts'
 import { defaultBoardPath } from '../../../modules/work-board/path.ts'
 import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 
@@ -803,9 +803,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
           let max = Math.max(0, ...steps.map((line) => parseStep(line)?.[0] ?? 0))
           row['feature-steps'] = a.featureStages.map((stage, index) => {
             refuseLine(stage)
-            const asked = index === 0 ? steps.find((line) => !line.done &&
-              (line.text.replace(/^\s*\d+[.)]?\s+/, '') === `[ask] ${stage}` ||
-               (/^기능 implementation 1\/\d+$/.test(stage) && /^\s*\d+[.)]?\s+\[ask\] 기능 implementation 1\/1$/.test(line.text)))) : undefined
+            const asked = index === 0 ? steps.find((line) => !line.done && adoptsAskStage(stage, line.text)) : undefined
             if (asked) {
               asked.text = asked.text.replace(/^(\s*\d+[.)]?\s+).*$/, (_, number) => number + stage)
               return parseStep(asked)![0]
