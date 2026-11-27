@@ -7,6 +7,9 @@ import namedReferences from './named-character-references.json' with { type: 'js
 const ID = '[a-z0-9][a-z0-9_-]*'
 const INTERNAL = new RegExp(`^dooray://(${ID})/tasks/(${ID})$`, 'i')
 const WEB_PATH = new RegExp(`^/(?:project/tasks|task/${ID})/(${ID})/?$`, 'i')
+const INTERNAL_ROUTE = /^\/tasks(?:\/|$)/iu
+const WEB_ROUTE = /^\/(?:project\/tasks|task)(?:\/|$)/iu
+const ORG_ID = new RegExp(`^${ID}$`, 'i')
 const LINK_BASE = 'https://base.invalid/'
 const POST_REF = /^[^\s/]+\/\d+(?=\s|$)/u
 const BRACKET = /\\[^\r\n]|[\[\]]/gu
@@ -148,6 +151,12 @@ function* findLinks(md: string): Generator<Link> {
 
 type Cache = { posts: Map<string, Lookup>; missingCli: boolean }
 
+function correctedLink(label: string, orgId: string, postId: string, workflow: string): string {
+  const orgHint = orgId === 'ORG_ID' ? ' ORG_ID 에 조직 ID 를 넣으세요.' : ''
+  const postHint = postId === 'POST_ID' ? ' POST_ID 에 연결하려는 업무 ID 를 넣으세요.' : ''
+  return `\n  고친 예 [${label}](dooray://${orgId}/tasks/${postId} "${workflow}")${orgHint}${postHint}\n  예시는 펜스 코드 블록으로 쓰세요.`
+}
+
 function checkBody(md: string, cache: Cache): { errors: string[]; warnings: string[] } {
   const errors: string[] = []
   const warnings: string[] = []
@@ -159,14 +168,26 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     if (!url) continue
     const path = decodePath(url.pathname)
     const host = url.hostname.replace(/\.$/u, '')
-    const internal = url.protocol === 'dooray:' ? INTERNAL.exec(`dooray://${host}${path.replace(/\/$/u, '')}`) : null
+    const doorayScheme = url.protocol === 'dooray:'
+    const internal = doorayScheme ? INTERNAL.exec(`dooray://${host}${path.replace(/\/$/u, '')}`) : null
     const doorayHost = host === 'dooray.com' || host.endsWith('.dooray.com') || host === 'base.invalid'
-    const webId = url.protocol !== 'dooray:' && doorayHost ? WEB_PATH.exec(path)?.[1] : undefined
+    const webId = !doorayScheme && doorayHost ? WEB_PATH.exec(path)?.[1] : undefined
     const id = internal?.[2] ?? webId
-    if (!id) continue
+    const taskRoute = doorayScheme ? INTERNAL_ROUTE.test(path) : doorayHost && WEB_ROUTE.test(path)
+    if (!id && !taskRoute) continue
 
     const label = shownLabel ?? ''
     const fixedLabel = escapeBrackets(label)
+    const shown = POST_REF.exec(decodeMarkdown(label))?.[0]
+    const fallbackLabel = shown ? fixedLabel : `PROJECT/NUMBER ${fixedLabel || '제목'}`
+    const fallbackWorkflow = shownWorkflow && WORKFLOW.test(shownWorkflow) ? shownWorkflow : 'registered'
+    if (!id) {
+      const org = doorayScheme && ORG_ID.test(host) ? host : 'ORG_ID'
+      const fix = correctedLink(fallbackLabel, org, 'POST_ID', fallbackWorkflow)
+      errors.push(`오류: 두레이 업무 링크 주소에서 조직 ID와 업무 ID를 확인하세요.${fix}`)
+      continue
+    }
+
     const post = cache.posts.get(id) ?? (cache.missingCli ? 'missing-cli' : lookupPost(id))
     if (!cache.posts.has(id)) {
       cache.posts.set(id, post)
@@ -180,18 +201,14 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     }
 
     const ref = typeof post === 'string' ? undefined : post.ref
-    const shown = POST_REF.exec(decodeMarkdown(label))?.[0]
     const mismatch = shown !== undefined && ref !== undefined && shown !== ref
     const actualLabel = ref && typeof post !== 'string'
       ? escapeBrackets(`${ref}${typeof post.subject === 'string' ? ` ${post.subject.replace(/\s+/gu, ' ').trim()}` : ''}`)
       : undefined
-    const workflow = typeof post !== 'string' && WORKFLOW.test(post.workflowClass ?? '')
-      ? post.workflowClass
-      : WORKFLOW.test(shownWorkflow ?? '') ? shownWorkflow : 'registered'
-    const replacement = shown && !mismatch ? fixedLabel : actualLabel ?? `PROJECT/NUMBER ${fixedLabel || '제목'}`
-    const example = `[${replacement}](dooray://${internal?.[1] ?? 'ORG_ID'}/tasks/${id} "${workflow}")`
-
-    const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}\n  예시는 펜스 코드 블록으로 쓰세요.`
+    const actualWorkflow = typeof post !== 'string' ? post.workflowClass : undefined
+    const workflow = actualWorkflow && WORKFLOW.test(actualWorkflow) ? actualWorkflow : fallbackWorkflow
+    const replacement = shown && !mismatch ? fixedLabel : actualLabel ?? fallbackLabel
+    const fix = correctedLink(replacement, internal?.[1] ?? 'ORG_ID', id, workflow)
     if (fixedLabel !== label) errors.push(`오류: 업무 링크 표시 글 「${label}」의 대괄호를 &#91; 과 &#93; 으로 바꾸세요.${fix}`)
     if (inline && !shown) errors.push(`오류: 두레이 업무 링크 표시 글은 프로젝트/업무번호로 시작해야 합니다.${fix}`)
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)

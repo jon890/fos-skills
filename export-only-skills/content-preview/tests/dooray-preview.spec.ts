@@ -494,6 +494,24 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
+  test('업무 ID가 없거나 잘못된 업무 주소는 조회 없이 막는다', () => {
+    for (const target of [
+      'dooray://example/tasks/',
+      'dooray://example/tasks',
+      'dooray://example/tasks/잘못된-ID',
+      'https://example.dooray.com/project/tasks/',
+      '/task/project-example/',
+    ]) {
+      const body = `[example/18 제목](${target} "working")`
+      const done = preview('comment', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /업무 링크 주소에서 조직 ID와 업무 ID를 확인하세요/u)
+      assert.match(done.stderr, /\/tasks\/POST_ID "working"/u)
+      assert.deepEqual(done.calls, [])
+      assert.equal(done.html, '')
+    }
+  })
+
   test('주소의 문자 참조와 Markdown 이스케이프를 풀어 실제 업무를 확인한다', () => {
     for (const address of [
       'dooray&#58;//example/tasks/post-example',
