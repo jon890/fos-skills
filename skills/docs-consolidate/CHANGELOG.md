@@ -1,5 +1,9 @@
 # CHANGELOG: docs-consolidate
 
+## 0.3.0 (2026-11-27)
+
+- 외부 공개 전 버전 체계에 맞춰 번호를 0.x로 바꿨어요.
+
 ## 2.0.0 (2026-11-12)
 
 - 호환성: 자기 오버레이가 없을 때 옛 이름 `.claude/docs-check-overlay.md` 를 더는 읽지 않는다. `.claude/docs-audit-overlay.md` 만 읽는다

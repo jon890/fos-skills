@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 fos-skills 저장소 `docs/contributing.md` 의 "버전과 변경 이력" 을 따른다.
 
+## 0.3.0 (2026-11-27)
+
+- 외부 공개 전 버전 체계에 맞춰 번호를 0.x로 바꿨어요.
+
 ## 2.2.0 (2026-11-26)
 
 - Mermaid 흐름도를 설치된 Chrome 으로 그려 보고서 HTML 안에 넣고, 그림을 만들지 못하면 원문을 보여 준다.
