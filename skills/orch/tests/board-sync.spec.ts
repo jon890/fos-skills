@@ -117,7 +117,7 @@ test('PR 없는 보고 단계는 담당 worker 의 완료를 받으면 끝난다
 
 test('worker_done 의 steps= 는 그 dispatch 의 항목 단계를 끝내고 PR 없는 일의 번호 없는 보고는 남은 단계를 모두 끝낸다', () => {
   const todo = { id: 'survey', status: 'doing', details: [step('1. 회차를 돌린다', false), step('2. 결과를 비교한다', false), step('3. 보고한다', false)],
-    workers: [worker('impl', 'survey', 'd1'), worker('review', 'review', 'd2')] }
+    workers: [worker('impl', 'survey', 'd1', { 'todo-steps': '1=1,2=2,3=3' }), worker('review', 'review', 'd2')] }
   // 다른 dispatch 의 보고와 리뷰 줄의 보고는 단계를 끝내지 않는다
   const other = sync([todo], ['--worker-steps', JSON.stringify({ d9: { steps: [1], noPr: true }, d2: { steps: [1], noPr: true } })])
   assert.equal(other.code, 0, other.result.stderr)
@@ -126,7 +126,7 @@ test('worker_done 의 steps= 는 그 dispatch 의 항목 단계를 끝내고 PR 
   assert.equal(some.code, 0, some.result.stderr)
   assert.deepEqual((some.board.survey.details as Json[]).map((d) => d.done), [true, true, false])
   assert.equal(some.board.survey.status, 'doing')
-  assert.match(some.result.stdout, /단계 7 가 없어 건너뛴다/)
+  assert.match(some.result.stdout, /할 일 7 의 단계가 없어 건너뛴다/)
   const all = sync([some.board.survey], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: true } })])
   assert.equal(all.code, 0, all.result.stderr)
   assert.deepEqual((all.board.survey.details as Json[]).map((d) => d.done), [true, true, true])
@@ -137,12 +137,13 @@ test('worker_done 의 steps= 는 그 dispatch 의 항목 단계를 끝내고 PR 
   assert.equal(legacy.board.survey.status, 'done')
 })
 
-test('PR 이 있는 일의 steps= 는 수동 단계만 끝내고 「PR 머지」 사건 단계와 항목 상태는 그대로 둔다', () => {
-  const item = { id: 'feat', status: 'doing', stages: 'merge=3', details: [step('1. 구현', false), step('2. 문서', false), step('3. PR 머지', false)],
+test('PR 이 있는 일의 steps= 는 할 일 번호와 단계의 짝이 없어 보드 단계를 끝내지 않는다', () => {
+  // 할 일(1. 구현, 2. 테스트)과 보드 단계(1. PR 머지, 2. 사람의 운영 확인)는 번호가 같아도 다른 일이다
+  const item = { id: 'feat', status: 'doing', stages: 'merge=1', details: [step('1. PR 머지', false), step('2. 사람의 운영 확인', false)],
     workers: [worker('impl', 'feat', 'd1')] }
-  const got = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2, 3], noPr: false } })])
+  const got = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2], noPr: false } })])
   assert.equal(got.code, 0, got.result.stderr)
-  assert.deepEqual((got.board.feat.details as Json[]).map((d) => d.done), [true, true, false])
+  assert.deepEqual(got.board.feat.details, item.details)
   assert.equal(got.board.feat.status, 'doing')
   // 번호 없는 보고는 PR 이 있는 일의 단계를 끝내지 않는다
   const none = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: false } })])
@@ -174,7 +175,7 @@ test('다시 연 항목은 담당 줄의 todo-steps 로 할 일 번호를 단계
   // 짝에 없는 할 일 번호는 건너뛴다
   const missing = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [3], noPr: true } })])
   assert.deepEqual(missing.board.again.details, item.details)
-  assert.match(missing.result.stdout, /단계 3 가 없어 건너뛴다/)
+  assert.match(missing.result.stdout, /할 일 3 의 단계가 없어 건너뛴다/)
   const both = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2], noPr: true } })])
   assert.equal(both.code, 0, both.result.stderr)
   assert.equal(both.board.again.status, 'done')

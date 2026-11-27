@@ -4,7 +4,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
 // --worker-steps 도 루프 내부용이다. 성공한 worker_done 의 dispatch 와 { steps: 끝낸 단계 번호 목록|null, noPr: PR 없는 지시서인지 } 객체를 받는다.
 //     그 dispatch 의 구현·후속 줄이 있는 항목에서 적힌 번호의 단계를 끝낸다. 사건 단계(stages 와 줄 stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 사건이 끝내므로 건드리지 않는다.
-//     번호는 지시서 「할 일」 번호이고, 담당 줄의 todo-steps(띄울 때 남긴 「할 일 번호=단계 번호」 짝)로 단계 번호로 옮긴다. 짝이 없는 줄은 단계 번호로 본다.
+//     번호는 지시서 「할 일」 번호이고, 담당 줄의 todo-steps(띄울 때 남긴 「할 일 번호=단계 번호」 짝)로 단계 번호로 옮긴다. 짝이 없는 줄(PR 있는 일)의 번호는 끝내지 않는다.
 //     PR 없는 일의 번호 없는 보고는 남은 단계를 모두 끝낸다. PR 없는 일의 단계가 이렇게 모두 끝나면 done 으로 바꾼다.
 //     보고는 그 항목의 가장 최근 구현·후속 줄(지금 담당자)의 것만 받는다. 다시 연 항목에서 앞 담당자의 옛 보고가 새 단계를 끝내지 않게 한다.
 //     리뷰·검증 항목과 기능 항목(기능 단계 줄은 feature-advance 가 맡는다)과 done 항목은 보지 않는다
@@ -505,7 +505,7 @@ function main(argv: string[]): number {
       // 사건 단계(stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 그 사건이 끝낸다
       const eventStep = (step: BoardStep): boolean => events.has(step.number) || stageTag(step.text) !== null || Boolean(parseEventTag(step.text))
       // steps= 는 지시서 「할 일」 번호다. 담당 줄의 todo-steps(띄울 때 남긴 「할 일 번호=단계 번호」 짝)로 단계 번호로 옮긴다.
-      // 짝이 없으면(PR 있는 일, 옛 줄) 보드 단계 번호로 본다. 번호로만 옮기므로 같은 보고가 다시 와도 결과가 같다
+      // 짝이 없으면(PR 있는 일, 옛 줄) 할 일 번호와 보드 단계가 이어지지 않아 끝내지 않는다. 번호로만 옮기므로 같은 보고가 다시 와도 결과가 같다
       const pairs = new Map(String(reports[0]?.['todo-steps'] ?? '').split(',').flatMap((pair) => {
         const match = /^(\d+)=(\d+)$/.exec(pair.trim())
         return match ? [[Number(match[1]), Number(match[2])] as const] : []
@@ -513,13 +513,13 @@ function main(argv: string[]): number {
       const explicit = new Set<number>()
       const unknown: number[] = []
       for (const number of given.flatMap((one) => one.steps ?? [])) {
-        const target = pairs.size > 0 ? pairs.get(number) : number
+        const target = pairs.get(number)
         if (target !== undefined && steps.some((step) => step.number === target)) explicit.add(target)
         else unknown.push(number)
       }
       const closing = steps.filter((step) => !step.done && !eventStep(step) && !scheduled.has(step.number) && (all || explicit.has(step.number)))
       after.push(...closing.map((step) => ['step', id, String(step.number)]))
-      if (unknown.length > 0) out(`board-sync: ${id} 에 worker_done 이 적은 단계 ${unknown.join(',')} 가 없어 건너뛴다`)
+      if (unknown.length > 0) out(`board-sync: ${id} 에 worker_done 이 적은 할 일 ${unknown.join(',')} 의 단계가 없어 건너뛴다(PR 없는 지시서로 만든 단계만 옮긴다)`)
       if (noPr && !finish && steps.length > 0 && steps.every((step) => step.done || scheduled.has(step.number) || closing.includes(step))) {
         after.push(['set', id, 'done', '--worktree', ''])
         finish = true
