@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextCron, updateSchedules, visibleSchedules, scheduleLine } from '../hooks/schedules.js'
+import { nextCron, updateSchedules, visibleSchedules, scheduleLine, scheduleDetail, scheduleSoon, sortSchedules,
+  cronText, promptTitle, whenText } from '../hooks/schedules.js'
 
 let moduleIndex = 0
 async function freshWatchSchedule() {
@@ -21,7 +22,7 @@ test('성공한 만들기와 지우기 결과만 예약 목록에 반영한다',
   const rows = updateSchedules([], create, answer, at)
   assert.equal(rows.length, 1)
   assert.equal(rows[0].next, at + 300000)
-  assert.match(scheduleLine(rows[0]), /5분마다 · CI 결과를 확인한다 · 다음 .* · 만료 /)
+  assert.equal(scheduleLine(rows[0], at), '오늘 10:05  ↻ CI 결과를 확인한다 · 5분마다')
   assert.deepEqual(updateSchedules(rows, remove, { result: { id: 'job-1' } }, at), [])
   assert.equal(updateSchedules(rows, remove, { isError: true, result: { id: 'job-1' } }, at), rows)
 })
@@ -115,4 +116,46 @@ test('다음 도구 이벤트에서 실행이 끝난 예약을 세션 상태에�
   await watchSchedule($, { ...remove, id: 'other' }, async () => ({ result: { id: 'other' } }))
   assert.deepEqual(stored, [])
   assert.equal(writes, 1)
+})
+
+const row = (over = {}) => ({ id: 'job', cron: '47 7,19 * * *', prompt: '[회차 뒤 점검, 한국어로만 보고] 방금 끝난 회차를 본다\n둘째 줄',
+  schedule: '47 7,19 * * *', recurring: true, next: at + 3600000, offset: 0, expires: at + 7 * 86400000, ...over })
+
+test('줄은 다음 실행, 반복 표시, [...] 제목, 읽는 주기 순이고 본문 앞부분은 빠진다', () => {
+  assert.equal(scheduleLine(row(), at), '오늘 11:00  ↻ 회차 뒤 점검, 한국어로만 보고 · 매일 07:47, 19:47')
+  const once = row({ cron: '4 19 27 11 *', recurring: false, expires: null, next: new Date(2026, 10, 21, 19, 4).getTime(), prompt: '긴 첫 줄'.repeat(20) })
+  assert.equal(scheduleLine(once, at), '내일 19:04  1회 ' + promptTitle(once.prompt) + ' · 한 번, 11/21 19:04')
+  assert.equal(promptTitle(once.prompt).length, 40)
+  assert.ok(promptTitle(once.prompt).endsWith('…'))
+  assert.equal(promptTitle('첫 줄\n[둘째 줄 제목]'), '첫 줄')
+})
+
+test('다음 실행은 오늘, 내일, 그 뒤는 날짜로 쓴다', () => {
+  assert.equal(whenText(new Date(2026, 10, 20, 19, 4).getTime(), at), '오늘 19:04')
+  assert.equal(whenText(new Date(2026, 10, 21, 7, 47).getTime(), at), '내일 07:47')
+  assert.equal(whenText(new Date(2026, 10, 22, 0, 0).getTime(), at), '11/22 00:00')
+})
+
+test('cron 식은 매일 시각과 한 번만 읽는 말로 바꾸고 그 밖은 도구의 말이나 원래 식이다', () => {
+  assert.equal(cronText(row()), '매일 07:47, 19:47')
+  assert.equal(cronText(row({ cron: '0,30 9 * * *' })), '매일 09:00, 09:30')
+  assert.equal(cronText(row({ recurring: false, next: new Date(2026, 10, 27, 19, 4).getTime() })), '한 번, 11/27 19:04')
+  assert.equal(cronText(row({ cron: '*/5 * * * *', schedule: '5분마다' })), '5분마다')
+  assert.equal(cronText(row({ cron: '0 9 * * 1', schedule: '0 9 * * 1' })), '0 9 * * 1')
+  assert.equal(cronText(row({ cron: '0 9-18 * * *', schedule: '0 9-18 * * *' })), '0 9-18 * * *')
+})
+
+test('다음 실행 순서로 세우고 한 시간 안에 도는 줄만 가깝다고 본다', () => {
+  const rows = [row({ id: 'late', next: at + 7200000 }), row({ id: 'soon', next: at + 600000 }), row({ id: 'edge', next: at + 3600000 })]
+  assert.deepEqual(sortSchedules(rows).map((r) => r.id), ['soon', 'edge', 'late'])
+  assert.deepEqual(rows.map((r) => r.id), ['late', 'soon', 'edge'])
+  assert.deepEqual(rows.map((r) => scheduleSoon(r, at)), [false, true, true])
+})
+
+test('펼친 자리에는 원래 식, 만료, 세션 한정 안내, 프롬프트 전문이 있다', () => {
+  const detail = scheduleDetail(row())
+  assert.equal(detail[0], 'cron 47 7,19 * * * · 만료 11/27 10:00')
+  assert.match(detail[1], /세션이 끝나면 사라져요/)
+  assert.equal(detail[2], row().prompt)
+  assert.equal(scheduleDetail(row({ expires: null }))[0], 'cron 47 7,19 * * *')
 })
