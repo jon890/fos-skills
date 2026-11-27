@@ -11,8 +11,8 @@ const LINK_BASE = 'https://base.invalid/'
 const POST_REF = /^[^\s/]+\/\d+(?=\s|$)/u
 const BRACKET = /\\[^\r\n]|[\[\]]/gu
 const WORKFLOW = /^(registered|working|closed|backlog)$/
-// 정상 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 표시 글을 그대로 읽는다.
-const INLINE_LINK = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)/gu
+// 짝을 이룬 백슬래시 뒤에서는 링크를 시작할 수 있다. 대괄호 검사를 위해 표시 글의 원문을 읽는다.
+const INLINE_LINK = /(?<!\\)(?:\\\\)*\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)/gu
 const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>`]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:(?:dooray|https?):)?\/\/[^\s<>]+)>|(?<address>(?:(?:dooray|https?):|(?<![\w:/]))\/\/[^\s<>()\[\]"`']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"`']+)/gimu
 const HTML_ATTRIBUTE = /\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/gu
 const CHARACTER_REFERENCE = String.raw`&(#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6})|[A-Za-z][A-Za-z0-9]*);`
@@ -128,10 +128,11 @@ function* findLinks(md: string): Generator<Link> {
   for (const { offset, text } of maskedBlocks(md)) {
     let cursor = 0
     for (const match of text.matchAll(INLINE_LINK)) {
-      const start = match.index + 1
+      const opening = match.index + match[0].indexOf('[')
+      const start = opening + 1
       const candidate = md.slice(offset + start, offset + start + match[1].length)
       const labelAt = labelStart(candidate)
-      const labelIndex = match.index + labelAt
+      const labelIndex = opening + labelAt
       yield* otherLinks(text.slice(cursor, labelIndex))
       cursor = match.index + match[0].length
       yield {

@@ -300,6 +300,20 @@ describe('dooray-preview task, comment', () => {
     assert.deepEqual(done.calls, ['--json post get --id post-example'])
   })
 
+  test('링크 앞의 백슬래시가 짝수면 표시 글을 읽고 홀수면 주소만 검사한다', () => {
+    const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
+    for (const count of [2, 4]) {
+      const done = preview('comment', '\\'.repeat(count) + link)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+    for (const count of [1, 3]) {
+      const done = preview('comment', '\\'.repeat(count) + link)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /주소만 적은 링크를 .*인라인 링크로 바꾸세요/u)
+    }
+  })
+
   test('표시 글의 대괄호와 두레이 웹 주소를 각각 고치도록 안내한다', () => {
     const badLabel = '[참고] [example/18 [Example] 제목](dooray://example/tasks/post-example "working")'
     const webLinks = [
