@@ -120,6 +120,7 @@ orch config unset contracts.merge_command contracts.paths
 | `board` | `task_line` | 이름 붙은 캡처 `number` 가 있는 JS 정규식 문자열(`m`, `u`). `title` 캡처는 선택이다 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
 | `board` | `auto_advance` | 자동 진행 여부. 기본은 `true` 이고 `false` 면 `STEP-READY` 와 자동 띄우기를 끈다. `[wait]` 는 깨우지 않고 시각 wait 는 그대로 끝낸다. `orch board auto-check` 가 거절하며 루프도 같은 값을 읽는다. boolean 이 아니면 설정 오류다 |
+| `board` | `wait_events` | 사건 대기 줄 `[wait: 사건 <이름>]` 의 확인 명령. 사건 이름에서 `{ "command": <비지 않은 문자열>, "timeout_sec": <1–600 정수, 기본 60> }` 로 가는 객체이고, 이름은 영문 소문자·숫자로 시작하는 영문 소문자·숫자·하이픈 32자 이하다. 명령은 주 checkout 에서 `sh -c` 로 돌고 0 이면 끝남, 1 이면 아직, 그 밖은 실패다. 동작은 [`board.md`](board.md) 의 「자동 진행 표시」 가 소유한다. 아래 「사건 대기 설정」 |
 | `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
 | `docker` | `containers` | 정리가 지울 컨테이너 규칙의 목록. 규칙은 `label`(`키` 나 `키=값`)과 `name`(이름 전체에 맞출 정규식) 가운데 하나 이상을 둔 객체이고, 둘 다 두면 둘 다 맞아야 한다. `name` 에 이름 붙은 묶음 `pid` 가 있으면 그 프로세스가 없을 때만, 없으면 멈춘 컨테이너만 지운다. `cleanup-sweep.ts` 가 읽는다. 언제 무엇을 지우는지는 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 |
 | `docker` | `images` | 정리가 지울 이미지 규칙의 목록. 규칙은 `repository`(저장소 이름 전체에 맞출 정규식)와 `keep`(저장소 이름마다 남길 최근 태그 수, 0 이상의 정수, 기본 1)이다. 컨테이너가 쓰는 이미지는 남긴다 |
@@ -334,6 +335,16 @@ orch config set board.task --json '{"adapter":"url-template","url":"https://jira
 
 `dooray` 는 사내 주소와 기본 프로젝트가 필수다. `url-template` 은 `{number}` 가 든 주소가 필수이고 이름은 생략하면 「업무」 다.
 짝 키는 한 호출에 함께 준다. 어댑터를 바꿀 때는 위 두 번째 명령처럼 객체 전체를 바꾼다.
+
+### 사건 대기 설정
+
+`board.wait_events` 도 새 번들을 설치하고 상주 루프를 다시 띄운 뒤에만 넣는다. 옛 번들의 설정 검사기는 모르는 키로 읽어 설정 오류를 낸다.
+
+```bash
+orch config set board.wait_events --json '{"dev-eval":{"command":"node scripts/dev-eval-done.ts","timeout_sec":60}}'
+```
+
+확인 명령은 끝났으면 0, 아직이면 1 로 끝낸다. 출력은 1MB 를 넘기지 않는다.
 
 ### 알림 필터 설정
 
