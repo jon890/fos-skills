@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { groupLive, liveInGroup, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
+import { groupLive, killGroup, liveInGroup, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
 
@@ -262,6 +262,36 @@ describe('runGroup', () => {
     const done = await runGroup(['sh', '-c', 'sleep 30 & echo $$; exit 0'], { timeoutMs: 10_000 })
     assert.deepEqual(done.outcome, { kind: 'exit', code: 0 })
     assert.equal(groupLive(Number(done.stdout.trim().split('\n')[0])), false)
+  })
+
+  test('셸이 끝난 뒤 정리 유예 중에 멈춰도 남은 손자까지 끝낸다', { timeout: 30_000 }, async (t) => {
+    // stopChildren 은 이 프로세스의 상태를 바꾸므로 별도 프로세스에서 돌린다
+    const tmp = mkdtempSync(join(tmpdir(), 'run-group-stop-'))
+    t.after(() => rmSync(tmp, { recursive: true, force: true }))
+    const pidFile = join(tmp, 'pgid')
+    const proc = fileURLToPath(new URL('../scripts/lib/proc.ts', import.meta.url))
+    // 손자는 TERM 을 무시하고 출력을 돌려 셸이 끝나도 남는다
+    const ignore = join(tmp, 'ignore.sh')
+    writeFileSync(ignore, "trap '' TERM\nsleep 30\n")
+    const script = join(tmp, 'stop.mjs')
+    const command = `echo $$ > ${pidFile}; sh ${ignore} >/dev/null 2>&1 & exit 0`
+    writeFileSync(script, [
+      "import { existsSync } from 'node:fs'",
+      `import { runGroup, stopChildren } from ${JSON.stringify(proc)}`,
+      `runGroup(['sh', '-c', ${JSON.stringify(command)}], { timeoutMs: 20_000 })`,
+      `while (!existsSync(${JSON.stringify(pidFile)})) await new Promise((r) => setTimeout(r, 20))`,
+      // 셸은 끝났고 runGroup 은 KILL 유예를 기다리는 중이다
+      'await new Promise((r) => setTimeout(r, 500))',
+      "await stopChildren('SIGTERM', 300)",
+      'process.exit(0)',
+    ].join('\n'))
+    const done = spawnSync(NODE, [script], { encoding: 'utf8', env: { ...process.env, ORCH_KILL_GRACE_SEC: '10' }, timeout: 20_000 })
+    assert.equal(done.status, 0, done.stderr)
+    const group = Number(readFileSync(pidFile, 'utf8').trim())
+    await new Promise((r) => setTimeout(r, 500))
+    const live = groupLive(group)
+    if (live) killGroup(group, 'SIGKILL')
+    assert.equal(live, false)
   })
 
   test('좀비만 남은 그룹은 살아 있지 않은 것으로 본다', () => {

@@ -368,46 +368,52 @@ export async function runGroup(argv: string[], opts: GroupOptions): Promise<Grou
   })
   if (spawned) return { outcome: { kind: 'spawn', reason: spawnFailure(argv, spawned, '', '').stderr }, ...text() }
   const pid = child.pid as number
-  trackChild(child, true)
-  let stopNow: () => void = () => {}
-  const stopped = new Promise<void>((resolve) => { stopNow = resolve })
-  const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
-    if (stop) return
-    size[key] += chunk.length
-    if (size[key] > maxBuffer) {
-      stop = 'overflow'
-      stopNow()
-      return
+  // 셸이 끝나도(close) 그룹 정리가 끝날 때까지 진행 중인 자식으로 둔다. 그사이 stopChildren 이 불려도 남은 손자에 신호가 간다
+  const entry: Tracked = { child, group: true }
+  tracked.add(entry)
+  try {
+    let stopNow: () => void = () => {}
+    const stopped = new Promise<void>((resolve) => { stopNow = resolve })
+    const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
+      if (stop) return
+      size[key] += chunk.length
+      if (size[key] > maxBuffer) {
+        stop = 'overflow'
+        stopNow()
+        return
+      }
+      chunks.push(chunk)
     }
-    chunks.push(chunk)
-  }
-  child.stdout!.on('data', collect(out, 'out'))
-  child.stderr!.on('data', collect(err, 'err'))
-  const exited = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-    child.once('exit', (status, signal) => resolve({ status, signal }))
-  })
-  const timer = setTimeout(() => { stop ??= 'timeout'; stopNow() }, opts.timeoutMs)
-  const first = await Promise.race([exited.then((end) => ({ end })), stopped.then(() => null)])
-  clearTimeout(timer)
-  // 셸이 스스로 끝났어도 그룹에 남은 것이 있으면 끝낸다. 끝내는 동안 쓴 출력은 버리지 않고 받는다
-  let gone = !groupLive(pid)
-  if (!gone) {
-    killGroup(pid, 'SIGTERM')
-    gone = await waitGroupGone(pid, killGraceMs())
+    child.stdout!.on('data', collect(out, 'out'))
+    child.stderr!.on('data', collect(err, 'err'))
+    const exited = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+      child.once('exit', (status, signal) => resolve({ status, signal }))
+    })
+    const timer = setTimeout(() => { stop ??= 'timeout'; stopNow() }, opts.timeoutMs)
+    const first = await Promise.race([exited.then((end) => ({ end })), stopped.then(() => null)])
+    clearTimeout(timer)
+    // 셸이 스스로 끝났어도 그룹에 남은 것이 있으면 끝낸다. 끝내는 동안 쓴 출력은 버리지 않고 받는다
+    let gone = !groupLive(pid)
     if (!gone) {
-      killGroup(pid, 'SIGKILL')
+      killGroup(pid, 'SIGTERM')
       gone = await waitGroupGone(pid, killGraceMs())
+      if (!gone) {
+        killGroup(pid, 'SIGKILL')
+        gone = await waitGroupGone(pid, killGraceMs())
+      }
     }
+    child.stdout!.destroy()
+    child.stderr!.destroy()
+    const result = text()
+    // 남은 그룹에 셸이 있으면 exit 가 오지 않으므로 기다리지 않는다
+    if (!gone) return { outcome: { kind: 'orphan', reason: `그룹 ${pid} 에 KILL 뒤에도 프로세스가 남았다` }, ...result }
+    const end = first?.end ?? await exited
+    if (stop === 'timeout') return { outcome: { kind: 'timeout', reason: `${Math.round(opts.timeoutMs / 1000)}초 안에 끝나지 않아 끊었다` }, ...result }
+    if (stop === 'overflow') return { outcome: { kind: 'overflow', reason: `출력이 한도 ${maxBuffer} 바이트를 넘어 끊었다` }, ...result }
+    return { outcome: { kind: 'exit', code: end.signal ? signalCode(end.signal) : end.status ?? 1 }, ...result }
+  } finally {
+    tracked.delete(entry)
   }
-  child.stdout!.destroy()
-  child.stderr!.destroy()
-  const result = text()
-  // 남은 그룹에 셸이 있으면 exit 가 오지 않으므로 기다리지 않는다
-  if (!gone) return { outcome: { kind: 'orphan', reason: `그룹 ${pid} 에 KILL 뒤에도 프로세스가 남았다` }, ...result }
-  const end = first?.end ?? await exited
-  if (stop === 'timeout') return { outcome: { kind: 'timeout', reason: `${Math.round(opts.timeoutMs / 1000)}초 안에 끝나지 않아 끊었다` }, ...result }
-  if (stop === 'overflow') return { outcome: { kind: 'overflow', reason: `출력이 한도 ${maxBuffer} 바이트를 넘어 끊었다` }, ...result }
-  return { outcome: { kind: 'exit', code: end.signal ? signalCode(end.signal) : end.status ?? 1 }, ...result }
 }
 
 function flush(stream: NodeJS.WriteStream): Promise<void> {
