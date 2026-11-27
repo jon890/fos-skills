@@ -176,7 +176,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     const replacement = shown && !mismatch ? fixedLabel : actualLabel ?? `PROJECT/NUMBER ${fixedLabel || '제목'}`
     const example = `[${replacement}](dooray://${internal?.[1] ?? 'ORG_ID'}/tasks/${id} "${workflow}")`
 
-    const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}\n  예시는 코드 블록으로 쓰세요.`
+    const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}\n  예시는 펜스 코드 블록으로 쓰세요.`
     if (fixedLabel !== label) errors.push(`오류: 업무 링크 표시 글 「${label}」의 대괄호를 &#91; 과 &#93; 으로 바꾸세요.${fix}`)
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)
     else if (kind === '인라인 코드 예제') errors.push(`오류: 인라인 코드에 두레이 업무 링크가 있습니다.${fix}`)

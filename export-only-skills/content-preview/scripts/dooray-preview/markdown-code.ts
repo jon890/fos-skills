@@ -1,8 +1,8 @@
-// 링크 검사에서 코드 블록을 가린다. 원문의 표시 글을 읽을 수 있도록 길이와 줄바꿈을 보존한다.
+// 링크 검사에서 펜스 코드 블록을 가린다. 원문의 표시 글을 읽을 수 있도록 길이와 줄바꿈을 보존한다.
 const FENCE = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/u
 const QUOTE = /^ {0,3}> ?/u
-const LIST_ITEM = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| |(?=\r?$))/u
-const HEADING_OR_BREAK = /^ {0,3}(?:#{1,6}(?: |\r?$)|(?:\* *){3,}\r?$|(?:- *){3,}\r?$|(?:_ *){3,}\r?$)/u
+const LIST_ITEM = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| |$)/u
+const HEADING_OR_BREAK = /^ {0,3}(?:#{1,6}(?: |$)|(?:\* *){3,}$|(?:- *){3,}$|(?:_ *){3,}$)/u
 
 type Container = { kind: 'quote' } | { kind: 'list'; indent: number }
 type Fence = { line: number; delimiter: string }
@@ -52,10 +52,9 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
   const containers: Container[] = []
   const blockStarts = new Set<number>()
   let fence: Fence | undefined
-  let paragraph = false
 
   for (const [index, line] of lines.entries()) {
-    const expanded = expandTabs(line)
+    const expanded = expandTabs(line).replace(/\r?\n$|\r$/u, '')
     let content = expanded
     let depth = 0
     for (const container of containers) {
@@ -67,7 +66,6 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
     if (depth !== containers.length) {
       containers.length = depth
       fence = undefined
-      paragraph = false
       blockStarts.add(index)
     }
 
@@ -87,17 +85,10 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
     while (next) {
       containers.push(next.container)
       content = content.slice(next.width)
-      paragraph = false
       next = startContainer(content)
     }
 
     if (!content.trim()) {
-      paragraph = false
-      blockStarts.add(index + 1)
-      continue
-    }
-    if (!paragraph && content.startsWith('    ')) {
-      lines[index] = blank(line)
       blockStarts.add(index + 1)
       continue
     }
@@ -105,14 +96,12 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
     const start = FENCE.exec(content)
     if (start && (start[1][0] !== '`' || !start[2].includes('`'))) {
       fence = { line: index, delimiter: start[1] }
-      paragraph = false
       blockStarts.add(index)
       // 닫는 줄이 확인될 때까지 여는 줄과 본문을 그대로 둔다.
       continue
     }
-    paragraph = !HEADING_OR_BREAK.test(content)
     lines[index] = maskContainerPrefix(line, expanded.length - content.length)
-    if (!paragraph) {
+    if (HEADING_OR_BREAK.test(content)) {
       blockStarts.add(index)
       blockStarts.add(index + 1)
     }
