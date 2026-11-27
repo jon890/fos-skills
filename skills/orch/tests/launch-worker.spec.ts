@@ -2780,6 +2780,25 @@ describe('spec-lint 관문', () => {
         assert.match(r.stdout, /LAUNCHED ctx_1/)
       }
     })
+
+    test('보드 항목 id 도 붙일 항목도 없으면 5 로 멈추고, id 를 적은 버그 수정은 새 항목을 만든다', () => {
+      const board = join(proj, '.omc/board.json')
+      mkdirSync(dirname(board), { recursive: true })
+      writeFileSync(board, JSON.stringify({ items: [] }))
+      const head = '# 일\n허락: push 는 허락했다.\n브랜치: `fix/typo`\n'
+      writeFileSync(spec, `${head}\n## 할 일\n루프 없이: 오타만 고친다\n`)
+      const r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
+      assert.equal(r.code, 5, both(r))
+      assert.match(r.stderr, /보드: 붙일 보드 항목을 찾지 못했다\(브랜치 fix\/typo, 업무 없음, 기능 폴더 없음\)/)
+      assert.deepEqual(lines('make '), [])
+      assert.deepEqual(lines('orca orchestration worker-start'), [])
+      resetLog()
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      writeFileSync(spec, `${head}보드 항목 id: fix-typo\n\n## 할 일\n루프 없이: 오타만 고친다\n`)
+      const given = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
+      assert.equal(given.code, 0, both(given))
+      assert.deepEqual(JSON.parse(readFileSync(board, 'utf8')).items.map((item: { id: string }) => item.id), ['fix-typo'])
+    })
   })
 })
 

@@ -54,6 +54,7 @@
 //        --base(없으면 origin/HEAD 의 브랜치)를 spec-lint 의 --base 로 넘긴다. 「할 일」 첫 줄의 상대경로 스펙은 worker 가 시작할 곳에서 읽는다.
 //        새 워크트리면 origin/<base>, --resume-remote 면 --spec-ref origin/<지시서 브랜치>, --worktree 면 --spec-root <그 워크트리> 다.
 //        첫 줄 검사(spec-lint 의 「루프」)에 걸려도 같은 5 다. 확인받은 스펙 없이 기능 worker 를 띄우지 않게 한다
+//        지시서에 보드 항목 id 가 없는데 붙일 항목을 찾지 못해도(spec-lint 의 「보드」) 같은 5 다. --worktree 면 그 워크트리를 --worktree 로 넘긴다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
 //     1-1-1. 저장소(주 checkout)가 Orca 에 등록됐는지 `orca repo show` 로 본다(lib/orca.ts 의 repoRegistered). repo_not_found 면 번호 예약과
 //        워크트리를 만들기 전에 `orca repo add --path <저장소>` 를 안내하고 1 로 멈춘다. 등록되지 않은 저장소의 워크트리는 Orca 가 알아보지 못해
@@ -433,7 +434,9 @@ async function lintGate(a: Args, continuation: boolean, execute: typeof runAsync
   // 루프 검사가 상대경로 스펙을 worker 가 시작할 곳에서 읽게 한다. 머리 주석의 「1-1」
   const base = (a.base || defaultBase(repo) || '').replace(/^origin\//, '')
   const source = loopSource(a, specPath)
-  const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...source, ...others.flatMap((file) => ['--active', file]), ...(continuation ? ['--active', specPath] : []), specPath]
+  // 이어 띄우면 보드 검사(spec-lint 의 `보드`)가 그 워크트리의 worker 줄로 항목을 찾는다
+  const own = a.worktree ? ['--worktree', realPath(a.worktree.replace(/^path:/, ''))] : []
+  const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...source, ...own, ...others.flatMap((file) => ['--active', file]), ...(continuation ? ['--active', specPath] : []), specPath]
   const done = await execute(scriptCommand(process.env.SPEC_LINT || scriptPath('spec-lint'), args))
   if (done.code !== 1) {
     if (done.code === 0 && done.stdout.trim()) err(done.stdout.trim())

@@ -22,7 +22,8 @@ import { rulesFrom } from './last-pr.ts'
 import { loadConfig } from './config.ts'
 import { BOARD_BIN, boardPath, staleBoardWrite } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
-import { boardIdOf, boardNewOf, featureFolderOf, featureSpecTarget, featureStagesOf, taskFirstLine, workerRoleOf, interimOf } from './spec.ts'
+import { findBoardItem, hasTask, type BoardQuery } from '../core/board-find.ts'
+import { boardIdOf, boardNewOf, boardNoneOf, branchesOf, featureFolderOf, featureSpecTarget, featureStagesOf, taskFirstLine, workerRoleOf, interimOf } from './spec.ts'
 import { noPrInstruction } from '../core/completion.ts'
 import { boardWorkerRows } from '../core/board-workers.ts'
 import type { WorkerRole } from '../core/board-workers.ts'
@@ -118,14 +119,10 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     return null
   }
   const text = readFileSync(spec, 'utf8')
+  // 지시서가 보드 항목 없이 띄운다고 적었다. 이유가 빈 줄은 spec-lint 가 띄우기 전에 막는다
+  if (boardNoneOf(text)) return null
   const items = readBoard(file)
-  const task = taskOf(text, boardSettings(repo).taskLine)
-  let adapter: TaskAdapter | null = null
-  if (task) {
-    try { adapter = taskAdapter(repo) }
-    catch (e) { process.stderr.write(`보드: 설정 board.task 를 읽지 못해 업무 번호를 맞추지 않는다: ${(e as Error).message}\n`) }
-  }
-  const ref = task ? normalizeRef(adapter, task.number) : null
+  const { task, adapter, ref } = taskRefOf(repo, text)
   const url = task ? urlFromLine(adapter, task.line) : null
   let taskArgs = ref ? ['--fill', '--task-ref', ref, ...(url ? ['--task', url] : [])] : []
   if (ref && /\s/.test(ref)) { taskArgs = []; process.stderr.write('보드: 업무 번호에 공백이 있어 업무 칸을 채우지 않는다\n') }
@@ -194,16 +191,16 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   if (given?.note && !items.some((row) => row.id === given.id)) {
     throw new Error(`지시서의 \`보드 항목 id: ${given.id}\` 가 보드에 없고 뒤에 설명이 붙어 있어 항목을 만들지 않는다. id 만 적거나 설명을 다른 줄로 옮긴다`)
   }
-  // 지시서가 id 를 정하지 않았으면 같은 워크트리나 브랜치의 끝나지 않은 항목을 이어 쓴다.
-  // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않게 한다
-  // 그다음은 같은 업무 번호의 항목이다. 한 업무의 다음 PR 이나 확인 작업을 다른 워크트리에서 띄워도 진행률이 한 항목에 모인다
+  // 지시서가 id 를 정하지 않았으면 core/board-find.ts 의 findBoardItem 으로 붙일 항목을 고른다(같은 워크트리, 브랜치, 업무, 기능 폴더 순).
+  // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않고, 한 업무나 기능의 다음 PR 이 한 항목에 모인다.
+  // 찾지 못했거나 둘 이상이면 spec-lint 가 띄우기 전에 막는다. --lint-ack 으로 넘겼으면 지금처럼 워크트리 이름으로 만든다
   const open = items.filter((row) => !['done', 'decide'].includes(String(row.status)) && typeof row.id === 'string')
   const latest = (rows: BoardItem[]) => rows.map((row, index) => ({ row, index })).sort((a, b) => String(a.row.stepAt ?? '').localeCompare(String(b.row.stepAt ?? '')) || a.index - b.index).at(-1)?.row
-  const same = explicit
-    ? undefined
-    : reviewRole ? undefined : (freshOnly ? latest(open.filter((row) => row.worktree === wt)) :
-      latest(open.filter((row) => current(row))) ?? latest(open.filter((row) => row.worktree === wt || (branch && row.branch === branch))) ??
-      (task ? latest(open.filter((row) => row['task-ref'] === ref)) ?? latest(open.filter((row) => !row['task-ref'] && hasTask(row.title, task.number))) : undefined))
+  const findSame = () => {
+    const found = findBoardItem(items, boardQuery(repo, text, wt, branch, { ref, task }))
+    return 'item' in found ? found.item : undefined
+  }
+  const same = explicit || reviewRole ? undefined : freshOnly ? latest(open.filter((row) => row.worktree === wt)) : findSame()
   const id = explicit || (same?.id as string | undefined) || name || basename(worktree)
   const title = specTitle(text, { items, explicit, task, id })
   const item = items.find((row) => row.id === id)
@@ -320,11 +317,26 @@ export function taskOf(text: string, pattern: RegExp | null = null): SpecTask | 
   return { number, title: groups?.title?.trim() || null, line: text.slice(start, end < 0 ? undefined : end) }
 }
 
-// 제목에 업무 번호가 든 항목인지. 번호 뒤에 숫자가 이어지면(`/282` 와 `/2821`) 다른 업무다
-export function hasTask(title: unknown, number: string): boolean {
-  if (typeof title !== 'string') return false
-  const escaped = number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?<![\\p{L}\\p{N}_/-])${escaped}(?!\\p{N})`, 'u').test(title)
+export { hasTask }
+
+// 지시서의 업무 연결 줄과 그 번호를 어댑터로 맞춘 task-ref. 설정을 읽지 못하면 번호를 그대로 쓰지 않고 ref 를 null 로 둔다
+export function taskRefOf(repo: string, text: string): { task: SpecTask | null; adapter: TaskAdapter | null; ref: string | null } {
+  const task = taskOf(text, boardSettings(repo).taskLine)
+  let adapter: TaskAdapter | null = null
+  if (task) {
+    try { adapter = taskAdapter(repo) }
+    catch (e) { process.stderr.write(`보드: 설정 board.task 를 읽지 못해 업무 번호를 맞추지 않는다: ${(e as Error).message}\n`) }
+  }
+  return { task, adapter, ref: task ? normalizeRef(adapter, task.number) : null }
+}
+
+// 지시서로 붙일 항목을 찾을 질의(core/board-find.ts). spec-lint 의 `보드` 발견과 registerBoard 가 같은 값을 쓴다.
+// 브랜치를 주지 않으면 지시서의 `브랜치:` 줄을 쓴다. 기능 폴더의 저장소는 주 checkout 실경로다
+export function boardQuery(repo: string, text: string, worktree: string, branch?: string, known?: { ref: string | null; task: SpecTask | null }): BoardQuery {
+  const { task, ref } = known ?? taskRefOf(repo, text)
+  const root = mainCheckout(repo)
+  const path = featureFolderOf(text, root)
+  return { worktree, branch: branch ?? branchesOf(text)[0] ?? '', ref, taskNumber: task?.number ?? null, feature: path ? { path, repo: root } : null }
 }
 
 // `## 목표` 절의 첫 문장. 목록 기호와 굵게 표시는 뗀다. 절이 없거나 비었으면 null 이다

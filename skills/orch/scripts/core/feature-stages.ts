@@ -40,7 +40,8 @@ export function nextFeatureStage(covered: FeatureStage[]): FeatureStage | null {
   return name === 'implementation' ? { name, part: 1, total: 1 } : name ? { name } : null
 }
 
-function stageOf(text: string): FeatureStage | undefined {
+// 보드 단계 줄(`3. [ask] 기능 implementation 1/2`)의 기능 단계. 기능 단계 줄이 아니면 undefined 다
+export function featureStageOfLine(text: string): FeatureStage | undefined {
   const match = /^\s*\d+[.)]?\s+(?:\[ask\]\s+)?기능 (.+)$/.exec(text)
   const parsed = match ? parseFeatureStages(match[1]) : null
   return parsed?.length === 1 ? parsed[0] : undefined
@@ -49,13 +50,13 @@ function stageOf(text: string): FeatureStage | undefined {
 export function isFeatureItem(item: Record<string, unknown>): boolean {
   return Boolean(item.feature || item['feature-final-pr'] || item['feature-final-report']) || [item.details, item.next].some((lines) =>
     (Array.isArray(lines) ? lines : String(lines ?? '').split('\n')).some((line) =>
-      stageOf(String(typeof line === 'string' ? line : line?.text ?? '').replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''))))
+      featureStageOfLine(String(typeof line === 'string' ? line : line?.text ?? '').replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''))))
 }
 
 export function finalFeatureStageFinished(item: Record<string, unknown>, steps: BoardStep[]): boolean {
   const merged = prNumbers(item['merged-pr'])
   if (item['feature-final-report'] || merged.has(String(item['feature-final-pr']))) return true
-  return steps.some((step) => step.done && stageOf(step.text)?.name === 'docs-consolidate' &&
+  return steps.some((step) => step.done && featureStageOfLine(step.text)?.name === 'docs-consolidate' &&
     boardWorkerRows(item).some((row) => merged.has(String(row.pr)) &&
       row['feature-steps']?.split(',').includes(String(step.number))))
 }
@@ -68,7 +69,7 @@ export function featureMergePlan(item: BoardItem, steps: BoardStep[], source: st
   const owned = new Set(row['feature-steps']!.split(',').map(Number))
   const covered = steps.filter((step) => owned.has(step.number)).sort((a, b) => a.number - b.number)
   const stages = covered.flatMap((step) => {
-    const stage = stageOf(step.text)
+    const stage = featureStageOfLine(step.text)
     return stage ? [stage] : []
   })
   if (stages.length !== owned.size) return null
