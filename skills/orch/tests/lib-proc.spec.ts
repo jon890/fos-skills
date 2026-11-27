@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { run, runAsync, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
+import { groupAlive, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
 
@@ -234,5 +234,43 @@ describe('execCommand', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runGroup', () => {
+  test('셸이 스스로 끝나면 종료 코드를 exit 로 낸다', async () => {
+    assert.deepEqual((await runGroup(['sh', '-c', 'echo hi; exit 0'], { timeoutMs: 5_000 })).outcome, { kind: 'exit', code: 0 })
+    const pending = await runGroup(['sh', '-c', 'exit 1'], { timeoutMs: 5_000 })
+    assert.deepEqual(pending.outcome, { kind: 'exit', code: 1 })
+  })
+
+  test('TERM 을 무시하는 손자를 남기는 명령은 timeout 이고 돌아온 뒤 그룹에 프로세스가 없다', { timeout: 30_000 }, async (t) => {
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
+    // 셸은 pid 를 쓰고 기다린다. 손자는 TERM 을 무시한다
+    const script = `${NODE} -e 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)' & echo $$; wait`
+    const done = await runGroup(['sh', '-c', script], { timeoutMs: 500 })
+    assert.equal(done.outcome.kind, 'timeout')
+    const group = Number(done.stdout.trim().split('\n')[0])
+    assert.ok(Number.isInteger(group) && group > 0, done.stdout)
+    assert.equal(groupAlive(group), false)
+  })
+
+  test('셸이 끝난 뒤 남은 백그라운드 손자도 끝내고 셸의 종료 코드를 낸다', { timeout: 30_000 }, async (t) => {
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
+    const done = await runGroup(['sh', '-c', 'sleep 30 & echo $$; exit 0'], { timeoutMs: 10_000 })
+    assert.deepEqual(done.outcome, { kind: 'exit', code: 0 })
+    assert.equal(groupAlive(Number(done.stdout.trim().split('\n')[0])), false)
+  })
+
+  test('출력 한도를 넘으면 overflow 다', async () => {
+    const done = await runGroup(node('process.stdout.write("x".repeat(2048)); setInterval(() => {}, 1000)'), { timeoutMs: 10_000, maxBuffer: 1024 })
+    assert.equal(done.outcome.kind, 'overflow')
+  })
+
+  test('실행 파일이 없으면 spawn 이다', async () => {
+    const done = await runGroup(['/nonexistent-orch-spec/missing-bin'], { timeoutMs: 1_000 })
+    assert.equal(done.outcome.kind, 'spawn')
   })
 })
