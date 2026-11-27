@@ -166,6 +166,13 @@ test('worker-add 실패면 기존 대표 칸 쓰기로 돌아간다', () => {
   assert.equal(items()[0].worktree, 'new')
 })
 
+test('PR 없는 지시서는 할 일의 번호 줄을 단계로 쓰고 기본 단계를 붙이지 않는다', () => {
+  board()
+  launch('허락: PR 없음\n## 할 일\n\n1. **dev** 전체 회차를 돌린다. 결과를 표로 남긴다.\n   - 하위 줄은 단계가 아니다\n2. `orch` 결과를 보고한다\n```text\n3. 예시 블록 줄\n```\n## 완료 기준\n1. 다른 절의 번호 줄')
+  assert.equal(items()[0].stages, undefined)
+  assert.deepEqual(items()[0].details, [{ text: '1. dev 전체 회차를 돌린다.', done: false }, { text: '2. orch 결과를 보고한다', done: false }])
+})
+
 test('이미 있는 항목에 띄우면 제목을 지시서 머리줄로 덮지 않는다', () => {
   for (const status of ['doing', 'done', 'wait']) {
     board(base({ title: '사용자가 정한 제목', status, stages: 'merge=1', details: [{ text: '1. PR 머지', done: status === 'done' }] }))
@@ -185,13 +192,6 @@ test('새 항목을 만드는 사이 같은 id 가 생기면 덮지 않고 기�
   assert.equal(items()[0].title, '먼저 생긴 제목')
 })
 
-const milestone = (extra = {}) => base({
-  stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }], workers: [row()], ...extra,
-})
-const texts = (item: any) => item.details.map((d: any) => d.text)
-
-test('앞 PR 이 열린 항목에 새 브랜치 후속을 붙이면 PR·머지 두 단계를 더하고 줄에 번호를 적는다', () => {
-  board(milestone({ 'task-ref': 'P/123' }))
 test('기본 「PR 머지」 한 줄 항목에 새 브랜치 후속을 붙이면 머지 단계 한 줄만 더한다', () => {
   board(base({ 'task-ref': 'P/123', stages: 'merge=1', details: [{ text: '1. PR #7 머지', done: false }] }))
   assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
@@ -201,6 +201,13 @@ test('기본 「PR 머지」 한 줄 항목에 새 브랜치 후속을 붙이면
   assert.equal(item.workers[1].stages, 'merge=2')
 })
 
+const milestone = (extra = {}) => base({
+  stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }], workers: [row()], ...extra,
+})
+const texts = (item: any) => item.details.map((d: any) => d.text)
+
+test('앞 PR 이 열린 항목에 새 브랜치 후속을 붙이면 PR·머지 두 단계를 더하고 줄에 번호를 적는다', () => {
+  board(milestone({ 'task-ref': 'P/123' }))
   assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
   const [item] = items()
   assert.deepEqual(texts(item), ['1. PR', '2. 머지', '3. PR (wb)', '4. 머지 (wb)'])

@@ -18,6 +18,7 @@ import { basename } from 'node:path'
 import { mainCheckout } from './git.ts'
 import { featureStageText } from '../core/feature-stages.ts'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesOf, stagesText } from './milestones.ts'
+import type { MilestoneStep } from './milestones.ts'
 import { section } from '../core/config.ts'
 import { FINISH_KEYS } from '../core/finish-options.ts'
 import { rulesFrom } from './last-pr.ts'
@@ -223,8 +224,13 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     return r
   }
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
-  const milestones = () => {
-    if (reportOnly) return [{ kind: null, text: WORKER_REPORT_STEP }]
+  // PR 없는 일은 기본 단계를 붙이지 않고 「할 일」 의 번호 줄을 단계로 쓴다. 번호 줄이 없으면 보고 받기 한 줄이다.
+  // worker_done 의 `steps=` 나 번호 없는 worker_done 이 이 단계를 끝낸다(board-sync.ts 의 --worker-steps)
+  const milestones = (): MilestoneStep[] => {
+    if (reportOnly) {
+      const todo = todoSteps(text)
+      return todo.length > 0 ? todo.map((line) => ({ kind: null, text: line })) : [{ kind: null, text: WORKER_REPORT_STEP }]
+    }
     const given = specSteps(text)
     if (given) return given
     return boardSettings(repo).steps ?? [...DEFAULT_STEPS]
@@ -303,12 +309,6 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   }
 }
 
-// 번호 단계가 하나 이상이고 모두 끝났는가. 번호 없는 줄(남은 일, 자동 줄)은 보지 않는다
-function allStagesDone(item: BoardItem): boolean {
-  const steps = (Array.isArray(item.details) ? item.details : []).filter((d) => /^\d+[.)]\s/.test(detailText(d).replace(LEAD_MARK, '')))
-  return steps.length > 0 && steps.every((d) => (typeof d === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(d) : d.done === true))
-}
-
 // 옛 기본 단계(PR, 머지 두 줄)의 글. 옛 두 줄 항목에 후속 묶음을 더할 때 쓴다
 const LEGACY_STEP_TEXT = { pr: 'PR', merge: '머지' } as const
 
@@ -332,6 +332,12 @@ export function todoSteps(text: string): string[] {
     steps.push(sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence)
   }
   return steps
+}
+
+// 번호 단계가 하나 이상이고 모두 끝났는가. 번호 없는 줄(남은 일, 자동 줄)은 보지 않는다
+function allStagesDone(item: BoardItem): boolean {
+  const steps = (Array.isArray(item.details) ? item.details : []).filter((d) => /^\d+[.)]\s/.test(detailText(d).replace(LEAD_MARK, '')))
+  return steps.length > 0 && steps.every((d) => (typeof d === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(d) : d.done === true))
 }
 
 export type SpecTask = { number: string; title: string | null; line: string }

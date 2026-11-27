@@ -115,6 +115,47 @@ test('PR 없는 보고 단계는 담당 worker 의 완료를 받으면 끝난다
   assert.equal(completed.board.measure.status, 'done')
 })
 
+test('worker_done 의 steps= 는 그 dispatch 의 항목 단계를 끝내고 PR 없는 일의 번호 없는 보고는 남은 단계를 모두 끝낸다', () => {
+  const todo = { id: 'survey', status: 'doing', details: [step('1. 회차를 돌린다', false), step('2. 결과를 비교한다', false), step('3. 보고한다', false)],
+    workers: [worker('impl', 'survey', 'd1'), worker('review', 'review', 'd2')] }
+  // 다른 dispatch 의 보고와 리뷰 줄의 보고는 단계를 끝내지 않는다
+  const other = sync([todo], ['--worker-steps', JSON.stringify({ d9: { steps: [1], noPr: true }, d2: { steps: [1], noPr: true } })])
+  assert.equal(other.code, 0, other.result.stderr)
+  assert.deepEqual(other.board.survey.details, todo.details)
+  const some = sync([todo], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2, 7], noPr: true } })])
+  assert.equal(some.code, 0, some.result.stderr)
+  assert.deepEqual((some.board.survey.details as Json[]).map((d) => d.done), [true, true, false])
+  assert.equal(some.board.survey.status, 'doing')
+  assert.match(some.result.stdout, /단계 7 가 없어 건너뛴다/)
+  const all = sync([some.board.survey], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: true } })])
+  assert.equal(all.code, 0, all.result.stderr)
+  assert.deepEqual((all.board.survey.details as Json[]).map((d) => d.done), [true, true, true])
+  assert.equal(all.board.survey.status, 'done')
+  // 옛 보고 받기 줄도 번호 없는 보고로 끝난다
+  const legacy = sync([{ ...todo, details: [step('1. 보고 받기(worker_done)', false)] }], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: true } })])
+  assert.equal(legacy.code, 0, legacy.result.stderr)
+  assert.equal(legacy.board.survey.status, 'done')
+})
+
+test('PR 이 있는 일의 steps= 는 수동 단계만 끝내고 「PR 머지」 사건 단계와 항목 상태는 그대로 둔다', () => {
+  const item = { id: 'feat', status: 'doing', stages: 'merge=3', details: [step('1. 구현', false), step('2. 문서', false), step('3. PR 머지', false)],
+    workers: [worker('impl', 'feat', 'd1')] }
+  const got = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2, 3], noPr: false } })])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.deepEqual((got.board.feat.details as Json[]).map((d) => d.done), [true, true, false])
+  assert.equal(got.board.feat.status, 'doing')
+  // 번호 없는 보고는 PR 이 있는 일의 단계를 끝내지 않는다
+  const none = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: null, noPr: false } })])
+  assert.equal(none.code, 0, none.result.stderr)
+  assert.deepEqual(none.board.feat.details, item.details)
+})
+
+test('잘못된 --worker-steps 는 사용법 오류다', () => {
+  for (const value of ['[]', '{"d1":{"steps":[0],"noPr":true}}', '{"d1":{"steps":null}}', 'x']) {
+    assert.equal(sync([], ['--worker-steps', value]).code, 2, value)
+  }
+})
+
 test('「PR 머지」 한 줄 항목은 열린 PR 의 번호를 줄에 적고 끝내지 않는다. 옛 두 줄 항목은 [pr] 단계를 끝낸다', () => {
   states = { '7': 'OPEN', '8': 'OPEN' }
   const one = { id: 'one', status: 'doing', pr: 7, stages: 'merge=1', details: [step('1. PR 머지', false)] }

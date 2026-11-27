@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { classify, isoTime, noPrInstruction } from '../scripts/lib/completion.ts'
+import { classify, doneSteps, isoTime, noPrInstruction } from '../scripts/lib/completion.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 import { reviewPrOfDispatch } from '../scripts/lib/review.ts'
 
@@ -72,6 +72,23 @@ describe('classify', () => {
     const result = classify([done], [], { isNoPr: () => true })[0]
     assert.equal(result.type, 'worker_done')
     assert.deepEqual(result.completionVerification, { status: 'ready', kind: 'no-pr' })
+  })
+
+  test('허락 줄의 「PR 없음」 도 PR 없는 지시서다', () => {
+    assert.equal(noPrInstruction('허락: PR 없음\n## 할 일\n1. 조사한다'), true)
+    assert.equal(noPrInstruction('허락: 커밋·PR 없음'), true)
+    assert.equal(noPrInstruction('허락: PR 생성까지. 다른 저장소는 PR 없음'), false)
+    assert.equal(noPrInstruction('## 배경\n- PR 없음 사례를 모았다'), false)
+  })
+
+  test('worker_done 의 끝낸 단계 번호를 제목·본문·payload 에서 읽는다', () => {
+    assert.deepEqual(doneSteps({ subject: '완료', body: '조사를 마쳤다. steps=2,3' }), [2, 3])
+    assert.deepEqual(doneSteps({ subject: 'steps = 1, 1 ,4' }), [1, 4])
+    assert.deepEqual(doneSteps({ payload: { steps: [5] } }), [5])
+    assert.deepEqual(doneSteps({ payload: JSON.stringify({ steps: '6,7' }) }), [6, 7])
+    assert.equal(doneSteps({ body: '번호 없음' }), null)
+    assert.equal(doneSteps({ body: 'next-steps=2' }), null)
+    assert.equal(doneSteps({ payload: { steps: [0] } }), null)
   })
 
   test('PR 을 여는 지시서에서 준비됨 없는 완료 보고는 여전히 의심스럽다', () => {

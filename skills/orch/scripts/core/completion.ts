@@ -55,7 +55,20 @@ export function noPrInstruction(text: string): boolean {
   if (permissions.some(line => /\bPR\s*생성/i.test(line))) return false
   return permissions.some(line => /\bPR\s*은\s*열지\s*않는다(?:[.!?\s]|$)/i.test(line))
     || visible.some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?(?:\*\*)?커밋\s*[·ㆍ・]\s*PR\s*없음[.]?(?:\*\*)?\s*$/i.test(line))
-    || permissions.some(line => /커밋\s*[·ㆍ・]\s*PR\s*없음(?:[.!?\s]|$)/i.test(line))
+    || permissions.some(line => /(?:커밋\s*[·ㆍ・]\s*)?(?<![A-Za-z])PR\s*없음(?:[.!?\s]|$)/i.test(line))
+}
+
+// worker_done 의 끝낸 단계 번호. 제목·본문의 `steps=2,3` 이나 payload 의 steps(숫자 목록이나 같은 꼴 글)를 읽는다.
+// 없거나 꼴이 틀리면 null 이다. 루프가 보드 단계를 끝낼 때 쓴다(board-sync.ts 의 --worker-steps)
+export function doneSteps(message: Json): number[] | null {
+  const data = payload(message)
+  const given = data.steps
+  if (Array.isArray(given) && given.length > 0 && given.every((n) => Number.isInteger(n) && (n as number) > 0)) return [...new Set(given as number[])]
+  const text = `${typeof given === 'string' ? `steps=${given}` : ''}\n${String(message.subject || '')}\n${String(message.body || '')}`
+  const match = /(?<![\w-])steps\s*=\s*(\d+(?:\s*,\s*\d+)*)(?![\d,])/i.exec(text)
+  if (!match) return null
+  const numbers = match[1].split(',').map((n) => Number(n.trim())).filter((n) => n > 0)
+  return numbers.length > 0 ? [...new Set(numbers)] : null
 }
 
 function startsWithCompletion(message: Json): boolean {
