@@ -37,7 +37,7 @@
 //   verify-merged  pr, copy(사본 절대경로), base_head, changed_files, overlap_files
 //   after-merge  pr, merge_commit, remote_branch_deleted(bool), retargeted(base 를 옮긴 PR 번호 목록)
 //   after-queue  merged_prs, code_prs, held_prs
-//   after-deploy  pr, merge_commit, deploy(success, failure, timeout, none), last_of_task(bool)
+//   after-deploy  pr, merge_commit, deploy(success, failure, timeout, none), last_of_task(bool), task_number(판정에 쓴 업무 번호. PR 제목에 없으면 브랜치 이름이나 보드 task-ref 에서 찾은 값, 못 찾으면 null)
 //   before-cleanup  worktree, branch, pr(있으면), worker(있으면)
 //   after-cleanup  removed(경로 목록), skipped(경로와 이유의 목록)
 //   tick  tick(루프 시작 뒤 몇 번째인지), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null), primary(bool. 주 Run 이거나 Run 이 없는 루프면 true).

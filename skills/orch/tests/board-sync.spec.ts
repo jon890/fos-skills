@@ -763,7 +763,7 @@ describe('board-sync 마지막 PR 판정', () => {
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.status, 'doing')
     assert.match(r.result.stdout, /BOARD-UNMATCHED a PR #7/)
-    assert.match(r.result.stdout, /PR 번호의 단계만 끝냄\(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다/)
+    assert.match(r.result.stdout, /PR 번호의 단계만 끝냄\(판정하지 못했다: PR 제목, 브랜치 이름, 보드 업무 번호에서 업무 번호를 찾지 못했다/)
   })
 
   test('done 이 아닌 항목이면 wait 이어도 같은 브랜치의 열린 PR 을 연결한다', () => {

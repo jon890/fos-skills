@@ -204,8 +204,8 @@ function lastPrRules(repo: string): LastPrRules | null {
   }
 }
 
-// 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
-function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerdict | null {
+// 머지한 PR 의 제목과 브랜치(제목에 업무 번호가 없으면 항목의 task-ref 도)로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
+function judge(repo: string, num: string, rules: LastPrRules | null, taskRef: unknown = null): LastPrVerdict | null {
   if (!rules?.taskPattern) return null
   const got = ghJson<{ title?: unknown; headRefName?: unknown; headRefOid?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName,headRefOid'], { cwd: repo, killSignal: 'SIGKILL' })
   if (!got.ok || typeof got.data !== 'object' || got.data === null) {
@@ -214,7 +214,7 @@ function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerd
   const title = typeof got.data.title === 'string' ? got.data.title : ''
   const branch = typeof got.data.headRefName === 'string' ? got.data.headRefName : ''
   const head = typeof got.data.headRefOid === 'string' ? got.data.headRefOid : undefined
-  return judgeLastPr(repo, { number: num, title, branch, head }, rules)
+  return judgeLastPr(repo, { number: num, title, branch, head, taskRef: typeof taskRef === 'string' && taskRef ? taskRef : null }, rules)
 }
 
 // 끝나지 않았는데 머지된 PR 번호(#N)를 가리키는 단계. 이 틱의 명령이 끝낼 단계, stages 가 가리키는 사건 단계,
@@ -633,7 +633,7 @@ function main(argv: string[]): number {
           } else {
             if (rules === undefined) rules = lastPrRules(repo)
             const rulesUnreadable = rules === null
-            let verdict = judge(repo, num, rules)
+            let verdict = judge(repo, num, rules, item['task-ref'])
             if (verdict === null && (rulesUnreadable || !rules?.taskPattern)) {
               const reason = rulesUnreadable ? '마지막 PR 판정 규칙을 읽지 못했다' : 'task_pattern 이 없다'
               verdict = { last: null, retry: false, number: null, prs: [], specs: [], reason: `판정하지 못했다: ${reason}` }
@@ -674,7 +674,7 @@ function main(argv: string[]): number {
           return 1
         }
         if (rules === undefined) rules = lastPrRules(repo)
-        const verdict = judge(repo, num, rules)
+        const verdict = judge(repo, num, rules, item['task-ref'])
         const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : 'PR 번호의 단계만 끝냄') : verdict.last ? '마지막' : '중간'
         if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
         if (verdict?.retry) hold = true
