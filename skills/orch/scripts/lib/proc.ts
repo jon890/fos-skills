@@ -316,9 +316,26 @@ export type GroupOptions = Pick<RunOptions, 'cwd' | 'env' | 'maxBuffer'> & { tim
 
 const GROUP_POLL_MS = 50
 
+// ps -A -o pgid=,stat= 의 출력에서 그룹 pgid 에 좀비(stat 이 Z 로 시작)가 아닌 프로세스가 있는지 본다.
+// 고아를 거두지 않는 PID 1 아래(일부 Linux 컨테이너)에서는 끝낸 손자가 좀비로 남아 kill(-pgid, 0) 이 계속 성공한다
+export function liveInGroup(psOutput: string, pgid: number): boolean {
+  return psOutput.split('\n').some((line) => {
+    const [group, stat] = line.trim().split(/\s+/)
+    return Number(group) === pgid && !!stat && !stat.startsWith('Z')
+  })
+}
+
+// 그룹에 실행 중인 프로세스가 남았는지. ps 를 읽지 못하면 kill(-pgid, 0) 의 판정을 그대로 쓴다
+function groupLive(pid: number): boolean {
+  if (!groupAlive(pid)) return false
+  const ps = spawnSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8', timeout: 5_000 })
+  if (ps.status !== 0 || typeof ps.stdout !== 'string') return true
+  return liveInGroup(ps.stdout, pid)
+}
+
 async function waitGroupGone(pid: number, ms: number): Promise<boolean> {
   const deadline = Date.now() + ms
-  while (groupAlive(pid)) {
+  while (groupLive(pid)) {
     if (Date.now() >= deadline) return false
     await new Promise((resolve) => setTimeout(resolve, GROUP_POLL_MS))
   }
@@ -329,6 +346,7 @@ async function waitGroupGone(pid: number, ms: number): Promise<boolean> {
 // runAsync 와 다른 점: 셸이 끝나도 그룹에 남은 프로세스(TERM 을 무시한 손자, 백그라운드 손자)를 끝낸 뒤 돌아오고,
 // 시간 초과와 출력 한도 초과를 종료 코드가 아니라 결과 종류로 돌려준다. runAsync 는 출력 초과를 1 로 내 「아직」 과 구분되지 않는다.
 // 끝내기: 그룹에 TERM, killGraceMs 뒤 KILL, 다시 killGraceMs 까지 그룹이 사라지기를 기다린다. 그래도 남으면 orphan 이다.
+// 좀비만 남은 그룹은 사라진 것으로 본다(liveInGroup).
 // 셸이 스스로 끝났는데 그룹에 남은 것이 있으면 같은 순서로 끝내고, 끝냈으면 셸의 종료 코드로 exit 를 낸다.
 export async function runGroup(argv: string[], opts: GroupOptions): Promise<GroupResult> {
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAX_BUFFER
@@ -372,7 +390,7 @@ export async function runGroup(argv: string[], opts: GroupOptions): Promise<Grou
   const first = await Promise.race([exited.then((end) => ({ end })), stopped.then(() => null)])
   clearTimeout(timer)
   // 셸이 스스로 끝났어도 그룹에 남은 것이 있으면 끝낸다. 끝내는 동안 쓴 출력은 버리지 않고 받는다
-  let gone = !groupAlive(pid)
+  let gone = !groupLive(pid)
   if (!gone) {
     killGroup(pid, 'SIGTERM')
     gone = await waitGroupGone(pid, killGraceMs())

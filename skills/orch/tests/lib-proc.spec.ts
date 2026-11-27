@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { groupAlive, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
+import { groupAlive, liveInGroup, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
 
@@ -262,6 +262,14 @@ describe('runGroup', () => {
     const done = await runGroup(['sh', '-c', 'sleep 30 & echo $$; exit 0'], { timeoutMs: 10_000 })
     assert.deepEqual(done.outcome, { kind: 'exit', code: 0 })
     assert.equal(groupAlive(Number(done.stdout.trim().split('\n')[0])), false)
+  })
+
+  test('좀비만 남은 그룹은 살아 있지 않은 것으로 본다', () => {
+    const ps = ['  1 Ss', ' 42 Z', ' 42 Z+', ' 77 S'].join('\n')
+    assert.equal(liveInGroup(ps, 42), false)
+    assert.equal(liveInGroup(ps + '\n 42 S+', 42), true)
+    assert.equal(liveInGroup(ps, 77), true)
+    assert.equal(liveInGroup('', 42), false)
   })
 
   test('출력 한도를 넘으면 overflow 다', async () => {
