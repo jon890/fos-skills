@@ -142,6 +142,48 @@ describe("docs-audit 문서 구조 검사", () => {
     assert.deepEqual(clean.out, []);
   });
 
+  test("참조 정의만 있는 문서는 누락되며 깨진 참조 정의는 기존 검사에서 찾는다", () => {
+    const root = repo({
+      [overlayPath]: enabled,
+      "README.md": "# 문서\n\n[unused]: orphan.md\n[broken]: missing.md\n",
+      "orphan.md": "# 고아 문서\n",
+    });
+    assert.deepEqual(run(root, "check").out, ["README.md:4: BROKEN_LINK missing.md"]);
+    const result = run(root, "check", "--docs-audit");
+    assert.equal(result.code, 1);
+    assert.deepEqual(result.out, [
+      "README.md:1: README_MISSING orphan.md",
+      "README.md:4: BROKEN_LINK missing.md",
+      "orphan.md:1: ORPHAN_DOC 다른 문서에서 이 문서로 오는 링크가 없다",
+    ]);
+  });
+
+  test("본문의 완전·축약·단축 참조를 풀고 인라인 링크와 이스케이프를 구별한다", () => {
+    const root = repo({
+      [overlayPath]: enabled,
+      "README.md": [
+        "# 문서",
+        "",
+        "[링크][FULL label] [collapsed][] [Shortcut] [same](inline.md) \\[escaped]",
+        "",
+        "[full  label]: full.md",
+        "[COLLAPSED]: collapsed.md",
+        "[shortcut]: shortcut.md",
+        "[same]: unused.md",
+        "[escaped]: unused.md",
+      ].join("\n"),
+      "full.md": "# 완전 참조\n",
+      "collapsed.md": "# 축약 참조\n",
+      "shortcut.md": "# 단축 참조\n",
+      "inline.md": "# 인라인\n",
+      "unused.md": "# 고아 문서\n",
+    });
+    assert.deepEqual(run(root, "check", "--docs-audit").out, [
+      "README.md:1: README_MISSING unused.md",
+      "unused.md:1: ORPHAN_DOC 다른 문서에서 이 문서로 오는 링크가 없다",
+    ]);
+  });
+
   test("Git 무시 경로와 제외 폴더의 문서는 발견과 링크 출처에서 모두 뺀다", () => {
     const root = repo({
       "README.md": "# 문서\n",

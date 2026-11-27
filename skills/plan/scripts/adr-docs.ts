@@ -291,6 +291,65 @@ export function linksOf(lines: string[]): Link[] {
   return links;
 }
 
+const REFERENCE_LABEL = /\[((?:\\.|[^\[\]\\\n])*)\]/g;
+
+function referenceKey(label: string) {
+  return label.trim().replace(/[ \t]+/g, " ").toLowerCase();
+}
+
+function isEscaped(line: string, index: number) {
+  let start = index;
+  while (start > 0 && line[start - 1] === "\\") start--;
+  return (index - start) % 2 !== 0;
+}
+
+// 문서 연결을 셀 때는 본문에서 실제로 쓰인 참조만 푼다. 깨진 링크 검사는 linksOf로 정의도 따로 본다.
+function* documentLinkTargets(lines: string[]): Generator<string> {
+  const definitions = new Map<string, string>();
+  const body = lines.filter((line) => {
+    const def = REFERENCE_DEF.exec(line);
+    if (!def) return true;
+    const key = referenceKey(def[1]);
+    if (!definitions.has(key)) definitions.set(key, def[2].replace(/^<|>$/g, ""));
+    return false;
+  });
+  for (const line of body) {
+    const inlines = new Map<number, InlineLink>();
+    for (const link of inlineLinks(line)) {
+      const opener = link.start + Number(line[link.start] === "!");
+      if (!isEscaped(line, opener)) inlines.set(opener, link);
+    }
+    if (definitions.size === 0) {
+      for (const link of inlines.values()) yield link.target;
+      continue;
+    }
+
+    const labels = new Map<number, RegExpMatchArray>();
+    for (const label of line.matchAll(REFERENCE_LABEL)) {
+      if (!isEscaped(line, label.index)) labels.set(label.index, label);
+    }
+    const starts = [...new Set([...inlines.keys(), ...labels.keys()])].sort((a, b) => a - b);
+    let consumed = 0;
+    for (const start of starts) {
+      if (start < consumed) continue;
+      const inline = inlines.get(start);
+      if (inline) {
+        consumed = inline.end;
+        yield inline.target;
+        continue;
+      }
+      const label = labels.get(start)!;
+      const end = start + label[0].length;
+      const suffix = labels.get(end);
+      // 뒤에 라벨이 붙으면 그 라벨로 찾는다. 없으면 다음 라벨부터 다시 검사한다.
+      const target = definitions.get(referenceKey(suffix?.[1] || label[1]));
+      if (!target || /^\(\s*(?:<>)?\s*\)/.test(line.slice(end))) continue;
+      consumed = end + (suffix?.[0].length ?? 0);
+      yield target;
+    }
+  }
+}
+
 // 로컬 파일 링크면 [경로, 앵커] 를 낸다. URL 스킴, //, / 로 시작하는 경로는 로컬 파일이 아니다.
 export function splitLocal(target: string): [string, string] | null {
   if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(target) || target.startsWith("/")) return null;
@@ -806,7 +865,7 @@ function checkDocumentStructure(repo: Repo, scope: string | undefined): Violatio
     const readme = readmes && posix.basename(source) === "README.md" ? new Set<string>() : undefined;
     if (readme) readmeTargets.set(source, readme);
     if (!orphans && !readme) continue;
-    for (const { target } of linksOf(prose(read(repo, source)))) {
+    for (const target of documentLinkTargets(prose(read(repo, source)))) {
       const rootRelative = target.startsWith("/") && !target.startsWith("//");
       const local = splitLocal(rootRelative ? target.slice(1) : target);
       if (!local?.[0]) continue;
