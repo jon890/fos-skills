@@ -1804,3 +1804,30 @@ describe('finish-pr 실제 CLI 대응', () => {
     assert.equal(done.stderr, '')
   })
 })
+
+test('설계 PR 의 마무리는 업무를 닫지 않고 다음 단계를 한 번만 준비한다', async (t) => {
+  const c = setup(t)
+  const file = join(c.tmp, 'board.json')
+  const event = join(c.tmp, 'event.jsonl')
+  hook(c, recorder(event))
+  writeFileSync(file, JSON.stringify({ items: [{
+    id: 'a', status: 'doing', worktree: 'wt', branch: 'feat/x', feature: 'docs/features/a', pr: 77,
+    workers: [{ worktree: 'wt', branch: 'feat/x', role: 'impl', pr: 77, status: 'done', 'feature-steps': '1' }],
+    details: [{ text: '1. 기능 technical-design', done: false }],
+  }] }))
+  for (let n = 0; n < 2; n++) {
+    const result = await c.finish(['--complete', '--board', file])
+    assert.equal(result.code, 0, both(result))
+  }
+  for (const input of inputs(event)) assert.equal(input.last_of_task, false)
+  const [row] = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.equal(row.status, 'doing')
+  assert.equal(row['merged-pr'], 77)
+  assert.equal(row.pr, undefined)
+  assert.deepEqual(row.details, [{ text: '1. 기능 technical-design', done: true },
+    { text: '2. [ask] 기능 implementation 1/1', done: false }])
+  const synced = await spawnDone([process.execPath, fileURLToPath(new URL('../scripts/board/board-sync.ts', import.meta.url)),
+    '--board', file, '--repo', c.repo], { env: c.env })
+  assert.equal(synced.code, 0, both(synced))
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).items[0].details, row.details)
+})

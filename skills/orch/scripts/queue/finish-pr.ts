@@ -144,6 +144,8 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { markFinishStarted } from '../lib/finish-marks.ts'
 import { recordUnmatched } from '../lib/board-unmatched.ts'
+import { featureMergePlan, isFeatureItem } from '../core/feature-stages.ts'
+import { featureAdvance, hasFeaturePr } from '../lib/feature-advance.ts'
 import { prNumbers, prSteps, NOTE, detailText } from '../core/board.ts'
 import { boardWorkerRows } from '../core/board-workers.ts'
 import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
@@ -158,7 +160,7 @@ import { eventTimeoutSec, fire, handlerFile } from '../lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS } from '../lib/finish-options.ts'
 import { real, realPath } from '../lib/fs.ts'
 import { gh } from '../lib/gh.ts'
-import { repoArgProblem } from '../lib/git.ts'
+import { mainCheckout, repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
 import { featureBranch } from '../lib/feature-evidence.ts'
 import { boardPath } from '../lib/board-file.ts'
@@ -596,7 +598,7 @@ function taggedBoardItem(args: Args, repo: string, item: string): boolean {
 
 // 머리 주석의 「보드 항목」 에서 찾은 항목. 없거나 둘 이상이면 null 이고, 둘 이상이면 알린다
 function pickBoardItem(args: Args, repo: string, branch: string, worktree: string | null): { id: string; by: 'pr' | 'branch'; row?: string } | null {
-  const found = findBoardItems(boardPath(repo, args.board), args.pr, branch, worktree)
+  const found = findBoardItems(boardPath(repo, args.board), args.pr, branch, worktree, repo)
   if (found === null) return null
   if (found.ids.length > 1) {
     log(`보드 항목이 둘 이상이라 건너뛴다: PR ${args.pr} -> ${found.ids.join(', ')}`)
@@ -802,8 +804,7 @@ async function finish(args: Args, repo: string): Promise<number> {
   const deployed = deploy === 'success' || deploy === 'none'
 
   const verdict = judgeLast(args, repo, merged)
-  const last = verdict.last
-  log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${verdict.reason})`)
+  let last = verdict.last
 
   // 배포 뒤 할 일 목록에 이미 있는 끝나지 않은 항목은 지킨다(PR 619 리뷰). 새 항목은 만들지 않는다.
   // 지시서, 업무 완료(after-deploy), 보드 done 을 남기고, `orch followup done` 이 항목을 끝낸 뒤 다시 띄우는 마무리가 이어 간다
@@ -817,6 +818,39 @@ async function finish(args: Args, repo: string): Promise<number> {
     return 0
   }
 
+  const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
+  let alreadyReflected = false
+  let advance: ReturnType<typeof featureAdvance> = null
+  const candidate = (() => {
+    try {
+      const root = mainCheckout(repo)
+      return readBoard(boardPath(repo, args.board)).find((row) =>
+        (!row['feature-repo'] || row['feature-repo'] === root) &&
+        (item ? row.id === item.id : prNumbers(row['merged-pr']).has(args.pr) && hasFeaturePr(row, args.pr)))
+    } catch { return undefined }
+  })()
+  if (candidate && isFeatureItem(candidate)) {
+    const unlinked = item && boardWorkerRows(candidate).find((row) => row['feature-steps'] && !row.pr &&
+      (('row' in item && row.worktree === item.row) || row.branch === branch))
+    if (unlinked && !hasFeaturePr(candidate, args.pr) && !linkRowPr(args, repo, candidate.id, unlinked.worktree)) {
+      return fail(`보드 ${candidate.id} 에 PR ${args.pr} 를 잇지 못했다`)
+    }
+    if (unlinked || hasFeaturePr(candidate, args.pr) || prNumbers(candidate['merged-pr']).has(args.pr)) {
+      const got = boardRow(args, repo, candidate.id)
+      if (!got) return fail(`보드 ${candidate.id} 의 기능 단계를 읽지 못했다`)
+      const row = { ...got.row, id: candidate.id }
+      alreadyReflected = prNumbers(row['merged-pr']).has(args.pr)
+      if (alreadyReflected) {
+        last &&= featureMergePlan(row, got.steps, args.pr, [])?.lastStage === true
+      } else {
+        advance = featureAdvance(repo, row, got.steps, args.pr)
+        if (!advance) return fail(`보드 ${candidate.id} 의 기능 단계를 확인하지 못했다`)
+        last &&= advance.lastStage
+      }
+    }
+  }
+
+  log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${advance && !advance.lastStage ? '다음 기능 단계가 남아 있다' : verdict.reason})`)
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
   try {
     const result = await fire('after-deploy', input, {
@@ -840,11 +874,17 @@ async function finish(args: Args, repo: string): Promise<number> {
     else log('지시서 유지: 업무의 마지막 PR 이 아니다')
   }
 
-  const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
   // 이번 마무리가 항목을 done 으로 닫았는가. 요청 완료는 항목이 닫힐 때만 보낸다(머리 주석의 「요청 완료」)
   let closed = false
-  const stages = item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
-  if (item?.by === 'id') {
+  const stages = !advance && !alreadyReflected && item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
+  if (advance && item) {
+    if (!board(args, repo, advance.args)) return fail(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다. 다시 실행해 현재 단계를 읽는다`)
+    if (advance.featureUnknown) out(`BOARD ${item.id} feature-unknown`)
+    closed = advance.status === 'done'
+    log(`보드 ${item.id} ${advance.status}`)
+  } else if (alreadyReflected) {
+    closed = candidate?.status === 'done'
+  } else if (item?.by === 'id') {
     if (setBoardDone(args, repo, item.id)) { closed = true; log(`보드 ${item.id} done`) }
     else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
   } else if (item && taggedBoardItem(args, repo, item.id)) {
@@ -877,7 +917,7 @@ async function finish(args: Args, repo: string): Promise<number> {
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
   }
   if (problems.length > 0) return fail(problems.join('; '))
-  if (item && last) completeRequest(repo, item.id, args.pr, args.run ?? null, closed)
+  if (item && (last || closed && advance)) completeRequest(repo, item.id, args.pr, args.run ?? null, closed)
   out('FINISH-DONE')
   return 0
 }

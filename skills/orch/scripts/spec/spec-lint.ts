@@ -118,7 +118,8 @@ import { confirmProblem, splitLines } from '../lib/spec-confirm.ts'
 import { duplicateRuleHeads } from './sync-common.ts'
 import { CONDITIONAL_RULES, outsideFences, retiredRuleHint, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
 import { specHold } from '../lib/auto-merge.ts'
-import { taskFirstLine } from '../lib/spec.ts'
+import { parseFeatureStages } from '../core/feature-stages.ts'
+import { featureSpecTarget, featureStageLine, taskFirstLine } from '../lib/spec.ts'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path'
@@ -518,7 +519,6 @@ function selectionErrors(spec: Spec, repo: string): string[] {
 
 // 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 plan 의 check_feature.ts 를 따른다
 const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스펙: 새로 쓴다)`, `루프 없이: <이유>`'
-const LOOP_SPEC = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/
 const LOOP_NONE = /^루프 없이\s*:(.*)$/
 const LOOP_NEW = '새로 쓴다'
 
@@ -552,15 +552,24 @@ function loopErrors(spec: Spec, repoRoot: string, source: LoopSource): string[] 
   const where = `${spec.name}:${no}: 루프: `
   const none = LOOP_NONE.exec(first)
   if (none) return none[1].trim() ? [] : [`${where}\`루프 없이:\` 뒤에 이유가 없다. 루프 없이 가는 이유를 한 줄로 적는다`]
-  const loop = LOOP_SPEC.exec(first)
-  if (!loop) return [`${where}\`## 할 일\` 아래 첫 줄이 ${LOOP_FORMAT} 가운데 하나가 아니다${first ? `: ${first.slice(0, 60)}` : '(첫 줄이 없다)'}`]
-  const target = stripChars(loop[1], '`').trim()
+  const target = featureSpecTarget(first)
+  if (target === null) return [`${where}\`## 할 일\` 아래 첫 줄이 ${LOOP_FORMAT} 가운데 하나가 아니다${first ? `: ${first.slice(0, 60)}` : '(첫 줄이 없다)'}`]
   if (target === LOOP_NEW) return []
   if (!target) return [`${where}\`스펙:\` 뒤에 경로가 없다. 스펙이 아직 없으면 \`루프를 쓴다(스펙: 새로 쓴다)\` 를 쓴다`]
   const got = readLoopSpec(repoRoot, source, target)
   if ('why' in got) return [`${where}${got.why}`]
   const problem = confirmProblem(got.text)
   return problem ? [`${where}스펙 \`${target}\`: ${problem}`] : []
+}
+
+function featureStageErrors(spec: Spec): string[] {
+  const text = spec.lines.join('\n')
+  if (reviewPrOfSpec(text) !== null || interimOf(text) !== null) return []
+  const first = taskFirstLine(text)
+  if (!first || featureSpecTarget(first.text) === null) return []
+  const stage = featureStageLine(text)
+  if (stage && parseFeatureStages(stage.text)) return []
+  return [`${spec.name}:${stage?.line ?? first.line}: 단계: 지시서 머리에 \`기능 단계: implementation 1/1\` 처럼 PR 이 맡는 단계를 순서대로 적는다`]
 }
 
 function lint(repo: Repo, specs: string[], overlay: string | null, active: string[], source: LoopSource): { errors: string[]; warnings: string[] } {
@@ -595,7 +604,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     }
     try { autoStepNumberOf(spec.lines.join('\n')) }
     catch (e) { errors.push(`${spec.name}:1: 보드 자동 단계: ${(e as Error).message}`) }
-    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source))
+    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source), ...featureStageErrors(spec))
     const remote = targets.has(spec.path) ? remoteWithCodex(spec.lines.join('\n')) : null
     if (remote) warnings.push(`${spec.name}:${remote.no}: 원격: 허락 줄의 \`${remote.phrase}\` 와 codex 선택이 함께 있다. ${REMOTE_HINT}`)
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {

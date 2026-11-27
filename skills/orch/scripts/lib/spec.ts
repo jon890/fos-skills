@@ -8,9 +8,10 @@
 
 import { LINE_BREAK } from '../core/text.ts'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { inside, isFile, realPath } from './fs.ts'
 import { orcaJson } from './orca.ts'
+import { parseFeatureStages } from '../core/feature-stages.ts'
 import { outsideFences } from './common-rules.ts'
 
 // 줄 머리의 `브랜치: \`x\``. 목록 기호(-, *)와 굵은 글씨(**브랜치:**, **브랜치**:)를 모두 받는다.
@@ -605,3 +606,30 @@ export function taskFirstLine(text: string): { text: string; line: number } | nu
 }
 
 export { LINE_BREAK } from '../core/text.ts'
+
+export function featureStageLine(text: string): { text: string; line: number } | null {
+  const visible = outsideFences(lines(text))
+  for (const [index, line] of visible.entries()) {
+    if (/^##\s/.test(line)) break
+    const match = /^\s*(?:[-*]\s+)?기능 단계\s*:\s*(.*)$/.exec(line)
+    if (match) return { text: match[1].trim(), line: index + 1 }
+  }
+  return null
+}
+
+export function featureStagesOf(text: string) {
+  const stage = featureStageLine(text)
+  return stage ? parseFeatureStages(stage.text) : null
+}
+
+export function featureSpecTarget(first: string): string | null {
+  const match = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/.exec(first)
+  return match ? match[1].trim().replace(/^`+|`+$/g, '').trim() : null
+}
+
+export function featureFolderOf(text: string, root: string): string | null {
+  const target = featureSpecTarget(taskFirstLine(text)?.text ?? '')
+  if (!target || target === '새로 쓴다') return null
+  const folder = relative(root, dirname(resolve(root, target)))
+  return !folder || folder === '..' || folder.startsWith('../') || isAbsolute(folder) ? null : folder
+}

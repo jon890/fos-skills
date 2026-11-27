@@ -647,8 +647,17 @@ describe('할 일 첫 줄의 루프 선택', () => {
     assert.match(r.stdout, /^spec-blank\.md:5: 루프: `루프 없이:` 뒤에 이유가 없다/m)
   })
 
+  test('기능 단계가 없거나 순서와 구현 차수가 맞지 않으면 막는다', () => {
+    for (const line of ['', '기능 단계: implementation 4/3', '기능 단계: verify implementation',
+      '기능 단계: implementation 1/2 verify docs-consolidate', '기능 단계: spec implementation']) {
+      const r = lint([task('spec-stage', `${line}\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)`)])
+      assert.equal(r.code, 1, r.stdout)
+      assert.match(r.stdout, /: 단계: /)
+    }
+  })
+
   test('`스펙: 새로 쓴다` 는 스펙 파일 없이 통과한다', () => {
-    assert.deepEqual(lint([task('spec-new', '## 할 일\n루프를 쓴다(스펙: 새로 쓴다). spec 인터뷰부터 한다')]), { code: 0, stdout: '' })
+    assert.deepEqual(lint([task('spec-new', '기능 단계: spec\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다). spec 인터뷰부터 한다')]), { code: 0, stdout: '' })
   })
 
   test('절대경로 스펙은 디스크에서 읽고 확인 줄이 있어야 통과한다', () => {
@@ -656,7 +665,7 @@ describe('할 일 첫 줄의 루프 선택', () => {
     const draft = write(join(tmp, 'drafts/draft.md'), confirmed('작성: 2026-11-02'))
     const badDate = write(join(tmp, 'drafts/bad-date.md'), confirmed('확인: 2026-02-30'))
     // 테스트 스펙은 OS 임시 폴더에 있어 임시 경고가 붙는다. 그 밖의 발견이 없어야 한다
-    const passed = lint([task('spec-good', `## 할 일\n루프를 쓴다(스펙: \`${good}\`). plan 부터 한다`)])
+    const passed = lint([task('spec-good', `기능 단계: implementation\n## 할 일\n루프를 쓴다(스펙: \`${good}\`). plan 부터 한다`)])
     assert.equal(passed.code, 0, passed.stdout)
     assert.deepEqual(passed.stdout.split('\n').filter((line) => line && !line.includes(': 임시: ')), [])
     const r = lint([
@@ -679,13 +688,13 @@ describe('할 일 첫 줄의 루프 선택', () => {
     write(join(repo, 'docs/features/b/spec.md'), confirmed())
     write(join(repo, 'docs/features/a/spec.md'), confirmed('작성: 확인 줄을 지운 작업 트리'))
     // 작업 트리에서 확인 줄을 지워도 origin/main 의 내용으로 판정한다
-    assert.deepEqual(lint([task('spec-a', '## 할 일\n루프를 쓴다(스펙: ./docs/features/a/spec.md)')]), { code: 0, stdout: '' })
+    assert.deepEqual(lint([task('spec-a', '기능 단계: implementation\n## 할 일\n루프를 쓴다(스펙: ./docs/features/a/spec.md)')]), { code: 0, stdout: '' })
     const r = lint([task('spec-b', '## 할 일\n루프를 쓴다(스펙: docs/features/b/spec.md)')])
     assert.equal(r.code, 1, r.stdout)
     assert.match(r.stdout, /^spec-b\.md:5: 루프: 스펙 `docs\/features\/b\/spec\.md` 이 origin\/main 에 없다\. .*절대경로로 적는다$/m)
     // --base 로 준 기준 브랜치에서 읽는다
     git('-C', repo, 'update-ref', 'refs/remotes/origin/release', 'refs/remotes/origin/main')
-    const other = run(['--repo', repo, '--base', 'release', task('spec-a2', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')])
+    const other = run(['--repo', repo, '--base', 'release', task('spec-a2', '기능 단계: implementation\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')])
     assert.equal(other.code, 0, other.stdout)
     assert.match(run(['--repo', repo, '--base', 'gone', task('spec-a3', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')]).stdout, /origin\/gone 가 없어 .*--base 로 주거나/)
     // 폴더를 가리키면 파일이 아니라고 알린다
@@ -698,12 +707,12 @@ describe('할 일 첫 줄의 루프 선택', () => {
     git('-C', repo, 'commit', '-q', '-m', 'base')
     git('-C', repo, 'update-ref', 'refs/remotes/origin/develop', 'HEAD')
     git('-C', repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
-    const rel = task('spec-rel', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')
+    const rel = task('spec-rel', '기능 단계: implementation\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')
     assert.deepEqual(lint([rel]), { code: 0, stdout: '' })
     // 커밋하지 않은 스펙도 worker 가 일할 워크트리(--spec-root)에 있으면 통과한다
     const wt = join(tmp, 'wt')
     write(join(wt, 'docs/features/b/spec.md'), confirmed())
-    const b = task('spec-b', '## 할 일\n루프를 쓴다(스펙: docs/features/b/spec.md)')
+    const b = task('spec-b', '기능 단계: implementation\n## 할 일\n루프를 쓴다(스펙: docs/features/b/spec.md)')
     assert.equal(lint([b]).code, 1)
     assert.equal(run(['--repo', repo, '--spec-root', wt, b]).code, 0)
     assert.match(run(['--repo', repo, '--spec-root', wt, rel]).stdout, /spec\.md` 을 파일로 읽지 못했다/)
@@ -715,7 +724,7 @@ describe('할 일 첫 줄의 루프 선택', () => {
 
   test('괄호 앞 띄어쓰기, 제목 뒤 설명, 여러 목록 기호를 받는다', () => {
     for (const [name, body] of [
-      ['space', '## 할 일\n루프를 쓴다 (스펙: 새로 쓴다)'],
+      ['space', '기능 단계: spec\n## 할 일\n루프를 쓴다 (스펙: 새로 쓴다)'],
       ['heading', '## 할 일 (이 PR 범위)\n루프 없이: 오타만 고친다'],
       ['plus', '## 할 일\n+ 루프 없이: 오타만 고친다'],
       ['paren', '## 할 일\n1) 루프 없이: 오타만 고친다'],

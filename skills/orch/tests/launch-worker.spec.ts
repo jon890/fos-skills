@@ -2755,7 +2755,7 @@ describe('spec-lint 관문', () => {
       assert.deepEqual(lines('orca orchestration worker-start'), [])
       // 작업 트리에만 있는 스펙을 상대경로로 적어도 막는다
       writeFileSync(join(proj, 'docs/features/a/draft.md'), '# 기능\n확인: 2026-11-02\n')
-      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/draft.md)\n')
+      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n기능 단계: implementation\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/draft.md)\n')
       const draft = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--', ...CLAUDE])
       assert.equal(draft.code, 5, both(draft))
       assert.match(draft.stderr, /루프: 스펙 `docs\/features\/a\/draft\.md` 이 origin\/main 에 없다/)
@@ -2763,7 +2763,7 @@ describe('spec-lint 관문', () => {
     })
 
     test('기준 브랜치의 확인받은 스펙을 가리키면 띄운다', () => {
-      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md). plan 부터 한다\n')
+      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n기능 단계: implementation\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md). plan 부터 한다\n')
       const r = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
@@ -2774,7 +2774,7 @@ describe('spec-lint 관문', () => {
       for (const first of ['루프 없이: 오타만 고친다', '루프를 쓴다(스펙: 새로 쓴다)']) {
         resetLog()
         state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-        writeFileSync(spec, `# 일\n허락: push 는 허락했다.\n\n## 할 일\n${first}\n`)
+        writeFileSync(spec, `# 일\n허락: push 는 허락했다.\n\n기능 단계: spec\n## 할 일\n${first}\n`)
         const r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
         assert.equal(r.code, 0, `${first}\n${both(r)}`)
         assert.match(r.stdout, /LAUNCHED ctx_1/)

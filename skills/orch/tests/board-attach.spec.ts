@@ -244,3 +244,30 @@ test('단계를 더하지 못하면 줄은 stages 없이 붙고 항목 단계는
   assert.equal(items()[0].workers[1].worktree, 'wb')
   assert.equal(items()[0].workers[1].stages, undefined)
 })
+
+test('기능 폴더를 저장하고 다음 단계 줄을 재사용한다', () => {
+  board(base({ details: ['✓ 1. 기능 technical-design', '2. [ask] 기능 implementation 1/1'] }))
+  const text = '보드 항목 id: a\n기능 단계: implementation 1/3 verify\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)'
+  launch(text)
+  launch(text, 'new', 'feat/new', 'retry')
+  const [item] = items()
+  assert.equal(item.feature, 'docs/features/a')
+  assert.equal(item['feature-repo'], repo)
+  assert.equal(item.stages, undefined)
+  assert.equal(item.workers[1]['feature-steps'], '2,3')
+  assert.deepEqual(item.details, [
+    { text: '1. 기능 technical-design', done: true },
+    { text: '2. 기능 implementation 1/3', done: false },
+    { text: '3. 기능 verify', done: false },
+  ])
+})
+
+test('새 스펙은 폴더 없이 기능 단계로 등록한다', () => {
+  board()
+  launch('기능 단계: spec\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)')
+  const [item] = items()
+  assert.equal(item.feature, undefined)
+  assert.equal(item.status, 'doing')
+  assert.deepEqual(item.details, [{ text: '1. 기능 spec', done: false }])
+  assert.equal(item.workers[0]['feature-steps'], '1')
+})

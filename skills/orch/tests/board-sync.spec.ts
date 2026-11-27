@@ -33,7 +33,8 @@ else if (args[1] === 'view' && args.includes('mergeCommit')) {
 } else if (args[1] === 'view' && args.some((arg) => arg.startsWith('title,headRefName'))) {
   if (!state['info:' + args[2]]) process.exit(1)
   say(state['info:' + args[2]])
-} else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
+} else if (args[1] === 'view' && args.includes('files')) say(state['files:' + args[2]] || {})
+else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
 else if (args[1] === 'list' && args.includes('number,title')) say(state.open || [])
 else if (args[1] === 'list' && head !== null) say((state.list || []).filter((pr) => pr.headRefName === head))
 else if (args[1] === 'list') say(state.list || [])
@@ -1337,4 +1338,59 @@ test('지운 목표 집계 옵션은 사용법 오류로 거절한다', () => {
     const result = run([flag, 'x'])
     assert.equal(result.code, 2)
   }
+})
+
+test('설계 PR 머지를 반영하고 같은 틱을 다시 돌려도 다음 단계는 하나다', () => {
+  states['77'] = 'MERGED'
+  const item = { id: 'a', status: 'doing', feature: 'docs/features/a', 'feature-repo': tmp, pr: 77,
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 technical-design', false)] }
+  const got = sync([item])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.equal(got.board.a['merged-pr'], 77)
+  assert.equal(got.board.a.pr, undefined)
+  const expected = [step('1. 기능 technical-design', true), step('2. [ask] 기능 implementation 1/1', false)]
+  assert.deepEqual(got.board.a.details, expected)
+  const again = run(['--board', board, '--repo', tmp])
+  assert.equal(again.code, 0, again.stderr)
+  assert.deepEqual(load().a.details, expected)
+})
+
+test('중간 구현 PR 은 검증까지 끝내고 다음 구현 차수를 준비한다', () => {
+  states['77'] = 'MERGED'
+  const wait = step('1. [wait: 보류] 수동 확인', false)
+  const manual = step('2. 사용자가 확인', false)
+  const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', pr: 77,
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '3,4', status: 'done' }],
+    details: [wait, manual, step('3. 기능 implementation 1/2', false), step('4. 기능 verify', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'doing')
+  assert.deepEqual(got.board.a.details, [wait, manual, step('3. 기능 implementation 1/2', true),
+    step('4. 기능 verify', true), step('5. [ask] 기능 implementation 2/2', false)])
+})
+
+test('기능의 마지막 PR 머지만 항목을 완료한다', () => {
+  states['77'] = 'MERGED'
+  const got = sync([{ id: 'a', status: 'doing', pr: 77, worktree: 'old',
+    workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 docs-consolidate', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a.status, 'done')
+  assert.equal(got.board.a.worktree, undefined)
+  assert.deepEqual(got.board.a.details, [step('1. 기능 docs-consolidate', true)])
+})
+
+test('스펙 PR 을 브랜치로 찾아 연결하고 머지 파일에서 기능 폴더를 읽는다', () => {
+  states['77'] = 'MERGED'
+  states['files:77'] = { files: [{ path: 'docs/features/a/spec.md', additions: 15 }] }
+  states.list = [{ number: 77, headRefName: 'feat/spec-a', state: 'MERGED' }]
+  const got = sync([{ id: 'a', status: 'doing',
+    workers: [{ worktree: 'old', branch: 'feat/spec-a', role: 'impl', 'feature-steps': '1', status: 'done' }],
+    details: [step('1. 기능 spec', false)] }])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.equal(got.board.a['merged-pr'], 77)
+  assert.equal(got.board.a.feature, 'docs/features/a')
+  assert.equal(got.board.a['feature-repo'], tmp)
+  assert.deepEqual(got.board.a.details, [step('1. 기능 spec', true), step('2. [ask] 기능 technical-design', false)])
 })
