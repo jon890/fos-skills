@@ -8,6 +8,7 @@
   push 범위가 version 을 이미 바꿨으면 올리지 않는다. 사람이 직접 정한 version 이 우선한다.
   마켓플레이스 항목과 `.codex-plugin/plugin.json` 에는 version 을 쓰지 않는다.
   [ADR-002](superseded/002-plugin-version-is-commit-sha.md) 를 대체한다. 사용자 결정 2026-11-02.
+- **대체된 부분**: [ADR-038](038-pre-release-versions.md) 이 시작 번호와 자동 올림 등급을 대체한다.
 - **맥락**: 사용자가 보드에서 설치본과 main 의 버전을 비교하고 싶어 했다. 커밋 SHA 12자리는 어느 쪽이 새것인지 읽히지 않는다.
   version 을 두면 그 문자열이 바뀌어야 `claude plugin update` 가 새 복사본을 받는다([ADR-002](superseded/002-plugin-version-is-commit-sha.md) 의 2026-10-01 실측). 사람이 올리면 빠뜨린 머지가 설치한 쪽에 가지 않는다.
   main 에는 보호 규칙이 없고, 여러 worker 의 PR 이 동시에 열리며, 외부 기여자 PR 은 GitHub 화면에서 머지된다.

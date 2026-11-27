@@ -4,7 +4,7 @@
 // CHANGELOG 절을 만든다. 근거는 docs/adr/023-version-at-merge.md 다.
 //
 // 단위는 `skills/<이름>`, `export-only-skills/<이름>`, `extensions/<이름>` 가운데 CHANGELOG.md 가 있는 폴더다.
-// 조각은 `- ` 항목 1~5개이고 등급은 파일 이름 접미(`.patch.md`, `.minor.md`)다. major 는 조각으로 받지 않는다.
+// 조각은 `- ` 항목 1~5개이고 등급은 파일 이름 접미(`.patch.md`, `.minor.md`)다. 호환성 항목은 minor 조각으로 받는다.
 
 import { spawnSync } from 'node:child_process'
 import { readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -54,7 +54,7 @@ export function checkFragment(name: string, text: string): string[] {
   if (bullets.some((bullet) => !pyStrip(bullet.slice(2)))) problems.push('내용이 빈 항목(`- `)이 있다')
   for (const bullet of bullets) {
     if (pyLen(bullet) - 2 > MAX_BULLET_CHARS) problems.push(`${MAX_BULLET_CHARS}자를 넘는 항목이 있다: ${pyHead(bullet, 40)}…`)
-    if (bullet.startsWith('- 호환성:')) problems.push('`호환성:` 항목은 조각으로 받지 않는다. major 는 PR 이 버전과 CHANGELOG 를 직접 올린다')
+    if (bullet.startsWith('- 호환성:') && !name.endsWith('.minor.md')) problems.push('`호환성:` 항목은 `.minor.md` 조각에 적는다')
   }
   return problems
 }

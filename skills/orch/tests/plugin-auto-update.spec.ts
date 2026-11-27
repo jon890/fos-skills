@@ -32,6 +32,9 @@ test('버전은 숫자 순서로 비교하고 알 수 없는 꼴은 갱신하지
   assert.equal(comparePluginVersion('1.9.0', '1.10.0'), -1)
   assert.equal(comparePluginVersion('2.0.0', '1.10.0'), 1)
   assert.equal(comparePluginVersion('1.0.0', '1.0.0'), 0)
+  assert.equal(comparePluginVersion('20.10.1', '0.21.0'), -1)
+  assert.equal(comparePluginVersion('0.21.0', '20.11.0'), 1)
+  assert.equal(comparePluginVersion('0.21.9', '0.22.0'), -1)
   assert.equal(comparePluginVersion('sha', '1.0.0'), null)
 })
 
@@ -39,17 +42,17 @@ test('설정 폴더와 scope 별 갱신, 설치 기록 검증, 30분 대기를 �
   const f = fixture(t)
   const project = join(f.root, 'project')
   mkdirSync(project)
-  f.add(f.home, 'user', '1.0.0')
-  f.add(f.profile, 'project', '1.1.0', project)
+  f.add(f.home, 'user', '20.10.1')
+  f.add(f.profile, 'project', '0.21.0', project)
   const calls: { argv: string[]; cwd?: string; config?: string }[] = []
   const exec = async (argv: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
     calls.push({ argv, cwd: opts.cwd, config: opts.env?.CLAUDE_CONFIG_DIR })
     if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
-    if (argv[0] === 'curl') return { code: 0, stdout: JSON.stringify({ version: '1.2.0' }), stderr: '', timedOut: false }
+    if (argv[0] === 'curl') return { code: 0, stdout: JSON.stringify({ version: '0.21.1' }), stderr: '', timedOut: false }
     if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
     const file = join(opts.env!.CLAUDE_CONFIG_DIR!, 'plugins', 'installed_plugins.json')
     const value = JSON.parse(readFileSync(file, 'utf8'))
-    value.plugins['fos-skills@fos-skills'][0].version = '1.2.0'
+    value.plugins['fos-skills@fos-skills'][0].version = '0.21.1'
     writeFileSync(file, JSON.stringify(value))
     return { code: 0, stdout: '', stderr: '', timedOut: false }
   }
@@ -62,7 +65,7 @@ test('설정 폴더와 scope 별 갱신, 설치 기록 검증, 30분 대기를 �
   assert.equal((await updatePlugins({ ...options, now: 1000 + UPDATE_MS - 1 })), null)
   assert.equal(calls.filter(call => call.argv[2] === 'update').length, 2)
   assert.deepEqual((await updatePlugins({ ...options, now: 1000 + UPDATE_MS }))?.results.map(row => row.result), ['success', 'success'])
-  assert.equal(readUpdateReport(f.stateDir)?.version, '1.2.0')
+  assert.equal(readUpdateReport(f.stateDir)?.version, '0.21.1')
 })
 
 test('갱신 명령이 성공해도 설치 기록이 그대로면 실패하며 다음 확인에 재시도한다', async t => {

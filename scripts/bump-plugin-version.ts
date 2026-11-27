@@ -2,7 +2,7 @@
 // main 에 들어온 변경으로 플러그인 version 을 올리고 플러그인 CHANGELOG 에 한 줄을 더한다.
 //
 // 사용: node scripts/bump-plugin-version.ts --base <push 전 커밋> --head <push 뒤 커밋> [--date YYYY-MM-DD]
-// `.github/workflows/plugin-version.yml` 이 main push 마다 부른다. 규칙의 근거는 docs/adr/019-plugin-version-auto-bump.md 다.
+// `.github/workflows/plugin-version.yml` 이 main push 마다 부른다. 규칙의 근거는 docs/adr/038-pre-release-versions.md 다.
 // 저장소는 이 파일의 상위 폴더다. 긴 옵션은 고유 접두로 줄여 쓸 수 있고 `--이름=값` 도 받는다.
 //
 // 옵션
@@ -11,12 +11,11 @@
 //   --date   절 날짜 (기본 한국 시간 오늘)
 //
 // 등급은 base..head 에서 바뀐 스킬 CHANGELOG 의 더한 줄로 정한다.
-// - `- 호환성:` 으로 시작하는 줄이 있으면 major
-// - 새 버전 절(`## X.Y.Z (날짜)`)이 있으면 minor
+// - `- 호환성:` 줄 또는 새 버전 절(`## X.Y.Z (날짜)`)이 있으면 minor
 // - 그 밖의 변경은 patch
 //
 // 먼저 main 트리의 변경 이력 조각(`<단위>/changes/*.patch.md`, `*.minor.md`)으로 스킬 버전을 올린다(scripts/skill_changes.ts,
-// docs/adr/023-version-at-merge.md). 조각이 있었으면 플러그인 등급은 minor 이상이고 요약 줄에 그 새 스킬 버전이 든다.
+// docs/adr/023-version-at-merge.md). 조각이 있었으면 플러그인 등급은 minor 이고 요약 줄에 그 새 스킬 버전이 든다.
 // 조각 검사에 걸려 건너뛴 것은 stderr 에 `경고: ` 줄로 낸다.
 //
 // 올리지 않고 끝내는 경우(종료 코드 0, stdout 첫 줄이 `skip:`):
@@ -34,8 +33,8 @@ import { writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../modules/kit/args.ts'
-import { normalizeNewlines, PY_SPACE, pyReadText, pyInt, pySplitLines, pyStrCompare } from '../modules/kit/py.ts'
-import { applyFragments, type Applied, CHANGES_DIR, todaySeoul, UNIT_ROOTS } from './skill_changes.ts'
+import { normalizeNewlines, PY_SPACE, pyReadText, pySplitLines, pyStrCompare } from '../modules/kit/py.ts'
+import { applyFragments, type Applied, CHANGES_DIR, nextVersion, todaySeoul, UNIT_ROOTS } from './skill_changes.ts'
 import { isMainModule } from './is-main.ts'
 
 const ROOT = join(import.meta.dirname, '..')
@@ -43,7 +42,6 @@ const MANIFEST = '.claude-plugin/plugin.json'
 const CHANGELOG = '.claude-plugin/CHANGELOG.md'
 const OWN_FILES = new Set([MANIFEST, CHANGELOG])
 const FRAGMENT_PATH = new RegExp(`^(?:${UNIT_ROOTS.join('|')})/[^/]+/${CHANGES_DIR}/`)
-const RANK: Record<string, number> = { patch: 0, minor: 1, major: 2 }
 export const ZERO = '0'.repeat(40)
 
 const SEMVER = /^(\p{Nd}+)\.(\p{Nd}+)\.(\p{Nd}+)(?=\n?$)/u
@@ -79,12 +77,8 @@ function fileAt(ref: string, path: string, root: string): string {
 }
 
 export function bump(version: string, level: string): string {
-  const match = SEMVER.exec(version || '')
-  if (!match) throw new Fatal(`bump-plugin-version: ${MANIFEST} 의 version 이 X.Y.Z 가 아니에요: '${version}'`)
-  const [major, minor, patch] = match.slice(1, 4).map(pyInt)
-  if (level === 'major') return `${major + 1}.0.0`
-  if (level === 'minor') return `${major}.${minor + 1}.0`
-  return `${major}.${minor}.${patch + 1}`
+  if (!SEMVER.test(version)) throw new Fatal(`bump-plugin-version: ${MANIFEST} 의 version 이 X.Y.Z 가 아니에요: '${version}'`)
+  return nextVersion(version, level)
 }
 
 function addedLines(base: string, head: string, path: string, root: string): string[] {
@@ -114,9 +108,9 @@ function classify(base: string, head: string, changed: string[], root: string): 
       const heading = VERSION_HEADING.exec(line)
       if (heading) {
         entries.push([skill, heading[1]])
-        if (level === 'patch') level = 'minor'
+        level = 'minor'
       } else if (COMPAT.test(line)) {
-        level = 'major'
+        level = 'minor'
       }
     }
   }
@@ -161,7 +155,7 @@ export function run(base: string, head: string, day: string, root: string = ROOT
   if (changed.length === 0 && applied.length === 0) return 'skip: 플러그인 버전 파일 말고 바뀐 것이 없어요'
   let { level, entries } = classify(base, head, changed, root)
   if (applied.length > 0) {
-    if (RANK[level] < RANK.minor) level = 'minor'
+    level = 'minor'
     entries = [...applied, ...entries]
   }
   const manifestPath = join(root, MANIFEST)

@@ -34,7 +34,8 @@ describe('checkFragment', () => {
     assert.ok(checkFragment('a.patch.md', Array.from({ length: 6 }, (_, n) => `- 항목 ${n}\n`).join('')).some((p) => p.includes('6개')))
     assert.ok(checkFragment('a.patch.md', `- ${'가'.repeat(161)}\n`).some((p) => p.includes('160자')))
     assert.deepEqual(checkFragment('a.patch.md', `- ${'가'.repeat(160)}\n`), [])
-    assert.ok(checkFragment('a.minor.md', '- 호환성: 옵션을 지웠다\n').some((p) => p.includes('호환성')))
+    assert.ok(checkFragment('a.patch.md', '- 호환성: 옵션을 지웠다\n').some((p) => p.includes('호환성')))
+    assert.deepEqual(checkFragment('a.minor.md', '- 호환성: 옵션을 지웠다\n'), [])
   })
 
   test('길이는 코드 포인트로 센다', () => {

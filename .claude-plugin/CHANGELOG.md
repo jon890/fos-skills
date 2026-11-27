@@ -1,9 +1,11 @@
 # CHANGELOG: fos-skills 플러그인
 
-버전은 `plugin.json` 의 `version` 과 같다. main 에 머지될 때마다 `.github/workflows/plugin-version.yml` 이 올리고 한 줄을 더한다. 사람이 고치지 않는다.
-등급은 그 머지에서 바뀐 스킬 CHANGELOG 와 스킬의 변경 이력 조각으로 정한다. `호환성:` 항목이 있으면 major, 조각이나 새 버전 절이 있으면 minor, 그 밖은 patch 다.
-규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
-플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
+버전은 `plugin.json`의 `version`과 같다. main에 머지될 때 GitHub Actions가 버전을 올리고 한 줄을 더한다.
+자동 올림 등급과 직접 번호를 정하는 경우는 [버전과 변경 이력](../docs/contributing.md#버전과-변경-이력)을 따른다.
+
+## 0.21.0 (2026-11-27)
+
+- 외부 공개를 준비하는 동안 플러그인과 스킬의 버전을 0.x로 관리해요.
 
 ## 20.11.1 (2026-11-27)
 

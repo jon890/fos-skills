@@ -159,11 +159,16 @@ flowchart TD
 
 ## 갱신
 
-설치한 쪽은 main 의 최신 version 을 받는다. version 은 머지마다 workflow 가 올리므로 사람이 올리는 단계는 없다([ADR-019](adr/019-plugin-version-auto-bump.md)). 스킬 버전도 같은 실행이 PR 의 변경 이력 조각(`<스킬>/changes/*.md`)으로 올린다([ADR-023](adr/023-version-at-merge.md)).
+설치한 쪽은 main 의 최신 버전을 받는다. workflow 가 머지마다 플러그인 버전을 올리고, 변경 이력 조각으로 스킬 버전도 올린다. [버전과 변경 이력](contributing.md#버전과-변경-이력)
 
 ```bash
+claude plugin marketplace update fos-skills
 claude plugin update fos-skills@fos-skills
 ```
+
+예전 버전 체계의 설치본에서 `0.21.0` 이후 버전으로 처음 옮길 때는 위 명령을 실행하고, 실행 중인 Claude 세션에서 `/reload-plugins` 를 실행한다. 옛 설치본에서 실행 중인 루프는 기존 숫자 순서로 버전을 비교한다. 새 설치 기록을 읽은 루프는 새 번들로 이어간다.
+
+이전 캐시는 실행 중인 세션이 계속 사용할 수 있다. 버전 `1.0.0` 을 다시 쓰기 전에 옛 배포판 캐시와 버전 비교의 전환 규칙을 정리한다.
 
 ```mermaid
 sequenceDiagram

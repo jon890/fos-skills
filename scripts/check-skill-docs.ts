@@ -80,10 +80,10 @@ export function checkChangelog(name: string, text: string, skillVersion: string)
     let limit: number
     if (version) {
       limit = MAX_VERSION_BULLETS
-      if (pyInt(version[1]) !== current) problems.push(`\`## ${heading}\`: 이전 major 는 \`## ${version[1]}.x\` 한 절로 줄인다`)
+      if (current > 0 && pyInt(version[1]) !== current) problems.push(`\`## ${heading}\`: 이전 major 는 \`## ${version[1]}.x\` 한 절로 줄인다`)
     } else if (summary) {
       limit = MAX_SUMMARY_BULLETS
-      if (pyInt(summary[1]) >= current) problems.push(`\`## ${heading}\`: 현재 major 는 버전마다 절을 둔다`)
+      if (pyInt(summary[1]) === current || (current > 0 && pyInt(summary[1]) > current)) problems.push(`\`## ${heading}\`: 현재 major 는 버전마다 절을 둔다`)
     } else {
       problems.push(`\`## ${heading}\`: \`X.Y.Z (YYYY-MM-DD)\` 나 \`N.x\` 꼴이 아니다`)
       continue

@@ -1,5 +1,9 @@
 # CHANGELOG: implementation
 
+## 0.10.0 (2026-11-27)
+
+- 외부 공개 전 버전 체계에 맞춰 번호를 0.x로 바꿨어요.
+
 ## 9.0.0 (2026-11-12)
 
 - 호환성: 옛 이름 오버레이와 Git 설정 키를 읽지 않는다. implementation-overlay.md 와 implementation.baseBranch 를 쓴다.

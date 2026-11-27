@@ -4,6 +4,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, 
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { compareFosPluginVersions as comparePluginVersion } from '../../../../modules/kit/fos-plugin-version.ts'
 import { reclaim } from '../lib/events.ts'
 import { alive } from '../lib/process.ts'
 import { run, runAsync, stopping } from '../lib/proc.ts'
@@ -20,13 +21,7 @@ export type UpdateReport = { version: string; checkedAt: number; results: Update
 type Exec = (argv: string[], options?: RunOptions) => Promise<RunResult>
 type Options = { home?: string; profiles?: string; stateDir?: string; repository?: string; now?: number; exec?: Exec }
 
-export function comparePluginVersion(left: string, right: string): number | null {
-  const parse = (value: string) => /^\d+\.\d+\.\d+$/.test(value) ? value.split('.').map(Number) : null
-  const a = parse(left), b = parse(right)
-  if (!a || !b) return null
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
-  return 0
-}
+export { comparePluginVersion }
 
 export function configDirs(home: string, profiles: string): string[] {
   let ids: string[] = []
