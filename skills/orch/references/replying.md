@@ -256,7 +256,10 @@ orch worker send --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE"
 
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
 - 후속 지시서를 보내도 종료 코드 3 이면 안내를 읽고 코디네이터에게 알린다
-- **PR 이 열려 있는데 worker 가 `worker_done` 을 보내 닫힌 경우**에는 `orch worker continue --dispatch "$DISPATCH_ID"` 로 같은 지시서에 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 붙여 이어 맡긴다. 상주 루프가 먼저 같은 일을 하므로(DONE-RETURNED) 직접 부르는 것은 루프가 못 했을 때다. 출력은 `CONTINUED`(이어 맡김), `CONTINUE-SKIP`(대상이 아님: PR 이 없거나 머지됐다, 리뷰 worker 다, 아직 살아 있다), `CONTINUE-FAIL`(조회나 전송 실패, 같은 명령을 다시)이다. 원본은 `scripts/worker/continue-worker.ts` 머리 주석이다
+- **PR 이 열려 있는데 worker 가 `worker_done` 을 보내 닫힌 경우**에는 `orch worker continue --dispatch "$DISPATCH_ID"` 로 같은 지시서에 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 붙여 이어 맡긴다. 상주 루프가 먼저 같은 일을 하므로(DONE-RETURNED) 직접 부르는 것은 루프가 못 했을 때다. 출력은 `CONTINUED`(이어 맡김), `CONTINUE-SKIP`(대상이 아님: 머지됐다, 리뷰 worker 다, 작업 중이다, 상한에 닿았다), `CONTINUE-FAIL`(조회나 전송 실패, 같은 명령을 다시)이다. 원본은 `scripts/worker/continue-worker.ts` 머리 주석이다
+- **worker 가 보고 없이 턴을 끝낸 경우**(Orca 의 「Worker stopped without reporting」)에도 PR 이 열리기 전이든 뒤든 같은 `orch worker continue --dispatch "$DISPATCH_ID"` 를 먼저 부른다. 「이어 가겠다」 한 줄로 턴을 끝내는 worker 는 답장 문구를 바꿔도 다시 멈췄다(2026-11-27). 그래서 답장을 다시 쓰지 않고 이 명령으로 「남은 할 일을 이 턴에서 이어 한다」 를 보낸다
+  - Orca 가 턴이 끝났다고 보는 살아 있는 dispatch(작업 중도 백그라운드 대기도 아니다)에는 본문만 보내고, 끝난 dispatch 에는 지시서로 후속 Task 를 연다
+  - 같은 브랜치와 단계(PR 없음, PR 번호)마다 2번까지다. 출력 끝의 `tries=<n>/<상한>` 이 횟수다. 상한에 닿아 `CONTINUE-SKIP` 이면 화면(`orch worker screen <터미널>`)과 지시서를 직접 보고 새 worker 로 이어받을지 정한다
 - 리뷰 반영 지시서에는 PR 번호를 적고 위 [리뷰 반영 절](#리뷰-지적을-반영한다)을 가리킨다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
 - 위 「새 worker 로 이어받는 순서」 나 [`launch.md`](launch.md) 의 새 worker 띄우기와 어긋나면 충돌과 리뷰 반영에는 이 절이 우선한다
 

@@ -188,8 +188,8 @@ export async function watchCompletions(repo: string, run: string, base: string, 
         const back = await continueWorker(repo, dispatch, { run, knownPr: typeof pr?.number === 'number' ? pr.number : null, exclude })
         if (back.kind === 'ok') {
           // 되돌린 기록과 알릴 글을 함께 남긴다. 알림이 실패해도 다음 틱이 되돌리지 않고 알림만 다시 보낸다
-          ;(seen.returned ??= []).push(dispatch, `pr:${back.target.pr.number}`)
-          ;(seen.returnNotes ??= {})[dispatch] = `${dispatch} PR #${back.target.pr.number} 이 아직 열려 있어 같은 워크트리의 worker 에게 되돌렸다(새 dispatch ${back.dispatch || '-'}). 머지될 때까지 맡는다`
+          ;(seen.returned ??= []).push(dispatch, `pr:${back.target.pr?.number ?? '-'}`)
+          ;(seen.returnNotes ??= {})[dispatch] = `${dispatch} PR #${back.target.pr?.number ?? '-'} 이 아직 열려 있어 같은 워크트리의 worker 에게 되돌렸다(새 dispatch ${back.dispatch || '-'}). 머지될 때까지 맡는다`
           save()
           notice = ''
         } else if (back.kind === 'fail') {
