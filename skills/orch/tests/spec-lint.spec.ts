@@ -882,7 +882,19 @@ describe('붙일 보드 항목', () => {
     board([{ id: 'other', status: 'doing', branch: 'feat/other' }])
     const r = lint([boardSpec('missing', '두레이 업무: P/7')])
     assert.equal(r.code, 1, r.stdout)
-    assert.deepEqual(findings(r.stdout), ['missing.md:1: 보드: 붙일 보드 항목을 찾지 못했다(브랜치 feat/missing, 업무 P/7, 기능 폴더 없음). 지시서 머리에 `보드 항목 id: <id>` 나 `보드 항목 없음: <이유>` 를 적는다'])
+    assert.deepEqual(findings(r.stdout), ['missing.md:1: 보드: 붙일 보드 항목을 찾지 못했다(브랜치 feat/missing, 업무 P/7, 기능 폴더 없음). 지시서 머리에 `보드 항목 id: <id>`, `보드 항목: 새로`, `보드 항목 없음: <이유>` 가운데 하나를 적는다'])
+  })
+
+  test('붙일 항목이 없으면 머리의 세 줄과 비슷한 열린 항목을 함께 알린다', () => {
+    board([
+      { id: 'req-a', status: 'doing', title: '보드 항목 후보 보이기', branch: 'feat/other' },
+      { id: 'req-b', status: 'done', title: '후보 보이기 끝난 일' },
+    ])
+    const r = lint([boardSpec('후보', '')])
+    assert.equal(r.code, 1, r.stdout)
+    const [line] = findings(r.stdout)
+    assert.match(line, /`보드 항목 id: <id>`, `보드 항목: 새로`, `보드 항목 없음: <이유>` 가운데 하나를 적는다/)
+    assert.match(line, /비슷한 열린 항목: req-a\(보드 항목 후보 보이기\)$/)
   })
 
   test('같은 브랜치의 항목이나 지시서 id, 새로 요청은 통과한다', () => {

@@ -72,6 +72,29 @@ export function findBoardItem(items: BoardItem[], q: BoardQuery): BoardFind {
   return { none: true }
 }
 
+// 붙일 항목을 찾지 못했을 때 보여 줄 비슷한 열린 항목. 지시서의 제목, 브랜치, 워크트리 이름과 항목의 제목, 브랜치가 겹치는 낱말 수로 고른다.
+// 두 글자 미만 낱말과 브랜치 머리(feat, fix 같은 것)는 세지 않는다. 겹침이 많은 순, 같으면 최근 stepAt 순으로 최대 limit 개다
+const PLAIN_WORDS = new Set(['feat', 'fix', 'chore', 'docs', 'refactor', 'test', 'tests', 'ci', 'build', 'perf', 'style'])
+function wordsOf(...texts: unknown[]): Set<string> {
+  const found = new Set<string>()
+  for (const text of texts) {
+    if (typeof text !== 'string') continue
+    for (const word of text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []) if (word.length >= 2 && !PLAIN_WORDS.has(word)) found.add(word)
+  }
+  return found
+}
+export function similarItems(items: BoardItem[], from: { title?: string | null; branch?: string; worktree?: string }, limit = 3): BoardItem[] {
+  const wanted = wordsOf(from.title, from.branch, from.worktree)
+  if (wanted.size === 0) return []
+  return items
+    .filter((item) => typeof item.id === 'string' && !['done', 'decide'].includes(String(item.status)))
+    .map((item) => ({ item, score: [...wordsOf(item.title, item.branch)].filter((word) => wanted.has(word)).length }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.item.stepAt ?? '').localeCompare(String(a.item.stepAt ?? '')))
+    .slice(0, limit)
+    .map((row) => row.item)
+}
+
 type StageLine = { stage: FeatureStage; text: string; ask: boolean; done: boolean }
 
 function stageLines(steps: { text: string; done: boolean }[]): StageLine[] {

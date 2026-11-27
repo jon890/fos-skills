@@ -196,7 +196,8 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   }
   // 지시서가 id 를 정하지 않았으면 core/board-find.ts 의 findBoardItem 으로 붙일 항목을 고른다(같은 워크트리, 브랜치, 업무, 기능 폴더 순).
   // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않고, 한 업무나 기능의 다음 PR 이 한 항목에 모인다.
-  // 찾지 못했거나 둘 이상이면 spec-lint 가 띄우기 전에 막는다. --lint-ack 으로 넘겼으면 지금처럼 워크트리 이름으로 만든다
+  // 찾지 못했거나 둘 이상이면 spec-lint 가 띄우기 전에 막고 --lint-ack 으로도 넘기지 못한다. 그래도 못 찾으면(보드 파일 밖에서 띄움 같은 것) 워크트리 이름으로 만든다.
+  // `보드 항목: 새로` 도 같은 규칙이다. 같은 워크트리의 열린 항목이 없으면 --name, 그다음 워크트리 이름이 id 다
   const open = items.filter((row) => !['done', 'decide'].includes(String(row.status)) && typeof row.id === 'string')
   const latest = (rows: BoardItem[]) => rows.map((row, index) => ({ row, index })).sort((a, b) => String(a.row.stepAt ?? '').localeCompare(String(b.row.stepAt ?? '')) || a.index - b.index).at(-1)?.row
   const findSame = () => {

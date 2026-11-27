@@ -93,6 +93,8 @@
 //                 `보드 항목: 새로` 와 `보드 항목 id:` 를 함께 쓰면 새로 만들지 붙일지가 갈려 오류다.
 //                 보드 파일이 있는 저장소에서는 붙일 항목도 본다(core/board-find.ts 의 findBoardItem, 질의는 lib/board.ts 의 boardQuery).
 //                 머리에 `보드 항목 id:` 도 `보드 항목 없음: <이유>` 도 `보드 항목: 새로` 도 없는데 붙일 항목이 없거나 둘 이상이면 오류다.
+//                 찾지 못했다는 오류에는 제목이나 브랜치의 낱말이 겹치는 열린 항목을 최대 세 개(id 와 제목) 붙인다(core/board-find.ts 의 similarItems).
+//                 「보드」 오류는 launch-worker 의 --lint-ack 으로 넘기지 못한다. 넘기면 워크트리 이름으로 따로 항목이 생기기 때문이다.
 //                 `보드 항목 id:` 의 항목이 다른 기능 폴더를 따라가거나, `보드 항목 없음:` 의 이유가 비었거나 id 와 함께 쓰면 오류다.
 //                 붙일 항목이 정해지고 지시서에 `기능 단계:` 가 있으면 첫 단계를 보드의 다음 단계와 맞춘다(startStageProblem). 어긋나면 오류다.
 //                 브랜치는 `브랜치:` 줄에서 읽는다. `리뷰 PR:`, `중간 과정:` 지시서와 --active 지시서는 보지 않는다.
@@ -139,7 +141,7 @@ import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { boardQuery, readBoard } from '../lib/board.ts'
-import { findBoardItem, startStageProblem } from '../core/board-find.ts'
+import { findBoardItem, similarItems, startStageProblem } from '../core/board-find.ts'
 import { adoptsAskStage, stepSource } from '../../../../modules/work-board/item.ts'
 import { autoStepNumberOf, boardIdOf, boardNewOf, boardNoneOf, boardIdOfLine, featureStagesOf, interimOf, remoteWithCodex, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
@@ -391,6 +393,9 @@ const TITLE_HINT =
   '`# ` 제목 줄도 `보드 항목 id:` 도 없다. 보드 항목 제목은 `# ` 제목 줄, `보드 항목 id` 의 기존 항목 제목, 업무 연결 줄의 제목, ' +
   '`## 목표` 첫 문장, id 순으로 고른다. 첫 줄 예: `# 보드 항목이 업무의 목적을 보이게 한다`'
 
+// 지시서 머리에서 보드 항목을 정하는 세 줄. 붙일 항목을 찾지 못하면 이 가운데 하나가 있어야 띄운다(launch-worker 의 --lint-ack 으로 넘기지 못한다)
+const BOARD_HEADS = '`보드 항목 id: <id>`, `보드 항목: 새로`, `보드 항목 없음: <이유>`'
+
 // 머리 주석의 「보드」. 고치는 방법을 함께 적는다
 const BOARD_HINT = '`보드 항목 id:` 뒤에 설명이 붙었다. id 만 적고 설명은 다른 줄로 옮긴다(그대로면 id 는 첫 토큰으로 읽고, 보드에 없으면 항목을 만들지 않는다)'
 
@@ -614,7 +619,9 @@ function boardErrors(spec: Spec, repoRoot: string, source: LoopSource, worktree:
   if ('many' in found) return [`${at(1)}붙일 보드 항목이 둘 이상이다(${found.many.join(', ')}). 지시서 머리에 \`보드 항목 id: <id>\` 를 적는다`]
   if ('none' in found && !given) {
     const where = `브랜치 ${query.branch || '없음'}, 업무 ${query.ref ?? '없음'}, 기능 폴더 ${query.feature?.path ?? '없음'}`
-    return [`${at(1)}붙일 보드 항목을 찾지 못했다(${where}). 지시서 머리에 \`보드 항목 id: <id>\` 나 \`보드 항목 없음: <이유>\` 를 적는다`]
+    const like = similarItems(items, { title: text.match(/^#\s+(.+)$/m)?.[1], branch: query.branch, worktree: query.worktree })
+    const hint = like.length > 0 ? `. 비슷한 열린 항목: ${like.map((item) => `${item.id}(${typeof item.title === 'string' ? item.title : '제목 없음'})`).join(', ')}` : ''
+    return [`${at(1)}붙일 보드 항목을 찾지 못했다(${where}). 지시서 머리에 ${BOARD_HEADS} 가운데 하나를 적는다${hint}`]
   }
   const stages = featureStagesOf(text)
   const first = taskFirstLine(text)

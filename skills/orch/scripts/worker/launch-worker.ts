@@ -10,6 +10,7 @@
 //                      --terminal 도 선택 정책은 검사한다. --lint-ack 으로 넘길 수 없다
 //     --lint-ack       spec-lint 가 막을 발견을 냈지만 의도한 것이라 넘기는 이유. 이유 없이 넘기는 옵션은 없다(빈 값은 사용법 오류).
 //                      이유는 `lint-ack: <이유>` 줄로 출력하고 띄운 worker 의 기록(lib/launched.ts 의 lint_ack)에 남긴다
+//                      「보드」 발견(붙일 보드 항목을 정하지 못함)은 넘기지 못한다(1-1)
 //     --task           같은 Task 다시 띄우기. failed/blocked 는 --retry-of 를 함께 주고 ready 는 생략한다.
 //                      워크트리는 이전 이력에서 읽는다. 이력 도입 전 기록은 launched-workers 에서 읽는다
 //     --repo, --name   새 워크트리를 make-worktree 로 만든다. --base, --resume-remote 는 make-worktree 에 넘긴다
@@ -55,6 +56,7 @@
 //        새 워크트리면 origin/<base>, --resume-remote 면 --spec-ref origin/<지시서 브랜치>, --worktree 면 --spec-root <그 워크트리> 다.
 //        첫 줄 검사(spec-lint 의 「루프」)에 걸려도 같은 5 다. 확인받은 스펙 없이 기능 worker 를 띄우지 않게 한다
 //        지시서에 보드 항목 id 가 없는데 붙일 항목을 찾지 못해도(spec-lint 의 「보드」) 같은 5 다. --worktree 면 그 워크트리를 --worktree 로 넘긴다
+//        「보드」 발견은 --lint-ack 이 있어도 5 로 멈춘다. 넘기면 워크트리 이름으로 따로 항목이 생겨, 지시서 머리의 `보드 항목 id:`, `보드 항목: 새로`, `보드 항목 없음: <이유>` 가운데 하나로 고친다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
 //     1-1-1. 저장소(주 checkout)가 Orca 에 등록됐는지 `orca repo show` 로 본다(lib/orca.ts 의 repoRegistered). repo_not_found 면 번호 예약과
 //        워크트리를 만들기 전에 `orca repo add --path <저장소>` 를 안내하고 1 로 멈춘다. 등록되지 않은 저장소의 워크트리는 Orca 가 알아보지 못해
@@ -137,7 +139,7 @@
 // 종료 코드: 0 LAUNCHED, 1 STALLED-START, 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 받거나 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
 //            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort, `후보 밖:` 으로 고른 낡은 세대(MODEL-OUTDATED)(worktree 를 만들기 전에 멈춘다),
-//            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
+//            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없거나, 「보드」 발견을 냈다(worktree 를 만들기 전에 멈춘다)
 //
 // 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. ORCA_CLAUDE_PROFILES 로 0-2 의 프로필 폴더를 바꾼다. ORCH_WORKER_PATH 는 0-3 이 보는 worker 셸의 PATH 를 정하고, ORCH_WORKER_SHELL 은 그 셸을 정한다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2, LAUNCH_MODEL_WAIT=60 이 기본값이다. 소수도 받는다.
@@ -422,6 +424,14 @@ function loopSource(a: Args, specPath: string): string[] {
   return branch ? ['--spec-ref', `origin/${branch}`] : []
 }
 
+// spec-lint 의 막을 발견 가운데 「보드」 줄. 막을 발견을 먼저 내고 경고를 뒤에 내므로, stderr 요약의 막을 발견 수만큼 앞줄만 본다.
+// 요약이 없으면(가짜 spec-lint) 모든 줄을 본다. 「보드」 경고(id 뒤 설명)는 막을 발견 뒤에 나와 세지 않는다
+export function boardFindings(stdout: string, stderr: string): string[] {
+  const rows = stdout.split('\n').filter((line) => line.trim())
+  const count = stderr.match(/spec-lint: 막을 발견 (\d+)건/)?.[1]
+  return (count === undefined ? rows : rows.slice(0, Number(count))).filter((line) => line.includes(': 보드: '))
+}
+
 // spec-lint 로 이 지시서를 검사한다. 머리 주석의 「1-1」. 막으면 종료 코드, 통과하거나 넘기면 null 이다.
 // acked 는 --lint-ack 으로 넘긴 발견의 이유다. 넘길 발견이 없으면 null 이라 기록에 남지 않는다.
 async function lintGate(a: Args, continuation: boolean, execute: typeof runAsync): Promise<{ stop: number | null; acked: string | null }> {
@@ -444,6 +454,11 @@ async function lintGate(a: Args, continuation: boolean, execute: typeof runAsync
     return { stop: null, acked: null }
   }
   err(done.stdout.trimEnd())
+  const board = boardFindings(done.stdout, done.stderr)
+  if (board.length > 0) {
+    err(`거부: 보드 항목을 정하지 못한 지시서는 --lint-ack 으로도 넘기지 못한다. 넘기면 워크트리 이름으로 따로 항목이 생긴다. 지시서 머리에 \`보드 항목 id: <id>\`, \`보드 항목: 새로\`, \`보드 항목 없음: <이유>\` 가운데 하나를 적는다${a.lintAck === null ? '' : `(받은 --lint-ack: ${a.lintAck})`}`)
+    return { stop: 5, acked: null }
+  }
   if (a.lintAck === null) {
     err(`거부: spec-lint 가 막을 발견을 냈다. 지시서를 고치거나, 의도한 발견(겹침 같은 것)이면 --lint-ack "<이유>" 로 이유를 적어 넘긴다${others.length > 0 ? `\n함께 본 활성 지시서: ${others.join(', ')}` : ''}`)
     return { stop: 5, acked: null }
