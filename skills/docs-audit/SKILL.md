@@ -34,7 +34,7 @@ metadata:
 지정이 없으면 현재 경로와 변경 파일을 기준으로 판정에 필요한 최소 범위를 정한다.
 
 **`<repo-root>/.claude/docs-audit-overlay.md` 가 있으면 먼저 읽고 코어보다 우선한다.**
-오버레이는 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 을 소유한다.
+오버레이는 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 과 2단계의 선택 검사 설정을 소유한다.
 없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)에서 문서 경계와 검증 명령을 찾는다.
 
 **모노레포인지, 감사 범위가 속한 하위 프로젝트가 무엇인지는 plan 의 스크립트가 판정한다.**
@@ -82,12 +82,25 @@ node "$PLAN_SKILL_DIR/scripts/overlay_paths.ts" --skill docs-audit $SCOPE_PATHS
 ```bash
 # cwd: 검사 대상 저장소 루트
 node "$SKILL_DIR/scripts/run_static_check.ts" "" "$SCOPE"
-node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --scope "$SCOPE" $ADR_ARGS
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --scope "$SCOPE" --docs-audit $ADR_ARGS
 ```
 
 `run_static_check.ts` 는 표 열 수, 제목 단계, 코드 펜스, 계획서 번호 참조, 책임 설명 목록을 본다.
 깨진 링크·앵커, 링크 없는 ADR 식별자, ADR 색인, 번호 중복, 대체된 ADR 위치는 `adr-docs.ts` 가 본다. 출력 줄과 종료 코드는 그 파일 머리 주석이 소유한다.
 `adr-docs.ts` 는 `--changed-since` 없이 감사 범위 전체를 리포트에 올린다. `--scope` 는 결과만 좁히고 링크 대상은 범위 밖에서도 찾는다.
+
+고아 문서와 README 누락 검사는 기본으로 꺼져 있다. 켤 검사에 해당하는 표 행을 `.claude/docs-audit-overlay.md` 에 둔다.
+
+| 설정 | 값 예시 |
+| --- | --- |
+| 고아 문서 검사 | `켜기` |
+| README 누락 검사 | `켜기` |
+| 문서 검사 제외 폴더 | `vendor`, `archive` |
+
+하위 프로젝트 오버레이의 값이 루트보다 우선한다. 루트에서 켠 검사는 하위 프로젝트에서 `끄기` 로 덮을 수 있다.
+제외 값은 경로의 어느 층에서나 일치하는 폴더 이름이다. 두 선택 검사는 Git 에서 무시하는 문서와 `.claude`, `.codex`, `.agents`, `node_modules` 아래 문서를 검사 대상과 링크 출처에서 뺀다.
+`ORPHAN_DOC` 는 다른 Markdown 문서에서 들어오는 링크가 없는 문서다. `README.md`, `INDEX.md`, `CLAUDE.md`, `AGENTS.md` 는 고아 판정에서 뺀다.
+`README_MISSING` 은 같은 폴더의 `README.md` 에 링크가 빠진 문서를 뜻한다. 두 발견을 `[구조 무결성]` 으로 리포트에 올린다.
 
 모노레포면 `$SCOPE` 에 `frontend/docs` 처럼 하위 프로젝트의 docs 경로를 준다. cwd 는 그대로 저장소 루트다.
 이 스크립트가 `static_check.ts` 를 하위 프로세스로 돌리고 종료 코드와 판정을 표로 낸다.
