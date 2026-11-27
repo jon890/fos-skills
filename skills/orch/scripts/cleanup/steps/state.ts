@@ -43,15 +43,18 @@ function activeAutoLog(stateDir: string): string | null | undefined {
   }
 }
 
+// 기한이 지난 띄우기 기록 가운데 끝났거나 Orca 가 이미 잊은 dispatch 의 것을 고른다.
+// 재개, 후속 보내기, 넘겨받기는 Orca 가 아는 dispatch 에만 쓰고, 리뷰와 다시 띄우기는 없으면 launch-history.jsonl 을 읽는다.
+// 그래서 끝나지 않은 dispatch 와 워크트리가 남은 기록, 브랜치에 열린 PR 이 있는 기록만 남긴다.
+// 브랜치 칸이 없는 옛 기록은 열린 PR 을 확인할 수 없지만 워크트리가 없고 기한이 지났으면 옮긴다(2026-11-27 실측: 이 둘이 한 달 넘게 쌓였다)
 async function launchCandidates(ctx: StepContext, state: StepState, dir: string, cutoff: number): Promise<string[]> {
   const files = oldFiles(dir, /^[\w-][\w.-]*\.json$/, cutoff)
   if (!files.length) return []
   const { args, repo } = ctx
   try {
     const workers = await args.allWorkers()
-    const finished = new Set(workers.filter(isFinished).map((row) => row.dispatchId))
     const unfinished = new Set(workers.filter((row) => !isFinished(row)).map((row) => row.dispatchId))
-    const eligible = files.filter(({ name }) => finished.has(name.slice(0, -5)) && !unfinished.has(name.slice(0, -5)))
+    const eligible = files.filter(({ name }) => !unfinished.has(name.slice(0, -5)))
     if (!eligible.length) return []
     const openHeads = lookupOf(repo).openHeads()
     if (!openHeads) return []
@@ -62,7 +65,7 @@ async function launchCandidates(ctx: StepContext, state: StepState, dir: string,
       // 재개와 지시서 정리는 워크트리가 남아 있는 동안 띄우기 기록을 읽는다.
       if (!launch || worktrees.has(realPath(launch.worktree))) return []
       const branch = launch.branch
-      if (!branch) return []
+      if (!branch) return [file]
       if (!openByBranch.has(branch)) {
         openByBranch.set(branch, openHeads.size > 0 && prCandidates(repo, branch).some(([head]) => openHeads.has(head)))
       }

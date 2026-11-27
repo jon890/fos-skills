@@ -350,13 +350,14 @@ orch followup done "$PR" --note "$NOTE"
 | 대상 | 기본 보존 기한 | 바꿀 설정 |
 | --- | --- | --- |
 | `.orch/queue` 의 끝난 머지 큐 로그와 마무리 로그·pid 파일 | 3일 | `cleanup.queue_days` |
-| `.orch/state/launched-workers` 의 끝난 dispatch 기록, `finish-started` 의 마무리 표시, `auto-merge` 의 자동 머지 로그 | 3일 | `cleanup.state_days` |
+| `.orch/state/launched-workers` 의 끝났거나 Orca 가 잊은 dispatch 기록(브랜치 칸 없는 옛 기록 포함), `finish-started` 의 마무리 표시, `auto-merge` 의 자동 머지 로그 | 3일 | `cleanup.state_days` |
 | `.orch/state/gh/logs` 의 날짜별 GitHub 조회 로그 | 1일 | `cleanup.gh_log_days` |
 | `.orch/handoff`, `.orch/data`, `.orch/specs` | [`overlay.md`](overlay.md) 의 「작업 산출물의 자리와 지우는 때」 | `cleanup.handoff_days`, `cleanup.specs_days` |
 
-열린 PR 의 파일, 실행 중인 큐나 마무리의 로그, 살아 있는 dispatch 의 기록은 기한이 지나도 남긴다. 워크트리가 남은 dispatch 의 기록은 작업을 재개하거나 지시서를 찾을 때 쓴다. 이 기록도 보존한다. PR 이나 dispatch 의 상태를 확인하지 못했을 때도 남긴다. 실패한 마무리 로그와 중간에 멈춘 마무리 로그는 설정을 줄여도 최소 1시간 동안 남긴다. 자동 머지의 종료 알림이 읽을 로그, 워크트리가 남아 있어 마무리 여부를 확인하는 데 필요한 표시, UTC 기준 당일 GitHub 조회 로그도 남긴다.
+열린 PR 의 파일, 실행 중인 큐나 마무리의 로그, 살아 있는 dispatch 의 기록은 기한이 지나도 남긴다. 워크트리가 남은 dispatch 의 기록은 작업을 재개하거나 지시서를 찾을 때 쓴다. 이 기록도 보존한다.
+워크트리가 없는 기록은 Orca 가 그 dispatch 를 목록에서 잊었어도 옮긴다. 재개와 후속 보내기는 Orca 가 아는 dispatch 에만 쓰고, 리뷰와 다시 띄우기는 영구 이력(`launch-history.jsonl`)에서 찾는다. PR 이나 dispatch 의 상태를 확인하지 못했을 때도 남긴다. 실패한 마무리 로그와 중간에 멈춘 마무리 로그는 설정을 줄여도 최소 1시간 동안 남긴다. 자동 머지의 종료 알림이 읽을 로그, 워크트리가 남아 있어 마무리 여부를 확인하는 데 필요한 표시, UTC 기준 당일 GitHub 조회 로그도 남긴다.
 
-실측 기록(`routing-log.jsonl`, `launch-history.jsonl`), 보드, 배포 뒤 할 일 목록, 요청 기록과 위 표에 없는 파일은 보존 기한 정리 대상에서 제외한다. `loop.log` 는 1 MiB 를 넘으면 다음 줄을 쓰기 전에 `loop.log.1` 로 옮긴다. 새로 돌릴 때 이전 `loop.log.1` 을 교체한다.
+실측 기록(`routing-log.jsonl`, `launch-history.jsonl`), 보드, 배포 뒤 할 일 목록, 요청 기록과 위 표에 없는 파일은 보존 기한 정리 대상에서 제외한다. 실측 기록은 배정 통계와 다시 띄우기가 처음부터 읽어 줄을 자르지 않는다. GitHub 응답 캐시(`state/gh/cache`)는 쓰기 호출마다 통째로 비워져 정리하지 않는다. `loop.log` 는 1 MiB 를 넘으면 다음 줄을 쓰기 전에 `loop.log.1` 로 옮긴다. 새로 돌릴 때 이전 `loop.log.1` 을 교체한다.
 작업이 띄운 Docker 컨테이너와 쌓은 이미지도 반납한다. 무엇을 지우고 남기는지는 아래 「Docker 자원 반납」 이 소유한다.
 상세 규칙은 `scripts/cleanup/steps/` 의 해당 단계 파일 맨 위 설명을 따른다.
 
