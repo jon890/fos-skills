@@ -71,6 +71,16 @@ test('- 로 시작하는 글은 번호를 붙여 다시 쓸 수 있게 안내한
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].details.at(-1).text, '10. - 하위 항목')
 })
 
+test('최대 단계보다 10 넘게 큰 번호로 시작하면 업무 번호 표기를 안내한다', () => {
+  save([item()])
+  refused(['add-step', 'x', '20. 검증'], /현재 최대 단계 번호 9/)
+  refused(['add-step', 'x', '575. 업무 575 확인'], /업무 575/)
+  refused(['step', 'x', '9', 'text', '575. 업무 575 확인'], /업무 575/)
+  ok(['step', 'x', '9', 'text', '9. 업무 575 확인'], 'BOARD-STEP x 9 text')
+  ok(['add-step', 'x', '19. 검증'], 'BOARD-STEP-ADD x 19')
+  ok(['add-step', 'x', '업무 575 확인'], 'BOARD-STEP-ADD x 20')
+})
+
 test('set 은 상태만 바꾸고 없는 항목과 진행률 없는 doing 을 거절한다', () => {
   save([item(), item({ id: 'empty', status: 'wait', details: [] })])
   for (const state of ['decide', 'wait', 'done', 'doing']) ok(['set', 'x', state], `BOARD-SET x ${state}`)
