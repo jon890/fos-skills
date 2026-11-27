@@ -226,13 +226,15 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 ### 작업 산출물의 자리와 지우는 때
 
 작업 중에 생기는 파일은 아래 표대로 둔다. 지시서 검사(`spec-lint`)가 표 밖의 자리를 막고, 정기 정리(`orch cleanup sweep`, 루프도 부른다)가 표대로 휴지통 폴더로 옮긴다. 사람이 확인하고 지울 일을 없애려는 것이다(사용자 결정 2026-11-24).
-정리는 모두 미리 보기와 `--apply` 를 나누고, 기한은 `cleanup` 절의 설정으로 바꾼다. 판정 코드는 `scripts/lib/folder-retention.ts` 와 `scripts/cleanup/steps/specs.ts` 맨 위 설명에 있다.
+정리는 모두 미리 보기와 `--apply` 를 나누고, 기한은 `cleanup` 절의 설정으로 바꾼다. 판정 코드는 `scripts/lib/folder-retention.ts`, `scripts/lib/queue-logs.ts`, `scripts/cleanup/steps/state.ts`, `scripts/cleanup/steps/specs.ts` 에 있다.
 
 | 폴더 | 담는 것 | 이름 꼴 | 지우는 때 |
 | --- | --- | --- | --- |
 | 세션 임시 폴더 | 한 번 쓰고 끝나는 파일(PR 본문 초안, 미리보기, 조사 결과) | 자유 | OS 가 지운다 |
 | `handoff/` | 코디네이터가 읽어야 하는 것만(대신 게시할 본문, ask 로 확인받을 본문) | `pr-<번호>/`, `pending/<워크트리 이름>/` 두 꼴만 | `pr-<번호>/` 는 그 PR 이 머지되거나 닫히면 바로. `pending/` 은 그 워크트리가 없어지고 `cleanup.handoff_days`(기본 3)일 뒤. 두 꼴 밖의 이름은 이름에 든 PR 이 닫혔으면 바로, 아니면 같은 기한 뒤 |
 | `data/` | 여러 날 다시 돌리는 검증 도구와 그 기준값(모델 비교 자료 포함) | `data/<보드 항목 id>/` | 그 보드 항목을 지우면(`orch board del`, `del --done` 포함) 다음 정기 정리 때. 폴더가 아닌 파일은 `cleanup.handoff_days` 일 뒤 |
+| `queue/` | 머지 큐와 마무리 출력(`finish-<PR>.out`, `.pid`) | 지금 이름 규칙 | 든 PR 이 모두 머지되거나 닫히고 그 큐나 마무리가 끝났으면 `cleanup.queue_days`(기본 3)일 뒤. 열린 PR 과 실행 중인 것은 남긴다 |
+| `state/` | 상주 루프와 정리가 기억하는 것 | 지금 이름 규칙 | 띄우기 기록, 마무리 표시, GitHub 조회 로그만 기한 뒤. 대상과 기한은 [정리](cleanup.md#정리)의 보존 기한 표 |
 | `specs/` | 지시서와 `spec-common.md` | 지금 이름 규칙 | 워크트리 정리 때. 워크트리 없이 남은 지시서는 PR 이 모두 머지됐으면 바로, 열린 PR, 살아 있는 worker, 대기 중인 배포 뒤 확인 어디에도 속하지 않으면 `cleanup.specs_days`(기본 3)일 뒤. `spec-common.md` 는 남긴다 |
 
 ## 저장소 스크립트에서 orch 부르기
