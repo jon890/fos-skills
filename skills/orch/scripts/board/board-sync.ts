@@ -29,7 +29,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
 //
 // 마일스톤 항목(stages 칸이 있는 항목, lib/milestones.ts, ADR-018)은 위 규칙 대신 사건으로 단계를 끝낸다:
-//     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
+//     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다. [pr] 단계가 없는 묶음(기본 「PR 머지」 한 줄)은 그 줄에 PR 번호를 적고 머지 때 끝낸다
 //     - 머지됐으면 위와 같이 마지막 PR 인지 판정하고 lib/milestones.ts 의 mergedCommands 로 [pr], [merge] 단계를 끝낸다.
 //       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 단, 판정 규칙이 없어 판정하지 못한 경우에는 모든 단계가 끝났고,
 //       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다(lib/last-pr.ts 의 closeUnjudged. finish-pr.ts 도 같은 조건을 쓴다). 그 밖에는 닫지 않고 판정 가능한 단계를 반영한다.
@@ -99,7 +99,7 @@ import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import type { DeployVerdict, RunRow } from '../lib/deploy.ts'
 import { git, mainCheckout } from '../lib/git.ts'
 import { closeUnjudged, hasActiveWorker, judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
-import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
+import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prMergeEdits, prStages, stagesOf } from '../lib/milestones.ts'
 import type { BoardSettings } from '../lib/milestones.ts'
 import { pidFileAlive } from '../lib/process.ts'
 import type { LastPrRules, LastPrVerdict } from '../lib/last-pr.ts'
@@ -590,6 +590,8 @@ function main(argv: string[]): number {
         cmds.push(plan.args)
         details = old
         finish = plan.status === 'done'
+      // 「PR 머지」 한 줄 묶음은 이은 PR 번호를 그 줄에 적는다(core/milestones.ts 의 prMergeEdits)
+      if (stages && !feature) after.push(...prMergeEdits(item, ownPrs()))
         hold = true
       } else if (stages && !(unreadable && numbers.length > 1) && (state === 'OPEN' || merged || openNumbers.length > 0)) {
         const steps = boardSteps(boardBin, id, board)

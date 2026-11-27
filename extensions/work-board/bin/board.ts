@@ -5,11 +5,11 @@
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
 // 사용:
-//   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]
+//   board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages [pr=N,]merge=M] [--keep-current ROLE] [--keep-dispatch D]
 //   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
 //   board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로이고 맞는 줄이 없으면 종료 코드 0 으로 아무것도 하지 않는다)
 //   board.ts worker-link <id> --worktree W --pr N   (그 줄의 pr 을 N 으로 하고 항목 pr 칸에 N 을 더한다. 한 잠금, 한 번 저장이라 둘 중 하나만 저장되지 않는다. 맞는 줄이 없으면 거절한다)
-//   --stages 는 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄의 PR·머지 단계 번호다. 같은 줄을 다시 쓸 때 주지 않으면 그대로 둔다.
+//   --stages 는 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄의 머지 단계 번호(merge=M, 옛 항목은 pr=N,merge=M)다. 같은 줄을 다시 쓸 때 주지 않으면 그대로 둔다.
 //   대표 칸은 가장 최근의 작업 중 구현·후속 줄이다. 리뷰·검증 줄은 대표가 되지 않는다. 줄 필드는 docs/data-schema.md 를 따른다.
 //   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--task-ref REF] [--fill] [--if-task-ref REF] [--progress N/M] [--stages S] [--priority N|none] [--detail D ...]
 //   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
@@ -92,8 +92,8 @@ const STATUSES = ['decide', 'doing', 'wait', 'done']
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
 // stages 칸의 값. 사건과 단계 번호의 짝을 쉼표로 잇는다
 const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|release)=\d+)*\s*$/
-// worker 줄의 stages 값. 후속 묶음은 PR·머지 두 단계만 갖는다
-const ROW_STAGES = /^\s*pr=\d+\s*,\s*merge=\d+\s*$/
+// worker 줄의 stages 값. 후속 묶음은 머지 단계 하나(기본 「PR 머지」 한 줄)나 옛 PR·머지 두 단계를 갖는다
+const ROW_STAGES = /^\s*(?:pr=\d+\s*,\s*)?merge=\d+\s*$/
 // PR 번호를 담는 칸. 「#555」 와 「555」 를 같은 값으로 저장한다(prValue)
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
@@ -114,7 +114,7 @@ const HELP = `${USAGE}
 새 파일이 없으면 기존 .omc 보드를 쓴다. --file 로 위치를 바꿀 수 있다.
 
 사용:
-  board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages pr=N,merge=M] [--keep-current ROLE] [--keep-dispatch D]
+  board.ts worker-add <id> <impl|follow|review|verify> --worktree W [--branch B] [--dispatch D] [--pr N] [--stages [pr=N,]merge=M] [--keep-current ROLE] [--keep-dispatch D]
   board.ts worker-end <id> <done|lost> (--dispatch D | --worktree W) [--clear]
   board.ts worker-set <id> --worktree W [--pr N]   (그 워크트리 줄의 pr 만 바꾼다. status 와 대표 칸은 그대로다)
   board.ts worker-link <id> --worktree W --pr N   (줄의 pr 과 항목 pr 칸을 한 번에 쓴다. 맞는 줄이 없으면 거절한다)
@@ -423,7 +423,7 @@ function parse(argv: string[]): Args | 'help' {
   if (values.priority !== undefined && cmd !== 'set') throw new Error('--priority 는 set 에만 쓴다')
   if ((values.fill !== undefined || values['if-task-ref'] !== undefined) && cmd !== 'set') throw new Error('--fill, --if-task-ref 는 set 에만 쓴다')
   if (values.fill && (values.task === '' || values['task-ref'] === '')) throw new Error('--fill 과 빈 업무 값은 함께 쓰지 않는다')
-  if (cmd === 'worker-add' && values.stages !== undefined && !ROW_STAGES.test(values.stages)) throw new Error(`worker-add 의 --stages 는 pr=N,merge=M 꼴이다: ${values.stages}`)
+  if (cmd === 'worker-add' && values.stages !== undefined && !ROW_STAGES.test(values.stages)) throw new Error(`worker-add 의 --stages 는 merge=M 이나 pr=N,merge=M 꼴이다: ${values.stages}`)
   if (cmd === 'worker-link' && (!id || status !== undefined || !values.worktree?.trim() || !PR_LIST.test(values.pr ?? '') || (values.pr!.match(/\d+/g) ?? []).length !== 1)) throw new Error('worker-link 에는 id, --worktree, PR 번호 하나(--pr)가 필요하다')
   if (cmd === 'worker-set' && (!id || status !== undefined || !values.worktree?.trim())) throw new Error('worker-set 에는 id 와 --worktree 가 필요하다')
   if (values.dispatch !== undefined && !['worker-add', 'worker-end'].includes(cmd)) throw new Error('--dispatch 는 worker-add, worker-end 에만 쓴다')

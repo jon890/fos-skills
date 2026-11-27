@@ -1661,8 +1661,8 @@ test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 �
   assert.equal(item.title, '자동 갱신')
   assert.equal(item.worktree, 'wt')
   assert.equal(item.status, 'doing')
-  assert.deepEqual(item.details, [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }])
-  assert.equal(item.stages, 'pr=1,merge=2')
+  assert.deepEqual(item.details, [{ text: '1. PR 머지', done: false }])
+  assert.equal(item.stages, 'merge=1')
   item.details[0].done = true
   writeFileSync(file, JSON.stringify({ items: [item] }))
   state({ next_ids: ['ctx_2'] })
@@ -1736,7 +1736,7 @@ test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단�
   assert.equal(r.code, 0, both(r))
   const item = JSON.parse(readFileSync(file, 'utf8')).items[0]
   assert.equal(item.id, 'example')
-  assert.equal(item.details.length, 2)
+  assert.equal(item.details.length, 1)
   assert.equal(item.worktree, 'new')
 })
 
@@ -2130,8 +2130,8 @@ describe('마일스톤 단계', () => {
   test('배포 워크플로가 있어도 기본 단계에 배포 단계를 만들지 않는다', () => {
     config({ finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'stage' } })
     const { item } = made()
-    assert.deepEqual(texts(item), ['1. PR', '2. 머지'])
-    assert.equal(item.stages, 'pr=1,merge=2')
+    assert.deepEqual(texts(item), ['1. PR 머지'])
+    assert.equal(item.stages, 'merge=1')
   })
 
   test('board.steps 가 기본 단계를 바꾸고 꼬리표 없는 줄은 stages 에 넣지 않는다', () => {

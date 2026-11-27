@@ -10,6 +10,7 @@ import {
   advanceCommands,
   boardSettings,
   DEFAULT_STEPS,
+  prMergeEdits,
   doneStep,
   eventKinds,
   eventNumbers,
@@ -76,11 +77,21 @@ describe('단계 정의', () => {
     assert.equal(specSteps('# 일\n\n## 보드 단계\n번호 없는 줄\n'), null)
   })
 
-  test('기본 단계는 PR 과 머지 두 줄이다', () => {
-    assert.deepEqual(DEFAULT_STEPS, [
-      { kind: 'pr', text: 'PR' },
-      { kind: 'merge', text: '머지' },
-    ])
+  test('기본 단계는 머지 때 끝나는 「PR 머지」 한 줄이다', () => {
+    assert.deepEqual(DEFAULT_STEPS, [{ kind: 'merge', text: 'PR 머지' }])
+    assert.deepEqual(milestoneLines([...DEFAULT_STEPS]), { details: ['1. PR 머지'], stages: { merge: 1 } })
+  })
+
+  test('「PR 머지」 한 줄 묶음에 PR 번호를 적고 옛 두 줄과 이미 적힌 줄은 그대로 둔다', () => {
+    const one = { id: 'a', stages: 'merge=1', details: [{ text: '1. PR 머지', done: false }] }
+    assert.deepEqual(prMergeEdits(one, ['12']), [['step-edit', 'a', '1', '1. PR #12 머지']])
+    assert.deepEqual(prMergeEdits({ ...one, details: [{ text: '1. PR #12 머지', done: false }] }, ['12']), [])
+    assert.deepEqual(prMergeEdits({ ...one, details: [{ text: '1. 배포 전 머지', done: false }] }, ['12']), [['step-edit', 'a', '1', '1. 배포 전 머지 #12']])
+    assert.deepEqual(prMergeEdits({ id: 'a', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }] }, ['12']), [])
+    // 후속 묶음 줄(merge=2)의 PR 은 그 줄에 적는다
+    const follow = { ...one, details: [{ text: '1. PR #12 머지', done: true }, { text: '2. PR 머지 (wb)', done: false }],
+      workers: [{ role: 'follow', worktree: 'wb', branch: 'b', pr: 13, stages: 'merge=2', status: 'working', at: '2026-01-02', endedAt: null }] }
+    assert.deepEqual(prMergeEdits(follow, ['12', '13']), [['step-edit', 'a', '2', '2. PR #13 머지 (wb)']])
   })
 
   test('단계 줄과 stages 를 시작 번호부터 만들고 stages 칸을 읽는다', () => {

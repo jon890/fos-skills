@@ -115,6 +115,21 @@ test('PR 없는 보고 단계는 담당 worker 의 완료를 받으면 끝난다
   assert.equal(completed.board.measure.status, 'done')
 })
 
+test('「PR 머지」 한 줄 항목은 열린 PR 의 번호를 줄에 적고 끝내지 않는다. 옛 두 줄 항목은 [pr] 단계를 끝낸다', () => {
+  states = { '7': 'OPEN', '8': 'OPEN' }
+  const one = { id: 'one', status: 'doing', pr: 7, stages: 'merge=1', details: [step('1. PR 머지', false)] }
+  const two = { id: 'two', status: 'doing', pr: 8, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)] }
+  const got = sync([one, two])
+  assert.equal(got.code, 0, got.result.stderr)
+  assert.deepEqual(got.board.one.details, [step('1. PR #7 머지', false)])
+  assert.deepEqual(got.board.two.details, [step('1. PR', true), step('2. 머지', false)])
+  // 이미 번호가 적혀 있으면 다시 고치지 않는다
+  const again = sync([got.board.one])
+  assert.equal(again.code, 0, again.result.stderr)
+  assert.match(again.result.stdout, /바뀐 항목 없음/)
+  assert.deepEqual(again.board.one.details, [step('1. PR #7 머지', false)])
+})
+
 test('워크트리 칸이 비워진 뒤에도 담당 worker 의 완료가 보고 단계를 끝낸다', () => {
   repoWith(tmp, [])
   const report = { id: 'measure', status: 'doing', worktree: 'report', details: [step('1. 보고 받기(worker_done)', false)],

@@ -136,6 +136,15 @@ test('worker-add --stages 를 저장하고 다시 쓸 때 주지 않으면 그�
   } finally { b.cleanup() }
 })
 
+test('worker-add --stages 는 「PR 머지」 한 줄 묶음의 merge=M 도 받는다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', stages: 'merge=1', details: ['1. PR #7 머지', '2. PR 머지 (w2)'] })
+    assert.equal(run(b.file, ['worker-add', 'a', 'follow', '--worktree', 'w2', '--branch', 'b2', '--stages', 'merge=2']).code, 0)
+    assert.equal((item(b.file, 'a').workers as Record<string, unknown>[])[0].stages, 'merge=2')
+  } finally { b.cleanup() }
+})
+
 test('worker-add 의 잘못된 --stages 와 worker-set 의 잘못된 인자는 종료 코드 2 다', () => {
   const b = tempBoard()
   try {

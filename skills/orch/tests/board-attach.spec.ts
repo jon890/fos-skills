@@ -48,7 +48,8 @@ test('PR 없는 지시서는 보드에 보고 단계만 만든다', () => {
   }
   board()
   launch('허락: PR 생성까지 허락한다.\n## 배경\n> 커밋·PR 없음')
-  assert.equal(items()[0].stages, 'pr=1,merge=2')
+  assert.equal(items()[0].stages, 'merge=1')
+  assert.deepEqual(items()[0].details, [{ text: '1. PR 머지', done: false }])
 
   board(base({ status: 'done', pr: null, stages: 'merge=1', details: [{ text: '1. 머지', done: true }] }))
   launch('보드 항목 id: a\n허락: PR 은 열지 않는다.')
@@ -191,6 +192,15 @@ const texts = (item: any) => item.details.map((d: any) => d.text)
 
 test('앞 PR 이 열린 항목에 새 브랜치 후속을 붙이면 PR·머지 두 단계를 더하고 줄에 번호를 적는다', () => {
   board(milestone({ 'task-ref': 'P/123' }))
+test('기본 「PR 머지」 한 줄 항목에 새 브랜치 후속을 붙이면 머지 단계 한 줄만 더한다', () => {
+  board(base({ 'task-ref': 'P/123', stages: 'merge=1', details: [{ text: '1. PR #7 머지', done: false }] }))
+  assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
+  const [item] = items()
+  assert.deepEqual(texts(item), ['1. PR #7 머지', '2. PR 머지 (wb)'])
+  assert.equal(item.stages, 'merge=1')
+  assert.equal(item.workers[1].stages, 'merge=2')
+})
+
   assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
   const [item] = items()
   assert.deepEqual(texts(item), ['1. PR', '2. 머지', '3. PR (wb)', '4. 머지 (wb)'])
@@ -230,8 +240,8 @@ test('앞 PR 이 없거나 머지된 항목은 단계를 더하지 않고 다시
   // 단계를 모두 끝낸 doing 항목: 마일스톤 전체
   board(milestone({ pr: undefined, 'merged-pr': 7, 'task-ref': 'P/123', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: true }] }))
   launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
-  assert.deepEqual(texts(items()[0]), ['1. PR', '2. 머지', '3. PR', '4. 머지'])
-  assert.equal(items()[0].stages, 'pr=3,merge=4')
+  assert.deepEqual(texts(items()[0]), ['1. PR', '2. 머지', '3. PR 머지'])
+  assert.equal(items()[0].stages, 'merge=3')
   assert.equal(items()[0].workers.find((one: any) => one.worktree === 'wb').stages, undefined)
 })
 

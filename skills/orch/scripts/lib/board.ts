@@ -2,7 +2,9 @@
 // 지시서에 `중간 과정:` 줄이 있으면 띄울 때 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다.
 // `보드 항목 id:` 로 정한 항목이 done 이면 doing 으로 다시 열고 지난 단계 뒤에 새 단계를 잇는다(ADR-015).
 // id 는 백틱 안의 글이나 공백 앞 첫 토큰이다(lib/spec.ts 의 boardIdOf). 설명이 붙었는데 보드에 없는 id 면 항목을 만들지 않는다
-// 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
+// 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018). 기본은 「PR 머지」 한 줄이다.
+// PR 없는 지시서(core/completion.ts 의 noPrInstruction)만 「할 일」 의 번호 줄을 단계로 쓴다(todoSteps)
+// 이미 있는 항목의 제목은 바꾸지 않는다. 새 항목도 set --create-only 로 만들어 그 사이 생긴 같은 id 를 덮지 않는다
 
 import { normalizeRef, urlFromLine } from '../core/task-adapters.ts'
 import type { TaskAdapter } from '../core/task-adapters.ts'
@@ -76,7 +78,7 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 리뷰·검증은 같은 워크트리, 명시한 id, 대상 PR, head 브랜치 순으로 찾고 상태·단계를 바꾸지 않는다.
 // 구현·후속은 중간 과정, id, 같은 워크트리·브랜치, 업무 번호 순이다. 새로 요청은 자동 찾기를 끈다.
 // 기존 항목의 대표 칸은 worker-add 가 잠금 안에서 쓰고, 실패할 때만 set 으로 돌아간다.
-// 앞 PR 이 열린 마일스톤 항목에 새 브랜치의 후속 worker 가 붙으면 PR·머지 두 단계를 다음 번호로 더하고(step-add, 글 뒤에 `(<워크트리>)`),
+// 앞 PR 이 열린 마일스톤 항목에 새 브랜치의 후속 worker 가 붙으면 머지 단계(단계 정의에 [pr] 이 있으면 PR·머지 두 단계)를 다음 번호로 더하고(step-add, 글 뒤에 `(<워크트리>)`),
 // 그 번호를 후속 줄의 stages 로 적는다(worker-add --stages). 순서는 단계 더하기, worker-add, set 이다. 규칙은 core/milestones.ts 의 「PR 묶음」 이다.
 export type BoardAttach = { item: string; role: WorkerRole; attached: boolean }
 export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string, dispatch = ''): BoardAttach | null {
@@ -278,8 +280,12 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     if (!branch || known.has(branch) || current(item) || !stagesOf(item) || ![...prNumbers(item.pr)].some((pr) => !merged.has(pr))) return ''
     const defs = milestones()
     const numbers: number[] = []
-    for (const kind of ['pr', 'merge'] as const) {
-      const base = (defs.find((step) => step.kind === kind) ?? DEFAULT_STEPS.find((step) => step.kind === kind) as { text: string }).text
+    // 단계 정의에 [pr] 단계가 없으면(기본 「PR 머지」 한 줄) 머지 단계 하나만 더한다.
+    // 항목이 옛 두 줄(stages 에 pr 이 있다)이면 그 꼴을 따라 PR·머지 두 줄을 더한다. 단계 정의에 [pr] 이 없으면 옛 글(PR, 머지)을 쓴다
+    const legacy = stagesOf(item)?.pr !== undefined && !defs.some((step) => step.kind === 'pr')
+    const kinds = legacy || defs.some((step) => step.kind === 'pr') ? (['pr', 'merge'] as const) : (['merge'] as const)
+    for (const kind of kinds) {
+      const base = legacy ? LEGACY_STEP_TEXT[kind] : (defs.find((step) => step.kind === kind) ?? DEFAULT_STEPS.find((step) => step.kind === kind) ?? { text: LEGACY_STEP_TEXT[kind] }).text
       const done = run(scriptCommand(bin, ['step-add', id, `${base} (${wt})`, '--file', file]), { timeoutMs: NO_LIMIT_MS })
       const number = done.code === 0 ? Number((JSON.parse(done.stdout) as { number?: unknown }).number) : NaN
       if (!Number.isInteger(number)) {
@@ -288,7 +294,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
       }
       numbers.push(number)
     }
-    return `pr=${numbers[0]},merge=${numbers[1]}`
+    return numbers.length === 2 ? `pr=${numbers[0]},merge=${numbers[1]}` : `merge=${numbers[0]}`
   }
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
@@ -301,6 +307,31 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
 function allStagesDone(item: BoardItem): boolean {
   const steps = (Array.isArray(item.details) ? item.details : []).filter((d) => /^\d+[.)]\s/.test(detailText(d).replace(LEAD_MARK, '')))
   return steps.length > 0 && steps.every((d) => (typeof d === 'string' ? /^\s*(?:✓|\[[xX]\])/.test(d) : d.done === true))
+}
+
+// 옛 기본 단계(PR, 머지 두 줄)의 글. 옛 두 줄 항목에 후속 묶음을 더할 때 쓴다
+const LEGACY_STEP_TEXT = { pr: 'PR', merge: '머지' } as const
+
+// 지시서 「할 일」 절의 맨 앞 번호 줄 글. 들여 쓴 하위 줄과 예시 블록은 읽지 않는다. 굵게 표시와 코드 표시를 떼고
+// 첫 문장만 80자 안으로 줄인다(보드 줄 규칙). 절이 없거나 번호 줄이 없으면 빈 목록이다
+export function todoSteps(text: string): string[] {
+  let fence = false
+  const lines = text.split('\n').filter((line) => {
+    if (/^\s*(?:`{3,}|~{3,})/.test(line)) { fence = !fence; return false }
+    return !fence
+  })
+  const at = lines.findIndex((line) => /^##\s+할 일(?:\s.*)?$/.test(line))
+  if (at < 0) return []
+  const steps: string[] = []
+  for (const line of lines.slice(at + 1)) {
+    if (/^#{1,2}\s/.test(line)) break
+    const body = /^(\d+)[.)]\s+(.+)$/.exec(line)?.[2]
+    if (!body) continue
+    const plain = body.replaceAll('**', '').replace(/`([^`]*)`/g, '$1').trim()
+    const sentence = plain.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? plain
+    steps.push(sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence)
+  }
+  return steps
 }
 
 export type SpecTask = { number: string; title: string | null; line: string }
