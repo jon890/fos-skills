@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText, TASK_FEED_SINCE } from '../scripts/adapters/dooray.ts'
+import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, MAX_THREAD_FAILURES, MAX_THREADS, messageText, MORE_LOG_COUNT, mentions, plainText, TASK_FEED_SINCE, THREAD_SCAN_COUNT } from '../scripts/adapters/dooray.ts'
 import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
 
 const ME = '4567890123456789012'
@@ -92,6 +92,11 @@ function runner(argv: string[]): RunResult {
   const key = argv.slice(2, 4).join(' ')
   const writeKey = argv.slice(1, 3).join(' ')
   if (failing.has(key) || failing.has(argv.slice(2).join(' ')) || (argv[1] !== '--json' && failing.has(writeKey))) return { code: 1, stdout: '', stderr: `${key} 실패 (429)` }
+  if (argv[1] === '--version') return { code: 0, stdout: '0.36.0\n', stderr: '' }
+  if (argv[1] === 'messenger' && argv[2] === 'react') {
+    sent.push({ argv, body: '' })
+    return { code: 0, stdout: '', stderr: '' }
+  }
   if (argv[1] !== '--json') {
     const file = argv[argv.indexOf('--body-file') + 1]
     sent.push({ argv, body: readFileSync(file, 'utf8') })
@@ -107,7 +112,7 @@ function runner(argv: string[]): RunResult {
   if (key === 'post get') return ok(POSTS[args[3]])
   if (key === 'post comment') return ok(comments)
   if (key === 'messenger channels') return ok(channelList)
-  if (key === 'messenger logs') return ok(LOGS[args[2]] ?? [])
+  if (key === 'messenger logs') return ok((LOGS[args[2]] ?? []).slice(0, Number(args[4]) || undefined))
   return { code: 1, stdout: '', stderr: `모르는 명령 ${argv.join(' ')}` }
 }
 
@@ -202,16 +207,20 @@ describe('받기', () => {
     }
   })
 
-  test(`한 방의 logs ${LOG_COUNT}개가 모두 지난 받기 뒤의 것이면 ${MORE_LOG_COUNT}개로 다시 읽는다`, () => {
+  test(`바뀐 방은 logs ${THREAD_SCAN_COUNT}개를 한 번에 읽고, 스레드 logs ${LOG_COUNT}개가 모두 지난 받기 뒤의 것이면 ${MORE_LOG_COUNT}개로 다시 읽는다`, () => {
     const busy = Array.from({ length: LOG_COUNT }, (_, i) => ({ id: `b${i}`, sender: { member: { organizationMemberId: LEE } },
       sentAt: new Date(Date.parse('2026-11-02T05:30:00Z') + i * 1000).toISOString(), text: '잡담' }))
-    LOGS['ch-dev'] = busy
+    LOGS['ch-dev'] = [...DEV_LOGS, { id: 'p-busy', sender: { member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T13:00:00+09:00', text: '스레드',
+      thread: { channelId: 'th-busy', totalCount: LOG_COUNT, lastUpdatedAt: Date.parse('2026-11-02T05:50:00Z') } }]
+    LOGS['th-busy'] = busy
     try {
       adapter().fetch({ since: SINCE, cursors: { messenger: '2026-11-02T05:00:00.000Z' } })
-      const counts = calls.filter((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev').map((argv) => argv[6])
-      assert.deepEqual(counts, [String(LOG_COUNT), String(MORE_LOG_COUNT)])
+      const counts = (id: string) => calls.filter((argv) => argv[3] === 'logs' && argv[4] === id).map((argv) => argv[6])
+      assert.deepEqual(counts('ch-dev'), [String(THREAD_SCAN_COUNT)])
+      assert.deepEqual(counts('th-busy'), [String(LOG_COUNT), String(MORE_LOG_COUNT)])
     } finally {
       LOGS['ch-dev'] = DEV_LOGS
+      delete LOGS['th-busy']
     }
   })
 
@@ -224,7 +233,7 @@ describe('받기', () => {
   })
 
   test('대화방 하나의 logs 가 실패하면 그 방만 빼고 오류를 남긴다', () => {
-    failing.add('messenger logs ch-dev -n 50')
+    failing.add(`messenger logs ch-dev -n ${THREAD_SCAN_COUNT}`)
     const result = adapter().fetch({ since: SINCE, cursors: {} })
     assert.match(result.errors.messenger, /대화방 1개 읽기 실패: 예시 개발방/)
     assert.deepEqual(result.items.filter((row) => row.source === 'messenger').map((row) => row.id), ['dooray:messenger:ch-dm:l9'])
@@ -238,11 +247,177 @@ describe('받기', () => {
   })
 })
 
+// 스레드 답글 실측 꼴(dooray-cli 0.36.0): 부모 메시지의 thread 칸에 스레드 대화방 id, 답글 수, 마지막 답글 시각(epoch ms)이 있다.
+// 스레드는 channels 목록에 나오지 않는다. id, 이름, 메시지는 가짜 값이다
+const THREAD_FROM = '2026-11-02T05:00:00.000Z'
+function parentLog(id: string, threadId: string, lastUpdatedAt: string) {
+  return { id, sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T13:00:00+09:00', text: '배포 순서 정리했어요',
+    thread: { channelId: threadId, totalCount: 4, lastUpdatedAt: Date.parse(lastUpdatedAt) } }
+}
+const THREAD_LOGS = [
+  { id: 't4', sender: { type: 'member', member: { organizationMemberId: LEE } }, sentAt: '2026-11-02T14:40:00+09:00', text: `${link(ME, '김병태')} 이 순서로 괜찮을까요?` },
+  { id: 't3', sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T14:35:00+09:00', text: '좋아요' },
+  { id: 't2', sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T14:30:00+09:00', text: JSON.stringify({ type: 0, text: `${link(ME, '김병태')} 확인 부탁해요` }) },
+  { id: 't1', sender: { type: 'member', member: { organizationMemberId: LEE } }, sentAt: '2026-11-02T14:20:00+09:00', text: '저는 봤어요' },
+]
+
+describe('스레드 답글 멘션', () => {
+  let saved: unknown[]
+  beforeEach(() => {
+    saved = LOGS['ch-dev']
+    LOGS['ch-dev'] = [...DEV_LOGS, parentLog('p-new', 'th-new', '2026-11-02T14:40:00+09:00'), parentLog('p-old', 'th-old', '2026-11-01T10:00:00+09:00')]
+    LOGS['th-new'] = THREAD_LOGS
+    LOGS['th-old'] = THREAD_LOGS
+  })
+  afterEach(() => {
+    LOGS['ch-dev'] = saved
+    delete LOGS['th-new']
+    delete LOGS['th-old']
+    for (let i = 0; i < MAX_THREADS + 3; i++) delete LOGS[`th${i}`]
+    for (let i = 0; i < MAX_THREADS; i++) delete LOGS[`thf${i}`]
+  })
+
+  test('부모 메시지에 멘션이 없어도 지난 받기 뒤에 달린 스레드 답글의 멘션을 모은다', () => {
+    const result = adapter().fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    assert.deepEqual(result.errors, {})
+    const thread = result.items.filter((row) => row.target.kind === 'messenger' && row.target.channelId === 'th-new')
+    assert.deepEqual(thread.map((row) => row.id).sort(), ['dooray:messenger:th-new:t2', 'dooray:messenger:th-new:t4'])
+    // 보드 제목과 숨김 기준은 부모 방이다
+    for (const row of thread) {
+      assert.equal(row.title, '예시 개발방')
+      assert.deepEqual(row.scope, ['ch-dev', '예시 개발방'])
+    }
+    assert.equal(thread.find((row) => row.id.endsWith('t2'))?.excerpt, '@김병태 확인 부탁해요')
+    // 지난 받기 전에 끝난 스레드는 다시 읽지 않는다
+    const read = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
+    assert.ok(read.includes('th-new'))
+    assert.ok(!read.includes('th-old'))
+  })
+
+  test('스레드 멘션의 답장과 리액션은 스레드로 간다', () => {
+    const target = adapter()
+    const row = target.fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } }).items.find((item) => item.id === 'dooray:messenger:th-new:t4')!
+    target.reply(row, '네 괜찮아요')
+    assert.deepEqual(sent[0].argv.slice(0, 5), ['dooray', 'messenger', 'channel-send', '--channel', 'th-new'])
+    target.react(row, 'thumbsup', { confirmed: true })
+    assert.deepEqual(sent[1].argv, ['dooray', 'messenger', 'react', 'th-new', 't4', '--emoji=thumbsup'])
+    // 맥락과 답함도 스레드 logs 로 본다
+    assert.equal(target.context(row).body, `${link(ME, '김병태')} 이 순서로 괜찮을까요?`)
+    assert.equal(target.answered(row), false)
+  })
+
+  test(`스레드는 한 번에 ${MAX_THREADS}개까지만 읽고 남은 스레드는 다음 받기에 읽는다`, () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    const count = MAX_THREADS + 3
+    LOGS['ch-dev'] = Array.from({ length: count }, (_, i) => parentLog(`p${i}`, `th${i}`, '2026-11-02T14:40:00+09:00'))
+    for (let i = 0; i < count; i++) LOGS[`th${i}`] = THREAD_LOGS
+    const threadReads = () => calls.filter((argv) => argv[3] === 'logs' && argv[4].startsWith('th')).map((argv) => argv[4])
+    const first = make().fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    assert.equal(threadReads().length, MAX_THREADS)
+    assert.equal(first.items.filter((row) => row.id.startsWith('dooray:messenger:th')).length, MAX_THREADS * 2)
+    calls = []
+    channelList = []
+    const second = make().fetch({ since: SINCE, cursors: first.cursors })
+    assert.deepEqual(threadReads(), Array.from({ length: 3 }, (_, i) => `th${MAX_THREADS + i}`))
+    assert.equal(second.items.length, 3 * 2 + 3)
+    assert.deepEqual(cache.read('dooray-pending-threads', ['?']), [])
+  })
+
+  test(`부모 메시지가 최근 ${LOG_COUNT}개 밖에 있어도 스레드를 찾는다`, () => {
+    const chatter = Array.from({ length: LOG_COUNT + 10 }, (_, i) => ({ id: `n${i}`, sender: { member: { organizationMemberId: LEE } },
+      sentAt: new Date(Date.parse('2026-11-02T05:59:00Z') - i * 120_000).toISOString(), text: '잡담' }))
+    // 부모 메시지는 지난 받기 전에 올라왔고, 그 뒤로 잡담이 지난 받기 앞뒤에 걸쳐 쌓였다
+    LOGS['ch-dev'] = [...chatter, { ...parentLog('p-deep', 'th-new', '2026-11-02T14:40:00+09:00'), sentAt: '2026-11-02T10:00:00+09:00' }]
+    const result = adapter().fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    assert.ok(result.items.some((row) => row.id === 'dooray:messenger:th-new:t4'))
+  })
+
+  test('부모 방 읽기가 실패하면 다음 받기는 실패한 받기의 기준 시각으로 스레드를 고른다', () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    failing.add(`messenger logs ch-dev -n ${THREAD_SCAN_COUNT}`)
+    const first = make().fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    // 커서는 앞으로 가서, 스레드의 마지막 답글(05:40Z)이 새 커서(06:00Z)보다 앞이 된다
+    assert.equal(first.cursors.messenger, '2026-11-02T06:00:00.000Z')
+    failing.clear()
+    calls = []
+    channelList = []
+    const second = make().fetch({ since: SINCE, cursors: first.cursors })
+    assert.ok(second.items.some((row) => row.id === 'dooray:messenger:th-new:t4'))
+    assert.deepEqual(cache.read('dooray-pending-channels', { '?': '' }), {})
+  })
+
+  test(`바뀐 방이 ${MAX_CHANNELS}개를 넘어 미룬 방은 다음 받기에도 미룰 때의 기준 시각으로 스레드를 고른다`, () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    // 앞 묶음의 방들이 스레드의 마지막 답글(05:40Z) 뒤에 바뀌어, 다음 커서가 그 답글보다 뒤가 된다
+    const filler = Array.from({ length: MAX_CHANNELS }, (_, i) => ({ id: `cf${i}`, title: `방${i}`, type: 'private',
+      updatedAt: new Date(Date.parse('2026-11-02T05:41:00Z') + i * 1000).toISOString() }))
+    const dev = { id: 'ch-dev', title: '예시 개발방', type: 'private', updatedAt: '2026-11-02T05:50:00.000Z' }
+    channelList = [...filler, dev]
+    const first = make().fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    assert.ok(!calls.some((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev'))
+    assert.ok(first.cursors.messenger > '2026-11-02T05:40:00.000Z')
+    calls = []
+    channelList = [dev]
+    const second = make().fetch({ since: SINCE, cursors: first.cursors })
+    assert.ok(second.items.some((row) => row.id === 'dooray:messenger:th-new:t4'))
+    assert.deepEqual(cache.read('dooray-pending-channels', { '?': '' }), {})
+  })
+
+  test(`읽지 못하는 스레드는 시도하지 않은 스레드 뒤로 가고, ${MAX_THREAD_FAILURES}번 실패하면 대기열에서 빠진다`, () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    const broken = Array.from({ length: MAX_THREADS }, (_, i) => `thf${i}`)
+    LOGS['ch-dev'] = [...broken.map((id, i) => parentLog(`pf${i}`, id, '2026-11-02T14:40:00+09:00')), parentLog('p-new', 'th-new', '2026-11-02T14:40:00+09:00')]
+    for (const id of broken) failing.add(`messenger logs ${id} -n ${LOG_COUNT}`)
+    let cursors: Record<string, string> = { messenger: THREAD_FROM }
+    const errors: string[] = []
+    const found: string[] = []
+    for (let round = 0; round < MAX_THREAD_FAILURES + 2; round++) {
+      const result = make().fetch({ since: SINCE, cursors })
+      cursors = result.cursors
+      channelList = []
+      if (result.errors.messenger) errors.push(result.errors.messenger)
+      found.push(...result.items.filter((row) => row.id === 'dooray:messenger:th-new:t4').map(() => String(round)))
+    }
+    // 첫 받기는 읽지 못하는 스레드로 차고, 둘째 받기에서 아직 시도하지 않은 스레드를 먼저 읽는다
+    assert.deepEqual(found, ['1'])
+    assert.ok(errors.some((line) => line.includes(`${MAX_THREAD_FAILURES}번 읽지 못해 더 읽지 않는다`)))
+    assert.deepEqual(cache.read('dooray-pending-threads', ['?']), [])
+  })
+
+  test('예전 재시도 캐시의 방은 대기 방으로 옮겨 다시 읽는다', () => {
+    const cache = new MemoryCache()
+    cache.write('dooray-retry-channels', ['ch-dev'])
+    cache.write('dooray-channel-titles', { 'ch-dev': '예시 개발방' })
+    channelList = []
+    const result = createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+      .fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    assert.ok(result.items.some((row) => row.id === 'dooray:messenger:th-new:t4'))
+    assert.deepEqual(cache.read('dooray-retry-channels', ['?']), [])
+  })
+
+  test('스레드 logs 가 실패하면 오류를 남기고 다음 받기에 다시 읽는다', () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    failing.add('messenger logs th-new -n 50')
+    const first = make().fetch({ since: SINCE, cursors: { messenger: THREAD_FROM } })
+    assert.match(first.errors.messenger, /예시 개발방 스레드/)
+    failing.clear()
+    calls = []
+    channelList = []
+    const second = make().fetch({ since: SINCE, cursors: first.cursors })
+    assert.ok(second.items.some((row) => row.id === 'dooray:messenger:th-new:t4'))
+  })
+})
+
 describe('부분 실패와 이름 (검토 반영)', () => {
   test('대화방 하나가 실패해도 메신저 커서는 앞으로 가고 그 방은 다음 받기에 다시 읽는다 (R7)', () => {
     const cache = new MemoryCache()
     const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
-    failing.add('messenger logs ch-dev -n 50')
+    failing.add(`messenger logs ch-dev -n ${THREAD_SCAN_COUNT}`)
     const first = make().fetch({ since: SINCE, cursors: {} })
     assert.match(first.errors.messenger, /예시 개발방/)
     assert.equal(first.cursors.messenger, '2026-11-02T06:00:00.000Z')
@@ -255,7 +430,7 @@ describe('부분 실패와 이름 (검토 반영)', () => {
     assert.ok(calls.some((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev'))
     assert.ok(second.items.some((row) => row.id === 'dooray:messenger:ch-dev:l1'))
     assert.deepEqual(second.items.find((row) => row.id === 'dooray:messenger:ch-dev:l1')?.scope, ['ch-dev', '예시 개발방'])
-    assert.deepEqual(cache.read('dooray-retry-channels', ['?']), [])
+    assert.deepEqual(cache.read('dooray-pending-channels', { '?': '' }), {})
   })
 
   test('업무 하나의 조회가 실패하면 그 원소만 빼고 커서는 앞으로 간다', () => {
