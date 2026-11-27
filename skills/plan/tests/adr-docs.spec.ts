@@ -184,6 +184,23 @@ describe("docs-audit 문서 구조 검사", () => {
     ]);
   });
 
+  test("이미지를 감싼 문서 링크를 세고 기존 깨진 이미지 발견은 유지한다", () => {
+    const root = repo({
+      [overlayPath]: enabled,
+      "README.md": "# 문서\n\n[![가이드](https://example.com/badge.svg)](guide.md)\n",
+      "guide.md": "# 가이드\n",
+    });
+    const clean = run(root, "check", "--docs-audit");
+    assert.equal(clean.code, 0, clean.err);
+    assert.deepEqual(clean.out, []);
+
+    write(root, { "README.md": "# 문서\n\n[![가이드](missing.svg)](guide.md)\n" });
+    const baseline = run(root, "check");
+    assert.equal(baseline.code, 1);
+    assert.deepEqual(baseline.out, ["README.md:3: BROKEN_LINK missing.svg"]);
+    assert.deepEqual(run(root, "check", "--docs-audit"), baseline);
+  });
+
   test("Git 무시 경로와 제외 폴더의 문서는 발견과 링크 출처에서 모두 뺀다", () => {
     const root = repo({
       "README.md": "# 문서\n",

@@ -175,39 +175,42 @@ export function prose(text: string, stripSpans = true): string[] {
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*$/;
 export type InlineLink = { start: number; end: number; text: string; target: string };
 
+function inlineDestination(line: string, i: number): { target: string; end: number } | undefined {
+  while (line[i] === " ") i++;
+  let target: string;
+  if (line[i] === "<") {
+    const close = line.indexOf(">", i);
+    if (close < 0) return undefined;
+    target = line.slice(i + 1, close);
+    i = close + 1;
+  } else {
+    let depth = 0;
+    const from = i;
+    for (; i < line.length; i++) {
+      const c = line[i];
+      if (c === "\\") i++;
+      else if (c === "(") depth++;
+      else if (c === ")") {
+        if (depth === 0) break;
+        depth--;
+      } else if (/\s/.test(c)) break;
+    }
+    target = line.slice(from, i);
+  }
+  const tail = /^\s*(?:(?:"[^"]*"|'[^']*')\s*)?\)/.exec(line.slice(i));
+  return tail ? { target, end: i + tail[0].length } : undefined;
+}
+
 // 한 줄의 인라인 링크(이미지 포함). 대상 안의 짝이 맞는 괄호는 경로의 일부다(GFM). `guide(v2).md` 를 자르지 않는다.
 export function inlineLinks(line: string): InlineLink[] {
   const found: InlineLink[] = [];
   const open = /!?\[([^\]\n]*)\]\(/g;
   let m: RegExpExecArray | null;
   while ((m = open.exec(line))) {
-    let i = m.index + m[0].length;
-    while (line[i] === " ") i++;
-    let target = "";
-    if (line[i] === "<") {
-      const close = line.indexOf(">", i);
-      if (close < 0) continue;
-      target = line.slice(i + 1, close);
-      i = close + 1;
-    } else {
-      let depth = 0;
-      const from = i;
-      for (; i < line.length; i++) {
-        const c = line[i];
-        if (c === "\\") i++;
-        else if (c === "(") depth++;
-        else if (c === ")") {
-          if (depth === 0) break;
-          depth--;
-        } else if (/\s/.test(c)) break;
-      }
-      target = line.slice(from, i);
-    }
-    const tail = /^\s*(?:(?:"[^"]*"|'[^']*')\s*)?\)/.exec(line.slice(i));
-    if (!tail || !target) continue;
-    const end = i + tail[0].length;
-    found.push({ start: m.index, end, text: m[1], target });
-    open.lastIndex = end;
+    const destination = inlineDestination(line, m.index + m[0].length);
+    if (!destination?.target) continue;
+    found.push({ start: m.index, end: destination.end, text: m[1], target: destination.target });
+    open.lastIndex = destination.end;
   }
   return found;
 }
@@ -291,16 +294,23 @@ export function linksOf(lines: string[]): Link[] {
   return links;
 }
 
-const REFERENCE_LABEL = /\[((?:\\.|[^\[\]\\\n])*)\]/g;
-
 function referenceKey(label: string) {
   return label.trim().replace(/[ \t]+/g, " ").toLowerCase();
 }
 
-function isEscaped(line: string, index: number) {
-  let start = index;
-  while (start > 0 && line[start - 1] === "\\") start--;
-  return (index - start) % 2 !== 0;
+// 여는 대괄호마다 닫는 위치를 찾는다. 이미지를 감싼 링크에서 바깥 대괄호도 짝을 이루어야 한다.
+function bracketEnds(line: string): Map<number, number> {
+  const starts: number[] = [];
+  const ends = new Map<number, number>();
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\\") i++;
+    else if (line[i] === "[") starts.push(i);
+    else if (line[i] === "]") {
+      const start = starts.pop();
+      if (start !== undefined) ends.set(start, i);
+    }
+  }
+  return ends;
 }
 
 // 문서 연결을 셀 때는 본문에서 실제로 쓰인 참조만 푼다. 깨진 링크 검사는 linksOf로 정의도 따로 본다.
@@ -314,38 +324,24 @@ function* documentLinkTargets(lines: string[]): Generator<string> {
     return false;
   });
   for (const line of body) {
-    const inlines = new Map<number, InlineLink>();
-    for (const link of inlineLinks(line)) {
-      const opener = link.start + Number(line[link.start] === "!");
-      if (!isEscaped(line, opener)) inlines.set(opener, link);
-    }
-    if (definitions.size === 0) {
-      for (const link of inlines.values()) yield link.target;
-      continue;
-    }
-
-    const labels = new Map<number, RegExpMatchArray>();
-    for (const label of line.matchAll(REFERENCE_LABEL)) {
-      if (!isEscaped(line, label.index)) labels.set(label.index, label);
-    }
-    const starts = [...new Set([...inlines.keys(), ...labels.keys()])].sort((a, b) => a - b);
-    let consumed = 0;
-    for (const start of starts) {
-      if (start < consumed) continue;
-      const inline = inlines.get(start);
+    const ends = bracketEnds(line);
+    for (let start = 0; start < line.length; start++) {
+      const end = ends.get(start);
+      if (end === undefined) continue;
+      const next = end + 1;
+      const inline = line[next] === "(" ? inlineDestination(line, next + 1) : undefined;
       if (inline) {
-        consumed = inline.end;
-        yield inline.target;
+        if (inline.target) yield inline.target;
+        start = inline.end - 1;
         continue;
       }
-      const label = labels.get(start)!;
-      const end = start + label[0].length;
-      const suffix = labels.get(end);
+      const suffixEnd = ends.get(next);
+      const suffix = suffixEnd === undefined ? "" : line.slice(next + 1, suffixEnd);
       // 뒤에 라벨이 붙으면 그 라벨로 찾는다. 없으면 다음 라벨부터 다시 검사한다.
-      const target = definitions.get(referenceKey(suffix?.[1] || label[1]));
-      if (!target || /^\(\s*(?:<>)?\s*\)/.test(line.slice(end))) continue;
-      consumed = end + (suffix?.[0].length ?? 0);
+      const target = definitions.get(referenceKey(suffix || line.slice(start + 1, end)));
+      if (!target) continue;
       yield target;
+      start = suffixEnd ?? end;
     }
   }
 }
