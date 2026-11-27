@@ -62,7 +62,8 @@ export async function bringUpToDate(stepContext: StepContext, state: StepState):
   for (;;) {
     p.judgedBase = null
     turn(stepContext, state, rounds > 0 ? TURN_PHASES.updated : TURN_PHASES.checks)
-    await waitChecks(stepContext, state)
+    // 차례를 처음 볼 때 체크가 하나도 없으면 기다리지 않고 멈춘다. 마지막 재판정은 HEAD 가 바뀐 PR 도 다시 보므로 새 CI 가 붙기를 기다린다
+    await waitChecks(stepContext, state, { noChecksStop: rounds === 0 && !state.rechecking })
     let updateDocs = false
     if (o.updateDocs) {
       const ov = overlapFiles(stepContext, state)

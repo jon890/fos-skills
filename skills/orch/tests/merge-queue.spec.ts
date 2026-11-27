@@ -175,19 +175,35 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     has(r.stdout, 'STOP 1 체크가 아직 끝나지 않았다(진행 중 1')
     lacks(c.log(), 'pr merge')
   })
-  test('체크가 없으면 대기 한도에서 멈추고 설정을 켜면 머지한다', async (t) => {
+  // fos-study 2026-11-27: CI 가 없는 저장소에서 큐가 5분 동안 짧은 출력 없이 기다려 멈춘 것으로 보였다
+  test('체크가 하나도 없으면 기다리지 않고 관문과 같은 이유로 멈추고 설정을 켜면 머지한다', async (t) => {
     const c = setup(t)
+    // 실제 대기 5분(--missing-timeout 기본값)을 0.6초로 줄인다. 바로 멈추면 그보다 훨씬 짧다
+    c.env.MERGE_QUEUE_SLEEP_SCALE = '0.002'
+    c.env.ORCH_OUTPUT = 'short'
     const state = { '1': pr({ statusCheckRollup: [] }) }
-    const args = ['--no-sweep', '--stop-on-hold', '--missing-timeout', '1', '1']
+    const args = ['--no-sweep', '--stop-on-hold', '1']
     const held = await c.runQueue(state, args)
     assert.equal(held.code, 1, both(held))
-    has(held.stdout, '진행 중인 체크가 없는데 CI 체크가 1분째 하나도 나타나지 않는다. CI 가 없는 저장소면 queue.allow_no_checks 를 켠다')
+    has(held.stdout, 'STOP 1 PR 에 CI 체크가 하나도 없다. CI 가 없는 저장소면 queue.allow_no_checks 를 켠다')
+    lacks(held.stdout, 'CHECK-WAIT')
     lacks(c.log(), 'pr merge')
+    delete c.env.ORCH_OUTPUT
 
     config(c, { queue: { allow_no_checks: true } })
     const merged = await c.runQueue(state, args)
     assert.equal(merged.code, 0, both(merged))
     has(merged.stdout, 'QUEUE-DONE')
+  })
+  test('체크를 기다리는 동안 몇 분째 무엇을 기다리는지 짧은 출력에도 낸다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_OUTPUT = 'short'
+    const state = { '1': pr({ statusCheckRollup: [{ name: 'Tests', status: 'IN_PROGRESS' }], appear: { left: 30, checks: [] } }) }
+    const r = await c.runQueue(state, ['--no-sweep', '--stop-on-hold', '--check-timeout', '10', '1'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^CHECK-WAIT 1 1분째 진행 중인 체크 1개가 끝나기를 기다린다$/m)
+    assert.match(r.stdout, /^CHECK-WAIT 1 3분째 진행 중인 체크 1개가 끝나기를 기다린다$/m)
+    has(r.stdout, '체크 대기 10분 초과')
   })
   test('체크 대기를 끝낸 뒤 새 체크가 붙으면 머지 전 명령에 들어가지 않는다', async (t) => {
     const c = setup(t)

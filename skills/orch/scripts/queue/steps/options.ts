@@ -23,6 +23,7 @@ export function parseArgs(argv: string[], command: 'merge' | 'gate' = 'merge'): 
     threadsCmd: '',
     checkTimeout: '60',
     missingTimeout: '5',
+    reviewTimeout: '20',
     required: [],
     allowFail: [],
     upToDate: false,
@@ -67,6 +68,7 @@ export function parseArgs(argv: string[], command: 'merge' | 'gate' = 'merge'): 
       else if (arg === '--threads-cmd') o.threadsCmd = value
       else if (arg === '--check-timeout') o.checkTimeout = value
       else if (arg === '--missing-timeout') o.missingTimeout = value
+      else if (arg === '--review-timeout') o.reviewTimeout = value
       else if (arg === '--required') o.required.push(...splitNames(value))
       else if (arg === '--required-check') o.required.push(value)
       else if (arg === '--allow-fail') o.allowFail.push(...splitNames(value))
@@ -106,6 +108,7 @@ export function validate(o: Options): Options {
   if (!['merge', 'squash', 'rebase'].includes(o.method)) throw new Usage('--method 는 merge, squash, rebase 중 하나다')
   if (!isDigits(o.checkTimeout)) throw new Usage('--check-timeout 은 분 단위 정수다')
   if (!isDigits(o.missingTimeout)) throw new Usage('--missing-timeout 은 분 단위 정수다')
+  if (!isDigits(o.reviewTimeout)) throw new Usage('--review-timeout 은 분 단위 정수다')
   for (const [name, value] of [['--poll-min-sec', o.pollMinSec], ['--poll-max-sec', o.pollMaxSec], ['--ci-expected-sec', o.ciExpectedSec || '1']]) {
     if (!isDigits(value) || Number(value) < 1) throw new Usage(`${name} 는 1 이상의 정수(초)다`)
   }

@@ -86,6 +86,8 @@ export type Options = {
   threadsCmd: string
   checkTimeout: string
   missingTimeout: string
+  // 관문 --wait 가 믿는 봇의 리뷰를 기다리는 한도(분). 머지 큐는 받지만 쓰지 않는다
+  reviewTimeout: string
   required: string[]
   allowFail: string[]
   upToDate: boolean
