@@ -1,1 +1,0 @@
-- `orch board set <항목> --priority 1`로 우선순위를 정하고 `--priority none`으로 지워요. `show`와 `list`에서 우선순위를 확인할 수 있어요.
