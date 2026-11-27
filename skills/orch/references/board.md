@@ -217,7 +217,7 @@ orch board release --release "$RELEASE_PR"
 | 시점 | 담당 | 갱신하는 것 |
 | --- | --- | --- |
 | worker 를 띄운 뒤 | `launch-worker.ts` | 지시서의 보드 항목 id 로 항목을 찾거나 만들어 doing 으로 두고 위 「마일스톤 단계」 로 `stages` 필드를 둔다. 항목 찾기 순서, 제목 정하기, 같은 업무의 다음 PR 을 이어 쓰는 규칙, `중간 과정: PR #N` 줄, done 항목 다시 열기는 `launch-worker.ts` 와 `scripts/lib/board.ts` 의 `registerBoard`·`specTitle` 주석이 소유한다. 항목이 이미 있으면 제목과 단계는 사용자가 정한 마일스톤이라 그대로 둔다. 업무 연결 줄의 꼴은 `board.task_line` 이 정한다. 번호는 `task-ref`, 같은 줄의 어댑터 호스트 주소는 `task` 에 빈 칸일 때만 넣는다. 새 제목에는 번호를 붙이지 않고 같은 업무는 번호 칸으로 먼저 찾는다 |
-| 성공한 `worker_done` | `orch-loop.ts` → `board-sync.ts --worker-steps` | 위 「worker 보고로 단계 끝내기」 대로 `steps=` 의 단계나 PR 없는 일의 남은 단계를 끝낸다 |
+| 성공한 `worker_done` | `orch-loop.ts`, `board-sync.ts` | 위 「worker 보고로 단계 끝내기」 대로 `steps=` 의 단계나 PR 없는 일의 남은 단계를 끝낸다 |
 | 준비됨 `worker_done` | `orch-loop.ts` | 그 PR 의 브랜치로 `pr` 필드가 빈 항목을 찾아 `pr` 필드를 채우고 PR 제목의 번호(`finish.task_pattern`)를 업무 칸(`task`, `task-ref`)이 둘 다 빌 때만 넣는다 |
 | 틱마다 | `orch-loop.ts` → `lib/task-links.ts` | 번호만 있는 열린 항목의 업무 주소를 어댑터로 만들어 채운다. 실패는 항목·번호마다 한 번 `TASK-LINK-FAIL` 로 남기고 30분마다 다시 해 본다 |
 | 틱마다 | `orch-loop.ts` → `board-sync.ts` | 항목의 `pr` 필드를 연결할 때 PR 제목의 번호(`finish.task_pattern`)를 업무 칸(`task`, `task-ref`)이 둘 다 빌 때만 넣고, 마일스톤 항목의 PR 이 열려 있으면 `[pr]` 단계를 끝내고, 없어진 워크트리 이름을 비우고, 결정 항목이 바뀌면 REMINDER 를 한 번 기록한다. 판정은 `board-sync.ts` 머리 주석이 소유한다 |

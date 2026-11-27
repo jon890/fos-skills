@@ -166,13 +166,14 @@ test('앞 PR 이 머지돼 단계가 모두 끝난 항목에 새 브랜치 worke
   registerBoard(repo, spec, join(repo, 'wt2'), 'a', 'feat/pr2')
   const row = items()[0]
   assert.equal(row.branch, 'feat/pr2')
-  assert.equal(row.stages, 'pr=3,merge=4')
+  // 다시 연 단계는 지금 기본 단계(「PR 머지」 한 줄)다
+  assert.equal(row.stages, 'merge=3')
   assert.deepEqual(row.details.slice(0, 2).map((d: { done: boolean }) => d.done), [true, true])
-  assert.equal(row.details.length, 4)
-  assert.equal(row.details[2].done, false)
+  assert.equal(row.details.length, 3)
+  assert.deepEqual(row.details[2], { text: '3. PR 머지', done: false })
   registerBoard(repo, spec, join(repo, 'wt2'), 'a', 'feat/pr2')
-  assert.equal(items()[0].details.length, 4)
-  assert.equal(items()[0].stages, 'pr=3,merge=4')
+  assert.equal(items()[0].details.length, 3)
+  assert.equal(items()[0].stages, 'merge=3')
 })
 
 test('끝나지 않은 단계가 남았거나 merged-pr 이 없는 항목은 새 브랜치여도 단계를 더하지 않는다', () => {
