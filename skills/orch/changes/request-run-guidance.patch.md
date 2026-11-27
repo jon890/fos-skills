@@ -1,3 +1,0 @@
-- Run 없는 세션에서 `orch request send` 가 「`--run` 이 필요하다」 로 끝나면, Run 을 만들고 루프에 묶는 명령을 저장소 값으로 채워 함께 알린다.
-- 루프에 등록된 Run 이 있으면 그 Run 으로 다시 부르는 명령을 먼저 보여 준다.
-- `orch loop start` 가 Run 없이 `run=-` 로 뜨면 `LOOP-NO-RUN` 줄로 경고하고 같은 다음 명령을 낸다.
