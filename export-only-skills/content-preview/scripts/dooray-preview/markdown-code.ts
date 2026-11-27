@@ -70,7 +70,9 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
       depth++
     }
     const previous = containers[depth]
-    if (previous) {
+    let next = startContainer(content, paragraph, previous)
+    const lazyLine = paragraph && content.trim().length > 0 && !next && !HEADING_OR_BREAK.test(content) && !FENCE.test(content)
+    if (previous && !lazyLine) {
       containers.length = depth
       fence = undefined
       blockStarts.add(index)
@@ -87,7 +89,6 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
       continue
     }
 
-    let next = startContainer(content, paragraph, previous)
     if (next) blockStarts.add(index)
     while (next) {
       containers.push(next.container)

@@ -402,6 +402,19 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
+  test('인용 기호나 목록 들여쓰기를 생략한 문단에서도 여러 줄 업무 링크를 검사한다', () => {
+    const address = 'dooray://example/tasks/post-example'
+    for (const prefix of ['> ', '- ', '1. ', '> - ']) {
+      const body = `${prefix}[example/18\n제목](${address} "working")`
+      const done = preview('comment', body)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      const mismatch = preview('comment', body.replace('example/18', 'example/20'))
+      assert.equal(mismatch.code, 1, mismatch.stderr)
+      assert.match(mismatch.stderr, /「example\/20 제목」과 실제 업무 example\/18/u)
+    }
+  })
+
   const internalAddress = 'dooray://example/tasks/post-example'
   const webAddress = 'https://example.dooray.com/project/tasks/post-example'
   const unsupportedLinks = [
