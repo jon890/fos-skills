@@ -680,11 +680,13 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
         row = { role: a.status!, dispatch: null, worktree: a.fields.worktree!, branch: null, pr: null, status: 'working', at: stamp, endedAt: null }
         rows.push(row)
       }
+      const sameLostDispatch = row.status === 'lost' && a.dispatch === row.dispatch
       if (a.dispatch !== undefined) row.dispatch = a.dispatch
       if (a.fields.branch !== undefined) row.branch = a.fields.branch
       if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
       if (a.fields.stages !== undefined) row.stages = a.fields.stages.replace(/\s+/g, '')
-      row.at = stamp
+      // 같은 dispatch 를 복구할 때는 새로 맡긴 시각으로 덮지 않는다.
+      if (!sameLostDispatch) row.at = stamp
       row.status = 'working'
       row.endedAt = null
       item.workers = rows

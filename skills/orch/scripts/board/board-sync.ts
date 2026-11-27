@@ -444,10 +444,9 @@ function main(argv: string[]): number {
     } else if (review) {
       // 리뷰 브랜치에는 구현 PR 을 연결하지 않는다. 리뷰 완료 보고나 대상 PR 머지로만 끝낸다.
     } else if (reportStep) {
-      const workRows = workerRows.filter((row) => row.role === 'impl' || row.role === 'follow')
-      // 워크트리가 먼저 사라지면 대표 칸은 비워지지만 마지막 담당자의 기록이 남는다.
-      const reporter = workRows.find((row) => row.worktree === item.worktree)
-        ?? workRows.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+      // 대표 칸이 비거나 옛 작업으로 바뀌어도 배정 시각으로 마지막 담당자를 찾는다.
+      const reporter = workerRows.filter((row) => row.role === 'impl' || row.role === 'follow')
+        .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
       // 줄만 끝낸 뒤 단계 쓰기에 실패했어도 다음 틱에서 보고 단계를 끝낼 수 있다.
       if (reporter && (reporter.status === 'done' || (reporter.dispatch && workerEnds[reporter.dispatch] === 'done'))) {
         after.push(['step', id, String(reportStep.number)])
