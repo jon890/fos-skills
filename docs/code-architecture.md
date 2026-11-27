@@ -66,7 +66,7 @@
 
 `skills` 배열은 이름순으로 둔다. 스킬을 더하거나 이름을 바꾸면 이 배열을 함께 고친다.
 `export-only-skills/` 아래 스킬도 배열에 등록한다([ADR-034](adr/034-export-only-skills-registered.md)).
-`version` 은 main 머지마다 workflow 가 올린다. 규칙과 근거는 [ADR-019](adr/019-plugin-version-auto-bump.md) 가 소유한다.
+`version` 은 main 머지마다 workflow 가 올린다. 버전 등급의 근거는 [ADR-038](adr/038-pre-release-versions.md) 에 있다.
 
 ## 모듈 책임
 

@@ -20,11 +20,11 @@
 | [ADR-016](016-orch-auto-merge.md) | 상주 루프가 머지할 수 있는 PR 을 스스로 머지 큐에 건다 | accepted | - |
 | [ADR-017](017-orch-migration-reserve.md) | 마이그레이션 번호는 worker 가 만들기 전에 잠금을 걸고 예약한다 | accepted | - |
 | [ADR-018](018-board-milestone-steps.md) | 보드 단계는 사건 꼬리표가 붙은 마일스톤이고, 스크립트가 PR, 머지, 배포, 릴리스로 끝낸다 | accepted | - |
-| [ADR-019](019-plugin-version-auto-bump.md) | 플러그인 version 을 두고 main 에 머지될 때마다 GitHub Actions 가 올린다 | accepted | - |
+| [ADR-019](019-plugin-version-auto-bump.md) | 플러그인 version 을 두고 main 에 머지될 때마다 GitHub Actions 가 올린다 | accepted | [ADR-038](038-pre-release-versions.md) |
 | [ADR-020](020-orch-loop-refresh.md) | 상주 루프가 뒤처진 PR 의 최신화를 머지 차례 전에 PR 마다 걸고, 머지는 머지 큐가 하나씩 한다 | accepted | - |
 | [ADR-021](021-skill-directory-layout.md) | 스킬 원본과 저장소 관리 영역을 나눈다 | accepted | - |
 | [ADR-022](022-extension-directory-layout.md) | 보드를 확장 기능 디렉터리에 둔다 | accepted | - |
-| [ADR-023](023-version-at-merge.md) | 스킬 버전과 CHANGELOG 절은 PR 이 아니라 머지 때 정한다 | accepted | - |
+| [ADR-023](023-version-at-merge.md) | 스킬 버전과 CHANGELOG 절은 PR 이 아니라 머지 때 정한다 | accepted | [ADR-038](038-pre-release-versions.md) |
 | [ADR-024](024-decision-record-classification.md) | 결정 기록은 종류를 나누고 현재 규칙의 원본을 연결한다 | accepted | - |
 | [ADR-025](025-script-runtime-typescript.md) | 저장소의 스크립트와 테스트를 TypeScript(Node 24) 하나로 둔다 | accepted | [ADR-030](030-plugin-npm-dependencies.md) |
 | [ADR-026](026-docs-checks-at-authoring-time.md) | 문서 링크와 ADR 검사는 plan 번들 검사기 하나가 작성 단계에서 맡는다 | accepted | - |
@@ -39,6 +39,7 @@
 | [ADR-035](035-orch-main-coordinator.md) | 저장소마다 메인 코디네이터 Run 하나만 루프를 맡고, 다른 코디네이터는 요청을 보낸다 | accepted | - |
 | [ADR-036](036-worker-commit-korean-check.md) | worker 의 한국어 표기 검사는 워크트리에 건 git 커밋 훅으로 한다 | accepted | - |
 | [ADR-037](037-orch-merge-readiness.md) | 머지 전 조건은 조건 표 하나가 소유하고 호출부는 범위만 고른다 | accepted | - |
+| [ADR-038](038-pre-release-versions.md) | 외부 공개 전 플러그인과 스킬의 버전을 0.x로 관리한다 | accepted | - |
 
 ## 대체됨
 
