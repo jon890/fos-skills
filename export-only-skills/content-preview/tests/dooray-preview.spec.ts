@@ -422,6 +422,57 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
+  test('주소의 문자 참조와 Markdown 이스케이프를 풀어 실제 업무를 확인한다', () => {
+    for (const address of [
+      'dooray&#58;//example/tasks/post-example',
+      'dooray&#x3a;&#47;/example/task&#115;/post-example',
+      'dooray&colon;&sol;&sol;example/tasks/post-example',
+      'dooray\\://example/tasks/post\\-example',
+    ]) {
+      const done = preview('comment', `[example/20 제목](${address} "working")`)
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /실제 업무 example\/18/u)
+      assert.ok(done.stderr.includes(`고친 예 [example/18 &#91;Example&#93; 제목](${internalAddress} "working")`))
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+
+    const canonicalLabel = preview('task', '[example/18 제목](dooray&#58;//example/tasks/post-example "working")')
+    assert.equal(canonicalLabel.code, 1)
+    assert.ok(canonicalLabel.stderr.includes(`고친 예 [example/18 제목](${internalAddress} "working")`))
+    assert.doesNotMatch(canonicalLabel.stderr, /실제 업무/u)
+
+    for (const body of [
+      `[task]: dooray&colon;//example/tasks/post-example`,
+      '<a href="dooray&#58;//example/tasks/post-example">제목</a>',
+      '[example/18 제목](https://example&period;dooray.com/project/tasks/post-example)',
+      '업무 주소 dooray://example/tasks/post-exampl&#101;',
+    ]) {
+      const done = preview('comment', body)
+      assert.equal(done.code, 1, done.stderr)
+      assert.ok(done.stderr.includes(`고친 예 [example/18`))
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+
+    const escapedEntity = preview('task', '[example/18 제목](dooray\\&colon;//example/tasks/post-example "working")')
+    assert.equal(escapedEntity.code, 0, escapedEntity.stderr)
+    assert.deepEqual(escapedEntity.calls, [])
+  })
+
+  test('표시 글의 문자 참조와 이스케이프를 풀어 프로젝트와 업무 번호를 대조한다', () => {
+    for (const label of [
+      'exampl&#101;&sol;18 제목',
+      'example&#x2f;&#x31;&#56; 제목',
+      'example\\/18 \\[예제\\] 제목',
+      'example/18 &lbrack;예제&rbrack; 제목',
+    ]) {
+      const body = `[${label}](${internalAddress} "working")`
+      const done = preview('task', body)
+      assert.equal(done.code, 0, done.stderr)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      assert.ok(done.html.includes(body))
+    }
+  })
+
   test('CLI 가 없거나 조회에 실패하면 --strict 에서도 경고와 함께 생성한다', () => {
     const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
     for (const state of ['missing', 'failed'] as const) {

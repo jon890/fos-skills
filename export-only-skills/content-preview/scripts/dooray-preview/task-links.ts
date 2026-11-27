@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { write } from '../io.ts'
 import { maskedBlocks } from './markdown-code.ts'
+// CommonMark 에서 참조하는 https://html.spec.whatwg.org/entities.json 의 세미콜론이 있는 이름.
+import namedReferences from './named-character-references.json' with { type: 'json' }
 
 const ID = '[a-z0-9][a-z0-9_-]*'
 const INTERNAL = new RegExp(`^dooray://(${ID})/tasks/(${ID})$`, 'i')
@@ -14,6 +16,10 @@ const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<referen
 const HTML_ATTRIBUTE = /\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/gu
 // 정상 링크와 같은 꼴의 인라인 코드 예제도 막는다. 백틱이 링크 검사에서 문장을 가리지는 않는다.
 const CODE_EXAMPLE = /(?<![`\\])(`+)(?!`)[^|]*?(?<!`)\1(?!`)/gu
+const CHARACTER_REFERENCE = String.raw`&(#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6})|[A-Za-z][A-Za-z0-9]*);`
+const MARKDOWN_ADDRESS = new RegExp(String.raw`\\([\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])|` + CHARACTER_REFERENCE, 'gu')
+const HTML_ADDRESS = new RegExp(CHARACTER_REFERENCE, 'gu')
+const namedCharacters: Readonly<Record<string, string>> = namedReferences
 
 type Post = { project: { code: string }; number: string | number; subject?: string; workflowClass?: string }
 type Lookup = Post | 'missing-cli' | 'unavailable'
@@ -65,6 +71,19 @@ function unwrapAddress(target: string): string {
   return target.startsWith('<') ? target.slice(1, -1) : target
 }
 
+function decodeReference(token: string, reference: string): string {
+  if (!reference.startsWith('#')) return Object.hasOwn(namedCharacters, reference) ? namedCharacters[reference] : token
+  const digits = reference.slice(1)
+  const value = /^[xX]/u.test(digits) ? Number.parseInt(digits.slice(1), 16) : Number.parseInt(digits, 10)
+  if (value === 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) return '\uFFFD'
+  return String.fromCodePoint(value)
+}
+
+function decodeMarkdown(text: string): string {
+  // 한 번만 풀어 \\&colon; 로 적은 리터럴 앰퍼샌드를 다시 해석하지 않는다.
+  return text.replace(MARKDOWN_ADDRESS, (token, escape, reference) => escape ?? decodeReference(token, reference))
+}
+
 type Link = {
   kind: 'inline' | '참조식 정의' | 'HTML 링크' | '자동 링크' | '주소만 적은 링크' | '인라인 코드 예제'
   target: string
@@ -87,7 +106,7 @@ function* otherLinks(text: string): Generator<Link> {
     } else if (auto) {
       yield { kind: '자동 링크', target: auto }
     } else {
-      yield { kind: '주소만 적은 링크', target: address.replace(/[.,!?;:]+$/u, '') }
+      yield { kind: '주소만 적은 링크', target: address }
     }
   }
 }
@@ -124,8 +143,10 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
   const warnings: string[] = []
   for (const { kind, label: shownLabel, target, workflow: shownWorkflow } of findLinks(md)) {
     const inline = kind === 'inline'
-    const internal = INTERNAL.exec(target.split(/[?#]/u, 1)[0].replace(/\/$/u, ''))
-    const webId = webPostId(target)
+    let decoded = kind === 'HTML 링크' ? target.replace(HTML_ADDRESS, decodeReference).trim() : decodeMarkdown(target)
+    if (kind === '주소만 적은 링크') decoded = decoded.replace(/[.,!?;:]+$/u, '')
+    const internal = INTERNAL.exec(decoded.split(/[?#]/u, 1)[0].replace(/\/$/u, ''))
+    const webId = webPostId(decoded)
     const id = internal?.[2] ?? webId
     if (!id) continue
 
@@ -144,7 +165,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     }
 
     const ref = typeof post === 'string' ? undefined : `${post.project.code}/${post.number}`
-    const shown = POST_REF.exec(label)
+    const shown = POST_REF.exec(decodeMarkdown(label))
     const mismatch = shownLabel !== undefined && ref !== undefined && (!shown || `${shown[1]}/${shown[2]}` !== ref)
     const actualLabel = ref && typeof post !== 'string'
       ? escapeBrackets(`${ref}${typeof post.subject === 'string' ? ` ${post.subject.replace(/\s+/gu, ' ').trim()}` : ''}`)
