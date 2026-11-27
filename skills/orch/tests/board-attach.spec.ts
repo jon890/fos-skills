@@ -48,7 +48,8 @@ test('PR 없는 지시서는 보드에 보고 단계만 만든다', () => {
   }
   board()
   launch('허락: PR 생성까지 허락한다.\n## 배경\n> 커밋·PR 없음')
-  assert.equal(items()[0].stages, 'pr=1,merge=2')
+  assert.equal(items()[0].stages, 'merge=1')
+  assert.deepEqual(items()[0].details, [{ text: '1. PR 머지', done: false }])
 
   board(base({ status: 'done', pr: null, stages: 'merge=1', details: [{ text: '1. 머지', done: true }] }))
   launch('보드 항목 id: a\n허락: PR 은 열지 않는다.')
@@ -165,6 +166,47 @@ test('worker-add 실패면 기존 대표 칸 쓰기로 돌아간다', () => {
   assert.equal(items()[0].worktree, 'new')
 })
 
+test('PR 없는 지시서는 할 일의 번호 줄을 단계로 쓰고 기본 단계를 붙이지 않는다', () => {
+  board()
+  launch('허락: PR 없음\n## 할 일\n\n1. **dev** 전체 회차를 돌린다. 결과를 표로 남긴다.\n   - 하위 줄은 단계가 아니다\n2. `orch` 결과를 보고한다\n```text\n3. 예시 블록 줄\n```\n## 완료 기준\n1. 다른 절의 번호 줄')
+  assert.equal(items()[0].stages, undefined)
+  assert.deepEqual(items()[0].details, [{ text: '1. dev 전체 회차를 돌린다.', done: false }, { text: '2. orch 결과를 보고한다', done: false }])
+  assert.equal(items()[0].workers[0]['todo-steps'], '1=1,2=2')
+  // 끝난 항목을 다시 열면 할 일 번호를 뒤로 밀린 단계 번호와 짝지어 담당 줄에 남긴다
+  board(base({ status: 'done', pr: null, details: [{ text: '1. 옛 일', done: true }] }))
+  launch('보드 항목 id: a\n허락: PR 없음\n## 할 일\n1. 결과를 비교한다. A 로\n2. 결과를 비교한다. B 로')
+  assert.deepEqual(items()[0].details.map((d: { text: string }) => d.text), ['1. 옛 일', '2. 결과를 비교한다.', '3. 결과를 비교한다.'])
+  assert.equal(items()[0].workers.find((one: { worktree: string }) => one.worktree === 'new')['todo-steps'], '1=2,2=3')
+})
+
+test('이미 있는 항목에 띄우면 제목을 지시서 머리줄로 덮지 않는다', () => {
+  for (const status of ['doing', 'done', 'wait']) {
+    board(base({ title: '사용자가 정한 제목', status, stages: 'merge=1', details: [{ text: '1. PR 머지', done: status === 'done' }] }))
+    launch('보드 항목 id: a\n허락: 커밋·PR 없음\n## 할 일\n1. 원인을 확인한다')
+    assert.equal(items()[0].title, '사용자가 정한 제목', status)
+  }
+})
+
+test('새 항목을 만드는 사이 같은 id 가 생기면 덮지 않고 기존 항목으로 붙인다', () => {
+  board()
+  const real = new URL('../../../extensions/work-board/bin/board.ts', import.meta.url).pathname
+  // 첫 create-only 직전에 같은 id 의 항목을 만들어 둔다(다른 쓰기와 경쟁한 상황)
+  writeNodeBin(repo, 'board-race.ts', `import { spawnSync } from 'node:child_process'; import { existsSync, writeFileSync } from 'node:fs'; const flag=${JSON.stringify(join(repo, 'raced'))}; const file=process.argv[process.argv.indexOf('--file')+1]; if(process.argv.includes('--create-only') && !existsSync(flag)){writeFileSync(flag,'1'); spawnSync(process.execPath,[${JSON.stringify(real)},'set','a','wait','--title','먼저 생긴 제목','--file',file])}; const r=spawnSync(process.execPath,[${JSON.stringify(real)},...process.argv.slice(2)],{stdio:'inherit'});process.exit(r.status)`)
+  process.env.BOARD_BIN = join(repo, 'board-race.ts')
+  launch('보드 항목 id: a')
+  assert.equal(items().length, 1)
+  assert.equal(items()[0].title, '먼저 생긴 제목')
+})
+
+test('기본 「PR 머지」 한 줄 항목에 새 브랜치 후속을 붙이면 머지 단계 한 줄만 더한다', () => {
+  board(base({ 'task-ref': 'P/123', stages: 'merge=1', details: [{ text: '1. PR #7 머지', done: false }] }))
+  assert.deepEqual(launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b'), { item: 'a', role: 'follow', attached: true })
+  const [item] = items()
+  assert.deepEqual(texts(item), ['1. PR #7 머지', '2. PR 머지 (wb)'])
+  assert.equal(item.stages, 'merge=1')
+  assert.equal(item.workers[1].stages, 'merge=2')
+})
+
 const milestone = (extra = {}) => base({
   stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }], workers: [row()], ...extra,
 })
@@ -211,8 +253,8 @@ test('앞 PR 이 없거나 머지된 항목은 단계를 더하지 않고 다시
   // 단계를 모두 끝낸 doing 항목: 마일스톤 전체
   board(milestone({ pr: undefined, 'merged-pr': 7, 'task-ref': 'P/123', details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: true }] }))
   launch('두레이 업무: P/123 「테스트」', 'wb', 'feat/b')
-  assert.deepEqual(texts(items()[0]), ['1. PR', '2. 머지', '3. PR', '4. 머지'])
-  assert.equal(items()[0].stages, 'pr=3,merge=4')
+  assert.deepEqual(texts(items()[0]), ['1. PR', '2. 머지', '3. PR 머지'])
+  assert.equal(items()[0].stages, 'merge=3')
   assert.equal(items()[0].workers.find((one: any) => one.worktree === 'wb').stages, undefined)
 })
 

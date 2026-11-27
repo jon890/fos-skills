@@ -1106,7 +1106,7 @@ describe('finish-pr 마지막 PR 판정', { concurrency: 4 }, () => {
     c.state.listFails = false
     c.state.pr.title = '제목에 번호 없음'
     r = await judged(c)
-    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다: 제목에 번호 없음)')
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: PR 제목, 브랜치 이름, 보드 업무 번호에서 업무 번호를 찾지 못했다: 제목에 번호 없음)')
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
     assert.equal(starting(c.calls(), 'task-cli').length, 0)
   })
@@ -1237,6 +1237,16 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(r.code, 0, both(r))
     assert.equal(starting(c.calls(), 'board set task-x done').length, 1, c.calls().join('\n'))
     has(r.stdout, '보드 task-x done(브랜치로 찾았다)')
+  })
+
+  test('PR 제목에 업무 번호가 없으면 보드 항목의 task-ref 로 마지막 PR 을 판정하고 after-deploy 에 번호를 넘긴다', async (t) => {
+    const c = setup(t)
+    c.state.pr.title = '(SHIP) 문구 정리'
+    const bin = board(c, [{ id: 'task-x', status: 'doing', branch: 'feat/x', 'task-ref': 'PROJ-123' }])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 마지막(업무 PROJ-123(보드 업무 번호에서 찾음)')
+    assert.equal(starting(c.calls(), 'board set task-x done').length, 1, c.calls().join('\n'))
   })
 
   test('워크트리 이름으로도 찾는다. 정리가 워크트리를 지우기 전에 이름을 읽는다', async (t) => {

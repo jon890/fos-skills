@@ -217,7 +217,9 @@ orch board auto-check "$ITEM"
 | --- | --- |
 | PR 을 여는 일, 직접 쓴 항목 | worker 가 PR 번호를 알린 턴에 `orch board step <항목> <번호> text "<줄>" --on "<PR> merge"` 로 꼬리표를 붙인다. 머지되면 스크립트가 끝낸다 |
 | PR 을 여는 일, `stages` 필드가 있는 항목 | 꼬리표를 붙이지 않고 머지를 확인한 턴에 `orch board step <항목> <번호> done` 으로 끝낸다 |
-| PR 이 없는 일 | `worker_done` 을 확인한 턴에 `orch board step <항목> <번호> done` 으로 끝낸다 |
+| PR 이 없는 일 | 지시서에 「`worker_done` 에 `steps=<번호>` 를 적는다」 를 넣으면 루프가 그 보고로 줄을 끝낸다. 번호 없이 온 보고는 `worker_done` 을 확인한 턴에 `orch board step <항목> <번호> done` 으로 끝낸다 |
+
+PR 없는 일의 `worker_done` 제목이나 본문에 `steps=2,3` 처럼 끝낸 「할 일」 번호를 적으면 루프가 그 할 일로 만든 보드 단계를 끝낸다. 사건 단계(`stages` 필드의 번호)는 건드리지 않는다. PR 없는 지시서의 항목은 번호 없는 `worker_done` 으로 남은 단계를 모두 끝내고 done 이 된다. 규칙은 [`board.md`](board.md) 의 「worker 보고로 단계 끝내기」 가 소유한다.
 
 `AUTO-REJECT` 면 이유에 따라 처리한다.
 

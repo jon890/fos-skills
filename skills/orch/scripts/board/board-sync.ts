@@ -2,6 +2,12 @@ import { boardRepo, guardWrite, MAIN_GUARD_OPTIONS } from '../lib/main-guard.ts'
 import { loopCaller } from '../lib/main-guard-context.ts'
 import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 // --worker-ends 는 루프 내부용이다. 끝난 worker 의 dispatch 와 done|lost 객체를 받아 작업 중 줄을 끝낸다.
+// --worker-steps 도 루프 내부용이다. 성공한 worker_done 의 dispatch 와 { steps: 끝낸 단계 번호 목록|null, noPr: PR 없는 지시서인지 } 객체를 받는다.
+//     그 dispatch 의 구현·후속 줄이 있는 항목에서 적힌 번호의 단계를 끝낸다. 사건 단계(stages 와 줄 stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 사건이 끝내므로 건드리지 않는다.
+//     번호는 지시서 「할 일」 번호이고, 담당 줄의 todo-steps(띄울 때 남긴 「할 일 번호=단계 번호」 짝)로 단계 번호로 옮긴다. 짝이 없는 줄(PR 있는 일)의 번호는 끝내지 않는다.
+//     PR 없는 일의 번호 없는 보고는 남은 단계를 모두 끝낸다. PR 없는 일의 단계가 이렇게 모두 끝나면 done 으로 바꾼다.
+//     보고는 그 항목의 가장 최근 구현·후속 줄(지금 담당자)의 것만 받는다. 다시 연 항목에서 앞 담당자의 옛 보고가 새 단계를 끝내지 않게 한다.
+//     리뷰·검증 항목과 기능 항목(기능 단계 줄은 feature-advance 가 맡는다)과 done 항목은 보지 않는다
 // --worker-revivals 도 루프 내부용이다. 끊김으로 적힌 줄의 dispatch 와 working|done 객체를 받아 줄을 되살린다(끊김 표시는 한 번 본 순간 상태로 굳지 않는다).
 // 리뷰 항목은 최초 띄우기 이력으로 정한다. 구현 이력·줄·PR 이 있는 항목은 리뷰 종료로 닫지 않는다.
 // 보드(board.json)에서 PR 이 머지된 항목의 단계와 상태를 맞춘다.
@@ -29,7 +35,7 @@ import { boardWorkerRows, rowsReviewPr } from '../core/board-workers.ts'
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
 //
 // 마일스톤 항목(stages 칸이 있는 항목, lib/milestones.ts, ADR-018)은 위 규칙 대신 사건으로 단계를 끝낸다:
-//     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
+//     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다. [pr] 단계가 없는 묶음(기본 「PR 머지」 한 줄)은 그 줄에 PR 번호를 적고 머지 때 끝낸다
 //     - 머지됐으면 위와 같이 마지막 PR 인지 판정하고 lib/milestones.ts 의 mergedCommands 로 [pr], [merge] 단계를 끝낸다.
 //       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 단, 판정 규칙이 없어 판정하지 못한 경우에는 모든 단계가 끝났고,
 //       열린 PR·작업 중 worker·남은 일 줄이 없을 때만 닫는다(lib/last-pr.ts 의 closeUnjudged. finish-pr.ts 도 같은 조건을 쓴다). 그 밖에는 닫지 않고 판정 가능한 단계를 반영한다.
@@ -99,7 +105,7 @@ import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import type { DeployVerdict, RunRow } from '../lib/deploy.ts'
 import { git, mainCheckout } from '../lib/git.ts'
 import { closeUnjudged, hasActiveWorker, judgeLastPr, rulesFrom } from '../lib/last-pr.ts'
-import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prStages, stagesOf } from '../lib/milestones.ts'
+import { advanceCommands, boardSettings, eventKinds, eventNumbers, hasPrGroup, mergedCommands, prMergeEdits, prStages, stagesOf } from '../lib/milestones.ts'
 import type { BoardSettings } from '../lib/milestones.ts'
 import { pidFileAlive } from '../lib/process.ts'
 import type { LastPrRules, LastPrVerdict } from '../lib/last-pr.ts'
@@ -117,6 +123,7 @@ import { withoutEvidence } from '../core/evidence.ts'
 import { parseStepMark } from '../../../../extensions/work-board/hooks/step-marks.js'
 import { stageTag, parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { emit, short } from '../lib/output.ts'
+import { lineProblem } from '../../../../extensions/work-board/hooks/line-rules.js'
 
 const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--dry-run]'
 const LEGACY_AUTO = '자동: '
@@ -125,6 +132,7 @@ const SKIP_STATUS = new Set(['done'])
 const OPTIONS = { ...MAIN_GUARD_OPTIONS,
   'worker-ends': { type: 'string' },
   'worker-revivals': { type: 'string' },
+  'worker-steps': { type: 'string' },
   board: { type: 'string' },
   'board-bin': { type: 'string' },
   repo: { type: 'string' },
@@ -204,8 +212,8 @@ function lastPrRules(repo: string): LastPrRules | null {
   }
 }
 
-// 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
-function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerdict | null {
+// 머지한 PR 의 제목과 브랜치(제목에 업무 번호가 없으면 항목의 task-ref 도)로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
+function judge(repo: string, num: string, rules: LastPrRules | null, taskRef: unknown = null): LastPrVerdict | null {
   if (!rules?.taskPattern) return null
   const got = ghJson<{ title?: unknown; headRefName?: unknown; headRefOid?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName,headRefOid'], { cwd: repo, killSignal: 'SIGKILL' })
   if (!got.ok || typeof got.data !== 'object' || got.data === null) {
@@ -214,7 +222,7 @@ function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerd
   const title = typeof got.data.title === 'string' ? got.data.title : ''
   const branch = typeof got.data.headRefName === 'string' ? got.data.headRefName : ''
   const head = typeof got.data.headRefOid === 'string' ? got.data.headRefOid : undefined
-  return judgeLastPr(repo, { number: num, title, branch, head }, rules)
+  return judgeLastPr(repo, { number: num, title, branch, head, taskRef: typeof taskRef === 'string' && taskRef ? taskRef : null }, rules)
 }
 
 // 끝나지 않았는데 머지된 PR 번호(#N)를 가리키는 단계. 이 틱의 명령이 끝낼 단계, stages 가 가리키는 사건 단계,
@@ -292,6 +300,17 @@ function main(argv: string[]): number {
     workerRevivals = parsed as Record<string, 'working' | 'done'>
   } catch (e) {
     err(`board-sync: --worker-revivals: ${(e as Error).message}`)
+    return 2
+  }
+  let workerSteps: Record<string, { steps: number[] | null; noPr: boolean }>
+  try {
+    const parsed: unknown = JSON.parse(values['worker-steps'] ?? '{}')
+    const valid = (value: unknown): boolean => isRecord(value) && typeof value.noPr === 'boolean' &&
+      (value.steps === null || (Array.isArray(value.steps) && value.steps.every((n) => Number.isInteger(n) && n > 0)))
+    if (!isRecord(parsed) || !Object.values(parsed).every(valid)) throw new Error('dispatch 와 { steps, noPr } 객체가 아니다')
+    workerSteps = parsed as typeof workerSteps
+  } catch (e) {
+    err(`board-sync: --worker-steps: ${(e as Error).message}`)
     return 2
   }
   let completedReviews: number[] = []
@@ -469,7 +488,44 @@ function main(argv: string[]): number {
         }
       }
     }
-    if (!reviewDone && !review && !reportStep && !featureReporter && tagged.length > 0) {
+    // 머리 주석의 --worker-steps. 이미 이 틱이 끝내기로 한 단계는 다시 넣지 않는다
+    // 보고는 지금 단계를 맡은 가장 최근(at) 구현·후속 줄의 것만 받는다. 루프는 지난 틱의 완료 보고도 다시 넘기므로,
+    // 다시 연 항목에서 앞 담당자의 옛 보고가 새로 더한 단계를 끝내지 않게 한다
+    const assignee = workerRows.filter((row) => row.role === 'impl' || row.role === 'follow')
+      .sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? ''))).at(-1)
+    const reports = assignee?.dispatch && Object.hasOwn(workerSteps, assignee.dispatch) ? [assignee] : []
+    if (!reviewDone && !review && !featureReporter && !feature && !SKIP_STATUS.has(String(item.status)) && reports.length > 0) {
+      const given = reports.map((row) => workerSteps[row.dispatch!])
+      const all = given.some((one) => one.noPr && one.steps === null)
+      const noPr = given.some((one) => one.noPr)
+      const steps = boardSteps(boardBin, id, board)
+      if (steps === null) { err(`board-sync: 단계 목록을 읽지 못했다: ${id}`); return 1 }
+      const events = eventNumbers(item)
+      const scheduled = new Set(after.filter((cmd) => cmd[0] === 'step' && cmd[1] === id).map((cmd) => Number(cmd[2])))
+      // 사건 단계(stages 의 번호, 줄 앞 [merge] 표시, 줄 끝 (#N merge) 꼬리표)는 그 사건이 끝낸다
+      const eventStep = (step: BoardStep): boolean => events.has(step.number) || stageTag(step.text) !== null || Boolean(parseEventTag(step.text))
+      // steps= 는 지시서 「할 일」 번호다. 담당 줄의 todo-steps(띄울 때 남긴 「할 일 번호=단계 번호」 짝)로 단계 번호로 옮긴다.
+      // 짝이 없으면(PR 있는 일, 옛 줄) 할 일 번호와 보드 단계가 이어지지 않아 끝내지 않는다. 번호로만 옮기므로 같은 보고가 다시 와도 결과가 같다
+      const pairs = new Map(String(reports[0]?.['todo-steps'] ?? '').split(',').flatMap((pair) => {
+        const match = /^(\d+)=(\d+)$/.exec(pair.trim())
+        return match ? [[Number(match[1]), Number(match[2])] as const] : []
+      }))
+      const explicit = new Set<number>()
+      const unknown: number[] = []
+      for (const number of given.flatMap((one) => one.steps ?? [])) {
+        const target = pairs.get(number)
+        if (target !== undefined && steps.some((step) => step.number === target)) explicit.add(target)
+        else unknown.push(number)
+      }
+      const closing = steps.filter((step) => !step.done && !eventStep(step) && !scheduled.has(step.number) && (all || explicit.has(step.number)))
+      after.push(...closing.map((step) => ['step', id, String(step.number)]))
+      if (unknown.length > 0) out(`board-sync: ${id} 에 worker_done 이 적은 할 일 ${unknown.join(',')} 의 단계가 없어 건너뛴다(PR 없는 지시서로 만든 단계만 옮긴다)`)
+      if (noPr && !finish && steps.length > 0 && steps.every((step) => step.done || scheduled.has(step.number) || closing.includes(step))) {
+        after.push(['set', id, 'done', '--worktree', ''])
+        finish = true
+      }
+    }
+    if (!finish && !reviewDone && !review && !reportStep && !featureReporter && tagged.length > 0) {
       // 꼬리표가 있는 수동 항목은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
       for (const step of tagged.filter((step) => !step.done)) {
         const tag = parseEventTag(step.text)!
@@ -496,7 +552,7 @@ function main(argv: string[]): number {
       const remainingEvents = tagged.filter((step) => !step.done && parseEventTag(step.text)?.event !== 'release')
       if (remainingEvents.length > 0) brief(`BOARD ${id} remaining-events ${remainingEvents.map((step) => `${step.number}: ${step.text}`).join(' | ')}`)
     }
-    if (!reviewDone && !review && !reportStep && !featureReporter && (feature || tagged.length === 0) && !SKIP_STATUS.has(String(item.status))) {
+    if (!finish && !reviewDone && !review && !reportStep && !featureReporter && (feature || tagged.length === 0) && !SKIP_STATUS.has(String(item.status))) {
       const stages = stagesOf(item)
       const repBranch = branches.get(String(item.worktree)) || String(item.branch || '')
       const rows = workerRows
@@ -554,6 +610,9 @@ function main(argv: string[]): number {
         if (target) link(target, baseRow, target === repBranch)
       }
       const branch = repBranch
+      // 「PR 머지」 한 줄 묶음은 이은 PR 번호를 그 줄에 적는다(core/milestones.ts 의 prMergeEdits)
+      // 줄 규칙(80자 따위)을 어기는 글이 되면 보드 명령이 거절해 이 틱이 멈추므로 번호를 적지 않는다
+      if (stages && !feature) after.push(...prMergeEdits(item, ownPrs()).filter((cmd) => lineProblem(cmd[3]) === null))
       // 마일스톤 항목은 pr 칸의 PR 을 번호 순으로 모두 본다. 하나라도 상태를 읽지 못하면 이 항목은 이번 틱에 고치지 않는다
       const ownNumbers = ownPrs()
       const numbers = stages || feature ? [...ownNumbers].sort((a, b) => Number(a) - Number(b)) : []
@@ -633,7 +692,7 @@ function main(argv: string[]): number {
           } else {
             if (rules === undefined) rules = lastPrRules(repo)
             const rulesUnreadable = rules === null
-            let verdict = judge(repo, num, rules)
+            let verdict = judge(repo, num, rules, item['task-ref'])
             if (verdict === null && (rulesUnreadable || !rules?.taskPattern)) {
               const reason = rulesUnreadable ? '마지막 PR 판정 규칙을 읽지 못했다' : 'task_pattern 이 없다'
               verdict = { last: null, retry: false, number: null, prs: [], specs: [], reason: `판정하지 못했다: ${reason}` }
@@ -674,7 +733,7 @@ function main(argv: string[]): number {
           return 1
         }
         if (rules === undefined) rules = lastPrRules(repo)
-        const verdict = judge(repo, num, rules)
+        const verdict = judge(repo, num, rules, item['task-ref'])
         const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : 'PR 번호의 단계만 끝냄') : verdict.last ? '마지막' : '중간'
         if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
         if (verdict?.retry) hold = true

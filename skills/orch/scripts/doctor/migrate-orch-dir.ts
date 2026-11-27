@@ -959,7 +959,8 @@ ${CHECKOUT}
 function main(): number {
   if (input.last_of_task !== true || !['success', 'none'].includes(String(input.deploy))) return 0
   const title = String(pr.title ?? '')
-  const number = PATTERN.exec(title)?.[1]
+  // finish-pr 가 판정에 쓴 업무 번호(제목, 브랜치 이름, 보드 task-ref 순)를 먼저 쓴다
+  const number = typeof input.task_number === 'string' && input.task_number ? input.task_number : PATTERN.exec(title)?.[1]
   if (!number) {
     process.stderr.write(\`PR 제목에서 업무 번호를 찾지 못했다: \${title}\\n\`)
     return 1

@@ -1,8 +1,10 @@
 // 보드 상태와 단계 명령. 검사와 저장은 board.ts 에 맡기고 결과 JSON 을 짧게 보인다.
-// 사용법: orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] [--priority N|none] | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
+// 사용법: orch board set <항목> [<상태>] [--title <제목>] [--task <주소>] [--task-ref <번호>] [--priority N|none] | step <항목> <번호> done|undo|text "<글>"|auto|ask|plain|wait ["<조건>"]
 //         orch board add-step <항목> "<글>" | show <항목>
 //         orch board clear-done <항목> | clear-done --all (끝난 단계를 지우고 남은 단계를 1번부터 다시 매긴다. 번호를 쓰는 기록은 아래 clearDone 이 맞춘다)
 // 공통: --repo DIR, --board FILE. text/add-step: --on "<PR> <사건>".
+// set 에 --title 을 주면 없는 항목을 그 상태로 만든다. 단계가 없는 새 항목은 doing 이 될 수 없어(진행률이 없다) wait 로 만들고 add-step 뒤 doing 으로 바꾼다.
+// 없는 항목에 add-step 하면 거절 이유 뒤에 항목을 만드는 명령을 알린다.
 // 경고(stderr)는 board.ts 가 낸다: 단계 줄이 progress 의 전체 값을 넘으면 progress 를 지우고, 글에 #번호 와 머지 낱말이 있는데 --on 이 없으면 알린다.
 // 짧은 출력: BOARD-SET, BOARD-STEP, BOARD-STEP-ADD 한 줄. show 는 BOARD 머리와 미완료 단계.
 // clear-done 은 고친 항목마다 BOARD-CLEAR <항목> <지운 수> 0/<남은 수>, 없으면 BOARD-NONE. 건너뛴 이유는 stderr 다.
@@ -22,7 +24,8 @@ import { appendStepLaunch, stepLaunches } from '../lib/step-launches.ts'
 import { hideEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 
 const USAGE = `사용법:
-  orch board set <항목> [<상태>] [--task <주소>] [--task-ref <번호>] [--priority N|none]
+  orch board set <항목> [<상태>] [--title <제목>] [--task <주소>] [--task-ref <번호>] [--priority N|none]
+    (--title 은 없는 항목을 만든다. 새 항목은 wait 로 만들고 add-step 으로 단계를 더한 뒤 doing 으로 바꾼다)
   orch board step <항목> <번호> done|undo
   orch board step <항목> <번호> text "<글>" [--on "<PR> <pr|merge|deploy|release>"]
   orch board step <항목> <번호> auto|ask|plain
@@ -39,7 +42,7 @@ const USAGE = `사용법:
   공통: [--repo <폴더>] [--board <파일>] [--full]
   - 로 시작하는 글은 그대로 받지 않는다. "10. - 하위 항목"처럼 단계 번호를 앞에 붙인다.`
 const OPTIONS = { ...MAIN_GUARD_OPTIONS,
-  task: { type: 'string' }, 'task-ref': { type: 'string' }, priority: { type: 'string' },
+  task: { type: 'string' }, 'task-ref': { type: 'string' }, priority: { type: 'string' }, title: { type: 'string' },
   repo: { type: 'string' }, board: { type: 'string' }, on: { type: 'string' },
   json: { type: 'boolean' }, status: { type: 'string' }, done: { type: 'boolean' }, force: { type: 'boolean' }, all: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -70,7 +73,7 @@ function main(argv: string[]): number {
   let command: string[]
   let trailing: string[] = []
   const usage = () => { process.stderr.write(`${USAGE}\n`); return 2 }
-  const hasFieldEdit = [values.task, values['task-ref'], values.priority].some((value) => value !== undefined)
+  const hasFieldEdit = [values.task, values['task-ref'], values.priority, values.title].some((value) => value !== undefined)
   if (hasFieldEdit && verb !== 'set') return usage()
   if ((values.done || values.force) && verb !== 'del') return usage()
   if (values.all && verb !== 'clear-done') return usage()
@@ -83,6 +86,10 @@ function main(argv: string[]): number {
   else if (verb === 'list' && args.length === 1) { command = ['items']; if (values.status !== undefined) trailing = ['--', values.status] }
   else if (verb === 'set' && [2, 3].includes(args.length) && values.on === undefined && (third !== undefined || hasFieldEdit)) {
     command = ['set', id, ...(third === undefined ? [] : [third]), '--exact']
+    if (values.title !== undefined) {
+      if (!values.title.trim()) { process.stderr.write('--title 에는 비지 않은 제목을 준다\n'); return 2 }
+      command.push('--title', values.title)
+    }
     if (values.task !== undefined) command.push('--task', values.task)
     if (values.priority !== undefined) command.push('--priority', values.priority)
     if (values['task-ref'] !== undefined) {
@@ -123,6 +130,10 @@ function main(argv: string[]): number {
   command.push(...trailing)
   const result = run(scriptCommand(process.env.BOARD_BIN || BOARD_BIN, command), { timeoutMs: NO_LIMIT_MS })
   process.stderr.write(result.stderr)
+  if (result.code !== 0) {
+    const hint = createHint(verb, id, values.title, result.stderr)
+    if (hint) process.stderr.write(`${hint}\n`)
+  }
   if (result.code !== 0 && !(verb === 'get' && result.code === 4)) return result.code
   if (verb === 'del') {
     const deleted = JSON.parse(result.stdout).deleted as unknown[]
@@ -165,6 +176,17 @@ function main(argv: string[]): number {
   const unmatched = verb === 'show' ? pending(view, unmatchedRecords(values.repo ?? process.cwd())).map((pr) => unmatchedLine(id, pr)) : []
   console.log([heading, ...unmatched, ...lines.map((line) => `${line.done ? '✓ ' : ''}${line.text}`)].join('\n'))
   return 0
+}
+
+// 항목 만들기가 막힌 거절 뒤에 붙이는 안내. 없는 항목에 add-step 했거나, --title 로 만들려는데 상태가 없거나 doing 이라 진행률이 없을 때다
+function createHint(verb: string, id: string, title: string | undefined, stderr: string): string | null {
+  const create = `orch board set ${id} wait --title "${title ?? '<제목>'}"`
+  if (verb === 'add-step' && /항목이 없다/.test(stderr)) return `항목을 먼저 만든다: ${create} 뒤 add-step 으로 단계를 더한다`
+  if (verb === 'set' && title === undefined && /항목이 없다/.test(stderr)) return `없는 항목은 --title 을 주면 만든다: ${create}`
+  if (verb === 'set' && title !== undefined && /새 항목에는 status 가 필요하다|doing 항목에는 진행률이 필요하다/.test(stderr)) {
+    return `새 항목은 ${create} 로 만들고 orch board add-step ${id} "<글>" 로 단계를 더한 뒤 orch board set ${id} doing 으로 바꾼다`
+  }
+  return null
 }
 
 type Cleared = { id: string; removed: number; progress: [number, number] | null; renumbered: { from: number; to: number; was: string; now: string }[] }

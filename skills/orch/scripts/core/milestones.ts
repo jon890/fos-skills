@@ -5,7 +5,9 @@
 //     꼬리표가 없으면 코디네이터가 끝내는 수동 단계다. 꼬리표는 한 번씩만 쓴다. 정하는 곳은 아래 순서로 처음 있는 것이다.
 //       1. 지시서의 `## 보드 단계` 절. 번호 줄(`2. [merge] 머지`)만 읽는다
 //       2. config.json 의 board.steps
-//       3. 기본값 DEFAULT_STEPS(`[pr] PR`, `[merge] 머지`). 배포와 릴리스의 흐름은 저장소마다 달라 코어가 기본값으로 정하지 않는다.
+//       3. 기본값 DEFAULT_STEPS(`[merge] PR 머지` 한 줄). PR 이 열리고 머지되는 것은 한 흐름이라 한 줄로 둔다(사용자 결정 2026-11-27).
+//          board-sync 가 그 줄에 PR 번호(`PR #N 머지`)를 적고 머지 때 끝낸다(prMergeEdits). 옛 두 줄(`pr=1,merge=2`) 항목도 그대로 읽는다.
+//          배포와 릴리스의 흐름은 저장소마다 달라 코어가 기본값으로 정하지 않는다.
 //          배포 워크플로가 있어도 배포 단계를 저절로 만들지 않는다. 그 저장소가 board.steps 로 정한다
 // 항목에는 사건과 단계 번호의 짝을 stages 칸(`pr=1,merge=2,deploy=3,release=4`)으로 저장한다. stages 칸이 없는 항목은
 // 옛 「할 일」 단계 항목이라 이 모듈을 쓰지 않고 예전 규칙(PR 번호가 적힌 단계만 끝낸다)으로 처리한다.
@@ -44,10 +46,9 @@ export type BoardSettings = {
   taskLine: RegExp | null
 }
 
-// board.steps 가 없을 때의 단계
+// board.steps 가 없을 때의 단계. PR 이 열려도 끝나지 않고 머지 때 끝난다
 export const DEFAULT_STEPS: readonly MilestoneStep[] = [
-  { kind: 'pr', text: 'PR' },
-  { kind: 'merge', text: '머지' },
+  { kind: 'merge', text: 'PR 머지' },
 ]
 // board.task_line 이 없을 때의 업무 연결 줄. `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안이 제목이다.
 // 번호 뒤에 붙은 `(중간 PR)` 같은 괄호 글은 제목으로 읽지 않는다. lib/board.ts 의 taskOf 가 읽는다
@@ -281,4 +282,21 @@ export function mergedCommands(
     ],
     done: advanced.done,
   }
+}
+
+// [pr] 단계가 없는 묶음(기본 단계 「PR 머지」 한 줄)의 머지 줄에 그 PR 번호를 적는 step-edit 명령. 줄에 PR 번호가 보이게 한다.
+// 글의 첫 `PR` 낱말 뒤에 `#N` 을 넣고, 낱말이 없으면 끝에 붙인다. 이미 `#N` 이 있거나 줄을 찾지 못하면 명령을 내지 않는다
+export function prMergeEdits(item: BoardItem | Record<string, unknown>, prs: string[]): string[][] {
+  const details = (Array.isArray(item.details) ? item.details : []) as BoardDetail[]
+  const cmds: string[][] = []
+  for (const pr of prs) {
+    const stages = prStages(item, pr)
+    if (!stages || stages.pr !== undefined || stages.merge === undefined) continue
+    const number = stages.merge
+    const line = details.map((d) => detailText(d).replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, '')).find((text) => new RegExp(`^${number}[.)]?\\s`).test(text))
+    if (!line || new RegExp(`#${pr}(?!\\d)`).test(line) || /#\d/.test(line.replace(/^\d+[.)]?\s+/, ''))) continue
+    const next = /(?<![A-Za-z])PR(?![A-Za-z])/.test(line) ? line.replace(/(?<![A-Za-z])PR(?![A-Za-z])/, `PR #${pr}`) : `${line} #${pr}`
+    cmds.push(['step-edit', String(item.id), String(number), next])
+  }
+  return cmds
 }

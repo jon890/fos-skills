@@ -1,5 +1,6 @@
 // 보드 동기화(틱 3, 워크트리 정리 전): 보드 파일(lib/board-file.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
 // worker_done 과 이미 읽은 Orca 행에서 끝남을 모아 --worker-ends 로, 끊김 줄의 되살림을 --worker-revivals 로 넘긴다.
+// 성공한 worker_done 의 끝낸 단계(`steps=2,3`)와 PR 없는 지시서인지를 --worker-steps 로 넘긴다. board-sync 가 그 dispatch 의 항목 단계를 끝낸다.
 //     결정이 남았을 때의 알림은 decisions.ts 가 맡는다.
 
 import { notifyUnmatched } from '../../lib/board-unmatched.ts'
@@ -7,7 +8,8 @@ import { scriptPath } from '../../lib/commands.ts'
 import { isFile } from '../../lib/fs.ts'
 import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
-import { context, payload } from '../../lib/completion.ts'
+import { context, doneSteps, noPrInstruction, payload } from '../../lib/completion.ts'
+import { readFileSync } from 'node:fs'
 import { boardItemOfDispatch, reviewPrOfDispatch, reviewPrOfItem, reviewPrsByItem, reviewOriginsByItem, isReviewItem } from '../../lib/review.ts'
 import { launchHistory } from '../../lib/launch-history.ts'
 import { readBoard } from '../../lib/board.ts'
@@ -66,6 +68,8 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
           else if (!item && pending.has(pr)) reviews.add(pr)
         }
       }
+      const steps = workerSteps(ctx.repo, messages)
+      if (Object.keys(steps).length) args.push('--worker-steps', JSON.stringify(steps))
       if (reviews.size) args.push('--completed-reviews', JSON.stringify([...reviews]))
       if (items.size) args.push('--completed-items', JSON.stringify([...items]))
       if (prs.ok) args.push('--open-prs', JSON.stringify(prs.mine.map((pr) => ({ number: pr.number, headRefName: pr.branch, title: pr.title }))))
@@ -80,4 +84,24 @@ export async function syncBoard(ctx: StepContext, state: StepState): Promise<Ste
     report('board', oneLine(e))
   }
   return { errors }
+}
+
+// dispatch → { steps, noPr }. steps 는 worker_done 이 적은 끝낸 단계 번호(없으면 null), noPr 은 그 dispatch 의 지시서가 PR 없는 일인지다.
+// 둘 다 없는 dispatch 는 넣지 않는다. 지시서를 읽지 못하면 PR 없는 일로 보지 않는다(번호 없는 보고로 모든 단계를 끝내지 않는다)
+export function workerSteps(repo: string, messages: Record<string, unknown>[]): Record<string, { steps: number[] | null; noPr: boolean }> {
+  const found: Record<string, { steps: number[] | null; noPr: boolean }> = {}
+  let history: Map<string, { spec?: string | null }> | null = null
+  for (const message of messages) {
+    const dispatch = context(message)[1]
+    if (!dispatch) continue
+    const id = String(dispatch)
+    history ??= new Map(launchHistory(repo).map((row) => [row.dispatch, row]))
+    const spec = history?.get(id)?.spec
+    let text = ''
+    try { text = spec ? readFileSync(spec, 'utf8') : '' } catch { text = '' }
+    const noPr = Boolean(text) && noPrInstruction(text)
+    const steps = doneSteps(message) ?? found[id]?.steps ?? null
+    if (steps || noPr) found[id] = { steps, noPr }
+  }
+  return found
 }

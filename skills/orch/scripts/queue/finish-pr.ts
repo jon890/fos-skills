@@ -82,7 +82,7 @@
 //     루프의 steps/requests.ts 가 다음 틱에 다시 보낸다. 마무리는 그대로 FINISH-DONE 이다
 //
 // 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
-//     last_of_task(마지막 PR 판정). base 는 PR 의 base, run 은 --run(없으면 null)이다.
+//     last_of_task(마지막 PR 판정), task_number(판정에 쓴 업무 번호, 없으면 null). base 는 PR 의 base, run 은 --run(없으면 null)이다.
 //     hooks.timeouts.after-deploy 는 머지와 배포를 기다리기 전에 검사한다.
 //
 // 실패로 남기는 것(이것들이 있어도 보드 done 은 돌고 마지막 줄이 FINISH-FAIL 이다):
@@ -543,13 +543,23 @@ function deleteConflictSpecs(args: Args, repo: string): void {
 // prs 와 specs 는 남은 PR 과 지시서다. 보드의 남은 일 줄에 쓴다
 // known 은 판정했는지다. 판정하지 못해 중간으로 본 것이면 false 다
 // retry 는 gh 조회가 실패해 다시 보면 풀릴 수 있다는 뜻이다. 이때는 보드 항목을 닫지 않는다
-type Verdict = { last: boolean; known: boolean; retry: boolean; reason: string; prs: string[]; specs: string[] }
-function judgeLast(args: Args, repo: string, merged: Merged): Verdict {
-  if (args.complete) return { last: true, known: true, retry: false, reason: '--complete 로 지정', prs: [], specs: [] }
-  if (args.intermediate) return { last: false, known: true, retry: false, reason: '--intermediate 로 지정', prs: [], specs: [] }
+// taskRef 는 보드 항목의 task-ref 다. PR 제목과 브랜치 이름에 업무 번호가 없을 때 쓴다(lib/last-pr.ts 의 taskNumberOf)
+type Verdict = { last: boolean; known: boolean; retry: boolean; reason: string; prs: string[]; specs: string[]; number: string | null }
+function judgeLast(args: Args, repo: string, merged: Merged, taskRef: string | null): Verdict {
+  if (args.complete) return { last: true, known: true, retry: false, reason: '--complete 로 지정', prs: [], specs: [], number: null }
+  if (args.intermediate) return { last: false, known: true, retry: false, reason: '--intermediate 로 지정', prs: [], specs: [], number: null }
   const rules = { taskPattern: args.taskPattern, specTaskPattern: args.specTaskPattern, specsDir: args.specsDir ? specsDirOf(args, repo) : null }
-  const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch, head: typeof merged.pr.head === 'string' ? merged.pr.head : undefined }, rules)
-  return { last: verdict.last === true, known: verdict.last !== null, retry: verdict.retry, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
+  const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch, head: typeof merged.pr.head === 'string' ? merged.pr.head : undefined, taskRef }, rules)
+  return { last: verdict.last === true, known: verdict.last !== null, retry: verdict.retry, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs, number: verdict.number }
+}
+
+// 보드 항목의 task-ref. 항목이 없거나 보드를 읽지 못하면 null 이다
+function boardTaskRef(args: Args, repo: string, item: string | null): string | null {
+  if (!item) return null
+  try {
+    const ref = readBoard(boardPath(repo, args.board)).find((row) => pyStr(row.id) === item)?.['task-ref']
+    return typeof ref === 'string' && ref ? ref : null
+  } catch { return null }
 }
 
 // 머리 주석의 단계 5. note 는 lib/deploy.ts 의 판정 근거다. 바뀔 때마다 `배포 판정: <근거>` 한 줄을 남긴다
@@ -803,7 +813,9 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
   const deployed = deploy === 'success' || deploy === 'none'
 
-  const verdict = judgeLast(args, repo, merged)
+  // 보드 항목을 먼저 찾아 그 업무 번호(task-ref)를 마지막 PR 판정에 넘긴다. PR 제목에 업무 번호가 없는 PR(`(SHIP) …`)도 판정하게 한다
+  const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
+  const verdict = judgeLast(args, repo, merged, boardTaskRef(args, repo, item?.id ?? null))
   let last = verdict.last
 
   // 배포 뒤 할 일 목록에 이미 있는 끝나지 않은 항목은 지킨다(PR 619 리뷰). 새 항목은 만들지 않는다.
@@ -818,7 +830,6 @@ async function finish(args: Args, repo: string): Promise<number> {
     return 0
   }
 
-  const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
   let alreadyReflected = false
   let advance: ReturnType<typeof featureAdvance> = null
   const candidate = (() => {
@@ -851,7 +862,7 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
 
   log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${advance && !advance.lastStage ? '다음 기능 단계가 남아 있다' : verdict.reason})`)
-  const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
+  const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last, task_number: verdict.number }
   try {
     const result = await fire('after-deploy', input, {
       repo,

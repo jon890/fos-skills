@@ -2,7 +2,9 @@
 // 지시서에 `중간 과정:` 줄이 있으면 띄울 때 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다.
 // `보드 항목 id:` 로 정한 항목이 done 이면 doing 으로 다시 열고 지난 단계 뒤에 새 단계를 잇는다(ADR-015).
 // id 는 백틱 안의 글이나 공백 앞 첫 토큰이다(lib/spec.ts 의 boardIdOf). 설명이 붙었는데 보드에 없는 id 면 항목을 만들지 않는다
-// 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
+// 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018). 기본은 「PR 머지」 한 줄이다.
+// PR 없는 지시서(core/completion.ts 의 noPrInstruction)만 「할 일」 의 번호 줄을 단계로 쓴다(todoSteps)
+// 이미 있는 항목의 제목은 바꾸지 않는다. 새 항목도 set --create-only 로 만들어 그 사이 생긴 같은 id 를 덮지 않는다
 
 import { normalizeRef, urlFromLine } from '../core/task-adapters.ts'
 import type { TaskAdapter } from '../core/task-adapters.ts'
@@ -16,6 +18,7 @@ import { basename } from 'node:path'
 import { mainCheckout } from './git.ts'
 import { featureStageText } from '../core/feature-stages.ts'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesOf, stagesText } from './milestones.ts'
+import type { MilestoneStep } from './milestones.ts'
 import { section } from '../core/config.ts'
 import { FINISH_KEYS } from '../core/finish-options.ts'
 import { rulesFrom } from './last-pr.ts'
@@ -77,7 +80,7 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 리뷰·검증은 같은 워크트리, 명시한 id, 대상 PR, head 브랜치 순으로 찾고 상태·단계를 바꾸지 않는다.
 // 구현·후속은 중간 과정, id, 같은 워크트리·브랜치, 업무 번호 순이다. 새로 요청은 자동 찾기를 끈다.
 // 기존 항목의 대표 칸은 worker-add 가 잠금 안에서 쓰고, 실패할 때만 set 으로 돌아간다.
-// 앞 PR 이 열린 마일스톤 항목에 새 브랜치의 후속 worker 가 붙으면 PR·머지 두 단계를 다음 번호로 더하고(step-add, 글 뒤에 `(<워크트리>)`),
+// 앞 PR 이 열린 마일스톤 항목에 새 브랜치의 후속 worker 가 붙으면 머지 단계(단계 정의에 [pr] 이 있으면 PR·머지 두 단계)를 다음 번호로 더하고(step-add, 글 뒤에 `(<워크트리>)`),
 // 그 번호를 후속 줄의 stages 로 적는다(worker-add --stages). 순서는 단계 더하기, worker-add, set 이다. 규칙은 core/milestones.ts 의 「PR 묶음」 이다.
 export type BoardAttach = { item: string; role: WorkerRole; attached: boolean }
 export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string, dispatch = ''): BoardAttach | null {
@@ -150,8 +153,8 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const working = (listed && !listed.ok) || (row && isLive(row) && !workerEnds([row], new Set(), new Set([prior!.dispatch]))[prior!.dispatch])
     return ['--keep-current', role, ...(working ? ['--keep-dispatch', prior!.dispatch] : [])]
   }
-  function add(item: BoardItem | undefined, id: string, role: WorkerRole, stages = ''): boolean {
-    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(stages ? ['--stages', stages] : []), ...(item ? keepArgs(item) : [])]
+  function add(item: BoardItem | undefined, id: string, role: WorkerRole, stages = '', todo = ''): boolean {
+    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(stages ? ['--stages', stages] : []), ...(todo ? ['--todo-steps', todo] : []), ...(item ? keepArgs(item) : [])]
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (done.code === 0) return true
     process.stderr.write(`보드: worker 줄을 쓰지 못했다: ${done.stderr.trim() || done.code}\n`)
@@ -218,8 +221,13 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     return r
   }
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
-  const milestones = () => {
-    if (reportOnly) return [{ kind: null, text: WORKER_REPORT_STEP }]
+  // PR 없는 일은 기본 단계를 붙이지 않고 「할 일」 의 번호 줄을 단계로 쓴다. 번호 줄이 없으면 보고 받기 한 줄이다.
+  // worker_done 의 `steps=` 나 번호 없는 worker_done 이 이 단계를 끝낸다(board-sync.ts 의 --worker-steps)
+  const milestones = (): MilestoneStep[] => {
+    if (reportOnly) {
+      const todo = todoSteps(text)
+      return todo.length > 0 ? todo.map((line) => ({ kind: null, text: line })) : [{ kind: null, text: WORKER_REPORT_STEP }]
+    }
     const given = specSteps(text)
     if (given) return given
     return boardSettings(repo).steps ?? [...DEFAULT_STEPS]
@@ -230,16 +238,19 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     !!item && item.status !== 'done' && !!branch && item.branch !== branch &&
     prNumbers(item['merged-pr']).size > 0 && allStagesDone(item)
   const reopen = !!item && ((explicit && item.status === 'done') || nextPr)
-  const added = item && !reviewRole ? add(item, id, r.role, !reopen && r.role === 'follow' ? followStages(item) : '') : false
+  // 다시 열면 새 단계는 지난 단계 번호 다음부터다. next 에만 단계가 있던 항목도 그 번호 다음부터 잇는다
+  const reopenStart = item && reopen ? Math.max(0, ...[...lines(item.details), ...lines(item.next)].map(plain).map((text) => Number(/^(\d+)[.)]?\s/.exec(text)?.[1] ?? 0))) + 1 : 1
+  // PR 없는 일의 「할 일」 번호 → 보드 단계 번호(worker 줄의 todo-steps). worker_done 의 steps= 를 이 짝으로 옮긴다.
+  // 새 단계를 만들지 않는 기존 항목에 붙으면 짝이 없다(빈 문자열)
+  const todoMap = (start: number): string => reportOnly ? [...todoNumbered(text).keys()].map((n, i) => `${n}=${start + i}`).join(',') : ''
+  const added = item && !reviewRole ? add(item, id, r.role, !reopen && r.role === 'follow' ? followStages(item) : '', reopen ? todoMap(reopenStart) : '') : false
   const representative = added ? [] : ['--worktree', wt, ...branchArgs]
   if (item && reopen) {
     const old = lines(item.details)
       .map(plain)
       .filter((text) => !text.startsWith(NOTE) && !text.startsWith(INTERIM))
       .map((text) => ({ text, done: true }))
-    // next 에만 단계가 있던 항목도 그 번호 다음부터 잇는다
-    const numbers = [...old.map((d) => d.text), ...lines(item.next).map(plain)].map((text) => Number(/^(\d+)[.)]?\s/.exec(text)?.[1] ?? 0))
-    const added = milestoneLines(milestones(), Math.max(0, ...numbers) + 1)
+    const added = milestoneLines(milestones(), reopenStart)
     // progress 칸에 옛 값(3/3)이 남아 있으면 단계 수보다 앞서 진행률이 100% 로 남아 지운다.
     // 제목은 사용자가 정한 마일스톤이라 이어 띄운 지시서의 머리줄로 바꾸지 않는다
     const args = ['set', id, 'doing', ...representative, '--progress', 'auto', '--stages', stagesText(added.stages)]
@@ -260,10 +271,11 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   }
   const fresh = milestoneLines(milestones())
   const stages = stagesText(fresh.stages)
-  const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
+  // 새 항목만 만든다. 읽은 뒤 같은 id 가 생겼으면 덮지 않고 다시 읽어 기존 항목 규칙으로 붙인다(제목을 지시서 머리줄로 바꾸지 않는다)
+  const args = ['set', id, 'doing', '--create-only', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
   for (const step of fresh.details) args.push('--detail', step)
   write([...args, ...taskArgs])
-  add(undefined, id, r.role)
+  add(undefined, id, r.role, '', todoMap(1))
   return r
   // 앞 PR 이 열려 있는 마일스톤 항목에 새 브랜치의 후속 줄이 붙을 때 더할 PR·머지 단계. 더한 번호를 `pr=N,merge=M` 로 돌려준다.
   // 앞 PR 이 아직 이어지지 않았거나 이미 머지됐으면, 같은 워크트리 재시도나 같은 브랜치이면, 단계 항목이 아니면 더하지 않는다(빈 문자열)
@@ -274,8 +286,12 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     if (!branch || known.has(branch) || current(item) || !stagesOf(item) || ![...prNumbers(item.pr)].some((pr) => !merged.has(pr))) return ''
     const defs = milestones()
     const numbers: number[] = []
-    for (const kind of ['pr', 'merge'] as const) {
-      const base = (defs.find((step) => step.kind === kind) ?? DEFAULT_STEPS.find((step) => step.kind === kind) as { text: string }).text
+    // 단계 정의에 [pr] 단계가 없으면(기본 「PR 머지」 한 줄) 머지 단계 하나만 더한다.
+    // 항목이 옛 두 줄(stages 에 pr 이 있다)이면 그 꼴을 따라 PR·머지 두 줄을 더한다. 단계 정의에 [pr] 이 없으면 옛 글(PR, 머지)을 쓴다
+    const legacy = stagesOf(item)?.pr !== undefined && !defs.some((step) => step.kind === 'pr')
+    const kinds = legacy || defs.some((step) => step.kind === 'pr') ? (['pr', 'merge'] as const) : (['merge'] as const)
+    for (const kind of kinds) {
+      const base = legacy ? LEGACY_STEP_TEXT[kind] : (defs.find((step) => step.kind === kind) ?? DEFAULT_STEPS.find((step) => step.kind === kind) ?? { text: LEGACY_STEP_TEXT[kind] }).text
       const done = run(scriptCommand(bin, ['step-add', id, `${base} (${wt})`, '--file', file]), { timeoutMs: NO_LIMIT_MS })
       const number = done.code === 0 ? Number((JSON.parse(done.stdout) as { number?: unknown }).number) : NaN
       if (!Number.isInteger(number)) {
@@ -284,13 +300,44 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
       }
       numbers.push(number)
     }
-    return `pr=${numbers[0]},merge=${numbers[1]}`
+    return numbers.length === 2 ? `pr=${numbers[0]},merge=${numbers[1]}` : `merge=${numbers[0]}`
   }
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
-    if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)
+    if (staleBoardWrite(args, done) || (args.includes('--create-only') && /이미 있는 항목이다/.test(done.stderr))) throw new StaleBoardWrite(done.stderr)
     if (done.code !== 0) throw new Error(done.stderr || `보드 명령 종료 코드 ${done.code}`)
   }
+}
+
+// 옛 기본 단계(PR, 머지 두 줄)의 글. 옛 두 줄 항목에 후속 묶음을 더할 때 쓴다
+const LEGACY_STEP_TEXT = { pr: 'PR', merge: '머지' } as const
+
+// 지시서 「할 일」 절의 맨 앞 번호 줄 글. 들여 쓴 하위 줄과 예시 블록은 읽지 않는다. 굵게 표시와 코드 표시를 떼고
+// 첫 문장만 80자 안으로 줄인다(보드 줄 규칙). 절이 없거나 번호 줄이 없으면 빈 목록이다
+export function todoSteps(text: string): string[] {
+  return [...todoNumbered(text).values()]
+}
+
+// 「할 일」 번호 → 보드 단계 글. todoSteps 와 같은 줄을 읽고, worker_done 의 steps= 번호를 단계 글로 옮길 때 쓴다
+export function todoNumbered(text: string): Map<number, string> {
+  let fence = false
+  const lines = text.split('\n').filter((line) => {
+    if (/^\s*(?:`{3,}|~{3,})/.test(line)) { fence = !fence; return false }
+    return !fence
+  })
+  const at = lines.findIndex((line) => /^##\s+할 일(?:\s.*)?$/.test(line))
+  const steps = new Map<number, string>()
+  if (at < 0) return steps
+  for (const line of lines.slice(at + 1)) {
+    if (/^#{1,2}\s/.test(line)) break
+    const match = /^(\d+)[.)]\s+(.+)$/.exec(line)
+    if (!match) continue
+    const body = match[2]
+    const plain = body.replaceAll('**', '').replace(/`([^`]*)`/g, '$1').trim()
+    const sentence = plain.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? plain
+    if (!steps.has(Number(match[1]))) steps.set(Number(match[1]), sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence)
+  }
+  return steps
 }
 
 // 번호 단계가 하나 이상이고 모두 끝났는가. 번호 없는 줄(남은 일, 자동 줄)은 보지 않는다
