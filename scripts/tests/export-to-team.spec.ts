@@ -181,6 +181,28 @@ describe('export-to-team 원본과 어긋남', () => {
     assert.ok(!existsSync(join(e.team, 'skills', e.skill, 'NOTE.md')))
   })
 
+  test('0.x 로 옮긴 원본은 옛 사본을 갱신하고 양쪽에서 버전 역행을 막는다', (t) => {
+    const e = setup(t)
+    const source = join(e.repo, e.skill)
+    const target = join(e.team, 'skills', e.skill)
+    const oldSkill = '---\nname: x\nmetadata:\n  version: "2.5.0"\n---\n'
+    const setTeamVersion = (version: string) => write(join(target, 'SKILL.md'), `---\nname: x\nversion: ${version}\n---\n`)
+    write(join(source, 'SKILL.md'), oldSkill.replace('2.5.0', '0.3.0'))
+    write(join(source, 'CHANGELOG.md'), '# CHANGELOG\n\n## 0.3.0 (2026-11-27)\n\n- 전환\n\n## 2.5.0 (2026-11-26)\n\n- 이전 변경\n')
+    setTeamVersion('2.5.1')
+    assert.equal(run(e, '--apply').code, 3)
+    setTeamVersion('2.5.0')
+    assert.equal(run(e, '--apply').code, 0)
+    assert.match(read(join(target, 'SKILL.md')), /^version: 0\.3\.0$/m)
+    assert.equal(run(e).code, 0)
+
+    write(join(source, 'SKILL.md'), oldSkill)
+    assert.equal(run(e, '--apply').code, 3)
+    write(join(source, 'SKILL.md'), oldSkill.replace('2.5.0', '0.3.0'))
+    setTeamVersion('0.3.1')
+    assert.equal(run(e, '--apply').code, 3)
+  })
+
   test('SKILL.md 의 metadata.version 은 팀의 최상위 version 으로 바꿔 쓴다', (t) => {
     const e = setup(t)
     write(join(e.repo, e.skill, 'SKILL.md'), '---\nname: x\nmetadata:\n  version: "1.2.0"\n---\n본문\n')

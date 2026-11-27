@@ -98,10 +98,10 @@ describe('check-skill-docs 명령', () => {
   test('스킬 폴더 밖 단위(extensions)의 조각도 인자 없이 본다', (t) => {
     const root = fixture(t)
     write(root, 'extensions/board/CHANGELOG.md', '# CHANGELOG: board\n\n## 1.0.0 (2026-11-01)\n\n- 처음\n')
-    write(root, 'extensions/board/changes/x.minor.md', '- 호환성: 지웠다\n')
+    write(root, 'extensions/board/changes/x.patch.md', '- 호환성: 지웠다\n')
     const done = check(root)
     assert.equal(done.code, 1)
-    assert.equal(done.stdout, 'extensions/board/changes/x.minor.md: `호환성:` 항목은 조각으로 받지 않는다. major 는 PR 이 버전과 CHANGELOG 를 직접 올린다\n')
+    assert.equal(done.stdout, 'extensions/board/changes/x.patch.md: `호환성:` 항목은 `.minor.md` 조각에 적는다\n')
   })
 
   test('README 가 없거나 없는 스킬 이름이면 1 이다', (t) => {
@@ -130,6 +130,11 @@ describe('checkReadme', () => {
 describe('checkChangelog', () => {
   const log = CHANGELOG('demo')
   test('맞는 CHANGELOG 는 통과한다', () => assert.deepEqual(checkChangelog('demo', log, '2.1.0'), []))
+  test('0.x 버전 절과 이전 번호의 이력을 함께 검사한다', () => {
+    const migrated = log.replace('## 2.1.0', '## 0.3.0 (2026-11-26)\n\n- 버전 체계를 바꿨다\n\n## 2.1.0')
+    assert.deepEqual(checkChangelog('demo', migrated, '0.3.0'), [])
+    assert.ok(checkChangelog('demo', migrated.replace('## 1.x', '## 0.x'), '0.3.0').some((p) => p.includes('현재 major')))
+  })
   test('SKILL.md 와 버전이 다름', () => assert.ok(checkChangelog('demo', log, '2.2.0').some((p) => p.includes('SKILL.md'))))
   test('날짜 없는 절', () => assert.ok(checkChangelog('demo', log.replace('2.0.0 (2026-10-20)', '2.0.0'), '2.1.0').some((p) => p.includes('`## 2.0.0`'))))
   test('이전 major 의 버전 절', () => assert.ok(checkChangelog('demo', log.replace('## 1.x', '## 1.3.0 (2026-10-01)'), '2.1.0').some((p) => p.includes('`## 1.x`'))))

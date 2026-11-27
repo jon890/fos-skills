@@ -97,6 +97,22 @@ function newer(a: number[], b: number[]): boolean {
   return false
 }
 
+// 번호를 다시 매길 때 원본 CHANGELOG 에서 유지한 마지막 옛 버전까지 내보낼 수 있다.
+function lastLegacyVersion(changelog: string): number[] | null {
+  if (!isFile(changelog)) return null
+  const firstLegacy = /^## ([1-9]\d*)\.(\d+)\.(\d+) \(\d{4}-\d{2}-\d{2}\)$/m.exec(pyReadText(changelog))
+  return firstLegacy ? firstLegacy.slice(1, 4).map(Number) : null
+}
+
+function targetHasNewerVersion(ours: number[], theirs: number[], source: string, target: string): boolean {
+  if (ours[0] === 0 && theirs[0] > 0) {
+    const legacy = lastLegacyVersion(join(dirname(source), 'CHANGELOG.md'))
+    if (legacy) return newer(theirs, legacy)
+  }
+  if (ours[0] > 0 && theirs[0] === 0 && lastLegacyVersion(join(dirname(target), 'CHANGELOG.md'))) return true
+  return newer(theirs, ours)
+}
+
 // 이 저장소의 metadata.version 을 팀 저장소가 검사하는 최상위 version 으로 바꾼다.
 // 두 저장소의 frontmatter 규약이 달라, 그대로 복사하면 팀 쪽 validate.sh 가 막는다
 function toTeamFrontmatter(text: string): string {
@@ -215,7 +231,9 @@ function exportFiles(repo: string, teamDir: string, apply: boolean): number {
     if (!(isFile(ourSkill) && isFile(theirSkill))) continue
     const ours = versionOf(pyReadText(ourSkill))
     const theirs = versionOf(pyReadText(theirSkill))
-    if (ours && theirs && newer(theirs, ours)) regressions.push(`  ${srcRel}: 팀 ${theirs.join('.')} > 이 저장소 ${ours.join('.')}`)
+    if (ours && theirs && targetHasNewerVersion(ours, theirs, ourSkill, theirSkill)) {
+      regressions.push(`  ${srcRel}: 팀 ${theirs.join('.')} > 이 저장소 ${ours.join('.')}`)
+    }
   }
   if (regressions.length > 0) {
     out('팀 저장소의 버전이 더 높다. 내보내면 팀의 수정을 되돌린다:')

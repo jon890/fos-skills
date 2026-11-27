@@ -3,6 +3,7 @@ import { readBoardWorkers } from '../../../skills/orch/scripts/lib/board-queries
 import { hasStopReportId, isQuestionCandidate, stopReason as stopReasonOf } from '../../../skills/orch/scripts/lib/board-queries/board-question-alerts.ts'
 import { muteKey, muteLabel, muteTarget } from '../../../skills/inbox/scripts/lib/mute.ts'
 import { BOARD_PATHS } from '../../../modules/work-board/locations.ts'
+import { compareFosPluginVersions } from '../../../modules/kit/fos-plugin-version.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
 import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
@@ -1096,11 +1097,7 @@ export function versionText(version, commit) {
 }
 
 export function comparePluginVersions(left, right) {
-  const parse = (value) => /^\d+\.\d+\.\d+$/.test(String(value || '')) ? String(value).split('.').map(Number) : null
-  const a = parse(left), b = parse(right)
-  if (!a || !b) return null
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
-  return 0
+  return compareFosPluginVersions(String(left || ''), String(right || ''))
 }
 
 export function newerInstall(install, rows) {

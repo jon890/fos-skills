@@ -121,6 +121,8 @@ test('새 설치본은 main 조회와 관계없이 먼저 알리고, 낮은 설�
   const install = { kind: 'cache', version: '1.9.0', scope: 'user', projectPath: '', key: 'fos-skills@fos-skills' }
   const rows = [{ scope: 'user', version: '1.10.0' }]
   assert.equal(comparePluginVersions('1.9.0', '1.10.0'), -1)
+  assert.equal(newerInstall({ ...install, version: '20.10.1' }, [{ scope: 'user', version: '0.21.0' }]), '0.21.0')
+  assert.equal(newerInstall({ ...install, version: '0.21.0' }, [{ scope: 'user', version: '20.11.0' }]), '')
   assert.equal(newerInstall(install, rows), '1.10.0')
   assert.equal(newerInstall(install, [{ scope: 'user', version: '1.8.0' }]), '')
   assert.match(versionLabel('fos-skills', install, { error: 'offline' }, '', '1.10.0').text, /새 버전 설치됨 · 쉴 때 다시 읽음/)

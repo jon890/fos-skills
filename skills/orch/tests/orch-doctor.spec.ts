@@ -1300,23 +1300,24 @@ describe('루프 번들 판정', () => {
     const bundle = (root: string, version: string) => join(root, 'plugins', 'cache', 'fos-skills', 'fos-skills', version)
     write(
       join(config, 'plugins', 'installed_plugins.json'),
-      JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', installPath: bundle(config, '3.12.0') }, { scope: 'project', installPath: bundle(join(tmp, 'old'), '3.6.0') }] } }),
+      JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', installPath: bundle(config, '0.21.0') }, { scope: 'project', installPath: bundle(join(tmp, 'old'), '20.10.1') }] } }),
     )
-    mkdirSync(join(bundle(config, '3.12.0'), 'skills', 'orch', 'scripts'), { recursive: true })
+    mkdirSync(join(bundle(config, '0.21.0'), 'skills', 'orch', 'scripts'), { recursive: true })
+    mkdirSync(bundle(join(tmp, 'old'), '20.10.1'), { recursive: true })
     const loopOf = (root: string, version: string) => join(bundle(root, version), 'orch', 'scripts', 'orch-loop.ts')
     const psFile = join(tmp, 'ps.txt')
     writeFileSync(
       psFile,
       [
-        `  111 node ${loopOf(join(tmp, 'old'), '3.6.0')} --repo /r/a --run r1 --foreground`,
-        `  222 node ${loopOf(join(tmp, 'other-profile'), '3.12.0')} --repo /r/b --run r2 --foreground`,
-        `  333 node ${loopOf(config, '3.12.0')} --repo /r/c --run r3 --foreground`,
+        `  111 node ${loopOf(join(tmp, 'old'), '20.10.1')} --repo /r/a --run r1 --foreground`,
+        `  222 node ${loopOf(join(tmp, 'other-profile'), '0.21.0')} --repo /r/b --run r2 --foreground`,
+        `  333 node ${loopOf(config, '0.21.0')} --repo /r/c --run r3 --foreground`,
         '',
       ].join('\n'),
     )
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
-    assert.deepEqual(r.stdout.split('\n').filter((line) => line.startsWith('LOOP-STALE')), ['LOOP-STALE /r/a 111 3.6.0'])
+    assert.deepEqual(r.stdout.split('\n').filter((line) => line.startsWith('LOOP-STALE')), ['LOOP-STALE /r/a 111 20.10.1'])
     assert.ok(r.stdout.includes(`${WORD} loop stop --repo /r/a --all`), r.stdout)
   })
 
