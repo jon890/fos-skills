@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { groupAlive, liveInGroup, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
+import { groupLive, liveInGroup, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
 
@@ -253,7 +253,7 @@ describe('runGroup', () => {
     assert.equal(done.outcome.kind, 'timeout')
     const group = Number(done.stdout.trim().split('\n')[0])
     assert.ok(Number.isInteger(group) && group > 0, done.stdout)
-    assert.equal(groupAlive(group), false)
+    assert.equal(groupLive(group), false)
   })
 
   test('셸이 끝난 뒤 남은 백그라운드 손자도 끝내고 셸의 종료 코드를 낸다', { timeout: 30_000 }, async (t) => {
@@ -261,7 +261,7 @@ describe('runGroup', () => {
     t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
     const done = await runGroup(['sh', '-c', 'sleep 30 & echo $$; exit 0'], { timeoutMs: 10_000 })
     assert.deepEqual(done.outcome, { kind: 'exit', code: 0 })
-    assert.equal(groupAlive(Number(done.stdout.trim().split('\n')[0])), false)
+    assert.equal(groupLive(Number(done.stdout.trim().split('\n')[0])), false)
   })
 
   test('좀비만 남은 그룹은 살아 있지 않은 것으로 본다', () => {

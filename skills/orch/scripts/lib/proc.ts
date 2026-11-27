@@ -326,7 +326,7 @@ export function liveInGroup(psOutput: string, pgid: number): boolean {
 }
 
 // 그룹에 실행 중인 프로세스가 남았는지. ps 를 읽지 못하면 kill(-pgid, 0) 의 판정을 그대로 쓴다
-function groupLive(pid: number): boolean {
+export function groupLive(pid: number): boolean {
   if (!groupAlive(pid)) return false
   const ps = spawnSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8', timeout: 5_000 })
   if (ps.status !== 0 || typeof ps.stdout !== 'string') return true
