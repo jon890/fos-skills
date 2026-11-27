@@ -16,6 +16,7 @@
 //   줄이 끝나거나 글이 바뀌면(보드에 그 열린 사건 줄이 없으면) 기록을 지운다. 같은 줄에서 실패 종류가 바뀌면 다시 알린다.
 //   「아직」 이 나오면 기록을 지운다. 그 뒤의 실패는 새 실패로 알린다.
 //   보드 파일이 없어진 기록은 쓸 때 지운다.
+// 끝내기 직전에 줄마다 그 항목의 단계를 다시 읽어 번호와 글이 같고 끝나지 않았을 때만 끝낸다. 앞 줄의 처리 중에 바뀐 줄을 옛 결과로 끝내지 않는다.
 // 줄을 끝낸 뒤 WAIT-EVENT 전송이 실패하면 다시 보내지 않고 failed 로 돌려준다. 단계가 오류 줄(wait-events@<주 Run>)에 남긴다.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -143,9 +144,11 @@ export async function checkWaitEvents(repo: string, opts: WaitEventsOptions): Pr
     const before = boards[key] ?? {}
     // 열린 사건 줄이 아닌 기록은 지운다(줄이 끝났거나 글이 바뀌었다)
     const records: Record<string, WaitFailure> = Object.fromEntries(Object.entries(before).filter(([one]) => lines.some((line) => recordKey(line) === one)))
-    // 명령을 도는 동안 줄이 바뀌었을 수 있다. 끝내기 직전에 다시 읽는다
-    let fresh: WaitLine[] | null = null
-    const stillOpen = (line: WaitLine) => (fresh ??= waitLines(repo, board)).some((one) => one.id === line.id && one.number === line.number && one.text === line.text)
+    // 명령을 도는 동안이나 앞 줄을 끝내고 알리는 동안 줄이 바뀌었을 수 있다. 줄마다 끝내기 직전에 그 항목의 단계를 다시 읽는다
+    const stillOpen = (line: WaitLine) => {
+      const steps = boardSteps(bin(), line.id, board)
+      return steps !== null && steps.some((step) => step.number === line.number && !step.done && step.text === line.text)
+    }
     for (const line of lines) {
       const verdict: WaitVerdict | undefined = line.owner === 'none'
         ? { kind: 'failed', failure: 'no-owner', reason: '확인할 저장소가 없다. 보드 파일이 저장소 밖에 있고 항목을 띄운 저장소도 없다' }

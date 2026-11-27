@@ -182,3 +182,17 @@ test('줄을 끝낸 뒤 알림이 실패하면 다시 보내지 않고 failed �
   assert.match(result.failed[0], /WAIT-EVENT a 2 dev-eval 알림을 보내지 못했다: offline/)
   assert.equal(c.rows()[0].details[1].done, true)
 })
+
+test('앞 줄을 알리는 동안 바뀐 뒤 줄은 옛 결과로 끝내지 않는다', async (t) => {
+  const c = setup(t)
+  c.configure({ 'dev-eval': { command: c.command(0) } })
+  c.put([c.item(), c.item({ id: 'b' })])
+  const sent: string[] = []
+  let changed = false
+  await checkWaitEvents(c.repo, { deadline: null, log: () => {}, notify: (kind, text) => {
+    sent.push(`${kind} ${text}`)
+    if (!changed) { changed = true; c.put([c.rows()[0], c.item({ id: 'b' }, '2. [wait: 사건 other] 다른 사건')]) }
+  } })
+  assert.deepEqual(sent, ['WAIT-EVENT a 2 dev-eval'])
+  assert.equal(c.rows()[1].details[1].done, false)
+})
