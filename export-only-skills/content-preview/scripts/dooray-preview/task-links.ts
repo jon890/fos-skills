@@ -8,7 +8,7 @@ const ID = '[a-z0-9][a-z0-9_-]*'
 const INTERNAL = new RegExp(`^dooray://(${ID})/tasks/(${ID})$`, 'i')
 const WEB_PATH = new RegExp(`^/(?:project/tasks|task/${ID})/(${ID})/?$`, 'i')
 const LINK_BASE = 'https://base.invalid/'
-const POST_REF = /^([^\s/]+)\/(\d+)(?=\s|$)/u
+const POST_REF = /^[^\s/]+\/\d+(?=\s|$)/u
 const BRACKET = /\\[^\r\n]|[\[\]]/gu
 const WORKFLOW = /^(registered|working|closed|backlog)$/
 // 정상 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 표시 글을 그대로 읽는다.
@@ -179,8 +179,8 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     }
 
     const ref = typeof post === 'string' ? undefined : post.ref
-    const shown = POST_REF.exec(decodeMarkdown(label))
-    const mismatch = shownLabel !== undefined && ref !== undefined && (!shown || `${shown[1]}/${shown[2]}` !== ref)
+    const shown = POST_REF.exec(decodeMarkdown(label))?.[0]
+    const mismatch = shown !== undefined && ref !== undefined && shown !== ref
     const actualLabel = ref && typeof post !== 'string'
       ? escapeBrackets(`${ref}${typeof post.subject === 'string' ? ` ${post.subject.replace(/\s+/gu, ' ').trim()}` : ''}`)
       : undefined
@@ -192,6 +192,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
 
     const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}\n  예시는 펜스 코드 블록으로 쓰세요.`
     if (fixedLabel !== label) errors.push(`오류: 업무 링크 표시 글 「${label}」의 대괄호를 &#91; 과 &#93; 으로 바꾸세요.${fix}`)
+    if (inline && !shown) errors.push(`오류: 두레이 업무 링크 표시 글은 프로젝트/업무번호로 시작해야 합니다.${fix}`)
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)
     else if (!inline) errors.push(`오류: 두레이 업무를 가리키는 ${kind}를 표시 글과 상태값을 갖춘 인라인 링크로 바꾸세요.${fix}`)
     else if (!INTERNAL.test(target) || !WORKFLOW.test(shownWorkflow ?? '')) {

@@ -545,6 +545,19 @@ describe('dooray-preview task, comment', () => {
     assert.match(invalid.stderr, /고친 예 \[example\/18 &#91;제목\]/u)
   })
 
+  test('CLI 없이도 업무 링크 표시 글의 프로젝트와 번호 형식을 검사한다', () => {
+    for (const state of ['missing', 'failed'] as const) {
+      for (const label of ['제목만 표시', 'example/18x 제목', '']) {
+        const done = preview('comment', `[${label}](dooray://example/tasks/post-example "working")`, state)
+        assert.equal(done.code, 1, done.stderr)
+        assert.match(done.stderr, /표시 글은 프로젝트\/업무번호로 시작해야 합니다/u)
+        assert.match(done.stderr, /프로젝트와 번호를 확인하지 못했습니다/u)
+        assert.ok(done.stderr.includes('고친 예 [PROJECT/NUMBER '))
+        assert.equal(done.html, '')
+      }
+    }
+  })
+
   test('코드 예제와 업무 이외 링크는 검사하지 않는다', () => {
     const link = '[example/18 [제목]](dooray://example/tasks/post-example "working")'
     const body = [
