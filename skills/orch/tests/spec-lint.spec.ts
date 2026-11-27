@@ -856,3 +856,97 @@ test('공통 지시서에서 표지 없는 항목과 표지 항목의 같은 머
   const result = lint([spec('duplicate-head', '담당: `src/net/client.ts`')])
   assert.match(result.stdout, /공통: 같은 머리 줄의 항목이 둘 이상 있다: 1, 2줄/)
 })
+
+describe('붙일 보드 항목', () => {
+  function board(items: Record<string, unknown>[]): void {
+    write(join(repo, '.orch/board.json'), JSON.stringify({ items }))
+  }
+  // 보드 검사만 보게 제목 줄, 선택 줄, 브랜치 줄을 둔다. head 는 머리, body 는 할 일 첫 줄이다
+  function boardSpec(name: string, head: string, body = '루프 없이: 테스트 지시서다'): string {
+    return write(join(specs, `${name}.md`), `# ${name}\n${SELECTED}\n브랜치: \`feat/${name}\`\n${head}\n## 할 일\n${body}\n`)
+  }
+  function findings(text: string): string[] {
+    return text.split('\n').filter((line) => line.includes(': 보드: '))
+  }
+  function feature(name: string, design = false): string {
+    const dir = join(repo, 'docs/features', name)
+    if (design) write(join(dir, 'design.md'), '# 설계\n')
+    return write(join(dir, 'spec.md'), '# 기능\n확인: 2026-11-02\n\n## 목표\n\n고친다\n')
+  }
+
+  test('보드 파일이 없으면 보지 않는다', () => {
+    assert.deepEqual(lint([boardSpec('lonely', '')]), { code: 0, stdout: '' })
+  })
+
+  test('붙일 항목이 없으면 브랜치, 업무, 기능 폴더를 알리며 막는다', () => {
+    board([{ id: 'other', status: 'doing', branch: 'feat/other' }])
+    const r = lint([boardSpec('missing', '두레이 업무: P/7')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.deepEqual(findings(r.stdout), ['missing.md:1: 보드: 붙일 보드 항목을 찾지 못했다(브랜치 feat/missing, 업무 P/7, 기능 폴더 없음). 지시서 머리에 `보드 항목 id: <id>` 나 `보드 항목 없음: <이유>` 를 적는다'])
+  })
+
+  test('같은 브랜치의 항목이나 지시서 id, 새로 요청은 통과한다', () => {
+    board([{ id: 'mine', status: 'doing', branch: 'feat/found' }])
+    assert.deepEqual(lint([boardSpec('found', '')]), { code: 0, stdout: '' })
+    assert.deepEqual(lint([boardSpec('given', '보드 항목 id: new-item')]), { code: 0, stdout: '' })
+    assert.deepEqual(lint([boardSpec('fresh', '보드 항목: 새로')]), { code: 0, stdout: '' })
+  })
+
+  test('같은 업무의 열린 항목이 둘이면 고르지 않고 막는다', () => {
+    board([{ id: 'a', status: 'doing', 'task-ref': 'P/7' }, { id: 'b', status: 'todo', 'task-ref': 'P/7' }])
+    const r = lint([boardSpec('twice', '두레이 업무: P/7')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.deepEqual(findings(r.stdout), ['twice.md:1: 보드: 붙일 보드 항목이 둘 이상이다(a, b). 지시서 머리에 `보드 항목 id: <id>` 를 적는다'])
+  })
+
+  test('`보드 항목 없음:` 은 이유가 있어야 하고 id 와 함께 쓰지 않는다', () => {
+    board([])
+    assert.deepEqual(lint([boardSpec('none-ok', '보드 항목 없음: 일회성 조사다')]), { code: 0, stdout: '' })
+    const r = lint([boardSpec('none-empty', '보드 항목 없음:'), boardSpec('none-id', '보드 항목 없음: 조사\n보드 항목 id: x')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.deepEqual(findings(r.stdout), [
+      'none-empty.md:4: 보드: `보드 항목 없음:` 뒤에 이유가 없다. 보드 항목 없이 띄우는 이유를 한 줄로 적는다',
+      'none-id.md:4: 보드: `보드 항목 없음:` 과 `보드 항목 id:` 를 함께 쓰지 않는다. 하나만 남긴다',
+    ])
+  })
+
+  test('리뷰와 중간 과정 지시서, 이미 띄운 지시서는 보지 않는다', () => {
+    board([])
+    const review = boardSpec('review', '리뷰 PR: #3')
+    const interim = boardSpec('interim', '중간 과정: PR #4')
+    const active = boardSpec('active', '')
+    const r = run(['--repo', repo, '--active', active, review, interim])
+    assert.deepEqual(findings(r.stdout), [])
+  })
+
+  test('기능 폴더로 찾고, 지시서 id 의 항목이 다른 기능을 따라가면 막는다', () => {
+    const a = feature('a')
+    board([
+      { id: 'feature-a', status: 'doing', feature: 'docs/features/a', 'feature-repo': repo, details: [{ text: '1. [ask] 기능 technical-design', done: false }] },
+      { id: 'feature-b', status: 'doing', feature: 'docs/features/b', 'feature-repo': repo },
+    ])
+    const loop = `루프를 쓴다(스펙: ${a})`
+    const r = lint([boardSpec('by-feature', '기능 단계: technical-design', loop), boardSpec('wrong-id', '보드 항목 id: feature-b\n기능 단계: technical-design', loop)])
+    assert.equal(r.code, 1, r.stdout)
+    assert.deepEqual(findings(r.stdout), ['wrong-id.md:4: 보드: 항목 feature-b 는 다른 기능 폴더 docs/features/b 를 따라간다. 이 기능의 항목 id 를 적는다'])
+  })
+
+  test('보드의 다음 단계와 지시서의 첫 단계가 어긋나면 막는다', () => {
+    const a = feature('a', true)
+    board([{ id: 'feature-a', status: 'doing', feature: 'docs/features/a', 'feature-repo': repo, details: [{ text: '1. [ask] 기능 technical-design', done: false }] }])
+    const r = lint([boardSpec('ahead', '보드 항목 id: feature-a\n기능 단계: implementation 1/1', `루프를 쓴다(스펙: ${a})`)])
+    assert.equal(r.code, 1, r.stdout)
+    assert.deepEqual(findings(r.stdout), ['ahead.md:5: 보드: 항목 feature-a 의 다음 단계는 technical-design 인데 지시서는 implementation 1/1 부터 시작한다'])
+  })
+
+  test('새 항목은 설계가 시작 브랜치에 있을 때만 구현 1차부터 받는다', () => {
+    board([])
+    const head = '보드 항목 id: fresh-item\n기능 단계: implementation 1/2'
+    const without = lint([boardSpec('no-design', head, `루프를 쓴다(스펙: ${feature('plain')})`)])
+    assert.equal(without.code, 1, without.stdout)
+    assert.match(findings(without.stdout).join('\n'), /no-design\.md:5: 보드: 항목 fresh-item 의 다음 단계는 technical-design 인데/)
+    const withDesign = lint([boardSpec('has-design', head, `루프를 쓴다(스펙: ${feature('designed', true)})`)])
+    assert.deepEqual(findings(withDesign.stdout), [])
+    assert.equal(withDesign.code, 0, withDesign.stdout)
+  })
+})

@@ -171,6 +171,16 @@ export function boardNewOf(text: string): boolean {
   return /^\s*(?:[-*]\s*)?보드 항목\s*:\s*새로\s*$/m.test(text.split(/^##\s/m)[0])
 }
 
+// 머리의 `보드 항목 없음: <이유>`. 보드 항목 없이 띄운다는 뜻이다(references/spec-writing.md). 줄이 없으면 null, 이유가 비면 reason 이 빈 글이다
+export function boardNoneOf(text: string): { reason: string; line: number } | null {
+  const head = text.split(/^##\s/m)[0].split('\n')
+  for (const [index, line] of head.entries()) {
+    const match = /^\s*(?:[-*]\s*)?보드 항목 없음\s*:(.*)$/.exec(line)
+    if (match) return { reason: match[1].trim(), line: index + 1 }
+  }
+  return null
+}
+
 // 머리의 검증 worker 역할. 나머지 역할은 띄우기가 정한다(references/spec-writing.md).
 export function workerRoleOf(text: string): 'verify' | null {
   return /^\s*(?:[-*]\s*)?worker 역할\s*:\s*검증\s*$/m.test(text.split(/^##\s/m)[0]) ? 'verify' : null

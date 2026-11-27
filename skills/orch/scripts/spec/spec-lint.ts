@@ -4,7 +4,7 @@
 // worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌한다. 띄우기 전에 한 번 돌린다.
 //
 // 사용법:
-//     spec-lint.ts --repo DIR [--overlay FILE] [--base BRANCH] [--spec-ref REF | --spec-root DIR] [--active FILE ...] SPEC [SPEC ...]
+//     spec-lint.ts --repo DIR [--overlay FILE] [--base BRANCH] [--spec-ref REF | --spec-root DIR] [--worktree DIR] [--active FILE ...] SPEC [SPEC ...]
 //     spec-lint.ts --repo DIR [--overlay FILE] --check-overlay [--base main] [SPEC ...]
 //
 //     --repo     대상 저장소. 존재 확인과 담당 경로 확장을 이 저장소의 git 으로 한다
@@ -18,6 +18,7 @@
 //                기본은 --check-overlay 가 main, 루프 검사가 origin/HEAD 의 브랜치(없으면 main)다
 //     --spec-ref 루프 검사가 상대경로 스펙을 읽을 git ref. 기본 origin/<base>. launch-worker 가 --resume-remote 면 origin/<지시서 브랜치> 를 준다
 //     --spec-root 루프 검사가 상대경로 스펙을 이 폴더 아래 디스크에서 읽는다. --spec-ref 보다 앞선다. launch-worker 가 --worktree 면 그 워크트리를 준다
+//     --worktree 보드 검사가 같은 워크트리의 항목을 찾을 워크트리. 이름만 본다. launch-worker 가 --worktree 로 이어 띄울 때 준다
 //
 // 지시서에서 읽는 줄:
 //     담당: `src/a/**`, `docs/a.md`     그 worker 가 고치는 경로. glob 을 쓴다. 여러 줄이어도 된다
@@ -90,6 +91,12 @@
 //     보드        `보드 항목 id:` 줄에 id 뒤 설명이 붙었다. id 는 백틱 안의 글이나 공백 앞 첫 토큰으로만 읽는다(lib/spec.ts 의 boardIdOf).
 //                 설명이 붙은 id 가 보드에 없으면 launch-worker 가 항목을 만들지 않는다. 설명은 다른 줄에 둔다. 경고이고 종료 코드에 넣지 않는다
 //                 `보드 항목: 새로` 와 `보드 항목 id:` 를 함께 쓰면 새로 만들지 붙일지가 갈려 오류다.
+//                 보드 파일이 있는 저장소에서는 붙일 항목도 본다(core/board-find.ts 의 findBoardItem, 질의는 lib/board.ts 의 boardQuery).
+//                 머리에 `보드 항목 id:` 도 `보드 항목 없음: <이유>` 도 `보드 항목: 새로` 도 없는데 붙일 항목이 없거나 둘 이상이면 오류다.
+//                 `보드 항목 id:` 의 항목이 다른 기능 폴더를 따라가거나, `보드 항목 없음:` 의 이유가 비었거나 id 와 함께 쓰면 오류다.
+//                 붙일 항목이 정해지고 지시서에 `기능 단계:` 가 있으면 첫 단계를 보드의 다음 단계와 맞춘다(startStageProblem). 어긋나면 오류다.
+//                 브랜치는 `브랜치:` 줄에서 읽는다. `리뷰 PR:`, `중간 과정:` 지시서와 --active 지시서는 보지 않는다.
+//                 확인되지 않은 일로 worker 가 보드 항목 없이 떠서 코디네이터가 항목을 손대야 했다(R39)
 //     완료        `## 완료 기준` 절(또는 `완료 기준:` 줄)에 PR 이 둘 이상 든다. `PR1`, `PR #12` 처럼 번호가 다른 PR 이 둘 이상이거나
 //                 `PR1~PR3`, `PR 두 개` 꼴이다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 이 지시서는 PR1 만 맡고 뒤 PR 은
 //                 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다(SKILL.md 원칙). 뒤 PR 목록은 완료 기준이 아닌 참고 절에 둔다.
@@ -108,7 +115,7 @@
 // 짧은 출력(진입점의 orch spec lint, lib/output.ts): 막을 발견은 `SPEC-ERROR <줄>`, 경고는 `SPEC-WARN <줄>` 이다. stderr 의 요약은 그대로다.
 // 종료 코드:
 //     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료, 머지 보류, 원격 경고는 있을 수 있다)
-//     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 오버레이 중 하나 이상
+//     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 단계, 보드(id 설명 경고 제외), 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
 //
@@ -130,14 +137,17 @@ import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { autoStepNumberOf, boardIdOf, boardNewOf, boardIdOfLine, interimOf, remoteWithCodex, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { boardPath } from '../lib/board-file.ts'
+import { boardQuery, readBoard } from '../lib/board.ts'
+import { findBoardItem, startStageProblem } from '../core/board-find.ts'
+import { autoStepNumberOf, boardIdOf, boardNewOf, boardNoneOf, boardIdOfLine, featureStagesOf, interimOf, remoteWithCodex, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 import { bundleRoot } from '../lib/bundle.ts'
 import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
 import { TEMP_PATH } from '../lib/temp-path.ts'
 
 const USAGE = [
-  '사용법: spec-lint.ts --repo DIR [--overlay FILE] [--base BRANCH] [--spec-ref REF | --spec-root DIR] [--active FILE ...] SPEC [SPEC ...]',
+  '사용법: spec-lint.ts --repo DIR [--overlay FILE] [--base BRANCH] [--spec-ref REF | --spec-root DIR] [--worktree DIR] [--active FILE ...] SPEC [SPEC ...]',
   '        spec-lint.ts --repo DIR [--overlay FILE] --check-overlay [--base main] [SPEC ...]',
 ].join('\n')
 
@@ -572,7 +582,52 @@ function featureStageErrors(spec: Spec): string[] {
   return [`${spec.name}:${stage?.line ?? first.line}: 단계: 지시서 머리에 \`기능 단계: implementation 1/1\` 처럼 PR 이 맡는 단계를 순서대로 적는다`]
 }
 
-function lint(repo: Repo, specs: string[], overlay: string | null, active: string[], source: LoopSource): { errors: string[]; warnings: string[] } {
+// 머리 주석의 「보드」 가운데 붙일 항목 찾기와 시작 단계 대조. 보드 파일을 읽지 못하면 보지 않는다
+function boardErrors(spec: Spec, repoRoot: string, source: LoopSource, worktree: string): string[] {
+  const text = spec.lines.join('\n')
+  if (reviewPrOfSpec(text) !== null || interimOf(text) !== null) return []
+  const at = (no: number) => `${spec.name}:${no}: 보드: `
+  const given = boardIdOf(text)
+  const none = boardNoneOf(text)
+  if (none) {
+    if (given) return [`${at(none.line)}\`보드 항목 없음:\` 과 \`보드 항목 id:\` 를 함께 쓰지 않는다. 하나만 남긴다`]
+    return none.reason ? [] : [`${at(none.line)}\`보드 항목 없음:\` 뒤에 이유가 없다. 보드 항목 없이 띄우는 이유를 한 줄로 적는다`]
+  }
+  if (boardNewOf(text)) return []
+  let file: string
+  let items: ReturnType<typeof readBoard>
+  try {
+    file = boardPath(repoRoot)
+    if (!existsSync(file)) return []
+    items = readBoard(file)
+  } catch {
+    return []
+  }
+  const query = boardQuery(repoRoot, text, worktree ? basename(worktree) : '')
+  const found = findBoardItem(items, { ...query, explicit: given?.id })
+  const idLine = spec.lines.findIndex((line) => boardIdOfLine(line)) + 1
+  if ('conflict' in found) {
+    const other = items.find((item) => item.id === found.conflict)?.feature
+    return [`${at(idLine)}항목 ${found.conflict} 는 다른 기능 폴더 ${other} 를 따라간다. 이 기능의 항목 id 를 적는다`]
+  }
+  if ('many' in found) return [`${at(1)}붙일 보드 항목이 둘 이상이다(${found.many.join(', ')}). 지시서 머리에 \`보드 항목 id: <id>\` 를 적는다`]
+  if ('none' in found && !given) {
+    const where = `브랜치 ${query.branch || '없음'}, 업무 ${query.ref ?? '없음'}, 기능 폴더 ${query.feature?.path ?? '없음'}`
+    return [`${at(1)}붙일 보드 항목을 찾지 못했다(${where}). 지시서 머리에 \`보드 항목 id: <id>\` 나 \`보드 항목 없음: <이유>\` 를 적는다`]
+  }
+  const stages = featureStagesOf(text)
+  const first = taskFirstLine(text)
+  const target = first ? featureSpecTarget(first.text) : null
+  if (!stages?.length || target === null) return []
+  const item = 'item' in found ? found.item : undefined
+  const id = item?.id ?? given!.id
+  const designAt = target && target !== LOOP_NEW ? `${dirname(target)}/design.md` : null
+  const hasDesign = !!designAt && !('why' in readLoopSpec(repoRoot, source, designAt))
+  const problem = startStageProblem(item, stages[0], { id, newSpec: target === LOOP_NEW, hasDesign })
+  return problem ? [`${at(featureStageLine(text)?.line ?? 1)}${problem}`] : []
+}
+
+function lint(repo: Repo, specs: string[], overlay: string | null, active: string[], source: LoopSource, worktree = ''): { errors: string[]; warnings: string[] } {
   const { coordinator, owners, forbidden } = readOverlay(overlay)
   const errors: string[] = []
   const warnings: string[] = []
@@ -604,7 +659,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     }
     try { autoStepNumberOf(spec.lines.join('\n')) }
     catch (e) { errors.push(`${spec.name}:1: 보드 자동 단계: ${(e as Error).message}`) }
-    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source), ...featureStageErrors(spec))
+    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source), ...featureStageErrors(spec), ...boardErrors(spec, repo.root, source, worktree))
     const remote = targets.has(spec.path) ? remoteWithCodex(spec.lines.join('\n')) : null
     if (remote) warnings.push(`${spec.name}:${remote.no}: 원격: 허락 줄의 \`${remote.phrase}\` 와 codex 선택이 함께 있다. ${REMOTE_HINT}`)
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
@@ -695,6 +750,7 @@ export function main(argv: string[]): number {
       base: { type: 'string' },
       'spec-root': { type: 'string' },
       'spec-ref': { type: 'string' },
+      worktree: { type: 'string' },
       active: { type: 'string', multiple: true },
       help: { type: 'boolean', short: 'h' },
     } as const
@@ -730,7 +786,7 @@ export function main(argv: string[]): number {
     const loopBase = (values.base ?? defaultBase(values.repo) ?? 'main').replace(/^origin\//, '')
     const specRoot = values['spec-root']
     const source: LoopSource = specRoot ? { root: specRoot } : { ref: values['spec-ref'] ?? `origin/${loopBase}` }
-    const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active, source) : { errors: [], warnings: [] }
+    const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active, source, values.worktree ?? '') : { errors: [], warnings: [] }
     if (values['check-overlay']) errors.push(...checkOverlay(values.repo, overlay, values.base ?? 'main'))
     // 짧은 출력(진입점의 orch spec lint)은 발견마다 판정 낱말을 붙인다
     const brief = short()
