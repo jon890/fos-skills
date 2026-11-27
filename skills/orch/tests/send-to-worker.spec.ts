@@ -149,8 +149,19 @@ function readState(): Json {
   return JSON.parse(readFileSync(stateFile, 'utf8')) as Json
 }
 
-function logText(): string {
+// send-to-worker 가 모든 본문 끝에 붙이는 줄들. 다른 테스트는 본문 한 줄로 기록을 보므로 logText 가 떼어 낸다
+const TURN = [
+  '할 일: 위 답이나 지시를 이 턴에서 실행한다. 확인 답만으로 턴을 끝내지 않는다.',
+  '완료 조건: 실행한 결과(고친 파일, 돌린 명령)를 status 로 알린다. 맡은 일이 모두 끝났으면 worker_done 을, 막혔으면 ask 를 보낸다.',
+  '의도한 대기면 status 에 대기라고 적고 턴을 끝낸다.',
+].join('\n')
+
+function rawLog(): string {
   return existsSync(log) ? readFileSync(log, 'utf8') : ''
+}
+
+function logText(): string {
+  return rawLog().replaceAll(`\n\n${TURN}`, '')
 }
 
 function lines(prefix: string): string[] {
@@ -239,27 +250,29 @@ describe('살아 있는 dispatch', () => {
     assert.equal(r.stdout.split('\n').filter((line) => line.startsWith('NOTE ')).length, 1)
   })
 
-  test('codex worker 에게 보내는 본문 끝에 이 턴 안에서 실행하라는 줄을 붙이고, claude worker 에게는 붙이지 않는다', () => {
-    const turn = '이 지시는 이 턴 안에서 실행한다. 확인만 출력하고 턴을 끝내지 않는다. status 나 ask 를 보내기 전에는 턴을 끝내지 않는다.'
+  test('모든 제공자의 worker 에게 보내는 본문 끝에 할 일, 완료 조건, 대기 표시 줄을 붙인다', () => {
+    const turn = TURN
     // 가짜 orca 의 기록은 인자를 공백으로 이어 적으므로 본문의 줄바꿈이 기록에도 그대로 남는다
-    for (const [agent, extra] of [['codex', `\n\n${turn}`], ['claude', '']] as const) {
+    for (const agent of ['codex', 'claude']) {
       rmSync(log, { force: true })
       const dispatches = worker('dispatched')
       dispatches.ctx_1.worker.startOptions = { launch: { effective: { agent, model: 'm', effort: 'medium' } } }
       state({ dispatches })
       const r = send('--body', '테스트를 고친다', '--no-reply')
       assert.equal(r.code, 0, both(r))
-      assert.match(logText(), new RegExp(`--body 테스트를 고친다${extra.replace(/[.]/g, '\\.')} `), agent)
-      assert.equal(logText().includes(turn), agent === 'codex', logText())
+      assert.ok(rawLog().includes(`--body 테스트를 고친다\n\n${turn} `), `${agent}\n${rawLog()}`)
+      // 제목은 본문 첫 줄 그대로다
+      assert.match(lines('orca orchestration send')[0], /--subject 테스트를 고친다 /, agent)
     }
     // 질문에 답할 때도 붙인다. 이미 붙은 본문에는 다시 붙이지 않는다
     const dispatches = worker('dispatched')
-    dispatches.ctx_1.worker.startOptions = { agent: 'codex' }
+    dispatches.ctx_1.worker.startOptions = { agent: 'claude' }
     state({ dispatches, inbox: [message('q_only', 'term_w', 'question', 2)] })
+    rmSync(log, { force: true })
     const r = send('--body', `답\n\n${turn}`, '--reply-to', 'q_only')
     assert.equal(r.code, 0, both(r))
     assert.match(lines('orca orchestration reply')[0], /--id q_only /)
-    assert.equal(logText().split(turn).length - 1, 1, logText())
+    assert.equal(rawLog().split(turn).length - 1, 1, rawLog())
   })
 
   test('본문과 --spec 을 함께 주면 본문만 보내고 무시한 옵션을 알린다', () => {
