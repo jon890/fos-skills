@@ -146,6 +146,8 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | 보드 항목의 칸 | 값 |
 | --- | --- |
 | `priority` | 선택 값. 1부터 `Number.MAX_SAFE_INTEGER`까지의 정수로, 숫자가 작을수록 같은 상태 묶음에서 먼저 보인다. 같은 값이거나 값이 없는 항목끼리는 파일 순서를 따른다. 값을 지우면 이 칸을 생략한다 |
+| `feature` | 저장소 기준 기능 폴더 경로. 스펙 PR 에서 기능 폴더를 확인하기 전에는 생략한다 |
+| `feature-repo` | 기능 폴더가 속한 저장소의 주 checkout 실경로. `feature` 와 함께 쓴다 |
 
 ## 보드 항목의 worker 줄
 
@@ -159,6 +161,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `branch` | 브랜치 이름 또는 `null` |
 | `pr` | PR 번호 또는 `null`. 리뷰·검증은 대상 PR |
 | `stages` | `pr=N,merge=M`. 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. 그 PR 의 단계 번호이고 없으면 칸이 없다. 끝난 단계 지우기(`orch board clear-done`)가 끝난 PR 단계를 지우면 `merge=M` 만 남고, merge 단계까지 지우면 칸을 지운다 |
+| `feature-steps` | 이 PR 이 맡은 기능 단계 번호를 쉼표로 이은 값. 끝난 단계를 지우면 남은 번호를 다시 매긴다 |
 | `status` | `working`, `done`, `lost`(보고 없이 끊김) |
 | `at` | 더하거나 다시 띄운 시각 |
 | `endedAt` | 끝난 시각 또는 `null` |
