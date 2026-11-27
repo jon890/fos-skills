@@ -257,20 +257,6 @@ async function sweepReviewWorktree(repo: string, path: string, n: number, args: 
     log(`건너뜀 리뷰 워크트리 ${path} (#${n}): ${reason}`)
     report.skipped.push({ path, reason: `리뷰 워크트리: ${reason}` })
   }
-  // 다른 Run 의 dispatch 가 이 경로를 이어 쓸 수 있다. 다른 PR 의 리뷰나 일반 작업, 터미널 없는 구조화 worker 도 있다
-  let rows: WorkerRow[]
-  try {
-    rows = await args.allWorkers()
-  } catch (e) {
-    return skip(`모든 Run 의 worker 목록을 읽지 못했다: ${(e as Error)?.message ?? String(e)}`)
-  }
-  const target = realPath(path)
-  const using = rows.filter((w) => {
-    const id = String(resourceOf(w).worktreeId ?? '')
-    const at = id.indexOf('::')
-    return at >= 0 && realPath(id.slice(at + 2)) === target && isLive(w)
-  })
-  if (using.length) return skip(`그 경로를 쓰는 살아 있는 dispatch ${using.map((w) => String(w.dispatchId ?? '?')).join(', ')}`)
   const live = liveReviewPrs(await (args.allLiveSpecs ?? allLiveSpecPaths)())
   if (live === null) return skip('살아 있는 지시서 목록을 읽지 못했다')
   if (live.has(n)) return skip('리뷰 dispatch 가 살아 있다')
@@ -399,7 +385,18 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     log(line)
     report.skipped.push({ path, reason })
   }
-  const mine = workersAt(workers, path)
+  const keepDispatchLookupError = (e: unknown) => {
+    const reason = 'dispatch 상태와 터미널 소유 상태 조회 실패'
+    keep(reason, `남김 ${path}: ${reason} (${(e as Error).message})`)
+  }
+  const keepLiveDispatch = (rows: WorkerRow[]): boolean => {
+    const live = rows.filter(isLive)
+    if (!live.length) return false
+    const reason = `살아 있는 dispatch 가 경로를 쓴다 (${live.map((row) => String(row.dispatchId ?? '?')).join(', ')})`
+    keep(reason, `건너뜀 ${path}: ${reason}`)
+    return true
+  }
+  const mine = workersAt(workers, path, terminals)
   // --run 으로 맡긴 정리는 그 Run 의 워크트리만 본다. 남의 경로를 판정하려고 전체 Run 을 읽지 않는다.
   if (args.run && mine.length === 0) {
     if (branch && !protectedReason(repo, branch, args.base)) {
@@ -427,7 +424,16 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   const launched = launchedOwn(repo, mine, terminals, path)
   const taken = new Set<unknown>([...takenOverOwn(args, mine, terminals, path), ...launched])
   if (!branch) {
-    const owner = await ownershipBlocker(path, taken, args.allWorkers)
+    let fresh: WorkerRow[]
+    try { fresh = await args.worktreeWorkers(path) }
+    catch (e) { return keepDispatchLookupError(e) }
+    const rows = workersAt(fresh, path, terminals)
+    if (keepLiveDispatch(rows)) return
+    if (rows.some((row) => !isFinished(row))) {
+      const reason = '끝나지 않은 dispatch 상태를 확인하지 못했다'
+      return keep(reason, `남김 ${path}: ${reason}`)
+    }
+    const owner = await ownershipBlocker(path, taken, async () => fresh)
     if (owner) return keep(owner, `남김: ${owner} (${path})`)
     return sweepDetached(repo, path, args, terminals, log, report)
   }
@@ -450,17 +456,18 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   if (m.ok || m.pr?.state === 'CLOSED') {
     let fresh: WorkerRow[]
     try { fresh = await args.worktreeWorkers(path) }
-    catch (e) { return keep('터미널 소유 상태 조회 실패', `남김: 터미널 소유 상태 조회 실패 (${path}): ${(e as Error).message}`) }
-    if (workersAt(fresh, path).some(isLive)) return keep('살아 있는 dispatch 가 경로를 쓴다', `건너뜀 ${path}: 살아 있는 dispatch 가 경로를 쓴다`)
+    catch (e) { return keepDispatchLookupError(e) }
+    const rows = workersAt(fresh, path, terminals)
+    if (keepLiveDispatch(rows)) return
     // 머리 주석의 「남기는 워크트리」 의 끊긴 worker. 터미널을 닫거나 dispatch 를 반납하기 전에 본다
-    const held = forced ? null : heldDispatch(workersAt(fresh, path))
+    const held = forced ? null : heldDispatch(rows)
     if (held) return keep(heldReason(held), `남김 ${path}: ${heldReason(held)}`)
     if (args.run) args.foreign = await foreignHandles(args.run, async () => fresh)
     // 원래 user_owned 였던 예외와 기록한 터미널로 이어 쓴 external 터미널만 유지한다. owned 에서 새로 넘어간 터미널은 띄우기 기록이 있어도 닫지 않는다.
     // external 은 삭제 직전에 새로 읽은 행으로 본다. 스냅샷 뒤에 사용자가 넘겨받아 user_owned 가 됐으면 빼지 않아 소유 확인이 막는다
     const previouslyTaken = new Set([
       ...mine.filter((row) => resourceOf(row).ownershipState === 'user_owned').flatMap((row) => [...rowHandles(row)]),
-      ...externalLaunched(repo, workersAt(fresh, path)),
+      ...externalLaunched(repo, rows),
     ])
     const ignored = new Set([...taken].filter((handle) => previouslyTaken.has(handle)))
     const owner = await ownershipBlocker(path, ignored, async () => fresh)
