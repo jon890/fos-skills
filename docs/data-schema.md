@@ -165,6 +165,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `worktree` | 워크트리 이름. 줄의 열쇠 |
 | `branch` | 브랜치 이름 또는 `null` |
 | `pr` | PR 번호 또는 `null`. 리뷰·검증은 대상 PR |
+| `todo-steps` | `1=3,2=4`. PR 없는 지시서로 단계를 만든 줄만 갖는다. 지시서 「할 일」 번호와 보드 단계 번호의 짝이고, 루프가 `worker_done` 의 `steps=` 를 단계 번호로 옮길 때 쓴다. 끝난 단계 지우기가 번호를 다시 매기면 함께 바꾼다 |
 | `stages` | `merge=M`(기본 「PR 머지」 한 줄) 또는 옛 두 줄 항목의 `pr=N,merge=M`. 앞 PR 이 열린 채 새 브랜치로 붙은 후속 줄만 갖는다. 그 PR 의 단계 번호이고 없으면 칸이 없다. 끝난 단계 지우기(`orch board clear-done`)가 끝난 PR 단계를 지우면 `merge=M` 만 남고, merge 단계까지 지우면 칸을 지운다 |
 | `feature-steps` | 이 PR 이 맡은 기능 단계 번호를 쉼표로 이은 값. 끝난 단계를 지우면 남은 번호를 다시 매긴다 |
 | `feature-report` | PR 없이 맡은 기능 단계의 성공 보고 반영 상태. `pending` 은 반영 전이고 `done` 은 반영 후다 |

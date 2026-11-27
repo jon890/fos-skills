@@ -153,8 +153,8 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     const working = (listed && !listed.ok) || (row && isLive(row) && !workerEnds([row], new Set(), new Set([prior!.dispatch]))[prior!.dispatch])
     return ['--keep-current', role, ...(working ? ['--keep-dispatch', prior!.dispatch] : [])]
   }
-  function add(item: BoardItem | undefined, id: string, role: WorkerRole, stages = ''): boolean {
-    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(stages ? ['--stages', stages] : []), ...(item ? keepArgs(item) : [])]
+  function add(item: BoardItem | undefined, id: string, role: WorkerRole, stages = '', todo = ''): boolean {
+    const args = ['worker-add', id, role, '--worktree', wt, ...branchArgs, ...(dispatch ? ['--dispatch', dispatch] : []), ...(reviewPr ? ['--pr', String(reviewPr)] : []), ...(stages ? ['--stages', stages] : []), ...(todo ? ['--todo-steps', todo] : []), ...(item ? keepArgs(item) : [])]
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (done.code === 0) return true
     process.stderr.write(`보드: worker 줄을 쓰지 못했다: ${done.stderr.trim() || done.code}\n`)
@@ -238,16 +238,19 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
     !!item && item.status !== 'done' && !!branch && item.branch !== branch &&
     prNumbers(item['merged-pr']).size > 0 && allStagesDone(item)
   const reopen = !!item && ((explicit && item.status === 'done') || nextPr)
-  const added = item && !reviewRole ? add(item, id, r.role, !reopen && r.role === 'follow' ? followStages(item) : '') : false
+  // 다시 열면 새 단계는 지난 단계 번호 다음부터다. next 에만 단계가 있던 항목도 그 번호 다음부터 잇는다
+  const reopenStart = item && reopen ? Math.max(0, ...[...lines(item.details), ...lines(item.next)].map(plain).map((text) => Number(/^(\d+)[.)]?\s/.exec(text)?.[1] ?? 0))) + 1 : 1
+  // PR 없는 일의 「할 일」 번호 → 보드 단계 번호(worker 줄의 todo-steps). worker_done 의 steps= 를 이 짝으로 옮긴다.
+  // 새 단계를 만들지 않는 기존 항목에 붙으면 짝이 없다(빈 문자열)
+  const todoMap = (start: number): string => reportOnly ? [...todoNumbered(text).keys()].map((n, i) => `${n}=${start + i}`).join(',') : ''
+  const added = item && !reviewRole ? add(item, id, r.role, !reopen && r.role === 'follow' ? followStages(item) : '', reopen ? todoMap(reopenStart) : '') : false
   const representative = added ? [] : ['--worktree', wt, ...branchArgs]
   if (item && reopen) {
     const old = lines(item.details)
       .map(plain)
       .filter((text) => !text.startsWith(NOTE) && !text.startsWith(INTERIM))
       .map((text) => ({ text, done: true }))
-    // next 에만 단계가 있던 항목도 그 번호 다음부터 잇는다
-    const numbers = [...old.map((d) => d.text), ...lines(item.next).map(plain)].map((text) => Number(/^(\d+)[.)]?\s/.exec(text)?.[1] ?? 0))
-    const added = milestoneLines(milestones(), Math.max(0, ...numbers) + 1)
+    const added = milestoneLines(milestones(), reopenStart)
     // progress 칸에 옛 값(3/3)이 남아 있으면 단계 수보다 앞서 진행률이 100% 로 남아 지운다.
     // 제목은 사용자가 정한 마일스톤이라 이어 띄운 지시서의 머리줄로 바꾸지 않는다
     const args = ['set', id, 'doing', ...representative, '--progress', 'auto', '--stages', stagesText(added.stages)]
@@ -272,7 +275,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const args = ['set', id, 'doing', '--create-only', '--title', title, '--worktree', basename(worktree), '--branch', branch, ...(stages ? ['--stages', stages] : [])]
   for (const step of fresh.details) args.push('--detail', step)
   write([...args, ...taskArgs])
-  add(undefined, id, r.role)
+  add(undefined, id, r.role, '', todoMap(1))
   return r
   // 앞 PR 이 열려 있는 마일스톤 항목에 새 브랜치의 후속 줄이 붙을 때 더할 PR·머지 단계. 더한 번호를 `pr=N,merge=M` 로 돌려준다.
   // 앞 PR 이 아직 이어지지 않았거나 이미 머지됐으면, 같은 워크트리 재시도나 같은 브랜치이면, 단계 항목이 아니면 더하지 않는다(빈 문자열)

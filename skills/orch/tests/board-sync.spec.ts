@@ -160,23 +160,23 @@ test('worker_done 의 steps= 는 줄 끝 사건 꼬리표와 줄 앞 사건 표�
   assert.equal(got.board.tagged.status, 'doing')
 })
 
-test('다시 연 항목은 worker_done 의 할 일 번호를 같은 글의 단계로 옮긴다', () => {
-  const item = { id: 'again', status: 'doing', details: [step('1. 조사한다', true), step('2. 조사한다', false), step('3. 정리한다', false)],
-    workers: [worker('impl', 'again', 'd1')] }
-  const one = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1], noPr: true, texts: ['조사한다'] } })])
-  assert.equal(one.code, 0, one.result.stderr)
-  assert.deepEqual((one.board.again.details as Json[]).map((d) => d.done), [true, true, false])
-  // 다음 틱에 같은 보고가 다시 와도 끝난 단계를 가리켜 다른 단계를 끝내지 않는다
-  const reopened = { ...item, details: [step('1. 옛 일', true), step('2. A 한다', false), step('3. B 한다', false)] }
-  const first = sync([reopened], ['--worker-steps', JSON.stringify({ d1: { steps: [2], noPr: true, texts: ['B 한다'] } })])
-  assert.deepEqual((first.board.again.details as Json[]).map((d) => d.done), [true, false, true])
-  const repeat = sync([first.board.again], ['--worker-steps', JSON.stringify({ d1: { steps: [2], noPr: true, texts: ['B 한다'] } })])
+test('다시 연 항목은 담당 줄의 todo-steps 로 할 일 번호를 단계 번호로 옮기고, 같은 보고가 다시 와도 결과가 같다', () => {
+  // 첫 문장이 같은 할 일 둘(2, 3 단계)도 글이 아니라 번호 짝으로 구분한다
+  const item = { id: 'again', status: 'doing', details: [step('1. 결과를 비교한다', true), step('2. 결과를 비교한다', false), step('3. 결과를 비교한다', false)],
+    workers: [worker('impl', 'again', 'd1', { 'todo-steps': '1=2,2=3' })] }
+  const first = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1], noPr: true } })])
+  assert.equal(first.code, 0, first.result.stderr)
+  assert.deepEqual((first.board.again.details as Json[]).map((d) => d.done), [true, true, false])
+  const repeat = sync([first.board.again], ['--worker-steps', JSON.stringify({ d1: { steps: [1], noPr: true } })])
   assert.equal(repeat.code, 0, repeat.result.stderr)
-  assert.deepEqual((repeat.board.again.details as Json[]).map((d) => d.done), [true, false, true])
+  assert.deepEqual((repeat.board.again.details as Json[]).map((d) => d.done), [true, true, false])
   assert.equal(repeat.board.again.status, 'doing')
-  const both = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2], noPr: true, texts: ['조사한다', '정리한다'] } })])
+  // 짝에 없는 할 일 번호는 건너뛴다
+  const missing = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [3], noPr: true } })])
+  assert.deepEqual(missing.board.again.details, item.details)
+  assert.match(missing.result.stdout, /단계 3 가 없어 건너뛴다/)
+  const both = sync([item], ['--worker-steps', JSON.stringify({ d1: { steps: [1, 2], noPr: true } })])
   assert.equal(both.code, 0, both.result.stderr)
-  assert.deepEqual((both.board.again.details as Json[]).map((d) => d.done), [true, true, true])
   assert.equal(both.board.again.status, 'done')
 })
 
@@ -193,7 +193,7 @@ test('다시 연 항목에서 앞 담당자의 옛 보고는 새 담당자의 �
 })
 
 test('잘못된 --worker-steps 는 사용법 오류다', () => {
-  for (const value of ['[]', '{"d1":{"steps":[0],"noPr":true}}', '{"d1":{"steps":null}}', 'x', '{"d1":{"steps":[1],"noPr":true,"texts":[]}}']) {
+  for (const value of ['[]', '{"d1":{"steps":[0],"noPr":true}}', '{"d1":{"steps":null}}', 'x']) {
     assert.equal(sync([], ['--worker-steps', value]).code, 2, value)
   }
 })

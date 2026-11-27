@@ -145,6 +145,21 @@ test('worker-add --stages 는 「PR 머지」 한 줄 묶음의 merge=M 도 받�
   } finally { b.cleanup() }
 })
 
+test('worker-add --todo-steps 를 저장하고 재시도에서 그대로 두며 clear-done 이 번호를 다시 매긴다', () => {
+  const b = tempBoard()
+  try {
+    write(b.file, { id: 'a', status: 'doing', details: [{ text: '1. 옛 일', done: true }, { text: '2. 조사', done: false }, { text: '3. 정리', done: false }] })
+    assert.equal(run(b.file, ['worker-add', 'a', 'impl', '--worktree', 'w', '--todo-steps', '1=2,2=3']).code, 0)
+    const rows = () => item(b.file, 'a').workers as Record<string, unknown>[]
+    assert.equal(rows()[0]['todo-steps'], '1=2,2=3')
+    assert.equal(run(b.file, ['worker-add', 'a', 'impl', '--worktree', 'w', '--dispatch', 'retry']).code, 0)
+    assert.equal(rows()[0]['todo-steps'], '1=2,2=3')
+    assert.equal(run(b.file, ['clear-done', 'a']).code, 0)
+    assert.equal(rows()[0]['todo-steps'], '1=1,2=2')
+    assert.equal(run(b.file, ['worker-add', 'a', 'impl', '--worktree', 'w', '--todo-steps', '1=x']).code, 2)
+  } finally { b.cleanup() }
+})
+
 test('worker-add 의 잘못된 --stages 와 worker-set 의 잘못된 인자는 종료 코드 2 다', () => {
   const b = tempBoard()
   try {

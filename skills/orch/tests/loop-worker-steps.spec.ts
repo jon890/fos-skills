@@ -26,6 +26,6 @@ test('worker_done 의 steps= 와 PR 없는 지시서를 dispatch 별로 모은�
   const done = (dispatch: string, body = '') => ({ type: 'worker_done', body, payload: { dispatchId: dispatch, outcome: 'succeeded' } })
   assert.deepEqual(workerSteps(repo, [done('a'), done('b', '끝냈다. steps=1,2'), done('b2'), done('c')]), {
     a: { steps: null, noPr: true },
-    b: { steps: [1, 2], noPr: false, texts: ['구현한다', '문서를 고친다'] },
+    b: { steps: [1, 2], noPr: false },
   })
 })
