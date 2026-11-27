@@ -15,7 +15,7 @@ export function featureAdvance(repo: string, item: BoardItem, steps: BoardStep[]
   const resolved = files?.ok && Array.isArray(files.data.files)
     ? featureMergePlan(item, steps, pr, files.data.files.filter((file) => file.additions !== 0).map((file) => file.path))! : plan
   const args = ['feature-advance', item.id, '--pr', pr, '--done', resolved.done.join(','), '--status', resolved.status,
-    ...(resolved.add ? ['--add', resolved.add] : []),
+    ...(resolved.add ? ['--add', resolved.add] : []), ...(resolved.lastStage ? ['--final'] : []),
     ...(resolved.feature ? ['--feature', resolved.feature, '--feature-repo', mainCheckout(repo)] : []),
     '--if-rev', linesRev(item)]
   return { ...resolved, args }

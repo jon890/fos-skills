@@ -148,6 +148,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `priority` | 선택 값. 1부터 `Number.MAX_SAFE_INTEGER`까지의 정수로, 숫자가 작을수록 같은 상태 묶음에서 먼저 보인다. 같은 값이거나 값이 없는 항목끼리는 파일 순서를 따른다. 값을 지우면 이 칸을 생략한다 |
 | `feature` | 저장소 기준 기능 폴더 경로. 스펙 PR 에서 기능 폴더를 확인하기 전에는 생략한다 |
 | `feature-repo` | 기능 폴더가 속한 저장소의 주 checkout 실경로. `feature` 와 함께 쓴다 |
+| `feature-final-pr` | 기능의 마지막 단계를 머지한 PR 번호. 끝난 단계 줄을 정리한 뒤에도 남은 단계가 끝나면 항목을 닫는 데 쓴다 |
 
 ## 보드 항목의 worker 줄
 

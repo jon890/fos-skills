@@ -47,13 +47,14 @@ function stageOf(text: string): FeatureStage | undefined {
 }
 
 export function isFeatureItem(item: Record<string, unknown>): boolean {
-  return Boolean(item.feature) || [item.details, item.next].some((lines) =>
+  return Boolean(item.feature || item['feature-final-pr']) || [item.details, item.next].some((lines) =>
     (Array.isArray(lines) ? lines : String(lines ?? '').split('\n')).some((line) =>
       stageOf(String(typeof line === 'string' ? line : line?.text ?? '').replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''))))
 }
 
 export function finalFeaturePrMerged(item: Record<string, unknown>, steps: BoardStep[]): boolean {
   const merged = prNumbers(item['merged-pr'])
+  if (merged.has(String(item['feature-final-pr']))) return true
   return steps.some((step) => step.done && stageOf(step.text)?.name === 'docs-consolidate' &&
     boardWorkerRows(item).some((row) => merged.has(String(row.pr)) &&
       row['feature-steps']?.split(',').includes(String(step.number))))

@@ -11,6 +11,7 @@ import { basename, delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
+import { run as editBoard } from '../../../extensions/work-board/tests/board-run.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/board/board-sync.ts', import.meta.url))
 
@@ -1395,7 +1396,7 @@ test('스펙 PR 을 브랜치로 찾아 연결하고 머지 파일에서 기능 
   assert.deepEqual(got.board.a.details, [step('1. 기능 spec', true), step('2. [ask] 기능 technical-design', false)])
 })
 
-test('마지막 기능 PR 머지 뒤 남은 수동 단계까지 끝나면 항목을 닫는다', () => {
+test('마지막 기능 PR 머지 뒤 완료 줄을 정리해도 수동 단계가 끝나면 항목을 닫는다', () => {
   states['77'] = 'MERGED'
   const got = sync([{ id: 'a', status: 'doing', feature: 'docs/features/a', pr: 77,
     workers: [{ worktree: 'old', role: 'impl', pr: 77, 'feature-steps': '1', status: 'done' }],
@@ -1403,10 +1404,22 @@ test('마지막 기능 PR 머지 뒤 남은 수동 단계까지 끝나면 항목
   assert.equal(got.code, 0, got.result.stderr)
   assert.equal(got.board.a.status, 'doing')
   assert.equal(got.board.a['merged-pr'], 77)
+  assert.equal(got.board.a['feature-final-pr'], 77)
   assert.deepEqual(got.board.a.details, [step('1. 기능 docs-consolidate', true), step('2. 수동 확인', false)])
   const closed = sync([{ ...got.board.a, details: [step('1. 기능 docs-consolidate', true), step('2. 수동 확인', true)] }])
   assert.equal(closed.code, 0, closed.result.stderr)
   assert.equal(closed.board.a.status, 'done')
+  writeFileSync(board, JSON.stringify({ items: [got.board.a] }))
+  const cleared = editBoard(board, ['clear-done', 'a'])
+  assert.equal(cleared.code, 0, cleared.stderr)
+  assert.deepEqual(load().a.details, [step('1. 수동 확인', false)])
+  assert.equal(load().a['feature-final-pr'], 77)
+  assert.equal((load().a.workers as Json[])[0]['feature-steps'], undefined)
+  const marked = editBoard(board, ['step', 'a', '1'])
+  assert.equal(marked.code, 0, marked.stderr)
+  const result = run(['--board', board, '--repo', tmp])
+  assert.equal(result.code, 0, result.stderr)
+  assert.equal(load().a.status, 'done')
 })
 
 test('사용자가 기능 단계 줄을 끝내도 마지막 PR 의 머지 기록이 없으면 닫지 않는다', () => {

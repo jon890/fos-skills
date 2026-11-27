@@ -841,7 +841,7 @@ async function finish(args: Args, repo: string): Promise<number> {
       const row = { ...got.row, id: candidate.id }
       alreadyReflected = prNumbers(row['merged-pr']).has(args.pr)
       if (alreadyReflected) {
-        last &&= featureMergePlan(row, got.steps, args.pr, [])?.lastStage === true
+        last &&= String(row['feature-final-pr']) === args.pr || featureMergePlan(row, got.steps, args.pr, [])?.lastStage === true
       } else {
         advance = featureAdvance(repo, row, got.steps, args.pr)
         if (!advance) return fail(`보드 ${candidate.id} 의 기능 단계를 확인하지 못했다`)
