@@ -113,6 +113,30 @@ test('PR 없는 보고 단계는 담당 worker 의 완료를 받으면 끝난다
   assert.equal(completed.board.measure.status, 'done')
 })
 
+test('워크트리 칸이 비워진 뒤에도 담당 worker 의 완료가 보고 단계를 끝낸다', () => {
+  repoWith(tmp, [])
+  const report = { id: 'measure', status: 'doing', worktree: 'report', details: [step('1. 보고 받기(worker_done)', false)],
+    workers: [
+      worker('impl', 'old', 'd0', { status: 'done' }),
+      worker('follow', 'report', 'd1', { at: '2026-01-02' }),
+    ] }
+  const lost = sync([report])
+  assert.equal(lost.code, 0, lost.result.stderr)
+  assert.ok(!lost.board.measure.worktree)
+  assert.equal((lost.board.measure.workers as Json[])[1].status, 'lost')
+
+  const waiting = sync([lost.board.measure])
+  assert.equal(waiting.code, 0, waiting.result.stderr)
+  assert.equal(waiting.board.measure.status, 'doing')
+  assert.deepEqual(waiting.board.measure.details, report.details)
+
+  const completed = sync([waiting.board.measure], ['--worker-revivals', '{"d1":"done"}'])
+  assert.equal(completed.code, 0, completed.result.stderr)
+  assert.equal((completed.board.measure.workers as Json[])[1].status, 'done')
+  assert.equal(completed.board.measure.status, 'done')
+  assert.deepEqual(completed.board.measure.details, [step('1. 보고 받기(worker_done)', true)])
+})
+
 test('대표가 빈 구현 항목의 리뷰가 끝나도 열린 구현 PR 의 항목을 닫지 않는다', () => {
   states = { '7': 'OPEN' }
   const orch = join(tmp, 'orch')
