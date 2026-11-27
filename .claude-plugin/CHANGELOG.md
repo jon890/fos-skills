@@ -3,6 +3,10 @@
 버전은 `plugin.json`의 `version`과 같다. main에 머지될 때 GitHub Actions가 버전을 올리고 한 줄을 더한다.
 자동 올림 등급과 직접 번호를 정하는 경우는 [버전과 변경 이력](../docs/contributing.md#버전과-변경-이력)을 따른다.
 
+## 0.27.0 (2026-11-27)
+
+- content-preview 0.6.1 (#666)
+
 ## 0.26.0 (2026-11-27)
 
 - harness-cleanup 0.5.1, orch 0.10.2 (#665)
