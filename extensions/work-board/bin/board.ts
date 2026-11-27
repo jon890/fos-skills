@@ -38,7 +38,7 @@
 //     결과 JSON: {"cleared": [{"id", "removed", "progress", "renumbered": [{"from", "to", "was", "now"}]}], "skipped": [{"id", "reason"}]}
 //   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 //   board.ts view <id> (읽기 전용 항목 JSON)
-//   set, step --exact: 있는 항목과 하나뿐인 단계에만 적용하고 결과 JSON 을 낸다.
+//   set, step --exact: 있는 항목과 하나뿐인 단계에만 적용하고 결과 JSON 을 낸다. set --exact 에 --title 을 주면 없는 항목을 만든다.
 //   set --if-rev REV: 읽은 뒤 줄이 바뀌었으면 통째 저장을 거절한다.
 //   JSON: id, status, was, progress, rev, lines 와 단계 동작의 number.
 //   board.ts step-edit <id> <번호> <글> [--event "PR 사건"] (같은 번호의 줄 글을 고친다)
@@ -1039,7 +1039,8 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
   let item = find(board, id)
   const was = item?.status
   if (item && a.createOnly) throw new Refused(`이미 있는 항목이다: ${id}`)
-  if (!item && (a.exact || a.ifRev !== undefined)) throw new Refused(`항목이 없다: ${id}`)
+  // --exact 는 있는 항목만 고친다. --title 을 함께 주면 없는 항목을 만든다(orch board set <id> <상태> --title)
+  if (!item && ((a.exact && a.fields.title === undefined) || a.ifRev !== undefined)) throw new Refused(`항목이 없다: ${id}`)
   if (a.ifRev !== undefined && linesRev(item) !== a.ifRev) throw new Refused(`읽은 뒤 ${id} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`)
   if (!item) {
     if (!a.status) throw new Refused('새 항목에는 status 가 필요하다')

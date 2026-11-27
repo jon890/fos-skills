@@ -93,6 +93,22 @@ test('set 은 상태만 바꾸고 없는 항목과 진행률 없는 doing 을 �
   assert.equal(saved, JSON.stringify(JSON.parse(saved), null, 1))
   assert.equal(JSON.parse(saved).items[0].title, '작업')
 })
+test('set --title 은 없는 항목을 만들고, 만들지 못한 거절과 없는 항목의 add-step 은 만드는 명령을 알린다', () => {
+  save([item()])
+  refused(['add-step', 'new', '1. 조사'], /항목이 없다[\s\S]*orch board set new wait --title "<제목>"/)
+  refused(['set', 'new', 'wait'], /항목이 없다[\s\S]*--title 을 주면 만든다/)
+  refused(['set', 'new', '--title', '새 일'], /status 가 필요하다[\s\S]*orch board set new wait --title "새 일"/)
+  refused(['set', 'new', 'doing', '--title', '새 일'], /진행률이 필요하다[\s\S]*add-step new/)
+  refused(['set', 'new', 'wait', '--title', ' '], /비지 않은 제목/, 2)
+  ok(['set', 'new', 'wait', '--title', '새 일'], 'BOARD-SET new wait')
+  ok(['add-step', 'new', '조사'], 'BOARD-STEP-ADD new 1')
+  ok(['set', 'new', 'doing'], 'BOARD-SET new doing')
+  // 있는 항목은 --title 로 제목만 바꾼다
+  ok(['set', 'x', '--title', '바꾼 제목'], 'BOARD-SET x doing')
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.deepEqual(items.map((one: { id: string; title: string; status: string }) => [one.id, one.title, one.status]), [['x', '바꾼 제목', 'doing'], ['new', '새 일', 'doing']])
+})
+
 test('set 으로 우선순위를 정하거나 지우고 show 와 list 에서 읽는다', () => {
   save([item()])
   ok(['set', 'x', '--priority', '2'], 'BOARD-SET x doing')
