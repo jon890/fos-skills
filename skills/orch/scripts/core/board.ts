@@ -8,6 +8,11 @@ export type { BoardDetail, BoardItem, BoardStep } from './board-details.ts'
 
 // CI 고침, 리뷰 반영, 충돌 해결처럼 기존 PR 을 마무리하는 지시서의 줄 머리. 단계 줄이 아니라 진행률에 세지 않는다
 export const INTERIM = '중간 과정: '
+export const WORKER_REPORT_STEP = '보고 받기(worker_done)'
+
+export function isWorkerReportStep(text: string): boolean {
+  return /^\d+[.)]?\s+(.+)$/.exec(text)?.[1] === WORKER_REPORT_STEP
+}
 
 // 통째 저장은 마지막 목록 하나만 맨 앞에 둔다. 나머지 칸 변경과 단계 명령의 순서는 보존한다.
 // 지문은 파일을 읽은 lib 호출자가 계산한다(core 는 work-board 를 읽지 않는다).

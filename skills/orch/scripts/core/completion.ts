@@ -43,7 +43,7 @@ function startsWithReviewVerdict(message: Json): boolean {
 
 export type ClassifyOptions = { isReview?: (dispatch: string) => boolean; isNoPr?: (dispatch: string) => boolean | 'unreadable' }
 
-// 허락 줄에서 PR 을 열지 않는다고 명시한 지시서만 PR 준비가 없는 일로 본다.
+// 허락 줄이나 독립된 '커밋·PR 없음' 지시가 있어야 PR 준비가 없는 일로 본다.
 // 완료 기준의 표현과 배경·코드 예시는 PR 여부를 판단하는 근거로 쓰지 않는다.
 export function noPrInstruction(text: string): boolean {
   let inFence = false
@@ -51,8 +51,11 @@ export function noPrInstruction(text: string): boolean {
     if (/^\s*```/.test(line)) { inFence = !inFence; return false }
     return !inFence && !/^\s*>/.test(line)
   })
-  return visible.some(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?.*\bPR 은 열지 않는다(?:[.!?\s]|$).*$/i.test(line)
-    && !/\bPR\s*생성/i.test(line))
+  const permissions = visible.filter(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:/.test(line))
+  if (permissions.some(line => /\bPR\s*생성/i.test(line))) return false
+  return permissions.some(line => /\bPR\s*은\s*열지\s*않는다(?:[.!?\s]|$)/i.test(line))
+    || visible.some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?(?:\*\*)?커밋\s*[·ㆍ・]\s*PR\s*없음[.]?(?:\*\*)?\s*$/i.test(line))
+    || permissions.some(line => /커밋\s*[·ㆍ・]\s*PR\s*없음(?:[.!?\s]|$)/i.test(line))
 }
 
 function startsWithCompletion(message: Json): boolean {

@@ -7,7 +7,7 @@
 import { normalizeRef, urlFromLine } from '../core/task-adapters.ts'
 import type { TaskAdapter } from '../core/task-adapters.ts'
 import { taskAdapter } from './task-adapters.ts'
-import { INTERIM, prNumbers, NOTE, detailText, detailArgs } from '../core/board.ts'
+import { INTERIM, prNumbers, NOTE, detailText, detailArgs, WORKER_REPORT_STEP } from '../core/board.ts'
 import { linesRev } from '../../../../modules/work-board/item.ts'
 import type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
@@ -21,6 +21,7 @@ import { loadConfig } from './config.ts'
 import { BOARD_BIN, boardPath, staleBoardWrite } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
 import { boardIdOf, boardNewOf, workerRoleOf, interimOf } from './spec.ts'
+import { noPrInstruction } from '../core/completion.ts'
 import { boardWorkerRows } from '../core/board-workers.ts'
 import type { WorkerRole } from '../core/board-workers.ts'
 import { reviewPrOfSpec, isReviewItem, reviewOriginsByItem } from './review.ts'
@@ -205,8 +206,10 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   const title = specTitle(text, { items, explicit, task, id })
   const item = items.find((row) => row.id === id)
   const r = result(item, id, reviewRole ?? (item ? 'follow' : 'impl'))
+  const reportOnly = noPrInstruction(text)
   // 지시서 절이 있으면 설정을 읽지 않는다. 기존 항목은 단계를 바꾸지 않아 다시 열 때만 단계를 만든다
   const milestones = () => {
+    if (reportOnly) return [{ kind: null, text: WORKER_REPORT_STEP }]
     const given = specSteps(text)
     if (given) return given
     return boardSettings(repo).steps ?? [...DEFAULT_STEPS]
@@ -255,6 +258,7 @@ function registerBoardOnce(repo: string, spec: string, worktree: string, name: s
   // 앞 PR 이 열려 있는 마일스톤 항목에 새 브랜치의 후속 줄이 붙을 때 더할 PR·머지 단계. 더한 번호를 `pr=N,merge=M` 로 돌려준다.
   // 앞 PR 이 아직 이어지지 않았거나 이미 머지됐으면, 같은 워크트리 재시도나 같은 브랜치이면, 단계 항목이 아니면 더하지 않는다(빈 문자열)
   function followStages(item: BoardItem): string {
+    if (reportOnly) return ''
     const merged = prNumbers(item['merged-pr'])
     const known = new Set([item.branch, ...boardWorkerRows(item).filter((row) => row.role === 'impl' || row.role === 'follow').map((row) => row.branch)])
     if (!branch || known.has(branch) || current(item) || !stagesOf(item) || ![...prNumbers(item.pr)].some((pr) => !merged.has(pr))) return ''

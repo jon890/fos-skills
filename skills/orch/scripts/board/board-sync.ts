@@ -85,6 +85,7 @@ import { prTaskRef } from '../lib/board.ts'
 import { recordUnmatched, unmatchedRecords, pruneUnmatched } from '../lib/board-unmatched.ts'
 import { boardOwnership, readBoard } from '../lib/board.ts'
 import type { BoardStep } from '../core/board.ts'
+import { isWorkerReportStep } from '../core/board.ts'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -398,6 +399,14 @@ function main(argv: string[]): number {
     }
     if (typeof item.worktree === 'string' && item.worktree && gone(item.worktree) && !workerRows.some((row) => row.status === 'working' && row.worktree === item.worktree)) cmds.push(['set', id, '--worktree', ''])
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
+    const reportSteps = !SKIP_STATUS.has(String(item.status)) && old.some((detail) => isWorkerReportStep(textOf(detail)))
+      ? boardSteps(boardBin, id, board)
+      : []
+    if (reportSteps === null) {
+      err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
+      return 1
+    }
+    const reportStep = reportSteps.find((step) => !step.done && isWorkerReportStep(step.text))
     let details = old
     const tagged = item.status === 'done' ? [] : taggedBoardSteps(boardBin, id, board, item)
     if (tagged === null) {
@@ -434,6 +443,16 @@ function main(argv: string[]): number {
       finish = true
     } else if (review) {
       // 리뷰 브랜치에는 구현 PR 을 연결하지 않는다. 리뷰 완료 보고나 대상 PR 머지로만 끝낸다.
+    } else if (reportStep) {
+      const reporter = workerRows.find((row) => (row.role === 'impl' || row.role === 'follow') && row.worktree === item.worktree)
+      // 줄만 끝낸 뒤 단계 쓰기에 실패했어도 다음 틱에서 보고 단계를 끝낼 수 있다.
+      if (reporter && (reporter.status === 'done' || (reporter.dispatch && workerEnds[reporter.dispatch] === 'done'))) {
+        after.push(['step', id, String(reportStep.number)])
+        if (reportSteps.every((step) => step.done || step === reportStep)) {
+          after.push(['set', id, 'done', '--worktree', ''])
+          finish = true
+        }
+      }
     } else if (tagged.length > 0) {
       // 꼬리표가 있는 수동 항목은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
       for (const step of tagged.filter((step) => !step.done)) {

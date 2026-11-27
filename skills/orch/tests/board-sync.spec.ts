@@ -100,6 +100,19 @@ const step = (text: string, done: boolean): Json => ({ text, done })
 
 const worker = (role: string, worktree: string, dispatch: string, extra = {}) => ({ role, worktree, dispatch, branch: 'feat/a', pr: null, at: '2026-01-01', status: 'working', endedAt: null, ...extra })
 
+test('PR 없는 보고 단계는 담당 worker 의 완료를 받으면 끝난다', () => {
+  mkdirSync(join(tmp, 'report'))
+  const report = { id: 'measure', status: 'doing', worktree: 'report', branch: 'feat/a', details: [step('1. 보고 받기(worker_done)', false)],
+    workers: [worker('impl', 'report', 'd1'), worker('review', 'review', 'd2')] }
+  const waiting = sync([report], ['--worker-ends', '{"d2":"done"}'])
+  assert.equal(waiting.code, 0, waiting.result.stderr)
+  assert.deepEqual(waiting.board.measure.details, report.details)
+  const completed = sync([report], ['--worker-ends', '{"d1":"done"}'])
+  assert.equal(completed.code, 0, completed.result.stderr)
+  assert.deepEqual(completed.board.measure.details, [step('1. 보고 받기(worker_done)', true)])
+  assert.equal(completed.board.measure.status, 'done')
+})
+
 test('대표가 빈 구현 항목의 리뷰가 끝나도 열린 구현 PR 의 항목을 닫지 않는다', () => {
   states = { '7': 'OPEN' }
   const orch = join(tmp, 'orch')
