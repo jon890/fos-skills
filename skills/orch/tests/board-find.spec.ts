@@ -64,6 +64,9 @@ test('시작 단계는 끝나지 않은 [ask] 기능 줄과 차수까지 같아�
   const opts = { id: 'f', newSpec: false, hasDesign: true }
   assert.equal(startStageProblem(item, { name: 'implementation', part: 2, total: 3 }, opts), null)
   assert.equal(startStageProblem(item, { name: 'implementation', part: 1, total: 3 }, opts), '항목 f 의 다음 단계는 implementation 2/3 인데 지시서는 implementation 1/3 부터 시작한다')
+  const placeholder: BoardItem = { id: 'f', details: [{ text: '2. [ask] 기능 implementation 1/1', done: false }] }
+  assert.equal(startStageProblem(placeholder, { name: 'implementation', part: 1, total: 3 }, opts), null)
+  assert.match(startStageProblem(placeholder, { name: 'implementation', part: 2, total: 3 }, opts)!, /다음 단계는 implementation 1\/1 인데 지시서는 implementation 2\/3 부터/)
   const design: BoardItem = { id: 'f', details: [{ text: '1. [ask] 기능 technical-design', done: false }] }
   assert.match(startStageProblem(design, { name: 'implementation', part: 1, total: 1 }, opts)!, /다음 단계는 technical-design 인데 지시서는 implementation 1\/1 부터/)
 })

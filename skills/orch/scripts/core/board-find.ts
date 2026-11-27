@@ -93,7 +93,8 @@ function stageLines(item: Record<string, unknown>): StageLine[] {
 
 // 지시서의 첫 기능 단계가 보드 항목과 맞는지. 맞으면 null, 아니면 spec-lint 의 `보드` 발견 문구(지시서 이름과 줄 번호 뒤)다.
 // item 이 없으면(지시서 id 의 항목이 아직 없다) 단계 줄이 없는 항목과 같이 본다.
-//   - 끝나지 않은 `[ask] 기능 <X>` 줄이 있으면 X 하나만 받는다. implementation 은 차수까지 같아야 한다
+//   - 끝나지 않은 `[ask] 기능 <X>` 줄이 있으면 X 하나만 받는다. implementation 은 차수까지 같아야 한다.
+//     단 `[ask] 기능 implementation 1/1` 은 구현 PR 수를 모를 때의 자리 줄이라 implementation 1/n 을 받는다
 //   - `[ask]` 없이 끝나지 않은 기능 단계 줄이 있으면 그 단계를 다시 띄우는 것으로 보고 그 단계만 받는다
 //   - 기능 단계 줄이 모두 끝났으면 막는다
 //   - 기능 단계 줄이 없으면 새 스펙(`스펙: 새로 쓴다`)은 spec, 확인된 스펙은 technical-design, 설계가 있으면 implementation 1/n 도 받는다
@@ -105,7 +106,10 @@ export function startStageProblem(item: BoardItem | undefined, first: FeatureSta
   const allowed = asked.length > 0 ? asked : open
   if (allowed.length > 0) {
     const texts = [...new Set(allowed.map((line) => featureStageText(line.stage)))]
-    return texts.includes(want) ? null : `항목 ${opts.id} 의 다음 단계는 ${texts.join(', ')} 인데 지시서는 ${want} 부터 시작한다`
+    // 설계 PR 머지 뒤의 `[ask] 기능 implementation 1/1` 은 구현 PR 수를 모를 때의 자리 줄이라 1/n 지시서도 받는다(work-board 의 worker-add 와 같다)
+    const placeholder = first.name === 'implementation' && first.part === 1 &&
+      asked.some((line) => line.stage.name === 'implementation' && line.stage.part === 1 && line.stage.total === 1)
+    return texts.includes(want) || placeholder ? null : `항목 ${opts.id} 의 다음 단계는 ${texts.join(', ')} 인데 지시서는 ${want} 부터 시작한다`
   }
   if (lines.length > 0) return `항목 ${opts.id} 의 기능 단계 줄이 모두 끝났고 다음 단계 줄이 없다. 단계 줄을 정리하거나 \`보드 항목 id:\` 로 다른 항목을 고른다`
   if (opts.newSpec) return first.name === 'spec' ? null : `항목 ${opts.id} 의 다음 단계는 spec 인데 지시서는 ${want} 부터 시작한다`
