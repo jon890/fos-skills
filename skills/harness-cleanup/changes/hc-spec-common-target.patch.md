@@ -1,0 +1,1 @@
+- 저장소 루트의 orch 공통 지시서(.orch/specs/spec-common.md)를 감사 대상에 넣는다. git 이 무시하는 .orch 폴더에 있어도 고르고, 개별 지시서는 고르지 않는다.

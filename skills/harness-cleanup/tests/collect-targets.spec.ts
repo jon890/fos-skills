@@ -69,6 +69,19 @@ describe('대상 선택', () => {
     assert.deepEqual(names(done.stdout).sort(), ['CLAUDE.md', 'skills/a/SKILL.md'])
   })
 
+  test('git 이 무시하는 .orch 의 공통 지시서도 범위로 고를 수 있고 개별 지시서는 고르지 않는다', () => {
+    const r = new Repo('hc-', true)
+    r.file('.git/info/exclude', '.orch/\n')
+    r.file('CLAUDE.md', 'x\n')
+    r.file('.orch/specs/spec-common.md', 'x\n')
+    r.file('.orch/specs/spec-foo.md', 'x\n')
+    assert.deepEqual(names(r.run('collect_targets', [r.root]).stdout).sort(), ['.orch/specs/spec-common.md', 'CLAUDE.md'])
+    const done = r.run('collect_targets', [r.root, '--scope', '.orch/specs/spec-common.md'])
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(names(done.stdout), ['.orch/specs/spec-common.md'])
+    assert.equal(r.run('collect_targets', [r.root, '--scope', '.orch/specs/spec-foo.md']).code, 2)
+  })
+
   test('건너뛰는 폴더 아래는 보지 않는다', () => {
     const r = new Repo()
     r.file('CLAUDE.md', 'x\n')
