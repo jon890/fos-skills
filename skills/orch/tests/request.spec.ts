@@ -119,7 +119,7 @@ test('다른 저장소의 메인에게 요청 번호를 붙여 보내고 양쪽 
   const payload = JSON.parse(sent[0][sent[0].indexOf('--payload') + 1])
   assert.equal(payload.request, 'R1')
   assert.match(sent[0].join(' '), /새 요청 · sender 가 보냄 · 「로그인 고침」 \(요청 1\)/)
-  assert.match(sent[0][sent[0].indexOf('--body') + 1], /orch request accept 1 /)
+  assert.match(sent[0][sent[0].indexOf('--body') + 1], / request accept 1 --repo /)
   // 번호는 받는 저장소마다 이어진다
   assert.deepEqual(send().lines, [`REQUEST-SENT R2 repo=${receiver} main=rB`])
 })
