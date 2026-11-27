@@ -97,6 +97,7 @@ import { waiterPids } from '../lib/waiters.ts'
 import { orchWord } from '../lib/commands.ts'
 import { findMain } from '../lib/main-coordinator.ts'
 import { shQuote } from '../lib/py.ts'
+import { createSteps } from '../lib/run-guidance.ts'
 import { announce, moveWorkers, pendingRuns, settlePending, writePending } from './takeover.ts'
 import { busyReason, decide, HANDOVER_ENV, handOver, heirEntry, newSelfUpdate, observe, pendingHeir } from './self-update.ts'
 import { watchModels } from './model-watch.ts'
@@ -287,8 +288,15 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
       return 0
     }
   }
-  log(`LOOP-RUNNING ${found.pid} run=${ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run}`)
+  const shown = ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run
+  log(`LOOP-RUNNING ${found.pid} run=${shown}`)
+  if (shown === '-') noRunWarning(ctx.repo)
   return 4
+}
+
+// Run 없이 뜬 루프는 성공처럼 보이지만 요청과 질문의 답을 받을 곳이 없다. 짧은 출력에도 남게 판정 줄로 다음 명령을 낸다(lib/run-guidance.ts)
+function noRunWarning(repo: string): void {
+  log(`LOOP-NO-RUN 이 루프에는 Run 이 없어 요청과 질문의 답을 받지 못한다. 받으려면: ${createSteps(repo)}`)
 }
 
 // 머리 주석의 「명의」. Orca 는 이 프로세스가 나온 터미널로 호출자를 정한다
@@ -561,6 +569,7 @@ async function launch(ctx: Context, entrypoint: string, renew = true, rejoin = f
     const state = readLoop(ctx.repo)
     if (pid !== undefined && state && Number(state.pid) === pid) {
       log(`LOOP-STARTED ${pid} run=${state.run || '-'}`)
+      if (!state.run) noRunWarning(ctx.repo)
       return 0
     }
     if (exited === 4) {

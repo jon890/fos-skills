@@ -224,6 +224,27 @@ describe('사용법 오류', () => {
     assert.match(r.error, /--run <Run> 이 필요하다/)
   })
 
+  test('request send 의 run 을 채우지 못하면 Run 을 만들고 루프에 묶는 다음 명령을 저장소 값으로 알린다', () => {
+    delete process.env.FAKE_RUN
+    const r = fill(['request', 'send', '--to', 'x', '--title', 't', '--body', 'b'], worktree)
+    assert.ok('error' in r)
+    assert.match(r.error, /--run <Run> 이 필요하다/)
+    assert.match(r.error, /orca orchestration run-create --objective "<목표 한 문장>"/)
+    assert.ok(r.error.includes(`loop start --run <만든 Run> --repo ${main}`), r.error)
+    assert.match(r.error, /request send <같은 인자> --run <만든 Run>/)
+    assert.doesNotMatch(r.error, /등록된 Run/)
+  })
+
+  test('이 저장소 루프에 등록된 Run 이 있으면 그 Run 으로 다시 부르는 명령을 앞에 둔다', () => {
+    delete process.env.FAKE_RUN
+    registerRun(main, 'run_reg', null)
+    const r = fill(['request', 'send', '--to', 'x', '--title', 't', '--body', 'b'], worktree)
+    assert.ok('error' in r)
+    const lines = r.error.split('\n')
+    assert.match(lines[1], /등록된 Run\(run_reg\).*request send <같은 인자> --run run_reg$/)
+    assert.match(lines[2], /run-create/)
+  })
+
   test('--ack 가 있는 wait 은 run-current 를 못 읽으면 설정으로 대신하지 않는다', () => {
     delete process.env.FAKE_RUN
     config(main, { run: 'run_conf' })

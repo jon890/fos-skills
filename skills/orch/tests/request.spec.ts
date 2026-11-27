@@ -94,6 +94,16 @@ function record(repo: string, id: string): Json {
 
 const send = (extra: string[] = []) => request(['send', '--to', receiver, '--title', '로그인 고침', '--body', '로그인 오류를 고쳐 달라', '--repo', sender, '--run', 'rA', ...extra])
 
+test('--run 없이 부르면 보내지 않고 Run 을 만들고 루프에 묶는 다음 명령을 알린다', () => {
+  const r = request(['send', '--to', receiver, '--title', '로그인 고침', '--body', '본문', '--repo', sender])
+  assert.equal(r.code, 2, r.lines.join('\n') + r.stderr)
+  assert.match(r.stderr, /send 는 보낸 Run\(--run\)이 필요하다/)
+  assert.match(r.stderr, /run-create --objective/)
+  assert.ok(r.stderr.includes(`loop start --run <만든 Run> --repo ${sender}`), r.stderr)
+  assert.match(r.stderr, /request send <같은 인자> --run <만든 Run>/)
+  assert.deepEqual(sends(), [])
+})
+
 test('다른 저장소의 메인에게 요청 번호를 붙여 보내고 양쪽 보드에 항목을 만든다', () => {
   const r = send()
   assert.equal(r.code, 0, r.lines.join('\n') + r.stderr)
