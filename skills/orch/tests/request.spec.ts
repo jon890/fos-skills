@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { noticeSubject } from '../scripts/lib/requests.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/request/orch-request.ts', import.meta.url))
 
@@ -24,7 +25,7 @@ else if (argv[1] === 'send') {
   else {
     fs.appendFileSync(process.env.FAKE_DIR + '/sends.jsonl', JSON.stringify(argv) + '\\n')
     // 메인이 깨어나 곧바로 거절하는 경우를 흉내 낸다. 보낸 쪽이 첫 보드를 쓰는 사이에 답이 들어온다
-    if (st.reject_on_request && argv.some((a) => a.startsWith('REQUEST '))) {
+    if (st.reject_on_request && argv.some((a) => a.startsWith('새 요청 · '))) {
       const { spawn } = require('node:child_process')
       spawn(process.execPath, ['--disable-warning=ExperimentalWarning', process.env.REQUEST_SCRIPT, 'reject', '--id', 'R1', '--reason', '이미 하는 일', '--repo', st.reject_on_request], { detached: true, stdio: ['ignore', fs.openSync(process.env.FAKE_DIR + '/reject.out', 'a'), fs.openSync(process.env.FAKE_DIR + '/reject.out', 'a')], env: process.env }).unref()
       // 메인의 답이 보낸 쪽의 첫 보드 쓰기보다 먼저 끝날 만큼 메시지 응답을 늦춘다
@@ -107,10 +108,18 @@ test('다른 저장소의 메인에게 요청 번호를 붙여 보내고 양쪽 
   assert.match(JSON.parse(sent[0][sent[0].indexOf('--payload') + 1]).source, /^orch-request$/)
   const mine = board(receiver)
   assert.deepEqual(mine.map((item) => [item.id, item.status]), [['req-receiver-1', 'wait']])
-  assert.match(String(mine[0].title), /^요청 R1: 로그인 고침 \(sender\)$/)
+  assert.equal(mine[0].title, '로그인 고침')
+  assert.equal(mine[0]['request-from'], 'sender')
   assert.ok(mine[0].stages, JSON.stringify(mine[0]))
   const theirs = board(sender)
   assert.deepEqual(theirs.map((item) => [item.id, item.status]), [['req-receiver-1', 'wait']])
+  assert.equal(theirs[0].title, '로그인 고침')
+  assert.equal(theirs[0]['request-to'], 'receiver')
+  // 알림 제목은 보낸 곳과 「요청 n」 을 낱말로 보인다. payload 칸 이름은 그대로다
+  const payload = JSON.parse(sent[0][sent[0].indexOf('--payload') + 1])
+  assert.equal(payload.request, 'R1')
+  assert.match(sent[0].join(' '), /새 요청 · sender 가 보냄 · 「로그인 고침」 \(요청 1\)/)
+  assert.match(sent[0][sent[0].indexOf('--body') + 1], /orch request accept 1 /)
   // 번호는 받는 저장소마다 이어진다
   assert.deepEqual(send().lines, [`REQUEST-SENT R2 repo=${receiver} main=rB`])
 })
@@ -137,6 +146,8 @@ test('같은 저장소 안의 요청은 보드 항목 하나만 만든다', () =
   assert.equal(r.code, 0, r.lines.join('\n') + r.stderr)
   assert.deepEqual(board(sender).map((item) => item.id), ['req-sender-1'])
   assert.equal(record(sender, 'R1').board.from, null)
+  assert.equal(board(sender)[0].title, '정리')
+  assert.equal(board(sender)[0]['request-from'], undefined)
 })
 
 test('보드를 함께 쓰는 두 저장소의 R1 은 각각 남고 같은 보드에는 이력을 한 번만 쓴다', () => {
@@ -223,8 +234,9 @@ test('보내기가 실패하면 기록을 지우고 번호는 다시 쓰지 않�
 
 test('받은 메인은 받음, 보류, 완료를 보내고 보낸 쪽 보드가 따라 바뀐다', () => {
   send()
-  const accepted = request(['accept', '--id', 'R1', '--repo', receiver, '--run', 'rB'])
+  const accepted = request(['accept', '--id', '1', '--repo', receiver, '--run', 'rB'])
   assert.deepEqual(accepted.lines, ['REQUEST-ACCEPTED R1 to=rA'])
+  assert.match(sends().at(-1)!.join(' '), /요청 받음 · receiver 가 받음 · 「로그인 고침」 \(요청 1\)/)
   assert.equal(record(receiver, 'R1').state, 'accepted')
   assert.equal(sends().at(-1)![sends().at(-1)!.indexOf('--to') + 1], 'run:rA')
   assert.ok(board(sender)[0].details.some((d: unknown) => /요청 받음/.test(typeof d === 'string' ? d : (d as Json).text)), JSON.stringify(board(sender)[0]))
@@ -302,4 +314,14 @@ test('긴 이유는 보드 줄에서 80자 안으로 줄이고 기록에는 그�
     assert.ok([...line!].length <= 80, line)
     assert.match(line!, /요청 완료: 설정 파일의 키 이름을 바꾸고.*…$/)
   }
+})
+
+test('알림 제목은 답마다 받은 저장소를 주어로 쓰고 길면 요청 제목만 줄인다', () => {
+  const record = { number: 46, title: '보드 단계 정리', repo: '/x/fos-skills', from: { repo: '/x/ai-analysis', run: 'r', terminal: null } }
+  assert.equal(noticeSubject('REQUEST', record), '새 요청 · ai-analysis 가 보냄 · 「보드 단계 정리」 (요청 46)')
+  assert.equal(noticeSubject('REQUEST-HELD', record), '요청 보류 · fos-skills 가 보류함 · 「보드 단계 정리」 (요청 46)')
+  assert.equal(noticeSubject('REQUEST-DONE', record), '요청 완료 · fos-skills 가 완료함 · 「보드 단계 정리」 (요청 46)')
+  const long = noticeSubject('REQUEST', { ...record, title: '가'.repeat(200) })
+  assert.equal([...long].length, 120)
+  assert.match(long, /…」 \(요청 46\)$/)
 })
