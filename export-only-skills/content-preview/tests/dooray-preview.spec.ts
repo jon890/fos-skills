@@ -301,19 +301,48 @@ describe('dooray-preview task, comment', () => {
   })
 
   test('표시 글의 대괄호와 두레이 웹 주소를 각각 고치도록 안내한다', () => {
-    const body = [
-      '[참고] [example/18 [Example] 제목](dooray://example/tasks/post-example "working")',
+    const badLabel = '[참고] [example/18 [Example] 제목](dooray://example/tasks/post-example "working")'
+    const webLinks = [
       '[example/18 제목](https://example.dooray.com/project/tasks/post-example?x=y)',
+      '[example/18 제목](//example.dooray.com/project/tasks/post-example)',
       '[example/18 제목]( </task/project-example/post-example> )',
       'https://example.dooray.com/task/project-example/post-example.',
-    ].join('\n')
+    ]
+    const body = [badLabel, ...webLinks].join('\n')
     const done = preview('task', body)
     assert.equal(done.code, 1)
     assert.equal(done.html, '')
     assert.match(done.stderr, /대괄호를.*\n  고친 예 \[example\/18 &#91;Example&#93; 제목\]/u)
-    assert.equal((done.stderr.match(/웹 주소를/g) ?? []).length, 3)
-    assert.equal((done.stderr.match(/고친 예 /g) ?? []).length, 4)
+    assert.equal((done.stderr.match(/웹 주소를/g) ?? []).length, webLinks.length)
+    assert.equal((done.stderr.match(/고친 예 /g) ?? []).length, webLinks.length + 1)
     assert.match(done.stderr, /dooray:\/\/ORG_ID\/tasks\/post-example "working"/u)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('업무 경로를 가리키는 절대·프로토콜 상대·루트 상대·상대 주소를 막는다', () => {
+    const paths = [
+      'HTTPS://example.DOORAY.com/project/tasks/post-example',
+      'https://dooray.com/project/tasks/post-example',
+      '//example.dooray.com/project/tasks/post-example',
+      '/project/tasks/post-example',
+      '/task/project-example/post-example',
+      'project/tasks/post-example',
+      '../task/project-example/post-example',
+      './other/../project/tasks/post-example',
+      'https://example.dooray.com/project/%74asks/post-example',
+    ]
+    for (const target of paths) {
+      const done = preview('task', `[example/18 제목](  ${target}  )`)
+      assert.equal(done.code, 1, target)
+      assert.match(done.stderr, /웹 주소를 dooray:\/\/ 링크로 바꾸세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('인라인 주소 앞뒤의 공백과 스킴 대소문자는 허용한다', () => {
+    const body = '[example/18 제목]( \tDOORAY://example/tasks/post-example "working" \t )'
+    const done = preview('comment', body)
+    assert.equal(done.code, 0, done.stderr)
     assert.deepEqual(done.calls, ['--json post get --id post-example'])
   })
 
@@ -385,7 +414,7 @@ describe('dooray-preview task, comment', () => {
 
   test('참조식 정의, 자동 링크, HTML 링크, 주소만 적은 링크를 인라인 형식으로 안내한다', () => {
     for (const [kind, makeBody] of unsupportedLinks) {
-      for (const [address, org] of [[internalAddress, 'example'], [webAddress, 'ORG_ID']]) {
+      for (const [address, org] of [[internalAddress, 'example'], [webAddress, 'ORG_ID'], [webAddress.slice('https:'.length), 'ORG_ID']]) {
         const done = preview('comment', makeBody(address))
         assert.equal(done.code, 1, makeBody(address))
         assert.ok(done.stderr.includes(address === internalAddress ? kind : '웹 주소를 dooray:// 링크로'), done.stderr)
@@ -494,6 +523,8 @@ describe('dooray-preview task, comment', () => {
       '[example](dooray://example/pages/page-example "publish")',
       '[example](https://example.com/project/tasks/post-example)',
       '[example](https://example.dooray.com.example.com/project/tasks/post-example)',
+      '[example](//example.dooray.com.example.com/project/tasks/post-example)',
+      '//example.com/task/project-example/post-example',
       '<a href="https://example.com/task/project-example/post-example">예제</a>',
       '[example][reference]\n\n[reference]: https://example.com/project/tasks/post-example',
     ].join('\n')

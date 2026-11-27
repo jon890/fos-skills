@@ -7,12 +7,13 @@ import namedReferences from './named-character-references.json' with { type: 'js
 const ID = '[a-z0-9][a-z0-9_-]*'
 const INTERNAL = new RegExp(`^dooray://(${ID})/tasks/(${ID})$`, 'i')
 const WEB_PATH = new RegExp(`^/(?:project/tasks|task/${ID})/(${ID})/?$`, 'i')
+const LINK_BASE = 'https://base.invalid/'
 const POST_REF = /^([^\s/]+)\/(\d+)(?=\s|$)/u
 const BRACKET = /\\[^\r\n]|[\[\]]/gu
 const WORKFLOW = /^(registered|working|closed|backlog)$/
 // 정상 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 표시 글을 그대로 읽는다.
 const INLINE_LINK = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)/gu
-const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>`]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:dooray|https?):\/\/[^\s<>]+)>|(?<address>(?:dooray|https?):\/\/[^\s<>()\[\]"`']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"`']+)/gimu
+const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>`]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:(?:dooray|https?):)?\/\/[^\s<>]+)>|(?<address>(?:(?:dooray|https?):|(?<![\w:/]))\/\/[^\s<>()\[\]"`']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"`']+)/gimu
 const HTML_ATTRIBUTE = /\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/gu
 // 정상 링크와 같은 꼴의 인라인 코드 예제도 막는다. 백틱이 링크 검사에서 문장을 가리지는 않는다.
 const CODE_EXAMPLE = /(?<![`\\])(`+)(?!`)[^|]*?(?<!`)\1(?!`)/gu
@@ -41,11 +42,12 @@ function lookupPost(id: string): Lookup {
   return 'unavailable'
 }
 
-function webPostId(target: string): string | undefined {
-  if (target.startsWith('/')) return WEB_PATH.exec(target.split(/[?#]/u, 1)[0])?.[1]
-  if (!/^https?:\/\//i.test(target)) return
-  const url = URL.parse(target)
-  if (url?.hostname.endsWith('.dooray.com')) return WEB_PATH.exec(url.pathname)?.[1]
+function decodePath(pathname: string): string {
+  try {
+    return decodeURI(pathname)
+  } catch {
+    return pathname
+  }
 }
 
 function escapeBrackets(label: string): string {
@@ -145,8 +147,13 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     const inline = kind === 'inline'
     let decoded = kind === 'HTML 링크' ? target.replace(HTML_ADDRESS, decodeReference).trim() : decodeMarkdown(target)
     if (kind === '주소만 적은 링크') decoded = decoded.replace(/[.,!?;:]+$/u, '')
-    const internal = INTERNAL.exec(decoded.split(/[?#]/u, 1)[0].replace(/\/$/u, ''))
-    const webId = webPostId(decoded)
+    const url = URL.parse(decoded, LINK_BASE)
+    if (!url) continue
+    const path = decodePath(url.pathname)
+    const host = url.hostname.replace(/\.$/u, '')
+    const internal = url.protocol === 'dooray:' ? INTERNAL.exec(`dooray://${host}${path.replace(/\/$/u, '')}`) : null
+    const doorayHost = host === 'dooray.com' || host.endsWith('.dooray.com') || host === 'base.invalid'
+    const webId = url.protocol !== 'dooray:' && doorayHost ? WEB_PATH.exec(path)?.[1] : undefined
     const id = internal?.[2] ?? webId
     if (!id) continue
 
@@ -181,7 +188,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)
     else if (kind === '인라인 코드 예제') errors.push(`오류: 인라인 코드에 두레이 업무 링크가 있습니다.${fix}`)
     else if (!inline) errors.push(`오류: 두레이 업무를 가리키는 ${kind}를 표시 글과 상태값을 갖춘 인라인 링크로 바꾸세요.${fix}`)
-    else if (target !== internal?.[0] || !WORKFLOW.test(shownWorkflow ?? '')) {
+    else if (!INTERNAL.test(target) || !WORKFLOW.test(shownWorkflow ?? '')) {
       errors.push(`오류: 두레이 업무 주소는 dooray://조직ID/tasks/업무ID 꼴로 쓰고 등록·진행·완료 등의 상태값을 큰따옴표로 감싸세요.${fix}`)
     }
     if (mismatch) errors.push(`오류: 업무 링크 표시 글 「${label}」과 실제 업무 ${ref} 가 다릅니다. 연결할 업무를 확인하세요.${fix}`)
