@@ -271,3 +271,27 @@ test('새 스펙은 폴더 없이 기능 단계로 등록한다', () => {
   assert.deepEqual(item.details, [{ text: '1. 기능 spec', done: false }])
   assert.equal(item.workers[0]['feature-steps'], '1')
 })
+
+test('설계 PR 머지 뒤 같은 워크트리에서 구현 PR 이 새 단계를 맡는다', () => {
+  const text = '보드 항목 id: a\n기능 단계: implementation 1/1\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)'
+  for (const branch of ['feat/impl', 'feat/a']) {
+    board(base({ pr: undefined, 'merged-pr': 7, details: ['✓ 1. 기능 technical-design', '2. [ask] 기능 implementation 1/1'],
+      workers: [{ ...row(), status: 'done', pr: 7, 'feature-steps': '1' }] }))
+    launch(text, 'old', branch)
+    const [item] = items()
+    assert.equal(item['merged-pr'], 7)
+    assert.equal(item.pr, undefined)
+    assert.deepEqual(item.details, [{ text: '1. 기능 technical-design', done: true },
+      { text: '2. 기능 implementation 1/1', done: false }])
+    assert.equal(item.workers.length, 1)
+    assert.equal(item.workers[0].pr, null)
+    assert.equal(item.workers[0]['feature-steps'], '2')
+    item.pr = 8
+    item.workers[0].pr = 8
+    board(item)
+    launch(text, 'old', branch, 'retry')
+    assert.equal(items()[0].workers[0].pr, 8)
+    assert.equal(items()[0].workers[0]['feature-steps'], '2')
+    assert.deepEqual(items()[0].details, item.details)
+  }
+})

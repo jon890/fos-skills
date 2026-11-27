@@ -1830,4 +1830,12 @@ test('설계 PR 의 마무리는 업무를 닫지 않고 다음 단계를 한 �
     '--board', file, '--repo', c.repo], { env: c.env })
   assert.equal(synced.code, 0, both(synced))
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).items[0].details, row.details)
+  // 다음 단계가 같은 워크트리를 이어받으면 이전 PR 은 merged-pr 에만 남는다.
+  row.workers[0] = { ...row.workers[0], branch: 'feat/impl', pr: null, 'feature-steps': '2' }
+  row.branch = 'feat/impl'
+  writeFileSync(file, JSON.stringify({ items: [row] }))
+  const replay = await c.finish(['--complete', '--board', file])
+  assert.equal(replay.code, 0, both(replay))
+  assert.equal(inputs(event).at(-1)?.last_of_task, false)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).items[0].status, 'doing')
 })

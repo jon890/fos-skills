@@ -826,7 +826,7 @@ async function finish(args: Args, repo: string): Promise<number> {
       const root = mainCheckout(repo)
       return readBoard(boardPath(repo, args.board)).find((row) =>
         (!row['feature-repo'] || row['feature-repo'] === root) &&
-        (item ? row.id === item.id : prNumbers(row['merged-pr']).has(args.pr) && hasFeaturePr(row, args.pr)))
+        (item ? row.id === item.id : prNumbers(row['merged-pr']).has(args.pr) && isFeatureItem(row)))
     } catch { return undefined }
   })()
   if (candidate && isFeatureItem(candidate)) {

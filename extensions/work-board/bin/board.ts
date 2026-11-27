@@ -755,9 +755,9 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
         rows.push(row)
       }
       const sameLostDispatch = row.status === 'lost' && a.dispatch === row.dispatch
+      const changedBranch = Boolean(row.branch && a.fields.branch && row.branch !== a.fields.branch)
       if (a.dispatch !== undefined) row.dispatch = a.dispatch
       if (a.fields.branch !== undefined) row.branch = a.fields.branch
-      if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
       if (a.fields.stages !== undefined) row.stages = a.fields.stages.replace(/\s+/g, '')
       if (a.featureStages) {
         if (item.feature && a.fields.feature && (item.feature !== a.fields.feature || item['feature-repo'] !== a.fields['feature-repo'])) {
@@ -770,8 +770,15 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
         for (const key of ['task', 'task-ref'] as const) {
           if (!item[key] && a.fields[key]) item[key] = a.fields[key]
         }
-        if (!row['feature-steps']) {
-          const [source, lines] = stepSource(item)
+        const [source, lines] = stepSource(item)
+        const owned = new Set(row['feature-steps']?.split(',').map(Number))
+        const previous = lines.filter((line) => owned.has(parseStep(line)?.[0] ?? 0))
+          .map((line) => line.text.replace(STEP, '').trim())
+        const mergedPrs: string[] = String(item['merged-pr'] ?? '').match(/\d+/g) ?? []
+        const reflected = mergedPrs.includes(String(row.pr))
+        const changedStages = previous.length !== a.featureStages.length || previous.some((stage, i) => stage !== a.featureStages![i])
+        if (!row['feature-steps'] || changedBranch || (reflected && changedStages)) {
+          row.pr = null
           const target = source ?? 'details'
           const steps = source ? lines : normalizeLines(item[target] ?? [])
           let max = Math.max(0, ...steps.map((line) => parseStep(line)?.[0] ?? 0))
@@ -793,6 +800,7 @@ function apply(a: Args, board: Board): boolean | View | { deleted: unknown[] } |
           delete item.stages
         }
       }
+      if (a.fields.pr !== undefined) row.pr = prValue(a.fields.pr)
       if (!row['feature-steps'] && a.featureSteps) row['feature-steps'] = a.featureSteps
       // 같은 dispatch 를 복구할 때는 새로 맡긴 시각으로 덮지 않는다.
       if (!sameLostDispatch) row.at = stamp
