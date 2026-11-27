@@ -143,6 +143,13 @@ describe('target_files', () => {
     assert.ok(!isTarget(`${root}/.orch/specs/spec-a.md`, root))
   })
 
+  test('orch 공통 지시서는 저장소 루트의 것만 대상이고 개별 지시서는 아니다', () => {
+    assert.ok(isTarget(`${root}/.orch/specs/spec-common.md`, root))
+    assert.ok(!isTarget(`${root}/.orch/specs/spec-foo.md`, root))
+    assert.ok(!isTarget(`${root}/sub/.orch/specs/spec-common.md`, root))
+    assert.ok(!isTarget(`${root}/skills/orch/templates/spec-common.md`, root))
+  })
+
   test('README 는 includeReadme 일 때 루트의 것만 대상이다', () => {
     assert.ok(!isTarget(`${root}/README.md`, root))
     assert.ok(isTarget(`${root}/README.md`, root, true))

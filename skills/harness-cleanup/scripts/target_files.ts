@@ -34,6 +34,8 @@ const GUIDE_PREFIXES: string[][] = [
   ['.claude', 'skills', '_shared'],
 ]
 
+const ORCH_COMMON_SPEC = '.orch/specs/spec-common.md'
+
 function isInstruction(path: string): boolean {
   const name = pathName(path)
   return name === 'AGENTS.md' || name === 'CLAUDE.md'
@@ -47,6 +49,9 @@ export function isTarget(path: string, root: string, includeReadme = false): boo
   if (includeReadme && name === 'README.md' && pathParent(path) === root) return true
   if (name.endsWith('-overlay.md') && parts.includes('.claude')) return true
   if (name === 'overlay.md' && parts.includes('.orch')) return true
+  // 모든 worker 가 읽는 orch 공통 지시서다. 개별 지시서(spec-<이름>.md)는 일회성이라 뺀다.
+  // .orch/ 는 git 밖(.git/info/exclude)에 두는 폴더라 git 추적 여부로 판정하지 않는다.
+  if (relativeTo(path, root) === ORCH_COMMON_SPEC) return true
   if (name === 'SKILL.md') return true
   const suffix = pathSuffix(path)
   if (suffix === '.toml' && inside(path, '.codex', 'agents')) return true
