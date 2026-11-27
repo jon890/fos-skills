@@ -26,6 +26,7 @@ import * as z from 'zod'
 import { taskAdapterOf } from './task-adapters.ts'
 import { autoMergeConfig, LEGACY_REVIEW_KEYS, REVIEW_CONFIG_KEYS } from './auto-merge.ts'
 import { autoAdvanceOf } from './auto-advance.ts'
+import { waitEventsOf } from './wait-events.ts'
 import {
   DOCKER_KEYS,
   HEAVY_KEYS,
@@ -291,6 +292,7 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     done_after: viaConfig('board', 'done_after', boardSettingsFromConfig),
     task_line: viaConfig('board', 'task_line', boardSettingsFromConfig),
     auto_advance: viaConfig('board', 'auto_advance', autoAdvanceOf),
+    wait_events: viaConfig('board', 'wait_events', waitEventsOf, 'free'),
   },
   review: { prepare: zodCheck(text) },
   feedback: { reviewer: zodCheck(leaf(isFeedbackReviewer, 'feedback.reviewer 는 영문이나 숫자로 시작하고 영문, 숫자, 밑줄, 점, 콜론, 하이픈만 쓰는 문자열이어야 한다')) },

@@ -2,11 +2,11 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, decisions, cleanup, hook, stalls, waiter, done, lost)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, movement, step-ready, auto-merge, conflicts, refresh, queue-turn, tick, slow-tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     공유 출처(SHARED_SOURCES: prs, board, wait-events, ci, merged, movement, step-ready, auto-merge, conflicts, refresh, queue-turn, tick, slow-tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
-//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리), refresh(최신화), queue-turn(큐 기록),
+//     board(보드 동기화가 0 이 아닌 종료), wait-events(사건 대기의 보드 읽기와 줄을 끝낸 뒤의 알림 전송), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리), refresh(최신화), queue-turn(큐 기록),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남), slow-tick(느린 틱 자식이 그렇게 끝남. orch-loop.ts 머리 주석의 「느린 단계」), heavy-slot(자리 보유 확인. 알림의 kind 는 HEAVY-SLOT-HELD),
 //     decisions(사용자 결정 알림), waiter(미답변 질문 확인), done(완료 보고 확인), lost(끊긴 worker 확인)이다.
 //     tick 과 slow-tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 Run 에 Orca 메시지로 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
@@ -21,7 +21,7 @@ import type { StepContext } from './context.ts'
 import { log, oneLine } from './shared.ts'
 
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'step-ready', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'slow-tick', 'heavy-slot', 'review-request'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'step-ready', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'slow-tick', 'heavy-slot', 'review-request', 'wait-events'])
 
 // 지난 오류 키를 지운다(머리 주석의 「오류 줄 억제」). runs 는 등록된 Run, primary 는 주 Run 이다
 export function dropStaleErrors(errors: Record<string, string | null>, runs: string[], primary: string | null): void {

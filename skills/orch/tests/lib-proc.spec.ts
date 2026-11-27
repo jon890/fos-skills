@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { run, runAsync, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
+import { groupLive, killGroup, liveInGroup, run, runAsync, runGroup, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
 
@@ -234,5 +234,81 @@ describe('execCommand', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runGroup', () => {
+  test('셸이 스스로 끝나면 종료 코드를 exit 로 낸다', async () => {
+    assert.deepEqual((await runGroup(['sh', '-c', 'echo hi; exit 0'], { timeoutMs: 5_000 })).outcome, { kind: 'exit', code: 0 })
+    const pending = await runGroup(['sh', '-c', 'exit 1'], { timeoutMs: 5_000 })
+    assert.deepEqual(pending.outcome, { kind: 'exit', code: 1 })
+  })
+
+  test('TERM 을 무시하는 손자를 남기는 명령은 timeout 이고 돌아온 뒤 그룹에 프로세스가 없다', { timeout: 30_000 }, async (t) => {
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
+    // 셸은 pid 를 쓰고 기다린다. 손자는 TERM 을 무시한다
+    const script = `${NODE} -e 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)' & echo $$; wait`
+    const done = await runGroup(['sh', '-c', script], { timeoutMs: 500 })
+    assert.equal(done.outcome.kind, 'timeout')
+    const group = Number(done.stdout.trim().split('\n')[0])
+    assert.ok(Number.isInteger(group) && group > 0, done.stdout)
+    assert.equal(groupLive(group), false)
+  })
+
+  test('셸이 끝난 뒤 남은 백그라운드 손자도 끝내고 셸의 종료 코드를 낸다', { timeout: 30_000 }, async (t) => {
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
+    const done = await runGroup(['sh', '-c', 'sleep 30 & echo $$; exit 0'], { timeoutMs: 10_000 })
+    assert.deepEqual(done.outcome, { kind: 'exit', code: 0 })
+    assert.equal(groupLive(Number(done.stdout.trim().split('\n')[0])), false)
+  })
+
+  test('셸이 끝난 뒤 정리 유예 중에 멈춰도 남은 손자까지 끝낸다', { timeout: 30_000 }, async (t) => {
+    // stopChildren 은 이 프로세스의 상태를 바꾸므로 별도 프로세스에서 돌린다
+    const tmp = mkdtempSync(join(tmpdir(), 'run-group-stop-'))
+    t.after(() => rmSync(tmp, { recursive: true, force: true }))
+    const pidFile = join(tmp, 'pgid')
+    const proc = fileURLToPath(new URL('../scripts/lib/proc.ts', import.meta.url))
+    // 손자는 TERM 을 무시하고 출력을 돌려 셸이 끝나도 남는다
+    const ignore = join(tmp, 'ignore.sh')
+    writeFileSync(ignore, "trap '' TERM\nsleep 30\n")
+    const script = join(tmp, 'stop.mjs')
+    const command = `echo $$ > ${pidFile}; sh ${ignore} >/dev/null 2>&1 & exit 0`
+    writeFileSync(script, [
+      "import { existsSync } from 'node:fs'",
+      `import { runGroup, stopChildren } from ${JSON.stringify(proc)}`,
+      `runGroup(['sh', '-c', ${JSON.stringify(command)}], { timeoutMs: 20_000 })`,
+      `while (!existsSync(${JSON.stringify(pidFile)})) await new Promise((r) => setTimeout(r, 20))`,
+      // 셸은 끝났고 runGroup 은 KILL 유예를 기다리는 중이다
+      'await new Promise((r) => setTimeout(r, 500))',
+      "await stopChildren('SIGTERM', 300)",
+      'process.exit(0)',
+    ].join('\n'))
+    const done = spawnSync(NODE, [script], { encoding: 'utf8', env: { ...process.env, ORCH_KILL_GRACE_SEC: '10' }, timeout: 20_000 })
+    assert.equal(done.status, 0, done.stderr)
+    const group = Number(readFileSync(pidFile, 'utf8').trim())
+    await new Promise((r) => setTimeout(r, 500))
+    const live = groupLive(group)
+    if (live) killGroup(group, 'SIGKILL')
+    assert.equal(live, false)
+  })
+
+  test('좀비만 남은 그룹은 살아 있지 않은 것으로 본다', () => {
+    const ps = ['  1 Ss', ' 42 Z', ' 42 Z+', ' 77 S'].join('\n')
+    assert.equal(liveInGroup(ps, 42), false)
+    assert.equal(liveInGroup(ps + '\n 42 S+', 42), true)
+    assert.equal(liveInGroup(ps, 77), true)
+    assert.equal(liveInGroup('', 42), false)
+  })
+
+  test('출력 한도를 넘으면 overflow 다', async () => {
+    const done = await runGroup(node('process.stdout.write("x".repeat(2048)); setInterval(() => {}, 1000)'), { timeoutMs: 10_000, maxBuffer: 1024 })
+    assert.equal(done.outcome.kind, 'overflow')
+  })
+
+  test('실행 파일이 없으면 spawn 이다', async () => {
+    const done = await runGroup(['/nonexistent-orch-spec/missing-bin'], { timeoutMs: 1_000 })
+    assert.equal(done.outcome.kind, 'spawn')
   })
 })

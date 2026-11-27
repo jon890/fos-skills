@@ -78,7 +78,8 @@
 //     1. 질문 확인. steps/questions.ts
 //     2. 열린 PR 조회. steps/prs.ts
 //     3. 보드 동기화(워크트리 정리 전). steps/board.ts. 이어서 사용자 결정 알림. steps/decisions.ts
-//     3-1. 업무 주소 채우기. steps/task-links.ts
+//     3-1. 사건 대기. steps/wait-events.ts. 보드 동기화가 시각 대기를 푼 같은 틱에 사건 대기 줄을 본다
+//     3-2. 업무 주소 채우기. steps/task-links.ts
 //     4. 정리. steps/cleanup.ts
 //     5. CI 감시. steps/ci.ts
 //     5-1. 머지 알림. steps/merged.ts
@@ -98,9 +99,9 @@
 //     14. 배포 뒤 할 일 알림. steps/followups.ts
 //
 // 느린 단계: pipeline.slow_sec 이 있으면 부모는 틱을 둘로 나눠 띄운다(lifecycle.ts 머리 주석의 「틱 자식」).
-//     빠른 틱(--fast)은 위 「틱」 에서 3 의 보드 동기화, 3-1, 4 를 빼고 돈다. 머지, CI, 메시지 확인, 사용자 결정 알림이 tick_sec 마다 돈다.
+//     빠른 틱(--fast)은 위 「틱」 에서 3 의 보드 동기화, 3-1, 3-2, 4 를 빼고 돈다. 머지, CI, 메시지 확인, 사용자 결정 알림이 tick_sec 마다 돈다.
 //     사용자 결정 알림은 질문 확인이 읽은 미답변 질문을 쓰므로 빠른 틱에 남긴다.
-//     느린 틱(--slow)은 질문 확인 대신 Run 마다 완료 보고만 읽은 뒤(steps/questions.ts 의 loadCompletions) 2, 3 의 보드 동기화, 3-1, 4 만 돈다.
+//     느린 틱(--slow)은 질문 확인 대신 Run 마다 완료 보고만 읽은 뒤(steps/questions.ts 의 loadCompletions) 2, 3 의 보드 동기화, 3-1, 3-2, 4 만 돈다.
 //     느린 틱의 정리는 worker 목록을 읽지 못해도 오류로 알리지 않는다. 같은 Orca 장애를 빠른 틱의 질문 확인이 알린다.
 //     결과 줄에는 tick_at, errors, open_prs 만 담고 부모는 errors 만 합친다. 보드 동기화와 정리가 한 틱에 몇 분씩 걸려
 //     빠른 단계를 그만큼 늦추던 것을 막는다. slow_sec 이 없거나 --once 면 지금처럼 한 틱에 모두 돈다
@@ -149,6 +150,7 @@ import { settleConflicts } from './steps/conflicts.ts'
 import { context, initialState, stepContext } from './steps/context.ts'
 import type { Context, StepResult, StepState, TickResult } from './steps/context.ts'
 import { fillTaskLinks } from './steps/task-links.ts'
+import { checkWaitEventLines } from './steps/wait-events.ts'
 import { notifyPendingDecisions } from './steps/decisions.ts'
 import { checkHeavySlot } from './steps/heavy-slot.ts'
 import { notifyMerged } from './steps/merged.ts'
@@ -207,6 +209,7 @@ async function tick(config: Context, n: number, kind: TickKind): Promise<number>
     // 결정 알림은 질문 확인이 읽은 미답변 질문(state.pending)을 쓰므로 질문 확인이 도는 틱에 함께 돈다
     if (fast) collect(state, await notifyPendingDecisions(ctx, state))
     if (slow) {
+      collect(state, await checkWaitEventLines(ctx, state))
       collect(state, await fillTaskLinks(ctx, state))
       collect(state, await sweepRuns(ctx, state))
     }

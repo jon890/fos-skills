@@ -40,3 +40,10 @@ export function waitTimeMs(condition: string | null): number | null {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day &&
     date.getHours() === hour && date.getMinutes() === minute ? date.getTime() : null
 }
+
+// 사건 대기 줄의 조건 `사건 <이름>` 에서 이름을 읽는다. 이름 규칙이 틀리면 null 이다(사람이 끝내는 글 조건으로 본다)
+export const WAIT_EVENT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/
+export function waitEventOf(condition: string | null): string | null {
+  const parts = /^사건 (\S+)$/.exec(condition ?? '')
+  return parts && WAIT_EVENT_NAME.test(parts[1]) ? parts[1] : null
+}

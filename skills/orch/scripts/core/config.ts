@@ -85,7 +85,8 @@ export const CONTRACTS_KEYS: readonly string[] = ['merge_command', 'paths']
 
 // task 는 core/task-adapters.ts 의 taskAdapterOf 가 판정한다.
 // board 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 board 행이다. 값의 판정은 lib/milestones.ts 의 boardSettings 가 소유한다.
-export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line', 'auto_advance', 'task']
+// wait_events 는 core/wait-events.ts 의 waitEventsOf 가 판정한다.
+export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line', 'auto_advance', 'task', 'wait_events']
 
 // review 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 review 행이다. launch-worker 가 리뷰 worker 를 띄울 때 읽는다.
 export const REVIEW_KEYS: readonly string[] = ['prepare']

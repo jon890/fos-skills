@@ -26,6 +26,8 @@
 // 띄우기 전에 이 프로세스의 stdout 과 stderr 를 비운다. macOS 에서 파이프로 가는 쓰기는 비동기라,
 // 비우지 않으면 앞서 쓴 줄이 자식의 출력보다 뒤에 나온다.
 //
+// runGroup 은 새 그룹으로 띄운 명령이 그룹째 끝난 뒤에 돌아오고 결과를 종류로 낸다. 판정은 그 함수 위 주석이 소유한다.
+//
 // execCommand 는 이 프로세스를 다른 명령으로 바꾼다(execvp). 옛 명령이 os.execvp 로 명령을 이어받던 자리
 // (heavy-slot 의 가벼운 검사와 중첩 호출, mem-gate 의 명령)에 쓴다. pid, 신호, 표준 입출력이 그대로 명령에 넘어간다.
 // 판정과 함정은 그 함수 위 주석이 소유한다.
@@ -303,6 +305,115 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
     if (opts.signal?.aborted) terminate()
     else opts.signal?.addEventListener('abort', terminate, { once: true })
   })
+}
+
+// runGroup 의 결과 종류. exit 는 셸이 스스로 끝난 것이고, 나머지는 끝내지 못했거나 이 함수가 끝낸 것이다
+export type GroupOutcome =
+  | { kind: 'exit'; code: number }
+  | { kind: 'timeout' | 'overflow' | 'spawn' | 'orphan'; reason: string }
+export type GroupResult = { outcome: GroupOutcome; stdout: string; stderr: string }
+export type GroupOptions = Pick<RunOptions, 'cwd' | 'env' | 'maxBuffer'> & { timeoutMs: number }
+
+const GROUP_POLL_MS = 50
+
+// ps -A -o pgid=,stat= 의 출력에서 그룹 pgid 에 좀비(stat 이 Z 로 시작)가 아닌 프로세스가 있는지 본다.
+// 고아를 거두지 않는 PID 1 아래(일부 Linux 컨테이너)에서는 끝낸 손자가 좀비로 남아 kill(-pgid, 0) 이 계속 성공한다
+export function liveInGroup(psOutput: string, pgid: number): boolean {
+  return psOutput.split('\n').some((line) => {
+    const [group, stat] = line.trim().split(/\s+/)
+    return Number(group) === pgid && !!stat && !stat.startsWith('Z')
+  })
+}
+
+// 그룹에 실행 중인 프로세스가 남았는지. ps 를 읽지 못하면 kill(-pgid, 0) 의 판정을 그대로 쓴다
+export function groupLive(pid: number): boolean {
+  if (!groupAlive(pid)) return false
+  const ps = spawnSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8', timeout: 5_000 })
+  if (ps.status !== 0 || typeof ps.stdout !== 'string') return true
+  return liveInGroup(ps.stdout, pid)
+}
+
+async function waitGroupGone(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (groupLive(pid)) {
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, GROUP_POLL_MS))
+  }
+  return true
+}
+
+// 새 프로세스 그룹으로 띄우고 그룹이 모두 끝난 뒤에 돌아온다. 사건 대기(lib/wait-events.ts)가 쓴다.
+// runAsync 와 다른 점: 셸이 끝나도 그룹에 남은 프로세스(TERM 을 무시한 손자, 백그라운드 손자)를 끝낸 뒤 돌아오고,
+// 시간 초과와 출력 한도 초과를 종료 코드가 아니라 결과 종류로 돌려준다. runAsync 는 출력 초과를 1 로 내 「아직」 과 구분되지 않는다.
+// 끝내기: 그룹에 TERM, killGraceMs 뒤 KILL, 다시 killGraceMs 까지 그룹이 사라지기를 기다린다. 그래도 남으면 orphan 이다.
+// 좀비만 남은 그룹은 사라진 것으로 본다(liveInGroup).
+// 셸이 스스로 끝났는데 그룹에 남은 것이 있으면 같은 순서로 끝내고, 끝냈으면 셸의 종료 코드로 exit 를 낸다.
+export async function runGroup(argv: string[], opts: GroupOptions): Promise<GroupResult> {
+  const maxBuffer = opts.maxBuffer ?? DEFAULT_MAX_BUFFER
+  if (stopSignal) return { outcome: { kind: 'spawn', reason: stoppedReason(argv, stopSignal) }, stdout: '', stderr: '' }
+  const out: Buffer[] = []
+  const err: Buffer[] = []
+  const size = { out: 0, err: 0 }
+  let stop: 'timeout' | 'overflow' | null = null
+  let child: ChildProcess
+  try {
+    child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  } catch (e) {
+    return { outcome: { kind: 'spawn', reason: (e as Error).message }, stdout: '', stderr: '' }
+  }
+  const text = () => ({ stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') })
+  const spawned = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
+    child.once('spawn', () => resolve(null))
+    child.once('error', (e: NodeJS.ErrnoException) => resolve(child.pid === undefined ? e : null))
+  })
+  if (spawned) return { outcome: { kind: 'spawn', reason: spawnFailure(argv, spawned, '', '').stderr }, ...text() }
+  const pid = child.pid as number
+  // 셸이 끝나도(close) 그룹 정리가 끝날 때까지 진행 중인 자식으로 둔다. 그사이 stopChildren 이 불려도 남은 손자에 신호가 간다
+  const entry: Tracked = { child, group: true }
+  tracked.add(entry)
+  try {
+    let stopNow: () => void = () => {}
+    const stopped = new Promise<void>((resolve) => { stopNow = resolve })
+    const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
+      if (stop) return
+      size[key] += chunk.length
+      if (size[key] > maxBuffer) {
+        stop = 'overflow'
+        stopNow()
+        return
+      }
+      chunks.push(chunk)
+    }
+    child.stdout!.on('data', collect(out, 'out'))
+    child.stderr!.on('data', collect(err, 'err'))
+    const exited = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+      child.once('exit', (status, signal) => resolve({ status, signal }))
+    })
+    const timer = setTimeout(() => { stop ??= 'timeout'; stopNow() }, opts.timeoutMs)
+    const first = await Promise.race([exited.then((end) => ({ end })), stopped.then(() => null)])
+    clearTimeout(timer)
+    // 셸이 스스로 끝났어도 그룹에 남은 것이 있으면 끝낸다. 끝내는 동안 쓴 출력은 버리지 않고 받는다
+    let gone = !groupLive(pid)
+    if (!gone) {
+      killGroup(pid, 'SIGTERM')
+      gone = await waitGroupGone(pid, killGraceMs())
+      if (!gone) {
+        killGroup(pid, 'SIGKILL')
+        gone = await waitGroupGone(pid, killGraceMs())
+      }
+    }
+    child.stdout!.destroy()
+    child.stderr!.destroy()
+    const result = text()
+    // 남은 그룹에 셸이 있으면 exit 가 오지 않으므로 기다리지 않는다
+    if (!gone) return { outcome: { kind: 'orphan', reason: `그룹 ${pid} 에 KILL 뒤에도 프로세스가 남았다` }, ...result }
+    const end = first?.end ?? await exited
+    if (stop === 'timeout') return { outcome: { kind: 'timeout', reason: `${Math.round(opts.timeoutMs / 1000)}초 안에 끝나지 않아 끊었다` }, ...result }
+    if (stop === 'overflow') return { outcome: { kind: 'overflow', reason: `출력이 한도 ${maxBuffer} 바이트를 넘어 끊었다` }, ...result }
+    return { outcome: { kind: 'exit', code: end.signal ? signalCode(end.signal) : end.status ?? 1 }, ...result }
+  } finally {
+    tracked.delete(entry)
+  }
 }
 
 function flush(stream: NodeJS.WriteStream): Promise<void> {

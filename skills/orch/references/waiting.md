@@ -37,7 +37,7 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 
 | 방식 | kind |
 |---|---|
-| 바로 | STEP-READY, CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, DONE-RETURNED(머지 전 완료 보고를 worker 에게 되돌렸다는 알림. 코디네이터는 그 worker 를 완료로 보지 않는다), LOOP-DEAD 류, LOOP-UPDATED, LOOP-UPDATE-FAIL, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
+| 바로 | STEP-READY, WAIT-EVENT(사건 대기 줄이 풀렸다. 그 항목의 다음 단계를 본다), WAIT-EVENT-ERROR(사건 확인이 실패했다. 같은 줄의 같은 실패는 한 번만), CI-FAILED, QUEUE-CONFLICT, CONFLICT-*, WORKER-LOST, UNANSWERED, WORKER-STALLED, WORKER-IDLE, DONE-SUSPECT, DONE-RETURNED(머지 전 완료 보고를 worker 에게 되돌렸다는 알림. 코디네이터는 그 worker 를 완료로 보지 않는다), LOOP-DEAD 류, LOOP-UPDATED, LOOP-UPDATE-FAIL, DECISION-PENDING, HEAVY-SLOT-HELD, FINISH-MISSING, BOARD-UNMATCHED, QUEUE-DROPPED(머지 큐가 뺀 PR 번호와 이유. 같은 PR 의 같은 이유는 한 번만). 표에 없는 kind 도 바로 보낸다 |
 | 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
 
 모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 이유의 WATCH-ERROR 가 연속 세 번째 틱이면 바로 한 번 보낸다. 부모의 틱 실패(`tick`)도 같고, 본문 앞에 저장소 루트 폴더 이름을 쓰며 원인 줄을 담는다.
