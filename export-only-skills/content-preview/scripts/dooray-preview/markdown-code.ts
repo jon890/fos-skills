@@ -1,9 +1,8 @@
-// 링크 검사에서 코드 예제를 가린다. 원문에서 표시 글을 다시 읽을 수 있도록 길이와 줄바꿈을 보존한다.
+// 링크 검사에서 코드 블록을 가린다. 원문의 표시 글을 읽을 수 있도록 길이와 줄바꿈을 보존한다.
 const FENCE = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/u
 const QUOTE = /^ {0,3}> ?/u
 const LIST_ITEM = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| |(?=\r?$))/u
 const HEADING_OR_BREAK = /^ {0,3}(?:#{1,6}(?: |\r?$)|(?:\* *){3,}\r?$|(?:- *){3,}\r?$|(?:_ *){3,}\r?$)/u
-const INLINE_CODE = /(?<![`\\])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/gu
 
 type Container = { kind: 'quote' } | { kind: 'list'; indent: number }
 type Fence = { line: number; delimiter: string }
@@ -108,9 +107,7 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
       fence = { line: index, delimiter: start[1] }
       paragraph = false
       blockStarts.add(index)
-      // 닫는 줄이 없으면 본문을 검사한다. 여는 기호만 인라인 코드 검사에서 뺀다.
-      const markerStart = line.indexOf(start[1])
-      lines[index] = line.slice(0, markerStart) + blank(start[1]) + line.slice(markerStart + start[1].length)
+      // 닫는 줄이 확인될 때까지 여는 줄과 본문을 그대로 둔다.
       continue
     }
     paragraph = !HEADING_OR_BREAK.test(content)
@@ -121,13 +118,13 @@ export function* maskedBlocks(md: string): Generator<{ offset: number; text: str
     }
   }
 
-  // 인라인 코드와 링크 표시 글은 같은 블록 안에서만 줄을 넘을 수 있다.
+  // 링크 표시 글은 같은 블록 안에서만 줄을 넘을 수 있다.
   blockStarts.add(lines.length)
   let start = 0
   let offset = 0
   for (const end of blockStarts) {
     const block = lines.slice(start, end).join('')
-    if (block.length > 0) yield { offset, text: block.replace(INLINE_CODE, blank) }
+    if (block.length > 0) yield { offset, text: block }
     offset += block.length
     start = end
   }

@@ -10,8 +10,10 @@ const BRACKET = /\\[^\r\n]|[\[\]]/gu
 const WORKFLOW = /^(registered|working|closed|backlog)$/
 // 정상 Markdown 파서가 버릴 수 있는 대괄호도 검사할 수 있도록 표시 글을 그대로 읽는다.
 const INLINE_LINK = /(?<!\\)\[((?:\\[^\r\n]|(?!\]\()[^\\])*?)\]\([ \t\r\n]*(<[^\s<>]+>|[^\s<>()]+)(?:[ \t\r\n]+(?:"((?:\\[^\r\n]|[^"\\])*)"|'((?:\\[^\r\n]|[^'\\])*)'|\(((?:\\[^\r\n]|[^()\\])*)\)))?[ \t\r\n]*\)/gu
-const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:dooray|https?):\/\/[^\s<>]+)>|(?<address>(?:dooray|https?):\/\/[^\s<>()\[\]"']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"']+)/gimu
+const OTHER_LINK = /^(?:[ \t]*\[(?:\\[^\r\n]|[^\[\]\\])+\]:[ \t\r\n]*)(?<reference><[^\s<>]+>|[^\s<>`]+)|(?<anchor><a\b(?:[^>"']|"[^"]*"|'[^']*')*>)|<(?<auto>(?:dooray|https?):\/\/[^\s<>]+)>|(?<address>(?:dooray|https?):\/\/[^\s<>()\[\]"`']+|(?<![\w/])\/(?:project\/tasks|task)\/[^\s<>()\[\]"`']+)/gimu
 const HTML_ATTRIBUTE = /\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/gu
+// 정상 링크와 같은 꼴의 인라인 코드 예제도 막는다. 백틱이 링크 검사에서 문장을 가리지는 않는다.
+const CODE_EXAMPLE = /(?<![`\\])(`+)(?!`)[^|]*?(?<!`)\1(?!`)/gu
 
 type Post = { project: { code: string }; number: string | number; subject?: string; workflowClass?: string }
 type Lookup = Post | 'missing-cli' | 'unavailable'
@@ -64,7 +66,7 @@ function unwrapAddress(target: string): string {
 }
 
 type Link = {
-  kind: 'inline' | '참조식 정의' | 'HTML 링크' | '자동 링크' | '주소만 적은 링크'
+  kind: 'inline' | '참조식 정의' | 'HTML 링크' | '자동 링크' | '주소만 적은 링크' | '인라인 코드 예제'
   target: string
   label?: string
   workflow?: string
@@ -93,18 +95,23 @@ function* otherLinks(text: string): Generator<Link> {
 function* findLinks(md: string): Generator<Link> {
   for (const { offset, text } of maskedBlocks(md)) {
     let cursor = 0
+    const codeExamples = text.matchAll(CODE_EXAMPLE)
+    let code = codeExamples.next().value
     for (const match of text.matchAll(INLINE_LINK)) {
       const start = match.index + 1
       const candidate = md.slice(offset + start, offset + start + match[1].length)
       const labelAt = labelStart(candidate)
-      yield* otherLinks(text.slice(cursor, match.index + labelAt))
+      const labelIndex = match.index + labelAt
+      yield* otherLinks(text.slice(cursor, labelIndex))
+      cursor = match.index + match[0].length
+      while (code && code.index + code[0].length <= labelIndex) code = codeExamples.next().value
+      const codeExample = code && code.index < labelIndex && code.index + code[0].length > cursor
       yield {
-        kind: 'inline',
+        kind: codeExample ? '인라인 코드 예제' : 'inline',
         label: candidate.slice(labelAt).replace(/[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/gu, ' '),
         target: unwrapAddress(match[2]),
         workflow: match[2].startsWith('<') ? undefined : match[3],
       }
-      cursor = match.index + match[0].length
     }
     yield* otherLinks(text.slice(cursor))
   }
@@ -138,7 +145,7 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
 
     const ref = typeof post === 'string' ? undefined : `${post.project.code}/${post.number}`
     const shown = POST_REF.exec(label)
-    const mismatch = inline && ref !== undefined && (!shown || `${shown[1]}/${shown[2]}` !== ref)
+    const mismatch = shownLabel !== undefined && ref !== undefined && (!shown || `${shown[1]}/${shown[2]}` !== ref)
     const actualLabel = ref && typeof post !== 'string'
       ? escapeBrackets(`${ref}${typeof post.subject === 'string' ? ` ${post.subject.replace(/\s+/gu, ' ').trim()}` : ''}`)
       : undefined
@@ -148,9 +155,10 @@ function checkBody(md: string, cache: Cache): { errors: string[]; warnings: stri
     const replacement = shown && !mismatch ? fixedLabel : actualLabel ?? `PROJECT/NUMBER ${fixedLabel || '제목'}`
     const example = `[${replacement}](dooray://${internal?.[1] ?? 'ORG_ID'}/tasks/${id} "${workflow}")`
 
-    const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}`
+    const fix = `\n  고친 예 ${example}${webId ? ' (ORG_ID 에 조직 ID 를 넣으세요.)' : ''}\n  예시는 코드 블록으로 쓰세요.`
     if (fixedLabel !== label) errors.push(`오류: 업무 링크 표시 글 「${label}」의 대괄호를 &#91; 과 &#93; 으로 바꾸세요.${fix}`)
     if (webId) errors.push(`오류: 두레이 업무 웹 주소를 dooray:// 링크로 바꾸세요.${fix}`)
+    else if (kind === '인라인 코드 예제') errors.push(`오류: 인라인 코드에 두레이 업무 링크가 있습니다.${fix}`)
     else if (!inline) errors.push(`오류: 두레이 업무를 가리키는 ${kind}를 표시 글과 상태값을 갖춘 인라인 링크로 바꾸세요.${fix}`)
     else if (target !== internal?.[0] || !WORKFLOW.test(shownWorkflow ?? '')) {
       errors.push(`오류: 두레이 업무 주소는 dooray://조직ID/tasks/업무ID 꼴로 쓰고 등록·진행·완료 등의 상태값을 큰따옴표로 감싸세요.${fix}`)

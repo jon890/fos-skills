@@ -400,7 +400,7 @@ describe('dooray-preview task, comment', () => {
 
   test('코드 예제 안의 다른 링크 형식은 검사하지 않는다', () => {
     const examples = unsupportedLinks.map(([, makeBody]) => makeBody(internalAddress))
-    const body = ['```text', ...examples, '```', '`<' + internalAddress + '>`'].join('\n')
+    const body = ['```text', ...examples, '```'].join('\n')
     const done = preview('task', body)
     assert.equal(done.code, 0, done.stderr)
     assert.deepEqual(done.calls, [])
@@ -439,7 +439,7 @@ describe('dooray-preview task, comment', () => {
   test('코드 예제와 업무 이외 링크는 검사하지 않는다', () => {
     const link = '[example/18 [제목]](dooray://example/tasks/post-example "working")'
     const body = [
-      '````markdown', '```', link, '````', '`' + link + '`',
+      '````markdown', '```', link, '````',
       '[example](dooray://example/pages/page-example "publish")',
       '[example](https://example.com/project/tasks/post-example)',
       '[example](https://example.dooray.com.example.com/project/tasks/post-example)',
@@ -498,13 +498,14 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
-  test('인라인 코드는 문단과 목록 항목, 인용의 경계를 넘어 짝짓지 않는다', () => {
+  test('문단, 목록 항목, 인용, 표의 칸에 백틱이 있어도 업무 링크를 검사한다', () => {
     const link = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
     for (const lines of [
       ['앞 문단의 백틱 `', '', link, '', '뒤 문단의 백틱 `'],
       ['- 앞 항목의 백틱 `', `- ${link}`, '- 뒤 항목의 백틱 `'],
       ['> 앞 문단의 백틱 `', '>', `> ${link}`, '>', '> 뒤 문단의 백틱 `'],
       ['앞 문단의 백틱 `', `# ${link}`, '뒤 문단의 백틱 `'],
+      ['| 앞 | 업무 | 뒤 |', '| --- | --- | --- |', '| 백틱 ` | ' + link + ' | 백틱 ` |'],
     ]) {
       const done = preview('comment', lines.join('\n'))
       assert.equal(done.code, 1)
@@ -512,7 +513,25 @@ describe('dooray-preview task, comment', () => {
     }
   })
 
-  test('같은 문단 안의 여러 줄 인라인 코드는 업무 링크 검사에서 뺀다', () => {
+  test('정상 업무 링크는 표의 다른 칸에 백틱이 있어도 통과한다', () => {
+    const link = '[example/18 제목](dooray://example/tasks/post-example "working")'
+    const body = ['| 앞 | 업무 | 뒤 |', '| --- | --- | --- |', '| 백틱 ` | ' + link + ' | 백틱 ` |'].join('\n')
+    const done = preview('comment', body)
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(done.calls, ['--json post get --id post-example'])
+  })
+
+  test('인라인 코드의 업무 주소나 링크는 막고 코드 블록을 안내한다', () => {
+    const link = '[example/18 제목](' + internalAddress + ' "working")'
+    for (const example of [internalAddress, webAddress, '<' + internalAddress + '>', link, '예시 ' + link]) {
+      const done = preview('comment', '`' + example + '`')
+      assert.equal(done.code, 1, done.stderr)
+      assert.match(done.stderr, /예시는 코드 블록으로 쓰세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+    }
+  })
+
+  test('같은 문단 안의 여러 줄 인라인 코드도 업무 링크를 검사한다', () => {
     const inside = '[예제](https://example.dooray.com/project/tasks/post-example-code)'
     const outside = '[example/18 제목](https://example.dooray.com/project/tasks/post-example)'
     for (const lines of [
@@ -523,7 +542,8 @@ describe('dooray-preview task, comment', () => {
     ]) {
       const done = preview('task', [...lines, '', outside].join('\n'))
       assert.equal(done.code, 1)
-      assert.deepEqual(done.calls, ['--json post get --id post-example'])
+      assert.match(done.stderr, /예시는 코드 블록으로 쓰세요/u)
+      assert.deepEqual(done.calls, ['--json post get --id post-example-code', '--json post get --id post-example'])
     }
   })
 
