@@ -88,11 +88,12 @@ flowchart TD
 기능 단계: implementation 3/3 verify docs-consolidate
 ```
 
-- 첫 낱말들이 그 PR 이 맡는 단계다. 순서대로, 건너뛰지 않고 적는다. `implementation` 만 `k/n` 을 붙여 몇 번째 구현 PR 인지 적고, 없으면 `1/1` 이다.
-- `spec-lint` 의 발견 `단계`: `## 할 일` 첫 줄이 `루프를 쓴다(...)` 인데 `기능 단계:` 줄이 없거나, 모르는 단계 이름, 거꾸로 된 순서, `k > n` 이면 막는다. `루프 없이:`, `리뷰 PR:`, `중간 과정:` 지시서는 보지 않는다. 보드와 대조하는 시작 단계 규칙은 「띄울 때 항목 찾기」 에 있다.
+- 첫 낱말들이 그 PR 이 맡는 단계다. 순서대로, 건너뛰지 않고 적는다. `implementation` 만 `k/n` 을 붙여 몇 번째 구현 PR 인지 적고, 없으면 `1/1` 이다. `k < n` 인 구현 PR 은 `docs-consolidate` 를 맡을 수 없다. 기능의 마지막 단계라 남은 구현 차수보다 앞설 수 없다.
+- `spec-lint` 의 발견 `단계`: `## 할 일` 첫 줄이 `루프를 쓴다(...)` 인데 `기능 단계:` 줄이 없거나, 모르는 단계 이름, 거꾸로 된 순서, `k > n`, `k < n` 인데 `docs-consolidate` 를 맡으면 막는다. `루프 없이:`, `리뷰 PR:`, `중간 과정:` 지시서는 보지 않는다. 보드와 대조하는 시작 단계 규칙은 「띄울 때 항목 찾기」 에 있다.
 - 단계 줄: 띄우기가 맡은 단계마다 `N. 기능 <단계>` 줄을 쓴다(`implementation` 은 `기능 implementation 2/3`). 시작 단계와 같은 `[ask] 기능 <단계>` 줄이 이미 있으면 새로 더하지 않고 그 줄의 `[ask]` 를 지운다. 기능 항목에는 기본 마일스톤(`[pr] PR`, `[merge] 머지`)과 항목 `stages` 칸을 만들지 않는다.
 - PR 이 맡은 줄 기록: `worker-add --feature-steps 3,4` 로 그 worker 줄에 단계 줄 번호를 남긴다. 같은 워크트리를 다시 띄우면(재시도, `--resume-remote`) 기존 값을 그대로 둔다. 머지 반영은 PR 번호로 worker 줄(`pr`)을 찾아 이 번호들만 끝낸다. 번호 범위가 아니라 목록이라, 앞에 남은 다른 대기 줄이나 수동 줄을 끝내지 않는다. `clear-done` 은 `stages` 처럼 이 번호도 새 번호로 바꾼다.
-- 다음 단계 계산(`nextFeatureStage(covered)`): 맡은 단계 가운데 마지막이 `implementation k/n` 이고 `k < n` 이면 `implementation k+1/n`, 그 밖에는 순서상 다음 단계다. `docs-consolidate` 를 맡았으면 다음이 없고 기능의 마지막 단계다.
+- 다음 단계 계산(`nextFeatureStage(covered)`): 남은 구현 차수가 먼저다. 맡은 단계에 `implementation k/n` 이 있고 `k < n` 이면, 뒤에 `verify` 를 함께 맡았어도 다음은 `implementation k+1/n` 이다. 구현 PR 마다 그 PR 의 검증을 함께 하기 때문이다([feature-loop](../../../skills/orch/references/feature-loop.md) 「worker 와 PR」). 그 밖에는 맡은 단계 가운데 마지막의 순서상 다음 단계다. `docs-consolidate` 를 맡았으면 다음이 없고 기능의 마지막 단계다.
+  - 예: `implementation 1/2 verify` 머지 뒤 다음은 `implementation 2/2` 다. `implementation 2/2 verify` 머지 뒤 다음은 `docs-consolidate` 다.
 
 ### 단계 PR 머지 뒤
 
@@ -236,10 +237,10 @@ board.ts feature-advance <id> --pr <N> --done 3,4 [--add "[ask] 기능 implement
 | --- | --- | --- |
 | REQ1 | `board-attach.spec.ts`(가짜 보드와 `registerBoard`) | 루프 줄 스펙 경로로 `feature`, `feature-repo` 칸이 채워진다. 기능이 아닌 지시서는 칸이 비고 지금의 마일스톤 줄이 생긴다 |
 | REQ2 | `board-sync.spec.ts`(가짜 gh 와 보드) | 「`기능 technical-design` 단계 PR 머지 → 항목 doing, `[ask] 기능 implementation 1/1` 줄이 생긴다」. `implementation 2/3` 머지 뒤 `3/3` 줄, `docs-consolidate` 머지 뒤 done. 같은 틱을 두 번 돌려도 줄이 하나다 |
-| REQ2 | `board-sync.spec.ts` | `implementation 1/2 verify` 를 맡은 중간 PR 의 머지는 그 두 줄만 끝내고, 앞에 남은 `[wait]` 줄과 수동 줄은 남긴다 |
+| REQ2 | `board-sync.spec.ts` | `implementation 1/2 verify` 를 맡은 중간 PR 의 머지는 그 두 줄만 끝내고, 앞에 남은 `[wait]` 줄과 수동 줄은 남긴다. 다음 줄은 `[ask] 기능 implementation 2/2` 이고 항목은 doing 이다(`docs-consolidate` 줄이 생기거나 done 이 되지 않는다) |
 | REQ2 | `finish-pr` 테스트 | 마무리가 먼저 돈 경우에도 같은 결과다. 그 뒤 `board-sync` 는 아무것도 하지 않는다. 설계 PR 의 `after-deploy` 입력 `last_of_task` 가 거짓이다 |
 | REQ2 | `board.spec.ts`(work-board) | `feature-advance` 가 `--if-rev` 가 다르면 아무것도 저장하지 않고, 같으면 줄, 상태, `merged-pr` 를 한 번에 저장한다 |
-| REQ2 | `core/feature-stages.ts` 단위 테스트 | 다음 단계 계산, `featureMergePlan`, `기능 단계:` 판독의 경계값 |
+| REQ2 | `core/feature-stages.ts` 단위 테스트 | 다음 단계 계산(남은 구현 차수가 `verify` 보다 먼저), `featureMergePlan`, `기능 단계:` 판독의 경계값 |
 | REQ3 | `spec-lint` 테스트, `findBoardItem` 단위 테스트 | 순서 1–4 의 각 경우, `many`, `none`, `conflict`, 같은 업무의 다른 기능 항목을 고르지 않음, 같은 상대 경로의 다른 저장소 항목을 고르지 않음, `보드 항목 없음:` 빈 이유, 보드 파일 없음, 리뷰·중간 과정 지시서 제외, 거부 문구 형식, 막을 때 종료 코드 1 |
 | REQ3 | `spec-lint` 테스트 | 보드의 `[ask] 기능 technical-design` 항목에 `기능 단계: implementation 1/1` 지시서를 막는다. 새 항목의 시작 단계 규칙 |
 | REQ3 | `launch-worker` 테스트 | `루프 없이:` 버그 수정이 `보드 항목 id:` 로 새 항목을 만든다. id 도 붙일 항목도 없으면 종료 코드 5 로 멈추고 워크트리를 만들지 않는다 |
