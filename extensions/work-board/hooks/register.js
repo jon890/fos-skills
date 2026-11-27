@@ -7,7 +7,7 @@ import { isBoardPriority } from '../../../modules/work-board/priority.ts'
 import { compareFosPluginVersions } from '../../../modules/kit/fos-plugin-version.ts'
 import { STEP, hideEventTag } from './event-tags.js'
 import { PR_MS, createNetworkPoll } from './network-poll.js'
-import { updateSchedules, visibleSchedules, scheduleLine } from './schedules.js'
+import { updateSchedules, visibleSchedules, sortSchedules, scheduleLine, scheduleDetail, scheduleSoon } from './schedules.js'
 /** @typedef {import('../../../types/index.d.ts').BoardSchedule} BoardSchedule */
 
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
@@ -2433,9 +2433,32 @@ export function register(on) {
     // 접힌 보기에서 단추가 사라진 목록(줄이 비었거나 항목이 사라짐)은 펼침 상태를 버린다. 다시 생기면 접힌 채 나온다
     // 보드를 읽지 못한 동안에는 지우지 않는다
     const sectionViews = SECTIONS.slice(1).flatMap(manualView)
-    const activeSchedules = visibleSchedules(schedules, await $.clock.now())
-    const scheduleView = activeSchedules.length ? [box('schedules', 'blue', '예약  ' + activeSchedules.length,
-      activeSchedules.map((row) => Text({ key: 'schedule-' + row.id, wrap: 'wrap', children: [scheduleLine(row)] })))] : []
+    // 예약은 다음 실행 순서다. 한 시간 안에 도는 줄은 노란색이다. 줄을 누르면 원래 식, 만료, 프롬프트 전문을 펼친다
+    // 펼침 상태는 단계 요약 줄과 같은 folded 에 「schedule:<예약 id>:detail」 로 둔다
+    const scheduleNow = await $.clock.now()
+    const activeSchedules = sortSchedules(visibleSchedules(schedules, scheduleNow))
+    const scheduleRow = (row) => {
+      const id = 'schedule:' + row.id + ':detail'
+      shownFolds.add(id)
+      const open = folded.has(id)
+      return Box({ key: 'schedule-' + row.id, flexDirection: 'column', children: [
+        Button({
+          key: 'fold-' + id,
+          plain: true,
+          onPress: () => {
+            if (dismissMode) return
+            if (!folded.delete(id)) folded.add(id)
+            $.ui.invalidate('ui.render')
+          },
+          children: [Text({ wrap: 'wrap', ...(scheduleSoon(row, scheduleNow) ? { color: 'yellow', bold: true } : {}),
+            children: [scheduleLine(row, scheduleNow) + (open ? '  접기' : '')] })],
+        }),
+        ...(open ? scheduleDetail(row).map((line, i) => Box({ key: 'schedule-' + row.id + '-' + i, paddingLeft: 2,
+          children: [Text({ dimColor: true, wrap: 'wrap', children: [line] })] })) : []),
+      ] })
+    }
+    const scheduleView = activeSchedules.length ? [box('schedules', 'blue', '예약  ' + activeSchedules.length + '  · 이 세션 한정',
+      activeSchedules.map(scheduleRow))] : []
     if (board && !board.error) for (const id of [...folded]) if (!shownFolds.has(id)) folded.delete(id)
 
     // 전체 진행률: 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합

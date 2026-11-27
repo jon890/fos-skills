@@ -31,7 +31,11 @@ test('성공한 CronCreate 뒤 예약 구역에 일정과 할 일을 그린다',
   expect(created).toEqual({ result: { id: 'job-1', humanSchedule: '5분마다', recurring: true, nextFireAt: at + 5 * 60 * 1000 } })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Box', key: 'schedules' })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /5분마다 · CI 확인 · 다음 .* · 만료/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^오늘 \d\d:\d\d  ↻ CI 확인 · 5분마다$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^cron / })).toBeUndefined()
+  await ui.press({ key: 'fold-schedule:job-1:detail' })
+  expect(await ui.find({ type: 'Text', text: /^cron \*\/5 \* \* \* \* · 만료 / })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: 'CI 확인\n상세' })).toBeTruthy()
   await ui.unmount()
 })
 
