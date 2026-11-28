@@ -631,10 +631,12 @@ async function main(argv: string[]): Promise<number> {
     out(`send-to-worker: ${a.dispatch} 의 워크트리를 몰라 이어 띄우지 못한다`)
     return 1
   }
+  // 이어 맡기기의 까닭은 다시 띄우는 길에서도 이력에 남긴다. routing 기록이 PR 을 앞 dispatch 에 붙인다
   const runArgs = run ? ['--run', run] : []
+  const originArgs = a.origin ? ['--origin', a.origin, '--continued-from', a.dispatch] : []
   out(`relaunch: 끝난 ${a.dispatch} 의 터미널 ${handle} 에 새 Task 로 띄운다`)
   const code = await passThrough(
-    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
+    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...originArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
     LAUNCH_MS,
   )
   if (code !== 3) return code === 0 ? 0 : 1
@@ -683,7 +685,7 @@ async function main(argv: string[]): Promise<number> {
     out(`send-to-worker: ${e.message}`)
     return 5
   }
-  const fresh = ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--']
+  const fresh = ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...originArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--']
   for (const key of SETTING_KEYS) if (settings[key]) fresh.push(`--${key}`, String(settings[key]))
   out(`restart: ${handle} 을 닫고 같은 워크트리에 새 worker 를 띄운다`)
   return (await passThrough(scriptCommand(LAUNCH_WORKER, fresh), LAUNCH_MS)) === 0 ? 0 : 1

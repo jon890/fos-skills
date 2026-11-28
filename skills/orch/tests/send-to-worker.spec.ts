@@ -576,6 +576,13 @@ describe('끝난 dispatch', () => {
     assert.match(r.stdout, /--body 가 가지 않는다/)
   })
 
+  test('이어 맡기기의 까닭은 다시 띄우는 길에도 launch-worker 로 넘긴다', () => {
+    state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
+    const r = send('--spec', join(tmp, 'next.md'), '--origin', 'returned')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('launch'), [`launch --spec ${join(tmp, 'next.md')} --worktree /w/feat --run run_x --origin returned --continued-from ctx_1 -- --terminal term_w`])
+  })
+
   test('--spec 만 주면 본문 없이 이어 띄우고 note 를 내지 않는다', () => {
     state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
     const r = send('--spec', join(tmp, 'next.md'))

@@ -194,7 +194,8 @@ import { workerSpecLine as copiedWorkerSpecLine } from '../lib/worker-spec-copy.
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
-  '            [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
+  '            [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON]',
+  '            [--origin returned|stopped --continued-from DISPATCH] -- WORKER_ARGS...',
 ].join('\n')
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
 const LONG_MS = 600_000
@@ -647,6 +648,9 @@ type Args = {
   spec: string
   task: string
   retryOf: string
+  // 이어 맡기기(lib/continue-worker.ts)의 후속 전송이 거절돼 send-to-worker 가 다시 띄울 때 넘기는 까닭과 앞 dispatch. 영구 이력의 origin, retry_of 가 된다
+  origin: 'returned' | 'stopped' | null
+  continuedFrom: string
   repo: string
   name: string
   base: string
@@ -728,6 +732,8 @@ function parse(argv: string[]): Args | 'help' {
     spec: { type: 'string' },
     task: { type: 'string', default: '' },
     'retry-of': { type: 'string', default: '' },
+    origin: { type: 'string', default: '' },
+    'continued-from': { type: 'string', default: '' },
     repo: { type: 'string', default: '' },
     name: { type: 'string', default: '' },
     base: { type: 'string', default: '' },
@@ -757,6 +763,7 @@ function parse(argv: string[]): Args | 'help' {
   if (dirtyAck === '') throw usage('--dirty-ack 에는 그대로 띄우는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
   if (!values.task && values['retry-of']) throw usage('--task 와 --retry-of 를 함께 준다')
+  if (!!values.origin !== !!values['continued-from'] || (values.origin && !['returned', 'stopped'].includes(values.origin as string))) throw usage('--origin(returned 나 stopped)과 --continued-from 을 함께 준다')
   if (values.preflight && !values.task) throw usage('--preflight 는 --task 와 함께 준다')
   if (values.task && (values.worktree || values.name)) throw usage('다시 띄우기의 워크트리는 이력에서 읽는다')
   if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
@@ -767,6 +774,8 @@ function parse(argv: string[]): Args | 'help' {
     spec: values.spec,
     task: values.task as string,
     retryOf: values['retry-of'] as string,
+    origin: (values.origin || null) as Args['origin'],
+    continuedFrom: values['continued-from'] as string,
     repo: values.repo as string,
     name: values.name as string,
     base: values.base as string,
@@ -1266,7 +1275,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (!stalled) try {
       recordHistory(repo, {
         ...launch, at: new Date().toISOString(), title: /^#\s+(.+)$/m.exec(text)?.[1] ?? null,
-        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch ?? inherited?.dispatch ?? null, ...specCounts(text),
+        row: selectionsOf(text)[0]?.row ?? null, retry_of: a.continuedFrom || retryDispatch || inherited?.dispatch || null, ...specCounts(text),
+        ...(a.origin ? { origin: a.origin } : {}),
       })
     } catch (e) {
       err(`launch-worker: 띄우기 이력을 기록하지 못했다: ${(e as Error).message}`)

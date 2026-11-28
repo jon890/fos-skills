@@ -870,6 +870,19 @@ describe('모델 세대', () => {
     assert.equal(history().spec_todos, 2)
     assert.equal(history().spec_files, 2)
   })
+
+  test('다시 띄운 이어 맡기기는 까닭과 앞 dispatch 를 이력에 남기고 한쪽만 주면 사용법 오류다', () => {
+    writeFileSync(spec, FABLE)
+    mkdirSync(env.ORCH_MACHINE_DIR!, { recursive: true })
+    writeFileSync(join(env.ORCH_MACHINE_DIR!, 'model-turns.json'), '{"fable":"claude"}')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--origin', 'returned', '--continued-from', 'ctx_prev', '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.equal(history().origin, 'returned')
+    assert.equal(history().retry_of, 'ctx_prev')
+    assert.equal(launch(['--worktree', worktree, '--origin', 'returned', '--', '--agent', 'claude'], 'bash', false).code, 2)
+    assert.equal(launch(['--worktree', worktree, '--origin', 'other', '--continued-from', 'x', '--', '--agent', 'claude'], 'bash', false).code, 2)
+  })
 })
 
 describe('선택 정책과 영구 이력', () => {
