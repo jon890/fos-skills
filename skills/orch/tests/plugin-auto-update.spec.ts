@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { acquireUpdateLock, comparePluginVersion, configDirs, readUpdateReport, updatePlugins, UPDATE_MS } from '../scripts/loop/plugin-auto-update.ts'
+import { acquireUpdateLock, comparePluginVersion, configDirs, distinctConfigDirs, readUpdateReport, updatePlugins, UPDATE_MS } from '../scripts/loop/plugin-auto-update.ts'
 
 const SHA = 'a'.repeat(40)
 function fixture(t: { after: (fn: () => void) => void }) {
@@ -80,7 +80,7 @@ test('갱신 명령이 성공해도 설치 기록이 그대로면 실패하며 �
     return { code: 0, stdout: '', stderr: '', timedOut: false }
   }
   const options = { home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec }
-  assert.equal((await updatePlugins({ ...options, now: 1000 }))?.results[0].reason, '설치 기록의 version 이 main 과 다르다')
+  assert.equal((await updatePlugins({ ...options, now: 1000 }))?.results[0].reason, `설치 기록의 version 1.0.0 이 main 1.2.0 보다 낮다(${f.home})`)
   assert.equal(readUpdateReport(f.stateDir)?.failureNotified, '1.2.0')
   assert.equal((await updatePlugins({ ...options, now: 1000 }))?.results[0], undefined)
   assert.equal((await updatePlugins({ ...options, now: 1000 + UPDATE_MS }))?.notifyFailure, undefined)
@@ -229,7 +229,53 @@ test('프로필마다 update 전에 마켓플레이스를 한 번 갱신하고, 
   ])
   assert.deepEqual(report?.results.map(row => [row.result, row.reason]), [
     ['success', undefined],
-    ['failed', '설치 기록의 version 이 main 과 다르다 (마켓플레이스 갱신 실패: network down)'],
-    ['failed', '설치 기록의 version 이 main 과 다르다 (마켓플레이스 갱신 실패: network down)'],
+    ['failed', `설치 기록의 version 1.0.0 이 main 1.2.0 보다 낮다(${f.profile}) (마켓플레이스 갱신 실패: network down)`],
+    ['failed', `설치 기록의 version 1.0.0 이 main 1.2.0 보다 낮다(${f.profile}) (마켓플레이스 갱신 실패: network down)`],
   ])
+})
+
+test('plugins 가 ~/.claude/plugins 링크인 프로필은 ~/.claude 와 묶어 한 번만 갱신한다', async t => {
+  const f = fixture(t)
+  const linked = join(f.profiles, 'two', 'home')
+  mkdirSync(linked, { recursive: true })
+  symlinkSync(join(f.home, 'plugins'), join(linked, 'plugins'))
+  f.add(f.home, 'user', '1.0.0')
+  assert.deepEqual(distinctConfigDirs(configDirs(f.home, f.profiles)), [f.home, f.profile])
+  const updates: (string | undefined)[] = []
+  const exec = async (argv: string[], opts: { env?: Record<string, string | undefined> } = {}) => {
+    if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
+    if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
+    updates.push(opts.env?.CLAUDE_CONFIG_DIR)
+    const file = join(f.home, 'plugins', 'installed_plugins.json')
+    const value = JSON.parse(readFileSync(file, 'utf8'))
+    value.plugins['fos-skills@fos-skills'][0].version = '1.3.0'
+    writeFileSync(file, JSON.stringify(value))
+    return { code: 0, stdout: '', stderr: '', timedOut: false }
+  }
+  const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec, now: 1000 })
+  assert.deepEqual(updates, [f.home])
+  assert.deepEqual(report?.results.map(row => [row.configDir, row.result]), [[f.home, 'success']], 'main 보다 높은 기록도 성공이다')
+})
+
+test('마켓플레이스가 로컬 폴더면 실패 이유에 그 폴더와 version 을 적는다', async t => {
+  const f = fixture(t)
+  f.add(f.home, 'user', '1.0.0')
+  const checkout = join(f.root, 'checkout')
+  mkdirSync(join(checkout, '.claude-plugin'), { recursive: true })
+  writeFileSync(join(checkout, '.claude-plugin', 'plugin.json'), JSON.stringify({ version: '1.1.0' }))
+  writeFileSync(join(f.home, 'plugins', 'known_marketplaces.json'), JSON.stringify({ 'fos-skills': { source: { source: 'directory', path: checkout } } }))
+  const exec = async (argv: string[]) => {
+    if (argv[0] === 'git') return { code: 0, stdout: `${SHA}\trefs/heads/main\n`, stderr: '', timedOut: false }
+    if (argv[0] === 'curl') return { code: 0, stdout: '{"version":"1.2.0"}', stderr: '', timedOut: false }
+    if (argv[2] === 'marketplace') return { code: 0, stdout: '', stderr: '', timedOut: false }
+    const file = join(f.home, 'plugins', 'installed_plugins.json')
+    const value = JSON.parse(readFileSync(file, 'utf8'))
+    value.plugins['fos-skills@fos-skills'][0].version = '1.1.0'
+    writeFileSync(file, JSON.stringify(value))
+    return { code: 0, stdout: '', stderr: '', timedOut: false }
+  }
+  const report = await updatePlugins({ home: f.home, profiles: f.profiles, stateDir: f.stateDir, repository: 'https://github.com/jon890/fos-skills', exec, now: 1000 })
+  assert.equal(report?.results[0].result, 'failed')
+  assert.equal(report?.results[0].reason, `설치 기록의 version 1.1.0 이 main 1.2.0 보다 낮다(${f.home}). 마켓플레이스가 로컬 폴더 ${checkout}(version 1.1.0)라 그 checkout 을 main 으로 받아야 한다`)
 })
