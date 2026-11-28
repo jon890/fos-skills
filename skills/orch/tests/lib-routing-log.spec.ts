@@ -3,7 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { utimesSync } from 'node:fs'
 import { afterEach, beforeEach, test } from 'node:test'
-import { MAX_MESSAGE_LIMIT, MESSAGE_LIMIT, dispatchesFor, recordRouting, routingRecords, reviewCounts, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
+import { MAX_MESSAGE_LIMIT, MESSAGE_LIMIT, continuedFrom, dispatchesFor, moduleOf, recordRouting, routingRecords, reviewCounts, reviewSources, sizeBucket, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
+import { specCounts } from '../scripts/lib/launch-history.ts'
 import { fixture, launch, msg, PR } from './fixtures/routing-fakes.ts'
 
 let f: ReturnType<typeof fixture>
@@ -314,4 +315,81 @@ test('Codex 세션의 종료 시각 뒤 누적값은 세지 않는다', async ()
   f.codexSession('2026/11/06', rows)
   await recordRouting(f.dir, 7, 'merged')
   assert.deepEqual(f.rows()[0].tokens, { input: 10, output: 5, cache_read: 0, cache_write: 0 })
+})
+
+test('Codex 봇의 첫 리뷰 인라인 배지를 출처와 함께 남기고 리뷰 뒤 커밋을 그 시각으로 센다', async () => {
+  writeFileSync(join(f.dir, '.orch/config.json'), JSON.stringify({ routing: { review_sources: [{ author: 'codex[bot]', kind: 'badges' }] } }))
+  f.state.comments = []
+  f.state.reviews = [{ id: 11, user: { login: 'codex[bot]' }, body: 'review', submitted_at: '2026-11-06T01:15:00Z' },
+    { id: 12, user: { login: 'codex[bot]' }, body: 'later', submitted_at: '2026-11-06T01:50:00Z' }]
+  f.state.inline = [
+    { pull_request_review_id: 11, user: { login: 'codex[bot]' }, body: '**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange)</sub></sub>** a' },
+    { pull_request_review_id: 11, user: { login: 'codex[bot]' }, body: '![P2 Badge](x) b' },
+    { pull_request_review_id: 11, user: { login: 'codex[bot]' }, body: '![P2 Badge](x) c' },
+    { pull_request_review_id: 12, user: { login: 'codex[bot]' }, body: '![P0 Badge](x) later' },
+    { pull_request_review_id: 11, user: { login: 'someone' }, body: '![P0 Badge](x) other' },
+  ]
+  f.save()
+  await recordRouting(f.dir, 7, 'merged')
+  const row = f.rows()[0]
+  assert.deepEqual(row.first_review, { P0: 0, P1: 1, P2: 2, P3: 0 })
+  assert.equal(row.first_review_source, 'codex[bot]')
+  assert.equal(row.first_review_at, '2026-11-06T01:15:00Z')
+  assert.equal(row.fix_commits_after_review, 1)
+  assert.equal(row.size_grade, null)
+})
+
+test('리뷰 출처가 여럿이면 출처마다 남기고 가장 이른 것을 첫 리뷰로 쓰며 「문제 없음」 댓글은 0 이다', async () => {
+  writeFileSync(join(f.dir, '.orch/config.json'), JSON.stringify({ routing: { review_author: 'review-bot', size_pattern: 'PR 크기 등급: \\**([A-D])',
+    review_sources: [{ author: 'codex[bot]', kind: 'badges' }] } }))
+  f.state.comments.push({ user: { login: 'codex[bot]' }, body: "Codex Review: Didn't find any major issues.", created_at: '2026-11-06T01:12:00Z' })
+  f.save()
+  await recordRouting(f.dir, 7, 'merged')
+  const row = f.rows()[0]
+  assert.deepEqual(row.first_reviews?.map(r => r.source), ['codex[bot]', 'review-bot'])
+  assert.deepEqual(row.first_review, { P0: 0, P1: 0, P2: 0, P3: 0 })
+  assert.equal(row.first_review_source, 'codex[bot]')
+  assert.equal(row.size_grade, 'B')
+  assert.throws(() => reviewSources({ review_sources: [{ kind: 'badges' }] }))
+  assert.throws(() => reviewSources({ review_sources: {} }))
+})
+
+test('리뷰 봇과 무관하게 바뀐 줄, 파일, 모듈 수와 크기 구간을 남긴다', async () => {
+  writeFileSync(join(f.dir, '.orch/config.json'), '{}')
+  await recordRouting(f.dir, 7, 'merged')
+  assert.deepEqual(f.rows()[0].size, { lines: 130, files: 3, modules: 2, bucket: 'small' })
+  assert.equal(moduleOf('skills/orch/scripts/lib/a.ts'), 'skills/orch/scripts/lib')
+  assert.equal(moduleOf('skills/orch/SKILL.md'), 'skills/orch')
+  assert.equal(moduleOf('docs/a/b.md'), 'docs/a')
+  assert.equal(moduleOf('README.md'), '.')
+  assert.equal(sizeBucket(68, 3, 1), 'small')
+  assert.equal(sizeBucket(194, 9, 4), 'medium')
+  assert.equal(sizeBucket(652, 24, 8), 'large')
+})
+
+test('되돌림으로 이어 맡은 dispatch 가 준비를 알려도 PR 은 첫 dispatch 의 것이고 되돌림과 멈춤 수를 남긴다', async () => {
+  f.history(launch({ dispatch: 'ctx_b', terminal: 'term_b', run: 'run_a', at: '2026-11-06T01:40:00Z', row: 'small-fix', retry_of: 'ctx_a', origin: 'returned',
+    agent: 'claude', model: 'claude-opus-5-5', effective: { agent: 'claude', model: 'claude-opus-5-5', effort: 'medium' } }))
+  f.state.inbox['run:run_a'] = [
+    msg('ready', { dispatch_id: 'ctx_b', from_handle: 'term_b', created_at: '2026-11-06T01:45:00Z', body: `준비됨 #7, head ${'a'.repeat(40)}` }),
+    msg('msg_stop_1', { type: 'escalation', subject: 'Worker stopped without reporting', payload: { dispatchId: 'ctx_a', stopReason: 'finished' }, created_at: '2026-11-06T01:20:00Z' }),
+  ]
+  f.save()
+  await recordRouting(f.dir, 7, 'merged')
+  const row = f.rows()[0]
+  assert.equal(row.dispatches.find(d => d.opened_pr)?.dispatch, 'ctx_a')
+  assert.equal(row.task_row, 'impl-explore')
+  assert.equal(row.returned, 1)
+  assert.equal(row.stopped, 1)
+  assert.equal(row.escalations, 0)
+  assert.equal(row.dispatches[1].origin, 'returned')
+  const chain = [{ dispatch: 'a', retry_of: null }, { dispatch: 'b', retry_of: 'a', origin: 'stopped' }, { dispatch: 'c', retry_of: 'b', origin: 'returned' }]
+  assert.equal(continuedFrom(chain, chain[2]).dispatch, 'a')
+  assert.equal(continuedFrom(chain, { dispatch: 'd', retry_of: 'a' }).dispatch, 'd')
+})
+
+test('지시서의 할 일 번호와 가리키는 파일을 센다', () => {
+  const text = '# 일\n`skills/a.ts` 와 `gpt-6.2-sol`\n\n## 할 일\n\n1. `docs/b.md:12` 를 본다\n   1. 안쪽\n2. `https://x.y/z` 와 `.orch/config.json`\n3. `orch routing report` 를 돈다\n\n## 끝\n4. 밖\n'
+  assert.deepEqual(specCounts(text), { spec_todos: 3, spec_files: 3 })
+  assert.equal(specCounts('할 일 없음').spec_todos, null)
 })

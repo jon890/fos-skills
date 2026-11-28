@@ -59,7 +59,7 @@ import { workerSpecLine as copiedWorkerSpecLine } from '../lib/worker-spec-copy.
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
-  '        send-to-worker.ts --dispatch ENDED_ID --spec FILE [--note TEXT] [--run RUN] [--agent A --model M --effort E]',
+  '        send-to-worker.ts --dispatch ENDED_ID --spec FILE [--note TEXT] [--origin returned|stopped] [--run RUN] [--agent A --model M --effort E]',
 ].join('\n')
 const LAUNCH_WORKER = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
 // 이 상태의 dispatch 는 reply 를 받는다. 나머지(completed, failed 같은 것)는 끝난 것이다
@@ -408,7 +408,8 @@ async function recordFollowUp(a: Args, prior: Described, run: string, receipt: J
   }
   try { recordLaunch(repo, launch) }
   catch (e) { err(`send-to-worker: 후속 worker 기록을 쓰지 못했다: ${(e as Error).message}`) }
-  try { recordHistory(repo, { ...launch, at: new Date().toISOString(), title: spec.title, row: choice.row, retry_of: a.dispatch }) }
+  // origin 은 이어 맡기기(lib/continue-worker.ts)가 준 까닭이다. routing 기록이 이 dispatch 를 다시 띄운 것으로 세지 않고 앞 dispatch 에 PR 을 붙인다
+  try { recordHistory(repo, { ...launch, at: new Date().toISOString(), title: spec.title, row: choice.row, retry_of: a.dispatch, ...(a.origin ? { origin: a.origin } : {}) }) }
   catch (e) { err(`send-to-worker: 후속 worker 이력을 쓰지 못했다: ${(e as Error).message}`) }
   try {
     const id = boardIdOf(spec.text)?.id
@@ -435,6 +436,7 @@ type Args = {
   noReply?: boolean
   spec?: string
   note?: string
+  origin?: 'returned' | 'stopped'
   run?: string
   agent?: string
   model?: string
@@ -442,7 +444,7 @@ type Args = {
 }
 
 function parse(argv: string[]): Args | 'help' | null {
-  const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'note', 'run', ...SETTING_KEYS]
+  const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'note', 'origin', 'run', ...SETTING_KEYS]
   const options = { ...MAIN_GUARD_OPTIONS, ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), 'no-reply': { type: 'boolean' as const }, help: { type: 'boolean' as const, short: 'h' } }
   let values
   try {
@@ -465,6 +467,10 @@ function parse(argv: string[]): Args | 'help' | null {
     err('send-to-worker: --note 는 --spec 과 함께 준다. 지시서 없이 보내는 글은 --body 다')
     return null
   }
+  if (values.origin !== undefined && (!values.spec || !['returned', 'stopped'].includes(String(values.origin)))) {
+    err('send-to-worker: --origin 은 --spec 과 함께 returned 나 stopped 로 준다')
+    return null
+  }
   const text = (name: string) => values[name] as string | undefined
   return {
     notMain: text('not-main'),
@@ -475,6 +481,7 @@ function parse(argv: string[]): Args | 'help' | null {
     noReply: values['no-reply'] === true,
     spec: text('spec'),
     note: text('note'),
+    origin: text('origin') as Args['origin'],
     run: text('run'),
     agent: text('agent'),
     model: text('model'),
@@ -624,10 +631,12 @@ async function main(argv: string[]): Promise<number> {
     out(`send-to-worker: ${a.dispatch} 의 워크트리를 몰라 이어 띄우지 못한다`)
     return 1
   }
+  // 이어 맡기기의 까닭은 다시 띄우는 길에서도 이력에 남긴다. routing 기록이 PR 을 앞 dispatch 에 붙인다
   const runArgs = run ? ['--run', run] : []
+  const originArgs = a.origin ? ['--origin', a.origin, '--continued-from', a.dispatch] : []
   out(`relaunch: 끝난 ${a.dispatch} 의 터미널 ${handle} 에 새 Task 로 띄운다`)
   const code = await passThrough(
-    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
+    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...originArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
     LAUNCH_MS,
   )
   if (code !== 3) return code === 0 ? 0 : 1
@@ -676,7 +685,7 @@ async function main(argv: string[]): Promise<number> {
     out(`send-to-worker: ${e.message}`)
     return 5
   }
-  const fresh = ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--']
+  const fresh = ['--spec', a.spec, '--worktree', worktree, ...runArgs, ...originArgs, ...(a.notMain !== undefined ? ['--not-main', a.notMain] : []), '--']
   for (const key of SETTING_KEYS) if (settings[key]) fresh.push(`--${key}`, String(settings[key]))
   out(`restart: ${handle} 을 닫고 같은 워크트리에 새 worker 를 띄운다`)
   return (await passThrough(scriptCommand(LAUNCH_WORKER, fresh), LAUNCH_MS)) === 0 ? 0 : 1

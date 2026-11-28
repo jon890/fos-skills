@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
-import { readPrices, reportRows } from '../scripts/lib/routing-report.ts'
+import { CACHE_READ, canonicalModel, pricedModel, readPrices, reportRows, UNKNOWN_SOURCE } from '../scripts/lib/routing-report.ts'
 import type { RoutingRecord } from '../scripts/lib/routing-log.ts'
 
 let dir: string
@@ -38,14 +38,17 @@ test('실제 진입점으로 두 저장소를 모아 중앙값·평균·요청�
   const b = repo('b', [record(1, { repo: 'test/b', minutes_to_ready: null, first_review: null, tokens: null, ci_failures: null, questions: null, fix_commits_after_review: null })])
   const result = cli(['--repo', a, '--repo', b, '--json'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), [{ ...sol, task_row: 'impl-explore', samples: 3, small_sample: true, hours_to_ready_median: 1 / 3,
-    first_review_p1_mean: 1, first_review_p2_mean: 3, fix_commits_after_review_mean: 3, ci_failures_mean: 1, questions_mean: 2,
+  assert.deepEqual(JSON.parse(result.stdout), [{ ...sol, task_row: 'impl-explore', size: null, samples: 3, small_sample: true, hours_to_ready_median: 1 / 3,
+    first_review: { [UNKNOWN_SOURCE]: { samples: 2, means: { P1: 1, P2: 3 } } }, fix_commits_after_review_mean: 3, ci_failures_mean: 1, questions_mean: 2,
+    returned_mean: null, stopped_mean: null,
     output_tokens_median: 200_000, estimated_cost_usd_median: 5.025, first_dispatch_samples: 3, retried_pr_ratio: 0 }])
   const full = cli(['--repo', a, '--repo', b, '--full'])
   assert.match(full.stdout, /^\| agent \|/)
   assert.match(full.stdout, /표본 적음/)
   assert.match(full.stdout, /준비 중앙\(시간\)/)
   assert.match(full.stdout, /0\.333333/)
+  assert.match(full.stdout, /첫 리뷰 출처 미기록 \|/)
+  assert.match(full.stdout, /P1 1, P2 3 \(2건\)/)
   const short = cli(['--repo', a])
   assert.match(short.stdout, /^ROUTING-ROW /)
   assert.match(short.stdout, /samples=2/)
@@ -78,7 +81,8 @@ test('가격표의 모델 id를 읽고 알 수 없는 모델과 가격표 부재
   const unknownRepo = repo('unknown', [r])
   const full = cli(['--repo', unknownRepo, '--full'])
   assert.equal(full.status, 0, full.stderr)
-  assert.equal(full.stdout.trim().split('\n')[2].split('|')[13].trim(), '')
+  const head = full.stdout.trim().split('\n')[0].split('|').map(cell => cell.trim())
+  assert.equal(full.stdout.trim().split('\n')[2].split('|')[head.indexOf('비용 추정 중앙($)')].trim(), '')
   const table = join(dir, 'prices.md')
   writeFileSync(table, '### 비교 근거\n| 모델 id | 입력 / 출력 ($/1M 토큰) |\n| --- | --- |\n| `gpt-6.1-sol` | 3 / 15 |\n')
   assert.equal(reportRows([record(1)], readPrices(table))[0].estimated_cost_usd_median, 4.575)
@@ -171,4 +175,60 @@ test('JSON과 전체 표 출력을 함께 고르면 진입점에서 사용법 �
     assert.equal(result.stdout, '')
     assert.match(result.stderr, /--json 과 --full 은 함께 쓸 수 없다/)
   }
+})
+
+test('계열 이름 기록은 정식 id 로 합치고 가격표에 없는 옛 세대는 같은 계열의 가까운 세대 단가를 쓴다', () => {
+  const prices = readPrices()
+  for (const id of prices.keys()) assert.notEqual(CACHE_READ[id], undefined, `${id} 의 캐시 배수가 없다`)
+  assert.equal(canonicalModel('opus'), 'claude-opus-5-5')
+  assert.equal(canonicalModel('fable'), 'claude-fable-5-2')
+  assert.equal(pricedModel('gpt-6-sol', prices), 'gpt-6.1-sol')
+  assert.equal(pricedModel('gpt-6.2-sol', prices), 'gpt-6.2-sol')
+  assert.equal(pricedModel('gpt-9-sol', prices), 'gpt-6.2-sol')
+  assert.equal(pricedModel('gpt-6-nova', prices), null)
+  const short = record(1); short.dispatches[0].effective = { ...opus, model: 'opus' }
+  const full = record(2); full.dispatches[0].effective = opus
+  const rows = reportRows([short, full], prices)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].model, 'claude-opus-5-5')
+  assert.equal(rows[0].samples, 2)
+  assert.notEqual(rows[0].estimated_cost_usd_median, null)
+  const old = record(3); old.dispatches[0].effective = { ...sol, model: 'gpt-6-sol' }
+  assert.equal(reportRows([old], prices)[0].estimated_cost_usd_median, reportRows([record(3)], prices)[0].estimated_cost_usd_median)
+})
+
+test('첫 리뷰는 출처마다 따로 세고 되돌림·멈춤 평균을 낸다', () => {
+  const a = record(1, { first_review: { P0: 0, P1: 1, P2: 0, P3: 0 }, first_review_source: 'codex[bot]', returned: 1, stopped: 2,
+    first_reviews: [{ source: 'codex[bot]', at: '2026-11-06T01:00:00Z', counts: { P0: 0, P1: 1, P2: 0, P3: 0 } },
+      { source: 'reviewer', at: '2026-11-06T02:00:00Z', counts: { P1: 0, P2: 3, P3: 0, P4: 0, P5: 0 } }] })
+  const b = record(2, { first_review: { P1: 1, P2: 1 }, returned: 0, stopped: 0 })
+  const row = reportRows([a, b], readPrices())[0]
+  assert.deepEqual(Object.keys(row.first_review).sort(), ['codex[bot]', 'reviewer', UNKNOWN_SOURCE].sort())
+  assert.equal(row.first_review['codex[bot]'].means.P1, 1)
+  assert.equal(row.first_review.reviewer.means.P2, 3)
+  assert.equal(row.first_review[UNKNOWN_SOURCE].samples, 1)
+  assert.equal(row.returned_mean, 0.5)
+  assert.equal(row.stopped_mean, 1)
+})
+
+test('--compare 는 지침 행과 크기 구간마다 두 모델을 한 줄에 나란히 둔다', () => {
+  const opusRecord = (pr: number, bucket: 'small' | 'large') => {
+    const r = record(pr, { size: { lines: 10, files: 1, modules: 1, bucket } })
+    r.dispatches[0].effective = opus
+    return r
+  }
+  const a = repo('a', [record(1, { size: { lines: 10, files: 1, modules: 1, bucket: 'small' } }), opusRecord(2, 'small'), opusRecord(3, 'large'), record(4)])
+  const json = cli(['--repo', a, '--compare', '--json'])
+  assert.equal(json.status, 0, json.stderr)
+  const groups = JSON.parse(json.stdout)
+  assert.deepEqual(groups.map((g: { size: string | null; models: unknown[] }) => [g.size, g.models.length]), [['small', 2], ['large', 1], [null, 1]])
+  const full = cli(['--repo', a, '--compare', '--full'])
+  assert.equal(full.status, 0, full.stderr)
+  const small = full.stdout.split('\n').find(line => line.includes('| 작음 |'))!
+  assert.match(small, /claude claude-opus-5-5 medium \/ codex gpt-6\.1-sol medium/)
+  assert.match(small, /\| 1 \/ 1 \|/)
+  assert.match(full.stdout, /\| 미기록 \|/)
+  const bySize = cli(['--repo', a, '--by-size', '--full'])
+  assert.match(bySize.stdout, /\| 크기 \|/)
+  assert.equal(cli(['--repo', a, '--by-size', '--compare']).status, 2)
 })

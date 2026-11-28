@@ -1,5 +1,19 @@
 // PR 종료 시 남기는 관측 기록. 본문·질문·금액은 저장하지 않는다.
 // 수집기 실패는 해당 값만 null, 쓰기 실패는 ROUTING-LOG-FAIL 한 줄이며 정리를 막지 않는다.
+//
+// 첫 리뷰: routing.review_sources 의 출처마다 그 계정의 첫 리뷰를 읽는다. 옛 키(review_author, review_pattern, size_pattern)는 표 출처 하나다.
+//     table   P1~P5 표(또는 pattern 캡처 다섯 개)가 있는 첫 리뷰·댓글
+//     badges  그 계정의 첫 PR 리뷰에 달린 인라인 댓글의 `![P0 Badge]` 꼴 배지 수(P0~P3). 리뷰보다 먼저 「문제 없음」 댓글(clean_pattern,
+//             기본 Codex 봇의 「Didn't find any major issues」)이 있으면 모두 0 이다
+//     출처마다 척도가 달라 first_reviews 에 출처와 시각을 함께 남긴다. first_review 와 리뷰 뒤 커밋은 가장 이른 출처의 것이다.
+// 일의 크기: 리뷰 봇과 무관하게 PR 의 바뀐 줄(additions+deletions), 파일 수, 건드린 최상위 모듈 수와 그 셋으로 정한 구간을 size 에 남긴다.
+//     구간 경계(sizeBucket)는 2026-11-20~27 12개 저장소 PR 261건의 세 분위수에서 정한 고정값이다.
+//     줄 120·350, 파일 6·15, 모듈 3·6 미만이면 그 지표가 0·1, 이상이면 2 점이다. 합이 1 이하 small, 4 이하 medium, 그 위 large 다.
+//     그 표본에서 small 91, medium 82, large 88 건이고, 백분위 평균으로 셋으로 나눈 구간과 236건(90%)이 같다.
+//     리뷰 봇이 남긴 등급은 따로 size_grade 다.
+// 이어 맡기기: 머지 전 완료 보고를 되돌리거나(origin returned) 멈춘 worker 를 이어 보내(origin stopped) 생긴 dispatch 가 PR 준비를 알려도
+//     opened_pr 는 retry_of 를 거슬러 이어 맡기 전 dispatch 에 둔다. opened_pr 는 PR 의 모델과 품질을 붙일 dispatch 다.
+//     returned 는 되돌림으로 생긴 dispatch 수, stopped 는 이 PR 의 dispatch 가 보고 없이 멈춘(Orca 의 finished 멈춤 보고) 수다.
 import { readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -13,19 +27,27 @@ import { launchHistory, type LaunchHistory } from './launch-history.ts'
 import { orcaJson } from './orca.ts'
 import { ensure, pathOf } from './paths.ts'
 import { SLACK_MS, sessionTokens } from './session-tokens.ts'
-import { isQuietStop } from './stop-reports.ts'
+import { isQuietStop, stopDispatch } from './stop-reports.ts'
 import { recipientOf, senderOf, threadOf } from '../core/message-fields.ts'
 
 type Json = Record<string, any>
 type Outcome = 'merged' | 'closed'
 export type TokensSource = 'session' | 'orca-usage' | 'stale' | 'unavailable'
 type Tokens = { input: number; output: number; cache_read: number; cache_write: number }
+export type SizeBucket = 'small' | 'medium' | 'large'
+export type PrSize = { lines: number; files: number; modules: number; bucket: SizeBucket }
+export type FirstReview = { source: string; at: string; counts: Record<string, number> }
 export type RoutingRecord = {
   version: 1; recorded_at: string; pr: number; repo: string; branch: string
   merged_at: string | null; closed_at: string | null; outcome: Outcome
+  // origin, alternation, spec_todos, spec_files 는 옛 기록에 없다
   dispatches: Array<{ dispatch: string; at: string; agent: string | null; model: string | null; effort: string | null;
-    effective: LaunchHistory['effective']; experiment: string | null; row: string | null; retry_of: string | null; opened_pr: boolean }>
+    effective: { agent: string | null; model: string | null; effort: string | null } | null; experiment: string | null; row: string | null; retry_of: string | null; opened_pr: boolean
+    origin?: 'returned' | 'stopped' | null; alternation?: boolean; spec_todos?: number | null; spec_files?: number | null }>
   task_row: string | null; size_grade: string | null; first_review: Record<string, number> | null
+  // 아래 넷은 옛 기록에 없다. first_review_source 가 없는 옛 first_review 는 출처를 모른다
+  first_review_source?: string | null; first_review_at?: string | null; first_reviews?: FirstReview[] | null
+  size?: PrSize | null; returned?: number | null; stopped?: number | null
   fix_commits_after_review: number | null; ci_failures: number | null
   questions: number | null; escalations: number | null; coordinator_messages: number | null
   minutes_to_ready: number | null; minutes_waiting_user: number | null; tokens: Tokens | null
@@ -35,6 +57,7 @@ export type RoutingRecord = {
 
 const CI_FAILURES = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE'])
 const FIELDS = 'number,url,headRefName,headRefOid,createdAt,closedAt,mergedAt,state'
+const VIEW_FIELDS = `${FIELDS},additions,deletions,changedFiles`
 export const MESSAGE_LIMIT = 200
 export const MAX_MESSAGE_LIMIT = MESSAGE_LIMIT * 32
 const ms = (value: unknown): number => typeof value === 'string' ? Date.parse(value) : NaN
@@ -128,21 +151,88 @@ export function reviewCounts(body: string, pattern?: string): Record<string, num
   return Object.fromEntries(values.map((value, i) => [`P${i + 1}`, Number(value)]))
 }
 
-function reviews(repo: string, target: { host: string; slug: string }, pr: number) {
-  const settings = section<{ review_author?: string; review_pattern?: string; size_pattern?: string }>(loadConfig(repo), 'routing', ROUTING_KEYS)
-  if (!settings.review_author) return { first_review: null, size_grade: null, at: null }
-  const endpoint = `repos/${target.slug}`
-  const rows = [...pages(repo, target.host, `${endpoint}/issues/${pr}/comments?per_page=100`),
-    ...pages(repo, target.host, `${endpoint}/pulls/${pr}/reviews?per_page=100`)]
-    .filter(row => String(row.user?.login).toLowerCase() === settings.review_author!.toLowerCase())
-    .map(row => ({ body: String(row.body ?? ''), at: row.submitted_at ?? row.created_at }))
-    .filter(row => Number.isFinite(ms(row.at))).sort((a, b) => ms(a.at) - ms(b.at))
-  for (const row of rows) {
-    const counts = attempt(() => reviewCounts(row.body, settings.review_pattern))
-    const size = settings.size_pattern ? attempt(() => new RegExp(settings.size_pattern!, 'm').exec(row.body)?.[1] ?? null) : null
-    if (counts || size) return { first_review: counts, size_grade: size, at: row.at as string }
+export type ReviewSource = { author: string; kind: 'table' | 'badges'; pattern?: string; size_pattern?: string; clean_pattern?: string }
+const BADGE = /!\[(P[0-3]) Badge\]/
+const CLEAN = "Didn't find any major issues"
+
+// 설정의 출처 목록. 옛 키는 맨 앞의 표 출처다. 꼴이 틀리면 던져 첫 리뷰만 null 이 된다
+export function reviewSources(settings: Json): ReviewSource[] {
+  const sources: ReviewSource[] = []
+  if (settings.review_author) sources.push({ author: String(settings.review_author), kind: 'table',
+    ...(settings.review_pattern ? { pattern: String(settings.review_pattern) } : {}), ...(settings.size_pattern ? { size_pattern: String(settings.size_pattern) } : {}) })
+  const listed = settings.review_sources ?? []
+  if (!Array.isArray(listed)) throw new Error('routing.review_sources 는 목록이다')
+  for (const item of listed) {
+    if (!object(item) || typeof item.author !== 'string' || !item.author || !['table', 'badges', undefined].includes(item.kind) ||
+      ['pattern', 'size_pattern', 'clean_pattern'].some(key => item[key] !== undefined && typeof item[key] !== 'string')) throw new Error('routing.review_sources 항목 형식 오류')
+    sources.push({ ...item, kind: item.kind ?? 'table' } as ReviewSource)
   }
-  return { first_review: null, size_grade: null, at: null }
+  return sources
+}
+
+type Reviews = { first_reviews: FirstReview[]; size_grade: string | null }
+function reviews(repo: string, target: { host: string; slug: string }, pr: number): Reviews {
+  const sources = reviewSources(section<Json>(loadConfig(repo), 'routing', ROUTING_KEYS))
+  if (!sources.length) return { first_reviews: [], size_grade: null }
+  const endpoint = `repos/${target.slug}`
+  const issue = pages(repo, target.host, `${endpoint}/issues/${pr}/comments?per_page=100`)
+  const prReviews = pages(repo, target.host, `${endpoint}/pulls/${pr}/reviews?per_page=100`)
+  const inline = sources.some(s => s.kind === 'badges') ? pages(repo, target.host, `${endpoint}/pulls/${pr}/comments?per_page=100`) : []
+  const by = (author: string) => (row: Json) => String(row.user?.login).toLowerCase() === author.toLowerCase()
+  const at = (row: Json) => String(row.submitted_at ?? row.created_at)
+  const sorted = (rows: Json[]) => rows.filter(row => Number.isFinite(ms(at(row)))).sort((a, b) => ms(at(a)) - ms(at(b)))
+  const found: FirstReview[] = []
+  let size: string | null = null
+  for (const source of sources) {
+    if (source.kind === 'table') {
+      for (const row of sorted([...issue, ...prReviews].filter(by(source.author)))) {
+        const body = String(row.body ?? '')
+        const counts = attempt(() => reviewCounts(body, source.pattern))
+        const grade = source.size_pattern ? attempt(() => new RegExp(source.size_pattern!, 'm').exec(body)?.[1] ?? null) : null
+        if (!counts && !grade) continue
+        if (counts) found.push({ source: source.author, at: at(row), counts })
+        size ??= grade
+        break
+      }
+      continue
+    }
+    const clean = new RegExp(source.clean_pattern ?? CLEAN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'm')
+    const first = sorted([...prReviews.filter(by(source.author)).map(row => ({ ...row, review: true })),
+      ...issue.filter(by(source.author)).filter(row => clean.test(String(row.body ?? '')))])[0]
+    if (!first) continue
+    const counts: Record<string, number> = { P0: 0, P1: 0, P2: 0, P3: 0 }
+    if (first.review) for (const c of inline) {
+      const badge = by(source.author)(c) && c.pull_request_review_id === first.id ? BADGE.exec(String(c.body ?? ''))?.[1] : undefined
+      if (badge) counts[badge]++
+    }
+    found.push({ source: source.author, at: at(first), counts })
+  }
+  return { first_reviews: found.sort((a, b) => ms(a.at) - ms(b.at)), size_grade: size }
+}
+
+// 최상위 모듈. 앞 두 조각이고 skills/<스킬>/ 아래는 한 조각, skills/<스킬>/scripts/ 아래는 두 조각 더 본다. 루트 파일은 `.` 이다
+export function moduleOf(file: string): string {
+  const parts = file.split('/')
+  if (parts[0] === 'skills' && parts.length >= 4 && parts[2] === 'scripts') return parts.slice(0, parts.length > 4 ? 4 : 3).join('/')
+  if (parts[0] === 'skills' && parts.length >= 3) return parts.slice(0, parts.length > 3 ? 3 : 2).join('/')
+  return parts.length > 2 ? parts.slice(0, 2).join('/') : parts.length > 1 ? parts[0] : '.'
+}
+
+// 머리 주석의 「일의 크기」 구간
+export function sizeBucket(lines: number, files: number, modules: number): SizeBucket {
+  const score = (value: number, [low, high]: [number, number]) => value < low ? 0 : value < high ? 1 : 2
+  const total = score(lines, [120, 350]) + score(files, [6, 15]) + score(modules, [3, 6])
+  return total <= 1 ? 'small' : total <= 4 ? 'medium' : 'large'
+}
+
+function prSize(repo: string, target: { host: string; slug: string }, info: Json): PrSize {
+  const lines = info.additions + info.deletions
+  if (![info.additions, info.deletions, info.changedFiles].every(n => Number.isInteger(n) && n >= 0)) throw new Error('PR 크기 필드 누락')
+  const files = pages(repo, target.host, `repos/${target.slug}/pulls/${info.number}/files?per_page=100`)
+  // 이 endpoint는 최대 3000건이다. https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files
+  if (files.length >= 3000 || files.some(f => typeof f.filename !== 'string')) throw new Error('파일 조회 범위 또는 형식 오류')
+  const modules = new Set(files.map(f => moduleOf(f.filename))).size
+  return { lines, files: info.changedFiles, modules, bucket: sizeBucket(lines, info.changedFiles, modules) }
 }
 
 function inbox(handle: string, since: number): Json[] {
@@ -157,7 +247,7 @@ function inbox(handle: string, since: number): Json[] {
   throw new Error('메시지 조회 한도에서 필요한 시각 범위를 확인하지 못했다')
 }
 
-type MessageMetrics = Pick<RoutingRecord, 'questions' | 'escalations' | 'coordinator_messages' | 'minutes_to_ready' | 'minutes_waiting_user'> & { opener: string | null }
+type MessageMetrics = Pick<RoutingRecord, 'questions' | 'escalations' | 'coordinator_messages' | 'minutes_to_ready' | 'minutes_waiting_user' | 'stopped'> & { opener: string | null }
 function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetrics {
   const all = new Map<string, Json>()
   const runs = new Map<string, Json[]>()
@@ -174,6 +264,7 @@ function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetr
   const sent = list.filter(m => from(m))
   const questions = sent.filter(m => m.type === 'question')
   const escalation = sent.filter(m => m.type === 'escalation' && !isQuietStop(m))
+  const stops = list.filter(m => isQuietStop(m) && (from(m) || rows.some(row => row.dispatch === stopDispatch(m))))
   const ready = sent.filter(m => m.type === 'status' && readyOf(m)?.pr === pr).sort((a, b) => ms(a.created_at) - ms(b.created_at))[0]
   const commands = list.filter(m => rows.some(row => recipientOf(m) === `dispatch:${row.dispatch}` || recipientOf(m) === row.terminal)
     && !from(m) && !['heartbeat', 'worker_done'].includes(m.type) && !payload(m).broadcast &&
@@ -195,7 +286,7 @@ function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetr
   for (const [start, stop] of intervals) { total += Math.max(0, stop - Math.max(start, end)); end = Math.max(end, stop) }
   return { questions: questions.length, escalations: escalation.length, coordinator_messages: commands.length,
     minutes_to_ready: ready ? (until - ms(rows[0].at)) / 60_000 : null,
-    minutes_waiting_user: waitingKnown ? total / 60_000 : null, opener: ready ? from(ready)!.dispatch : null }
+    minutes_waiting_user: waitingKnown ? total / 60_000 : null, stopped: stops.length, opener: ready ? from(ready)!.dispatch : null }
 }
 
 const sum = (list: Tokens[]): Tokens => list.reduce((a, t) => ({ input: a.input + t.input, output: a.output + t.output,
@@ -260,11 +351,24 @@ export function collectTokens(rows: LaunchHistory[], history: LaunchHistory[], e
   return { tokens: null, tokens_source: usage?.stale ? 'stale' : 'unavailable' }
 }
 
+// 이어 맡은 dispatch 면 retry_of 를 거슬러 이어 맡기 전 dispatch 를 낸다(머리 주석의 「이어 맡기기」)
+export function continuedFrom<T extends { dispatch: string; retry_of?: string | null; origin?: string | null }>(rows: T[], row: T): T {
+  const seen = new Set<string>()
+  let owner = row
+  while ((owner.origin === 'returned' || owner.origin === 'stopped') && !seen.has(owner.dispatch)) {
+    seen.add(owner.dispatch)
+    const previous = rows.find(other => other.dispatch === owner.retry_of)
+    if (!previous) break
+    owner = previous
+  }
+  return owner
+}
+
 async function collect(repo: string, pr: number, outcome: Outcome): Promise<void> {
   const history = launchHistory(repo)
   if (!history.length) return
   if (routingRecords(repo).some(row => row.pr === pr && (row.outcome === outcome || row.outcome === 'merged'))) return
-  const info = github<Json>(repo, ['pr', 'view', String(pr), '--json', FIELDS])
+  const info = github<Json>(repo, ['pr', 'view', String(pr), '--json', VIEW_FIELDS])
   if (info.state !== outcome.toUpperCase()) throw new Error('PR 결과 불일치')
   const target = apiTarget(info.url)
   if (!target) throw new Error('PR URL 형식 오류')
@@ -273,6 +377,8 @@ async function collect(repo: string, pr: number, outcome: Outcome): Promise<void
   const rows = dispatchesFor(info, siblings, history)
   if (!rows.length) return
   const review = attempt(() => reviews(repo, target, pr))
+  const first = review?.first_reviews[0] ?? null
+  const size = attempt(() => prSize(repo, target, info))
   const commits = attempt(() => {
     const found = pages(repo, target.host, `repos/${target.slug}/pulls/${pr}/commits?per_page=100`)
     // 이 endpoint는 최대 250건이다. 한도에서 완전성을 증명하지 못하면 null이다.
@@ -303,15 +409,18 @@ async function collect(repo: string, pr: number, outcome: Outcome): Promise<void
   })
   const ended = ms(info.mergedAt ?? info.closedAt)
   const message = attempt(() => messages(pr, rows, ended))
-  const opener = rows.find(row => row.dispatch === message?.opener) ?? rows.filter(row => ms(row.at) <= ms(info.createdAt)).at(-1)!
+  const opener = continuedFrom(rows, rows.find(row => row.dispatch === message?.opener) ?? rows.filter(row => ms(row.at) <= ms(info.createdAt)).at(-1)!)
   await writeRoutingRecord(repo, {
     version: 1, recorded_at: new Date().toISOString(), pr, repo: target.slug, branch: info.headRefName,
     merged_at: outcome === 'merged' ? info.mergedAt : null, closed_at: outcome === 'closed' ? info.closedAt : null, outcome,
     dispatches: rows.map(row => ({ dispatch: row.dispatch, at: row.at, agent: row.agent ?? null, model: row.model ?? null,
       effort: row.effort ?? null, effective: row.effective ? { agent: row.effective.agent ?? null, model: row.effective.modelId ?? row.effective.model ?? null, effort: row.effective.effort ?? null } : null, experiment: row.experiment ?? null, row: row.row ?? null,
-      retry_of: row.retry_of ?? null, opened_pr: row.dispatch === opener.dispatch })),
-    task_row: opener.row ?? null, first_review: review?.first_review ?? null, size_grade: review?.size_grade ?? null,
-    fix_commits_after_review: review?.at && commits ? commits.filter(c => ms(c.commit?.committer?.date) > ms(review.at)).length : null,
+      retry_of: row.retry_of ?? null, opened_pr: row.dispatch === opener.dispatch, origin: row.origin ?? null, alternation: !!row.effective?.alternation,
+      spec_todos: row.spec_todos ?? null, spec_files: row.spec_files ?? null })),
+    task_row: opener.row ?? null, first_review: first?.counts ?? null, first_review_source: first?.source ?? null, first_review_at: first?.at ?? null,
+    first_reviews: review?.first_reviews ?? null, size_grade: review?.size_grade ?? null, size,
+    fix_commits_after_review: first && commits ? commits.filter(c => ms(c.commit?.committer?.date) > ms(first.at)).length : null,
+    returned: rows.filter(row => row.origin === 'returned').length, stopped: message?.stopped ?? null,
     ci_failures: ci, questions: message?.questions ?? null, escalations: message?.escalations ?? null,
     coordinator_messages: message?.coordinator_messages ?? null, minutes_to_ready: message?.minutes_to_ready ?? null,
     minutes_waiting_user: message?.minutes_waiting_user ?? null, ...collectTokens(rows, history, ended),

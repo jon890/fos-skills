@@ -52,7 +52,7 @@ test('열린 PR 이 있고 dispatch 가 끝났으면 지시서와 이유를 후�
   assert.equal(r.code, 0, r.stdout + r.stderr)
   assert.equal(r.stdout, 'CONTINUED d1 d2 task2 pr=#7')
   const [args] = sent()
-  assert.deepEqual(args, ['--dispatch', 'd1', '--spec', join(repo, 'spec-x.md'), '--note', continueNote(7), '--run', 'R'])
+  assert.deepEqual(args, ['--dispatch', 'd1', '--spec', join(repo, 'spec-x.md'), '--note', continueNote(7), '--origin', 'returned', '--run', 'R'])
   assert.match(continueNote(7), /PR #7 이 아직 열려 있다.*머지될 때까지 이 worker 가 맡는다/)
 })
 test('--run 을 주면 그 Run 으로 보낸다', () => {
@@ -94,7 +94,7 @@ test('PR 을 열기 전에 끝난 dispatch 는 남은 할 일을 후속 지시�
   const r = run('--dispatch', 'd1')
   assert.equal(r.code, 0, r.stdout + r.stderr)
   assert.equal(r.stdout, `CONTINUED d1 d2 task2 pr=- tries=1/${STOP_LIMIT}`)
-  assert.deepEqual(sent()[0], ['--dispatch', 'd1', '--spec', join(repo, 'spec-x.md'), '--note', stoppedNote(null), '--run', 'R'])
+  assert.deepEqual(sent()[0], ['--dispatch', 'd1', '--spec', join(repo, 'spec-x.md'), '--note', stoppedNote(null), '--origin', 'stopped', '--run', 'R'])
   assert.match(stoppedNote(null), /^앞 턴이 보고 없이 끝났다\. 이 턴에서 바로 지시서의 남은 할 일을 이어 한다.*아직 PR 이 없다/)
 })
 test('살아 있지만 턴을 끝낸 dispatch 에는 본문만 보낸다', () => {

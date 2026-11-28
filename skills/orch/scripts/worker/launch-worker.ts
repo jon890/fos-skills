@@ -160,7 +160,7 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFamily, type Generation, type WorkerHome } from '../lib/model-generation.ts'
+import { claudeGeneration, codexGeneration, parseModel, pinnedCheck, readCodexModels, sameFamily, type Generation, type WorkerHome } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Alternation, type CandidateOverride, type Effective } from '../lib/launched.ts'
@@ -179,7 +179,7 @@ import { installCommitCheck, removeCommitCheck } from '../lib/commit-check.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
+import { latestTerminal, launchHistory, recordHistory, specCounts } from '../lib/launch-history.ts'
 import { acceptsTurnCandidate, candidateOverrideOf, pinnedSelection, selectionVerdict, turnPolicy } from '../lib/selection.ts'
 import { parseModelTurn, takeModelTurn, type ModelTurn } from '../lib/model-turn.ts'
 import { limitRowOf, readSelectionTable } from '../lib/limit-table.ts'
@@ -194,7 +194,8 @@ import { workerSpecLine as copiedWorkerSpecLine } from '../lib/worker-spec-copy.
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
-  '            [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
+  '            [--task ID [--retry-of DISPATCH] [--preflight]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON]',
+  '            [--origin returned|stopped --continued-from DISPATCH] -- WORKER_ARGS...',
 ].join('\n')
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
 const LONG_MS = 600_000
@@ -647,6 +648,9 @@ type Args = {
   spec: string
   task: string
   retryOf: string
+  // 이어 맡기기(lib/continue-worker.ts)의 후속 전송이 거절돼 send-to-worker 가 다시 띄울 때 넘기는 까닭과 앞 dispatch. 영구 이력의 origin, retry_of 가 된다
+  origin: 'returned' | 'stopped' | null
+  continuedFrom: string
   repo: string
   name: string
   base: string
@@ -728,6 +732,8 @@ function parse(argv: string[]): Args | 'help' {
     spec: { type: 'string' },
     task: { type: 'string', default: '' },
     'retry-of': { type: 'string', default: '' },
+    origin: { type: 'string', default: '' },
+    'continued-from': { type: 'string', default: '' },
     repo: { type: 'string', default: '' },
     name: { type: 'string', default: '' },
     base: { type: 'string', default: '' },
@@ -757,6 +763,7 @@ function parse(argv: string[]): Args | 'help' {
   if (dirtyAck === '') throw usage('--dirty-ack 에는 그대로 띄우는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
   if (!values.task && values['retry-of']) throw usage('--task 와 --retry-of 를 함께 준다')
+  if (!!values.origin !== !!values['continued-from'] || (values.origin && !['returned', 'stopped'].includes(values.origin as string))) throw usage('--origin(returned 나 stopped)과 --continued-from 을 함께 준다')
   if (values.preflight && !values.task) throw usage('--preflight 는 --task 와 함께 준다')
   if (values.task && (values.worktree || values.name)) throw usage('다시 띄우기의 워크트리는 이력에서 읽는다')
   if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
@@ -767,6 +774,8 @@ function parse(argv: string[]): Args | 'help' {
     spec: values.spec,
     task: values.task as string,
     retryOf: values['retry-of'] as string,
+    origin: (values.origin || null) as Args['origin'],
+    continuedFrom: values['continued-from'] as string,
     repo: values.repo as string,
     name: values.name as string,
     base: values.base as string,
@@ -1232,9 +1241,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
     if (candidateOverride) effective = { ...(limitOverride ? candidateOf(passthru) : {}), ...effective, candidateOverride }
     if (alternation) effective = { ...candidateOf(passthru), ...effective, alternation }
-    // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」)
-    const modelId = !stalled && generation && passValue(passthru, '--agent') === 'claude' ? await claudeModelId(worktree, launchedAt) : null
-    if (generation) effective = { ...effective, generation, ...(passValue(passthru, '--agent') === 'claude' ? { modelId } : {}) }
+    // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」).
+    // 세대를 바꾼 띄우기뿐 아니라 지시서가 처음부터 계열 이름(`--model opus`)이거나 모델을 주지 않은 띄우기도 읽는다.
+    // 예전에는 세대를 바꾼 때만 읽어 계열 이름으로 띄운 기록의 모델이 `opus` 로 남고 가격을 찾지 못했다(2026-11-28)
+    const claude = passValue(passthru, '--agent') === 'claude'
+    const familyOnly = claude && (!passValue(passthru, '--model') || parseModel(passValue(passthru, '--model'))?.generation === null)
+    const modelId = !stalled && (claude && generation || familyOnly) ? await claudeModelId(worktree, launchedAt) : null
+    if (generation) effective = { ...effective, generation, ...(claude ? { modelId } : {}) }
+    else if (familyOnly) effective = { ...effective, modelId }
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
@@ -1246,7 +1260,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       spec: resolve(a.spec),
       agent: reused ? inherited?.agent ?? null : common.agent,
       // Claude 를 계열 이름으로 띄웠으면 읽은 실제 모델 ID, 못 읽었으면 표의 모델 ID 다. 가격 집계(routing-report)가 모델 ID 로 단가를 찾는다
-      model: reused ? inherited?.model ?? null : modelId ?? (generation && passValue(passthru, '--agent') === 'claude' ? generation.from : common.model),
+      model: reused ? inherited?.model ?? null : modelId ?? (generation && claude ? generation.from : common.model),
       effort: reused ? inherited?.effort ?? null : common.effort,
       effective,
       experiment: experimentOf(text)?.name ?? null,
@@ -1261,7 +1275,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (!stalled) try {
       recordHistory(repo, {
         ...launch, at: new Date().toISOString(), title: /^#\s+(.+)$/m.exec(text)?.[1] ?? null,
-        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch ?? inherited?.dispatch ?? null,
+        row: selectionsOf(text)[0]?.row ?? null, retry_of: a.continuedFrom || retryDispatch || inherited?.dispatch || null, ...specCounts(text),
+        ...(a.origin ? { origin: a.origin } : {}),
       })
     } catch (e) {
       err(`launch-worker: 띄우기 이력을 기록하지 못했다: ${(e as Error).message}`)

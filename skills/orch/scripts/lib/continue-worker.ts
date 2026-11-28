@@ -209,7 +209,7 @@ export async function continueWorker(repo: string, dispatch: string, options: { 
   const note = counted ? stoppedNote(target.pr?.number ?? null) : continueNote(target.pr!.number)
   const args = live
     ? ['--dispatch', dispatch, '--no-reply', '--body', note, ...(run ? ['--run', run] : [])]
-    : ['--dispatch', dispatch, '--spec', target.spec, '--note', note, ...(run ? ['--run', run] : [])]
+    : ['--dispatch', dispatch, '--spec', target.spec, '--note', note, '--origin', counted ? 'stopped' : 'returned', ...(run ? ['--run', run] : [])]
   if (options.notMain !== undefined) args.push('--not-main', options.notMain)
   const sent = await runAsync(scriptCommand(send, args), { timeoutMs: SEND_MS })
   const shown = `${sent.stdout}${sent.stderr}`.trim()

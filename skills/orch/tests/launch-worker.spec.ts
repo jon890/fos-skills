@@ -846,6 +846,43 @@ describe('모델 세대', () => {
     assert.equal(history().model, 'claude-fable-5-2')
     assert.equal(history().effective.modelId, null)
   })
+
+  test('지시서가 처음부터 계열 이름이어도 실제 모델 ID 와 지시서의 할 일·파일 수를 이력에 남긴다', () => {
+    writeFileSync(spec, '# 일\n허락: push\n- **worker 선택:** `claude` `fable` effort `기본`. 행: impl-hard. 이유: 어렵다.\n\n## 할 일\n\n1. `lib/a.ts` 를 고친다\n2. `docs/b.md` 와 `lib/a.ts:3` 을 맞춘다\n')
+    mkdirSync(env.ORCH_MACHINE_DIR!, { recursive: true })
+    writeFileSync(join(env.ORCH_MACHINE_DIR!, 'model-turns.json'), '{"fable":"claude"}')
+    const home = join(tmp, 'claude-home-family')
+    env.CLAUDE_CONFIG_DIR = home
+    env.LAUNCH_MODEL_WAIT = '1'
+    const project = join(home, 'projects', claudeProjectName(worktree))
+    mkdirSync(project, { recursive: true })
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString()
+    const session = join(project, 'session.jsonl')
+    writeFileSync(session, [JSON.stringify({ type: 'user', timestamp: at(30_000), message: { content: 'hi' } }), JSON.stringify({ type: 'assistant', timestamp: at(31_000), message: { model: 'claude-fable-5-2' } })].join('\n') + '\n')
+    const later = new Date(Date.now() + 60_000)
+    utimesSync(session, later, later)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'fable'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(started(), / --agent claude --model fable(?: |$)/)
+    assert.equal(history().model, 'claude-fable-5-2')
+    assert.equal(history().effective.modelId, 'claude-fable-5-2')
+    assert.equal(history().spec_todos, 2)
+    assert.equal(history().spec_files, 2)
+  })
+
+  test('다시 띄운 이어 맡기기는 까닭과 앞 dispatch 를 이력에 남기고 한쪽만 주면 사용법 오류다', () => {
+    writeFileSync(spec, FABLE)
+    mkdirSync(env.ORCH_MACHINE_DIR!, { recursive: true })
+    writeFileSync(join(env.ORCH_MACHINE_DIR!, 'model-turns.json'), '{"fable":"claude"}')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--origin', 'returned', '--continued-from', 'ctx_prev', '--', '--agent', 'claude', '--model', 'claude-fable-5-2'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.equal(history().origin, 'returned')
+    assert.equal(history().retry_of, 'ctx_prev')
+    assert.equal(launch(['--worktree', worktree, '--origin', 'returned', '--', '--agent', 'claude'], 'bash', false).code, 2)
+    assert.equal(launch(['--worktree', worktree, '--origin', 'other', '--continued-from', 'x', '--', '--agent', 'claude'], 'bash', false).code, 2)
+  })
 })
 
 describe('선택 정책과 영구 이력', () => {

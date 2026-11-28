@@ -47,11 +47,14 @@
 | 키 | 값 |
 | --- | --- |
 | `pr`, `repo`, `branch`, `merged_at`, `closed_at` | PR 번호, 저장소, 브랜치, 머지 시각, 닫힌 시각(머지 없이 닫힌 PR 만) |
-| `dispatches` | 그 PR 을 만든 dispatch 마다 `agent`, `model`, `effort`(요청과 `launch.effective`), `experiment`, 띄운 시각 |
+| `dispatches` | 그 PR 을 만든 dispatch 마다 `agent`, `model`, `effort`(요청과 `launch.effective`), `experiment`, 띄운 시각. `effective.model` 은 Claude 를 계열 이름으로 띄웠으면 세션 기록에서 읽은 실제 모델 id 다. `origin` 은 이어 맡기기로 생긴 dispatch 의 까닭(`returned` 머지 전 완료 보고 되돌림, `stopped` 멈춘 worker 이어 보내기), `alternation` 은 번갈아 띄우기 표시, `spec_todos`, `spec_files` 는 띄울 때 지시서의 「## 할 일」 번호 수와 백틱으로 가리킨 파일 수다. `opened_pr` 는 PR 의 모델과 품질을 붙일 dispatch 이고, 이어 맡은 dispatch 가 준비를 알렸으면 이어 맡기 전 dispatch 다 |
 | `task_row` | 지시서 `worker 선택:` 줄의 「행: <id>」 값(DECISION20). 옛 지시서처럼 없으면 `null` |
-| `size_grade` | 저장소의 PR 크기 등급. 저장소에 크기 기준이 없으면 `null` |
-| `first_review` | 첫 자동 리뷰 판정의 P1~P5 수 |
-| `fix_commits_after_review` | 첫 리뷰 뒤 커밋 수 |
+| `size` | 리뷰 봇과 무관한 일의 크기. 바뀐 줄(additions+deletions) `lines`, 파일 수 `files`, 건드린 최상위 모듈 수 `modules`, 구간 `bucket`(`small`, `medium`, `large`). 줄 120·350, 파일 6·15, 모듈 3·6 미만이면 지표마다 0·1, 이상이면 2 점이고 합이 1 이하 small, 4 이하 medium, 그 위 large 다. 경계는 2026-11-20~27 12개 저장소 PR 261건의 세 분위수에서 정했고(small 91, medium 82, large 88), 백분위 평균으로 나눈 구간과 90% 가 같다. 모듈과 구간 규칙은 `lib/routing-log.ts` 머리 주석이 갖는다 |
+| `size_grade` | 리뷰 봇이 본문에 적은 PR 크기 등급. 설정에 크기 꼴이 없으면 `null` |
+| `first_review`, `first_review_source`, `first_review_at` | 가장 이른 출처의 첫 자동 리뷰 지적 수와 그 출처(리뷰 계정), 시각. 척도는 출처마다 다르다(표 리뷰 P1~P5, Codex 봇 배지 P0~P3) |
+| `first_reviews` | 설정한 리뷰 출처마다 첫 리뷰의 `source`, `at`, `counts`. 보고서는 출처마다 칸을 나눈다 |
+| `fix_commits_after_review` | 첫 리뷰(`first_review_at`) 뒤 커밋 수 |
+| `returned`, `stopped` | 되돌림으로 생긴 dispatch 수, 이 PR 의 dispatch 가 보고 없이 멈춘(Orca 의 finished 멈춤 보고) 수 |
 | `ci_failures` | 그 PR head 들의 CI 실패 실행 수 |
 | `questions`, `escalations`, `coordinator_messages` | worker 질문 수, worker escalation 수, 코디네이터가 그 dispatch 에 보낸 지시 수(여러 worker 에 같이 보낸 공지는 뺀다) |
 | `minutes_to_ready`, `minutes_waiting_user` | 띄운 때부터 첫 `준비됨` 까지, 그 가운데 질문이 답을 기다린 시간 |

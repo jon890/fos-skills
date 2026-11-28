@@ -92,7 +92,7 @@ export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line'
 export const REVIEW_KEYS: readonly string[] = ['prepare']
 
 // PR 종료 관측값의 저장소별 읽기 규칙.
-export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern', 'usage_boost']
+export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern', 'review_sources', 'usage_boost']
 
 export const FEEDBACK_KEYS: readonly string[] = ['reviewer']
 

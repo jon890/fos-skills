@@ -92,6 +92,8 @@ export const SAMPLES: Record<string, Record<string, Sample>> = {
     review_pattern: { good: ['(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+(\\d+)'], bad: ['(\\d+)', '(', '', 1] },
     usage_boost: { good: [true, false, 'old', 0, null], bad: [] },
     size_pattern: { good: ['Size: (\\w+)'], bad: ['size', '(', '', 1] },
+    review_sources: { good: [[], [{ author: 'codex[bot]', kind: 'badges' }, { author: 'bot', size_pattern: 'Size: (\\w+)' }]],
+      bad: ['x', [{}], [{ author: 'a', kind: 'other' }], [{ author: 'a', size_pattern: 'size' }]] },
   },
   docker: {
     containers: { good: [[], [{ label: 'a=b' }, { name: 'job-(?<pid>\\d+)' }]], bad: ['x', [{}], [{ label: 'x', extra: 1 }], [{ name: '(' }]] },
