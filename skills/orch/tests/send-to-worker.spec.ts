@@ -694,6 +694,16 @@ describe('Orca 후속 일과 기록', () => {
     })
   }
 
+  test('이어 맡기기의 까닭(--origin)을 영구 이력에 남기고 지시서 없는 --origin 은 사용법 오류다', () => {
+    follow()
+    const r = send('--spec', join(tmp, 'next.md'), '--origin', 'returned')
+    assert.equal(r.code, 0, both(r))
+    const history = JSON.parse(readFileSync(join(tmp, 'orch/state/launch-history.jsonl'), 'utf8'))
+    assert.equal(history.origin, 'returned')
+    assert.equal(send('--body', 'x', '--origin', 'returned').code, 2)
+    assert.equal(send('--spec', join(tmp, 'next.md'), '--origin', 'other').code, 2)
+  })
+
   test('Claude 후속 지시서도 워크트리에 복사하고 원본 경로를 남긴다', () => {
     follow()
     const st = readState()

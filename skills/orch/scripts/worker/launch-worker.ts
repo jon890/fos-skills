@@ -160,7 +160,7 @@ import type { FireContext } from '../lib/events.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
-import { claudeGeneration, codexGeneration, pinnedCheck, readCodexModels, sameFamily, type Generation, type WorkerHome } from '../lib/model-generation.ts'
+import { claudeGeneration, codexGeneration, parseModel, pinnedCheck, readCodexModels, sameFamily, type Generation, type WorkerHome } from '../lib/model-generation.ts'
 import { claudeModelOf } from '../lib/session-tokens.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch, type Alternation, type CandidateOverride, type Effective } from '../lib/launched.ts'
@@ -179,7 +179,7 @@ import { installCommitCheck, removeCommitCheck } from '../lib/commit-check.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { checkWorkerOrch } from '../lib/worker-path.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
+import { latestTerminal, launchHistory, recordHistory, specCounts } from '../lib/launch-history.ts'
 import { acceptsTurnCandidate, candidateOverrideOf, pinnedSelection, selectionVerdict, turnPolicy } from '../lib/selection.ts'
 import { parseModelTurn, takeModelTurn, type ModelTurn } from '../lib/model-turn.ts'
 import { limitRowOf, readSelectionTable } from '../lib/limit-table.ts'
@@ -1232,9 +1232,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
     if (candidateOverride) effective = { ...(limitOverride ? candidateOf(passthru) : {}), ...effective, candidateOverride }
     if (alternation) effective = { ...candidateOf(passthru), ...effective, alternation }
-    // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」)
-    const modelId = !stalled && generation && passValue(passthru, '--agent') === 'claude' ? await claudeModelId(worktree, launchedAt) : null
-    if (generation) effective = { ...effective, generation, ...(passValue(passthru, '--agent') === 'claude' ? { modelId } : {}) }
+    // Claude 를 계열 이름으로 띄웠으면 worker 세션 기록에서 실제 모델 ID 를 읽어 남긴다(머리 주석의 「0-0-1」).
+    // 세대를 바꾼 띄우기뿐 아니라 지시서가 처음부터 계열 이름(`--model opus`)이거나 모델을 주지 않은 띄우기도 읽는다.
+    // 예전에는 세대를 바꾼 때만 읽어 계열 이름으로 띄운 기록의 모델이 `opus` 로 남고 가격을 찾지 못했다(2026-11-28)
+    const claude = passValue(passthru, '--agent') === 'claude'
+    const familyOnly = claude && (!passValue(passthru, '--model') || parseModel(passValue(passthru, '--model'))?.generation === null)
+    const modelId = !stalled && (claude && generation || familyOnly) ? await claudeModelId(worktree, launchedAt) : null
+    if (generation) effective = { ...effective, generation, ...(claude ? { modelId } : {}) }
+    else if (familyOnly) effective = { ...effective, modelId }
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
@@ -1246,7 +1251,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       spec: resolve(a.spec),
       agent: reused ? inherited?.agent ?? null : common.agent,
       // Claude 를 계열 이름으로 띄웠으면 읽은 실제 모델 ID, 못 읽었으면 표의 모델 ID 다. 가격 집계(routing-report)가 모델 ID 로 단가를 찾는다
-      model: reused ? inherited?.model ?? null : modelId ?? (generation && passValue(passthru, '--agent') === 'claude' ? generation.from : common.model),
+      model: reused ? inherited?.model ?? null : modelId ?? (generation && claude ? generation.from : common.model),
       effort: reused ? inherited?.effort ?? null : common.effort,
       effective,
       experiment: experimentOf(text)?.name ?? null,
@@ -1261,7 +1266,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     if (!stalled) try {
       recordHistory(repo, {
         ...launch, at: new Date().toISOString(), title: /^#\s+(.+)$/m.exec(text)?.[1] ?? null,
-        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch ?? inherited?.dispatch ?? null,
+        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch ?? inherited?.dispatch ?? null, ...specCounts(text),
       })
     } catch (e) {
       err(`launch-worker: 띄우기 이력을 기록하지 못했다: ${(e as Error).message}`)
