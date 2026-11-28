@@ -37,6 +37,30 @@ export function ageSeconds(message: Message, now: number): number {
   return created === null ? 0 : now - created / 1000
 }
 
+// 시간 제한이 있는 질문의 만료 줄 머리. worker-ask --expires-at 이 질문 본문 끝에 `만료: <UTC ISO 시각>` 을 붙인다
+export const EXPIRY_PREFIX = '만료:'
+export const EXPIRED_MARK = '[만료됨]'
+
+// 시간대를 붙인 ISO 8601 시각의 epoch 밀리초. 시간대가 없으면 머신마다 뜻이 달라 읽지 않는다
+export function expiryTime(value: string): number | null {
+  const trimmed = value.trim()
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) return null
+  const at = Date.parse(trimmed)
+  return Number.isFinite(at) ? at : null
+}
+
+// 질문 본문의 마지막 `만료:` 줄이 가리키는 epoch 밀리초. 줄이 없거나 읽지 못하면 null 이다
+export function expiresAt(message: Message): number | null {
+  const line = String(message.body || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith(EXPIRY_PREFIX)).pop()
+  return line === undefined ? null : expiryTime(line.slice(EXPIRY_PREFIX.length))
+}
+
+// now 는 epoch 초다. 만료 줄의 시각이 지났으면 true 다
+export function isExpired(message: Message, now: number): boolean {
+  const at = expiresAt(message)
+  return at !== null && at <= now * 1000
+}
+
 export type Notice = { line: string; message: Message; reminder: boolean }
 export function brief(body: unknown): string {
   const flat = String(body || '').split(/\s+/).filter(Boolean).join(' ')

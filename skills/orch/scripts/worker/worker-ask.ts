@@ -1,7 +1,7 @@
 // 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문을 보낸 뒤, 답을 기다리지 않고 끝난다.
 //
 // 사용: worker-ask.ts --from HANDLE (--question TEXT | --question-file FILE)
-//                    [--options CSV] [--run ID] [--force] [--decision] [--temp-ok]
+//                    [--options CSV] [--run ID] [--force] [--decision] [--temp-ok] [--expires-at ISO]
 //       worker-ask.ts --check-answer TEXT (--question TEXT | --question-file FILE)
 // --question-file: 질문 본문을 파일에서 읽는다. 긴 결정 블록을 셸 인자로 붙이지 않고 파일 경로로 보내려는 것이다.
 // --question 과 함께 줄 수 없고, 파일이 없거나 비었으면 사용법 오류(2)다. --decision 이면 파일 내용의 첫 줄을 검사한다.
@@ -21,6 +21,10 @@
 // 안내는 stderr 에 낸다. 코디네이터가 읽을 파일은 `$(orch paths root)/handoff/` 에 두고 절대경로로 적는다(공통 지시서 `handoff-path`).
 // --temp-ok: 질문의 임시 경로가 코디네이터가 열 필요 없는 기록용이라는 뜻이다. 이 검사를 건너뛴다. 한 번 쓰고 끝나는 파일은
 // 세션 임시 폴더에 두므로, 그 경로를 알리기만 하는 질문까지 막지 않으려는 것이다(R17, 2026-11-24).
+// --expires-at: 질문에 담은 값(기기 코드처럼 사용자가 시간 안에 써야 하는 것)이 쓸 수 없게 되는 시각이다. ISO 8601 로 받는다.
+// 질문 본문 끝에 `만료: <UTC ISO 시각>` 줄을 붙여 보낸다. 코디네이터의 질문 알림은 이 줄의 시각이 지나면 「만료됨」 을 붙인다(core/questions.ts 의 expiresAt).
+// 시각을 읽지 못하거나 이미 지났으면 보내지 않고 2 다. ask 는 비동기라 코디네이터를 거치는 동안 값이 만료된다(2026-11-28 기기 코드 다섯 개가 모두 만료).
+// 그래서 시간 제한이 있는 값은 먼저 「준비되면 답해 달라」 는 준비 신호를 묻고, 답을 받은 뒤 새 값을 내 이 옵션과 함께 보낸다.
 // 종료: 0 보냈다(`ASKED <질문 id>`) 또는 바로 답을 받았다(`answer: `), 2 사용법·실행 오류(--decision 형식 위반, --resume, 다시 불러도 바쁜 Orca,
 // 끝난 dispatch 가 아닌 ask 실패 포함), 3 Run 메일함으로 대신 보냄, 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
 // 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나, 시간 초과인데 질문 ID 가 없거나,
@@ -66,6 +70,7 @@ import { short } from '../lib/output.ts'
 import { sessionTempPaths } from '../lib/temp-path.ts'
 import { pyStr as text } from '../lib/py.ts'
 import { senderOf } from '../core/message-fields.ts'
+import { EXPIRY_PREFIX, expiryTime } from '../core/questions.ts'
 
 // 답을 받은 출력. 첫 줄이 `answer: <답>` 이고, 지금 출력은 그 뒤에 ask 의 출력을 잇는다. 짧은 출력은 첫 줄만이다
 
@@ -80,7 +85,7 @@ function asked(id: string, output: string): void {
 
 const USAGE = [
   '사용법: orch worker ask --from HANDLE (--question TEXT | --question-file FILE)',
-  '                        [--options CSV] [--run ID] [--force] [--decision] [--temp-ok]',
+  '                        [--options CSV] [--run ID] [--force] [--decision] [--temp-ok] [--expires-at ISO]',
   '        orch worker ask --check-answer TEXT (--question TEXT | --question-file FILE)',
   'HANDLE 은 dispatch 머리말의 --from 값이다. 질문을 전경에서 보내고 긴 본문은 --question-file 로 준다.',
   '질문에 세션 임시 폴더 경로가 있으면 거절한다. 코디네이터가 읽을 파일은 "$(orch paths root)/handoff/" 에 두고, 기록용 경로면 --temp-ok 를 붙인다.',
@@ -91,6 +96,8 @@ const USAGE = [
   '  - 선택지 이름: 고르면 생기는 결과',
   '  - 선택지 이름: 고르면 생기는 결과',
   '  권장: 선택지 이름. 이유',
+  '기기 코드처럼 시간 안에 써야 하는 값은 바로 보내지 않는다. 먼저 「준비되면 답해 달라」 는 준비 신호를 묻고,',
+  '답을 받은 뒤 새 값을 내 --expires-at <만료 시각, ISO 8601> 을 붙여 보낸다. 질문 끝에 `만료:` 줄이 붙고, 지난 시각이면 보내지 않는다.',
   '0 ASKED 또는 3 SENT-RUN 이면 턴을 끝낸다. Orca 가 깨우면 orca orchestration check 로 답을 읽는다.',
   '0 answer: 줄에 답이 있으면 적용한다. 5 면 출력된 미확인 메시지를 읽고, 질문이 여전히 필요하면 같은 명령을 다시 부른다.',
   '2 면 오류 안내를 따른다. 질문이 닿았는지 알 수 없으면 다시 보내기 전에 orca orchestration check 로 확인한다.',
@@ -279,10 +286,11 @@ async function main(argv: string[]): Promise<number> {
       force: { type: 'boolean', default: false },
       decision: { type: 'boolean', default: false },
       'temp-ok': { type: 'boolean', default: false },
+      'expires-at': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     } as const
     // `--question "- 선택지"` 처럼 값이 - 로 시작해도 값으로 받는다
-    const joined = ['from', 'question', 'question-file', 'check-answer', 'resume', 'options', 'run', 'timeout-ms', 'max-wait']
+    const joined = ['from', 'question', 'question-file', 'check-answer', 'resume', 'options', 'run', 'timeout-ms', 'max-wait', 'expires-at']
     values = parseArgs({ args: expandArgs(argv, optionSpec, joined), options: optionSpec }).values
   } catch (e) {
     err(`${USAGE}\nworker-ask: ${(e as Error).message}`)
@@ -356,6 +364,19 @@ async function main(argv: string[]): Promise<number> {
       err(USAGE)
       return 2
     }
+  }
+  const expires = values['expires-at']
+  if (expires !== undefined) {
+    const at = expiryTime(expires)
+    if (at === null) {
+      err(`${USAGE}\nworker-ask: --expires-at 을 시각으로 읽지 못했다: ${expires}. 시간대를 붙인 ISO 8601(예: 2026-11-28T01:48:00Z)로 준다`)
+      return 2
+    }
+    if (at <= Date.now()) {
+      err(`worker-ask: --expires-at ${expires} 이 이미 지나 보내지 않았다. 새 값을 내기 전에 「준비되면 답해 달라」 는 준비 신호를 먼저 묻는다`)
+      return 2
+    }
+    question = `${question}\n${EXPIRY_PREFIX} ${new Date(at).toISOString()}`
   }
   const orca = orcaBin()
   const peek = () => run([orca, ...withFull(['orchestration', 'check', '--terminal', sender, '--peek', '--json'])]).stdout
