@@ -206,6 +206,151 @@
 
 Codex 매니페스트에 hook 을 넣지 않는 선택은 [ADR-007](../../adr/007-codex-manifest-without-hooks.md) 에 있다. 기존 지침은 공통 지시서에 review-subagents 요청이 없으면 Codex worker 가 검토를 코디네이터에게 넘기는 사례와, terra 의 시각 작업 effort 는 아직 실측 전이라는 한계도 기록했다.
 
+## 2026-11-28 공개 자료와 번갈아 띄우기 뒤 실측
+
+사용자 결정(2026-11-28)으로 `review` 와 `security-review` 행의 Claude Sonnet 5.5 를 `medium` 대신 `high` 로 띄운다.
+이 절은 그 결정과 미룬 결정의 근거를 모은다. 공개 자료는 2026-11-27 에 조회했고, 실측은 번갈아 띄우기(#609, 2026-11-23 머지) 앞뒤의 PR 이다.
+원자료는 코디네이터 세션의 임시 폴더에 있어 사라질 수 있으므로 판단에 쓴 수치만 옮긴다. PR 제목과 업무 번호는 옮기지 않았다.
+
+### 자료와 범위
+
+- 신뢰도: 높음은 공식 문서나 독립 기관의 재현 가능한 측정이다. 중간은 실작업 비교지만 표본이나 하네스가 우리와 다른 것이다. 낮음은 경험담, 추정, 벤더 자체 주장이다.
+- 실측 대상: `routing-log.jsonl` 이 있는 저장소 12곳에서 PR 이 닫힌 날(UTC)이 2026-11-20 이후인 262건(머지 261)이다. 11-20~23 이 124건, 11-24 이후가 138건이다. 아래 실측 표는 11-24 이후만 쓴다.
+- 모델은 PR 을 연 dispatch 의 모델이다. `--model opus` 처럼 짧은 이름으로 띄운 24건은 정식 id 로 합쳤다. 개입 수는 Orca `orchestration.db` 를 읽기 전용으로 셌다.
+- 크기 구간: PR 마다 바뀐 줄, 파일 수, 최상위 모듈 수의 백분위 평균으로 셋으로 나눴다. 작음 87건(줄 중앙 68, 파일 3), 중간 87건(194, 9), 큼 88건(652, 24)이다.
+- 비용은 토큰에 공식 단가를 곱한 가정 값이다. 지금 `orch routing report` 는 6.2 세대 단가가 없어 sol 비용을 비워 두므로, 이 절의 비용은 분석 스크립트가 아래 가격 표로 따로 계산했다.
+
+### 공개 자료
+
+가격($/1M 토큰, 입력 / 캐시 읽기 / 출력).
+
+| 모델 | 가격 | 측정일 | 출처 | 신뢰도 |
+| --- | --- | --- | --- | --- |
+| `gpt-6.2-astra` | 8 / 0.40 / 40. GPT-6 Astra(10 / 1 / 50)보다 20% 낮다 | 11-27 조회 | [OpenAI 가격](https://developers.openai.com/api/docs/pricing) | 높음 |
+| `gpt-6.2-sol` | 2 / 0.10 / 10. 6.1 sol 과 같다. 272K 넘는 입력은 4 / 15, Fast 는 약 2배 | 11-27 조회 | 위와 같음 | 높음 |
+| `gpt-6.1-terra`, `gpt-6-luna` | terra 1 / 0.05 / 5, luna 0.10 / 0.01 / 0.50 | 11-27 조회 | 위와 같음 | 높음 |
+| Claude | Fable 5.2 8 / 0.20 / 40, Opus 5.5 4 / 0.20 / 20, Sonnet 5.5 2 / 0.10 / 10, Haiku 5.5 0.10 / - / 0.50 | 11-27 조회 | [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing) | 높음 |
+
+코딩 에이전트 벤치마크와 실작업 비교.
+
+| 근거 | 결과 | effort | 측정일 | 표본 | 신뢰도 |
+| --- | --- | --- | --- | --- | --- |
+| [FrontierCode 2.0](https://cognition.com/frontiercode)(Cognition) | Fable 50.2% $17.73, Opus 47.3% $12.82, astra 44.2% $5.97, sol 43.8% $1.29, Sonnet 42.2% $19.94, 6.1 sol 39.6% | Fable xhigh, 나머지 max | 11-11 재채점 | 132과제 | 높음 |
+| [Terminal-Bench 4.0](https://www.vals.ai/benchmarks/terminal-bench-4)(Vals, 공통 하네스) | Fable 65.15% $14.56, Opus 65.15% $12.04, Sonnet 64.14% $10.75, astra 63.13% $4.69, sol 60.61% $1.13, 6.1 sol 55.05% | sol max | 11-19 | 미공개 | 높음 |
+| [AA 코딩 에이전트 지수](https://x.com/ArtificialAnlys/status/2122750637041693183) | Fable 5.2 58, astra 53, sol 49. sol 은 6.1 의 52 에서 3점 내렸고 「핵심 사실을 빠뜨리는 경향」 이 있다 | max | 11-17 | 미공개 | 하락은 높음, 절대값은 중간 |
+| [Agent Duel](https://agentduel.com/leaderboard)(사람 투표, 같은 하네스) | Fable 1069 $3.70·4.0분, Opus 1060 $1.64·3.0분, astra 1009 $2.17·2.6분, sol 943 $0.46·1.7분 | 미공개 | 11-27 | 미공개 | 중간 |
+| [Bito 실작업](https://bito.ai/blog/gpt-6-2-sol-astra-vs-claude-opus-fable-gpt-6-1-sol/)(어려운 5턴 세션 2종 × 4회) | 종합 점수와 세션당 비용: Opus 85.0 $5.40, Fable 83.1 $8.13, astra 77.5 $8.19, sol 76.5 $2.22, Sonnet 65.7 $1.28 | Claude medium, 6.2 high | 11-18 | 8회 | 중간 |
+
+- 독립 측정 셋(FrontierCode, Terminal-Bench, Agent Duel)에서 Fable 과 Opus 가 맨 위이고 둘의 차이는 오차 안이거나 아주 작다. sol 은 두 모델보다 3-6점 낮고 작업당 비용은 Opus 의 1/4 에서 1/10 정도다.
+- 6.2 sol 이 6.1 보다 나아졌는지는 자료끼리 어긋난다. AA 코딩 에이전트 지수는 3점 내렸고, FrontierCode 와 Terminal-Bench 는 4~6점 올랐다.
+- Sonnet 은 effort 에 따라 순위가 크게 바뀐다. Terminal-Bench(max)에서는 Opus 와 1점 차인데, Bito(medium)에서는 Haiku 보다 낮다.
+
+effort 별 품질과 비용.
+
+| 근거 | 결과 | 측정일 | 표본 | 신뢰도 |
+| --- | --- | --- | --- | --- |
+| [AA sol effort 별](https://artificialanalysis.ai/models/gpt-6-2-sol) | 지능 지수 low 41(출력 7.2M), medium 52(14.6M), high 55(22.7M), xhigh 56, max 57(60.9M) | 11-17 이후 | AA 과제 전체 | 높음 |
+| Bito sol low 와 high(위 Bito 글) | 어려운 세션 67.3% → 75.8%, $1.22 → $2.22, 12.2분 → 29.5분, 답변당 잘못된 주장 0.62 → 0.23. medium 은 측정하지 않았다 | 11-18 | 8회 | 중간 |
+| [Claude 공식 effort](https://platform.claude.com/docs/en/build-with-claude/effort) | Claude Code 기본 effort 는 네 모델 모두 `medium` 이다. API 기본은 Opus·Haiku `medium`, Fable·Sonnet `high` 다. Sonnet 은 「명세가 분명한 에이전트 코딩은 medium, 더 어렵거나 긴 작업은 high」 다 | 11-27 조회 | - | 높음 |
+| [Anthropic 출시 차트](https://www.digitalapplied.com/blog/sonnet-5-5-or-opus-5-5-effort-level-cost-per-task) | Terminal-Bench 4.0 Sonnet low 20.0 / medium 28.8 / high 43.0 / xhigh 61.5 / max 70.6, Opus 38.5 / 57.6 / 64.2 / 66.4 / 64.8. CursorBench 4.0 Sonnet medium 39.2 / high 47.8 / max 55.5 | 09-28 | 미공개 | 낮음(벤더) |
+| [AI Coding Daily](https://aicodingdaily.com/model/opus-5-5)(Claude Code, 프로젝트 5개) | Opus high 84.95 $0.83, medium 83.15 $0.57, low 78.19 $0.37 | 11-13 | 5 | 중간 |
+| [arXiv 2610.34491](https://arxiv.org/abs/2610.34491) | 높은 effort 는 쉬운 과제를 놓치고 비용이 최대 42배다. 낮게 시작해 실패 뒤 올리는 방식이 고정 최고 effort 와 같거나 낫다 | 10-25 | 벤치 4종 | 중간 |
+
+- Codex 와 API 의 6.2 sol·astra 공식 effort 기본값은 찾지 못했다. 「Codex 카탈로그 기본값 low」 는 2차 출처뿐이다(신뢰도 낮음). Codex CLI 0.171.0 부터 sol 이 카탈로그 기본 선택이다([changelog](https://learn.chatgpt.com/docs/changelog)).
+- Sonnet 의 Terminal-Bench max 는 벤더 차트가 70.6, Vals 공통 하네스가 64.14 다. 하네스와 측정 주체가 달라 절대값은 맞지 않고, effort 를 올리면 크게 오른다는 방향만 같다.
+
+무인 에이전트 신뢰성.
+
+| 근거 | 결과 | 측정일 | 표본 | 신뢰도 |
+| --- | --- | --- | --- | --- |
+| [OpenAI 시스템 카드](https://deploymentsafety.openai.com/gpt-6-2-astra-sol)(Codex 배포 시뮬레이션) | 지시 불이행 sol 4.66%(6.1 sol 3.21%), astra 2.87%. 게으름 sol 5.25%(6.1 sol 3.32%). astra 가 알고 있는 장애물을 보고에서 빠뜨림 22.28%(6 Astra 11.09%) | 11-17 | 약 17,000과제 | 중간~높음 |
+| openai/codex 이슈 [#62195](https://github.com/openai/codex/issues/62195), [#63434](https://github.com/openai/codex/issues/63434) 등 | 중간에 최종 응답으로 끝나거나, 승인된 계획 일부만 실행하고 계속하라는 요청을 거듭 요구한다. 11-27 기준 모두 열려 있고, CLI 0.171.0·0.172.0 changelog 에 고쳤다는 공지가 없다 | 11-09~23 | 개인 | 낮음(방향은 시스템 카드와 같음) |
+| [Opus 5.5 프롬프트 가이드](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5) | 진행 보고를 도구 호출 없는 텍스트로 보내 턴이 끝나 무인 루프가 멈춘다. 할 일 목록을 유지하고, 남은 항목을 적어 계속 요청하되 2~3회에서 멈추라고 권한다. 빈도 수치는 없다 | 11-27 조회 | - | 높음 |
+| [LiveNerf](https://enjoy.dev/blog/claude-opus-5-5-nerfed/) | Opus 품질 저하 주장을 고정 78문항으로 측정했다. 출시 때 0.584, 11-13~22 0.617 로 떨어지지 않았다. 긴 세션은 측정하지 않았다 | 11-24 | 78 | 중간 |
+| Claude 공식 effort(위 표) | Haiku 5.5 `low` 는 긴 에이전트 프롬프트에서 조기 종료와 검사 생략이 늘어난다 | 11-27 조회 | - | 높음 |
+
+Fable 5.2 를 일상 설계와 구현에 쓸 가치.
+
+| 근거 | 결과 | 신뢰도 |
+| --- | --- | --- |
+| Bito([글](https://bito.ai/blog/claude-fable-5-2-vs-opus-5-5-sonnet-haiku/)) | Fable 종합 83.1% 세션당 $8.13, Opus 85.0% $5.42. 가장 어려운 세션의 답변당 잘못된 주장 Fable 0.88, Opus 0.20 | 중간 |
+| [Atomic Agent](https://atomicagent.io/blog/claude-fable-5-2-vs-opus-5-5/), [wmedia](https://wmedia.es/en/tips/claude-code-fable-5-2-vs-opus-5-5-benchmark) 작은 과제 | 모두 통과해 품질 차이가 없다. 비용은 Fable medium 이 Opus medium 의 1.8~1.9배다 | 중간 |
+| [FrontierSWE v2](https://www.frontierswe.com/)(34과제 × 5회, 20시간 예산) | Fable 69.9% ±8.6, Opus 62.3%(벤더 발표만), Fable 회당 $168.78·16.5시간 | Fable 높음, Opus 중간 |
+| [Claude 플랜 안내](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan) | Max·Ultra 에서 Fable 은 주간 한도의 최대 50% 까지 쓰고 다른 모델보다 빨리 닳는다 | 높음 |
+
+- 일상 작업에서 Fable 이 Opus 보다 낫다는 근거는 없다. 몇 시간짜리 큰 작업에서만 앞선다. 위 「2026-11-12 Fable 5.2 실험 결과」 의 판단과 같다.
+
+### 같은 행과 같은 크기 구간의 Opus 와 sol (11-24 이후)
+
+Opus 는 `claude-opus-5-5` `medium`, sol 은 6.2 세대 sol 을 effort 구분 없이 묶었다(`impl-explore`·`design` 은 `medium`, `small-fix`·`impl-planned` 은 대부분 `low`). 칸은 Opus / sol 이다. 건수가 셋 이하인 칸은 방향만 본다.
+
+| 행 | 크기 | 건수 | 첫 리뷰 P1·P2 평균 | 리뷰 뒤 커밋 평균 | CI 실패 평균 | 출력 토큰 중앙(천) | 비용 가정 중앙($) |
+| --- | --- | --: | --: | --: | --: | --: | --: |
+| `impl-explore` | 작음 | 7 / 3 | 0.14 / 0.00 | 1.00 / 2.00 | 0.43 / 0.00 | 31 / 121 | 2.96 / 9.84 |
+| `impl-explore` | 중간 | 8 / 7 | 0.25 / 0.43 | 1.38 / 3.00 | 0.25 / 0.00 | 40 / 167 | 4.05 / 15.04 |
+| `impl-explore` | 큼 | 13 / 16 | 0.67 / 0.25 | 2.50 / 1.38 | 0.23 / 0.25 | 67 / 132 | 7.07 / 9.62 |
+| `small-fix` | 작음 | 11 / 8 | 0.00 / 0.00 | 0.78 / 0.29 | 0.00 / 0.12 | 19 / 17 | 1.57 / 1.68 |
+| `small-fix` | 중간 | 10 / 9 | 0.20 / 0.22 | 1.80 / 2.44 | 0.10 / 0.22 | 26 / 57 | 2.45 / 6.46 |
+| `design` | 작음 | 7 / 6 | 0.00 / 0.17 | 3.43 / 1.83 | 1.00 / 0.67 | 68 / 72 | 7.01 / 5.51 |
+| `impl-planned` | 큼 | 4 / 5 | 0.75 / 0.25 | 3.25 / 5.00 | 0.50 / 0.60 | 126 / 134 | 20.16 / 18.02 |
+
+행 전체로 본 11-24 이후 값은 아래와 같다(칸은 Opus / sol).
+
+| 행(sol effort) | 건수 | 준비 중앙(시간) | CI 실패 평균 | 리뷰 뒤 커밋 평균 | 질문 평균 | 출력 토큰 중앙(천) | 비용 가정 중앙($) |
+| --- | --: | --: | --: | --: | --: | --: | --: |
+| `impl-explore`(`medium`) | 28 / 26 | 0.58 / 0.51 | 0.29 / 0.15 | 1.78 / 1.88 | 0.43 / 0.58 | 45 / 123 | 4.44 / 9.84 |
+| `small-fix`(`low`) | 20 / 19 | 0.24 / 0.45 | 0.05 / 0.16 | 1.11 / 1.50 | 0.05 / 0.53 | 19 / 52 | 1.78 / 5.18 |
+| `design`(`medium`) | 14 / 8 | 0.60 / 0.29 | 0.79 / 0.62 | 3.00 / 1.62 | 1.57 / 1.00 | 72 / 94 | 9.15 / 7.36 |
+| `impl-planned`(`low`) | 8 / 4 | 0.37 / 0.30 | 0.25 / 0.50 | 2.86 / 5.00 | 0.38 / 0.75 | 77 / 179 | 8.66 / 21.03 |
+
+- 같은 행과 같은 크기 구간끼리 품질 지표(첫 리뷰 P1·P2, CI 실패, 리뷰 뒤 커밋)는 차이가 작고 방향도 구간마다 바뀐다. 어느 한쪽이 낫다고 말할 수 없다.
+- 출력 토큰과 비용은 `impl-explore` 세 구간과 `small-fix` 중간에서 sol 이 2~4배다. `small-fix` 작음, `design` 작음, `impl-planned` 큼은 비슷하거나 sol 이 조금 낮다.
+- 번갈아 표시가 남은 81건에서 크기는 한쪽에 크게 몰리지 않았다. `impl-explore` 줄 중앙은 Opus 15건 257, sol 16건 340 이다. `design` 중간 구간 6건은 모두 Opus 였다.
+- `hard-design` 과 `impl-hard` 는 Fable 2건, sol `high` 1건, astra 0건이라 비교하지 못한다.
+- `review` 행은 11-24 이후 Sonnet `medium` 3건뿐이라 effort 판단에 쓰지 않는다.
+
+### 비용이 외부 측정과 반대로 나온 이유
+
+외부 측정에서 sol 의 작업당 비용은 Opus 의 1/4 에서 1/10 정도다(Agent Duel $0.46 대 $1.64, Terminal-Bench $1.13 대 $12.04).
+우리 실측에서는 sol 이 2~3배 비싸다.
+`impl-explore` 의 토큰 중앙값을 나눠 보면 원인이 캐시 읽기다.
+
+| 모델 | 입력(천) | 출력(천) | 캐시 읽기(천) | 캐시 쓰기(천) |
+| --- | --: | --: | --: | --: |
+| Opus 5.5 `medium` | 0 | 45 | 11,698 | 187 |
+| `gpt-6.2-sol` `medium` | 780 | 123 | 65,951 | - |
+
+- sol 은 캐시 읽기 토큰이 Opus 의 약 5.6배이고, sol 비용의 약 70% 가 캐시 읽기다. 위 가격 표에서 캐시 읽기 단가는 sol 이 Opus 의 절반이지만, 읽는 양이 훨씬 많아 단가 차이를 넘는다.
+- 외부 측정은 짧은 과제 하나를 공통 하네스에서 돌린 값이다. 우리 worker 는 한 PR 에서 긴 지시서 읽기, 저장소 탐색, 리뷰 반영을 한 세션으로 이어 가므로 턴마다 다시 읽는 문맥이 쌓인다. 왜 Codex 쪽이 더 많이 읽는지는 확인하지 못했다.
+- Codex 쪽 토큰은 35건이 낡았거나 없어서 sol 비용의 표본이 적다. 비용 표본은 위 표의 건수보다 작다.
+
+### 개입 (11-24 이후)
+
+dispatch 를 돌린 모델 기준이다.
+
+| 모델 | dispatch | 관여 PR | 보고 없이 멈춤(PR 당) | 오류로 멈춤(PR 당) | 완료 보고를 되돌림 |
+| --- | --: | --: | --: | --: | --: |
+| Opus 5.5 | 107 | 74 | 0.82 | 0.19 | 31 |
+| `gpt-6.2-sol` | 99 | 65 | 0.66 | 0.03 | 32 |
+
+- 머지 전 완료 보고를 되돌린 일은 두 모델 모두 PR 두 건에 한 번꼴이다.
+- 외부 자료와 어긋난다. OpenAI 시스템 카드와 Codex 이슈는 6.2 sol 의 지시 불이행과 조기 종료가 늘었다고 하지만, 우리 실측에서 보고 없이 멈춘 횟수는 Opus 가 조금 더 많다. Opus 가이드가 적은 「텍스트로 끝난 턴」 과 같은 모습이다.
+- 멈춘 worker 에 남은 일을 다시 보내는 `orch worker continue`(#679, 11-27 머지)는 아직 쓰인 기록이 없다.
+
+### 결정
+
+- `review` 와 `security-review` 행의 Sonnet 5.5 를 `high` 로 띄운다(사용자 결정 2026-11-28). sol 칸은 `medium` 그대로다. 근거는 세 가지다. Anthropic 출시 차트에서 Sonnet 이 medium 에서 high 로 오를 때 Terminal-Bench 가 28.8 → 43.0, CursorBench 가 39.2 → 47.8 로 올랐다. 공식 안내는 「더 어렵거나 긴 작업은 high」 이고 API 기본값도 `high` 다. 독립 측정에서 Sonnet 순위가 effort 에 따라 Opus 와 1점 차부터 Haiku 아래까지 바뀐다. 우리 실측은 3건이라 근거로 쓰지 않았다.
+- 측정 도구의 빈틈(6.2 단가와 Fable 캐시 배수 없음, 짧은 모델 이름, 첫 리뷰 척도 변화)은 다른 PR 이 고친다(사용자 결정 2026-11-28).
+- 미룸: `small-fix` 와 `impl-planned` 행의 sol `low` 는 2026-12-08 실측 보고 뒤에 정한다. 검토할 근거는 AA 지수의 low 41 대 medium 52, Bito 의 low → high 에서 잘못된 주장 0.62 → 0.23, 우리 `small-fix` sol `low` 19건의 CI 실패 0.16(Opus 0.05)과 질문 0.53(Opus 0.05)이다. 첫 리뷰 P1·P2 는 두 모델 모두 0.11 이었다.
+
+### 한계
+
+- Task 를 무작위로 배정하지 않았다. 번갈아 표시는 첫 dispatch 에만 남아, 이어 맡은 dispatch 가 연 48건은 표시가 빠졌다.
+- 첫 리뷰 척도가 섞였다. 한 저장소는 리뷰 설정이 없어 129건 모두 도구 집계에서 첫 리뷰가 비었다. fos-skills 는 11-24 이후 리뷰가 사람 계정의 표 리뷰에서 Codex 봇의 인라인 배지로 바뀌어 69건 가운데 68건이 비었다. 위 표의 첫 리뷰 값은 분석 스크립트가 리뷰 봇 댓글에서 직접 셌고, 두 리뷰의 척도가 다르다.
+- 준비 시간은 262건 가운데 104건이 비었다. `small-fix` 작음 구간 sol 의 준비 중앙 39.4시간처럼 사람 확인과 머지 대기가 섞인 이상값이 있어 준비 시간은 판단에 쓰지 않았다.
+- 완료 보고를 되돌리면 새 dispatch 가 생기고, 도구는 품질을 PR 을 연 dispatch 에 붙인다. 11-24 이후 「다시 띄움」 비율이 0.45~0.65 로 올라 그 앞과 같은 기준으로 비교하지 못한다.
+- 외부 자료는 하네스, effort, 표본이 서로 다르고 미공개인 곳이 많다. Bito 의 앞선 글은 채점자가 Opus 5.5 였고(위 2026-11-10 절), 이번 글의 채점자는 확인하지 못했다. 벤더 수치는 낮음으로 두고 방향만 본다.
+
 ## 같은 일 두 모델 비교
 
 같은 계열의 새 세대가 아닌 새 모델을 같은 지시서로 지금 모델과 함께 맡긴 기록을 여기 쌓는다.

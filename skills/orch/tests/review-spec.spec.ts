@@ -79,10 +79,10 @@ test('구현 worker 가 Codex 면 Claude 리뷰이고 가장 늦은 구현 행�
   recordHistory(repo, row('rv', 'review/pr-262', 'claude', '2026-11-10T00:09:00Z'))
   const r = make('#262')
   assert.equal(r.code, 0, r.stdout + r.stderr)
-  assert.match(r.stdout, /review=claude\/claude-sonnet-5-5\/medium/)
+  assert.match(r.stdout, /review=claude\/claude-sonnet-5-5\/high/)
   assert.match(r.stdout, /^REVIEW-SPEC-WARN 구현 이력의 제공자가 둘 이상이다\(claude, codex\)/m)
   const [choice] = selectionsOf(readFileSync(file(), 'utf8'))
-  assert.deepEqual([choice.agent, choice.model, choice.effort], ['claude', 'claude-sonnet-5-5', 'medium'])
+  assert.deepEqual([choice.agent, choice.model, choice.effort], ['claude', 'claude-sonnet-5-5', 'high'])
 })
 test('REQ6: 리뷰는 지시서나 차례의 제공자 대신 실제 구현 제공자의 반대쪽을 고른다', () => {
   const from = { agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium' }

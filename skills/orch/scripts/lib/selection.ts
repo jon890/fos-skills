@@ -24,9 +24,11 @@ export function modelPolicies(table: string): Map<string, ModelPolicy> {
     const grade = cells[2]?.match(/^`([a-z][a-z0-9-]*)`$/)?.[1] ?? null
     const effort = cells[3]?.match(/^`(기본|low|medium|high|xhigh|max|ultra)`$/)?.[1]
     const candidates = grade ? grades.get(grade) : undefined
+    // 이 표의 두 모델 칸에 적힌 effort 가 행의 값보다 먼저다. 같은 등급을 쓰는 행끼리 한 모델의 effort 만 다르게 둘 수 있다
+    const shown = new Map([...(cells[4] ?? '').matchAll(/`([a-z][a-z0-9.-]*)` `(기본|low|medium|high|xhigh|max|ultra)`/g)].map(([, model, e]) => [model, e]))
     const workers = cells.length === 5 && effort && candidates ? candidates
       .filter(worker => id !== 'security-review' || worker.agent === 'claude')
-      .map(worker => ({ ...worker, effort: worker.effort ?? effort })) : []
+      .map(worker => ({ ...worker, effort: worker.effort ?? shown.get(worker.model!) ?? effort })) : []
     policies.set(id, { grade, workers, alternates: workers.length === 2 && id !== 'review' })
   }
   return policies
