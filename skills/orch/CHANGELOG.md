@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 0.16.4 (2026-11-28)
+
+- 리뷰와 보안 리뷰 worker 의 Sonnet 5.5 를 `medium` 대신 `high` 로 띄운다. 리뷰를 맡는 sol 은 `medium` 그대로다.
+- 모델 표의 「두 모델과 effort」 칸에 적힌 effort 를 행의 effort 보다 먼저 쓴다. 같은 등급을 쓰는 행끼리 한 모델의 effort 만 다르게 둘 수 있다.
+
 ## 0.16.3 (2026-11-27)
 
 - PR 을 열기 전에 보고 없이 턴을 끝낸 worker 도 `orch worker continue --dispatch <id>` 로 이어 가게 한다. 지금까지는 열린 PR 이 없으면 `CONTINUE-SKIP` 으로 끝나 다시 움직일 명령이 없었다.
