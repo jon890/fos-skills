@@ -105,6 +105,10 @@
 //                 경고이고 종료 코드에 넣지 않는다
 //     채움        `{{채울 것: …}}` 자리표시가 남았다. `orch spec review <PR>` 이 만든 리뷰 지시서에서 코디네이터가 채울 「배경」 과 「특히 볼 것」 이다.
 //                 채우지 않고 띄우면 worker 가 자리표시를 지시로 읽는다. 코드 블록 안은 보지 않는다. 경고이고 종료 코드에 넣지 않는다
+//     완료 보고   허락 줄이 PR 을 열지 않는다고 정했는데(core/completion.ts 의 prDecisionOf) 완료 기준에 `worker_done` 첫 줄 `완료:` 규칙이 없다.
+//                 경고이고 종료 코드에 넣지 않는다
+//     PR 여부     허락 줄이 있는데 PR 생성도 PR 없음도 읽히지 않는다(prDecisionOf 가 'unknown'). `리뷰 PR:` 지시서는 보지 않는다.
+//                 완료 판정이 준비됨 status 를 기다려 PR 없는 운영 worker 의 완료를 DONE-SUSPECT 로 알렸다. 경고이고 종료 코드에 넣지 않는다
 //     머지 보류   머지 조건 문장이 있는데 `머지 보류:` 줄이 없다. 완료 담당 문장과 코드 블록은 제외한다. 경고이고 종료 코드에 넣지 않는다
 //     오버레이    (--check-overlay) 오버레이의 백틱 값과 config.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
 //                 명령(`bash scripts/verify.sh --fast`)이면 낱말마다 본다. `/` 가 든 확장자 있는 낱말만 경로로 본다.
@@ -116,7 +120,7 @@
 //
 // 짧은 출력(진입점의 orch spec lint, lib/output.ts): 막을 발견은 `SPEC-ERROR <줄>`, 경고는 `SPEC-WARN <줄>` 이다. stderr 의 요약은 그대로다.
 // 종료 코드:
-//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료, 머지 보류, 원격 경고는 있을 수 있다)
+//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료, 완료 보고, PR 여부, 머지 보류, 원격 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 단계, 보드(id 설명 경고 제외), 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
@@ -139,6 +143,7 @@ import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
+import { prDecisionOf } from '../core/completion.ts'
 import { boardPath } from '../lib/board-file.ts'
 import { boardQuery, readBoard } from '../lib/board.ts'
 import { findBoardItem, similarItems, startStageProblem } from '../core/board-find.ts'
@@ -407,12 +412,14 @@ const DONE_HINT =
   '완료 기준에 PR 이 둘 이상 보인다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. ' +
   '이 지시서는 PR1 만 맡는다고 적고, 뒤 PR 은 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다. 뒤 PR 목록은 참고 절에만 둔다'
 const NO_PR_DONE_HINT = 'PR 을 열지 않는 지시서는 완료 기준에 `worker_done` 첫 줄을 `완료:`로 쓴다고 적는다'
+const PR_DECISION_HINT = '허락 줄에서 PR 을 여는지 읽지 못했다. `PR 생성(base main)은 사용자가 허락했다` 나 `PR 은 열지 않는다` 를 적는다. ' +
+  '둘 다 없으면 완료 판정이 준비됨 status 를 기다려 PR 없는 worker_done 을 DONE-SUSPECT 로 알린다'
 
+// PR 을 열지 않는 지시서(core/completion.ts 의 prDecisionOf 가 'no-pr')인데 완료 기준에 `완료:` 첫 줄 규칙이 없으면 그 허락 줄 번호
 function noPrDoneProblem(lines: string[]): number | null {
+  const decided = prDecisionOf(lines.join('\n'))
+  if (decided.decision !== 'no-pr' || decided.line === null) return null
   const visible = outsideFences(lines)
-  const permission = visible.findIndex(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?.*\bPR 은 열지 않는다(?:[.!?\s]|$).*$/i.test(line)
-    && !/\bPR\s*생성/i.test(line))
-  if (permission < 0) return null
   let completionLevel = 0
   let hasMarker = false
   visible.forEach(line => {
@@ -423,7 +430,15 @@ function noPrDoneProblem(lines: string[]): number | null {
     }
     if (completionLevel && /`?worker_done`?\s+첫 줄.*완료\s*:`?/i.test(line)) hasMarker = true
   })
-  return hasMarker ? null : permission + 1
+  return hasMarker ? null : decided.line
+}
+
+// 허락 줄이 있는데 PR 을 여는지도 열지 않는지도 읽히지 않으면 그 줄 번호. 리뷰 지시서는 PR 을 열지 않는 것이 정해져 있어 보지 않는다
+function prDecisionProblem(lines: string[]): number | null {
+  const text = lines.join('\n')
+  if (reviewPrOfSpec(text) !== null) return null
+  const decided = prDecisionOf(text)
+  return decided.decision === 'unknown' ? decided.line : null
 }
 
 function doneProblem(lines: string[]): { no: number; found: string } | null {
@@ -697,6 +712,8 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     }
     const noPrDone = noPrDoneProblem(spec.lines)
     if (noPrDone !== null) warnings.push(`${spec.name}:${noPrDone}: 완료 보고: ${NO_PR_DONE_HINT}`)
+    const prDecision = prDecisionProblem(spec.lines)
+    if (prDecision !== null) warnings.push(`${spec.name}:${prDecision}: PR 여부: ${PR_DECISION_HINT}`)
     for (const [glob, no] of spec.owned) {
       for (const c of coordinator) {
         if (overlap(repo, glob, c)) errors.push(`${spec.name}:${no}: 코디네이터: \`${glob}\` 가 코디네이터 소유 \`${c}\` 와 겹친다`)

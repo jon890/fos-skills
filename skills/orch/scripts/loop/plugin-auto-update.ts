@@ -1,6 +1,13 @@
 // 루프 부모가 30분마다 머신의 fos-skills 캐시 설치본을 확인한다. 테스트는 설정 폴더와 명령 실행기를 임시 폴더로 주입한다.
+//
+// 대상: ~/.claude 와 Orca 프로필 home 들이다. 프로필의 plugins 는 보통 ~/.claude/plugins 링크라(lib/claude-profile.ts) 설치 기록이 같다.
+//     plugins 폴더의 실제 경로(realpath)가 같은 설정 폴더는 하나로 묶어 처음 것(~/.claude 가 앞)만 갱신한다(distinctConfigDirs).
+//     묶지 않으면 같은 기록을 프로필 수만큼 갱신하고, 앞 갱신이 끝난 기록을 낡은 값으로 다시 보고 결과를 겹쳐 적었다.
+// 성공: 갱신 뒤 설치 기록의 version 이 main 이상이다. 낮으면 실패이고 이유에 실제 version 과 설정 폴더를 적는다.
+//     마켓플레이스가 로컬 폴더(known_marketplaces.json 의 source 가 directory)면 claude 는 그 폴더의 version 을 설치한다.
+//     그 checkout 이 아직 main 의 버전 커밋을 받지 않았으면 갱신이 성공해도 기록이 main 보다 낮다. 이유에 그 폴더와 그 폴더의 version 을 붙인다
 import { randomUUID } from 'node:crypto'
-import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +34,37 @@ export function configDirs(home: string, profiles: string): string[] {
   let ids: string[] = []
   try { ids = readdirSync(profiles) } catch { /* Orca 미설치 */ }
   return [...new Set([home, ...ids.map(id => join(profiles, id, 'home'))].map(dir => resolve(dir)))]
+}
+
+// plugins 폴더의 실제 경로가 같은 설정 폴더를 하나로 묶는다(머리 주석의 「대상」). plugins 가 없으면 설정 폴더 경로로 센다
+export function distinctConfigDirs(dirs: string[]): string[] {
+  const seen = new Set<string>()
+  return dirs.filter(dir => {
+    let key: string
+    try { key = realpathSync(join(dir, 'plugins')) } catch { key = dir }
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+// 마켓플레이스가 로컬 폴더면 그 폴더와 그 폴더의 플러그인 version. 아니거나 읽지 못하면 null
+export function localMarketplace(configDir: string): { path: string; version: string } | null {
+  try {
+    const known = JSON.parse(readFileSync(join(configDir, 'plugins', 'known_marketplaces.json'), 'utf8'))?.[MARKETPLACE]
+    const source = known?.source
+    if (source?.source !== 'directory' || typeof source.path !== 'string') return null
+    let version = '-'
+    try { version = String(JSON.parse(readFileSync(join(source.path, '.claude-plugin', 'plugin.json'), 'utf8')).version ?? '-') } catch { /* 폴더가 없으면 - */ }
+    return { path: source.path, version }
+  } catch { return null }
+}
+
+// 갱신 뒤 기록이 main 보다 낮을 때의 이유(머리 주석의 「성공」)
+export function behindReason(configDir: string, recorded: string | undefined, main: string): string {
+  const local = localMarketplace(configDir)
+  const hint = local ? `. 마켓플레이스가 로컬 폴더 ${local.path}(version ${local.version})라 그 checkout 을 main 으로 받아야 한다` : ''
+  return `설치 기록의 version ${recorded || '-'} 이 main ${main} 보다 낮다(${configDir})${hint}`
 }
 
 function records(dir: string): Entry[] {
@@ -140,7 +178,7 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
     const previous = readUpdateReport(stateDir)
     if (previous && now - previous.checkedAt < UPDATE_MS) return null
     const dirs = configDirs(home, profiles)
-    const targets = dirs.flatMap(configDir => records(configDir).filter(entry => cacheEntry(entry, dirs)).map(entry => ({ configDir, entry })))
+    const targets = distinctConfigDirs(dirs).flatMap(configDir => records(configDir).filter(entry => cacheEntry(entry, dirs)).map(entry => ({ configDir, entry })))
     if (targets.length === 0) return null
     const manifestFile = fileURLToPath(new URL('../../../../.claude-plugin/plugin.json', import.meta.url))
     const repository = options.repository ?? JSON.parse(readFileSync(manifestFile, 'utf8')).repository
@@ -181,9 +219,11 @@ export async function updatePlugins(options: Options = {}): Promise<UpdateReport
         cwd, env: { CLAUDE_CONFIG_DIR: configDir }, timeoutMs: COMMAND_MS, group: true,
       })
       const updated = records(configDir).find(row => row.scope === entry.scope && row.projectPath === entry.projectPath)
-      if (command.code === 0 && updated?.version === version) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success', ...(marketplaceFailure ? { reason: marketplaceFailure } : {}) })
+      const recorded = typeof updated?.version === 'string' ? updated.version : undefined
+      const reached = recorded !== undefined && (comparePluginVersion(recorded, version) ?? -1) >= 0
+      if (command.code === 0 && reached) results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'success', ...(marketplaceFailure ? { reason: marketplaceFailure } : {}) })
       else {
-        const reason = command.code !== 0 ? lastLine(command) : '설치 기록의 version 이 main 과 다르다'
+        const reason = command.code !== 0 ? lastLine(command) : behindReason(configDir, recorded, version)
         results.push({ configDir, scope: entry.scope, projectPath, oldVersion, result: 'failed', reason: marketplaceFailure ? `${reason} (${marketplaceFailure})` : reason })
       }
     }

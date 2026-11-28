@@ -43,19 +43,79 @@ function startsWithReviewVerdict(message: Json): boolean {
 
 export type ClassifyOptions = { isReview?: (dispatch: string) => boolean; isNoPr?: (dispatch: string) => boolean | 'unreadable' }
 
-// 허락 줄이나 독립된 '커밋·PR 없음' 지시가 있어야 PR 준비가 없는 일로 본다.
-// 완료 기준의 표현과 배경·코드 예시는 PR 여부를 판단하는 근거로 쓰지 않는다.
-export function noPrInstruction(text: string): boolean {
+// 허락 줄이 이 dispatch 의 PR 을 정했는지. 'pr' 은 PR 을 연다, 'no-pr' 은 열지 않는다, 'unknown' 은 허락 줄이 없거나 PR 을 정하지 않았다.
+// 허락 줄을 문장(., !, ? 뒤 공백)으로 나눠 본다.
+//   PR 없음 문장  `PR 은/을 열지 않는다`, `PR 없음`, 부정문 속 `PR 생성`(`PR 생성은 허락하지 않았다`, `PR 생성 금지`)
+//   PR 생성 문장  부정 표현이 없는 문장의 `PR 생성`
+//   PR 바로 앞이 `다른 <낱말>` 이면(`다른 저장소의 PR 은 열지 않는다`, `다른 저장소는 PR 없음`) 다른 곳의 PR 이라 세지 않는다.
+// PR 없음 문장이 하나라도 있으면 'no-pr' 이다. `PR 생성을 허락했다. 스펙만으로 PR 을 열지 않는다` 는 이번 dispatch 가 PR 을 열지 않는다는 뜻이다.
+// 허락 줄 밖에서는 독립된 `커밋·PR 없음` 줄만 'no-pr' 근거다. 완료 기준의 표현과 배경, 코드 블록, 인용은 근거로 쓰지 않는다.
+export type PrDecision = 'pr' | 'no-pr' | 'unknown'
+
+const PERMISSION_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:/
+const NO_PR_LINE = /^\s*(?:(?:[-*]|\d+[.)])\s+)?(?:\*\*)?커밋\s*[·ㆍ・]\s*PR\s*없음[.]?(?:\*\*)?\s*$/i
+// 「PR 을 열지 않는다」, 「PR 은 열지 않는다」, 「PR 없음」. 앞의 `커밋·` 은 받는다
+const NO_PR_PHRASE = /(?<![A-Za-z])PR\s*(?:(?:은|을|는|를)?\s*열지\s*않|없음|없이)/gi
+const PR_CREATE = /(?<![A-Za-z])PR\s*생성/gi
+const NEGATED = /않|없이|금지|하지\s*말|말고|못\s/
+// `PR 생성` 을 받는 서술어 절의 끝. 쉼표와 연결 어미(`하되`, `했고`, `하지만`, `하며`) 뒤는 다른 행위의 절이다
+const CLAUSE_END = /[,，;]|하되|되\s|지만|으나|고\s|며\s/
+const ELSEWHERE = /다른\s*[^\s.]+\s*$/
+
+// 괄호와 낫표 안은 이유와 인용이라 보지 않는다(`허락했다(「…하지 말고…」)` 의 부정 표현을 세지 않는다)
+function sentences(line: string): string[] {
+  return line.replace(PERMISSION_LINE, '').replace(/\([^()]*\)|「[^「」]*」/g, '').split(/(?<=[.!?。])\s+/)
+}
+
+function hereMatches(sentence: string, pattern: RegExp): string[] {
+  return [...sentence.matchAll(pattern)]
+    .filter(m => !ELSEWHERE.test(sentence.slice(0, m.index).replace(/(?:의|는|은|에서는|에서|에는)\s*$/, '')))
+    .map(m => sentence.slice(m.index))
+}
+
+function sentenceDecision(sentence: string): PrDecision {
+  if (hereMatches(sentence, NO_PR_PHRASE).length > 0) return 'no-pr'
+  const creates = hereMatches(sentence, PR_CREATE)
+  if (creates.length === 0) return 'unknown'
+  // 부정 표현은 `PR 생성` 을 받는 서술어 절에서만 본다.
+  // `PR 생성까지 허락한다, 머지는 하지 않는다` 와 `PR 생성은 허락하되 머지는 하지 않는다` 는 PR 을 연다
+  return creates.some(rest => NEGATED.test(rest.split(CLAUSE_END)[0])) ? 'no-pr' : 'pr'
+}
+
+// 허락 줄 한 줄의 결정. 허락 줄이 아니면 null
+export function permissionDecision(line: string): PrDecision | null {
+  if (!PERMISSION_LINE.test(line)) return null
+  const found = sentences(line).map(sentenceDecision)
+  return found.includes('no-pr') ? 'no-pr' : found.includes('pr') ? 'pr' : 'unknown'
+}
+
+function visibleLines(text: string): string[] {
   let inFence = false
-  const visible = text.split('\n').filter(line => {
-    if (/^\s*```/.test(line)) { inFence = !inFence; return false }
-    return !inFence && !/^\s*>/.test(line)
+  return text.split('\n').map(line => {
+    if (/^\s*```/.test(line)) { inFence = !inFence; return '' }
+    return inFence || /^\s*>/.test(line) ? '' : line
   })
-  const permissions = visible.filter(line => /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:/.test(line))
-  if (permissions.some(line => /\bPR\s*생성/i.test(line))) return false
-  return permissions.some(line => /\bPR\s*은\s*열지\s*않는다(?:[.!?\s]|$)/i.test(line))
-    || visible.some(line => /^\s*(?:(?:[-*]|\d+[.)])\s+)?(?:\*\*)?커밋\s*[·ㆍ・]\s*PR\s*없음[.]?(?:\*\*)?\s*$/i.test(line))
-    || permissions.some(line => /(?:커밋\s*[·ㆍ・]\s*)?(?<![A-Za-z])PR\s*없음(?:[.!?\s]|$)/i.test(line))
+}
+
+// 지시서 전체의 결정과 그 근거 줄 번호(1부터). 허락 줄이 없으면 line 은 null 이다
+export function prDecisionOf(text: string): { decision: PrDecision; line: number | null } {
+  const visible = visibleLines(text)
+  let first: number | null = null
+  let allow: number | null = null
+  for (const [index, line] of visible.entries()) {
+    const decision = permissionDecision(line)
+    if (decision === null) continue
+    first ??= index + 1
+    if (decision === 'no-pr') return { decision, line: index + 1 }
+    if (decision === 'pr') allow ??= index + 1
+  }
+  const standalone = visible.findIndex(line => NO_PR_LINE.test(line))
+  if (standalone >= 0) return { decision: 'no-pr', line: standalone + 1 }
+  return allow !== null ? { decision: 'pr', line: allow } : { decision: 'unknown', line: first }
+}
+
+export function noPrInstruction(text: string): boolean {
+  return prDecisionOf(text).decision === 'no-pr'
 }
 
 // worker_done 의 끝낸 단계 번호. 제목·본문의 `steps=2,3` 이나 payload 의 steps(숫자 목록이나 같은 꼴 글)를 읽는다.

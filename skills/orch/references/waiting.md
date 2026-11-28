@@ -18,7 +18,7 @@ Orca 가 check 명령을 지정한 깨움은 그 명령으로 읽는다. orch �
 CI 실패, 충돌, 멈춤과 조회 실패는 기존 중복 억제 규칙을 따른다. 보내지 못하면 NOTICE-FAIL 을 기록하고 다음 틱에서 다시 시도한다. Run 없는 옛 루프는 로그에만 남긴다.
 DONE-SUSPECT 는 준비 근거 없는 완료 보고, WORKER-LOST 는 끊긴 worker 를 뜻한다. 완료·끊김 이벤트와 보드 PR 연결도 루프가 맡는다. 첫 루프 틱은 지난 완료 보고를 알리지 않는다.
 `--no-pr`, `review` 행, 독립된 `머지하지 않는다` 지시로 띄운 dispatch 는 `completion: none` 을 기록해 준비 보고가 없어도 DONE-SUSPECT 에서 뺀다. 「머지는 사람이 한다」 처럼 사람에게 머지를 맡기는 독립 문장이나 허락 줄의 문장도 같은 기록을 남긴다. 문장 앞 목록 기호와 번호는 허용하며, 배경 속 인용·코드 예시·「머지는 코디네이터가 한다」 는 제외 근거가 아니다. 완료 기준 절에 `준비됨` 보고를 요구하면 행과 지시의 자동 제외보다 그 요구를 우선한다. 정리 뒤에도 영구 이력의 같은 값을 쓴다.
-PR 없는 완료 보고는 허락 줄에 `PR 은 열지 않는다`가 명시됐거나 다른 저장소에서 작업을 띄운 경우에만 준비 상태 없이 인정하며, worker_done 첫 줄은 `완료:`여야 한다. 완료 기준에 `MERGED`가 없다는 사실만으로 PR 없는 일로 보지 않는다. PR 을 여는 일의 `완료:` 보고에는 기존처럼 준비됨 status 가 필요하다.
+PR 없는 완료 보고는 허락 줄에 PR 을 열지 않는다는 문장(`PR 은 열지 않는다`, `스펙만으로 PR 을 열지 않는다`, `PR 없음`)이 있거나 다른 저장소에서 작업을 띄운 경우에만 준비 상태 없이 인정하며, worker_done 첫 줄은 `완료:`여야 한다. 완료 기준에 `MERGED`가 없다는 사실만으로 PR 없는 일로 보지 않는다. PR 을 여는 일의 `완료:` 보고에는 기존처럼 준비됨 status 가 필요하다.
 제외 기록이 없는 옛 리뷰 dispatch 는 지시서나 첫 status 의 `판정:` 줄로 알아보고, 앞서 보낸 결과 status 가 있어야 정상 완료로 본다. 지시서는 띄우기 기록이 지워진 뒤에도 영구 이력으로 찾는다.
 **PR 이 열린 채 온 `worker_done`(준비 근거가 없거나, 준비됨 뒤에도 PR 이 OPEN)은 DONE-SUSPECT 로 알리기 전에 루프가 그 worker 에게 되돌린다.** dispatch 는 이미 completed 로 닫혀 `send` 는 `ENDED`, `resume` 은 `RESUME-FAIL` 이 되므로, 루프가 `lib/continue-worker.ts` 로 지시서와 「PR #N 이 아직 열려 있다. 머지될 때까지 맡는다」 를 후속 지시(`send-to-worker --spec --note`)로 보낸다. Orca 가 끝난 dispatch 에 후속 Task 를 열어 같은 워크트리에서 새 dispatch 로 이어진다. 이어 맡으면 DONE-RETURNED 하나만 알리고 DONE-SUSPECT 는 보내지 않는다. 조건은 아래와 같다.
 - 지시서(띄우기 기록, 없으면 영구 이력)의 브랜치에 열린 PR 이 있다. 리뷰 worker, `completion: none` dispatch, `outcome failed` 보고는 대상이 아니다
@@ -41,6 +41,7 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 | 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
 
 모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 이유의 WATCH-ERROR 가 연속 세 번째 틱이면 바로 한 번 보낸다. 부모의 틱 실패(`tick`)도 같고, 본문 앞에 저장소 루트 폴더 이름을 쓰며 원인 줄을 담는다.
+정리(cleanup) 실패 가운데 그동안 Mac 이 잠든 것(벽시계가 단조 시계보다 1분 넘게 더 갔다)은 WATCH-ERROR 대신 loop.log 의 `WATCH-SLEPT` 줄로만 남긴다. 다음 회차가 성공하면 알리지 않고, 다음 회차도 실패하면 WATCH-ERROR 로 알린다. 잠자기가 아닌 시간 초과는 그때 돌던 정리 단계 이름을 이유에 붙인다.
 
 한 Run 에 저장소마다 루프가 등록돼 있으면 같은 알림이 루프 수만큼 오지 않게, 보내기 전에 머신 폴더의 `run-notices/<Run>/<해시>` 를 본다. 다른 저장소의 루프가 10분 안에 같은 Run, kind, 본문을 보냈으면 보내지 않는다(`lib/notice-transport.ts`). 완료 보고 확인은 이 저장소가 띄우지 않은 dispatch 의 PR 조회가 실패하면 건너뛴다. 띄운 저장소의 루프가 맡는다.
 

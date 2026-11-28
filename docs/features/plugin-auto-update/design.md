@@ -18,9 +18,9 @@
 
 ## 인터페이스와 데이터
 
-설정 폴더는 `~/.claude` 와 `lib/claude-profile.ts` 의 Orca 프로필 루트 아래 `*/home` 이다. 테스트에서는 임시 폴더 경로를 함수 인자로 주입한다. 각 폴더의 `plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 행만 읽는다. 캐시 밖의 `installPath` 는 제외한다. `user` 는 그 설정 폴더, `project`·`local` 은 `projectPath` 에서 명령을 실행하며 자식 프로세스의 `CLAUDE_CONFIG_DIR` 를 대상 폴더로 지정한다.
+설정 폴더는 `~/.claude` 와 `lib/claude-profile.ts` 의 Orca 프로필 루트 아래 `*/home` 이다. 테스트에서는 임시 폴더 경로를 함수 인자로 주입한다. `plugins` 폴더의 실제 경로가 같은 설정 폴더(프로필의 `plugins` 가 `~/.claude/plugins` 링크인 경우)는 하나로 묶어 `~/.claude` 쪽만 갱신한다. 각 폴더의 `plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 행만 읽는다. 캐시 밖의 `installPath` 는 제외한다. `user` 는 그 설정 폴더, `project`·`local` 은 `projectPath` 에서 명령을 실행하며 자식 프로세스의 `CLAUDE_CONFIG_DIR` 를 대상 폴더로 지정한다.
 
-머신 공통 상태는 사용자 홈의 캐시 폴더에 마지막 확인 시각, main 버전, 설치본별 결과와 실패 알림을 보낸 버전을 둔다. 이는 설치 기록을 대신하지 않는다. 갱신 명령이 성공하고 설치 기록의 `version` 이 main 과 같을 때 성공으로 판단한다. 상태 기록은 잠금을 쥔 루프만 쓴다. 같은 version 을 다시 읽으면 성공한 설치본은 명령을 호출하지 않고 성공 결과를 유지한다. 늦게 다시 뜬 루프에도 옛 버전과 성공 결과를 알리기 위해서다.
+머신 공통 상태는 사용자 홈의 캐시 폴더에 마지막 확인 시각, main 버전, 설치본별 결과와 실패 알림을 보낸 버전을 둔다. 이는 설치 기록을 대신하지 않는다. 갱신 명령이 성공하고 설치 기록의 `version` 이 main 이상일 때 성공으로 판단한다. 낮으면 실패 이유에 실제 version 과 설정 폴더를 적는다. 마켓플레이스가 로컬 폴더(`known_marketplaces.json` 의 `directory`)면 claude 가 그 checkout 의 version 을 설치하므로, 그 폴더와 version 도 함께 적는다. 상태 기록은 잠금을 쥔 루프만 쓴다. 같은 version 을 다시 읽으면 성공한 설치본은 명령을 호출하지 않고 성공 결과를 유지한다. 늦게 다시 뜬 루프에도 옛 버전과 성공 결과를 알리기 위해서다.
 
 Claude Code의 [mod 타입 선언](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts)은 `$.command.list()` 의 `source` 가 `builtin` 을 구분하고, `$.command.run()` 이 내장 명령을 포함한 슬래시 명령을 세션이 쉴 때 실행한다고 정의한다. 보드는 목록에 `{ name: 'reload-plugins', source: 'builtin' }` 이 있는 경우에만 `{ command: 'reload-plugins' }` 를 보낸다. 명령 출력은 Claude Code 가 채팅에 기록하며 입력란은 건드리지 않는다. 목록에 없거나 실행이 실패하면 `p` 버튼과 수동 갱신 안내를 보인다. 다시 읽은 버전은 설치 기록을 새로 읽고 같은 버전의 중복 실행을 막는다.
 
