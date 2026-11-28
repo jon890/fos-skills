@@ -188,7 +188,7 @@ const ROWS: Row[] = [
     group: 'config', verb, script: 'config/orch-config.ts', prepend: [verb], context: ['repo'], usage: `orch config ${verb} ${args}`,
   })),
   // routing
-  { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--json | --full]' },
+  { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--by-size | --compare] [--json | --full]' },
   // request(ADR-035). 보낸 Run 과 답한 Run 은 지금 코디네이터의 Run 이다
   {
     group: 'request', verb: 'send', script: 'request/orch-request.ts', prepend: ['send'], context: ['repo', 'run'], required: ['run'], runFrom: 'run-current', legacy: null,
