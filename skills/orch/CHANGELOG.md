@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 0.17.0 (2026-11-28)
+
+- 모델 실측 비용이 빠지지 않는다. 가격표에 6.2 계열을 더하고, 옛 세대는 같은 계열 단가로, `opus` 같은 계열 이름은 정식 id 로 합쳐 계산한다.
+- 계열 이름으로 띄운 Claude worker 도 실제 모델 id 를 기록한다. 띄울 때 지시서의 할 일 수와 가리키는 파일 수도 남긴다.
+- 새 설정 `routing.review_sources` 로 첫 리뷰 출처를 여럿 받고 Codex 봇의 P0~P3 배지를 센다. PR 의 바뀐 줄, 파일, 모듈 수와 크기 구간도 남긴다.
+- 되돌려 이어 맡은 dispatch 가 연 PR 은 첫 dispatch 의 모델로 센다. `orch routing report --compare` 는 크기 구간별로 모델을 나란히 보인다.
+- 호환성: `orch routing report --json` 의 `first_review_p1_mean`, `first_review_p2_mean` 을 없앴다. 출처별 값은 `first_review.<출처>.means` 에서 읽는다.
+
 ## 0.16.4 (2026-11-28)
 
 - 리뷰와 보안 리뷰 worker 의 Sonnet 5.5 를 `medium` 대신 `high` 로 띄운다. 리뷰를 맡는 sol 은 `medium` 그대로다.
