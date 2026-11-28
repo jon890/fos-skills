@@ -26,7 +26,7 @@
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
 import { objectOr } from '../core/json.ts'
-import { isQuestionCandidate, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
+import { isQuestionCandidate, unanswered, ageSeconds, brief, dispatchOf, EXPIRED_MARK, isExpired } from '../core/questions.ts'
 import type { Message, Notice } from '../core/questions.ts'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
@@ -160,6 +160,7 @@ function exists(file: string): boolean {
 
 // now 는 epoch 초다. 알릴 줄을 정하고 알린 시각을 state 에 적는다.
 // 처음 보는 미답변 질문은 QUESTION, 알린 뒤 remindAfter 초가 지나도 답이 없는 질문은 REMINDER 줄이다.
+// 본문의 `만료:` 줄(worker-ask --expires-at) 시각이 지난 질문은 줄의 질문 앞에 「[만료됨]」 을 붙인다. 답해도 그 값은 쓸 수 없다.
 // pending 은 알릴지와 무관한 미답변 질문 전부다. 상주 루프가 질문을 기다리는 worker 를 멈춘 것으로 보지 않는 데 쓴다.
 export function poll(run: string | null, state: string, now: number, remindAfter: number, repo: string, lookup: QuestionLookup = {}): { run: string; notices: Notice[]; pending: Message[] } {
   const found = snapshot(run, lookup)
@@ -182,7 +183,7 @@ export function poll(run: string | null, state: string, now: number, remindAfter
     if (typeof previous === 'number' && now - previous < remindAfter) continue
     const reminder = previous !== undefined && previous !== null
     notices.push({
-      line: `${reminder ? 'REMINDER' : 'QUESTION'} ${id} ${text(message.type)} from=${text(senderOf(message))}: ${brief(message.body)}`,
+      line: `${reminder ? 'REMINDER' : 'QUESTION'} ${id} ${text(message.type)} from=${text(senderOf(message))}: ${isExpired(message, now) ? `${EXPIRED_MARK} ` : ''}${brief(message.body)}`,
       message,
       reminder,
     })

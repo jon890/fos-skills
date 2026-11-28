@@ -655,3 +655,53 @@ describe('세션 임시 폴더 경로가 든 질문', () => {
     }
   })
 })
+
+describe('시간 제한이 있는 값(--expires-at)', () => {
+  const OK = '{"result":{"messageId":"msg_q","pending":true}}'
+  const later = () => new Date(Date.now() + 15 * 60_000).toISOString()
+
+  test('질문 끝에 UTC 만료 줄을 붙여 보낸다', () => {
+    fake(OK, 0)
+    const at = later()
+    const r = ask('--from', 'term_w', '--question', '코드 ABCD-1234 를 입력하고 답해 달라', '--expires-at', at.replace('Z', '+00:00'))
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(firstLine(r.stdout), 'ASKED msg_q')
+    // 여러 줄 인자는 로그에서 줄이 나뉜다. ask 줄 다음 줄이 만료 줄이다
+    const i = r.calls.findIndex((c) => c.includes('[ask]'))
+    assert.ok(r.calls[i].includes('[--question][코드 ABCD-1234 를 입력하고 답해 달라'), r.calls[i])
+    assert.ok(r.calls[i + 1].startsWith(`만료: ${at}]`), r.calls[i + 1])
+  })
+
+  test('결정 질문에도 형식 검사 뒤 만료 줄을 붙인다', () => {
+    fake(OK, 0)
+    const r = ask('--from', 'term_w', '--decision', '--question', DECISION, '--expires-at', later())
+    assert.equal(r.code, 0, r.stderr)
+  })
+
+  test('이미 지난 시각이면 보내지 않고 준비 신호를 먼저 물으라고 알리며 2 다', () => {
+    fake(OK, 0)
+    const r = ask('--from', 'term_w', '--question', '코드 입력', '--expires-at', '2026-01-01T00:00:00Z')
+    assert.equal(r.code, 2, r.stderr)
+    assert.match(r.stderr, /이미 지나/)
+    assert.match(r.stderr, /준비 신호/)
+    assert.equal(r.calls.length, 0, 'orca 를 부르지 않는다')
+  })
+
+  test('시간대가 없거나 읽지 못하는 시각은 사용법 오류 2 다', () => {
+    fake(OK, 0)
+    for (const value of ['2099-01-01T00:00:00', '15분 뒤', '']) {
+      const r = ask('--from', 'term_w', '--question', '코드 입력', '--expires-at', value)
+      assert.equal(r.code, 2, `${value}: ${r.stderr}`)
+      assert.match(r.stderr, /--expires-at 을 시각으로 읽지 못했다/)
+      assert.equal(r.calls.length, 0)
+    }
+  })
+
+  test('사용법이 준비 신호를 먼저 묻는 꼴을 알린다', () => {
+    fake(OK, 0)
+    const r = ask('--help')
+    assert.equal(r.code, 0)
+    assert.match(r.stdout, /준비 신호/)
+    assert.match(r.stdout, /--expires-at/)
+  })
+})

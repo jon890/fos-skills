@@ -366,6 +366,18 @@ describe('poll 기록과 재알림', () => {
     assert.equal(readFileSync(state, 'utf8'), '{"r": {"q": 1600}}\n')
   })
 
+  test('만료 줄의 시각이 지난 질문은 줄에 [만료됨] 을 붙인다', () => {
+    // 1000 초는 1970-01-01T00:16:40Z 다. 그 전 시각이면 만료, 뒤면 아직이다
+    fake({ all: { messages: [
+      message('old', 'question', { body: '코드 입력\n만료: 1970-01-01T00:10:00Z' }),
+      message('new', 'question', { body: '코드 입력\n만료: 2099-01-01T00:00:00Z' }),
+    ] } })
+    assert.deepEqual(poll('r', seenFile(), 1000, 600, tmp).notices.map((n) => n.line).sort(), [
+      'QUESTION new question from=dispatch:d: 코드 입력 만료: 2099-01-01T00:00:00Z',
+      'QUESTION old question from=dispatch:d: [만료됨] 코드 입력 만료: 1970-01-01T00:10:00Z',
+    ])
+  })
+
   test('깨진 알림 기록과 조회 실패는 기록을 덮지 않고 오류를 낸다', () => {
     fake({ all: { messages: [message()] } })
     mkdirSync(dirname(seenFile()), { recursive: true })
