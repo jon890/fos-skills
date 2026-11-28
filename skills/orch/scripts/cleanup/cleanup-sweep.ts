@@ -1,4 +1,5 @@
 // 정리 단계를 순서대로 실행하고 저장소별 결과를 모은다. 기본은 dry-run 이다.
+// ORCH_SWEEP_CACHE 가 있으면 들어가는 단계 이름을 그 폴더의 stage 파일에 덮어쓴다(markStage). 루프가 시간 초과를 알릴 때 어느 단계였는지 적는다
 import type { Args, Log, Terminal } from './steps/shared.ts'
 import { ConfigError } from '../lib/config.ts'
 import { RepoError, err } from './steps/shared.ts'
@@ -17,25 +18,45 @@ import { prepare } from './steps/prepare.ts'
 import { prepareSession } from './steps/cli.ts'
 import { withRun } from '../lib/proc.ts'
 import { allLaunches } from '../lib/launched.ts'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 export type { Host } from './steps/processes.ts'
 export { waitFree, stopHolders } from './steps/processes.ts'
 export type { SweepContext } from './steps/output.ts'
 export { sweepLine } from './steps/output.ts'
 
+// 들어가는 단계를 적는다. 쓰지 못해도 정리는 계속한다
+function markStage(name: string): void {
+  const dir = process.env.ORCH_SWEEP_CACHE
+  if (!dir) return
+  try {
+    writeFileSync(join(dir, 'stage'), `${name}\n`)
+  } catch { /* 단계 기록은 알림 보조라 정리를 막지 않는다 */ }
+}
+
 async function sweepRepo(repo: string, args: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<number> {
   const ctx: StepContext = { repo, args, workers, terminals, log }
   const state: StepState = { report: { removed: [], skipped: [] }, listed: [], remaining: new Set(), specsDir: null, owners: () => null, workerBranches: new Set(allLaunches(repo).flatMap((launch) => launch.branch ? [launch.branch] : [])), code: 0 }
+  markStage('prepare')
   Object.assign(state, await prepare(ctx, state))
+  markStage('worktrees')
   Object.assign(state, await cleanupWorktrees(ctx, state))
   if (ctx.args.guardWorktrees?.has(repo)) return state.code
+  markStage('branches')
   Object.assign(state, await cleanupBranches(ctx, state))
+  markStage('reviews')
   Object.assign(state, await cleanupReviews(ctx, state))
+  markStage('specs')
   Object.assign(state, await cleanupSpecs(ctx, state))
+  markStage('remote-branches')
   Object.assign(state, await cleanupRemoteBranches(ctx, state))
+  markStage('state')
   Object.assign(state, await cleanupState(ctx, state))
+  markStage('docker')
   Object.assign(state, await cleanupDocker(ctx, state))
   if (!ctx.args.apply) return state.code
+  markStage('after-cleanup')
   try {
     // 실패와 시간 초과는 HOOK-FAIL 줄만 남긴다. 정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다.
     await fire('after-cleanup', { removed: state.report.removed, skipped: state.report.skipped }, { repo, base: ctx.args.base, run: args.run, out: log })
@@ -50,6 +71,7 @@ export function main(argv: string[], runner?: Runner): Promise<number> {
 }
 
 async function executeMain(argv: string[]): Promise<number> {
+  markStage('session')
   const session = await prepareSession(argv)
   if ('code' in session) return session.code
   const { repos, args, workers, terminals, log, brief, tally } = session

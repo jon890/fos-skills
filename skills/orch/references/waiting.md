@@ -41,6 +41,7 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 | 모음 | WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED |
 
 모은 알림은 `state/notice-digest/<Run>.json` 에 쌓고 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 보낸다. 모을 것이 없으면 보내지 않는다. 같은 이유의 WATCH-ERROR 가 연속 세 번째 틱이면 바로 한 번 보낸다. 부모의 틱 실패(`tick`)도 같고, 본문 앞에 저장소 루트 폴더 이름을 쓰며 원인 줄을 담는다.
+정리(cleanup) 실패 가운데 그동안 Mac 이 잠든 것(벽시계가 단조 시계보다 1분 넘게 더 갔다)은 WATCH-ERROR 대신 loop.log 의 `WATCH-SLEPT` 줄로만 남긴다. 다음 회차가 성공하면 알리지 않고, 다음 회차도 실패하면 WATCH-ERROR 로 알린다. 잠자기가 아닌 시간 초과는 그때 돌던 정리 단계 이름을 이유에 붙인다.
 
 한 Run 에 저장소마다 루프가 등록돼 있으면 같은 알림이 루프 수만큼 오지 않게, 보내기 전에 머신 폴더의 `run-notices/<Run>/<해시>` 를 본다. 다른 저장소의 루프가 10분 안에 같은 Run, kind, 본문을 보냈으면 보내지 않는다(`lib/notice-transport.ts`). 완료 보고 확인은 이 저장소가 띄우지 않은 dispatch 의 PR 조회가 실패하면 건너뛴다. 띄운 저장소의 루프가 맡는다.
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { calls, exists, fx, git, runSweep, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
 
@@ -28,6 +28,8 @@ test('틱이 준 worker 행은 정리에서 다시 읽지 않는다', () => {
   shareWorkers()
   runSweep(['--run', 'own'])
   assert.doesNotMatch(calls(), /worker-list|task-list|run-list/)
+  // 들어간 마지막 단계를 루프가 시간 초과 알림에 적도록 남긴다(loop/steps/cleanup.ts 의 「잠자기」)
+  assert.equal(readFileSync(join(fx.env.ORCH_SWEEP_CACHE!, 'stage'), 'utf8'), 'docker\n')
 })
 
 test('열린 PR 의 리뷰 브랜치는 모든 Run 의 지시서를 조회하지 않고 남긴다', () => {
