@@ -88,12 +88,19 @@ describe('classify', () => {
       '허락: push 와 draft PR 생성(base main)은 사용자가 허락했다(2026-11-21, 「백엔드로 관리하지 말자」). 스펙만으로 PR 을 열지 않는다.',
       '허락: PR 생성은 허락하지 않았다.',
       '허락: PR 생성 금지',
+      '허락: PR 생성은 하지 않고 push 만 한다.',
+      '허락: PR 생성하지 말고 결과만 보고한다.',
     ]) assert.equal(noPrInstruction(`${line}\n## 완료 기준\n- 결과를 전달한다.`), true, line)
   })
 
   test('허락 줄의 결정은 PR 생성, PR 없음, 모름 셋이고 근거 줄 번호를 함께 낸다', () => {
     assert.deepEqual(prDecisionOf('# 일\n허락: push 와 draft PR 생성(base main)은 사용자가 허락했다(「되돌리지 말고」).'), { decision: 'pr', line: 2 })
     assert.deepEqual(prDecisionOf('허락: 구현과 PR 생성까지 허락한다, 머지는 하지 않는다.'), { decision: 'pr', line: 1 })
+    for (const line of [
+      '허락: push 와 PR 생성은 허락하되 머지는 하지 않는다.',
+      '허락: PR 생성은 허락했고 머지는 하지 않는다.',
+      '허락: PR 생성은 허락하지만 머지는 코디네이터가 하니 하지 않는다.',
+    ]) assert.deepEqual(prDecisionOf(line), { decision: 'pr', line: 1 }, line)
     assert.deepEqual(prDecisionOf('# 일\n\n허락: push 는 사용자가 허락했다.'), { decision: 'unknown', line: 3 })
     assert.deepEqual(prDecisionOf('# 일\n## 할 일\n- 고친다'), { decision: 'unknown', line: null })
     assert.deepEqual(prDecisionOf('허락: push 는 허락했다.\n- 커밋·PR 없음'), { decision: 'no-pr', line: 2 })

@@ -57,7 +57,9 @@ const NO_PR_LINE = /^\s*(?:(?:[-*]|\d+[.)])\s+)?(?:\*\*)?커밋\s*[·ㆍ・]\s*P
 // 「PR 을 열지 않는다」, 「PR 은 열지 않는다」, 「PR 없음」. 앞의 `커밋·` 은 받는다
 const NO_PR_PHRASE = /(?<![A-Za-z])PR\s*(?:(?:은|을|는|를)?\s*열지\s*않|없음|없이)/gi
 const PR_CREATE = /(?<![A-Za-z])PR\s*생성/gi
-const NEGATED = /않|없이|금지|말고|못\s/
+const NEGATED = /않|없이|금지|하지\s*말|말고|못\s/
+// `PR 생성` 을 받는 서술어 절의 끝. 쉼표와 연결 어미(`하되`, `했고`, `하지만`, `하며`) 뒤는 다른 행위의 절이다
+const CLAUSE_END = /[,，;]|하되|되\s|지만|으나|고\s|며\s/
 const ELSEWHERE = /다른\s*[^\s.]+\s*$/
 
 // 괄호와 낫표 안은 이유와 인용이라 보지 않는다(`허락했다(「…하지 말고…」)` 의 부정 표현을 세지 않는다)
@@ -75,8 +77,9 @@ function sentenceDecision(sentence: string): PrDecision {
   if (hereMatches(sentence, NO_PR_PHRASE).length > 0) return 'no-pr'
   const creates = hereMatches(sentence, PR_CREATE)
   if (creates.length === 0) return 'unknown'
-  // 부정 표현은 `PR 생성` 뒤 같은 절(쉼표 앞)에서만 본다. `PR 생성까지 허락한다, 머지는 하지 않는다` 는 PR 을 연다
-  return creates.some(rest => NEGATED.test(rest.split(/[,，;]/)[0])) ? 'no-pr' : 'pr'
+  // 부정 표현은 `PR 생성` 을 받는 서술어 절에서만 본다.
+  // `PR 생성까지 허락한다, 머지는 하지 않는다` 와 `PR 생성은 허락하되 머지는 하지 않는다` 는 PR 을 연다
+  return creates.some(rest => NEGATED.test(rest.split(CLAUSE_END)[0])) ? 'no-pr' : 'pr'
 }
 
 // 허락 줄 한 줄의 결정. 허락 줄이 아니면 null
