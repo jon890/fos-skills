@@ -300,6 +300,13 @@ export const KEYS: Readonly<Record<Section, Readonly<Record<string, Check>>>> = 
     review_author: zodCheck(nonEmptyText),
     review_pattern: zodCheck(capturePattern('routing.review_pattern', 5, 'js')),
     size_pattern: zodCheck(capturePattern('routing.size_pattern', 1, 'js')),
+    // 리뷰 출처 목록. 읽는 쪽은 lib/routing-log.ts 의 reviewSources 다
+    review_sources: zodCheck(z.array(z.strictObject({
+      author: nonEmptyText, kind: z.enum(['table', 'badges']).optional(),
+      pattern: capturePattern('routing.review_sources[].pattern', 5, 'js').optional(),
+      size_pattern: capturePattern('routing.review_sources[].size_pattern', 1, 'js').optional(),
+      clean_pattern: leaf((value) => typeof value === 'string' && validRegExp(value) === null, 'routing.review_sources[].clean_pattern 는 정규식이어야 한다').optional(),
+    }))),
     usage_boost: zodCheck(z.unknown()), // 옛 설정 파일을 열어 키를 지울 수 있게 받는다.
   },
   docker: Object.fromEntries(DOCKER_KEYS.map((key) => [key, viaConfig('docker', key, dockerRules)])),
