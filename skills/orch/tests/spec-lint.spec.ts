@@ -610,6 +610,23 @@ describe('지시서 검사', () => {
     assert.doesNotMatch(result.stdout, /^spec-no-pr-present\.md:.*완료 보고:/m)
     assert.doesNotMatch(result.stdout, /^spec-no-pr-hinted\.md:.*완료 보고:/m)
   })
+  test('스펙만으로 PR 을 열지 않는 허락 줄도 완료 보고 규칙을 요구한다', () => {
+    const spec1 = spec('spec-spec-only', '허락: push 와 draft PR 생성(base main)은 허락했다. 스펙만으로 PR 을 열지 않는다.\n## 완료 기준\n- 스펙을 확인받는다.')
+    const result = lint([spec1])
+    assert.equal(result.code, 0, result.stdout)
+    assert.match(result.stdout, /^spec-spec-only\.md:1: 완료 보고:/m)
+    assert.doesNotMatch(result.stdout, /PR 여부:/)
+  })
+
+  test('허락 줄이 PR 을 여는지 정하지 않으면 PR 여부 경고를 낸다', () => {
+    const unknown = spec('spec-pr-unknown', '허락: push 는 사용자가 허락했다.\n## 완료 기준\n- 결과를 전달한다.')
+    const decided = spec('spec-pr-decided', '허락: push 와 PR 생성(base main)은 사용자가 허락했다.\n## 완료 기준\n- PR 이 MERGED 다.')
+    const review = spec('spec-pr-review', '리뷰 PR: #12\n허락: 리뷰 등록을 허락했다.\n## 완료 기준\n- 리뷰를 단다.')
+    const result = lint([unknown, decided, review])
+    assert.equal(result.code, 0, result.stdout)
+    assert.match(result.stdout, /^spec-pr-unknown\.md:1: PR 여부: 허락 줄에서 PR 을 여는지 읽지 못했다/m)
+    assert.doesNotMatch(result.stdout, /^spec-pr-(?:decided|review)\.md:.*PR 여부:/m)
+  })
 })
 
 describe('할 일 첫 줄의 루프 선택', () => {
