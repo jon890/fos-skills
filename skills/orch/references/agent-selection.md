@@ -23,10 +23,10 @@
 | `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | `fable` | `기본` | `claude-fable-5-2` `기본` / `gpt-6.2-astra` `medium` |
 | `impl-hard` | 여러 모듈에 걸친 큰 구조 정리처럼 정말 어려운 구현 | `fable` | `기본` | `claude-fable-5-2` `기본` / `gpt-6.2-astra` `medium` |
 | `visual` | 화면이나 이미지를 보고 판정, 브라우저나 앱 조작 | `sonnet` | `low` | `claude-sonnet-5-5` `low` / `gpt-6.2-sol` `low` |
-| `review` | 리뷰와 검증. 구현한 쪽과 다른 제공자를 고른다 | `sonnet` | `medium` | `claude-sonnet-5-5` `medium` / `gpt-6.2-sol` `medium` |
-| `security-review` | 공격 경로를 재현하는 보안 리뷰. Claude를 고른다 | `sonnet` | `medium` | `claude-sonnet-5-5` `medium` / `gpt-6.2-sol` `medium` |
+| `review` | 리뷰와 검증. 구현한 쪽과 다른 제공자를 고른다 | `sonnet` | `high` | `claude-sonnet-5-5` `high` / `gpt-6.2-sol` `medium` |
+| `security-review` | 공격 경로를 재현하는 보안 리뷰. Claude를 고른다 | `sonnet` | `high` | `claude-sonnet-5-5` `high` / `gpt-6.2-sol` `medium` |
 
-- 행의 두 모델은 아래 한도 표에서 등급이 표시된 행의 모델과 첫 반대 제공자다. 그 칸에 effort가 있으면 그 값을, 없으면 행의 값을 쓴다.
+- 행의 두 모델은 아래 한도 표에서 등급이 표시된 행의 모델과 첫 반대 제공자다. 그 칸에 effort가 있으면 그 값을 쓴다. 없으면 이 표의 두 모델 칸에 적힌 effort 를, 그것도 없으면 행의 값을 쓴다. 리뷰 행의 sol 이 `medium` 인 것은 두 모델 칸의 값이다.
 - 등급에 반대 제공자 대응이 없으면 한도 표에 적힌 모델로 띄운다.
 - `spec-lint`와 `launch-worker`는 두 조합을 모두 허용한다. 보안 리뷰의 시작 조합은 Claude다. 다른 모델이나 effort를 쓰려면 `후보 밖: <이유>`를 적는다. 이 경우 차례를 사용하지 않는다.
 - `LAUNCH-EFFECTIVE`와 띄우기 이력의 `effective.alternation`에 교대 이유가 남는다. 같은 등급이면 저장소나 작업 행이 달라도 차례가 이어진다.
