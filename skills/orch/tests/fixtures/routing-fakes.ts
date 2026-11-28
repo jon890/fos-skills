@@ -6,7 +6,7 @@ import type { LaunchHistory } from '../../scripts/lib/launch-history.ts'
 import { routingRecords } from '../../scripts/lib/routing-log.ts'
 
 export const PR = { number: 7, url: 'https://github.com/test/repo/pull/7', headRefName: 'feat/a', headRefOid: 'head2',
-  createdAt: '2026-11-06T01:10:00Z', mergedAt: '2026-11-06T02:00:00Z', closedAt: null, state: 'MERGED' }
+  createdAt: '2026-11-06T01:10:00Z', mergedAt: '2026-11-06T02:00:00Z', closedAt: null, state: 'MERGED', additions: 100, deletions: 30, changedFiles: 3 }
 export const launch = (extra: Partial<LaunchHistory> = {}): LaunchHistory => ({ dispatch: 'ctx_a', task: 'task_a', terminal: 'term_a', run: 'run_a',
   worktree: '/temp/worktree', branch: 'feat/a', at: '2026-11-06T01:00:00Z', title: '작업', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium',
   effective: { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' }, row: 'impl-explore', retry_of: null, ...extra })
@@ -18,7 +18,9 @@ export function fixture() {
   const state = {
     pr: { ...PR }, siblings: [] as Record<string, unknown>[], history: [] as unknown[], inbox: {} as Record<string, unknown[]>,
     comments: [{ user: { login: 'review-bot' }, body: '| P1 | P2 | P3 | P4 | P5 |\n| --- | --- | --- | --- | --- |\n| 0 | 1 | 2 | 0 | 0 |\nPR 크기 등급: **B', created_at: '2026-11-06T01:20:00Z' }],
-    reviews: [], commits: [{ sha: 'head1', commit: { committer: { date: '2026-11-06T01:10:00Z' } } }, { sha: 'head2', commit: { committer: { date: '2026-11-06T01:40:00Z' } } }],
+    reviews: [] as Record<string, unknown>[], inline: [] as Record<string, unknown>[],
+    files: [{ filename: 'skills/orch/scripts/lib/a.ts' }, { filename: 'skills/orch/scripts/lib/b.ts' }, { filename: 'docs/x/y.md' }],
+    commits: [{ sha: 'head1', commit: { committer: { date: '2026-11-06T01:10:00Z' } } }, { sha: 'head2', commit: { committer: { date: '2026-11-06T01:40:00Z' } } }],
     attempts: {} as Record<string, unknown>,
     runs: { head1: [{ id: 1, conclusion: 'failure' }], head2: [{ id: 2, conclusion: 'success' }] }, fail: '',
   }
@@ -45,7 +47,9 @@ if (args[0] === 'pr' && args[1] === 'view') out(state.pr);
 if (args[0] === 'pr' && args[1] === 'list') out(state.siblings.length ? state.siblings : [state.pr]);
 if (args[0] === 'api') {
  const endpoint = args[3];
+ if (endpoint.includes('/pulls/') && endpoint.includes('/comments')) out([state.inline]);
  if (endpoint.includes('/comments')) out([state.comments]);
+ if (endpoint.includes('/files')) out([state.files]);
  if (endpoint.includes('/reviews')) out([state.reviews]);
  if (endpoint.includes('/commits')) out([state.commits]);
  if (endpoint.includes('/attempts/')) out(state.attempts[endpoint.split('/').slice(-3).join('/')]);

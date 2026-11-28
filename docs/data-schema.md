@@ -86,7 +86,8 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `feedback` | `reviewer` | 영문이나 숫자로 시작하고 영문, 숫자, 밑줄, 점, 콜론, 하이픈만 쓰는 문자열 | 없음 | 스킬 개선 후보의 판정을 맡는 이름. [피드백 검토 주기](../skills/orch/references/feedback-review.md#주기)를 따른다 |
 | `routing` | `review_author` | 비지 않은 GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
 | `routing` | `review_pattern` | JS 정규식 문자열(`m`). P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
-| `routing` | `size_pattern` | JS 정규식 문자열(`m`). 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
+| `routing` | `size_pattern` | JS 정규식 문자열(`m`). 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다(`size_grade`). 리뷰 봇과 무관한 크기 구간은 따로 계산한다 |
+| `routing` | `review_sources` | 객체 목록. 항목은 `author`(GitHub 로그인), `kind`(`table` 기본, `badges`), 선택 `pattern`, `size_pattern`(`table`), `clean_pattern`(`badges`) | 없음 | 첫 리뷰를 읽을 출처를 더한다. `review_author` 가 있으면 그것이 맨 앞의 `table` 출처다. `badges` 는 그 계정의 첫 PR 리뷰 인라인 댓글의 `![P0 Badge]` 꼴 배지를 센다(Codex 봇). 출처마다 따로 기록한다 |
 | `routing` | `usage_boost` | 값이 남아 있으면 시작할 때 삭제를 안내한다 | 없음 | [모델 사용 한도 회피](features/exhausted-model-avoid/spec.md)가 시작 전에 고른 모델의 한도를 확인한다. 옛 설정은 제거할 때까지 읽을 수 있다 |
 | `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 이름이 자유로운 객체. 값은 문자열이나 유한한 수의 목록(빈 목록 허용) | 절이 없으면 필터 없이 모두 보인다 | [저장소별 알림 필터](../skills/inbox/references/config.md#저장소-필터). `dooray.excludeProjects` 와 `dooray.excludeChannels` 는 이 보드에서 숨길 범위다. `enabled: false` 면 이 보드의 알림을 끈다. 옛 자리 `config/notification.json` 은 `inbox` 절이 없을 때 한 major 동안 읽는다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 양수이며 타이머 상한 이하의 초로 가는 객체. 모르는 이벤트 이름은 받지 않는다 | 위 「위치와 실행」 | 핸들러 시간 제한. 폐기된 `before-ready`, `pr-ready` 값은 무시하고 doctor 가 알린다 |
